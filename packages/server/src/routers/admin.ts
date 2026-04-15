@@ -2,7 +2,6 @@ import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
 import { createTrainingExportQueue } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { startTrainingExportWorker } from "../lib/start-worker.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { adminProcedure, router } from "../trpc.ts";
@@ -443,7 +442,6 @@ export const adminRouter = router({
         since: input.since,
         until: input.until,
       });
-      startTrainingExportWorker();
       return { jobId: String(job.id) };
     }),
 

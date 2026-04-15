@@ -37,8 +37,9 @@ LOCK_DURATION_MS = 600_000  # 10 minutes
 STALLED_INTERVAL_MS = 300_000  # 5 minutes (LOCK_DURATION / 2)
 MAX_STALLED_COUNT = 3
 
-# Idle timeout: exit if no jobs arrive within this period (matches Node worker)
-IDLE_TIMEOUT_SECONDS = 5 * 60
+# Keep the dedicated training export worker alive by default.
+# A value <= 0 disables idle shutdown.
+IDLE_TIMEOUT_SECONDS = 0
 
 # Shared volume for export output (matches JOB_FILES_DIR in Node.js)
 JOB_FILES_DIR = Path(os.environ.get("JOB_FILES_DIR", "/tmp/dofek-job-files"))
@@ -125,6 +126,8 @@ async def run_worker() -> None:
 
     def schedule_idle_shutdown() -> None:
         nonlocal idle_handle
+        if IDLE_TIMEOUT_SECONDS <= 0:
+            return
         if idle_handle is not None:
             idle_handle.cancel()
         idle_handle = asyncio.get_running_loop().call_later(
@@ -163,13 +166,15 @@ async def run_worker() -> None:
     worker.on("completed", lambda _job, _result, _prev: schedule_idle_shutdown())
     worker.on("failed", lambda _job, _error, _prev: schedule_idle_shutdown())
 
-    # Start idle timer immediately
-    schedule_idle_shutdown()
-
-    logger.info(
-        "Training export worker started (queue=training-export, idle_timeout=%ds)",
-        IDLE_TIMEOUT_SECONDS,
-    )
+    if IDLE_TIMEOUT_SECONDS > 0:
+        # Start idle timer immediately when idle shutdown is enabled.
+        schedule_idle_shutdown()
+        logger.info(
+            "Training export worker started (queue=training-export, idle_timeout=%ds)",
+            IDLE_TIMEOUT_SECONDS,
+        )
+    else:
+        logger.info("Training export worker started (queue=training-export, idle_timeout=disabled)")
 
     await shutdown_event.wait()
 
