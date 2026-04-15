@@ -543,6 +543,67 @@ describe("Router data coverage", () => {
       }
     });
 
+    it("verticalAscentRate includes climbs when grade samples are offset from altitude samples", async () => {
+      const startedAt = new Date();
+      startedAt.setDate(startedAt.getDate() - 2);
+      startedAt.setMinutes(0, 0, 0);
+      const endedAt = new Date(startedAt.getTime() + 10 * 60 * 1000);
+
+      const activityRows = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, activity_type, started_at, ended_at, name
+            ) VALUES (
+              'test_provider', ${TEST_USER_ID}, 'cycling', ${startedAt.toISOString()},
+              ${endedAt.toISOString()}, 'Offset Grade Climb'
+            )
+            RETURNING id`,
+      );
+      const activityId = activityRows[0]?.id;
+
+      if (!activityId) {
+        throw new Error("Failed to create Offset Grade Climb activity");
+      }
+
+      const sensorValues: string[] = [];
+      for (let second = 0; second <= 600; second += 5) {
+        const altitudeTimestamp = new Date(startedAt.getTime() + second * 1000).toISOString();
+        const gradeTimestamp = new Date(startedAt.getTime() + second * 1000 + 2000).toISOString();
+        const altitude = 400 + second * 0.6;
+
+        sensorValues.push(
+          `('${altitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
+          `('${gradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${activityId}', 6, NULL)`,
+        );
+      }
+
+      await testCtx.db.execute(
+        sql.raw(`INSERT INTO fitness.metric_stream (
+          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+        ) VALUES ${sensorValues.join(",\n")}`),
+      );
+
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+      await queryCache.invalidateAll();
+
+      const result = await query<
+        {
+          date: string;
+          activityName: string;
+          verticalAscentRate: number;
+          elevationGainMeters: number;
+          climbingMinutes: number;
+        }[]
+      >("cyclingAdvanced.verticalAscentRate", { days: 90 });
+
+      const offsetRow = result.find((row) => row.activityName === "Offset Grade Climb");
+      expect(offsetRow).toBeDefined();
+      expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
+      expect(offsetRow?.climbingMinutes).toBeGreaterThan(5);
+      expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
+    });
+
     it("activityVariability returns NP, VI, IF per activity", async () => {
       const result = await query<{
         rows: {
