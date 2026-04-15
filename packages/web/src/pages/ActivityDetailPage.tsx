@@ -138,7 +138,7 @@ export function ActivityDetailPage() {
         <DeleteActivityButton activityId={id} />
       </div>
 
-      <ActivityHeader activity={activity} units={units} />
+      <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
 
       {hasGps && (
         <Section
@@ -254,9 +254,11 @@ function DeleteActivityButton({ activityId }: { activityId: string }) {
 export function ActivityHeader({
   activity,
   units,
+  hasGps,
 }: {
   activity: ActivityDetail;
   units: UnitConverter;
+  hasGps: boolean;
 }) {
   const durationMin =
     activity.startedAt && activity.endedAt
@@ -274,12 +276,12 @@ export function ActivityHeader({
   const stats: Array<{ label: string; value: string }> = [];
 
   if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
-  if (activity.totalDistance != null)
+  if (hasGps && activity.totalDistance != null)
     stats.push({
       label: "Distance",
       value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
-  if (activity.elevationGain != null)
+  if (hasGps && activity.elevationGain != null)
     stats.push({
       label: "Elevation Gain",
       value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
@@ -292,7 +294,7 @@ export function ActivityHeader({
     stats.push({ label: "Avg Power", value: `${Math.round(activity.avgPower)} W` });
   if (activity.maxPower != null)
     stats.push({ label: "Max Power", value: `${Math.round(activity.maxPower)} W` });
-  if (activity.avgSpeed != null)
+  if (hasGps && activity.avgSpeed != null)
     stats.push({
       label: "Avg Speed",
       value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,

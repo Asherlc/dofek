@@ -793,13 +793,13 @@ export default function ActivityDetailScreen() {
       value: formatDurationRange(activity.startedAt, activity.endedAt),
     });
   }
-  if (activity.totalDistance != null) {
+  if (hasGps && activity.totalDistance != null) {
     stats.push({
       label: "Distance",
       value: `${formatNumber(units.convertDistance(activity.totalDistance / 1000))} ${units.distanceLabel}`,
     });
   }
-  if (activity.elevationGain != null) {
+  if (hasGps && activity.elevationGain != null) {
     stats.push({
       label: "Elevation Gain",
       value: `${Math.round(units.convertElevation(activity.elevationGain))} ${units.elevationLabel}`,
@@ -829,7 +829,7 @@ export default function ActivityDetailScreen() {
       value: `${Math.round(activity.maxPower)} W`,
     });
   }
-  if (activity.avgSpeed != null) {
+  if (hasGps && activity.avgSpeed != null) {
     stats.push({
       label: "Avg Speed",
       value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
