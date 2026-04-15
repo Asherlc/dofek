@@ -14,6 +14,7 @@ import { queryCache } from "../lib/cache.ts";
  * cannot.
  */
 describe("dailyMetrics data correctness", () => {
+  const staleViewUserId = "00000000-0000-0000-0000-000000000002";
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
@@ -108,13 +109,17 @@ describe("dailyMetrics data correctness", () => {
     await testCtx?.cleanup();
   });
 
-  async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
+  async function queryWithCookie<T = unknown>(
+    cookie: string,
+    path: string,
+    input: Record<string, unknown> = {},
+  ): Promise<T> {
     await queryCache.invalidateAll();
     const res = await fetch(`${baseUrl}/api/trpc/${path}?batch=1`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Cookie: sessionCookie,
+        Cookie: cookie,
         "x-timezone": "UTC",
       },
       body: JSON.stringify({ "0": input }),
@@ -125,6 +130,10 @@ describe("dailyMetrics data correctness", () => {
       throw new Error(`${path} error: ${JSON.stringify(first.error)}`);
     }
     return first?.result?.data;
+  }
+
+  async function query<T = unknown>(path: string, input: Record<string, unknown> = {}): Promise<T> {
+    return queryWithCookie(sessionCookie, path, input);
   }
 
   describe("trends", () => {
@@ -203,6 +212,76 @@ describe("dailyMetrics data correctness", () => {
       expect(result.avg_resting_hr).toBeNull();
       expect(result.latest_resting_hr).toBeNull();
       expect(result.latest_date).toBeNull();
+    });
+
+    it("refreshes stale trends when today's steps were inserted after the materialized view refresh", async () => {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name)
+            VALUES (${staleViewUserId}, 'Stale View User')
+            ON CONFLICT (id) DO NOTHING`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('apple_health_stale_view', 'Apple Health', ${staleViewUserId})`,
+      );
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('garmin_stale_view', 'Garmin Connect', ${staleViewUserId})`,
+      );
+
+      for (let i = 7; i >= 1; i--) {
+        await testCtx.db.execute(
+          sql`INSERT INTO fitness.daily_metrics (
+                date, provider_id, user_id, steps, active_energy_kcal
+              ) VALUES (
+                CURRENT_DATE - ${i}::int,
+                'apple_health_stale_view',
+                ${staleViewUserId},
+                ${8000 + i * 100},
+                ${400 + i * 10}
+              )`,
+        );
+      }
+
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.daily_metrics (
+              date, provider_id, user_id, distance_km
+            ) VALUES (
+              CURRENT_DATE,
+              'garmin_stale_view',
+              ${staleViewUserId},
+              5.2
+            )`,
+      );
+
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
+
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.daily_metrics (
+              date, provider_id, user_id, steps, active_energy_kcal
+            ) VALUES (
+              CURRENT_DATE,
+              'apple_health_stale_view',
+              ${staleViewUserId},
+              9876,
+              543
+            )`,
+      );
+
+      const staleSession = await createSession(testCtx.db, staleViewUserId);
+      const staleSessionCookie = `session=${staleSession.sessionId}`;
+
+      const result = await queryWithCookie<{
+        avg_steps: number | null;
+        latest_steps: number | null;
+        latest_active_energy: number | null;
+        latest_date: string | null;
+      }>(staleSessionCookie, "dailyMetrics.trends", { days: 30, endDate });
+
+      expect(result.latest_date).toBe(endDate);
+      expect(result.latest_steps).toBe(9876);
+      expect(result.latest_active_energy).toBe(543);
+      expect(result.avg_steps).not.toBeNull();
     });
   });
 

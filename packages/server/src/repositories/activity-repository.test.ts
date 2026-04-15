@@ -147,6 +147,34 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["cycling", "running"]));
     });
 
+    it("uses IN syntax for multi-value activityTypes filters without row expressions", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.list({
+        days: 30,
+        endDate: "2024-02-01",
+        limit: 20,
+        offset: 20,
+        activityTypes: [
+          "strength",
+          "strength_training",
+          "functional_strength",
+          "functional_fitness",
+        ],
+      });
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("a.activity_type IN (");
+      expect(compiledQuery.sql).not.toContain("ANY(($");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining([
+          "strength",
+          "strength_training",
+          "functional_strength",
+          "functional_fitness",
+        ]),
+      );
+    });
+
     it("does not include activityTypes filter when not provided", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });

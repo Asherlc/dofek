@@ -184,4 +184,150 @@ describe("sleep router integration", () => {
     expect(stages.length).toBe(3);
     expect(stages.map((stage) => stage.stage)).toEqual(["light", "deep", "rem"]);
   });
+
+  it("sleep.latestStages returns overlapping stages even when the staged session starts more than two hours earlier", async () => {
+    await queryCache.invalidateAll();
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('apple_health_overlap', 'Apple Health Overlap', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop_overlap', 'WHOOP Overlap', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority)
+          VALUES ('whoop_overlap', 1, 1)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = 1, sleep_priority = 1`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            sleep_type
+          ) VALUES (
+            'apple_health_overlap', ${TEST_USER_ID},
+            NOW() - INTERVAL '8 hours',
+            NOW() - INTERVAL '30 minutes',
+            450, 90, 90, 210, 60,
+            'sleep'
+          )`,
+    );
+
+    const stagedSessionRows = await executeWithSchema(
+      testCtx.db,
+      z.object({ id: z.string() }),
+      sql`SELECT id FROM fitness.sleep_session
+          WHERE provider_id = 'apple_health_overlap' AND user_id = ${TEST_USER_ID}
+          ORDER BY started_at DESC LIMIT 1`,
+    );
+    const stagedSessionId = stagedSessionRows[0]?.id;
+    expect(stagedSessionId).toBeDefined();
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
+          VALUES
+            (${stagedSessionId}::uuid, 'light', NOW() - INTERVAL '8 hours', NOW() - INTERVAL '6 hours'),
+            (${stagedSessionId}::uuid, 'deep', NOW() - INTERVAL '6 hours', NOW() - INTERVAL '4 hours'),
+            (${stagedSessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '2 hours')`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            sleep_type
+          ) VALUES (
+            'whoop_overlap', ${TEST_USER_ID},
+            NOW() - INTERVAL '3 hours',
+            NOW(),
+            180, 20, 40, 100, 20,
+            'sleep'
+          )`,
+    );
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
+
+    const stages =
+      await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
+
+    expect(stages.length).toBe(3);
+    expect(stages.map((stage) => stage.stage)).toEqual(["light", "deep", "rem"]);
+  });
+
+  it("sleep.latestStages ignores staged sessions that end before the latest sleep starts", async () => {
+    await queryCache.invalidateAll();
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('apple_health_gap', 'Apple Health Gap', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop_gap', 'WHOOP Gap', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority)
+          VALUES ('whoop_gap', 1, 1)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = 1, sleep_priority = 1`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            sleep_type
+          ) VALUES (
+            'apple_health_gap', ${TEST_USER_ID},
+            NOW() + INTERVAL '1 hour',
+            NOW() + INTERVAL '3 hours',
+            120, 30, 30, 45, 15,
+            'sleep'
+          )`,
+    );
+
+    const stagedSessionRows = await executeWithSchema(
+      testCtx.db,
+      z.object({ id: z.string() }),
+      sql`SELECT id FROM fitness.sleep_session
+          WHERE provider_id = 'apple_health_gap' AND user_id = ${TEST_USER_ID}
+          ORDER BY started_at DESC LIMIT 1`,
+    );
+    const stagedSessionId = stagedSessionRows[0]?.id;
+    expect(stagedSessionId).toBeDefined();
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_stage (session_id, stage, started_at, ended_at)
+          VALUES
+            (${stagedSessionId}::uuid, 'light', NOW() + INTERVAL '1 hour', NOW() + INTERVAL '2 hours'),
+            (${stagedSessionId}::uuid, 'deep', NOW() + INTERVAL '2 hours', NOW() + INTERVAL '3 hours')`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
+            sleep_type
+          ) VALUES (
+            'whoop_gap', ${TEST_USER_ID},
+            NOW() + INTERVAL '4 hours',
+            NOW() + INTERVAL '11 hours',
+            420, 60, 90, 210, 60,
+            'sleep'
+          )`,
+    );
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
+
+    const stages =
+      await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
+
+    expect(stages).toEqual([]);
+  });
 });

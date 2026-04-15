@@ -184,6 +184,71 @@ describe("healthspan zone time with variable-interval HR data", () => {
     }
   });
 
+  it("sleep consistency score is not deflated by midnight wraparound", async () => {
+    // This test verifies the bedtime stddev calculation handles midnight crossings correctly.
+    // A person who goes to bed consistently at ~midnight (some nights 11 PM, some at 1 AM)
+    // has a very consistent schedule — only ~60 min spread. Without the fix, raw
+    // minutes-of-day (1380 vs 60) are 1320 apart, producing a huge stddev and score=0.
+    //
+    // sleepNightDate subtracts 6 hours: a 1 AM start on calendar day N → sleep_date = day N-1,
+    // same as 11 PM on day N-1. So we must use sessions on alternate (non-adjacent) nights
+    // to avoid the DISTINCT ON dedup collapsing them into one row per night.
+    //
+    // Sessions and their sleep_dates:
+    //   daysAgo=14, 23:00 → sleep_date = today-14  (23:00 − 6h = 17:00 same day)
+    //   daysAgo=12, 01:00 → sleep_date = today-13  (01:00 − 6h = 19:00 prev day)
+    //   daysAgo=10, 23:10 → sleep_date = today-10
+    //   daysAgo=8,  01:10 → sleep_date = today-9
+    //   daysAgo=6,  23:20 → sleep_date = today-6
+    //   daysAgo=4,  01:20 → sleep_date = today-5
+    //   daysAgo=2,  23:30 → sleep_date = today-2
+    //
+    // True bedtime stddev (normalized, with 1 AM → 1500 min):
+    //   values: 1380, 1500, 1390, 1510, 1400, 1520, 1410  → stddev ≈ 58 min → score ≈ 36
+    // Without the fix (raw minutes, 1 AM = 60):
+    //   values: 1380, 60, 1390, 70, 1400, 80, 1410  → stddev ≈ 665 min → score = 0
+
+    const midnightNights = [
+      { daysAgo: 14, hour: 23, minute: 0 },
+      { daysAgo: 12, hour: 1, minute: 0 },
+      { daysAgo: 10, hour: 23, minute: 10 },
+      { daysAgo: 8, hour: 1, minute: 10 },
+      { daysAgo: 6, hour: 23, minute: 20 },
+      { daysAgo: 4, hour: 1, minute: 20 },
+      { daysAgo: 2, hour: 23, minute: 30 },
+    ];
+
+    for (const night of midnightNights) {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.sleep_session (
+              provider_id, user_id, started_at, ended_at,
+              duration_minutes, sleep_type
+            ) VALUES (
+              'test_provider', ${TEST_USER_ID},
+              (CURRENT_DATE - ${night.daysAgo}::int)
+                + make_time(${night.hour}, ${night.minute}, 0),
+              (CURRENT_DATE - ${night.daysAgo}::int)
+                + make_time(${night.hour}, ${night.minute}, 0)
+                + INTERVAL '7 hours',
+              420, 'sleep'
+            )`,
+      );
+    }
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+
+    const sleepConsistency = result.metrics.find((m) => m.name === "Sleep Consistency");
+    expect(sleepConsistency).toBeDefined();
+    // Score must be > 0. Without the midnight wraparound fix it would be 0.
+    expect(sleepConsistency?.score).toBeGreaterThan(0);
+    // Stddev should reflect ~60 min spread, not hundreds of minutes
+    if (sleepConsistency?.value != null) {
+      expect(sleepConsistency.value).toBeLessThan(120);
+    }
+  });
+
   it("high intensity minutes are proportional to actual time, not sample count", async () => {
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 

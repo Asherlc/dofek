@@ -124,6 +124,7 @@ function LineChart({
   const minVal = Math.min(...values.map((v) => v.value));
   const maxVal = Math.max(...values.map((v) => v.value));
   const range = maxVal - minVal || 1;
+  const totalPoints = data.length;
 
   const toX = (index: number) =>
     CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
@@ -262,6 +263,7 @@ function AreaChart({
   const minVal = Math.min(...values.map((v) => v.value));
   const maxVal = Math.max(...values.map((v) => v.value));
   const range = maxVal - minVal || 1;
+  const totalPoints = data.length;
 
   const toX = (index: number) =>
     CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;

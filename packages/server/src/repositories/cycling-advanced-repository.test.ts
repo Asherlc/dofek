@@ -300,6 +300,25 @@ describe("CyclingAdvancedRepository", () => {
       expect(result[0]).toBeInstanceOf(VerticalAscentModel);
       expect(result[0]?.toDetail().verticalAscentRate).toBe(1000);
     });
+
+    it("does not require grade channel data — altitude-only providers return results", async () => {
+      // Regression test: the original query used INNER JOIN on the grade channel,
+      // which returned empty for providers that don't emit grade (Garmin, Wahoo, etc.).
+      // The query now uses altitude deltas alone to detect climbing.
+      const { repo, execute } = makeRepository([
+        {
+          date: "2024-04-01",
+          name: "Garmin Ride",
+          elevation_gain: 800,
+          climbing_seconds: 2400,
+        },
+      ]);
+      const result = await repo.getVerticalAscentRates(90);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.toDetail().activityName).toBe("Garmin Ride");
+      // Verify only a single execute call was made (no separate grade channel query)
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("getPedalDynamics", () => {

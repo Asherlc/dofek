@@ -31,9 +31,6 @@ const config: ExpoConfig = {
   ...baseConfig.expo,
   extra: {
     ...baseConfig.expo.extra,
-    router: {
-      ignore: ["\\.stories\\.[tj]sx?$"],
-    },
   },
   ...(PREVIEW_CHANNEL
     ? {

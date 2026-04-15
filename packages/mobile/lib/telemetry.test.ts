@@ -78,18 +78,15 @@ describe("ios telemetry", () => {
     }
   });
 
-  it("does not initialize without a DSN", async () => {
+  it("throws immediately when EXPO_PUBLIC_SENTRY_DSN is not set", async () => {
     delete process.env.EXPO_PUBLIC_SENTRY_DSN;
 
     const mod = await import("./telemetry");
-    mod.initTelemetry();
-    mod.captureException(new Error("boom"));
 
-    expect(mocks.mockInit).not.toHaveBeenCalled();
-    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ extra: {} }),
+    expect(() => mod.initTelemetry()).toThrow(
+      "EXPO_PUBLIC_SENTRY_DSN is not set — Sentry cannot initialize",
     );
+    expect(mocks.mockInit).not.toHaveBeenCalled();
   });
 
   it("initializes Sentry once with DSN and sends a verification message", async () => {
@@ -122,6 +119,7 @@ describe("ios telemetry", () => {
   });
 
   it("initializes OTel LoggerProvider when endpoint is set", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
     process.env.EXPO_PUBLIC_OTEL_HEADERS = "Authorization=Bearer tok123,x-axiom-dataset=dofek-logs";
 
@@ -132,6 +130,7 @@ describe("ios telemetry", () => {
   });
 
   it("logger.info emits OTel log record when provider is initialized", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
 
     const mod = await import("./telemetry");
@@ -150,6 +149,7 @@ describe("ios telemetry", () => {
   });
 
   it("logger works without OTel endpoint (console-only)", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     delete process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
 
     const mod = await import("./telemetry");
@@ -165,6 +165,7 @@ describe("ios telemetry", () => {
   });
 
   it("flushTelemetry flushes the OTel provider", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
 
     const mod = await import("./telemetry");
