@@ -37,6 +37,7 @@ const headerMeta = {
   args: {
     activity: baseActivity,
     units: new UnitConverter("metric"),
+    hasGps: true,
   },
 } satisfies Meta<typeof ActivityHeader>;
 
@@ -44,16 +45,22 @@ export default headerMeta;
 
 type HeaderStory = StoryObj<typeof headerMeta>;
 
-export const CyclingMetric: HeaderStory = {};
+export const CyclingMetric: HeaderStory = {
+  args: {
+    hasGps: true,
+  },
+};
 
 export const CyclingImperial: HeaderStory = {
   args: {
     units: new UnitConverter("imperial"),
+    hasGps: true,
   },
 };
 
 export const Running: HeaderStory = {
   args: {
+    hasGps: true,
     activity: {
       ...baseActivity,
       activityType: "running",
@@ -71,6 +78,7 @@ export const Running: HeaderStory = {
 
 export const Minimal: HeaderStory = {
   args: {
+    hasGps: false,
     activity: {
       ...baseActivity,
       name: null,
