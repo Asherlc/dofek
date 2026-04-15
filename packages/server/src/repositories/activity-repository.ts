@@ -145,10 +145,10 @@ export class ActivityRepository extends BaseRepository {
   #listRawRows(input: ListInput) {
     const typeFilter =
       input.activityTypes && input.activityTypes.length > 0
-        ? sql`AND a.activity_type = ANY(ARRAY[${sql.join(
+        ? sql`AND a.activity_type IN (${sql.join(
             input.activityTypes.map((type) => sql`${type}`),
             sql`, `,
-          )}])`
+          )})`
         : sql``;
     return this.query(
       activityListRowSchema,
