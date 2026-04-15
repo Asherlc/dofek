@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm audit --prod --audit-level=critical
+      - run: pnpm audit --prod --audit-level=critical --ignore-registry-errors
 
   license-check:
     name: License Check
