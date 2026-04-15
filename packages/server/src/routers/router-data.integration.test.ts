@@ -543,6 +543,106 @@ describe("Router data coverage", () => {
       }
     });
 
+    it("verticalAscentRate uses nearby grade when present and altitude fallback otherwise", async () => {
+      async function createActivity(name: string, startedAt: Date, endedAt: Date): Promise<string> {
+        const activityRows = await testCtx.db.execute<{ id: string }>(
+          sql`INSERT INTO fitness.activity (
+                provider_id, user_id, activity_type, started_at, ended_at, name
+              ) VALUES (
+                'test_provider', ${TEST_USER_ID}, 'cycling', ${startedAt.toISOString()},
+                ${endedAt.toISOString()}, ${name}
+              )
+              RETURNING id`,
+        );
+        const activityId = activityRows[0]?.id;
+
+        if (!activityId) {
+          throw new Error(`Failed to create ${name} activity`);
+        }
+
+        return activityId;
+      }
+
+      const startedAt = new Date();
+      startedAt.setDate(startedAt.getDate() - 2);
+      startedAt.setMinutes(0, 0, 0);
+      const endedAt = new Date(startedAt.getTime() + 10 * 60 * 1000);
+
+      const offsetGradeClimbId = await createActivity("Offset Grade Climb", startedAt, endedAt);
+      const lowGradeDriftId = await createActivity(
+        "Low Grade Drift",
+        new Date(startedAt.getTime() + 20 * 60 * 1000),
+        new Date(endedAt.getTime() + 20 * 60 * 1000),
+      );
+      const altitudeOnlyClimbId = await createActivity(
+        "Altitude Only Climb",
+        new Date(startedAt.getTime() + 40 * 60 * 1000),
+        new Date(endedAt.getTime() + 40 * 60 * 1000),
+      );
+
+      const sensorValues: string[] = [];
+      for (let second = 0; second <= 600; second += 5) {
+        const offsetAltitudeTimestamp = new Date(startedAt.getTime() + second * 1000).toISOString();
+        const offsetGradeTimestamp = new Date(
+          startedAt.getTime() + second * 1000 + 2000,
+        ).toISOString();
+        const driftAltitudeTimestamp = new Date(
+          startedAt.getTime() + 20 * 60 * 1000 + second * 1000,
+        ).toISOString();
+        const driftGradeTimestamp = new Date(
+          startedAt.getTime() + 20 * 60 * 1000 + second * 1000 + 2000,
+        ).toISOString();
+        const altitudeOnlyTimestamp = new Date(
+          startedAt.getTime() + 40 * 60 * 1000 + second * 1000,
+        ).toISOString();
+        const altitude = 400 + second * 0.6;
+
+        sensorValues.push(
+          `('${offsetAltitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${offsetGradeClimbId}', ${altitude}, NULL)`,
+          `('${offsetGradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${offsetGradeClimbId}', 6, NULL)`,
+          `('${driftAltitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${lowGradeDriftId}', ${altitude}, NULL)`,
+          `('${driftGradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${lowGradeDriftId}', 0.5, NULL)`,
+          `('${altitudeOnlyTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${altitudeOnlyClimbId}', ${altitude}, NULL)`,
+        );
+      }
+
+      await testCtx.db.execute(
+        sql.raw(`INSERT INTO fitness.metric_stream (
+          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+        ) VALUES ${sensorValues.join(",\n")}`),
+      );
+
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+      await queryCache.invalidateAll();
+
+      const result = await query<
+        {
+          date: string;
+          activityName: string;
+          verticalAscentRate: number;
+          elevationGainMeters: number;
+          climbingMinutes: number;
+        }[]
+      >("cyclingAdvanced.verticalAscentRate", { days: 90 });
+
+      const offsetRow = result.find((row) => row.activityName === "Offset Grade Climb");
+      const altitudeOnlyRow = result.find((row) => row.activityName === "Altitude Only Climb");
+      const lowGradeRow = result.find((row) => row.activityName === "Low Grade Drift");
+
+      expect(offsetRow).toBeDefined();
+      expect(offsetRow?.elevationGainMeters).toBeGreaterThan(0);
+      expect(offsetRow?.climbingMinutes).toBeGreaterThan(5);
+      expect(offsetRow?.verticalAscentRate).toBeGreaterThan(0);
+
+      expect(altitudeOnlyRow).toBeDefined();
+      expect(altitudeOnlyRow?.elevationGainMeters).toBeGreaterThan(0);
+      expect(altitudeOnlyRow?.verticalAscentRate).toBeGreaterThan(0);
+
+      expect(lowGradeRow).toBeUndefined();
+    });
+
     it("activityVariability returns NP, VI, IF per activity", async () => {
       const result = await query<{
         rows: {

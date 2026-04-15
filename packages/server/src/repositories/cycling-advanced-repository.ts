@@ -571,12 +571,13 @@ export class CyclingAdvancedRepository {
     };
   }
 
-  /** Vertical ascent rate (VAM) for climbing segments (positive altitude gain). */
+  /** Vertical ascent rate (VAM) for climbing segments.
+   *  Use nearby grade samples when an activity has grade data; otherwise fall back to altitude gain. */
   async getVerticalAscentRates(days: number): Promise<VerticalAscentModel[]> {
     const rows = await executeWithSchema(
       this.#db,
       vamRowSchema,
-      sql`WITH altitude_samples AS (
+      sql`WITH altitude_points AS (
             SELECT
               alt.activity_id,
               alt.scalar AS altitude,
@@ -593,6 +594,39 @@ export class CyclingAdvancedRepository {
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ${enduranceTypeFilter("a")}
               AND alt.channel = 'altitude'
+          ),
+          grade_activities AS (
+            SELECT DISTINCT grd.activity_id
+            FROM fitness.deduped_sensor grd
+            JOIN fitness.v_activity a ON a.id = grd.activity_id
+            WHERE a.user_id = ${this.#userId}
+              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+              AND ${enduranceTypeFilter("a")}
+              AND grd.channel = 'grade'
+          ),
+          climbing_segments AS (
+            SELECT
+              ap.activity_id,
+              ap.recorded_at,
+              ap.altitude,
+              ap.prev_altitude,
+              ap.prev_recorded_at,
+              nearest_grade.grade,
+              ga.activity_id IS NOT NULL AS has_grade_samples
+            FROM altitude_points ap
+            LEFT JOIN grade_activities ga ON ga.activity_id = ap.activity_id
+            LEFT JOIN LATERAL (
+              SELECT grd.scalar AS grade
+              FROM fitness.deduped_sensor grd
+              WHERE grd.activity_id = ap.activity_id
+                AND grd.channel = 'grade'
+                AND grd.recorded_at BETWEEN
+                  ap.recorded_at - INTERVAL '5 seconds' AND ap.recorded_at + INTERVAL '5 seconds'
+              ORDER BY
+                ABS(EXTRACT(EPOCH FROM (grd.recorded_at - ap.recorded_at))),
+                grd.recorded_at
+              LIMIT 1
+            ) nearest_grade ON true
           )
           SELECT
             (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
@@ -603,11 +637,12 @@ export class CyclingAdvancedRepository {
             SUM(
               EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))
             )::int AS climbing_seconds
-          FROM altitude_samples cs
+          FROM climbing_segments cs
           JOIN fitness.v_activity a ON a.id = cs.activity_id
           WHERE cs.prev_altitude IS NOT NULL
             AND cs.prev_recorded_at IS NOT NULL
             AND cs.altitude > cs.prev_altitude
+            AND (NOT cs.has_grade_samples OR cs.grade > 3)
           GROUP BY a.id, a.started_at, a.name
           HAVING SUM(EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))) > 60
           ORDER BY a.started_at`,
