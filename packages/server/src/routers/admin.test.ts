@@ -8,10 +8,6 @@ vi.mock("dofek/jobs/queues", () => ({
   createTrainingExportQueue: () => ({ add: mockAdd }),
 }));
 
-vi.mock("../lib/start-worker.ts", () => ({
-  startTrainingExportWorker: vi.fn(),
-}));
-
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));

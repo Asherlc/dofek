@@ -42,8 +42,8 @@ class TestConstants:
     def test_max_stalled_count(self) -> None:
         assert MAX_STALLED_COUNT == 3
 
-    def test_idle_timeout_is_5_minutes(self) -> None:
-        assert IDLE_TIMEOUT_SECONDS == 300
+    def test_idle_timeout_disabled_by_default(self) -> None:
+        assert IDLE_TIMEOUT_SECONDS == 0
 
 
 class TestProcessTrainingExport:
