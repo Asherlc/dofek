@@ -88,6 +88,7 @@ resource "terraform_data" "deploy_compose" {
       "cd /opt/dofek",
       "test -f .env.deploy || printf 'IMAGE_TAG=latest\\n' > .env.deploy",
       "test -s .env.prod || { echo 'ERROR: .env.prod is missing or empty. Run secret-sync first.' >&2; exit 1; }",
+      "missing_vars=''; for required_var in CLOUDFLARE_API_TOKEN POSTGRES_PASSWORD PGADMIN_DEFAULT_EMAIL PGADMIN_DEFAULT_PASSWORD; do grep -Eq \"^$${required_var}=.+\" .env.prod || missing_vars=\"$${missing_vars} $${required_var}\"; done; [ -z \"$${missing_vars}\" ] || { echo \"ERROR: .env.prod is missing required vars:$${missing_vars}. Add them in Infisical (prod), then run secret-sync.yml before terraform apply.\" >&2; exit 1; }",
       "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml pull --ignore-pull-failures db redis collector ota databasus pgadmin traefik portainer netdata",
       "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d db redis collector ota databasus pgadmin traefik portainer netdata",
     ]

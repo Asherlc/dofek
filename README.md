@@ -619,6 +619,17 @@ Required GitHub secrets for this workflow:
 - `DEPLOY_SSH_KEY`
 - `SERVER_HOST`
 
+Required Infisical `prod` keys for deploy compose interpolation:
+- `CLOUDFLARE_API_TOKEN`
+- `POSTGRES_PASSWORD`
+- `PGADMIN_DEFAULT_EMAIL`
+- `PGADMIN_DEFAULT_PASSWORD`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `OTA_JWT_SECRET`
+
+`CLOUDFLARE_API_TOKEN` is used by both Traefik (for DNS challenge certificates) and Terraform deploy automation, so one Cloudflare token covers certificate DNS challenges plus Terraform-managed DNS/R2 changes.
+
 To force a manual sync:
 
 ```bash

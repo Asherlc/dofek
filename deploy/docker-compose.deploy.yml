@@ -31,7 +31,7 @@ services:
       - --certificatesresolvers.le.acme.email=asherlc@asherlc.com
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
     environment:
-      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+      CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
     ports:
       - "80:80"
       - "443:443"
