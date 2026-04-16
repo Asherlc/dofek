@@ -448,10 +448,11 @@ describe("adminRouter", () => {
         "fitness.v_daily_metrics",
         "fitness.deduped_sensor",
         "fitness.activity_summary",
+        "fitness.provider_stats",
       ]);
       expect(result.failed).toEqual([]);
-      // 6 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
-      expect(execute).toHaveBeenCalledTimes(6);
+      // 7 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
+      expect(execute).toHaveBeenCalledTimes(7);
     });
 
     it("falls back to non-concurrent refresh on error", async () => {
@@ -462,10 +463,10 @@ describe("adminRouter", () => {
         .mockResolvedValue([]); // remaining views
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(6);
+      expect(result.refreshed).toHaveLength(7);
       expect(result.failed).toHaveLength(0);
-      // 1 failed concurrent + 1 fallback + 5 remaining = 7
-      expect(execute).toHaveBeenCalledTimes(7);
+      // 1 failed concurrent + 1 fallback + 6 remaining = 8
+      expect(execute).toHaveBeenCalledTimes(8);
     });
 
     it("reports failed views without aborting the rest", async () => {
@@ -479,7 +480,7 @@ describe("adminRouter", () => {
       execute.mockResolvedValue([]);
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(5);
+      expect(result.refreshed).toHaveLength(6);
       expect(result.failed).toEqual([
         { view: "fitness.v_body_measurement", error: "does not exist" },
       ]);

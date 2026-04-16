@@ -44,8 +44,8 @@ describe("refreshDedupViews", () => {
 
     await refreshDedupViews(mockDb);
 
-    // 5 dedup views + 1 rollup view = 6 total refreshes
-    expect(mockExecute).toHaveBeenCalledTimes(6);
+    // 5 dedup views + 2 rollup views = 7 total refreshes
+    expect(mockExecute).toHaveBeenCalledTimes(7);
 
     // Verify order: dedup views first
     const calls = mockExecute.mock.calls.map((c) => c[0]);
@@ -56,6 +56,7 @@ describe("refreshDedupViews", () => {
     expect(calls[4]).toContain("fitness.deduped_sensor");
     // Then rollup views
     expect(calls[5]).toContain("fitness.activity_summary");
+    expect(calls[6]).toContain("fitness.provider_stats");
   });
 
   it("falls back to non-concurrent refresh when view has not been populated", async () => {
@@ -76,8 +77,8 @@ describe("refreshDedupViews", () => {
 
     await refreshDedupViews(mockDb);
 
-    // Each view: 1 failed CONCURRENTLY + 1 fallback = 2 calls per view, 6 views = 12
-    expect(mockExecute).toHaveBeenCalledTimes(12);
+    // Each view: 1 failed CONCURRENTLY + 1 fallback = 2 calls per view, 7 views = 14
+    expect(mockExecute).toHaveBeenCalledTimes(14);
   });
 
   it("falls back when error mentions concurrently", async () => {
@@ -96,8 +97,8 @@ describe("refreshDedupViews", () => {
 
     await refreshDedupViews(mockDb);
 
-    // First view: 1 failed + 1 fallback = 2; remaining 5 views: 1 each = 5; total = 7
-    expect(mockExecute).toHaveBeenCalledTimes(7);
+    // First view: 1 failed + 1 fallback = 2; remaining 6 views: 1 each = 6; total = 8
+    expect(mockExecute).toHaveBeenCalledTimes(8);
   });
 
   it("triggers view sync and retries when a view is missing", async () => {

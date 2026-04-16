@@ -23,6 +23,12 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Shared content**: Use `README.md` for information relevant to both agents and humans.
 - **README reference**: `AGENTS.md` must always instruct the agent to read the `README.md`.
 
+## End-of-Task Retrospective
+- **Always close with a short retrospective**: At the end of each task, briefly evaluate what went well, what required investigation, what would be useful context next time, and what guidelines were missing or could be refined.
+- **Propose concrete improvements to the user**: After that retrospective, propose specific updates to `AGENTS.md`, `README.md`, or `docs/` that would have made the task faster, safer, or clearer.
+- **Suggest useful skills**: As part of the retrospective, suggest relevant skills that should be used next time for similar tasks (or new skills that should be created if a gap exists).
+- **Create a positive feedback loop**: Treat each completed task as input for improving future tasks. Surface suggested wording changes or new runbook notes to the user for approval.
+
 ## Debugging
 - **Instrumentation first**: When debugging a production issue, before attempting a fix, verify that we have working instrumentation (logs, metrics, traces) to confirm the diagnosis. If logs aren't reaching the observability platform, or the relevant code path has no logging, fix that first. A confident fix requires confident evidence — don't guess at root causes when you can instrument and observe. If you find yourself saying "likely", "probably", or "most likely", that's a signal you need more observability — add logging/tracing to confirm the hypothesis before writing a fix.
 
