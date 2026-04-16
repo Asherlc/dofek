@@ -16,6 +16,12 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **"I can't see a provider" means it's broken**: When the user says they can't see a provider in the UI, it means the provider is failing validation and being hidden. The fix is to debug **why** the provider's `validate()` fails (missing env vars, bad config, etc.) — not to show disabled providers. Disabled providers are intentionally hidden from users. Use the `/fix-provider` skill to diagnose and fix.
 - **Always use latest versions**: When adding or updating any dependency, Docker image, service, artifact, or tool, always use the latest stable version available. Check for the current latest version rather than copying an older version from elsewhere in the codebase. Pin to specific versions in production (e.g., `timescale/timescaledb:2.26.2-pg18`, not `latest`), but those pinned versions should be the newest stable release at the time of the change.
 
+## Agent Documentation
+- **Local AGENTS.md files**: Packages and logical directories should have their own `AGENTS.md` and `README.md` files.
+- **Symlinks**: `AGENTS.md` must be symlinked to `GEMINI.md` and `CLAUDE.md` in the same directory.
+- **Agent-only content**: Populate `AGENTS.md` with information useful *only* to an agent.
+- **Shared content**: Use `README.md` for information relevant to both agents and humans.
+- **README reference**: `AGENTS.md` must always instruct the agent to read the `README.md`.
 
 ## Debugging
 - **Instrumentation first**: When debugging a production issue, before attempting a fix, verify that we have working instrumentation (logs, metrics, traces) to confirm the diagnosis. If logs aren't reaching the observability platform, or the relevant code path has no logging, fix that first. A confident fix requires confident evidence — don't guess at root causes when you can instrument and observe. If you find yourself saying "likely", "probably", or "most likely", that's a signal you need more observability — add logging/tracing to confirm the hypothesis before writing a fix.

@@ -1,52 +1,30 @@
-# trainerroad-client
+# @dofek/trainerroad-client
 
-Unofficial TrainerRoad API client using reverse-engineered cookie-based authentication. Discovered via browser network inspection.
+TypeScript client for the TrainerRoad internal API.
 
-## Authentication
+## Overview
 
-TrainerRoad uses classic web form login with CSRF protection. The sign-in flow:
+This package provides a client for interacting with TrainerRoad, allowing for the retrieval of member information, scheduled and completed activities, and career data (FTP and weight).
 
-1. GET the login page and extract the `__RequestVerificationToken` from the HTML
-2. POST the login form with credentials and CSRF token
-3. Extract the `SharedTrainerRoadAuth` cookie from the response
-4. Use the cookie for all subsequent API calls
+## Features
+
+- **Authentication**: Supports programmatic sign-in via username and password, handling CSRF tokens and session cookies automatically.
+- **Member Info**: Retrieve user details like `MemberId` and `Username`.
+- **Activities**: Fetch activities for a specific user and date range.
+- **Career Data**: Access career stats including current FTP and weight in kg.
+- **Normalization**: Logic to map TrainerRoad activity types (e.g., "Ride", "VirtualRide") to canonical `dofek` activity types.
+
+## Usage
 
 ```typescript
-import { TrainerRoadClient } from "trainerroad-client";
-
-const { authCookie, username } = await TrainerRoadClient.signIn(
-  "email@example.com",
-  "password"
-);
-
+const { authCookie, username } = await TrainerRoadClient.signIn(email, password);
 const client = new TrainerRoadClient(authCookie);
-const activities = await client.getActivities(username, "2024-01-01", "2024-01-31");
+const activities = await client.getActivities(username, '2024-01-01', '2024-01-07');
 ```
 
-## Data available
+## Implementation Details
 
-- **Activities** (cycling, running, virtual rides/runs) with completion date and duration
-- **Training metrics** (TSS, normalized power, intensity factor)
-- **Power and HR** (average, max)
-- **Cadence and speed** (average, max)
-- **Career data** (current FTP, weight)
-- **Calories and elevation**
-
-## API details
-
-| Detail | Value |
-|--------|-------|
-| Base URL | `https://www.trainerroad.com` |
-| Auth | Cookie-based form login with CSRF token |
-| Cookie name | `SharedTrainerRoadAuth` |
-| Cookie lifetime | ~30 days (estimated) |
-| Refresh tokens | Not applicable -- re-authenticate when expired |
-| Data format | JSON |
-| Key quirk | `CompletedDate` is the end time; subtract `Duration` to get start time |
-
-## Exports
-
-- `TrainerRoadClient` -- API client class with `signIn()`, `getMemberInfo()`, `getActivities()`, `getCareer()`
-- `mapTrainerRoadActivityType()` -- Map activity types considering indoor/outdoor
-- `parseTrainerRoadActivity()` -- Parse activity into normalized format
-- All response and parsed types
+- **Auth Cookie**: Uses the `SharedTrainerRoadAuth` cookie for all authenticated requests.
+- **CSRF Extraction**: The `signIn` method performs a GET request to `/app/login` to extract the `__RequestVerificationToken` from the HTML before POSTing credentials.
+- **Date Handling**: Activity start times are derived from the `CompletedDate` and `Duration` fields.
+- **Activity Mapping**: Differentiates between indoor and outdoor cycling using the `IsOutside` flag.

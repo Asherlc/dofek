@@ -1,53 +1,30 @@
-# zwift-client
+# Zwift Client
 
-Unofficial Zwift API client using the reverse-engineered Keycloak authentication. The client ID (`Zwift Game Client`) is embedded in the game client and is publicly known.
+Internal API client for Zwift.
 
-## Authentication
+## Features
+- **Authentication**: OAuth2 password grant and token refresh support.
+- **Profile**: Fetch athlete profile data.
+- **Activities**: List activity summaries and fetch detailed activity records (with snapshots).
+- **Fitness Data**: Access fitness/performance data from linked URLs.
+- **Power Curve**: Fetch the athlete's power profile/curve.
 
-Zwift uses Keycloak OpenID Connect with a resource owner password grant. Supports token refresh.
+## Technical Details
+- **Auth URL**: `https://secure.zwift.com/auth/realms/zwift/protocol/openid-connect/token`
+- **API Base**: `https://us-or-rly101.zwift.com`
+- **Client ID**: `Zwift Game Client`
+- **Mandatory Headers**:
+  - `Platform: OSX`
+  - `Source: Game Client`
+  - `User-Agent`: Spoofs a modern macOS Zwift game client (macOS 13 Ventura, Darwin 22.4.0).
+  - `Authorization: Bearer <token>`
 
+## Usage
 ```typescript
-import { ZwiftClient } from "zwift-client";
+import { ZwiftClient } from './src/client';
 
-const { accessToken, refreshToken, expiresIn } = await ZwiftClient.signIn(
-  "email@example.com",
-  "password"
-);
-
-// Decode JWT to get athlete ID
-const payload = JSON.parse(
-  Buffer.from(accessToken.split(".")[1], "base64").toString()
-);
-const athleteId = Number(payload.sub);
-
+const { accessToken, refreshToken } = await ZwiftClient.signIn(username, password);
 const client = new ZwiftClient(accessToken, athleteId);
-const activities = await client.getActivities(0, 20);
+
+const profile = await client.getProfile();
 ```
-
-## Data available
-
-- **Activities** (cycling, running) with summaries
-- **Activity streams** -- second-by-second power, HR, cadence, speed, altitude, GPS
-- **Athlete profile** (weight, height, FTP, total distances)
-- **Power curve** with zFTP, zMAP, VO2max, and critical power efforts
-
-## API details
-
-| Detail | Value |
-|--------|-------|
-| Auth URL | `https://secure.zwift.com/auth/realms/zwift/protocol/openid-connect/token` |
-| API Base URL | `https://us-or-rly101.zwift.com` |
-| Auth | Keycloak password grant |
-| Client ID | `Zwift Game Client` |
-| Refresh tokens | Supported |
-| Data format | JSON |
-| Unit quirks | Speed in cm/s, altitude in cm, distance in cm, weight in grams |
-
-## Exports
-
-- `ZwiftClient` -- API client class
-- `mapZwiftSport()` -- Map Zwift sport strings to normalized types
-- `parseZwiftActivity()` -- Parse activity summary into normalized format
-- `parseZwiftFitnessData()` -- Parse second-by-second stream data (handles cm-to-m conversion)
-- `ZWIFT_AUTH_URL`, `ZWIFT_API_BASE` -- URL constants
-- All response and parsed types
