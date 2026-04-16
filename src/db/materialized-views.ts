@@ -1,7 +1,7 @@
 /**
  * Canonical list of materialized views, ordered by dependency.
  * activity_summary depends on v_activity + deduped_sensor, so it must be refreshed
- * after those views. provider_stats is independent and can be refreshed after rollups.
+ * after those views. provider_stats is independent and can be refreshed after aggregate views.
  *
  * Import this from any code that needs to enumerate or refresh materialized views
  * rather than maintaining a separate copy.
