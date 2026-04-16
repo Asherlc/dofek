@@ -1,11 +1,11 @@
 # Production stack: all services, Traefik reverse proxy, management UIs.
 #
-# Secrets come from /opt/dofek/.env.prod (exported by Infisical CLI).
+# Secrets come from a short-lived Infisical export file created at deploy time.
 # Image tag comes from /opt/dofek/.env.deploy (written by CI).
 #
 # Usage:
-#   docker compose --env-file /opt/dofek/.env.prod --env-file /opt/dofek/.env.deploy \
-#     -f docker-compose.deploy.yml up -d
+#   INFISICAL_TOKEN=<token> ./run-compose-with-infisical.sh compose up -d \
+#     db redis web worker
 
 name: dofek
 
@@ -51,7 +51,7 @@ services:
     # No container_name — docker-rollout needs to scale to 2 instances
     restart: unless-stopped
     command: ["web"]
-    env_file: /opt/dofek/.env.prod
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -95,7 +95,7 @@ services:
     # No container_name — docker-rollout needs to scale to 2 instances
     restart: unless-stopped
     command: ["worker"]
-    env_file: /opt/dofek/.env.prod
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
@@ -230,7 +230,7 @@ services:
     container_name: dofek-collector
     restart: unless-stopped
     user: "0:0"
-    env_file: /opt/dofek/.env.prod
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
@@ -245,7 +245,7 @@ services:
     image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
     container_name: dofek-ota
     restart: unless-stopped
-    env_file: /opt/dofek/.env.prod
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       BASE_URL: https://ota.dofek.asherlc.com
       STORAGE_MODE: s3

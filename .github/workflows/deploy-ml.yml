@@ -24,6 +24,7 @@ jobs:
     name: Deploy ML Worker
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Resolve image tag
         id: resolve
         env:
@@ -41,19 +42,29 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Upload deploy helper
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          scp deploy/server/run-compose-with-infisical.sh "root@${SERVER_HOST}:/opt/dofek/run-compose-with-infisical.sh"
+          ssh "root@${SERVER_HOST}" "chmod 700 /opt/dofek/run-compose-with-infisical.sh"
       - name: Deploy training-export-worker
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
           SHA_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" <<'DEPLOY'
+          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" "$INFISICAL_TOKEN" <<'DEPLOY'
             set -euo pipefail
             GHCR_TOKEN="$1"
             SHA_TAG="$2"
+            INFISICAL_TOKEN="$3"
+            if [ -z "$INFISICAL_TOKEN" ]; then
+              echo "::error::Missing INFISICAL_TOKEN GitHub secret"
+              exit 1
+            fi
             cd /opt/dofek
-
-            COMPOSE="docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml"
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
 
@@ -62,12 +73,12 @@ jobs:
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
             # Ensure db and redis are healthy before deploying
-            if ! $COMPOSE up -d --wait --wait-timeout 120 db redis; then
+            if ! INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose up -d --wait --wait-timeout 120 db redis; then
               echo "::error::Timed out waiting for db/redis to become healthy"
-              $COMPOSE ps
-              $COMPOSE logs --tail=100 db redis || true
+              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose ps
+              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose logs --tail=100 db redis || true
               exit 1
             fi
 
-            $COMPOSE up -d --force-recreate training-export-worker
+            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose up -d --force-recreate training-export-worker
           DEPLOY

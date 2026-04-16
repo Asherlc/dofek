@@ -46,7 +46,9 @@ jobs:
           TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_infisical_token: ${{ secrets.INFISICAL_TOKEN }}
         run: |
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
+          test -n "$TF_VAR_infisical_token" || { echo "ERROR: missing required GitHub secret INFISICAL_TOKEN" >&2; exit 1; }
           terraform init
           terraform apply -auto-approve

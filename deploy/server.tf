@@ -64,6 +64,7 @@ resource "terraform_data" "deploy_compose" {
   triggers_replace = [
     filesha256("${path.module}/docker-compose.deploy.yml"),
     filesha256("${path.module}/otel-collector-config.yaml"),
+    filesha256("${path.module}/server/run-compose-with-infisical.sh"),
   ]
 
   connection {
@@ -83,14 +84,19 @@ resource "terraform_data" "deploy_compose" {
     destination = "/opt/dofek/otel-collector-config.yaml"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/server/run-compose-with-infisical.sh"
+    destination = "/opt/dofek/run-compose-with-infisical.sh"
+  }
+
   provisioner "remote-exec" {
     inline = [
       "cd /opt/dofek",
+      "chmod 700 /opt/dofek/run-compose-with-infisical.sh",
       "test -f .env.deploy || printf 'IMAGE_TAG=latest\\n' > .env.deploy",
-      "test -s .env.prod || { echo 'ERROR: .env.prod is missing or empty. Run secret-sync first.' >&2; exit 1; }",
-      "missing_vars=''; for required_var in CLOUDFLARE_API_TOKEN POSTGRES_PASSWORD PGADMIN_DEFAULT_EMAIL PGADMIN_DEFAULT_PASSWORD; do grep -Eq \"^$${required_var}=.+\" .env.prod || missing_vars=\"$${missing_vars} $${required_var}\"; done; [ -z \"$${missing_vars}\" ] || { echo \"ERROR: .env.prod is missing required vars:$${missing_vars}. Add them in Infisical (prod), then run secret-sync.yml before terraform apply.\" >&2; exit 1; }",
-      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml pull --ignore-pull-failures db redis collector ota databasus pgadmin traefik portainer netdata",
-      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d db redis collector ota databasus pgadmin traefik portainer netdata",
+      "test -n \"${var.infisical_token}\" || { echo 'ERROR: infisical_token is required' >&2; exit 1; }",
+      "REQUIRED_INFISICAL_VARS='CLOUDFLARE_API_TOKEN POSTGRES_PASSWORD PGADMIN_DEFAULT_EMAIL PGADMIN_DEFAULT_PASSWORD R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY OTA_JWT_SECRET OTA_PRIVATE_KEY_B64 OTA_PUBLIC_KEY_B64' INFISICAL_TOKEN='${var.infisical_token}' /opt/dofek/run-compose-with-infisical.sh compose pull --ignore-pull-failures db redis collector ota databasus pgadmin traefik portainer netdata",
+      "REQUIRED_INFISICAL_VARS='CLOUDFLARE_API_TOKEN POSTGRES_PASSWORD PGADMIN_DEFAULT_EMAIL PGADMIN_DEFAULT_PASSWORD R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY OTA_JWT_SECRET OTA_PRIVATE_KEY_B64 OTA_PUBLIC_KEY_B64' INFISICAL_TOKEN='${var.infisical_token}' /opt/dofek/run-compose-with-infisical.sh compose up -d db redis collector ota databasus pgadmin traefik portainer netdata",
     ]
   }
 }
