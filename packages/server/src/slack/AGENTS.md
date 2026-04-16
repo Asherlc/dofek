@@ -8,6 +8,7 @@ Read `README.md` in this directory before making any changes.
 - If you touch message text/blocks in web behavior, verify mobile/web user expectations still hold.
 - Preserve idempotent confirm behavior: repeated confirm clicks on already-confirmed entries should remain safe.
 - Slack intake architecture rule: keep all parsed/unconfirmed food entries in Redis only. Persist to Postgres only after explicit user confirmation. Postgres is the source of truth for confirmed/final values, not pending drafts.
+- Food database boundary rule: do not introduce Slack-specific columns or semantics into `fitness.food_entry` or `fitness.nutrition_data`; these remain provider-agnostic food data tables.
 
 ## Where to Start Debugging
 1. `slack-handlers.ts` for event/action flow.
