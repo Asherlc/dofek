@@ -324,10 +324,10 @@ export class FoodEntryRepository {
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, food_description,
+              id, user_id, provider_id, date, meal, food_name, food_description,
               category, nutrition_data_id, confirmed
             ) VALUES (
-              ${pendingEntry.userId}, ${DOFEK_PROVIDER_ID}, ${pendingEntry.date}::date,
+              ${pendingEntry.id}, ${pendingEntry.userId}, ${DOFEK_PROVIDER_ID}, ${pendingEntry.date}::date,
               ${item.meal}, ${item.foodName}, ${item.foodDescription},
               ${item.category}, (SELECT id FROM new_nutrition), true
             ) RETURNING id`,
