@@ -94,7 +94,7 @@ describe("Slack Bot — Refinement Coverage", () => {
     );
   });
 
-  it("handles refinement failure and sends error (kills error path mutants)", async () => {
+  it("handles refinement failure when refineNutritionItems returns no items", async () => {
     const db = createMockDb();
     const mockExecute = getMockExecute(db);
 
@@ -103,7 +103,10 @@ describe("Slack Bot — Refinement Coverage", () => {
     vi.spyOn(FoodEntryRepository.prototype, "loadForRefinement").mockResolvedValue(
       castMock([{ foodName: "Test" }]),
     );
-    mockRefine.mockRejectedValueOnce(new Error("AI refinement failed"));
+    mockRefine.mockResolvedValueOnce({
+      items: [],
+      provider: "gemini",
+    });
 
     const { messageHandler } = setupHandlers(db);
 
@@ -118,7 +121,9 @@ describe("Slack Bot — Refinement Coverage", () => {
           messages: [
             {
               bot_id: "B1",
-              blocks: [{ type: "actions", elements: [{ action_id: "confirm_food", value: "id" }] }],
+              blocks: [
+                { type: "actions", elements: [{ action_id: "confirm_food", value: "id" }] },
+              ],
             },
           ],
         }),
@@ -134,7 +139,7 @@ describe("Slack Bot — Refinement Coverage", () => {
 
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining("failed"),
+        text: expect.stringContaining("Sorry, I couldn't refine that"),
       }),
     );
   });
