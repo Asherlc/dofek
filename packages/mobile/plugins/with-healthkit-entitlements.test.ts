@@ -19,7 +19,7 @@ describe("withHealthKitEntitlements", () => {
     const result = mergeHealthKitEntitlements({});
     expect(result["com.apple.developer.healthkit"]).toBe(true);
     expect(result["com.apple.developer.healthkit.background-delivery"]).toBe(true);
-    expect(result["com.apple.developer.healthkit.access"]).toBe(true);
+    expect(result["com.apple.developer.healthkit.access"]).toEqual(["health-records"]);
   });
 
   it("preserves unrelated entitlements", () => {
@@ -29,7 +29,7 @@ describe("withHealthKitEntitlements", () => {
     expect(result["aps-environment"]).toBe("production");
     expect(result["com.apple.developer.healthkit"]).toBe(true);
     expect(result["com.apple.developer.healthkit.background-delivery"]).toBe(true);
-    expect(result["com.apple.developer.healthkit.access"]).toBe(true);
+    expect(result["com.apple.developer.healthkit.access"]).toEqual(["health-records"]);
   });
 
   it("forces HealthKit entitlements on when previously disabled", () => {
@@ -40,7 +40,7 @@ describe("withHealthKitEntitlements", () => {
     });
     expect(result["com.apple.developer.healthkit"]).toBe(true);
     expect(result["com.apple.developer.healthkit.background-delivery"]).toBe(true);
-    expect(result["com.apple.developer.healthkit.access"]).toBe(true);
+    expect(result["com.apple.developer.healthkit.access"]).toEqual(["health-records"]);
   });
 
   it("handles non-object input defensively", () => {

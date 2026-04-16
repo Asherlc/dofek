@@ -84,7 +84,8 @@ function assertHealthKitBuildPrerequisites(configToValidate: ExpoConfig): void {
       ? iosConfig.entitlements
       : {};
   for (const entitlementKey of REQUIRED_HEALTH_KIT_ENTITLEMENTS) {
-    if (entitlements[entitlementKey] !== true) {
+    const val = entitlements[entitlementKey];
+    if (val !== true && !(Array.isArray(val) && val.length > 0)) {
       throw new Error(
         `Missing required iOS entitlement "${entitlementKey}" in app config. Apple Health must be enabled at build time.`,
       );
