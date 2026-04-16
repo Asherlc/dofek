@@ -50,5 +50,9 @@ jobs:
         run: |
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_infisical_token" || { echo "ERROR: missing required GitHub secret INFISICAL_TOKEN" >&2; exit 1; }
-          terraform init
-          terraform apply -auto-approve
+          # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
+          # When init is followed immediately by apply, apply can race the init lock release
+          # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
+          # is benign in CI and avoids spurious "workspace already locked" failures.
+          terraform init -lock-timeout=5m
+          terraform apply -auto-approve -lock-timeout=5m

@@ -1,6 +1,6 @@
 # Health Data
 
-> **Canonical agent guidelines.** agents.md is the source of truth. Other agent config files (CLAUDE.md, GEMINI.md, etc.) are symlinked to it.
+> **Canonical agent guidelines.** AGENTS.md is the source of truth. Other agent config files (CLAUDE.md, GEMINI.md, etc.) are symlinked to it.
 
 Provider-agnostic fitness/health data pipeline. Syncs data from various providers (Wahoo, WHOOP, Garmin, Peloton, etc.) into a TimescaleDB database with a built-in web dashboard and iOS app.
 
