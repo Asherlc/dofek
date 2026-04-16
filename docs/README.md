@@ -35,5 +35,6 @@ Dofek specializes in deep integration with fitness platforms that lack public AP
 ## Operations
 
 - `ci-debugging.md`: Pro-tips for diagnosing CI failures, specifically how to extract Swift compiler errors from truncated iOS build logs using `gh api`.
+- `testing.md`: Practical patterns for test assertions with chainable DB mocks (`values(...)` payload checks, guarding against accidental `values([])` inserts).
 - `xcode-cloud.md`: Configuration and troubleshooting for our automated iOS build pipeline.
 - `provider-api-audit.md`: Periodic review of provider API health and data coverage.
