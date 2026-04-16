@@ -266,13 +266,9 @@ Migrations run at two levels for reliability: a dedicated one-shot `migrate` con
 
 ### Deploying from scratch
 
-1. Provision the server: `cd deploy/server && terraform apply`
-2. Apply DNS/R2: `cd deploy/cloudflare && terraform apply`
-3. Export secrets: SSH to server, run `infisical export --env=prod --format=dotenv --token=<token> > /opt/dofek/.env.prod`
-4. Copy compose file: `scp deploy/docker-compose.deploy.yml root@<SERVER_IP>:/opt/dofek/`
-5. Copy OTel config: `scp deploy/otel-collector-config.yaml root@<SERVER_IP>:/opt/dofek/`
-6. Create initial deploy tag: `echo "IMAGE_TAG=latest" > /opt/dofek/.env.deploy`
-7. Start the stack: `docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d`
+1. Set required Terraform variables (`TF_VAR_hcloud_token`, `TF_VAR_ssh_public_key`, `TF_VAR_ssh_private_key`, `TF_VAR_cloudflare_api_token`, `TF_VAR_cloudflare_account_id`, `TF_VAR_infisical_token`)
+2. Provision infra + compose stack: `cd deploy && terraform apply`
+3. Deploy the app image: `gh workflow run deploy-web.yml -f image_tag=latest`
 
 ### Updating server config
 
@@ -392,14 +388,14 @@ The production containers get environment variables from two places:
 
 1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
 
-2. **`/opt/dofek/.env.prod` on the server** — runtime secrets exported from Infisical via `secret-sync.yml` workflow. Referenced by compose services via `env_file`. Structural config like `DATABASE_URL` is set in the compose file's `environment:` block.
+2. **Infisical export at deploy time** — deploy workflows and Terraform call `deploy/server/run-compose-with-infisical.sh`, which exports secrets to a short-lived temp file and injects them into Docker Compose. No long-lived `/opt/dofek/.env.prod` file is stored on the server.
 
 **Adding or updating secrets:**
 
 ```bash
 infisical secrets set --env prod KEY=value
-# Triggers Infisical webhook -> GitHub repository_dispatch -> secret-sync workflow
-# Workflow exports secrets to server and restarts affected services
+# Then redeploy app/worker to pick up the new values:
+gh workflow run deploy-web.yml -f image_tag=latest
 ```
 
 No SSH to the server needed. No image rebuild needed.
@@ -414,10 +410,10 @@ No SSH to the server needed. No image rebuild needed.
 
 **If a provider is missing from the Data Sources page** it usually means `validate()` is failing, so the provider is being filtered out entirely rather than shown disabled. Check:
 1. Are the vars in Infisical? → `infisical secrets get <VAR_NAME> --env=prod`
-2. Did `secret-sync.yml` run successfully? → `gh run list --workflow secret-sync.yml`
-3. Force sync (dry-run first, then real run):
-   - `gh workflow run secret-sync.yml -f dry_run=true`
-   - `gh workflow run secret-sync.yml -f dry_run=false`
+2. Redeploy app/worker so containers load fresh secrets:
+   - `gh workflow run deploy-web.yml -f image_tag=latest`
+3. Confirm the deploy run succeeded:
+   - `gh run list --workflow deploy-web.yml`
 4. If the app still shows stale config after sync, check container logs via Portainer or SSH and refresh app caches.
 
 ## Supplements
@@ -560,7 +556,7 @@ Environment variables are split into two tiers:
 | Tier | Where | Examples | Needs rebuild? |
 |------|-------|----------|----------------|
 | **Non-secret config** | Committed `.env` in this repo | Client IDs, redirect URIs, endpoints, DSNs | Yes (baked into image) |
-| **Secrets** | [Infisical](https://infisical.com/) (prod environment) → exported to `/opt/dofek/.env.prod` on server | Client secrets, API keys, tokens, private keys | No (sync + service restart) |
+| **Secrets** | [Infisical](https://infisical.com/) (prod environment) → exported to a short-lived temp file during deploy | Client secrets, API keys, tokens, private keys | No (redeploy services) |
 
 ### Setup (new machine)
 
@@ -606,16 +602,16 @@ infisical secrets get KEY --env=prod
 infisical secrets delete KEY --env=prod --type shared
 ```
 
-### Automatic production sync
+### Production deploy-time injection
 
-Production secret propagation is automated by `.github/workflows/secret-sync.yml`. It SSHs to the server, runs `infisical export` to write `/opt/dofek/.env.prod`, then restarts affected services.
+Production deploy workflows call `deploy/server/run-compose-with-infisical.sh` on the host. The helper script:
+- installs Infisical CLI if missing
+- exports Infisical `prod` secrets to a temp file
+- injects that file into Docker Compose for interpolation + `env_file`
+- deletes the temp file on exit
 
-- Primary trigger: `repository_dispatch` type `infisical-secrets-updated` (from Infisical webhook)
-- Recovery trigger: nightly schedule
-- Manual trigger: `workflow_dispatch` (supports dry-run)
-
-Required GitHub secrets for this workflow:
-- `INFISICAL_TOKEN`
+Required GitHub secrets:
+- `INFISICAL_TOKEN` (used by deploy workflows + Terraform apply)
 - `DEPLOY_SSH_KEY`
 - `SERVER_HOST`
 
@@ -627,22 +623,20 @@ Required Infisical `prod` keys for deploy compose interpolation:
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `OTA_JWT_SECRET`
+- `OTA_PRIVATE_KEY_B64`
+- `OTA_PUBLIC_KEY_B64`
 
 `CLOUDFLARE_API_TOKEN` is used by both Traefik (for DNS challenge certificates) and Terraform deploy automation, so one Cloudflare token covers certificate DNS challenges plus Terraform-managed DNS/R2 changes.
 
-To force a manual sync:
+To force a manual secrets refresh, redeploy:
 
 ```bash
-# Validate diff only
-gh workflow run secret-sync.yml -f dry_run=true
-
-# Apply changes + restart services
-gh workflow run secret-sync.yml -f dry_run=false
+gh workflow run deploy-web.yml -f image_tag=latest
 ```
 
 ### Adding a new env var
 
-- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`. The `secret-sync.yml` workflow will export it to the server.
+- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`, then redeploy (`gh workflow run deploy-web.yml -f image_tag=latest`).
 - **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root.
 
 ### Production machine identity
@@ -653,7 +647,7 @@ Production containers authenticate to Infisical using a machine identity token s
 2. Create a Universal Auth identity with read access to the `prod` environment
 3. Copy the access token
 4. Store it in 1Password as `Infisical Machine Identity Token` (password field)
-5. The token reaches the server via Terraform's `infisical_token` variable → cloud-init writes it to `/opt/dofek/.env` as `INFISICAL_TOKEN`
+5. The token is passed to deploy jobs via GitHub Actions secret `INFISICAL_TOKEN` and to Terraform via `TF_VAR_infisical_token`
 
 ### 1Password deploy notes
 
