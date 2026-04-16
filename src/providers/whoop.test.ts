@@ -2598,4 +2598,243 @@ describe("WhoopProvider.sync() — strength sync", () => {
     );
     expect(strengthWorkoutInsert).toBeUndefined();
   });
+
+  it("reuses cached exercise id for duplicate provider exercise ids", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: null,
+        workouts: [
+          {
+            activity_id: "w-cache-1",
+            during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            score: 9,
+            average_heart_rate: 130,
+            max_heart_rate: 160,
+            kilojoules: 1400,
+          },
+        ],
+      },
+    ];
+
+    const weightliftingData: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "w-cache-1",
+      user_id: 42,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      total_effective_volume_kg: 0,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 50,
+                  number_of_reps: 10,
+                  msk_total_volume_kg: 500,
+                  time_in_seconds: 0,
+                  during: "['2026-03-01T10:05:00Z','2026-03-01T10:05:30Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "SAME_ID",
+                name: "Bench Press",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS",
+              },
+            },
+            {
+              sets: [
+                {
+                  weight_kg: 45,
+                  number_of_reps: 12,
+                  msk_total_volume_kg: 540,
+                  time_in_seconds: 0,
+                  during: "['2026-03-01T10:15:00Z','2026-03-01T10:15:30Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "SAME_ID",
+                name: "Bench Press",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      weightliftingData,
+      journalData: [],
+      hrValues: [],
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
+    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-cache" }]);
+    db.limit.mockResolvedValue([{ id: "exercise-uuid-cache" }]);
+
+    await provider.sync(db, new Date("2026-03-01"));
+
+    expect(db.select).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
+    expect(db.select).toHaveBeenCalledTimes(1);
+
+    const valuesCallArgs = getValuesCallArgs(db);
+    const exerciseInserts = valuesCallArgs.filter(
+      (arg) => isRecord(arg) && arg.name === "Bench Press" && arg.equipment === "BARBELL",
+    );
+    expect(exerciseInserts).toHaveLength(1);
+  });
+
+  it("records unresolved exercise when lookup returns no row and avoids set insert", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "test",
+      refreshToken: "test-refresh",
+      expiresAt: new Date("2027-01-01"),
+      scopes: "userId:42",
+    });
+
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: null,
+        workouts: [
+          {
+            activity_id: "w-missing-exercise",
+            during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            score: 6,
+            average_heart_rate: 120,
+            max_heart_rate: 150,
+            kilojoules: 1000,
+          },
+        ],
+      },
+    ];
+
+    const weightliftingData: WhoopWeightliftingWorkoutResponse = {
+      activity_id: "w-missing-exercise",
+      user_id: 42,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+      total_effective_volume_kg: 0,
+      raw_msk_strain_score: 0,
+      scaled_msk_strain_score: 0,
+      cardio_strain_score: 0,
+      cardio_strain_contribution_percent: 0,
+      msk_strain_contribution_percent: 0,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 80,
+                  number_of_reps: 5,
+                  msk_total_volume_kg: 400,
+                  time_in_seconds: 0,
+                  during: "['2026-03-01T10:05:00Z','2026-03-01T10:05:30Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "NOT_FOUND",
+                name: "Unknown Lift",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["BACK"],
+                volume_input_format: "REPS",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      weightliftingData,
+      journalData: [],
+      hrValues: [],
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
+    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-missing" }]);
+    db.limit.mockResolvedValueOnce([]);
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    const resolveError = result.errors.find((error) =>
+      error.message.includes("Could not resolve exercise: Unknown Lift"),
+    );
+    expect(resolveError).toBeDefined();
+
+    const strengthErrors = result.errors.filter((error) => error.message.includes("Strength"));
+    expect(strengthErrors).toHaveLength(0);
+
+    const valuesCallArgs = getValuesCallArgs(db);
+    const unresolvedAliasInsert = findValuesRecord(
+      valuesCallArgs,
+      (record) => record.providerExerciseId === "NOT_FOUND" && record.providerId === "whoop",
+    );
+    expect(unresolvedAliasInsert).toBeUndefined();
+
+    const emptySetBatch = findValuesBatch(valuesCallArgs, (rows) => rows.length === 0);
+    expect(emptySetBatch).toBeUndefined();
+    const insertedEmptySetBatch = db.values.mock.calls.some(
+      (call: unknown[]) => Array.isArray(call[0]) && call[0].length === 0,
+    );
+    expect(insertedEmptySetBatch).toBe(false);
+  });
 });
