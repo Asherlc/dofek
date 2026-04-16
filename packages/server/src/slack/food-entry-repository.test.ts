@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { 
-  extractLatestConfirmFromThread, 
-  slackTimestampToDateString, 
+import { castMock, mockAs } from "./bot-unit.test.ts";
+import {
+  extractLatestConfirmFromThread,
+  FoodEntryRepository,
+  slackTimestampToDateString,
   slackTimestampToLocalTime,
-  FoodEntryRepository
 } from "./food-entry-repository.ts";
 
 describe("food-entry-repository utility functions", () => {
@@ -13,11 +14,7 @@ describe("food-entry-repository utility functions", () => {
     });
 
     it("skips messages without bot_id or blocks", () => {
-      const messages = [
-        { ts: "1" },
-        { ts: "2", bot_id: "B1" },
-        { ts: "3", blocks: [] },
-      ];
+      const messages = [{ ts: "1" }, { ts: "2", bot_id: "B1" }, { ts: "3", blocks: [] }];
       expect(extractLatestConfirmFromThread(messages)).toBeNull();
     });
 
@@ -46,7 +43,7 @@ describe("food-entry-repository utility functions", () => {
         {
           ts: "300.000",
           text: "Some other message",
-        }
+        },
       ];
       const result = extractLatestConfirmFromThread(messages);
       expect(result).toEqual({
@@ -145,27 +142,31 @@ describe("food-entry-repository utility functions", () => {
 
 describe("FoodEntryRepository", () => {
   it("throws error in confirm if row is missing (kills if(!row){} mutation)", async () => {
-    const mockDb = {
+    const mockDb = mockAs<import("dofek/db").Database>({
       execute: vi.fn().mockResolvedValue([]), // Return empty array for RETURNING id
-    } as any;
+    });
     const mockPendingStore = {
-      loadByIds: vi.fn().mockResolvedValue([{
-        id: "id-1",
-        userId: "user-1",
-        date: "2024-04-16",
-        item: { foodName: "Test" }
-      }]),
+      loadByIds: vi.fn().mockResolvedValue([
+        {
+          id: "id-1",
+          userId: "user-1",
+          date: "2024-04-16",
+          item: { foodName: "Test" },
+        },
+      ]),
       deleteByIds: vi.fn(),
       findIdsByMessage: vi.fn(),
       save: vi.fn(),
     };
-    
-    const repository = new FoodEntryRepository(mockDb, mockPendingStore as any);
+
+    const repository = new FoodEntryRepository(mockDb, castMock(mockPendingStore));
 
     // Mock other things needed for confirm
     vi.spyOn(repository, "lookupUserIdForEntries").mockResolvedValue("user-1");
     vi.spyOn(repository, "ensureDofekProvider").mockResolvedValue(undefined);
 
-    await expect(repository.confirm(["id-1"])).rejects.toThrow('Failed to confirm parsed food entry "Test"');
+    await expect(repository.confirm(["id-1"])).rejects.toThrow(
+      'Failed to confirm parsed food entry "Test"',
+    );
   });
 });

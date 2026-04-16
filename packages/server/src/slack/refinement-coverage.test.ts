@@ -1,7 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { createMockDb, getMockExecute, setupHandlers } from "./bot-unit.test.ts";
-import { FoodEntryRepository } from "./food-entry-repository.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { refineNutritionItems } from "../lib/ai-nutrition.ts";
+import { castMock, createMockDb, getMockExecute, setupHandlers } from "./bot-unit.test.ts";
+import { FoodEntryRepository } from "./food-entry-repository.ts";
 
 vi.mock("../lib/ai-nutrition.ts", () => ({
   analyzeNutritionItems: vi.fn(),
@@ -21,16 +21,22 @@ describe("Slack Bot — Refinement Coverage", () => {
 
     // Mock lookupOrCreateUserId
     mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-    
+
     // Mock loadForRefinement (must return items to enter the refinement block)
     const previousItems = [{ foodName: "Old Pizza", calories: 500, meal: "lunch" as const }];
-    const loadSpy = vi.spyOn(FoodEntryRepository.prototype, "loadForRefinement").mockResolvedValue(previousItems as any);
-    
+    const loadSpy = vi
+      .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
+      .mockResolvedValue(castMock(previousItems));
+
     // Mock deleteUnconfirmed
-    const deleteSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed").mockResolvedValue(undefined);
-    
+    const deleteSpy = vi
+      .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+      .mockResolvedValue(undefined);
+
     // Mock saveUnconfirmed
-    const saveSpy = vi.spyOn(FoodEntryRepository.prototype, "saveUnconfirmed").mockResolvedValue(["new-id"]);
+    const saveSpy = vi
+      .spyOn(FoodEntryRepository.prototype, "saveUnconfirmed")
+      .mockResolvedValue(["new-id"]);
 
     mockRefine.mockResolvedValueOnce({
       items: [{ foodName: "New Pizza", calories: 400, meal: "lunch" as const }],
@@ -81,9 +87,11 @@ describe("Slack Bot — Refinement Coverage", () => {
     expect(mockRefine).toHaveBeenCalled();
     expect(deleteSpy).toHaveBeenCalledWith(["old-id"]);
     expect(saveSpy).toHaveBeenCalled();
-    expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining("New Pizza"),
-    }));
+    expect(chatUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("New Pizza"),
+      }),
+    );
   });
 
   it("handles refinement failure and sends error (kills error path mutants)", async () => {
@@ -91,8 +99,10 @@ describe("Slack Bot — Refinement Coverage", () => {
     const mockExecute = getMockExecute(db);
 
     mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-    
-    vi.spyOn(FoodEntryRepository.prototype, "loadForRefinement").mockResolvedValue([{ foodName: "Test" }] as any);
+
+    vi.spyOn(FoodEntryRepository.prototype, "loadForRefinement").mockResolvedValue(
+      castMock([{ foodName: "Test" }]),
+    );
     mockRefine.mockRejectedValueOnce(new Error("AI refinement failed"));
 
     const { messageHandler } = setupHandlers(db);
@@ -105,7 +115,12 @@ describe("Slack Bot — Refinement Coverage", () => {
       },
       conversations: {
         replies: vi.fn().mockResolvedValue({
-          messages: [{ bot_id: "B1", blocks: [{ type: "actions", elements: [{ action_id: "confirm_food", value: "id" }] }] }],
+          messages: [
+            {
+              bot_id: "B1",
+              blocks: [{ type: "actions", elements: [{ action_id: "confirm_food", value: "id" }] }],
+            },
+          ],
         }),
       },
       chat: { postMessage: chatPostMessage, update: vi.fn() },
@@ -117,8 +132,10 @@ describe("Slack Bot — Refinement Coverage", () => {
       client,
     });
 
-    expect(say).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining("failed"),
-    }));
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("failed"),
+      }),
+    );
   });
 });

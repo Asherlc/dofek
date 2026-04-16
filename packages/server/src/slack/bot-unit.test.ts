@@ -95,7 +95,9 @@ export function getMockExecute(db: import("dofek/db").Database): FlexibleMock {
   return mock;
 }
 
-export function makeFoodItem(overrides: Partial<NutritionItemWithMeal> = {}): NutritionItemWithMeal {
+export function makeFoodItem(
+  overrides: Partial<NutritionItemWithMeal> = {},
+): NutritionItemWithMeal {
   return {
     foodName: "Test Food",
     foodDescription: "1 serving",
