@@ -109,7 +109,7 @@ describe("FoodEntryRepository - reproduction of 'already logged' issue", () => {
     ];
 
     const ids = await repository.saveUnconfirmed(TEST_USER_ID, "2026-04-15", items);
-
+    
     // Confirm them
     const confirmedCount = await repository.confirm(ids);
     expect(confirmedCount).toBe(1);
