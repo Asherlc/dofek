@@ -81,9 +81,41 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(HKSeriesType.workoutRoute()))
     }
 
+    func testReadTypesContainsClinicalTypes() {
+        #if os(iOS)
+        let clinicalIdentifiers: [HKClinicalTypeIdentifier] = [
+            .allergyRecord,
+            .conditionRecord,
+            .immunizationRecord,
+            .labResultRecord,
+            .medicationRecord,
+            .procedureRecord,
+            .vitalSignRecord,
+        ]
+
+        for identifier in clinicalIdentifiers {
+            let type = HKClinicalType.clinicalType(forIdentifier: identifier)!
+            XCTAssertTrue(readTypes.contains(type), "readTypes should contain \(identifier.rawValue)")
+        }
+
+        if #available(iOS 14.2, *) {
+            XCTAssertTrue(readTypes.contains(HKClinicalType.clinicalType(forIdentifier: .clinicalNoteRecord)!))
+        }
+        if #available(iOS 15.0, *) {
+            XCTAssertTrue(readTypes.contains(HKClinicalType.clinicalType(forIdentifier: .coverageRecord)!))
+        }
+        #endif
+    }
+
     func testReadTypesTotalCount() {
         // 51 quantity types + 5 category types + 1 workout type + 1 workout route = 58
-        XCTAssertEqual(readTypes.count, 58)
+        var expectedCount = 58
+        #if os(iOS)
+        expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
+        if #available(iOS 14.2, *) { expectedCount += 1 } // clinicalNote
+        if #available(iOS 15.0, *) { expectedCount += 1 } // coverage
+        #endif
+        XCTAssertEqual(readTypes.count, expectedCount)
     }
 
     // MARK: - writeTypes

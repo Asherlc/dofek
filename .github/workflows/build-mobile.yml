@@ -66,19 +66,17 @@ jobs:
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
-      - name: Download Sentry XCFramework
-        run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
-          restore-keys: pods-v7-
+          key: pods-v8-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts') }}
+          restore-keys: pods-v8-
       - name: Cache DerivedData
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
           restore-keys: deriveddata-v1-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
@@ -132,14 +130,12 @@ jobs:
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
-      - name: Download Sentry XCFramework
-        run: packages/mobile/scripts/download-sentry-xcframework.sh
       - name: Cache CocoaPods
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: packages/mobile/ios/Pods
-          key: pods-watchos-v7-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/scripts/download-sentry-xcframework.sh') }}
-          restore-keys: pods-watchos-v7-
+          key: pods-watchos-v8-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts') }}
+          restore-keys: pods-watchos-v8-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator

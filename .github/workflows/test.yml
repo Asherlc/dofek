@@ -222,8 +222,8 @@ jobs:
             packages/mobile/modules/health-kit/.build
             packages/mobile/modules/whoop-ble/.build
             packages/mobile/modules/watch-motion/.build
-          key: periphery-v1-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
-          restore-keys: periphery-v1-
+          key: periphery-v2-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
+          restore-keys: periphery-v2-
       - name: Install Periphery
         run: brew install peripheryapp/periphery/periphery
       - name: Scan for unused code

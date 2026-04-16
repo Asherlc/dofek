@@ -26,12 +26,7 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 
 ## HealthKit Prerequisites
 
-HealthKit must be configured in app config and iOS entitlements:
-
-- Plugin: `packages/mobile/plugins/with-healthkit-entitlements.js`
-- App config checks: `packages/mobile/app.config.ts`
-
-Required entitlements:
+HealthKit must be configured in `app.json` entitlements:
 
 - `com.apple.developer.healthkit`
 - `com.apple.developer.healthkit.background-delivery`
@@ -43,7 +38,6 @@ From repo root:
 - `pnpm test:mobile -- packages/mobile/app/providers/index.test.tsx`
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
-- `pnpm test:mobile -- packages/mobile/plugins/with-healthkit-entitlements.test.ts`
 
 ## Common Failure Modes
 

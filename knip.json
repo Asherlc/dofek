@@ -36,7 +36,6 @@
       "entry": [
         "app/**/*.{ts,tsx}",
         "modules/*/index.ts",
-        "plugins/*.js",
         "metro.config.js",
         "types/api.ts",
         "theme.ts"
