@@ -2,9 +2,19 @@ import { describe, expect, it } from "vitest";
 
 const {
   mergeHealthKitEntitlements,
+  VERIFY_ENTITLEMENT_SCRIPT,
 } = require("./with-healthkit-entitlements");
 
 describe("withHealthKitEntitlements", () => {
+  it("build phase script checks for HealthKit entitlement", () => {
+    expect(VERIFY_ENTITLEMENT_SCRIPT).toContain("com.apple.developer.healthkit");
+    expect(VERIFY_ENTITLEMENT_SCRIPT).toContain(
+      "com.apple.developer.healthkit.background-delivery",
+    );
+    expect(VERIFY_ENTITLEMENT_SCRIPT).toContain("com.apple.developer.healthkit.access");
+    expect(VERIFY_ENTITLEMENT_SCRIPT).toContain("exit 1");
+  });
+
   it("adds missing HealthKit entitlements", () => {
     const result = mergeHealthKitEntitlements({});
     expect(result["com.apple.developer.healthkit"]).toBe(true);
