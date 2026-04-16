@@ -9,6 +9,7 @@ const HEALTH_KIT_PLUGIN_PATH = "./plugins/with-healthkit-entitlements";
 const REQUIRED_HEALTH_KIT_ENTITLEMENTS = [
   "com.apple.developer.healthkit",
   "com.apple.developer.healthkit.background-delivery",
+  "com.apple.developer.healthkit.access",
 ] as const;
 const REQUIRED_HEALTH_KIT_USAGE_KEYS = [
   "NSHealthShareUsageDescription",

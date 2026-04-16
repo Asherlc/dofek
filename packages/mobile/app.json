@@ -57,7 +57,8 @@
       "backgroundModes": ["bluetooth-central", "fetch"],
       "entitlements": {
         "com.apple.developer.healthkit": true,
-        "com.apple.developer.healthkit.background-delivery": true
+        "com.apple.developer.healthkit.background-delivery": true,
+        "com.apple.developer.healthkit.access": true
       }
     },
     "plugins": [
