@@ -4,6 +4,15 @@ import type { ExpoConfig } from "expo/config";
 import { z } from "zod";
 
 const PREVIEW_CHANNEL = process.env.PREVIEW_CHANNEL;
+const HEALTH_KIT_PLUGIN_PATH = "./plugins/with-healthkit-entitlements";
+const REQUIRED_HEALTH_KIT_ENTITLEMENTS = [
+  "com.apple.developer.healthkit",
+  "com.apple.developer.healthkit.background-delivery",
+] as const;
+const REQUIRED_HEALTH_KIT_USAGE_KEYS = [
+  "NSHealthShareUsageDescription",
+  "NSHealthUpdateUsageDescription",
+] as const;
 
 const appJsonCandidatePaths = [
   join(process.cwd(), "app.json"),
@@ -27,6 +36,70 @@ const AppJsonSchema = z.object({
 
 const baseConfig = AppJsonSchema.parse(parsedAppJson);
 
+function hasHealthKitPlugin(plugins: ExpoConfig["plugins"]): boolean {
+  if (!plugins) {
+    return false;
+  }
+  return plugins.some((plugin) => {
+    if (typeof plugin === "string") {
+      return plugin === HEALTH_KIT_PLUGIN_PATH;
+    }
+    if (Array.isArray(plugin)) {
+      const [pluginName] = plugin;
+      return pluginName === HEALTH_KIT_PLUGIN_PATH;
+    }
+    return false;
+  });
+}
+
+function getRequiredString(
+  infoPlist: Record<string, unknown>,
+  key: (typeof REQUIRED_HEALTH_KIT_USAGE_KEYS)[number],
+): string {
+  const value = infoPlist[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Missing required iOS Info.plist value "${key}" for Apple Health permissions.`);
+  }
+  return value;
+}
+
+function assertHealthKitBuildPrerequisites(configToValidate: ExpoConfig): void {
+  if (!hasHealthKitPlugin(configToValidate.plugins)) {
+    throw new Error(
+      `Missing required Expo plugin "${HEALTH_KIT_PLUGIN_PATH}". This must be configured so Apple Health entitlements are always written during prebuild.`,
+    );
+  }
+
+  const iosConfig = configToValidate.ios;
+  if (!iosConfig) {
+    throw new Error("Missing iOS config. Apple Health integration requires an iOS configuration.");
+  }
+
+  const entitlements =
+    typeof iosConfig.entitlements === "object" &&
+    iosConfig.entitlements !== null &&
+    !Array.isArray(iosConfig.entitlements)
+      ? iosConfig.entitlements
+      : {};
+  for (const entitlementKey of REQUIRED_HEALTH_KIT_ENTITLEMENTS) {
+    if (entitlements[entitlementKey] !== true) {
+      throw new Error(
+        `Missing required iOS entitlement "${entitlementKey}" in app config. Apple Health must be enabled at build time.`,
+      );
+    }
+  }
+
+  const infoPlist =
+    typeof iosConfig.infoPlist === "object" &&
+    iosConfig.infoPlist !== null &&
+    !Array.isArray(iosConfig.infoPlist)
+      ? iosConfig.infoPlist
+      : {};
+  for (const requiredUsageKey of REQUIRED_HEALTH_KIT_USAGE_KEYS) {
+    getRequiredString(infoPlist, requiredUsageKey);
+  }
+}
+
 const config: ExpoConfig = {
   ...baseConfig.expo,
   extra: {
@@ -49,5 +122,7 @@ const config: ExpoConfig = {
       }
     : {}),
 };
+
+assertHealthKitBuildPrerequisites(config);
 
 export default config;
