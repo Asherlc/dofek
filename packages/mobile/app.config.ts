@@ -5,7 +5,6 @@ import { z } from "zod";
 
 const PREVIEW_CHANNEL = process.env.PREVIEW_CHANNEL;
 const PREVIEW_BUNDLE_IDENTIFIER = process.env.PREVIEW_BUNDLE_IDENTIFIER;
-const HEALTH_KIT_PLUGIN_PATH = "./plugins/with-healthkit-entitlements";
 const REQUIRED_HEALTH_KIT_ENTITLEMENTS = [
   "com.apple.developer.healthkit",
   "com.apple.developer.healthkit.background-delivery",
@@ -38,22 +37,6 @@ const AppJsonSchema = z.object({
 
 const baseConfig = AppJsonSchema.parse(parsedAppJson);
 
-function hasHealthKitPlugin(plugins: ExpoConfig["plugins"]): boolean {
-  if (!plugins) {
-    return false;
-  }
-  return plugins.some((plugin) => {
-    if (typeof plugin === "string") {
-      return plugin === HEALTH_KIT_PLUGIN_PATH;
-    }
-    if (Array.isArray(plugin)) {
-      const [pluginName] = plugin;
-      return pluginName === HEALTH_KIT_PLUGIN_PATH;
-    }
-    return false;
-  });
-}
-
 function getRequiredString(
   infoPlist: Record<string, unknown>,
   key: (typeof REQUIRED_HEALTH_KIT_USAGE_KEYS)[number],
@@ -66,12 +49,6 @@ function getRequiredString(
 }
 
 function assertHealthKitBuildPrerequisites(configToValidate: ExpoConfig): void {
-  if (!hasHealthKitPlugin(configToValidate.plugins)) {
-    throw new Error(
-      `Missing required Expo plugin "${HEALTH_KIT_PLUGIN_PATH}". This must be configured so Apple Health entitlements are always written during prebuild.`,
-    );
-  }
-
   const iosConfig = configToValidate.ios;
   if (!iosConfig) {
     throw new Error("Missing iOS config. Apple Health integration requires an iOS configuration.");

@@ -79,7 +79,6 @@
         }
       ],
       "./plugins/with-background-modes",
-      "./plugins/with-healthkit-entitlements",
       [
         "@sentry/react-native/expo",
         {

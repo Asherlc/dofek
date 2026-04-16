@@ -84,6 +84,25 @@ let readTypes: Set<HKObjectType> = {
     types.insert(HKWorkoutType.workoutType())
     // Workout route (GPS data associated with workouts)
     types.insert(HKSeriesType.workoutRoute())
+
+    // Clinical Records (FHIR data)
+    let clinicalTypes: [HKClinicalTypeIdentifier] = [
+        .allergyRecord,
+        .clinicalNoteRecord,
+        .conditionRecord,
+        .coverageRecord,
+        .immunizationRecord,
+        .labResultRecord,
+        .medicationRecord,
+        .procedureRecord,
+        .vitalSignRecord,
+    ]
+    for id in clinicalTypes {
+        if let type = HKClinicalType.clinicalType(forIdentifier: id) {
+            types.insert(type)
+        }
+    }
+
     return types
 }()
 
