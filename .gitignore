@@ -54,3 +54,6 @@ packages/mobile/sentry.options.json
 # Downloaded Sentry XCFramework and private headers (see scripts/download-sentry-xcframework.sh)
 packages/mobile/native/sentry-pod/Sentry.xcframework/
 packages/mobile/native/sentry-pod/Sources/
+
+# Gemini CLI
+.gemini/
