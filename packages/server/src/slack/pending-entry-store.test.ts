@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
-import { 
-  InMemoryPendingEntryStore, 
-  RedisPendingEntryStore, 
-  type PendingSlackEntry 
-} from "./pending-entry-store.ts";
+import { describe, expect, it } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
+import {
+  InMemoryPendingEntryStore,
+  type PendingSlackEntry,
+  RedisPendingEntryStore,
+} from "./pending-entry-store.ts";
 
 const makeFoodItem = (overrides: Partial<NutritionItemWithMeal> = {}): NutritionItemWithMeal => ({
   foodName: "Apple",
@@ -22,7 +22,9 @@ const makeFoodItem = (overrides: Partial<NutritionItemWithMeal> = {}): Nutrition
   ...overrides,
 });
 
-const makeEntry = (overrides: Partial<Omit<PendingSlackEntry, "id">> = {}): Omit<PendingSlackEntry, "id"> => ({
+const makeEntry = (
+  overrides: Partial<Omit<PendingSlackEntry, "id">> = {},
+): Omit<PendingSlackEntry, "id"> => ({
   userId: "00000000-0000-0000-0000-000000000001",
   date: "2026-04-16",
   item: makeFoodItem(),
@@ -39,10 +41,12 @@ describe("InMemoryPendingEntryStore", () => {
 
   it("saves and loads entries by ID", async () => {
     const entry = makeEntry({ userId: "00000000-0000-0000-0000-000000000002" });
-    const [id] = await store.save([entry]);
+    const ids = await store.save([entry]);
+    const id = ids[0];
+    if (!id) throw new Error("ID not generated");
     expect(id).toBeDefined();
 
-    const [loaded] = await store.loadByIds([id!]);
+    const [loaded] = await store.loadByIds([id]);
     expect(loaded).toMatchObject({ ...entry, id });
   });
 
@@ -65,9 +69,10 @@ describe("InMemoryPendingEntryStore", () => {
   it("deletes entries by ID and updates message index", async () => {
     const e1 = makeEntry({ channelId: "c2", confirmationMessageTs: "ts2" });
     const [id1] = await store.save([e1]);
+    if (!id1) throw new Error("ID not generated");
 
-    await store.deleteByIds([id1!]);
-    const loaded = await store.loadByIds([id1!]);
+    await store.deleteByIds([id1]);
+    const loaded = await store.loadByIds([id1]);
     expect(loaded).toHaveLength(0);
 
     const ids = await store.findIdsByMessage("c2", "ts2");
@@ -99,15 +104,16 @@ describe("RedisPendingEntryStore", () => {
   it("saves and loads entries with JSON serialization", async () => {
     const entry = makeEntry();
     const [id] = await store.save([entry]);
-    
-    const [loaded] = await store.loadByIds([id!]);
+    if (!id) throw new Error("ID not generated");
+
+    const [loaded] = await store.loadByIds([id]);
     expect(loaded).toMatchObject({ ...entry, id });
   });
 
   it("maintains message index in Redis", async () => {
     const e1 = makeEntry({ channelId: "rc1", confirmationMessageTs: "rts1" });
     const [id1] = await store.save([e1]);
-    
+
     const ids = await store.findIdsByMessage("rc1", "rts1");
     expect(ids).toEqual([id1]);
   });
@@ -115,9 +121,10 @@ describe("RedisPendingEntryStore", () => {
   it("deletes entries and cleans up index", async () => {
     const e1 = makeEntry({ channelId: "rc2", confirmationMessageTs: "rts2" });
     const [id1] = await store.save([e1]);
-    
-    await store.deleteByIds([id1!]);
-    expect(await store.loadByIds([id1!])).toHaveLength(0);
+    if (!id1) throw new Error("ID not generated");
+
+    await store.deleteByIds([id1]);
+    expect(await store.loadByIds([id1])).toHaveLength(0);
     expect(await store.findIdsByMessage("rc2", "rts2")).toHaveLength(0);
   });
 
@@ -125,8 +132,9 @@ describe("RedisPendingEntryStore", () => {
     const e1 = makeEntry({ channelId: "rc3", confirmationMessageTs: "rts3" });
     const e2 = makeEntry({ channelId: "rc3", confirmationMessageTs: "rts3" });
     const [id1, id2] = await store.save([e1, e2]);
-    
-    await store.deleteByIds([id1!]);
+    if (!id1) throw new Error("ID not generated");
+
+    await store.deleteByIds([id1]);
     const ids = await store.findIdsByMessage("rc3", "rts3");
     expect(ids).toEqual([id2]);
   });
@@ -135,10 +143,8 @@ describe("RedisPendingEntryStore", () => {
     mockRedis.storage.set("slack:pending-entry:bad", "invalid json");
     const loaded = await store.loadByIds(["bad"]);
     expect(loaded).toHaveLength(0);
-    
+
     mockRedis.storage.set("slack:pending-message:bad", "not an array");
-    const ids = await store.findIdsByMessage("any", "any"); // wait, findIdsByMessage uses keys
-    // Let's set the actual key it expects
     const key = "slack:pending-message:m1:ts1";
     mockRedis.storage.set(key, "not an array");
     expect(await store.findIdsByMessage("m1", "ts1")).toHaveLength(0);

@@ -7,8 +7,8 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { createPendingEntryStore, type PendingEntryStore } from "./pending-entry-store.ts";
 
-export const slackBlockSchema = z.object({
-  type: z.string().optional(),
+const slackBlockSchema = z.object({
+  type: z.string(),
   elements: z
     .array(
       z.object({
@@ -18,31 +18,6 @@ export const slackBlockSchema = z.object({
     )
     .optional(),
 });
-
-const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).catch("other");
-const categorySchema = z
-  .enum([
-    "beans_and_legumes",
-    "beverages",
-    "breads_and_cereals",
-    "cheese_milk_and_dairy",
-    "eggs",
-    "fast_food",
-    "fish_and_seafood",
-    "fruit",
-    "meat",
-    "nuts_and_seeds",
-    "pasta_rice_and_noodles",
-    "salads",
-    "sauces_spices_and_spreads",
-    "snacks",
-    "soups",
-    "sweets_candy_and_desserts",
-    "vegetables",
-    "supplement",
-    "other",
-  ])
-  .catch("other");
 
 const DOFEK_PROVIDER_ID = "dofek";
 
