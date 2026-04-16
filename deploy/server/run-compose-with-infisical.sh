@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INFISICAL_VERSION="${INFISICAL_VERSION:-0.159.13}"
+INFISICAL_VERSION="${INFISICAL_VERSION:-0.38.0}"
 INFISICAL_ENVIRONMENT="${INFISICAL_ENVIRONMENT:-prod}"
 
 if [ "$#" -lt 2 ]; then

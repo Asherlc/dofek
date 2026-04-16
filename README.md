@@ -92,7 +92,7 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
-├── deploy/                        # Terraform + Docker Compose (production stack)
+├── deploy/                        # Terraform + Docker Compose (production stack) — see deploy/README.md
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
 
@@ -181,129 +181,7 @@ All modes use Node 22 `--experimental-transform-types` to run TypeScript source 
 
 ## Deployment
 
-Deployed on a Hetzner Cloud CAX11 (ARM) server at `dofek.asherlc.com`.
-
-### Infrastructure
-
-The `deploy/` directory contains Terraform and Docker Compose configuration:
-
-```
-deploy/
-├── docker-compose.deploy.yml     # Full production stack (all services)
-├── otel-collector-config.yaml    # OTel Collector config
-├── server/main.tf                # Terraform — Hetzner server with Docker + docker-rollout
-├── cloudflare/main.tf            # Terraform — DNS, R2 buckets (Terraform Cloud: dofek-cloudflare)
-├── db/main.tf                    # Terraform — TimescaleDB extension management
-└── .gitignore
-```
-
-Docker Compose manages all services. Traefik handles TLS termination (Let's Encrypt via Cloudflare DNS challenge) and reverse proxy. Zero-downtime deploys use [docker-rollout](https://github.com/Wowu/docker-rollout). Management UIs: Portainer (`portainer.dofek.asherlc.com`) for Docker, Netdata (`netdata.dofek.asherlc.com`) for server health, Databasus (`databasus.dofek.asherlc.com`) for backups, and pgAdmin (`pgadmin.dofek.asherlc.com`) for PostgreSQL administration. Portainer, Netdata, Databasus, and pgAdmin are behind Authentik forward auth.
-
-### Production architecture
-
-```
-Internet → Traefik (auto-HTTPS :443, serves dofek.asherlc.com + dofek.fit + dofek.live)
-             └── dofek-web (Express :3000)
-                   ├── /assets/*    → static files (1yr immutable cache)
-                   ├── /api/*       → tRPC + REST API
-                   ├── /auth/*      → OAuth flows
-                   ├── /callback    → OAuth callback
-                   ├── /admin/*     → BullMQ dashboard
-                   ├── /metrics     → Prometheus metrics
-                   └── /*           → index.html (SPA fallback)
-```
-
-### Services
-
-All services run in a single Docker Compose stack (`deploy/docker-compose.deploy.yml`):
-
-| Service | Image | Purpose |
-|---------|-------|---------|
-| `traefik` | traefik:3.4 | Reverse proxy, auto-HTTPS via Cloudflare DNS challenge |
-| `web` | ghcr.io/asherlc/dofek | Express + tRPC API + static file serving (port 3000) |
-| `worker` | ghcr.io/asherlc/dofek | BullMQ job worker (processes sync jobs, file imports) |
-| `db` | timescale/timescaledb:2.26.2-pg18 | TimescaleDB (persistent volume) |
-| `redis` | redis:7-alpine | Job queue backend for BullMQ + OTA cache |
-| `ota` | ghcr.io/axelmarciano/expo-open-ota | Self-hosted Expo OTA server (ota.dofek.asherlc.com) |
-| `collector` | otel/opentelemetry-collector-contrib | OTel Collector — logs/traces → Axiom |
-| `db-backup` | databasus/databasus | DB backups to Cloudflare R2 (databasus.dofek.asherlc.com) |
-| `pgadmin` | dpage/pgadmin4 | PostgreSQL management UI (pgadmin.dofek.asherlc.com) |
-| `portainer` | portainer/portainer-ce | Docker management UI (portainer.dofek.asherlc.com) |
-| `netdata` | netdata/netdata | Server health monitoring (netdata.dofek.asherlc.com) |
-
-> **Post-deploy setup required for backups:** After `docker compose up`, open the Databasus dashboard at `databasus.dofek.asherlc.com` and configure the PostgreSQL connection (host: `db`, database: `health`, user: `health`) and the R2 storage destination (`dofek-db-backups` bucket, credentials from Infisical). Backups will not run until this is done.
-
-### Checking mobile OTA update status
-
-The server hosts a self-hosted Expo Updates endpoint at `/api/updates/manifest`. This implementation follows the **Expo Updates Protocol v1 (Modern Manifest)** with mandatory **RSA-SHA256 code signing** for security.
-
-To check what OTA update is currently deployed on prod:
-
-```bash
-curl -s -v -H "expo-protocol-version: 1" -H "expo-platform: ios" -H "expo-runtime-version: 1.0" \
-  https://dofek.asherlc.com/api/updates/manifest
-```
-
-- **Multipart response** with JSON manifest and `expo-signature` header → an update is published (includes `id`, `createdAt`, `runtimeVersion`, and asset hashes)
-- **204 No Content** → no update is published (the app uses its embedded bundle)
-
-OTA artifacts (`expo-updates-manifest.json` and the standard Expo `dist/` structure) are stored in Cloudflare R2 under versioned prefixes:
-- `mobile-ota/releases/<release-id>/...`
-- `mobile-ota/current-release.json` (pointer file with `{ "releaseId": "..." }`)
-
-The API serves `/api/updates/*` directly from R2. The runtime version must match what's in `packages/mobile/app.json`.
-
-### CI/CD pipeline
-
-```
-git push → GHA builds ARM Docker images + exports Expo OTA bundle → signs manifest → uploads to R2
-→ Docker image pushed to GHCR (sha-tagged) → CI SSHs to server → docker rollout (zero-downtime)
-```
-
-Deploy automation now runs through reusable GitHub workflows (`deploy-*.yml`) called directly from `ci.yml` (same workflow DAG, no cross-workflow dispatch). Each deploy receives the exact CI commit SHA, and deploy jobs run only when that SHA is still the current `main` head.
-
-Migrations run at two levels for reliability: a dedicated one-shot `migrate` container runs first during `docker compose up` (via `depends_on: { condition: service_completed_successfully }`), and each service's entrypoint also runs migrations before starting. A Postgres advisory lock serializes concurrent runs so only one container applies migrations at a time. With replicated `web` instances and rolling restarts, at least one healthy API instance remains available while another instance migrates and boots. In local dev, run `pnpm migrate` manually.
-
-### Deploying from scratch
-
-1. Set required Terraform variables (`TF_VAR_hcloud_token`, `TF_VAR_ssh_public_key`, `TF_VAR_ssh_private_key`, `TF_VAR_cloudflare_api_token`, `TF_VAR_cloudflare_account_id`, `TF_VAR_infisical_token`)
-2. Provision infra + compose stack: `cd deploy && terraform apply`
-3. Deploy the app image: `gh workflow run deploy-web.yml -f image_tag=latest`
-
-### Updating server config
-
-**Never SSH into the server to edit config files directly.** All changes go through the deploy compose file (committed to git) or Terraform. SSH is allowed for debugging only.
-
-### SSH access
-
-The domain (`dofek.asherlc.com`) is behind Cloudflare, so you need the **direct Hetzner IP** to SSH. Find it via:
-- Hetzner Cloud console → Servers → `dofek` → IP address
-- `~/.ssh/known_hosts` (grep for Hetzner IP ranges like `159.69.*`, `116.203.*`, `49.12.*`)
-- Terraform state if available: `cd deploy && terraform output server_ip`
-
-```bash
-ssh root@<SERVER_IP>
-```
-
-### Accessing logs
-
-**In-browser (easiest):** The Data Sources page has a "System Logs" panel that shows the most recent server log entries from the in-memory ring buffer (currently queried at `limit=100`). This is the fastest way to check OAuth errors, sync failures, and recent provider activity.
-
-**Docker container logs (SSH):**
-
-```bash
-ssh root@<SERVER_IP>
-
-docker ps                                         # container status
-docker logs <container> --tail 100                # container logs
-docker logs <container> -f                        # follow logs in real-time
-```
-
-Container management (restart, inspect, exec) can be done through Portainer at `portainer.dofek.asherlc.com` or via SSH. Server health monitoring is at `netdata.dofek.asherlc.com`.
-
-**Axiom (centralized):** Application logs, traces, and Docker container logs are shipped to [Axiom](https://axiom.co) via the OpenTelemetry Collector sidecar. In the current collector config, logs and traces both land in `dofek-logs`, and metrics land in `dofek-metrics`. This is the most complete log source because it survives container restarts and preserves structured metadata.
-
-**Note:** The in-memory ring buffer and Docker container logs are still available for quick debugging, but Axiom is the primary log store.
+See [`deploy/README.md`](deploy/README.md) for the production architecture, services, CI/CD pipeline, secrets handling, SSH access, log sources, and operational runbooks.
 
 ### OpenTelemetry (Provider-Agnostic)
 
@@ -380,41 +258,9 @@ axiom query 'dofek-logs' --filter 'span.name == "db.query" AND duration > 200ms'
 axiom query 'dofek-logs' --filter 'message contains "Slow query"'
 ```
 
-### Production secrets
+### Production secrets and deploy-time injection
 
-**All secrets are managed in [Infisical](https://infisical.com/).** Infisical is the single source of truth for credentials — if a secret isn't in Infisical, it's untracked. Infisical syncs secrets to GitHub Actions automatically.
-
-The production containers get environment variables from two places:
-
-1. **Committed `.env` (this repo)** — non-secret config: client IDs, redirect URIs, endpoints, DSNs. Baked into the Docker image. Loaded by the entrypoint on startup.
-
-2. **Infisical export at deploy time** — deploy workflows and Terraform call `deploy/server/run-compose-with-infisical.sh`, which exports secrets to a short-lived temp file and injects them into Docker Compose. No long-lived `/opt/dofek/.env.prod` file is stored on the server.
-
-**Adding or updating secrets:**
-
-```bash
-infisical secrets set --env prod KEY=value
-# Then redeploy app/worker to pick up the new values:
-gh workflow run deploy-web.yml -f image_tag=latest
-```
-
-No SSH to the server needed. No image rebuild needed.
-
-**Adding or updating non-secret config:** Edit `.env` in this repo, commit, push. CI builds a new image and deploys via docker-rollout.
-
-**Important:** Compose `environment:` block values override `env_file` values. Never put `DATABASE_URL` in Infisical — it must come from the compose file.
-
-### Troubleshooting
-
-**Login page says "No identity providers configured"** — this can mean either there are truly no configured login providers, or the API server (`web`) is unreachable and the frontend fell back to an empty `/api/auth/providers` result. Check `docker ps`, then inspect `docker logs dofek-web-1`.
-
-**If a provider is missing from the Data Sources page** it usually means `validate()` is failing, so the provider is being filtered out entirely rather than shown disabled. Check:
-1. Are the vars in Infisical? → `infisical secrets get <VAR_NAME> --env=prod`
-2. Redeploy app/worker so containers load fresh secrets:
-   - `gh workflow run deploy-web.yml -f image_tag=latest`
-3. Confirm the deploy run succeeded:
-   - `gh run list --workflow deploy-web.yml`
-4. If the app still shows stale config after sync, check container logs via Portainer or SSH and refresh app caches.
+See [`deploy/README.md`](deploy/README.md#production-secrets) for how Infisical secrets are exported to the production stack at deploy time, the list of required Infisical keys, and the production machine identity setup.
 
 ## Supplements
 
@@ -602,78 +448,12 @@ infisical secrets get KEY --env=prod
 infisical secrets delete KEY --env=prod --type shared
 ```
 
-### Production deploy-time injection
-
-Production deploy workflows call `deploy/server/run-compose-with-infisical.sh` on the host. The helper script:
-- installs Infisical CLI if missing
-- exports Infisical `prod` secrets to a temp file
-- injects that file into Docker Compose for interpolation + `env_file`
-- deletes the temp file on exit
-
-Required GitHub secrets:
-- `INFISICAL_TOKEN` (used by deploy workflows + Terraform apply)
-- `DEPLOY_SSH_KEY`
-- `SERVER_HOST`
-
-Required Infisical `prod` keys for deploy compose interpolation:
-- `CLOUDFLARE_API_TOKEN`
-- `POSTGRES_PASSWORD`
-- `PGADMIN_DEFAULT_EMAIL`
-- `PGADMIN_DEFAULT_PASSWORD`
-- `R2_ACCESS_KEY_ID`
-- `R2_SECRET_ACCESS_KEY`
-- `OTA_JWT_SECRET`
-- `OTA_PRIVATE_KEY_B64`
-- `OTA_PUBLIC_KEY_B64`
-
-`CLOUDFLARE_API_TOKEN` is used by both Traefik (for DNS challenge certificates) and Terraform deploy automation, so one Cloudflare token covers certificate DNS challenges plus Terraform-managed DNS/R2 changes.
-
-To force a manual secrets refresh, redeploy:
-
-```bash
-gh workflow run deploy-web.yml -f image_tag=latest
-```
-
 ### Adding a new env var
 
 - **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`, then redeploy (`gh workflow run deploy-web.yml -f image_tag=latest`).
 - **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root.
 
-### Production machine identity
-
-Production containers authenticate to Infisical using a machine identity token stored in 1Password. To create or rotate:
-
-1. In the [Infisical dashboard](https://app.infisical.com/) → Project Settings → Machine Identities
-2. Create a Universal Auth identity with read access to the `prod` environment
-3. Copy the access token
-4. Store it in 1Password as `Infisical Machine Identity Token` (password field)
-5. The token is passed to deploy jobs via GitHub Actions secret `INFISICAL_TOKEN` and to Terraform via `TF_VAR_infisical_token`
-
-### 1Password deploy notes
-
-Deploy secrets (Hetzner API token, Infisical machine identity token) are stored in 1Password — never in `terraform.tfvars` or any committed file.
-
-| 1Password Item | Use |
-|---|---|
-| `Hetzner Cloud API Token` | Terraform `hcloud_token` for server provisioning |
-| `Infisical Machine Identity Token` | `INFISICAL_TOKEN` for the host deploy script to export production secrets |
-
-Important: the 1Password item titled `Hetzner` stores Hetzner account login credentials, not a Cloud API token. Use `Hetzner Cloud API Token` for Terraform.
-
-When running from automation/agent shells, `op signin` may not persist a global session. Use an inline session token:
-
-```bash
-TOKEN=$(op signin --account my.1password.com --raw)
-OP_SESSION_my_1password_com="$TOKEN" op whoami --account my.1password.com
-```
-
-Example Terraform env export flow:
-
-```bash
-TOKEN=$(op signin --account my.1password.com --raw)
-export TF_VAR_hcloud_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Hetzner Cloud API Token" --field password)
-export TF_VAR_infisical_token=$(OP_SESSION_my_1password_com="$TOKEN" op item get "Infisical Machine Identity Token" --field password)
-```
+For production deploy-time secret injection, the required Infisical `prod` keys, GitHub Actions secrets, the production machine identity setup, and the 1Password deploy items, see [`deploy/README.md`](deploy/README.md#production-secrets).
 
 ## Stack
 

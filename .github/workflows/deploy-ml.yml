@@ -72,12 +72,18 @@ jobs:
 
             echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
 
-            # Ensure db and redis are healthy before deploying
-            if ! INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose up -d --wait --wait-timeout 120 db redis; then
-              echo "::error::Timed out waiting for db/redis to become healthy"
-              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose ps
+            # Ensure db and redis are healthy before deploying.
+            # The error message below intentionally does NOT claim the cause is a healthcheck timeout —
+            # the helper script can also fail before compose runs (e.g. infisical install/export). The
+            # real cause is in the output above; downstream messages must not invent a different cause.
+            up_status=0
+            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh \
+              compose up -d --wait --wait-timeout 120 db redis || up_status=$?
+            if [ $up_status -ne 0 ]; then
+              echo "::error::compose up for db/redis failed (exit $up_status). See output above for the real cause (helper script, infisical export, image pull, or healthcheck timeout)."
+              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose ps || true
               INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose logs --tail=100 db redis || true
-              exit 1
+              exit $up_status
             fi
 
             INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose up -d --force-recreate training-export-worker
