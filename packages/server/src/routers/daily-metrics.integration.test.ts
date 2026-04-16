@@ -137,9 +137,9 @@ describe("dailyMetrics data correctness", () => {
   }
 
   describe("trends", () => {
-    it("returns today's values only, not backfilled historical data", async () => {
-      // endDate (today) only has garmin rows with no health metrics,
-      // so all today's values should be null — not backfilled from day 4.
+    it("returns latest non-null metric values across the window", async () => {
+      // endDate (today) only has garmin rows with no health metrics, so latest
+      // metric values should come from the most recent day where each metric exists.
       const result = await query<{
         latest_date: string | null;
         latest_resting_hr: number | null;
@@ -149,13 +149,13 @@ describe("dailyMetrics data correctness", () => {
 
       expect(result).not.toBeNull();
 
-      // latest_date is today (endDate) since that row exists in the view
+      // latest_date still reflects the most recent row in the window.
       expect(result.latest_date).toBe(endDate);
 
-      // All health metrics should be null — today's garmin row has no health data
-      expect(result.latest_resting_hr).toBeNull();
-      expect(result.latest_hrv).toBeNull();
-      expect(result.latest_steps).toBeNull();
+      // Metrics should use latest available non-null values in the window.
+      expect(result.latest_resting_hr).not.toBeNull();
+      expect(result.latest_hrv).not.toBeNull();
+      expect(result.latest_steps).not.toBeNull();
     });
 
     it("returns today's values when endDate has health data", async () => {
