@@ -47,32 +47,18 @@ jobs:
             exit 1
           fi
       - name: Setup SSH
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Upload deploy helper
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          scp deploy/server/run-compose-with-infisical.sh "root@${SERVER_HOST}:/opt/dofek/run-compose-with-infisical.sh"
-          ssh "root@${SERVER_HOST}" "chmod 700 /opt/dofek/run-compose-with-infisical.sh"
-      - name: Deploy web and worker
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
           SHA_TAG: ${{ steps.resolve.outputs.tag }}
-        run: |
-          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" "$INFISICAL_TOKEN" <<'DEPLOY'
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GHCR_TOKEN,INFISICAL_TOKEN,SHA_TAG
+          script: |
             set -euo pipefail
-            GHCR_TOKEN="$1"
-            SHA_TAG="$2"
-            INFISICAL_TOKEN="$3"
             if [ -z "$INFISICAL_TOKEN" ]; then
               echo "::error::Missing INFISICAL_TOKEN GitHub secret"
               exit 1
@@ -110,4 +96,3 @@ jobs:
             INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh rollout web
 
             INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh rollout worker
-          DEPLOY
