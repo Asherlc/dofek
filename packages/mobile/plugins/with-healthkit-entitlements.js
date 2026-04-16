@@ -3,6 +3,7 @@ const { withEntitlementsPlist, withXcodeProject } = require("@expo/config-plugin
 const REQUIRED_ENTITLEMENTS = {
   "com.apple.developer.healthkit": true,
   "com.apple.developer.healthkit.background-delivery": true,
+  "com.apple.developer.healthkit.access": ["health-records"],
 };
 
 const VERIFY_ENTITLEMENT_SCRIPT = `
@@ -19,6 +20,11 @@ if [ -n "$CODE_SIGN_ENTITLEMENTS" ]; then
     fi
     if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.healthkit.background-delivery" "$ENTITLEMENTS_PATH" 2>/dev/null | grep -q "true"; then
       echo "error: HealthKit background delivery entitlement is missing from $ENTITLEMENTS_PATH."
+      echo "error: Ensure the with-healthkit-entitlements Expo config plugin is listed in app.json plugins."
+      exit 1
+    fi
+    if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.healthkit.access" "$ENTITLEMENTS_PATH" 2>/dev/null | grep -q "health-records"; then
+      echo "error: HealthKit access entitlement (com.apple.developer.healthkit.access) is missing from $ENTITLEMENTS_PATH."
       echo "error: Ensure the with-healthkit-entitlements Expo config plugin is listed in app.json plugins."
       exit 1
     fi

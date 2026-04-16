@@ -9,6 +9,7 @@ const HEALTH_KIT_PLUGIN_PATH = "./plugins/with-healthkit-entitlements";
 const REQUIRED_HEALTH_KIT_ENTITLEMENTS = [
   "com.apple.developer.healthkit",
   "com.apple.developer.healthkit.background-delivery",
+  "com.apple.developer.healthkit.access",
 ] as const;
 const REQUIRED_HEALTH_KIT_USAGE_KEYS = [
   "NSHealthShareUsageDescription",
@@ -83,7 +84,8 @@ function assertHealthKitBuildPrerequisites(configToValidate: ExpoConfig): void {
       ? iosConfig.entitlements
       : {};
   for (const entitlementKey of REQUIRED_HEALTH_KIT_ENTITLEMENTS) {
-    if (entitlements[entitlementKey] !== true) {
+    const val = entitlements[entitlementKey];
+    if (val !== true && !(Array.isArray(val) && val.length > 0)) {
       throw new Error(
         `Missing required iOS entitlement "${entitlementKey}" in app config. Apple Health must be enabled at build time.`,
       );
