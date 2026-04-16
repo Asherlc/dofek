@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopCycle,
+  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
@@ -11,6 +12,7 @@ import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   buildV2ActivityTypeLookup,
   type InlineSleepRecord,
+  parseDailyStepValues,
   parseHeartRateValues,
   parseInlineSleep,
   parseRecovery,
@@ -707,6 +709,31 @@ describe("parseHeartRateValues — edge cases", () => {
     expect(parsed[0]?.heartRate).toBe(72);
     expect(parsed[1]?.recordedAt).toEqual(new Date(1709280006000));
     expect(parsed[1]?.heartRate).toBe(75);
+  });
+});
+
+describe("parseDailyStepValues", () => {
+  it("uses the max value per day when multiple samples exist", () => {
+    const values: WhoopMetricValue[] = [
+      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: 1200 },
+      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 7421 },
+      { time: new Date("2026-03-01T22:00:00Z").getTime(), data: 7000 },
+      { time: new Date("2026-03-02T21:00:00Z").getTime(), data: 9100 },
+    ];
+
+    expect(parseDailyStepValues(values)).toEqual([
+      { date: "2026-03-01", steps: 7421 },
+      { date: "2026-03-02", steps: 9100 },
+    ]);
+  });
+
+  it("rounds step values and ignores negatives", () => {
+    const values: WhoopMetricValue[] = [
+      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: -5 },
+      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 9000.6 },
+    ];
+
+    expect(parseDailyStepValues(values)).toEqual([{ date: "2026-03-01", steps: 9001 }]);
   });
 });
 

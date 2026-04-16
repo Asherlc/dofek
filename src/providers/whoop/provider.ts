@@ -37,6 +37,7 @@ import {
   buildV2ActivityTypeLookup,
   extractSleepIdsFromCycle,
   inlineSleepSchema,
+  parseDailyStepValues,
   parseHeartRateValues,
   parseInlineSleep,
   parseRecovery,
@@ -195,6 +196,8 @@ export class WhoopProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    let rateLimited = false;
+
     // --- Sync recovery from cycles ---
     try {
       const recoveryCount = await withSyncLog(
@@ -271,6 +274,78 @@ export class WhoopProvider implements SyncProvider {
         message: `recovery: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
+    }
+
+    // --- Sync daily steps from metrics-service ---
+    try {
+      const dailyActivityCount = await withSyncLog(
+        db,
+        this.id,
+        "daily_activity",
+        async () => {
+          const weekMs = 7 * 24 * 60 * 60 * 1000;
+          let windowStart = since.getTime();
+          const nowMs = Date.now();
+          const maxStepsByDate = new Map<string, number>();
+
+          while (windowStart < nowMs) {
+            const windowEnd = Math.min(windowStart + weekMs, nowMs);
+            const startStr = new Date(windowStart).toISOString();
+            const endStr = new Date(windowEnd).toISOString();
+
+            const values = await client.getSteps(startStr, endStr, 300);
+            const parsedDays = parseDailyStepValues(values);
+            for (const parsedDay of parsedDays) {
+              const currentMax = maxStepsByDate.get(parsedDay.date);
+              if (currentMax == null || parsedDay.steps > currentMax) {
+                maxStepsByDate.set(parsedDay.date, parsedDay.steps);
+              }
+            }
+
+            windowStart = windowEnd;
+          }
+
+          for (const [date, steps] of maxStepsByDate) {
+            await db
+              .insert(dailyMetrics)
+              .values({
+                date,
+                providerId: this.id,
+                steps,
+              })
+              .onConflictDoUpdate({
+                target: [
+                  dailyMetrics.userId,
+                  dailyMetrics.date,
+                  dailyMetrics.providerId,
+                  dailyMetrics.sourceName,
+                ],
+                set: { steps },
+              });
+          }
+
+          return { recordCount: maxStepsByDate.size, result: maxStepsByDate.size };
+        },
+        options?.userId,
+      );
+      recordsSynced += dailyActivityCount;
+    } catch (err) {
+      if (err instanceof WhoopRateLimitError) {
+        rateLimited = true;
+      } else if (
+        err instanceof Error &&
+        (err.message.includes("WHOOP API error (400)") ||
+          err.message.includes("WHOOP API error (404)"))
+      ) {
+        logger.info(
+          `[whoop] Steps metric unavailable from metrics-service; skipping steps sync (${err.message})`,
+        );
+      } else {
+        errors.push({
+          message: `daily_activity: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // --- Sync sleep from cycles ---
@@ -503,7 +578,6 @@ export class WhoopProvider implements SyncProvider {
     }
 
     // --- Sync strength workouts (exercise-level data) ---
-    let rateLimited = false;
     try {
       const strengthCount = await withSyncLog(
         db,

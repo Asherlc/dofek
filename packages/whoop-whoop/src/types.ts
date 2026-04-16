@@ -2,14 +2,17 @@
 // WHOOP internal API response types
 // ============================================================
 
-export interface WhoopHrValue {
+export interface WhoopMetricValue {
   time: number; // Unix millis
-  data: number; // BPM
+  data: number;
 }
 
-export interface WhoopHrResponse {
-  values: WhoopHrValue[];
+export interface WhoopMetricResponse {
+  values: WhoopMetricValue[];
 }
+
+export type WhoopHrValue = WhoopMetricValue;
+export type WhoopHrResponse = WhoopMetricResponse;
 
 export interface WhoopRecoveryScore {
   user_calibrating: boolean;
