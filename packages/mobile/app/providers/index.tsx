@@ -89,7 +89,6 @@ export default function ProvidersScreen() {
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
   // HealthKit sync state
-  const [healthKitEntitlementMissing, setHealthKitEntitlementMissing] = useState(false);
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
   const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
@@ -113,25 +112,20 @@ export default function ProvidersScreen() {
     setHealthKitSyncing(true);
     setHealthKitProgress("Requesting permissions...");
     try {
-      await requestPermissions();
+      const granted = await requestPermissions();
       setHealthKitEverAuthorized(hasEverAuthorized());
       const status = await getRequestStatus();
       setHealthKitPermissionStatus(status);
-      setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
+      if (!granted || status === "unavailable") {
+        setHealthKitProgress("HealthKit is unavailable on this device");
+      } else {
+        setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
+      }
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      if (
-        error instanceof Error &&
-        error.message.toLowerCase().includes("com.apple.developer.healthkit entitlement")
-      ) {
-        // Build configuration issue — silently degrade to import-only mode
-        setHealthKitEntitlementMissing(true);
-        setHealthKitProgress(undefined);
-      } else {
-        setHealthKitProgress(
-          error instanceof Error ? error.message : "Failed to connect to Apple Health",
-        );
-      }
+      setHealthKitProgress(
+        error instanceof Error ? error.message : "Failed to connect to Apple Health",
+      );
     } finally {
       setHealthKitSyncing(false);
     }
@@ -415,7 +409,7 @@ export default function ProvidersScreen() {
     [serverUrl, sessionToken, trpcUtils],
   );
 
-  const healthKitAvailable = isHealthKitAvailable() && !healthKitEntitlementMissing;
+  const healthKitAvailable = isHealthKitAvailable();
 
   const providerList: Provider[] = (providers.data ?? []).map((p) => ({
     id: p.id,
@@ -529,14 +523,10 @@ export default function ProvidersScreen() {
           id: "apple_health",
           label: "Apple Health",
           enabled: healthKitAvailable && healthKitEverAuthorized,
-          authStatus: healthKitAvailable
-            ? healthKitEverAuthorized
-              ? "connected"
-              : "not_connected"
-            : "connected",
+          authStatus: healthKitEverAuthorized ? "connected" : "not_connected",
           authType: "none",
           lastSyncAt: null,
-          importOnly: !healthKitAvailable,
+          importOnly: false,
         }}
         stats={statsMap.apple_health}
         syncing={healthKitSyncing}

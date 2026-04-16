@@ -38,14 +38,23 @@ describe("app.config", () => {
     expect(config.updates?.requestHeaders?.["expo-channel-name"]).toBe("production");
   });
 
-  it("overrides channel and bundle ID for preview", async () => {
+  it("overrides channel and app name for preview", async () => {
     vi.stubEnv("PREVIEW_CHANNEL", "pr-42");
 
     const config = (await import("./app.config")).default;
 
     expect(config.name).toBe("Dofek Preview");
-    expect(config.ios?.bundleIdentifier).toBe("com.dofek.preview");
+    expect(config.ios?.bundleIdentifier).toBe("com.dofek.app");
     expect(config.updates?.requestHeaders?.["expo-channel-name"]).toBe("pr-42");
+  });
+
+  it("uses explicit preview bundle ID only when PREVIEW_BUNDLE_IDENTIFIER is set", async () => {
+    vi.stubEnv("PREVIEW_CHANNEL", "pr-42");
+    vi.stubEnv("PREVIEW_BUNDLE_IDENTIFIER", "com.dofek.preview");
+
+    const config = (await import("./app.config")).default;
+
+    expect(config.ios?.bundleIdentifier).toBe("com.dofek.preview");
   });
 
   it("preserves OTA server URL in preview mode", async () => {
