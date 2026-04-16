@@ -1,49 +1,31 @@
-# eight-sleep-client
+# @dofek/eight-sleep
 
-Unofficial Eight Sleep API client using reverse-engineered authentication. Credentials extracted from the Eight Sleep Android app.
+TypeScript client for the Eight Sleep internal API.
 
-## Authentication
+## Overview
 
-Eight Sleep uses a proprietary OAuth2 flow with hardcoded client credentials. No refresh tokens are issued -- re-authenticate when the token expires.
+This package provides a client for Eight Sleep mattresses, enabling the retrieval of sleep sessions, biometric trends (HR, HRV, Respiratory Rate), and high-frequency heart rate time series data.
+
+## Features
+
+- **Authentication**: Uses OAuth2 password grant with hardcoded client credentials extracted from the official Android app.
+- **Sleep Sessions**: Detailed breakdown of sleep stages (awake, light, deep, rem) and durations.
+- **Biometric Trends**: Daily aggregates for resting HR, HRV, respiratory rate, and average bed temperature.
+- **Time Series**: Granular heart rate samples recorded during sleep sessions.
+
+## Usage
 
 ```typescript
-import { EightSleepClient } from "eight-sleep-client";
-
-const { accessToken, userId, expiresIn } = await EightSleepClient.signIn(
-  "email@example.com",
-  "password"
-);
-
+const { accessToken, userId } = await EightSleepClient.signIn(email, password);
 const client = new EightSleepClient(accessToken, userId);
-const trends = await client.getTrends("America/New_York", "2024-01-01", "2024-01-31");
+const trends = await client.getTrends('UTC', '2024-01-01', '2024-01-07');
 ```
 
-## Data available
+## Implementation Details
 
-- **Sleep sessions** with stage breakdowns (light, deep, REM, awake)
-- **Sleep quality scores** (overall, HRV, respiratory rate, heart rate)
-- **Sleep routine scores** (latency, consistency)
-- **Daily metrics** (resting HR, HRV, respiratory rate)
-- **Temperature** (bed and room)
-- **Heart rate time series** from sleep sessions
-- **Toss and turn** count
-
-## API details
-
-| Detail | Value |
-|--------|-------|
-| Auth Base URL | `https://auth-api.8slp.net/v1` |
-| API Base URL | `https://client-api.8slp.net/v1` |
-| Auth | OAuth2 password grant with hardcoded client credentials |
-| Token endpoint | `/tokens` |
-| User-Agent | `okhttp/4.9.3` (Android) |
-| Refresh tokens | Not supported -- re-authenticate |
-| Data format | JSON |
-
-## Exports
-
-- `EightSleepClient` -- API client class with `signIn()` and `getTrends()`
-- `parseEightSleepTrendDay()` -- Parse a trend day into a sleep session
-- `parseEightSleepDailyMetrics()` -- Extract HRV, resting HR, respiratory rate
-- `parseEightSleepHeartRateSamples()` -- Extract HR time series from sessions
-- All response and parsed types
+- **Credentials**: Uses `EIGHT_SLEEP_CLIENT_ID` and `EIGHT_SLEEP_CLIENT_SECRET` hardcoded in `client.ts`.
+- **User-Agent**: Requests are spoofed with an `okhttp/4.9.3` User-Agent to match the Android app's behavior.
+- **Data Model**:
+    - `getTrends` returns data for multiple days, including `presenceDuration` vs `sleepDuration`.
+    - `parseEightSleepTrendDay` calculates `awakeMinutes` as `presenceDuration - sleepDuration`.
+    - Heart rate samples are extracted from `sessions` nested within trend days.
