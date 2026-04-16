@@ -4,6 +4,7 @@ import type { ExpoConfig } from "expo/config";
 import { z } from "zod";
 
 const PREVIEW_CHANNEL = process.env.PREVIEW_CHANNEL;
+const PREVIEW_BUNDLE_IDENTIFIER = process.env.PREVIEW_BUNDLE_IDENTIFIER;
 const HEALTH_KIT_PLUGIN_PATH = "./plugins/with-healthkit-entitlements";
 const REQUIRED_HEALTH_KIT_ENTITLEMENTS = [
   "com.apple.developer.healthkit",
@@ -117,7 +118,10 @@ const config: ExpoConfig = {
         },
         ios: {
           ...baseConfig.expo.ios,
-          bundleIdentifier: "com.dofek.preview",
+          ...(typeof PREVIEW_BUNDLE_IDENTIFIER === "string" &&
+          PREVIEW_BUNDLE_IDENTIFIER.trim().length > 0
+            ? { bundleIdentifier: PREVIEW_BUNDLE_IDENTIFIER.trim() }
+            : {}),
         },
       }
     : {}),

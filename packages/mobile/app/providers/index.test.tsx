@@ -639,6 +639,7 @@ describe("ProvidersScreen", () => {
     mockWhoopSaveTokens.mockReset();
     mockIsHealthKitAvailable.mockReset().mockReturnValue(true);
     mockGetRequestStatus.mockReset().mockResolvedValue("unnecessary");
+    mockHasEverAuthorized.mockReset().mockReturnValue(true);
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
     setupDefaultMocks();
@@ -1154,17 +1155,17 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("renders Apple Health as import-only when HealthKit is not available", async () => {
+  it("does not render Apple Health as import-only when HealthKit is not available", async () => {
     mockIsHealthKitAvailable.mockReturnValue(false);
+    mockHasEverAuthorized.mockReturnValue(false);
 
     const { default: ProvidersScreen } = await import("./index");
     render(<ProvidersScreen />);
 
     const appleCard = within(screen.getByTestId("provider-card-apple_health"));
     expect(appleCard.getByText("Apple Health")).toBeTruthy();
-    expect(appleCard.getByText("Import only")).toBeTruthy();
-    expect(appleCard.queryByText("Sync")).toBeNull();
-    expect(appleCard.queryByText("Connect")).toBeNull();
+    expect(appleCard.queryByText("Import only")).toBeNull();
+    expect(appleCard.getByText("Connect")).toBeTruthy();
   });
 
   it("renders Apple Health card when HealthKit is available", async () => {
@@ -1291,7 +1292,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("silently degrades to import-only when Apple Health entitlement is missing", async () => {
+  it("shows entitlement error and keeps connect controls when Apple Health entitlement is missing", async () => {
     const { captureException } = await import("../../lib/telemetry");
     const mockCaptureException = vi.mocked(captureException);
     mockCaptureException.mockClear();
@@ -1312,11 +1313,12 @@ describe("ProvidersScreen", () => {
     const appleCard = within(screen.getByTestId("provider-card-apple_health"));
     fireEvent.click(appleCard.getByText("Connect"));
 
-    // Should degrade to import-only mode with no error message
+    // Should keep normal provider controls and surface a clear error
     await waitFor(() => {
       const card = within(screen.getByTestId("provider-card-apple_health"));
-      expect(card.getByText("Import only")).toBeTruthy();
-      expect(card.queryByText("Connect")).toBeNull();
+      expect(card.queryByText("Import only")).toBeNull();
+      expect(card.getByText("Missing com.apple.developer.healthkit entitlement.")).toBeTruthy();
+      expect(card.getByText("Connect")).toBeTruthy();
     });
 
     // Should report to Sentry

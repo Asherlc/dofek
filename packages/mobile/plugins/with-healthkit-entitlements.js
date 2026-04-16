@@ -35,6 +35,25 @@ function mergeHealthKitEntitlements(existing) {
   };
 }
 
+function getApplicationTargetUuid(project) {
+  const nativeTargets = project.pbxNativeTargetSection();
+  const applicationTargetEntries = Object.entries(nativeTargets).filter(([key, value]) => {
+    if (key.endsWith("_comment")) return false;
+    return value?.productType === '"com.apple.product-type.application"';
+  });
+
+  if (applicationTargetEntries.length === 1) {
+    return applicationTargetEntries[0][0];
+  }
+
+  const firstTargetUuid = project.getFirstTarget().uuid;
+  const firstTarget = nativeTargets[firstTargetUuid];
+  if (firstTarget?.productType === '"com.apple.product-type.application"') {
+    return firstTargetUuid;
+  }
+  return firstTargetUuid;
+}
+
 /** @type {import('@expo/config-plugins').ConfigPlugin} */
 function withHealthKitEntitlements(config) {
   // 1. Merge HealthKit entitlements into the entitlements plist
@@ -46,7 +65,7 @@ function withHealthKitEntitlements(config) {
   // 2. Add a build phase that verifies entitlements at build time
   config = withXcodeProject(config, (modConfig) => {
     const project = modConfig.modResults;
-    const targetUuid = project.getFirstTarget().uuid;
+    const targetUuid = getApplicationTargetUuid(project);
     project.addBuildPhase(
       [],
       "PBXShellScriptBuildPhase",
