@@ -324,7 +324,7 @@ export async function upsertDailyMetricsBatch(
   >();
   for (const r of records) {
     if (!DAILY_METRIC_TYPES.has(r.type)) continue;
-    const dateKey = dateToString(r.startDate);
+    const dateKey = r.startDateCalendarDay ?? dateToString(r.startDate);
     const sourceName = r.sourceName ?? null;
     const compoundKey = `${dateKey}\0${sourceName}`;
     if (!byDateSource.has(compoundKey)) byDateSource.set(compoundKey, new Map());
@@ -553,7 +553,7 @@ export async function upsertNutritionBatch(
   for (const r of records) {
     const field = NUTRITION_TYPES[r.type];
     if (!field) continue;
-    const dateKey = dateToString(r.startDate);
+    const dateKey = r.startDateCalendarDay ?? dateToString(r.startDate);
     if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
     const day = byDate.get(dateKey) ?? new Map();
     day.set(field, (day.get(field) ?? 0) + r.value);

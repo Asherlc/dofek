@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
+  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWorkoutRecord,
@@ -143,6 +144,7 @@ function whoopHandlers(
   cycles: FakeCycle[],
   opts?: {
     hrValues?: WhoopHrValue[];
+    stepValues?: WhoopMetricValue[];
     authError?: boolean;
     /** Per-activityId response for GET sleep-events (detailed sleep + stages). */
     sleepDetailByActivityId?: Record<string, WhoopSleepRecord>;
@@ -194,11 +196,18 @@ function whoopHandlers(
       return HttpResponse.json(fakeSleepResponse);
     }),
 
-    // Heart rate (metrics-service)
-    http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
-      const values = opts?.hrValues ?? fakeHrValues(100, Date.now() - 600000);
-      return HttpResponse.json({ values });
-    }),
+    // Metrics (metrics-service): heart_rate + steps
+    http.get(
+      "https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId",
+      ({ request }) => {
+        const metricName = new URL(request.url).searchParams.get("name");
+        if (metricName === "steps") {
+          return HttpResponse.json({ values: opts?.stepValues ?? [] });
+        }
+        const values = opts?.hrValues ?? fakeHrValues(100, Date.now() - 600000);
+        return HttpResponse.json({ values });
+      },
+    ),
 
     // Journal / behavior-impact-service
     http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
@@ -293,6 +302,30 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(day.hrv).toBeCloseTo(77.1, 0);
     expect(day.spo2Avg).toBeCloseTo(96.5);
     expect(day.skinTempC).toBeCloseTo(34.2);
+  });
+
+  it("syncs daily steps from metrics-service into daily_metrics", async () => {
+    const cycles = [fakeCycle({ days: ["2026-03-01"] })];
+    const stepValues: WhoopMetricValue[] = [
+      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: 1200 },
+      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 7421 },
+      { time: new Date("2026-03-02T21:00:00Z").getTime(), data: 9100 },
+    ];
+    server.use(...whoopHandlers(cycles, { stepValues }));
+    const provider = new WhoopProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "whoop"));
+
+    const march1 = rows.find((row) => row.date === "2026-03-01");
+    const march2 = rows.find((row) => row.date === "2026-03-02");
+    expect(march1?.steps).toBe(7421);
+    expect(march2?.steps).toBe(9100);
   });
 
   it("syncs sleep sessions", async () => {

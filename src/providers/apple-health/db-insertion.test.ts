@@ -15,7 +15,7 @@ import {
   upsertSleepBatch,
   upsertWorkoutBatch,
 } from "./db-insertion.ts";
-import type { HealthRecord } from "./records.ts";
+import { type HealthRecord, parseRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
@@ -486,6 +486,26 @@ describe("upsertBodyMeasurementBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertDailyMetricsBatch", () => {
+  it("uses the source calendar day for steps instead of UTC-shifted date", async () => {
+    const { db, capture } = createMockDb();
+    const parsedRecord = parseRecord({
+      type: "HKQuantityTypeIdentifierStepCount",
+      value: "3500",
+      sourceName: "Apple Watch",
+      unit: "count",
+      // Local day is March 1, but UTC day is March 2.
+      startDate: "2024-03-01 23:30:00 -0800",
+      endDate: "2024-03-01 23:30:05 -0800",
+      creationDate: "2024-03-01 23:31:00 -0800",
+    });
+    expect(parsedRecord).not.toBeNull();
+    if (!parsedRecord) return;
+
+    await upsertDailyMetricsBatch(db, "apple_health", [parsedRecord]);
+
+    expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01", steps: 3500 });
+  });
+
   it("sums additive types (steps) across records on the same day", async () => {
     const { db, capture } = createMockDb();
     const records = [
@@ -823,6 +843,26 @@ describe("upsertDailyMetricsBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertNutritionBatch", () => {
+  it("uses the source calendar day for nutrition instead of UTC-shifted date", async () => {
+    const { db, capture } = createMockDb();
+    const parsedRecord = parseRecord({
+      type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
+      value: "500",
+      sourceName: "Apple Watch",
+      unit: "kcal",
+      // Local day is March 1, but UTC day is March 2.
+      startDate: "2024-03-01 23:45:00 -0800",
+      endDate: "2024-03-01 23:45:10 -0800",
+      creationDate: "2024-03-01 23:46:00 -0800",
+    });
+    expect(parsedRecord).not.toBeNull();
+    if (!parsedRecord) return;
+
+    await upsertNutritionBatch(db, "apple_health", [parsedRecord]);
+
+    expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01", calories: 500 });
+  });
+
   it("aggregates calories by day", async () => {
     const { db, capture } = createMockDb();
     const records = [

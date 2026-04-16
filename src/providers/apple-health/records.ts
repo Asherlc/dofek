@@ -1,10 +1,11 @@
-import { parseHealthDate } from "./dates.ts";
+import { extractCalendarDay, parseHealthDate } from "./dates.ts";
 
 export interface HealthRecord {
   type: string;
   sourceName: string | null;
   unit: string | null;
   value: number;
+  startDateCalendarDay?: string | null;
   startDate: Date;
   endDate: Date;
   creationDate: Date;
@@ -20,6 +21,7 @@ export function parseRecord(attrs: Record<string, string>): HealthRecord | null 
     sourceName: attrs.sourceName ?? null,
     unit: attrs.unit ?? null,
     value,
+    startDateCalendarDay: extractCalendarDay(attrs.startDate ?? ""),
     startDate: parseHealthDate(attrs.startDate ?? ""),
     endDate: parseHealthDate(attrs.endDate ?? ""),
     creationDate: parseHealthDate(attrs.creationDate ?? ""),

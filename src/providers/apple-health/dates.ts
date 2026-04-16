@@ -14,6 +14,20 @@ export function parseHealthDate(dateStr: string): Date {
 }
 
 /**
+ * Extract the calendar day from a raw Apple Health date string.
+ * This preserves the source day boundary from the export instead of
+ * converting through UTC (which can shift the day near midnight).
+ */
+export function extractCalendarDay(dateStr: string): string | null {
+  const match = dateStr.match(/^(\d{4}-\d{2}-\d{2})(?:\s|T|$)/);
+  if (match?.[1]) return match[1];
+
+  const parsedDate = new Date(dateStr);
+  if (Number.isNaN(parsedDate.getTime())) return null;
+  return parsedDate.toISOString().slice(0, 10);
+}
+
+/**
  * Extract string attributes from a SAX node.
  * When `strict=true` is used without `xmlns`, SAX always returns `Tag` with
  * `{ [key: string]: string }` attributes, but the TS union type includes

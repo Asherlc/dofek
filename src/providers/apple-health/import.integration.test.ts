@@ -813,9 +813,8 @@ describe("importAppleHealthFile — full DB integration", () => {
   it("creates nutrition_daily rows with aggregated nutrition", async () => {
     const rows = await ctx.db.select().from(schema.nutritionDaily);
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    // The dietary records are at 20:00 -0500, which is 2024-03-02 01:00 UTC.
-    // dateToString uses toISOString().slice(0,10), so the date key is "2024-03-02".
-    const day = rows.find((r) => r.date === "2024-03-02");
+    // Nutrition rows should use the source calendar day from Apple Health.
+    const day = rows.find((r) => r.date === "2024-03-01");
     expect(day).toBeDefined();
     expect(day?.calories).toBe(650);
     expect(day?.proteinG).toBeCloseTo(45.5);

@@ -523,6 +523,21 @@ describe("WhoopClient.getHeartRate", () => {
   });
 });
 
+describe("WhoopClient.getSteps", () => {
+  it("requests steps metric with default step interval", async () => {
+    const stepValues = [{ time: 1700000000000, data: 8123 }];
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: stepValues } });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.getSteps("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    expect(result).toEqual(stepValues);
+    const [url] = fetchFn.mock.calls[0];
+    expect(String(url)).toContain("name=steps");
+    expect(String(url)).toContain("step=300");
+  });
+});
+
 describe("WhoopClient.getCycles", () => {
   it("returns cycles from array response", async () => {
     const cycles = [{ id: 1, user_id: 12345 }];

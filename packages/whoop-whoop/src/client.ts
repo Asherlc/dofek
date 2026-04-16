@@ -1,8 +1,9 @@
 import type {
   WhoopAuthToken,
   WhoopCycle,
-  WhoopHrResponse,
   WhoopHrValue,
+  WhoopMetricResponse,
+  WhoopMetricValue,
   WhoopSignInResult,
   WhoopSleepRecord,
   WhoopVerificationMethod,
@@ -346,9 +347,22 @@ export class WhoopClient {
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
-    const response = await this.#get<WhoopHrResponse>(
+    return this.getMetricValues("heart_rate", start, end, step);
+  }
+
+  async getSteps(start: string, end: string, step = 300): Promise<WhoopMetricValue[]> {
+    return this.getMetricValues("steps", start, end, step);
+  }
+
+  async getMetricValues(
+    name: "heart_rate" | "steps",
+    start: string,
+    end: string,
+    step: number,
+  ): Promise<WhoopMetricValue[]> {
+    const response = await this.#get<WhoopMetricResponse>(
       `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.#userId}`,
-      { start, end, step: String(step), name: "heart_rate" },
+      { start, end, step: String(step), name },
     );
     return response.values ?? [];
   }

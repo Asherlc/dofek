@@ -3,6 +3,7 @@ import { mapSportId, mapV2ActivityType } from "whoop-whoop/sports";
 import type {
   WhoopCycle,
   WhoopHrValue,
+  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
@@ -316,6 +317,30 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
     recordedAt: new Date(v.time),
     heartRate: v.data,
   }));
+}
+
+export interface ParsedDailyStepCount {
+  date: string;
+  steps: number;
+}
+
+export function parseDailyStepValues(values: WhoopMetricValue[]): ParsedDailyStepCount[] {
+  const maxStepsByDate = new Map<string, number>();
+
+  for (const value of values) {
+    const roundedSteps = Math.round(value.data);
+    if (!Number.isFinite(roundedSteps) || roundedSteps < 0) continue;
+
+    const date = new Date(value.time).toISOString().slice(0, 10);
+    const currentMax = maxStepsByDate.get(date);
+    if (currentMax == null || roundedSteps > currentMax) {
+      maxStepsByDate.set(date, roundedSteps);
+    }
+  }
+
+  return [...maxStepsByDate.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([date, steps]) => ({ date, steps }));
 }
 
 /**

@@ -27,6 +27,7 @@ Full API documentation is in [`whoop-api.openapi.yaml`](whoop-api.openapi.yaml) 
 | Data | Endpoint | Notes |
 |------|----------|-------|
 | Recovery | `GET /core-details-bff/v0/cycles/details` | Embedded in cycle response. HRV, resting HR, SpO2, skin temp. |
+| Daily steps | `GET /metrics-service/v1/metrics/user/<userId>?name=steps` | Daily step totals inferred as max value per day from WHOOP metric samples; inserted into `daily_metrics.steps`. If WHOOP returns 400/404 for `steps`, sync skips this metric and continues. |
 | Sleep | `GET /sleep-service/v1/sleep-events?activityId=<id>` | Per-sleep detail with stage breakdown. Sleep ID comes from cycles. |
 | Workouts | `GET /core-details-bff/v0/cycles/details` | Embedded in cycle response under `strain.workouts[]`. Aggregate only: strain, HR, calories, zones. |
 | Strength workouts | `GET /weightlifting-service/v2/weightlifting-workout/{activityId}` | Discovered, not yet synced. Exercise-level data: sets, reps, weight, muscle groups, MSK strain. |
