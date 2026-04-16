@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { castMock, mockAs } from "./bot-unit.test.ts";
 import {
-  extractLatestConfirmFromThread,
   FoodEntryRepository,
+  extractLatestConfirmFromThread,
   slackTimestampToDateString,
   slackTimestampToLocalTime,
 } from "./food-entry-repository.ts";
+import { castMock, mockAs } from "./bot-unit.test.ts";
 
 describe("food-entry-repository utility functions", () => {
   describe("extractLatestConfirmFromThread", () => {
@@ -168,5 +168,14 @@ describe("FoodEntryRepository", () => {
     await expect(repository.confirm(["id-1"])).rejects.toThrow(
       'Failed to confirm parsed food entry "Test"',
     );
+  });
+  
+  it("handles empty entryIds in deleteUnconfirmed", async () => {
+    const mockPendingStore = {
+      deleteByIds: vi.fn(),
+    };
+    const repository = new FoodEntryRepository(castMock({}), castMock(mockPendingStore));
+    await repository.deleteUnconfirmed([]);
+    expect(mockPendingStore.deleteByIds).not.toHaveBeenCalled();
   });
 });
