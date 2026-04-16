@@ -6,6 +6,7 @@
 - **Always use Terraform**: Never manually modify infrastructure on Hetzner or Cloudflare.
 - **Secrets via Infisical**: Never hardcode secrets in `.tf` files or `docker-compose`. Use the `run-compose-with-infisical.sh` script on the server.
 - **Zero-Downtime**: Use `rollout` instead of `up` for application services (`web`, `worker`) to ensure availability during updates.
+- **Deterministic Migrations**: Production deployments must run migrations explicitly before rolling out `web`/`worker`. Do not run migrations in `web` startup in production.
 - **DNS Consistency**: Every domain added to `docker-compose.deploy.yml` MUST have a corresponding `cloudflare_dns_record` in `dns.tf`.
 
 ## Common Tasks
