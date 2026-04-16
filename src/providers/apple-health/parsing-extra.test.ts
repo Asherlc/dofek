@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHealthDate } from "./dates.ts";
+import { extractCalendarDay, parseHealthDate } from "./dates.ts";
 import { parseCategoryRecord, parseRecord, parseRouteLocation } from "./records.ts";
 import { parseSleepAnalysis } from "./sleep.ts";
 import {
@@ -31,6 +31,20 @@ describe("parseHealthDate", () => {
   });
 });
 
+describe("extractCalendarDay", () => {
+  it("extracts day from Apple Health date format", () => {
+    expect(extractCalendarDay("2024-03-01 23:30:00 -0800")).toBe("2024-03-01");
+  });
+
+  it("extracts day from ISO timestamp", () => {
+    expect(extractCalendarDay("2024-03-01T23:30:00-08:00")).toBe("2024-03-01");
+  });
+
+  it("returns null for invalid date strings", () => {
+    expect(extractCalendarDay("not-a-date")).toBeNull();
+  });
+});
+
 describe("parseRecord", () => {
   it("parses a record with all fields", () => {
     const attrs = {
@@ -48,6 +62,7 @@ describe("parseRecord", () => {
     expect(record?.sourceName).toBe("Apple Watch");
     expect(record?.unit).toBe("count/min");
     expect(record?.value).toBe(72);
+    expect(record?.startDateCalendarDay).toBe("2024-03-01");
   });
 
   it("returns null when type is missing", () => {

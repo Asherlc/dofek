@@ -19,6 +19,8 @@ The `export.xml` can be 1GB+ for users with years of data. We use a SAX streamin
 
 **Date format**: `"2024-03-01 10:30:00 -0500"` (not ISO 8601). Parse with `new Date(str)` which handles this format.
 
+**Daily aggregation boundary**: For `daily_metrics` and `nutrition_daily`, always use the source calendar day from the raw Apple Health timestamp string (`YYYY-MM-DD`) rather than `toISOString().slice(0, 10)`. Converting through UTC can shift near-midnight local records into the next/previous day and make dashboard daily charts appear empty or delayed.
+
 ### Record Elements
 
 ```xml
