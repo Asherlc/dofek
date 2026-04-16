@@ -121,9 +121,7 @@ describe("Slack Bot — Refinement Coverage", () => {
           messages: [
             {
               bot_id: "B1",
-              blocks: [
-                { type: "actions", elements: [{ action_id: "confirm_food", value: "id" }] },
-              ],
+              blocks: [{ type: "actions", elements: [{ action_id: "confirm_food", value: "id" }] }],
             },
           ],
         }),
