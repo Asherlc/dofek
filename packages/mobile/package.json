@@ -2,7 +2,7 @@
   "name": "dofek-mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "index.js",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=true sb-rn-get-stories && EXPO_PUBLIC_STORYBOOK_ENABLED=true expo start --clear",

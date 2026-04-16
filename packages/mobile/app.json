@@ -98,10 +98,6 @@
             "deploymentTarget": "16.0",
             "extraPods": [
               {
-                "name": "Sentry",
-                "path": "../native/sentry-pod"
-              },
-              {
                 "name": "ExpoHealthKit",
                 "path": "../modules/health-kit/ios"
               },
@@ -121,10 +117,7 @@
           }
         }
       ],
-      "@bacons/apple-targets",
-      "./plugins/with-watch-target-exclusions",
-      "./plugins/with-watch-scheme",
-      "./plugins/with-podfile-post-install"
+      "@bacons/apple-targets"
     ]
   }
 }
