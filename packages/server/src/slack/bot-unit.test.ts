@@ -57,9 +57,9 @@ import { slackTimestampToDateString } from "./food-entry-repository.ts";
 const mockAnalyze = vi.mocked(analyzeNutritionItems);
 const mockRefine = vi.mocked(refineNutritionItems);
 
-type FlexibleMock = ReturnType<typeof vi.fn>;
+export type FlexibleMock = ReturnType<typeof vi.fn>;
 
-interface MockSlackApp {
+export interface MockSlackApp {
   message: ReturnType<typeof vi.fn>;
   action: ReturnType<typeof vi.fn>;
   event: ReturnType<typeof vi.fn>;
@@ -72,7 +72,7 @@ interface MockSlackApp {
  * typed as `T`. Uses `Partial<T>` internally so the single `as T` assertion is
  * valid (Partial<T> always overlaps with T).
  */
-function mockAs<T extends object>(partial: Partial<T>): T {
+export function mockAs<T extends object>(partial: Partial<T>): T {
   const result: T = partial;
   return result;
 }
@@ -82,20 +82,20 @@ function mockAs<T extends object>(partial: Partial<T>): T {
  * when the source type (e.g. a real Slack App) is structurally different from
  * the mock interface.
  */
-function castMock<T>(value: object): T {
+export function castMock<T>(value: object): T {
   return value;
 }
 
-function createMockDb(): import("dofek/db").Database {
+export function createMockDb(): import("dofek/db").Database {
   return mockAs<import("dofek/db").Database>({ execute: vi.fn().mockResolvedValue([]) });
 }
 
-function getMockExecute(db: import("dofek/db").Database): FlexibleMock {
+export function getMockExecute(db: import("dofek/db").Database): FlexibleMock {
   const mock: FlexibleMock = db.execute;
   return mock;
 }
 
-function makeFoodItem(overrides: Partial<NutritionItemWithMeal> = {}): NutritionItemWithMeal {
+export function makeFoodItem(overrides: Partial<NutritionItemWithMeal> = {}): NutritionItemWithMeal {
   return {
     foodName: "Test Food",
     foodDescription: "1 serving",
@@ -117,7 +117,7 @@ function makeFoodItem(overrides: Partial<NutritionItemWithMeal> = {}): Nutrition
  * Helper: create a Slack bot in socket mode, capture all registered handlers,
  * and return them for direct invocation.
  */
-function setupHandlers(db: ReturnType<typeof createMockDb>) {
+export function setupHandlers(db: ReturnType<typeof createMockDb>) {
   process.env.SLACK_BOT_TOKEN = "xoxb-test";
   process.env.SLACK_APP_TOKEN = "xapp-test";
 

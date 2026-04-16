@@ -88,7 +88,10 @@ export function extractLatestConfirmFromThread(
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
-          const ids = element.value.split(",").filter(Boolean);
+          const ids = element.value
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
           if (ids.length > 0) {
             return { entryIds: ids, messageTs: threadMsg.ts ?? null };
           }
