@@ -52,7 +52,7 @@ vi.mock("../lib/cache.ts", () => ({
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { queryCache } from "../lib/cache.ts";
 import { createSlackBot } from "./bot.ts";
-import { slackTimestampToDateString } from "./food-entry-repository.ts";
+import { FoodEntryRepository, slackTimestampToDateString } from "./food-entry-repository.ts";
 
 const mockAnalyze = vi.mocked(analyzeNutritionItems);
 const mockRefine = vi.mocked(refineNutritionItems);
@@ -566,6 +566,213 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(mockRefine).not.toHaveBeenCalled();
       expect(mockAnalyze).toHaveBeenCalled();
+    });
+
+    it("refines items and updates confirmation message when previous entries are pending", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const previousItem = makeFoodItem({ foodName: "Old Pizza", calories: 500 });
+      const newItem = makeFoodItem({ foodName: "New Pizza", calories: 400 });
+
+      const loadSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
+        .mockResolvedValueOnce([previousItem]);
+      const deleteSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+        .mockResolvedValueOnce(undefined);
+      const saveSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "saveUnconfirmed")
+        .mockResolvedValueOnce(["new-entry-id"]);
+
+      mockRefine.mockResolvedValueOnce({ items: [newItem], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "refine-thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B123",
+                ts: "old-confirm-ts",
+                blocks: [
+                  { type: "actions", elements: [{ action_id: "confirm_food", value: "old-id" }] },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "actually lower the calories",
+          ts: "2000.000",
+          thread_ts: "1000.000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      expect(loadSpy).toHaveBeenCalledWith(["old-id"]);
+      expect(mockRefine).toHaveBeenCalled();
+      expect(deleteSpy).toHaveBeenCalledWith(["old-id"]);
+      expect(saveSpy).toHaveBeenCalled();
+
+      // Confirmation message updated with refined items
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ ts: "refine-thinking-ts", blocks: expect.any(Array) }),
+      );
+
+      // Old confirmation message retired
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ts: "old-confirm-ts",
+          text: "Superseded by a newer edit below.",
+          blocks: [],
+        }),
+      );
+
+      loadSpy.mockRestore();
+      deleteSpy.mockRestore();
+      saveSpy.mockRestore();
+    });
+
+    it("sends error via say() when refinement throws", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const loadSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
+        .mockResolvedValueOnce([makeFoodItem()]);
+
+      mockRefine.mockRejectedValueOnce(new Error("AI refinement failed"));
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                ts: "confirm-ts",
+                blocks: [
+                  { type: "actions", elements: [{ action_id: "confirm_food", value: "old-id" }] },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: vi.fn() },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "refine please",
+          ts: "2000.000",
+          thread_ts: "1000.000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("AI refinement failed"),
+          thread_ts: "1000.000",
+        }),
+      );
+
+      loadSpy.mockRestore();
+    });
+
+    it("uses say() for confirmation when postMessage returns no ts during refinement", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      // lookupOrCreateUserId
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const loadSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
+        .mockResolvedValueOnce([makeFoodItem()]);
+      const deleteSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+        .mockResolvedValueOnce(undefined);
+      const saveSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "saveUnconfirmed")
+        .mockResolvedValueOnce(["new-id"]);
+
+      mockRefine.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      // postMessage returns no ts → falls back to say()
+      const chatPostMessage = vi.fn().mockResolvedValue({});
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B1",
+                blocks: [
+                  { type: "actions", elements: [{ action_id: "confirm_food", value: "old-id" }] },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "tweak it",
+          ts: "200.000",
+          thread_ts: "100.000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({ thread_ts: "100.000", blocks: expect.any(Array) }),
+      );
+
+      loadSpy.mockRestore();
+      deleteSpy.mockRestore();
+      saveSpy.mockRestore();
     });
 
     it("falls back to fresh analysis when thread entries are no longer pending", async () => {
