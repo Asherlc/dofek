@@ -21,17 +21,17 @@ const latestErrorRowSchema = z.object({
 
 const providerStatsRowSchema = z.object({
   provider_id: z.string(),
-  activities: z.string(),
-  daily_metrics: z.string(),
-  sleep_sessions: z.string(),
-  body_measurements: z.string(),
-  food_entries: z.string(),
-  health_events: z.string(),
-  metric_stream: z.string(),
-  nutrition_daily: z.string(),
-  lab_panels: z.string(),
-  lab_results: z.string(),
-  journal_entries: z.string(),
+  activities: z.coerce.number(),
+  daily_metrics: z.coerce.number(),
+  sleep_sessions: z.coerce.number(),
+  body_measurements: z.coerce.number(),
+  food_entries: z.coerce.number(),
+  health_events: z.coerce.number(),
+  metric_stream: z.coerce.number(),
+  nutrition_daily: z.coerce.number(),
+  lab_panels: z.coerce.number(),
+  lab_results: z.coerce.number(),
+  journal_entries: z.coerce.number(),
 });
 
 // ---------------------------------------------------------------------------
@@ -164,75 +164,37 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       providerStatsRowSchema,
-      sql`
-      SELECT
-        p.id AS provider_id,
-        COALESCE(a.cnt, 0)::text AS activities,
-        COALESCE(dm.cnt, 0)::text AS daily_metrics,
-        COALESCE(ss.cnt, 0)::text AS sleep_sessions,
-        COALESCE(bm.cnt, 0)::text AS body_measurements,
-        COALESCE(fe.cnt, 0)::text AS food_entries,
-        COALESCE(he.cnt, 0)::text AS health_events,
-        COALESCE(ms.cnt, 0)::text AS metric_stream,
-        COALESCE(nd.cnt, 0)::text AS nutrition_daily,
-        COALESCE(lp.cnt, 0)::text AS lab_panels,
-        COALESCE(lr.cnt, 0)::text AS lab_results,
-        COALESCE(je.cnt, 0)::text AS journal_entries
-      FROM (
-        SELECT DISTINCT provider_id AS id
-        FROM fitness.oauth_token
-        WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.activity WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.daily_metrics WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.sleep_session WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.body_measurement WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.food_entry WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.health_event WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.metric_stream WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.nutrition_daily WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.lab_panel WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.lab_result WHERE user_id = ${this.#userId}
-        UNION
-        SELECT DISTINCT provider_id AS id FROM fitness.journal_entry WHERE user_id = ${this.#userId}
-      ) p
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.activity WHERE user_id = ${this.#userId} GROUP BY provider_id) a ON a.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.daily_metrics WHERE user_id = ${this.#userId} GROUP BY provider_id) dm ON dm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.sleep_session WHERE user_id = ${this.#userId} GROUP BY provider_id) ss ON ss.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.body_measurement WHERE user_id = ${this.#userId} GROUP BY provider_id) bm ON bm.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.food_entry WHERE user_id = ${this.#userId} AND confirmed = true GROUP BY provider_id) fe ON fe.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.health_event WHERE user_id = ${this.#userId} GROUP BY provider_id) he ON he.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.metric_stream WHERE user_id = ${this.#userId} GROUP BY provider_id) ms ON ms.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.nutrition_daily WHERE user_id = ${this.#userId} GROUP BY provider_id) nd ON nd.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_panel WHERE user_id = ${this.#userId} GROUP BY provider_id) lp ON lp.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.lab_result WHERE user_id = ${this.#userId} GROUP BY provider_id) lr ON lr.provider_id = p.id
-      LEFT JOIN (SELECT provider_id, count(*) AS cnt FROM fitness.journal_entry WHERE user_id = ${this.#userId} GROUP BY provider_id) je ON je.provider_id = p.id
-      ORDER BY p.id
-    `,
+      sql`SELECT
+            provider_id,
+            activities,
+            daily_metrics,
+            sleep_sessions,
+            body_measurements,
+            food_entries,
+            health_events,
+            metric_stream,
+            nutrition_daily,
+            lab_panels,
+            lab_results,
+            journal_entries
+          FROM fitness.provider_stats
+          WHERE user_id = ${this.#userId}
+          ORDER BY provider_id`,
     );
 
     return rows.map((row) => ({
       providerId: row.provider_id,
-      activities: Number(row.activities),
-      dailyMetrics: Number(row.daily_metrics),
-      sleepSessions: Number(row.sleep_sessions),
-      bodyMeasurements: Number(row.body_measurements),
-      foodEntries: Number(row.food_entries),
-      healthEvents: Number(row.health_events),
-      metricStream: Number(row.metric_stream),
-      nutritionDaily: Number(row.nutrition_daily),
-      labPanels: Number(row.lab_panels),
-      labResults: Number(row.lab_results),
-      journalEntries: Number(row.journal_entries),
+      activities: row.activities,
+      dailyMetrics: row.daily_metrics,
+      sleepSessions: row.sleep_sessions,
+      bodyMeasurements: row.body_measurements,
+      foodEntries: row.food_entries,
+      healthEvents: row.health_events,
+      metricStream: row.metric_stream,
+      nutritionDaily: row.nutrition_daily,
+      labPanels: row.lab_panels,
+      labResults: row.lab_results,
+      journalEntries: row.journal_entries,
     }));
   }
 }
