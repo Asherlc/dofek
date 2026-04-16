@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -81,5 +83,84 @@ describe("app.config", () => {
       organization: "east-bay-software",
       project: "dofek-mobile",
     });
+  });
+
+  it("fails fast when HealthKit entitlements are missing from app config", () => {
+    const temporaryDirectoryPath = mkdtempSync(resolve(tmpdir(), "dofek-mobile-config-"));
+    const appJsonPath = resolve(temporaryDirectoryPath, "app.json");
+    writeFileSync(
+      appJsonPath,
+      JSON.stringify(
+        {
+          expo: {
+            name: "Dofek",
+            slug: "dofek",
+            ios: {
+              entitlements: {},
+            },
+            plugins: ["./plugins/with-healthkit-entitlements"],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const executionResult = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", appConfigPath],
+      {
+        cwd: temporaryDirectoryPath,
+        encoding: "utf8",
+      },
+    );
+
+    expect(executionResult.status).not.toBe(0);
+    expect(`${executionResult.stdout}${executionResult.stderr}`).toContain(
+      "Missing required iOS entitlement",
+    );
+  });
+
+  it("fails fast when the HealthKit entitlement plugin is not configured", () => {
+    const temporaryDirectoryPath = mkdtempSync(resolve(tmpdir(), "dofek-mobile-config-"));
+    const appJsonPath = resolve(temporaryDirectoryPath, "app.json");
+    writeFileSync(
+      appJsonPath,
+      JSON.stringify(
+        {
+          expo: {
+            name: "Dofek",
+            slug: "dofek",
+            ios: {
+              entitlements: {
+                "com.apple.developer.healthkit": true,
+                "com.apple.developer.healthkit.background-delivery": true,
+              },
+              infoPlist: {
+                NSHealthShareUsageDescription: "Reads health data.",
+                NSHealthUpdateUsageDescription: "Writes dietary data.",
+              },
+            },
+            plugins: [],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const executionResult = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", appConfigPath],
+      {
+        cwd: temporaryDirectoryPath,
+        encoding: "utf8",
+      },
+    );
+
+    expect(executionResult.status).not.toBe(0);
+    expect(`${executionResult.stdout}${executionResult.stderr}`).toContain(
+      "./plugins/with-healthkit-entitlements",
+    );
   });
 });

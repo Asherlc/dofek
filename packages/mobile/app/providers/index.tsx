@@ -56,16 +56,6 @@ async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   return blob;
 }
 
-function getHealthKitConnectErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Failed to connect to Apple Health";
-  }
-  if (error.message.includes("com.apple.developer.healthkit entitlement")) {
-    return "This app build is missing Apple Health capability. Please contact support or check for updates.";
-  }
-  return error.message;
-}
-
 export default function ProvidersScreen() {
   const router = useRouter();
   const { serverUrl, sessionToken } = useAuth();
@@ -99,6 +89,7 @@ export default function ProvidersScreen() {
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
   // HealthKit sync state
+  const [healthKitEntitlementMissing, setHealthKitEntitlementMissing] = useState(false);
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
   const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
@@ -129,7 +120,18 @@ export default function ProvidersScreen() {
       setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setHealthKitProgress(getHealthKitConnectErrorMessage(error));
+      if (
+        error instanceof Error &&
+        error.message.toLowerCase().includes("com.apple.developer.healthkit entitlement")
+      ) {
+        // Build configuration issue — silently degrade to import-only mode
+        setHealthKitEntitlementMissing(true);
+        setHealthKitProgress(undefined);
+      } else {
+        setHealthKitProgress(
+          error instanceof Error ? error.message : "Failed to connect to Apple Health",
+        );
+      }
     } finally {
       setHealthKitSyncing(false);
     }
@@ -413,7 +415,7 @@ export default function ProvidersScreen() {
     [serverUrl, sessionToken, trpcUtils],
   );
 
-  const healthKitAvailable = isHealthKitAvailable();
+  const healthKitAvailable = isHealthKitAvailable() && !healthKitEntitlementMissing;
 
   const providerList: Provider[] = (providers.data ?? []).map((p) => ({
     id: p.id,

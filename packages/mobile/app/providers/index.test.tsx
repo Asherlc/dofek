@@ -1291,7 +1291,11 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("shows actionable message when Apple Health entitlement is missing", async () => {
+  it("silently degrades to import-only when Apple Health entitlement is missing", async () => {
+    const { captureException } = await import("../../lib/telemetry");
+    const mockCaptureException = vi.mocked(captureException);
+    mockCaptureException.mockClear();
+
     mockHasEverAuthorized.mockReturnValue(false);
     mockRequestPermissions.mockRejectedValue(
       new Error("Missing com.apple.developer.healthkit entitlement."),
@@ -1308,12 +1312,17 @@ describe("ProvidersScreen", () => {
     const appleCard = within(screen.getByTestId("provider-card-apple_health"));
     fireEvent.click(appleCard.getByText("Connect"));
 
+    // Should degrade to import-only mode with no error message
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "This app build is missing Apple Health capability. Please contact support or check for updates.",
-        ),
-      ).toBeTruthy();
+      const card = within(screen.getByTestId("provider-card-apple_health"));
+      expect(card.getByText("Import only")).toBeTruthy();
+      expect(card.queryByText("Connect")).toBeNull();
     });
+
+    // Should report to Sentry
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("healthkit entitlement") }),
+      expect.objectContaining({ context: "healthkit-connect" }),
+    );
   });
 });
