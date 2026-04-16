@@ -6,11 +6,6 @@ import { z } from "zod";
 const PREVIEW_CHANNEL = process.env.PREVIEW_CHANNEL;
 const PREVIEW_BUNDLE_IDENTIFIER = process.env.PREVIEW_BUNDLE_IDENTIFIER;
 const HEALTH_KIT_PLUGIN_PATH = "./plugins/with-healthkit-entitlements";
-const REQUIRED_HEALTH_KIT_ENTITLEMENTS = [
-  "com.apple.developer.healthkit",
-  "com.apple.developer.healthkit.background-delivery",
-  "com.apple.developer.healthkit.access",
-] as const;
 const REQUIRED_HEALTH_KIT_USAGE_KEYS = [
   "NSHealthShareUsageDescription",
   "NSHealthUpdateUsageDescription",
@@ -75,20 +70,6 @@ function assertHealthKitBuildPrerequisites(configToValidate: ExpoConfig): void {
   const iosConfig = configToValidate.ios;
   if (!iosConfig) {
     throw new Error("Missing iOS config. Apple Health integration requires an iOS configuration.");
-  }
-
-  const entitlements =
-    typeof iosConfig.entitlements === "object" &&
-    iosConfig.entitlements !== null &&
-    !Array.isArray(iosConfig.entitlements)
-      ? iosConfig.entitlements
-      : {};
-  for (const entitlementKey of REQUIRED_HEALTH_KIT_ENTITLEMENTS) {
-    if (entitlements[entitlementKey] !== true) {
-      throw new Error(
-        `Missing required iOS entitlement "${entitlementKey}" in app config. Apple Health must be enabled at build time.`,
-      );
-    }
   }
 
   const infoPlist =
