@@ -102,6 +102,10 @@ jobs:
               exit $up_status
             fi
 
+            # Apply migrations explicitly before rolling out app services.
+            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh \
+              compose run --rm web migrate
+
             # Zero-downtime rollout for both services
             INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh rollout web
 
