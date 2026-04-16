@@ -45,7 +45,7 @@ export interface PendingEntryStore {
   findIdsByMessage(channelId: string, confirmationMessageTs: string): Promise<string[]>;
 }
 
-class InMemoryPendingEntryStore implements PendingEntryStore {
+export class InMemoryPendingEntryStore implements PendingEntryStore {
   #entries = new Map<string, PendingSlackEntry>();
   #messageIndex = new Map<string, string[]>();
 
@@ -87,7 +87,7 @@ class InMemoryPendingEntryStore implements PendingEntryStore {
   }
 }
 
-class RedisPendingEntryStore implements PendingEntryStore {
+export class RedisPendingEntryStore implements PendingEntryStore {
   readonly #getRedisClient: () => Promise<RedisClient>;
 
   constructor(getRedisClient: () => Promise<RedisClient> = getSharedRedisClient) {

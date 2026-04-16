@@ -20,6 +20,7 @@
       }
     },
     "packages/server": {
+      "entry": ["src/index.ts"],
       "vitest": {
         "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]

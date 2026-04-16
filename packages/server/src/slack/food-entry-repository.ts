@@ -19,8 +19,8 @@ export const slackBlockSchema = z.object({
     .optional(),
 });
 
-export const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).catch("other");
-export const categorySchema = z
+const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).catch("other");
+const categorySchema = z
   .enum([
     "beans_and_legumes",
     "beverages",
@@ -92,18 +92,6 @@ export function slackTimestampToDateString(slackTs: string, timezone: string): s
   const epochSeconds = Number.parseFloat(slackTs);
   const date = new Date(epochSeconds * 1000);
   return date.toLocaleDateString("en-CA", { timeZone: timezone });
-}
-
-/**
- * Extract food entry IDs from thread messages returned by conversations.replies.
- * Walks backwards to find the most recent bot message with a confirm button.
- * The button value contains comma-separated food_entry UUIDs.
- */
-export function extractEntryIdsFromThread(
-  messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
-): string[] | null {
-  const context = extractLatestConfirmFromThread(messages);
-  return context?.entryIds ?? null;
 }
 
 /**
