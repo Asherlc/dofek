@@ -113,3 +113,12 @@ resource "cloudflare_dns_record" "databasus_dofek_asherlc" {
   proxied = false
   ttl     = 1
 }
+
+resource "cloudflare_dns_record" "pgadmin_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "pgadmin.dofek.asherlc.com"
+  content = hcloud_server.dofek.ipv4_address
+  proxied = false
+  ttl     = 1
+}

@@ -183,6 +183,34 @@ services:
       - traefik.http.routers.databasus.middlewares=authentik-auth
       - traefik.http.services.databasus.loadbalancer.server.port=4005
 
+  # ── pgAdmin (PostgreSQL management UI) ─────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:9.14.0
+    container_name: dofek-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL is required}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD is required}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pgadmin.rule=Host(`pgadmin.dofek.asherlc.com`)
+      - traefik.http.routers.pgadmin.entrypoints=websecure
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.routers.pgadmin.tls.certresolver=le
+      - traefik.http.routers.pgadmin.middlewares=authentik-auth
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+
   # ── Redis ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
@@ -300,6 +328,7 @@ volumes:
   letsencrypt:
   db_data:
   databasus_data:
+  pgadmin_data:
   redis_data:
   job_files:
   portainer_data:
