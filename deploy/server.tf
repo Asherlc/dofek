@@ -88,8 +88,8 @@ resource "terraform_data" "deploy_compose" {
       "cd /opt/dofek",
       "test -f .env.deploy || printf 'IMAGE_TAG=latest\\n' > .env.deploy",
       "test -s .env.prod || { echo 'ERROR: .env.prod is missing or empty. Run secret-sync first.' >&2; exit 1; }",
-      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml pull --ignore-pull-failures db redis collector ota databasus traefik portainer netdata",
-      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d db redis collector ota databasus traefik portainer netdata",
+      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml pull --ignore-pull-failures db redis collector ota databasus pgadmin traefik portainer netdata",
+      "docker compose --env-file .env.prod --env-file .env.deploy -f docker-compose.deploy.yml up -d db redis collector ota databasus pgadmin traefik portainer netdata",
     ]
   }
 }

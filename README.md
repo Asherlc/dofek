@@ -197,7 +197,7 @@ deploy/
 └── .gitignore
 ```
 
-Docker Compose manages all services. Traefik handles TLS termination (Let's Encrypt via Cloudflare DNS challenge) and reverse proxy. Zero-downtime deploys use [docker-rollout](https://github.com/Wowu/docker-rollout). Management UIs: Portainer (`portainer.dofek.asherlc.com`) for Docker, Netdata (`netdata.dofek.asherlc.com`) for server health — both behind Authentik forward auth.
+Docker Compose manages all services. Traefik handles TLS termination (Let's Encrypt via Cloudflare DNS challenge) and reverse proxy. Zero-downtime deploys use [docker-rollout](https://github.com/Wowu/docker-rollout). Management UIs: Portainer (`portainer.dofek.asherlc.com`) for Docker, Netdata (`netdata.dofek.asherlc.com`) for server health, Databasus (`databasus.dofek.asherlc.com`) for backups, and pgAdmin (`pgadmin.dofek.asherlc.com`) for PostgreSQL administration. Portainer, Netdata, Databasus, and pgAdmin are behind Authentik forward auth.
 
 ### Production architecture
 
@@ -227,6 +227,7 @@ All services run in a single Docker Compose stack (`deploy/docker-compose.deploy
 | `ota` | ghcr.io/axelmarciano/expo-open-ota | Self-hosted Expo OTA server (ota.dofek.asherlc.com) |
 | `collector` | otel/opentelemetry-collector-contrib | OTel Collector — logs/traces → Axiom |
 | `db-backup` | databasus/databasus | DB backups to Cloudflare R2 (databasus.dofek.asherlc.com) |
+| `pgadmin` | dpage/pgadmin4 | PostgreSQL management UI (pgadmin.dofek.asherlc.com) |
 | `portainer` | portainer/portainer-ce | Docker management UI (portainer.dofek.asherlc.com) |
 | `netdata` | netdata/netdata | Server health monitoring (netdata.dofek.asherlc.com) |
 
