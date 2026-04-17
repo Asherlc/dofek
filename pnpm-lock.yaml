@@ -259,9 +259,6 @@ importers:
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
-      '@expo/config-plugins':
-        specifier: 55.0.7
-        version: 55.0.7
       '@opentelemetry/api-logs':
         specifier: 0.214.0
         version: 0.214.0
