@@ -1,0 +1,60 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker/master/packages/core/schema/stryker-core.schema.json",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "vitest": {
+    "configFile": "vitest.config.mutation.ts"
+  },
+  "ignoreStatic": true,
+  "incremental": false,
+  "mutate": [
+    "src/**/*.ts",
+    "packages/format/src/**/*.ts",
+    "packages/scoring/src/**/*.ts",
+    "packages/nutrition/src/**/*.ts",
+    "packages/training/src/**/*.ts",
+    "packages/recovery/src/**/*.ts",
+    "packages/zones/src/**/*.ts",
+    "packages/stats/src/**/*.ts",
+    "packages/onboarding/src/**/*.ts",
+    "packages/providers-meta/src/**/*.ts",
+    "packages/auth/src/**/*.ts",
+    "packages/server/src/**/*.ts",
+    "packages/web/src/lib/**/*.ts",
+    "packages/garmin-connect/src/**/*.ts",
+    "packages/eight-sleep/src/**/*.ts",
+    "packages/whoop-whoop/src/**/*.ts",
+    "packages/trainerroad-client/src/**/*.ts",
+    "packages/velohero-client/src/**/*.ts",
+    "packages/zwift-client/src/**/*.ts",
+    "packages/trainingpeaks-connect/src/**/*.ts",
+    "packages/mobile/app/**/*.{ts,tsx}",
+    "packages/mobile/components/**/*.{ts,tsx}",
+    "packages/mobile/lib/**/*.{ts,tsx}",
+    "!**/*.stories.tsx",
+    "!**/*.stories.ts",
+    "!**/*.test.ts",
+    "!**/*.test.tsx",
+    "!**/test-helpers.ts",
+    "!**/fixtures/**",
+    "!src/db/schema.ts"
+  ],
+  "ignorePatterns": [
+    "dist/**",
+    ".codex/**",
+    ".claude/**",
+    ".context/**"
+  ],
+  "mutator": {
+    "excludedMutations": ["StringLiteral"]
+  },
+  "testRunnerNodeArgs": ["--import", "tsx"],
+  "dryRunTimeoutMinutes": 15,
+  "timeoutMS": 15000,
+  "thresholds": {
+    "high": 100,
+    "low": 90,
+    "break": 75
+  },
+  "reporters": ["clear-text", "progress"]
+}

@@ -21,7 +21,6 @@ NODE="node --experimental-transform-types --enable-source-maps --disable-warning
 
 case "${1:-sync}" in
   web)
-    $NODE src/db/run-migrate.ts
     exec $NODE packages/server/src/index.ts
     ;;
   sync)

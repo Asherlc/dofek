@@ -114,6 +114,8 @@ describe("dailyMetricsRouter", () => {
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
           latest_date: "2024-01-16",
+          latest_steps_date: "2024-01-16",
+          latest_active_energy_date: "2024-01-16",
         },
       ];
       const caller = makeCaller(rows);
@@ -155,6 +157,8 @@ describe("dailyMetricsRouter", () => {
           latest_active_energy: 550,
           latest_skin_temp: 36.6,
           latest_date: "2024-01-16",
+          latest_steps_date: "2024-01-16",
+          latest_active_energy_date: "2024-01-16",
         },
       ];
       const caller = makeCaller(rows);

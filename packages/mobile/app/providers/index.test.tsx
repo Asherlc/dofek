@@ -655,6 +655,24 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("renders provider cards even while provider stats are still loading", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [connectedProvider],
+      isLoading: false,
+    });
+    mockStatsQuery.mockReturnValue({
+      data: [],
+      isLoading: true,
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("provider-card-wahoo")).toBeTruthy();
+    });
+  });
+
   it("does not render Full sync link for disconnected providers", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [disconnectedProvider],

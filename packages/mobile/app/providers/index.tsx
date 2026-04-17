@@ -428,7 +428,7 @@ export default function ProvidersScreen() {
 
   const { refreshing, onRefresh } = useRefresh();
 
-  const isLoading = providers.isLoading || stats.isLoading;
+  const isLoading = providers.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
 
   if (isLoading) {

@@ -61,6 +61,8 @@ const trendsRowSchema = z.object({
   latest_active_energy: z.coerce.number().nullable(),
   latest_skin_temp: z.coerce.number().nullable(),
   latest_date: dateStringSchema.nullable(),
+  latest_steps_date: dateStringSchema.nullable(),
+  latest_active_energy_date: dateStringSchema.nullable(),
 });
 
 export type TrendsRow = z.infer<typeof trendsRowSchema>;
@@ -96,9 +98,16 @@ const KEY_METRICS = ["steps", "active_energy_kcal"] as const;
 type KeyMetric = (typeof KEY_METRICS)[number];
 
 const KEY_METRIC_TREND_FIELDS = {
-  steps: { avg: "avg_steps", latest: "latest_steps" },
-  active_energy_kcal: { avg: "avg_active_energy", latest: "latest_active_energy" },
-} satisfies Record<KeyMetric, { avg: keyof TrendsRow; latest: keyof TrendsRow }>;
+  steps: { avg: "avg_steps", latest: "latest_steps", latestDate: "latest_steps_date" },
+  active_energy_kcal: {
+    avg: "avg_active_energy",
+    latest: "latest_active_energy",
+    latestDate: "latest_active_energy_date",
+  },
+} satisfies Record<
+  KeyMetric,
+  { avg: keyof TrendsRow; latest: keyof TrendsRow; latestDate: keyof TrendsRow }
+>;
 
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {
@@ -305,10 +314,17 @@ export class DailyMetricsRepository extends BaseRepository {
               FROM current
             ),
             latest AS (
-              SELECT resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c, date
+              SELECT
+                (ARRAY_AGG(resting_hr ORDER BY date DESC) FILTER (WHERE resting_hr IS NOT NULL))[1] AS resting_hr,
+                (ARRAY_AGG(hrv ORDER BY date DESC) FILTER (WHERE hrv IS NOT NULL))[1] AS hrv,
+                (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
+                (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
+                (ARRAY_AGG(active_energy_kcal ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal,
+                (ARRAY_AGG(skin_temp_c ORDER BY date DESC) FILTER (WHERE skin_temp_c IS NOT NULL))[1] AS skin_temp_c,
+                (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps_date,
+                (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal_date,
+                MAX(date) AS date
               FROM current
-              ORDER BY date DESC
-              LIMIT 1
             )
             SELECT
               stats.*,
@@ -318,7 +334,9 @@ export class DailyMetricsRepository extends BaseRepository {
               latest.steps AS latest_steps,
               latest.active_energy_kcal AS latest_active_energy,
               latest.skin_temp_c AS latest_skin_temp,
-              latest.date AS latest_date
+              latest.date AS latest_date,
+              latest.steps_date AS latest_steps_date,
+              latest.active_energy_kcal_date AS latest_active_energy_date
             FROM stats LEFT JOIN latest ON true`,
       );
 
@@ -339,6 +357,20 @@ export class DailyMetricsRepository extends BaseRepository {
     ) {
       const refreshed = await this.#tryRefreshView(
         "latest trends missing metrics present in base table",
+      );
+      if (refreshed) {
+        const retryRows = await trendsQuery();
+        result = retryRows[0] ?? null;
+      }
+    }
+
+    if (
+      result &&
+      result.latest_date != null &&
+      (await this.#latestTrendsOutdatedMetrics(result, endDate))
+    ) {
+      const refreshed = await this.#tryRefreshView(
+        "latest trends outdated vs base table metric dates",
       );
       if (refreshed) {
         const retryRows = await trendsQuery();
@@ -382,6 +414,29 @@ export class DailyMetricsRepository extends BaseRepository {
       endDate,
       false,
     );
+  }
+
+  async #latestTrendsOutdatedMetrics(result: TrendsRow, endDate: string): Promise<boolean> {
+    const staleColumns: KeyMetric[] = [];
+    for (const column of KEY_METRICS) {
+      const fields = KEY_METRIC_TREND_FIELDS[column];
+      const metricValue = result[fields.latest];
+      const metricDate = result[fields.latestDate];
+      if (metricValue == null || metricDate == null) continue;
+      if (metricDate >= endDate) continue;
+      staleColumns.push(column);
+    }
+    if (staleColumns.length === 0) return false;
+
+    for (const column of staleColumns) {
+      const fields = KEY_METRIC_TREND_FIELDS[column];
+      const metricDate = result[fields.latestDate];
+      if (typeof metricDate !== "string") continue;
+      const hasNewer = await this.#baseTableHasMetricData([column], metricDate, endDate, false);
+      if (hasNewer) return true;
+    }
+
+    return false;
   }
 
   async #baseTableHasMetricData(

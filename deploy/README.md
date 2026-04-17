@@ -45,7 +45,8 @@ Deployments are triggered by GitHub Actions or manually via Terraform.
 
 1. **Build**: GitHub Actions builds the `server` and `ml` (training-export-worker) images and pushes them to GHCR.
 2. **Apply**: `terraform apply` updates the server state and triggers the `remote-exec` provisioner.
-3. **Rollout**: The server executes `/opt/dofek/run-compose-with-infisical.sh rollout up -d` to perform a zero-downtime update using the `docker-rollout` plugin.
+3. **Migrate**: Deploy workflow runs `compose run --rm web migrate` after `db`/`redis` are healthy.
+4. **Rollout**: The server executes `/opt/dofek/run-compose-with-infisical.sh rollout up -d` to perform a zero-downtime update using the `docker-rollout` plugin.
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)

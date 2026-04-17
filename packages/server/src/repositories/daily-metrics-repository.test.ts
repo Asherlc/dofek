@@ -78,6 +78,8 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
     latest_active_energy: "450",
     latest_skin_temp: "33.2",
     latest_date: "2025-03-15",
+    latest_steps_date: "2025-03-15",
+    latest_active_energy_date: "2025-03-15",
     ...overrides,
   };
 }
@@ -493,13 +495,12 @@ describe("DailyMetricsRepository", () => {
       expect(result?.latest_hrv).toBe(48);
       expect(result?.avg_hrv).toBe(43.8);
 
-      // Verify the SQL uses a "latest" CTE with ORDER BY ... DESC LIMIT 1
+      // Verify the SQL uses a "latest" CTE to derive latest non-null values
       // instead of requiring an exact date match on endDate.
       const sqlArg = execute.mock.calls[0]?.[0];
       const sqlText = JSON.stringify(sqlArg);
       expect(sqlText).toContain("latest");
-      expect(sqlText).toContain("ORDER BY date DESC");
-      expect(sqlText).toContain("LIMIT 1");
+      expect(sqlText).toContain("ARRAY_AGG");
     });
 
     it("handles all-null trends row", async () => {

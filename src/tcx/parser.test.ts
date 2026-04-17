@@ -109,6 +109,52 @@ describe("parseTcx", () => {
     const points = parseTcx(buffer);
     expect(points).toHaveLength(2);
   });
+
+  it("handles malformed XML gracefully", () => {
+    const tcx = `<?xml version="1.0"?>
+    <TrainingCenterDatabase>
+      <Activities><Activity><Lap><Track>
+        <Trackpoint>
+          <Time>2024-01-15T10:00:00Z</Time>
+          <HeartRateBpm><Value>140</Value></HeartRateBpm>
+        <!-- missing closing tag -->
+      </Track></Lap></Activity></Activities>
+    </TrainingCenterDatabase>`;
+
+    const points = parseTcx(tcx);
+    // SAX parser will still try to find whatever it can
+    expect(Array.isArray(points)).toBe(true);
+  });
+
+  it("handles trackpoints without a Time tag", () => {
+    const tcx = `<?xml version="1.0"?>
+    <TrainingCenterDatabase>
+      <Activities><Activity><Lap><Track>
+        <Trackpoint>
+          <HeartRateBpm><Value>140</Value></HeartRateBpm>
+        </Trackpoint>
+      </Track></Lap></Activity></Activities>
+    </TrainingCenterDatabase>`;
+
+    const points = parseTcx(tcx);
+    // Should skip trackpoints without Time
+    expect(points).toHaveLength(0);
+  });
+
+  it("handles empty or whitespace-only tags", () => {
+    const tcx = `<?xml version="1.0"?>
+    <TrainingCenterDatabase>
+      <Activities><Activity><Lap><Track>
+        <Trackpoint>
+          <Time>  </Time>
+          <HeartRateBpm><Value>140</Value></HeartRateBpm>
+        </Trackpoint>
+      </Track></Lap></Activity></Activities>
+    </TrainingCenterDatabase>`;
+
+    const points = parseTcx(tcx);
+    expect(points).toHaveLength(0);
+  });
 });
 
 describe("tcxToSensorSamples", () => {

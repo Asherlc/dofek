@@ -64,3 +64,22 @@ gh run view <RUN_ID> --json jobs -q '.jobs[] | select(.conclusion == "failure") 
 | Swift Tests | Same — XCTAssert failures are inline |
 | Coverage | Usually fails because upstream test/build jobs failed; fix those first |
 | Unit & Integration Tests | Depends on unit/integration test jobs; check if they passed individually |
+
+## Deploy Rollout Healthcheck Failures
+
+If `Deploy App` fails during rollout with healthcheck output like `wget: can't connect to remote host: Connection refused`, verify whether the new container is still running startup work instead of listening yet.
+
+### How to diagnose quickly
+
+1. Pull full logs for the failed deploy job:
+```bash
+gh run view <RUN_ID> --job <JOB_ID> --log
+```
+2. Check if the failure happens during `rollout web` and includes repeated healthcheck failures.
+3. Correlate timestamps with container logs printed by rollout. If you see migration/view logs during the healthcheck window, startup work is blocking readiness.
+
+### Correct fix pattern
+
+1. Keep `web` startup focused on serving traffic.
+2. Run migrations as a separate explicit deploy step before `rollout web` (for example `compose run --rm web migrate`).
+3. Use `start_period` only as a bounded startup grace window, not as the primary migration strategy.
