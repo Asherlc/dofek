@@ -117,7 +117,8 @@
           }
         }
       ],
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      "./plugins/with-podfile-post-install"
     ]
   }
 }
