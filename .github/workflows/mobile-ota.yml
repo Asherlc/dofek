@@ -30,11 +30,12 @@ jobs:
           EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
           PR_NUMBER: ${{ github.event.number }}
         run: |
-          npx eoas@2.3.16 publish \
+          DEBUG=expo:* npx eoas@2.3.16 publish \
             --branch "pr-$PR_NUMBER" \
             --platform ios \
             --nonInteractive \
-            --packageRunner npx
+            --packageRunner npx \
+            --verbose
 
       - name: Generate comment body
         env:
