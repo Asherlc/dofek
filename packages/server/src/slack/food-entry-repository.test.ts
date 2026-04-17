@@ -290,6 +290,87 @@ describe("FoodEntryRepository", () => {
       expect(result.confirmedCount).toBe(2);
       expect(result.confirmedEntryIds).toEqual([id1, id2]);
     });
+
+    it("passes all optional micronutrients through to SQL insert values", async () => {
+      const store = new InMemoryPendingEntryStore();
+      const entryWithMicronutrients = makeEntry({
+        userId: "user-1",
+        item: makeItem({
+          polyunsaturatedFatG: 11,
+          monounsaturatedFatG: 12,
+          transFatG: 13,
+          cholesterolMg: 14,
+          potassiumMg: 15,
+          vitaminAMcg: 16,
+          vitaminCMg: 17,
+          vitaminDMcg: 18,
+          vitaminEMg: 19,
+          vitaminKMcg: 20,
+          vitaminB1Mg: 21,
+          vitaminB2Mg: 22,
+          vitaminB3Mg: 23,
+          vitaminB5Mg: 24,
+          vitaminB6Mg: 25,
+          vitaminB7Mcg: 26,
+          vitaminB9Mcg: 27,
+          vitaminB12Mcg: 28,
+          calciumMg: 29,
+          ironMg: 30,
+          magnesiumMg: 31,
+          zincMg: 32,
+          seleniumMcg: 33,
+          copperMg: 34,
+          manganeseMg: 35,
+          chromiumMcg: 36,
+          iodineMcg: 37,
+          omega3Mg: 38,
+          omega6Mg: 39,
+        }),
+      });
+      const [entryId] = await store.save([entryWithMicronutrients]);
+      if (!entryId) throw new Error("Expected ID");
+
+      const executedQueries: unknown[] = [];
+      const mockExecute = vi.fn(async (query: unknown) => {
+        executedQueries.push(query);
+        // ensureDofekProvider first query
+        if (executedQueries.length === 1) return [];
+        // INSERT ... RETURNING id second query
+        return [{ id: entryId }];
+      });
+
+      const repo = new FoodEntryRepository(asMock({ execute: mockExecute }), store);
+      const result = await repo.confirm([entryId]);
+
+      expect(result.confirmedCount).toBe(1);
+      expect(result.confirmedEntryIds).toEqual([entryId]);
+
+      const insertQuery = executedQueries[1];
+      const queryChunksCandidate =
+        typeof insertQuery === "object" && insertQuery !== null
+          ? Reflect.get(insertQuery, "queryChunks")
+          : undefined;
+      expect(Array.isArray(queryChunksCandidate)).toBe(true);
+      if (!Array.isArray(queryChunksCandidate)) {
+        throw new Error("Expected second execute() call to receive a SQL query with queryChunks");
+      }
+
+      const scalarBindValues = queryChunksCandidate
+        .filter(
+          (chunk): chunk is number | string | null =>
+            typeof chunk === "number" || typeof chunk === "string" || chunk === null,
+        )
+        .filter((chunk) => typeof chunk === "number");
+
+      const expectedMicronutrientValues = [
+        11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+        34, 35, 36, 37, 38, 39,
+      ];
+
+      for (const expectedValue of expectedMicronutrientValues) {
+        expect(scalarBindValues).toContain(expectedValue);
+      }
+    });
   });
 
   describe("deleteUnconfirmed", () => {
