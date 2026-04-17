@@ -39,6 +39,7 @@
         "NSHealthClinicalHealthRecordsShareUsageDescription": "Dofek reads your clinical health records (like lab results) to provide a complete picture of your health.",
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to your WHOOP strap via Bluetooth to record accelerometer data during workouts.",
+        "UIBackgroundModes": ["bluetooth-central", "fetch", "location"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
         "LSSupportsOpeningDocumentsInPlace": false,
         "CADisableMinimumFrameDurationOnPhone": true,
@@ -55,7 +56,6 @@
           }
         ]
       },
-      "backgroundModes": ["bluetooth-central", "fetch"],
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "com.apple.developer.healthkit.background-delivery": true,
@@ -75,11 +75,9 @@
         {
           "locationWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance.",
           "locationAlwaysAndWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance, even when the app is in the background.",
-          "isIosBackgroundLocationEnabled": true
+          "isIosBackgroundLocationEnabled": false
         }
       ],
-      "./plugins/with-background-modes",
-      "./plugins/with-healthkit-entitlements",
       [
         "@sentry/react-native/expo",
         {
@@ -99,10 +97,6 @@
           "ios": {
             "deploymentTarget": "16.0",
             "extraPods": [
-              {
-                "name": "Sentry",
-                "path": "../native/sentry-pod"
-              },
               {
                 "name": "ExpoHealthKit",
                 "path": "../modules/health-kit/ios"
@@ -124,8 +118,6 @@
         }
       ],
       "@bacons/apple-targets",
-      "./plugins/with-watch-target-exclusions",
-      "./plugins/with-watch-scheme",
       "./plugins/with-podfile-post-install"
     ]
   }

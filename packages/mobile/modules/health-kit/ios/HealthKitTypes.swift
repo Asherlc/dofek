@@ -84,6 +84,29 @@ let readTypes: Set<HKObjectType> = {
     types.insert(HKWorkoutType.workoutType())
     // Workout route (GPS data associated with workouts)
     types.insert(HKSeriesType.workoutRoute())
+
+    // Clinical Records (FHIR data) — iOS only; not available on macOS
+    #if os(iOS)
+    var clinicalTypes: [HKClinicalTypeIdentifier] = [
+        .allergyRecord,
+        .conditionRecord,
+        .coverageRecord,
+        .immunizationRecord,
+        .labResultRecord,
+        .medicationRecord,
+        .procedureRecord,
+        .vitalSignRecord,
+    ]
+    if #available(iOS 16.4, *) {
+        clinicalTypes.append(.clinicalNoteRecord)
+    }
+    for id in clinicalTypes {
+        if let type = HKClinicalType.clinicalType(forIdentifier: id) {
+            types.insert(type)
+        }
+    }
+    #endif
+
     return types
 }()
 

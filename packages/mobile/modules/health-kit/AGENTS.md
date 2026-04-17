@@ -35,4 +35,3 @@ Run from repo root:
 - `pnpm test:mobile -- packages/mobile/app/providers/index.test.tsx`
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
-- `pnpm test:mobile -- packages/mobile/plugins/with-healthkit-entitlements.test.ts`

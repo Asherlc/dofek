@@ -55,5 +55,10 @@ packages/mobile/sentry.options.json
 packages/mobile/native/sentry-pod/Sentry.xcframework/
 packages/mobile/native/sentry-pod/Sources/
 
+packages/ios/ios/Dofek.xcodeproj/project.xcworkspace/
+packages/ios/ios/Dofek.xcworkspace/
+packages/ios/ios/Pods
+packages/ios/ios/build
+
 # Gemini CLI
 .gemini/

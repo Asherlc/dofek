@@ -113,7 +113,7 @@ jobs:
           echo "Comparing $LAST_DEPLOY_SHA...$DIFF_SHA"
           DIFF=$(git diff --name-only "$LAST_DEPLOY_SHA"..."$DIFF_SHA")
           echo "$DIFF"
-          if echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|plugins/|targets/|native/|modules/.*/ios/)'; then
+          if echo "$DIFF" | grep -qE '^packages/mobile/(app\.json|app\.config\.ts|targets/|modules/.*/ios/)'; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "iOS native changes detected"
           else
