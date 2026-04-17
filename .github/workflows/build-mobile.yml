@@ -144,6 +144,14 @@ jobs:
           set -o pipefail
           BUILD_DIR="$(pwd)/packages/mobile/ios/build"
           xcodebuild build \
+            -project packages/mobile/ios/Pods/Pods.xcodeproj \
+            -target Pods-DofekWatch \
+            -sdk watchsimulator \
+            -configuration Debug \
+            SYMROOT="$BUILD_DIR" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tail -20
+          xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
             -target DofekWatch \
             -sdk watchsimulator \

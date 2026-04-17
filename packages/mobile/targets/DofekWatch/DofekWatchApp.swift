@@ -1,4 +1,6 @@
+#if canImport(Sentry)
 import Sentry
+#endif
 import SwiftUI
 
 @main
@@ -15,6 +17,7 @@ struct DofekWatchApp: App {
     )
 
     init() {
+        #if canImport(Sentry)
         SentrySDK.start { options in
             options.dsn = "https://971f1d756067049f70cdf4a04e8771a4@o4511073249067008.ingest.us.sentry.io/4511073386627073"
             // Disable iOS-specific features that are unavailable on watchOS.
@@ -26,6 +29,7 @@ struct DofekWatchApp: App {
             options.enableCaptureFailedRequests = false
             options.enableAppHangTracking = false
         }
+        #endif
     }
 
     var body: some Scene {
