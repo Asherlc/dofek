@@ -27,7 +27,7 @@ const POST_INSTALL_SNIPPET = [
   "    end",
 ].join("\n");
 
-/** @type {import('@expo/config-plugins').ConfigPlugin} */
+/** @type {import('expo/config-plugins').ConfigPlugin} */
 function withPodfilePostInstall(config) {
   return withDangerousMod(config, [
     "ios",

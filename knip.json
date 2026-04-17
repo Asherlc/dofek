@@ -38,6 +38,7 @@
         "app/**/*.{ts,tsx}",
         "modules/*/index.ts",
         "metro.config.js",
+        "plugins/*.js",
         "types/api.ts",
         "theme.ts"
       ],
