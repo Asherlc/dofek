@@ -98,7 +98,7 @@ final class HealthKitTypesTests: XCTestCase {
             XCTAssertTrue(readTypes.contains(type), "readTypes should contain \(identifier.rawValue)")
         }
 
-        if #available(iOS 14.2, *) {
+        if #available(iOS 16.4, *) {
             XCTAssertTrue(readTypes.contains(HKClinicalType.clinicalType(forIdentifier: .clinicalNoteRecord)!))
         }
         if #available(iOS 15.0, *) {
@@ -112,7 +112,7 @@ final class HealthKitTypesTests: XCTestCase {
         var expectedCount = 58
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
-        if #available(iOS 14.2, *) { expectedCount += 1 } // clinicalNote
+        if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
         if #available(iOS 15.0, *) { expectedCount += 1 } // coverage
         #endif
         XCTAssertEqual(readTypes.count, expectedCount)

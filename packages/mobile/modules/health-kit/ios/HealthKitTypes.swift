@@ -87,9 +87,8 @@ let readTypes: Set<HKObjectType> = {
 
     // Clinical Records (FHIR data) — iOS only; not available on macOS
     #if os(iOS)
-    let clinicalTypes: [HKClinicalTypeIdentifier] = [
+    var clinicalTypes: [HKClinicalTypeIdentifier] = [
         .allergyRecord,
-        .clinicalNoteRecord,
         .conditionRecord,
         .coverageRecord,
         .immunizationRecord,
@@ -98,6 +97,9 @@ let readTypes: Set<HKObjectType> = {
         .procedureRecord,
         .vitalSignRecord,
     ]
+    if #available(iOS 16.4, *) {
+        clinicalTypes.append(.clinicalNoteRecord)
+    }
     for id in clinicalTypes {
         if let type = HKClinicalType.clinicalType(forIdentifier: id) {
             types.insert(type)
