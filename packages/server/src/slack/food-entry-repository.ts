@@ -5,9 +5,10 @@ import { z } from "zod";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { createPendingEntryStore, type PendingEntryStore } from "./pending-entry-store.ts";
 
-export const slackBlockSchema = z.object({
-  type: z.string().optional(),
+const slackBlockSchema = z.object({
+  type: z.string(),
   elements: z
     .array(
       z.object({
@@ -18,34 +19,14 @@ export const slackBlockSchema = z.object({
     .optional(),
 });
 
-export const mealSchema = z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).catch("other");
-export const categorySchema = z
-  .enum([
-    "beans_and_legumes",
-    "beverages",
-    "breads_and_cereals",
-    "cheese_milk_and_dairy",
-    "eggs",
-    "fast_food",
-    "fish_and_seafood",
-    "fruit",
-    "meat",
-    "nuts_and_seeds",
-    "pasta_rice_and_noodles",
-    "salads",
-    "sauces_spices_and_spreads",
-    "snacks",
-    "soups",
-    "sweets_candy_and_desserts",
-    "vegetables",
-    "supplement",
-    "other",
-  ])
-  .catch("other");
-
 const DOFEK_PROVIDER_ID = "dofek";
 
 export const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
+
+export interface ThreadConfirmContext {
+  entryIds: string[];
+  messageTs: string | null;
+}
 
 /** Build a SQL `IN (...)` clause from an array of UUID strings */
 export function sqlIdList(ids: string[]) {
@@ -58,6 +39,14 @@ export function sqlIdList(ids: string[]) {
 export interface SlackUserInfo {
   userId: string;
   timezone: string;
+}
+
+export interface SlackEntryContext {
+  channelId: string;
+  confirmationMessageTs: string;
+  threadTs: string;
+  sourceMessageTs: string;
+  slackUserId: string;
 }
 
 /** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
@@ -81,13 +70,13 @@ export function slackTimestampToDateString(slackTs: string, timezone: string): s
 }
 
 /**
- * Extract food entry IDs from thread messages returned by conversations.replies.
- * Walks backwards to find the most recent bot message with a confirm button.
- * The button value contains comma-separated food_entry UUIDs.
+ * Extract the latest confirm button context from thread messages returned by
+ * conversations.replies. Includes both the entry IDs and the message ts so
+ * callers can retire stale confirm buttons after refinements.
  */
-export function extractEntryIdsFromThread(
-  messages: Array<{ bot_id?: string; blocks?: unknown[] }>,
-): string[] | null {
+export function extractLatestConfirmFromThread(
+  messages: Array<{ bot_id?: string; blocks?: unknown[]; ts?: string }>,
+): ThreadConfirmContext | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const threadMsg = messages[i];
     if (!threadMsg || !threadMsg.bot_id || !threadMsg.blocks) continue;
@@ -99,8 +88,13 @@ export function extractEntryIdsFromThread(
       if (block.type !== "actions" || !block.elements) continue;
       for (const element of block.elements) {
         if (element.action_id === "confirm_food" && element.value) {
-          const ids = element.value.split(",").filter(Boolean);
-          if (ids.length > 0) return ids;
+          const ids = element.value
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
+          if (ids.length > 0) {
+            return { entryIds: ids, messageTs: threadMsg.ts ?? null };
+          }
         }
       }
     }
@@ -123,9 +117,11 @@ export interface SlackClient {
  */
 export class FoodEntryRepository {
   readonly #db: Database;
+  readonly #pendingEntryStore: PendingEntryStore;
 
-  constructor(db: Database) {
+  constructor(db: Database, pendingEntryStore: PendingEntryStore = createPendingEntryStore()) {
     this.#db = db;
+    this.#pendingEntryStore = pendingEntryStore;
   }
 
   /** Find an existing user by email. Throws if no match is found. */
@@ -255,11 +251,52 @@ export class FoodEntryRepository {
     userId: string,
     date: string,
     items: NutritionItemWithMeal[],
+    context?: SlackEntryContext,
   ): Promise<string[]> {
+    if (!context) {
+      throw new Error("Slack entry context is required for pending entry storage");
+    }
+
+    const ids = await this.#pendingEntryStore.save(
+      items.map((item) => ({
+        userId,
+        date,
+        item,
+        channelId: context.channelId,
+        confirmationMessageTs: context.confirmationMessageTs,
+        threadTs: context.threadTs,
+        sourceMessageTs: context.sourceMessageTs,
+        slackUserId: context.slackUserId,
+      })),
+    );
+    logger.info(`[slack] Saved ${ids.length} unconfirmed entries: ${ids.join(",")}`);
+    return ids;
+  }
+
+  /** Confirm pending entries by writing final rows into Postgres. */
+  async confirm(
+    pendingEntryIds: string[],
+  ): Promise<{ confirmedCount: number; confirmedEntryIds: string[]; userId: string | null }> {
+    if (pendingEntryIds.length === 0) {
+      return { confirmedCount: 0, confirmedEntryIds: [], userId: null };
+    }
+
+    const pendingEntries = await this.#pendingEntryStore.loadByIds(pendingEntryIds);
+    if (pendingEntries.length === 0) {
+      const userId = await this.lookupUserIdForEntries(pendingEntryIds);
+      return { confirmedCount: 0, confirmedEntryIds: pendingEntryIds, userId };
+    }
+
+    const userId = pendingEntries[0]?.userId ?? null;
+    if (!userId) {
+      return { confirmedCount: 0, confirmedEntryIds: [], userId: null };
+    }
+
     await this.ensureDofekProvider(userId);
 
-    const ids: string[] = [];
-    for (const item of items) {
+    const confirmedEntryIds: string[] = [];
+    for (const pendingEntry of pendingEntries) {
+      const item = pendingEntry.item;
       const rows = await executeWithSchema(
         this.#db,
         z.object({ id: z.string() }),
@@ -290,53 +327,29 @@ export class FoodEntryRepository {
               ) RETURNING id
             )
             INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, food_description,
+              id, user_id, provider_id, date, meal, food_name, food_description,
               category, nutrition_data_id, confirmed
             ) VALUES (
-              ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
+              ${pendingEntry.id}, ${pendingEntry.userId}, ${DOFEK_PROVIDER_ID}, ${pendingEntry.date}::date,
               ${item.meal}, ${item.foodName}, ${item.foodDescription},
-              ${item.category}, (SELECT id FROM new_nutrition), false
+              ${item.category}, (SELECT id FROM new_nutrition), true
             ) RETURNING id`,
       );
       const row = rows[0];
-      if (row) {
-        ids.push(row.id);
-      } else {
-        logger.warn(`[slack] INSERT RETURNING returned no id for "${item.foodName}"`);
+      if (!row) {
+        throw new Error(`Failed to confirm parsed food entry "${item.foodName}"`);
       }
+      confirmedEntryIds.push(row.id);
     }
-    logger.info(`[slack] Saved ${ids.length} unconfirmed entries: ${ids.join(",")}`);
-    return ids;
-  }
 
-  /** Confirm food entries by setting confirmed = true */
-  async confirm(entryIds: string[]): Promise<number> {
-    if (entryIds.length === 0) return 0;
-    const result = await executeWithSchema(
-      this.#db,
-      z.object({ id: z.string() }),
-      sql`UPDATE fitness.food_entry
-          SET confirmed = true
-          WHERE id IN (${sqlIdList(entryIds)})
-            AND confirmed = false
-          RETURNING id`,
-    );
-    return result.length;
+    await this.#pendingEntryStore.deleteByIds(pendingEntries.map((entry) => entry.id));
+    return { confirmedCount: confirmedEntryIds.length, confirmedEntryIds, userId };
   }
 
   /** Delete unconfirmed food entries and their nutrition_data */
   async deleteUnconfirmed(entryIds: string[]): Promise<void> {
     if (entryIds.length === 0) return;
-    await this.#db.execute(
-      sql`WITH deleted AS (
-            DELETE FROM fitness.food_entry
-            WHERE id IN (${sqlIdList(entryIds)})
-              AND confirmed = false
-            RETURNING nutrition_data_id
-          )
-          DELETE FROM fitness.nutrition_data
-          WHERE id IN (SELECT nutrition_data_id FROM deleted WHERE nutrition_data_id IS NOT NULL)`,
-    );
+    await this.#pendingEntryStore.deleteByIds(entryIds);
   }
 
   /** Load food entries by IDs for display after confirmation */
@@ -355,44 +368,8 @@ export class FoodEntryRepository {
 
   /** Load food entries for refinement (thread follow-up messages) */
   async loadForRefinement(entryIds: string[]): Promise<NutritionItemWithMeal[]> {
-    const rows = await executeWithSchema(
-      this.#db,
-      z.object({
-        food_name: z.string(),
-        food_description: z.string().nullable(),
-        category: z.string().nullable(),
-        calories: z.coerce.number().nullable(),
-        protein_g: z.coerce.number().nullable(),
-        carbs_g: z.coerce.number().nullable(),
-        fat_g: z.coerce.number().nullable(),
-        fiber_g: z.coerce.number().nullable(),
-        saturated_fat_g: z.coerce.number().nullable(),
-        sugar_g: z.coerce.number().nullable(),
-        sodium_mg: z.coerce.number().nullable(),
-        meal: z.string().nullable(),
-      }),
-      sql`SELECT fe.food_name, fe.food_description, fe.category,
-                 nd.calories, nd.protein_g, nd.carbs_g, nd.fat_g, nd.fiber_g,
-                 nd.saturated_fat_g, nd.sugar_g, nd.sodium_mg, fe.meal
-          FROM fitness.food_entry fe
-          LEFT JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
-          WHERE fe.id IN (${sqlIdList(entryIds)})`,
-    );
-
-    return rows.map((row) => ({
-      foodName: row.food_name,
-      foodDescription: row.food_description ?? "",
-      category: categorySchema.parse(row.category ?? "other"),
-      calories: row.calories ?? 0,
-      proteinG: row.protein_g ?? 0,
-      carbsG: row.carbs_g ?? 0,
-      fatG: row.fat_g ?? 0,
-      fiberG: row.fiber_g ?? 0,
-      saturatedFatG: row.saturated_fat_g ?? 0,
-      sugarG: row.sugar_g ?? 0,
-      sodiumMg: row.sodium_mg ?? 0,
-      meal: mealSchema.parse(row.meal ?? "other"),
-    }));
+    const pendingEntries = await this.#pendingEntryStore.loadByIds(entryIds);
+    return pendingEntries.map((pendingEntry) => pendingEntry.item);
   }
 
   /** Look up the user ID that owns the given food entries */

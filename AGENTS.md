@@ -13,6 +13,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 ## General
 - **Apply minimum fix**: Only perform the minimum fix required to resolve the issue at hand. Do not add extra error handling, validation, or infrastructure unless explicitly requested. The user will ask if they want more far-reaching changes.
 - **Read README.md first**: Before working on deployment, infrastructure, or operational tasks, always read the README for current architecture, deployment procedures, and operational runbooks. The README is the source of truth for how the production system works.
+- **Mirror agent config files with symlinks**: Every directory that contains an `AGENTS.md` file must also contain `CLAUDE.md` and `GEMINI.md` symlinked to `AGENTS.md` (same directory). Keep these in sync whenever adding or moving agent guidance files.
 - **"I can't see a provider" means it's broken**: When the user says they can't see a provider in the UI, it means the provider is failing validation and being hidden. The fix is to debug **why** the provider's `validate()` fails (missing env vars, bad config, etc.) — not to show disabled providers. Disabled providers are intentionally hidden from users. Use the `/fix-provider` skill to diagnose and fix.
 - **Always use latest versions**: When adding or updating any dependency, Docker image, service, artifact, or tool, always use the latest stable version available. Check for the current latest version rather than copying an older version from elsewhere in the codebase. Pin to specific versions in production (e.g., `timescale/timescaledb:2.26.2-pg18`, not `latest`), but those pinned versions should be the newest stable release at the time of the change.
 
@@ -45,9 +46,12 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Do not test static config files**: Treat static config file tests as unnecessary. If a config file only contains declarative static values and no meaningful runtime logic, do not add or run dedicated tests for it.
 - **Production code drives, tests adapt**: Never add hacks, indirection, or complexity to production code just to make tests easier. No lazy initialization to avoid connections in tests, no conditional logic gated on `NODE_ENV === 'test'`, no runtime feature flags for testability. Tests should use mocks, dependency injection, or module-level mocking (`vi.mock`) to work around production code — not the other way around. If production code needs restructuring to be testable, that restructuring should also improve the production design (e.g., proper DI).
 - **No exports just for testability**: Never export a function, class, or variable solely because a test needs to access it. Exports define the public API of a module — every export should serve a production consumer. If a test needs to verify internal behavior, test it through the public interface instead. Comments like "exported for testing" are a code smell — if it's worth exporting, it's worth exporting for production use too.
+- **Shared test utilities**: When multiple unit or integration tests need to share mock setups, utility functions, or test data, extract them into a local `test-helpers.ts` file within the same directory. Do not export these helpers from the source file being tested or import them from another `*.test.ts` file.
 - **Colocated unit tests**: Unit test files live next to the source file they test, named `<source>.test.ts`. Do not use `__tests__/` directories. For example, `src/db/tokens.ts` has its unit test at `src/db/tokens.test.ts`. Integration tests (`*.integration.test.ts`) can live wherever makes sense.
 - **Test separation**: Unit tests use `*.test.ts`, integration tests use `*.integration.test.ts`. Unit tests must never need access to external services (databases, APIs). Integration tests must never mock at the module level (`vi.mock`). For 3rd party services in integration tests, mock at the network level with [MSW](https://mswjs.io/) (`setupServer` from `msw/node`), not with constructor-injected fetch or `vi.spyOn(globalThis, 'fetch')`.
+- **Mutation testing (Stryker)**: High coverage is a baseline, but the goal is to kill every mutant. When the `Test / Stryker` job fails, check the logs for surviving mutants even if unit/integration tests pass. Add targeted test cases to cover the exact branch, operator, or boundary that survived.
 - **Provider-agnostic**: The schema and sync framework must not be coupled to any specific provider. Providers implement a plugin interface.
+- **Food DB must stay provider-agnostic**: `fitness.food_entry` and `fitness.nutrition_data` must store food/nutrition facts and generic provider references only. Never add Slack-specific (or any source-implementation-specific) fields to these core food tables.
 - **Isolated & modular providers**: Each provider must be self-contained in its own file under `src/providers/`. Providers implement the `Provider` interface from `types.ts` and must not depend on other providers. All provider-specific types, parsing, API client code, and sync logic live within the provider's own file. This keeps providers easy to add, remove, or modify independently.
 - **Raw data only, no duplicate sources of truth**: Only store raw data — never store computed or aggregate values that can be derived from raw data. If a value is computable from existing data (averages, totals, durations, start/end times), don't store it. Be ruthless about this. Every column must earn its place by being genuinely raw or structural (e.g., activity type, name) and not derivable from other stored data.
 - **Deduplicate at query time, not insert time**: Never filter, merge, or discard data during ingestion. Store all raw records from all sources with their source attribution intact (e.g., per-source daily totals, not a naive sum across sources). Deduplication belongs in materialized views or queries — not in insert pipelines. This preserves the ability to re-derive correct values when dedup logic improves and avoids irreversible data loss. For example, when Apple Health reports steps from both iPhone and Apple Watch, store each source's daily total separately and let the view pick the best source — don't sum them at insert time.
@@ -71,12 +75,12 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
   docker build --target server -t dofek-server:local .
   # Stand up a test DB and run the server
   docker network create dofek-test
-  docker run -d --name dofek-test-db --network dofek-test \
-    -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test \
+  docker run -d --name dofek-test-db --network dofek-test 
+    -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test 
     timescale/timescaledb:latest-pg18
   sleep 5
-  docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 \
-    -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 \
+  docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 
+    -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 
     dofek-server:local web
   sleep 8
   docker logs dofek-test-web  # should show migrations + "API running"
@@ -111,6 +115,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## CI
 - **GitHub Actions** runs on every push/PR: lint, typecheck, knip, test (unit + integration with coverage), e2e (Docker-based), mutation (Stryker, PR-only).
+- **Knip unused code analysis**: Root `knip.json` must be updated whenever adding a new package with its own runtime entry point (e.g. `packages/server/src/index.ts`). If Knip reports false positives for an entire package, verify its entry point is correctly registered.
 - **Use the `gh` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `gh run list`, `gh run view <id>`. See `docs/ci-debugging.md` for how to extract actual error messages from truncated CI logs (especially iOS builds where xcodebuild output is piped through `tail -40`).
 - **Periodically check CI runs** to catch failures early. Before starting work, check if CI is green.
 - **Never rerun flaky CI as a fix**: Re-running a failed job is never an acceptable solution. Every CI failure — even "infrastructure" flakes like network timeouts, tool install failures, or timing issues — must be fixed at the root cause (pin versions, add caching, replace flaky dependencies, etc.). Flaky CI that gets re-run trains the team to ignore failures.

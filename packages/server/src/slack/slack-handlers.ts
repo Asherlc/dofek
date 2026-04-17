@@ -3,7 +3,7 @@ import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition
 import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import {
-  extractEntryIdsFromThread,
+  extractLatestConfirmFromThread,
   type FoodEntryRepository,
   slackTimestampToDateString,
   slackTimestampToLocalTime,
@@ -21,7 +21,7 @@ interface ParsedMessageArgs {
     channel: string,
     ts: string,
   ) => Promise<{
-    messages?: Array<{ bot_id?: string; blocks?: unknown[] }>;
+    messages?: Array<{ bot_id?: string; blocks?: unknown[]; ts?: string }>;
   }>;
   postMessage: (message: { channel: string; text: string; thread_ts?: string }) => Promise<{
     ts?: string;
@@ -71,7 +71,8 @@ async function handleParsedMessage(
 
       try {
         const thread = await getThreadReplies(msgChannel, msgThreadTs);
-        const previousEntryIds = extractEntryIdsFromThread(thread.messages ?? []);
+        const previousConfirmContext = extractLatestConfirmFromThread(thread.messages ?? []);
+        const previousEntryIds = previousConfirmContext?.entryIds ?? null;
 
         if (previousEntryIds) {
           const previousItems = await repository.loadForRefinement(previousEntryIds);
@@ -89,7 +90,15 @@ async function handleParsedMessage(
             const result = await refineNutritionItems(previousItems, msgText, localTime);
 
             await repository.deleteUnconfirmed(previousEntryIds);
-            const newEntryIds = await repository.saveUnconfirmed(userId, date, result.items);
+            const confirmationMessageTs =
+              thinkingMsg.ts ?? `fallback-refine-${msgThreadTs}-${Date.now()}`;
+            const newEntryIds = await repository.saveUnconfirmed(userId, date, result.items, {
+              channelId: msgChannel,
+              confirmationMessageTs,
+              threadTs: msgThreadTs,
+              sourceMessageTs: msgTs,
+              slackUserId: msgUser,
+            });
 
             const entryIdsValue = newEntryIds.join(",");
             const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
@@ -102,6 +111,23 @@ async function handleParsedMessage(
               });
             } else {
               await say({ ...confirmation, thread_ts: msgThreadTs });
+            }
+
+            // Retire the previous confirmation message so users don't click stale
+            // buttons that reference now-deleted unconfirmed entry IDs.
+            if (previousConfirmContext?.messageTs) {
+              try {
+                await updateMessage({
+                  channel: msgChannel,
+                  ts: previousConfirmContext.messageTs,
+                  text: "Superseded by a newer edit below.",
+                  blocks: [],
+                });
+              } catch (updateError) {
+                logger.warn(
+                  `[slack] Failed to retire prior confirmation: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+                );
+              }
             }
             return;
           }
@@ -129,7 +155,14 @@ async function handleParsedMessage(
     try {
       const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
       const result = await analyzeNutritionItems(msgText, localTime);
-      const entryIds = await repository.saveUnconfirmed(userId, date, result.items);
+      const confirmationMessageTs = thinkingMsg.ts ?? `fallback-parse-${msgTs}-${Date.now()}`;
+      const entryIds = await repository.saveUnconfirmed(userId, date, result.items, {
+        channelId: msgChannel,
+        confirmationMessageTs,
+        threadTs: msgTs,
+        sourceMessageTs: msgTs,
+        slackUserId: msgUser,
+      });
       const entryIdsValue = entryIds.join(",");
       const confirmation = formatConfirmationMessage(result.items, entryIdsValue);
 
@@ -204,16 +237,33 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
     const msgChannel = message.channel;
     const msgThreadTs = "thread_ts" in message ? message.thread_ts : undefined;
 
+    const updateMessage =
+      typeof client.chat?.update === "function"
+        ? (message: {
+            channel: string;
+            ts: string;
+            text?: string;
+            blocks?: unknown[];
+            [key: string]: unknown;
+          }) =>
+            client.chat.update({
+              ...message,
+              attachments: [],
+            })
+        : async () => ({});
+
+    const postMessage =
+      typeof client.chat?.postMessage === "function"
+        ? (message: { channel: string; text: string; thread_ts?: string }) =>
+            client.chat.postMessage(message)
+        : async () => ({ ts: undefined });
+
     await handleParsedMessage(repository, {
       say,
       getUserInfo: (slackUserId) => client.users.info({ user: slackUserId }),
       getThreadReplies: (channel, ts) => client.conversations.replies({ channel, ts }),
-      postMessage: (message) => client.chat.postMessage(message),
-      updateMessage: (message) =>
-        client.chat.update({
-          ...message,
-          attachments: [],
-        }),
+      postMessage,
+      updateMessage,
       msgText,
       msgUser,
       msgTs,
@@ -232,16 +282,33 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
 
     logger.info(`[slack] App mention from ${event.user}: "${msgText}"`);
 
+    const updateMessage =
+      typeof client.chat?.update === "function"
+        ? (message: {
+            channel: string;
+            ts: string;
+            text?: string;
+            blocks?: unknown[];
+            [key: string]: unknown;
+          }) =>
+            client.chat.update({
+              ...message,
+              attachments: [],
+            })
+        : async () => ({});
+
+    const postMessage =
+      typeof client.chat?.postMessage === "function"
+        ? (message: { channel: string; text: string; thread_ts?: string }) =>
+            client.chat.postMessage(message)
+        : async () => ({ ts: undefined });
+
     await handleParsedMessage(repository, {
       say,
       getUserInfo: (slackUserId) => client.users.info({ user: slackUserId }),
       getThreadReplies: (channel, ts) => client.conversations.replies({ channel, ts }),
-      postMessage: (message) => client.chat.postMessage(message),
-      updateMessage: (message) =>
-        client.chat.update({
-          ...message,
-          attachments: [],
-        }),
+      postMessage,
+      updateMessage,
       msgText,
       msgUser: event.user,
       msgTs: event.ts,
@@ -264,13 +331,16 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
       `[slack] confirm_food action: entryIds=${JSON.stringify(entryIds)}, buttonValue=${action.value.substring(0, 100)}`,
     );
 
+    const channelId = body.channel?.id;
+    const messageTs = body.message?.ts;
+
     if (entryIds.length === 0) {
-      logger.warn("[slack] confirm_food: no entry IDs in button value");
-      if (body.channel?.id && body.message?.ts) {
+      logger.warn("[slack] confirm_food: no entry IDs available for confirmation");
+      if (channelId && messageTs) {
         await client.chat.update({
-          channel: body.channel.id,
-          ts: body.message.ts,
-          text: "These entries were already saved.",
+          channel: channelId,
+          ts: messageTs,
+          text: "This confirmation is invalid or expired. Please confirm the latest parsed message.",
           blocks: [],
         });
       }
@@ -278,18 +348,22 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
     }
 
     try {
-      const confirmedCount = await repository.confirm(entryIds);
+      const confirmation = await repository.confirm(entryIds);
+      const confirmedCount = confirmation.confirmedCount;
       logger.info(`[slack] confirmFoodEntries updated ${confirmedCount} rows`);
 
-      const rows = await repository.loadConfirmedSummary(entryIds);
+      const confirmedEntryIds = confirmation.confirmedEntryIds;
+      const rows = await repository.loadConfirmedSummary(
+        confirmedEntryIds.length > 0 ? confirmedEntryIds : entryIds,
+      );
 
       if (rows.length === 0) {
         logger.warn(`[slack] confirm_food: no entries found for IDs ${entryIds.join(",")}`);
-        if (body.channel?.id && body.message?.ts) {
+        if (channelId && messageTs) {
           await client.chat.update({
-            channel: body.channel.id,
-            ts: body.message.ts,
-            text: "These entries were already saved.",
+            channel: channelId,
+            ts: messageTs,
+            text: "This confirmation has expired. Please confirm the latest parsed message.",
             blocks: [],
           });
         }
@@ -312,7 +386,8 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
       }
 
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
-      const entryUserId = await repository.lookupUserIdForEntries(entryIds);
+      const entryUserId =
+        confirmation.userId ?? (await repository.lookupUserIdForEntries(confirmedEntryIds));
       if (entryUserId) {
         await queryCache.invalidateByPrefix(`${entryUserId}:food.`);
         await queryCache.invalidateByPrefix(`${entryUserId}:nutrition.`);
