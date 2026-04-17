@@ -4,7 +4,7 @@
  * Xcode 26+ treats ExpoModulesCore Worklets return-type warnings as errors in
  * EXJavaScriptSerializable.mm. Downgrade that warning until upstream resolves it.
  */
-const { withDangerousMod } = require("@expo/config-plugins");
+const { withDangerousMod } = require("expo/config-plugins");
 const fs = require("node:fs");
 const path = require("node:path");
 
