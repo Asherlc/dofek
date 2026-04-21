@@ -14,8 +14,10 @@ Use this during a planned maintenance window. Do not run this as an automatic de
 
 1. **Take a fresh backup/snapshot first** (required).
 2. Ensure **free disk headroom** before migration (target at least 20GB free).
-3. Ensure Terraform-managed data volume is provisioned (`data_volume_size_gb`, default `100`) and applied.
-4. Plan a write pause for app services that insert into `metric_stream` (`web`, `worker`, `training-export-worker`).
+3. Ensure sufficient DB memory headroom for conversion. On current production data volume (~77M rows in `metric_stream`), `create_hypertable(... migrate_data => TRUE)` can be OOM-killed on low-memory hosts.
+4. If host memory is constrained, use a staged-copy conversion (new empty hypertable + batched inserts + table swap) instead of direct `migrate_data`.
+5. Ensure Terraform-managed data volume is provisioned (`data_volume_size_gb`, default `100`) and applied.
+6. Plan a write pause for app services that insert into `metric_stream` (`web`, `worker`, `training-export-worker`).
 
 ## 1) Verify current state
 
@@ -39,6 +41,10 @@ docker service scale dofek_web=0 dofek_worker=0 dofek_training-export-worker=0
 ```
 
 ## 3) Convert table to hypertable
+
+This is now codified in migration `drizzle/0007_metric_stream_hypertable.sql` (idempotent).
+It auto-converts only when `fitness.metric_stream` is empty (fresh setup).
+For existing production data, migration `0007` intentionally no-ops and requires this runbook-based maintenance conversion.
 
 ```sql
 SELECT create_hypertable(
