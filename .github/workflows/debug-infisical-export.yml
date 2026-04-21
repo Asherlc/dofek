@@ -47,6 +47,15 @@ jobs:
             fi
           done
 
+          echo "Direct Infisical lookup (key presence):"
+          for key in EXPO_ACCESS_TOKEN EXPO_TOKEN EXPO_APP_ID; do
+            if infisical secrets get "$key" --projectId="$project_id" --env=prod --plain --silent >/dev/null 2>&1; then
+              echo "$key=present"
+            else
+              echo "$key=missing"
+            fi
+          done
+
           export_line="$(grep '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod" || true)"
           if [ -z "$export_line" ]; then
             echo "EXPO_ACCESS_TOKEN is missing from dotenv export; skipping quote/parsing checks"
