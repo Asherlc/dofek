@@ -20,7 +20,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
   - **Sentry**: Receives application logs/errors.
   - **Netdata**: Real-time server health and performance monitoring.
-- **Secrets**: Managed via **Infisical**. CI exports deploy-tagged secrets (`--tags=web-deploy-env`) from the project ID in `.infisical.json` into a temporary `.env.prod` file on the runner for `docker stack deploy` and validates required deploy keys are present. Multiline secrets (for example `APPLE_PRIVATE_KEY`) are injected as dedicated Docker Swarm secrets. The server never stores secrets on disk.
+- **Secrets**: Managed via **Infisical**. CI exports deploy-tagged secrets (`--tags=web-env`) from the project ID in `.infisical.json` into a temporary `.env.prod` file on the runner for `docker stack deploy` and validates required deploy keys are present. Multiline secrets (for example `APPLE_PRIVATE_KEY`) are injected as dedicated Docker Swarm secrets. The server never stores secrets on disk.
 
 ## Implementation Details
 
