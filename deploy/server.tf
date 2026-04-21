@@ -63,8 +63,11 @@ resource "hcloud_volume" "dofek_data" {
 # for the existing live server we apply it explicitly here. Idempotent.
 resource "terraform_data" "swarm_init" {
   triggers_replace = [
-    "swarm-v2",
+    "swarm-v3",
     hcloud_server.dofek.id,
+    # Reconcile swarm manager state on every terraform apply to self-heal
+    # drift (e.g. node left swarm). The command is idempotent.
+    plantimestamp(),
   ]
 
   connection {
