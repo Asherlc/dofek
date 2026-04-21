@@ -95,6 +95,10 @@ jobs:
             esac
             export "$env_line"
           done < "$INFISICAL_ENV_FILE"
+          if [ -z "${POSTGRES_PASSWORD:-}" ]; then
+            echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export (expected tag: deploy-env)"
+            exit 1
+          fi
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           APPLE_PRIVATE_KEY_SECRET_HASH="$(sha256sum "$APPLE_PRIVATE_KEY_FILE" | cut -c1-12)"
           APPLE_PRIVATE_KEY_SECRET_NAME="dofek_apple_private_key_${APPLE_PRIVATE_KEY_SECRET_HASH}"
