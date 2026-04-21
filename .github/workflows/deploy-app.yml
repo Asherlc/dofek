@@ -67,6 +67,11 @@ jobs:
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           curl -1sLf "https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh" | sudo -E bash
           sudo apt-get install -y infisical
+          project_id="$(jq -r '.workspaceId // empty' .infisical.json)"
+          if [ -z "$project_id" ]; then
+            echo "::error::.infisical.json is missing workspaceId"
+            exit 1
+          fi
           required_deploy_keys=(
             CLOUDFLARE_API_TOKEN
             OTA_JWT_SECRET
@@ -79,7 +84,7 @@ jobs:
             R2_ENDPOINT
             R2_SECRET_ACCESS_KEY
           )
-          infisical export --env=prod --format=dotenv --tags=deploy-env --silent > "$RUNNER_TEMP/.env.prod"
+          infisical export --projectId="$project_id" --env=prod --format=dotenv --tags=deploy-env --silent > "$RUNNER_TEMP/.env.prod"
           missing_deploy_keys=()
           for key in "${required_deploy_keys[@]}"; do
             if ! grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
@@ -90,7 +95,7 @@ jobs:
             echo "::error::Infisical deploy export with tag deploy-env is missing required keys: ${missing_deploy_keys[*]}"
             exit 1
           fi
-          infisical secrets get APPLE_PRIVATE_KEY --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
+          infisical secrets get APPLE_PRIVATE_KEY --projectId="$project_id" --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
           if [ ! -s "$RUNNER_TEMP/apple_private_key.pem" ]; then
             echo "::error::APPLE_PRIVATE_KEY is missing or empty in Infisical"
             exit 1
