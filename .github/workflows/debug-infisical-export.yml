@@ -146,6 +146,32 @@ jobs:
             echo "recursive_json_valid=false"
           fi
 
+          folders_json_file="$RUNNER_TEMP/folders.json"
+          infisical secrets folders get --projectId="$project_id" --env=prod --path=/ --output=json --silent > "$folders_json_file" || true
+          if jq -e . "$folders_json_file" >/dev/null 2>&1; then
+            echo "folders_json_valid=true"
+            echo "folders_json_type=$(jq -r 'type' "$folders_json_file")"
+            echo "folders_json_count=$(jq -r 'if type=="array" then length else 0 end' "$folders_json_file")"
+            probe_paths_file="$RUNNER_TEMP/probe-paths.txt"
+            {
+              echo "/"
+              jq -r '
+                if type=="array" then
+                  .[]
+                  | (.path // .folderPath // .name // empty)
+                else empty end
+              ' "$folders_json_file"
+            } | awk 'NF' | awk '!seen[$0]++' | head -n 30 > "$probe_paths_file"
+            echo "path_probe_count=$(wc -l < "$probe_paths_file" | tr -d "[:space:]")"
+            while IFS= read -r folder_path; do
+              raw_value="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --path="$folder_path" --plain --silent --expand=false || true)"
+              expanded_value="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --path="$folder_path" --plain --silent || true)"
+              echo "path_probe path=$folder_path raw_len=${#raw_value} expanded_len=${#expanded_value}"
+            done < "$probe_paths_file"
+          else
+            echo "folders_json_valid=false"
+          fi
+
           export_line="$(grep '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod" || true)"
           if [ -z "$export_line" ]; then
             echo "EXPO_ACCESS_TOKEN is missing from dotenv export; skipping quote/parsing checks"
