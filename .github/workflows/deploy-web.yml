@@ -82,8 +82,8 @@ jobs:
 
   deploy-ml:
     name: Deploy ML
-    needs: [check, terraform]
-    if: needs.check.outputs.should_deploy == 'true'
+    needs: [check, terraform, deploy-app]
+    if: needs.check.outputs.should_deploy == 'true' && needs.deploy-app.result == 'success'
     uses: ./.github/workflows/deploy-ml.yml
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
