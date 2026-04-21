@@ -107,12 +107,10 @@ jobs:
         env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            case "$env_line" in
-              ""|\#*) continue
-            esac
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
+          set -a
+          # shellcheck disable=SC1090
+          . "$INFISICAL_ENV_FILE"
+          set +a
           if [ -z "${POSTGRES_PASSWORD:-}" ]; then
             echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export"
             exit 1
@@ -124,6 +122,10 @@ jobs:
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
               --command "SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;" 2>&1 || true)
             recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
+            if printf '%s' "$recovery_output" | grep -Eqi "password authentication failed|no password supplied|role \"health\" does not exist|database \"health\" does not exist"; then
+              echo "::error::Postgres readiness hard failure: $(printf '%s' "$recovery_output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-240)"
+              exit 1
+            fi
             if [ "$recovery_state" = "writable" ]; then
               echo "Postgres is writable."
               break
@@ -146,12 +148,10 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            case "$env_line" in
-              ""|\#*) continue
-            esac
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
+          set -a
+          # shellcheck disable=SC1090
+          . "$INFISICAL_ENV_FILE"
+          set +a
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
@@ -177,10 +177,8 @@ jobs:
         env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            case "$env_line" in
-              ""|\#*) continue
-            esac
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
+          set -a
+          # shellcheck disable=SC1090
+          . "$INFISICAL_ENV_FILE"
+          set +a
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
