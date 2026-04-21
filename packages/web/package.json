@@ -20,7 +20,6 @@
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@sentry/react": "10.45.0",
-    "@tailwindcss/vite": "4.2.1",
     "@tanstack/react-query": "5.90.21",
     "@tanstack/react-router": "1.166.7",
     "@tanstack/react-table": "8.21.3",
@@ -34,13 +33,13 @@
     "react": "19.2.4",
     "react-body-highlighter": "2.0.5",
     "react-dom": "19.2.4",
-    "tailwindcss": "4.2.1",
     "zod": "3.25.76"
   },
   "devDependencies": {
     "@sentry/vite-plugin": "5.1.1",
     "@storybook/addon-a11y": "10.3.5",
     "@storybook/react-vite": "10.3.5",
+    "@tailwindcss/vite": "4.2.1",
     "@tanstack/router-cli": "1.166.7",
     "@tanstack/router-plugin": "1.166.7",
     "@types/leaflet": "1.9.21",
@@ -48,6 +47,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
     "storybook": "10.3.5",
+    "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vite": "6.4.2"
   }
