@@ -69,8 +69,21 @@ jobs:
           access_plain="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
           token_plain="$(infisical secrets get EXPO_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
           access_plain_no_override="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --secret-overriding=false || true)"
+          access_raw_no_expand="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --expand=false || true)"
           echo "infisical_expo_access_len=${#access_plain}"
           echo "infisical_expo_access_no_override_len=${#access_plain_no_override}"
+          echo "infisical_expo_access_no_expand_len=${#access_raw_no_expand}"
+          if printf "%s" "$access_raw_no_expand" | grep -q "EXPO_TOKEN"; then
+            echo "infisical_expo_access_no_expand_mentions_expo_token=true"
+          else
+            echo "infisical_expo_access_no_expand_mentions_expo_token=false"
+          fi
+          first_char="$(printf "%s" "$access_raw_no_expand" | cut -c1)"
+          if [ "$first_char" = '$' ]; then
+            echo "infisical_expo_access_no_expand_starts_with_dollar=true"
+          else
+            echo "infisical_expo_access_no_expand_starts_with_dollar=false"
+          fi
           echo "infisical_expo_token_len=${#token_plain}"
           if [ -n "$access_plain" ]; then
             printf "%s" "$access_plain" | sha256sum | awk '{print "infisical_expo_access_sha256="$1}'
