@@ -21,9 +21,22 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
 
+      - name: Check mobile changes
+        id: mobile-changes
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish OTA to PR branch
+        if: steps.mobile-changes.outputs.changed == 'true'
         working-directory: packages/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -39,6 +52,7 @@ jobs:
             --packageRunner npx 
 
       - name: Generate comment body
+        if: steps.mobile-changes.outputs.changed == 'true'
         env:
           PR_NUMBER: ${{ github.event.number }}
           COMMIT_SHA: ${{ github.sha }}
@@ -67,8 +81,8 @@ jobs:
           COMMENT_BODY
 
       - name: Comment PR with Mobile Preview Info
+        if: steps.mobile-changes.outputs.changed == 'true'
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
         with:
           header: mobile-preview
           path: /tmp/mobile-preview-comment.md
-
