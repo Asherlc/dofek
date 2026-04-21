@@ -91,8 +91,8 @@ jobs:
             R2_ENDPOINT
             R2_SECRET_ACCESS_KEY
           )
-          infisical export --projectId="$project_id" --env=prod --format=dotenv --tags=deploy-env --silent > "$RUNNER_TEMP/.env.prod"
-          echo "Infisical deploy-env export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
+          infisical export --projectId="$project_id" --env=prod --format=dotenv --tags=web-deploy-env --silent > "$RUNNER_TEMP/.env.prod"
+          echo "Infisical web-deploy-env export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
           missing_deploy_keys=()
           for key in "${required_deploy_keys[@]}"; do
             if ! grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
@@ -100,7 +100,7 @@ jobs:
             fi
           done
           if [ "${#missing_deploy_keys[@]}" -gt 0 ]; then
-            echo "::error::Infisical deploy export with tag deploy-env is missing required keys: ${missing_deploy_keys[*]}"
+            echo "::error::Infisical deploy export with tag web-deploy-env is missing required keys: ${missing_deploy_keys[*]}"
             exit 1
           fi
           infisical secrets get APPLE_PRIVATE_KEY --projectId="$project_id" --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
