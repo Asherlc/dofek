@@ -84,7 +84,20 @@ jobs:
             R2_ENDPOINT
             R2_SECRET_ACCESS_KEY
           )
+          untagged_env_file="$RUNNER_TEMP/.env.untagged"
+          infisical export --projectId="$project_id" --env=prod --format=dotenv --silent > "$untagged_env_file"
+          echo "Infisical untagged export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$untagged_env_file" || true)"
+          echo "Infisical untagged export sample keys:"
+          cut -d= -f1 "$untagged_env_file" | sed '/^$/d' | head -n 20
           infisical export --projectId="$project_id" --env=prod --format=dotenv --tags=deploy-env --silent > "$RUNNER_TEMP/.env.prod"
+          echo "Infisical deploy-env export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
+          echo "Infisical deploy-env export sample keys:"
+          cut -d= -f1 "$RUNNER_TEMP/.env.prod" | sed '/^$/d' | head -n 20
+          if infisical secrets get POSTGRES_PASSWORD --projectId="$project_id" --env=prod --plain --silent >/dev/null 2>&1; then
+            echo "Infisical direct secret fetch for POSTGRES_PASSWORD: success"
+          else
+            echo "Infisical direct secret fetch for POSTGRES_PASSWORD: failed"
+          fi
           missing_deploy_keys=()
           for key in "${required_deploy_keys[@]}"; do
             if ! grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
