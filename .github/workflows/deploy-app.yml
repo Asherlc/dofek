@@ -103,6 +103,22 @@ jobs:
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
           docker pull "postgres:18-alpine"
 
+      - name: Bootstrap stack (if DB service is missing)
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+        run: |
+          set -a
+          # shellcheck disable=SC1090
+          . "$INFISICAL_ENV_FILE"
+          set +a
+          if docker service inspect dofek_db >/dev/null 2>&1; then
+            echo "Swarm DB service already exists; skipping bootstrap deploy."
+          else
+            echo "Swarm DB service is missing; running bootstrap stack deploy."
+            docker stack deploy -c deploy/stack.yml --with-registry-auth dofek
+          fi
+
       - name: Wait for Postgres writable
         env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
@@ -175,6 +191,7 @@ jobs:
 
       - name: Deploy stack
         env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
           set -a
