@@ -60,14 +60,20 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SERVER_HOST: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
           INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
+          INFISICAL_VERSION: 0.43.76
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
-          sudo apt-get install -y infisical
-          infisical --version
+          sudo apt-get install -y "infisical=${INFISICAL_VERSION}"
+          installed_infisical_version="$(infisical --version | awk '{print $3}')"
+          echo "Infisical CLI version: ${installed_infisical_version}"
+          if [ "$installed_infisical_version" != "$INFISICAL_VERSION" ]; then
+            echo "::error::Expected Infisical ${INFISICAL_VERSION}, got ${installed_infisical_version}"
+            exit 1
+          fi
           project_id="$(jq -r '.workspaceId // empty' .infisical.json)"
           if [ -z "$project_id" ]; then
             echo "::error::.infisical.json is missing workspaceId"
