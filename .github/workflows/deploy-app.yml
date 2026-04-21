@@ -85,7 +85,7 @@ jobs:
           set -a; . "$INFISICAL_ENV_FILE"; set +a
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           for attempt in $(seq 1 12); do
-            if docker run --rm --network dofek_default \
+            if timeout 90s docker run --rm --network dofek_default \
               -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \
               "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate; then
               break
