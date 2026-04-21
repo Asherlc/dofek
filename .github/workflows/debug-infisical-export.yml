@@ -58,6 +58,8 @@ jobs:
 
           access_plain="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
           token_plain="$(infisical secrets get EXPO_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
+          echo "infisical_expo_access_len=${#access_plain}"
+          echo "infisical_expo_token_len=${#token_plain}"
           if [ -n "$access_plain" ]; then
             printf "%s" "$access_plain" | sha256sum | awk '{print "infisical_expo_access_sha256="$1}'
           fi
