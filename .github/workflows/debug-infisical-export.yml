@@ -222,6 +222,43 @@ jobs:
             echo "non_recursive_json_valid=false"
           fi
 
+          echo "json_shape_probe_start"
+          for key in EXPO_ACCESS_TOKEN EXPO_APP_ID EXPO_TOKEN; do
+            key_json_file="$RUNNER_TEMP/key-${key}.json"
+            infisical secrets get "$key" --projectId="$project_id" --env=prod --output=json --silent > "$key_json_file" || true
+            if ! jq -e . "$key_json_file" >/dev/null 2>&1; then
+              echo "json_shape key=$key valid=false"
+              continue
+            fi
+            echo "json_shape key=$key valid=true top_level_type=$(jq -r 'type' "$key_json_file")"
+            echo "json_shape key=$key top_level_keys=$(jq -r 'if type=="object" then keys|join(",") else "" end' "$key_json_file")"
+            echo "json_shape key=$key candidate_count=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[] | select((.secretKey // .key // .name // "") == "'"$key"'")] | length
+            ' "$key_json_file")"
+            echo "json_shape key=$key candidate_fields=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[] | select((.secretKey // .key // .name // "") == "'"$key"'") | keys | join(",")] | first // ""
+            ' "$key_json_file")"
+            echo "json_shape key=$key candidate_value_len=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[] | select((.secretKey // .key // .name // "") == "'"$key"'") | (.secretValue // .value // "") | tostring | length] | first // 0
+            ' "$key_json_file")"
+          done
+          echo "json_shape_probe_end"
+
           folders_json_file="$RUNNER_TEMP/folders.json"
           infisical secrets folders get --projectId="$project_id" --env=prod --path=/ --output=json --silent > "$folders_json_file" || true
           if jq -e . "$folders_json_file" >/dev/null 2>&1; then
