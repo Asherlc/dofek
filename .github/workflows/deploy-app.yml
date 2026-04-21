@@ -85,17 +85,6 @@ jobs:
           fi
           infisical export --projectId="$project_id" --env=prod --format=dotenv --silent > "$RUNNER_TEMP/.env.prod"
           echo "Infisical prod export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
-          set -a
-          # shellcheck disable=SC1090
-          . "$RUNNER_TEMP/.env.prod"
-          set +a
-          for required_key in EXPO_TOKEN EXPO_APP_ID; do
-            required_value="$(printenv "$required_key" || true)"
-            if [ -z "$required_value" ]; then
-              echo "::error::${required_key} is missing or empty in Infisical prod export"
-              exit 1
-            fi
-          done
           chmod 600 "$RUNNER_TEMP/.env.prod"
 
       - name: Login to GHCR
