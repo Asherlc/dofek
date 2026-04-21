@@ -288,7 +288,19 @@ jobs:
             if [ -n "$json_candidate_value" ] && [ -n "$first_char" ] && printf "%s" "$json_candidate_value" | tr -d "$first_char" | grep -q '^$'; then
               repeated_single_char=true
             fi
-            echo "json_shape key=$key starts_with_dollar=$starts_with_dollar dollar_identifier=$dollar_identifier dollar_brace_identifier=$dollar_brace_identifier referenced_identifier=$referenced_identifier symbol_only=$symbol_only repeated_single_char=$repeated_single_char"
+            candidate_hash=""
+            if [ -n "$json_candidate_value" ]; then
+              candidate_hash="$(printf "%s" "$json_candidate_value" | sha256sum | awk '{print $1}')"
+            fi
+            plain_hash=""
+            if [ "$key" = "EXPO_TOKEN" ] && [ -n "$token_plain" ]; then
+              plain_hash="$(printf "%s" "$token_plain" | sha256sum | awk '{print $1}')"
+            fi
+            hash_matches_plain=false
+            if [ -n "$plain_hash" ] && [ "$candidate_hash" = "$plain_hash" ]; then
+              hash_matches_plain=true
+            fi
+            echo "json_shape key=$key starts_with_dollar=$starts_with_dollar dollar_identifier=$dollar_identifier dollar_brace_identifier=$dollar_brace_identifier referenced_identifier=$referenced_identifier symbol_only=$symbol_only repeated_single_char=$repeated_single_char candidate_hash=$candidate_hash hash_matches_plain=$hash_matches_plain"
           done
           echo "json_shape_probe_end"
 
