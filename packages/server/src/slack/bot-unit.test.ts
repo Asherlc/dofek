@@ -1164,6 +1164,7 @@ describe("bot.ts — registerHandlers", () => {
     it("deletes unconfirmed entries and updates message", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const deleteUnconfirmedSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
 
       const { cancelHandler } = setupHandlers(db);
 
@@ -1190,12 +1191,16 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(ack).toHaveBeenCalled();
       expect(mockExecute).not.toHaveBeenCalled();
+      expect(deleteUnconfirmedSpy).toHaveBeenCalledTimes(1);
+      expect(deleteUnconfirmedSpy).toHaveBeenCalledWith(["entry-1", "entry-2"]);
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           text: "Cancelled.",
           blocks: [],
         }),
       );
+
+      deleteUnconfirmedSpy.mockRestore();
     });
 
     it("returns early when body type is not block_actions", async () => {
@@ -3218,6 +3223,7 @@ describe("bot.ts — registerHandlers", () => {
   describe("cancel_food — blocks with non-matching action_id", () => {
     it("does not delete entries when blocks have non-matching action_id", async () => {
       const db = createMockDb();
+      const deleteUnconfirmedSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
       const { cancelHandler } = setupHandlers(db);
 
       const ack = vi.fn();
@@ -3243,8 +3249,11 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(ack).toHaveBeenCalled();
       expect(getMockExecute(db)).not.toHaveBeenCalled();
+      expect(deleteUnconfirmedSpy).not.toHaveBeenCalled();
       // Should still update the message with "Cancelled."
       expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+
+      deleteUnconfirmedSpy.mockRestore();
     });
 
     it("does not delete entries when block type is not actions", async () => {
@@ -4224,6 +4233,7 @@ describe("bot.ts — registerHandlers", () => {
     it("does not execute DELETE SQL when cancelling with empty entry IDs", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const deleteUnconfirmedSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
 
       const { cancelHandler } = setupHandlers(db);
 
@@ -4251,9 +4261,13 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(ack).toHaveBeenCalled();
       // deleteUnconfirmedEntries should return early (entryIds.length === 0)
+      expect(deleteUnconfirmedSpy).toHaveBeenCalledTimes(1);
+      expect(deleteUnconfirmedSpy).toHaveBeenCalledWith([]);
       expect(mockExecute).not.toHaveBeenCalled();
       // Should still update message with "Cancelled."
       expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+
+      deleteUnconfirmedSpy.mockRestore();
     });
   });
 });

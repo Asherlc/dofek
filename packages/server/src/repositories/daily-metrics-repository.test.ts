@@ -3,14 +3,14 @@ import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
 const mockLoggerWarn = vi.hoisted(() => vi.fn());
 
-const mocktelemetryCapture = vi.hoisted(() => vi.fn());
+const mockTelemetryCapture = vi.hoisted(() => vi.fn());
 
 vi.mock("../logger.ts", () => ({
   logger: { warn: mockLoggerWarn, info: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("dofek/telemetry", () => ({
-  captureMessage: mocktelemetryCapture,
+  captureMessage: mockTelemetryCapture,
   captureException: vi.fn(),
 }));
 
@@ -91,7 +91,7 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
 describe("DailyMetricsRepository", () => {
   beforeEach(() => {
     mockLoggerWarn.mockClear();
-    mocktelemetryCapture.mockClear();
+    mockTelemetryCapture.mockClear();
   });
 
   describe("list", () => {
@@ -130,7 +130,7 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.list(30, "2025-03-15");
       expect(result).toHaveLength(1);
       expect(result[0]?.steps).toBe(8500);
-      expect(mocktelemetryCapture).toHaveBeenCalledWith(
+      expect(mockTelemetryCapture).toHaveBeenCalledWith(
         expect.stringContaining("Stale daily metrics"),
         expect.anything(),
       );
@@ -227,7 +227,7 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.list(30, "2025-03-15");
       expect(result).toHaveLength(1);
       expect(result[0]?.steps).toBe(9200);
-      expect(mocktelemetryCapture).toHaveBeenCalledWith(
+      expect(mockTelemetryCapture).toHaveBeenCalledWith(
         expect.stringContaining("Stale daily metrics"),
         expect.objectContaining({
           extra: expect.objectContaining({
@@ -268,7 +268,7 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.steps).toBeNull();
       // No refresh attempted — view query + latest-date check + window check
       expect(execute).toHaveBeenCalledTimes(3);
-      expect(mocktelemetryCapture).not.toHaveBeenCalled();
+      expect(mockTelemetryCapture).not.toHaveBeenCalled();
     });
 
     it("refreshes view when the latest row is missing steps but the base table has steps for that date", async () => {
@@ -299,7 +299,7 @@ describe("DailyMetricsRepository", () => {
 
       expect(result).toHaveLength(2);
       expect(result[1]?.steps).toBe(9200);
-      expect(mocktelemetryCapture).toHaveBeenCalledWith(
+      expect(mockTelemetryCapture).toHaveBeenCalledWith(
         expect.stringContaining("Stale daily metrics"),
         expect.objectContaining({
           extra: expect.objectContaining({
@@ -438,7 +438,7 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result?.avg_resting_hr).toBe(57.2);
       expect(result?.latest_date).toBe("2025-03-15");
-      expect(mocktelemetryCapture).toHaveBeenCalledWith(
+      expect(mockTelemetryCapture).toHaveBeenCalledWith(
         expect.stringContaining("Stale daily metrics"),
         expect.anything(),
       );
@@ -474,7 +474,7 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.getTrends(30, "2025-03-15");
 
       expect(result?.latest_steps).toBe(9400);
-      expect(mocktelemetryCapture).toHaveBeenCalledWith(
+      expect(mockTelemetryCapture).toHaveBeenCalledWith(
         expect.stringContaining("Stale daily metrics"),
         expect.objectContaining({
           extra: expect.objectContaining({

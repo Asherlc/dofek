@@ -1265,6 +1265,82 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(500);
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("(code=invalid_client)"));
     });
+
+    it("logs OAuth error description when error has description property", async () => {
+      const oauthError = Object.assign(new Error("OAuth request error"), {
+        description: "Authorization code has expired",
+      });
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn().mockRejectedValue(oauthError),
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:test-state",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:test-state",
+      );
+
+      expect(res.status).toBe(500);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("(desc=Authorization code has expired)"),
+      );
+    });
+
+    it("omits OAuth metadata when code/description are not strings", async () => {
+      const oauthError = Object.assign(new Error("OAuth request error"), {
+        code: 401,
+        description: { reason: "invalid" },
+      });
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn().mockRejectedValue(oauthError),
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:test-state",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:test-state",
+      );
+
+      expect(res.status).toBe(500);
+      const loggedMessage = vi.mocked(logger.error).mock.calls.at(-1)?.[0];
+      expect(typeof loggedMessage).toBe("string");
+      expect(String(loggedMessage)).not.toContain("code=");
+      expect(String(loggedMessage)).not.toContain("desc=");
+    });
+
+    it("omits OAuth metadata when thrown value is not an Error", async () => {
+      const thrownValue = { code: "invalid_client", description: "Denied by provider" };
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: vi.fn().mockRejectedValue(thrownValue),
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:test-state",
+        codeVerifier: "verifier",
+      });
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:test-state",
+      );
+
+      expect(res.status).toBe(500);
+      const loggedMessage = vi.mocked(logger.error).mock.calls.at(-1)?.[0];
+      expect(typeof loggedMessage).toBe("string");
+      expect(String(loggedMessage)).not.toContain("code=");
+      expect(String(loggedMessage)).not.toContain("desc=");
+    });
   });
 
   describe("GET /auth/callback/:provider (link flow)", () => {
