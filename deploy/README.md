@@ -67,6 +67,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
          -> deploy-terraform (shared prerequisite)
          -> deploy-app
               -> export env via Infisical
+              -> bootstrap stack if dofek_db is missing
+              -> wait for postgres writable
               -> migrate (one-shot container on dofek_default)
               -> docker stack deploy dofek
 ```
@@ -78,10 +80,23 @@ CI (main) -> build dofek + dofek-ml (same tag)
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
-   5. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
-   6. Run migrations as a one-shot container attached to the swarm overlay network:
+   5. Bootstrap step for clean-slate hosts: if `docker service inspect dofek_db` fails, run
+      `docker stack deploy -c deploy/stack.yml --with-registry-auth dofek` first so the swarm DB service and overlay network exist.
+   6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
+   7. Run migrations as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
-   7. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
+   8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
+
+### Deployment Runbook: Cold-Start and DB Availability
+
+If a deploy is running against a fresh host (or after removing previous non-swarm containers), `dofek_db` and `dofek_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
+
+The deploy workflow handles this with a bootstrap gate:
+- If `dofek_db` exists, continue normally.
+- If `dofek_db` is missing, run a non-prune stack deploy first to create the swarm services/network.
+- After bootstrap, run DB readiness and migrations, then run the normal prune deploy.
+
+This preserves migration gating while remaining safe for both warm updates and scratch deployments.
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)
