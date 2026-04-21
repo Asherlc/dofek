@@ -146,13 +146,6 @@ jobs:
             echo "recursive_json_valid=false"
           fi
 
-          infisical export --projectId="$project_id" --env=prod --format=dotenv --silent --recursive > "$RUNNER_TEMP/.env.prod.recursive"
-          if grep -q '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod.recursive"; then
-            echo "recursive_dotenv_expo_access=present"
-          else
-            echo "recursive_dotenv_expo_access=missing"
-          fi
-
           export_line="$(grep '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod" || true)"
           if [ -z "$export_line" ]; then
             echo "EXPO_ACCESS_TOKEN is missing from dotenv export; skipping quote/parsing checks"
