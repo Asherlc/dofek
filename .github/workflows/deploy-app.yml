@@ -85,6 +85,24 @@ jobs:
           set -a; . "$INFISICAL_ENV_FILE"; set +a
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
+          docker pull "postgres:18-alpine"
+          for attempt in $(seq 1 36); do
+            recovery_state=$(timeout 15s docker run --rm --network dofek_default \
+              -e "PGPASSWORD=${POSTGRES_PASSWORD}" \
+              postgres:18-alpine \
+              psql --host=db --username=health --dbname=health --no-align --tuples-only \
+              --command "SELECT NOT pg_is_in_recovery();" 2>/dev/null || true)
+            if [ "$(echo "$recovery_state" | tr -d '[:space:]')" = "t" ]; then
+              echo "Postgres is writable."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::Postgres did not become writable within 180s"
+              exit 1
+            fi
+            echo "Postgres still starting/recovering; retrying in 5s..."
+            sleep 5
+          done
           for attempt in $(seq 1 12); do
             if timeout 90s docker run --rm --network dofek_default \
               -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \

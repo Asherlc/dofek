@@ -12,6 +12,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## General
 - **Apply minimum fix**: Only perform the minimum fix required to resolve the issue at hand. Do not add extra error handling, validation, or infrastructure unless explicitly requested. The user will ask if they want more far-reaching changes.
+- **Prefer elegant solutions**: Favor clear, maintainable, first-principles fixes over ad-hoc patches or layered self-healing workarounds. If a fix feels hacky, stop and propose a cleaner alternative.
 - **Read README.md first**: Before working on deployment, infrastructure, or operational tasks, always read the README for current architecture, deployment procedures, and operational runbooks. The README is the source of truth for how the production system works.
 - **Mirror agent config files with symlinks**: Every directory that contains an `AGENTS.md` file must also contain `CLAUDE.md` and `GEMINI.md` symlinked to `AGENTS.md` (same directory). Keep these in sync whenever adding or moving agent guidance files.
 - **No commented-out dead code/config**: Do not leave commented-out code, workflow jobs, config blocks, or TODO-disabled paths unless the user explicitly asks for that. If something is being removed, delete it fully.
@@ -117,6 +118,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## CI
 - **GitHub Actions** runs on every push/PR: lint, typecheck, knip, test (unit + integration with coverage), e2e (Docker-based), mutation (Stryker, PR-only).
+- **Swarm deploy release unit**: For web deploys, treat `docker stack deploy` as the single release action. Do not split `web` and `training-export-worker` into separate deploy workflows/jobs for normal releases; both are updated by the same stack using the same image tag.
 - **Knip unused code analysis**: Root `knip.json` must be updated whenever adding a new package with its own runtime entry point (e.g. `packages/server/src/index.ts`). If Knip reports false positives for an entire package, verify its entry point is correctly registered.
 - **Use the `gh` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `gh run list`, `gh run view <id>`. See `docs/ci-debugging.md` for how to extract actual error messages from truncated CI logs (especially iOS builds where xcodebuild output is piped through `tail -40`).
 - **Use the CI fix skill**: When a user asks to fix failing GitHub Actions checks, use the `github:gh-fix-ci` skill.

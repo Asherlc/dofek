@@ -49,6 +49,26 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 
 Deployments are push-based from CI, using a remote Docker context over SSH. CI never runs shell scripts on the server — it only calls the Docker API.
 
+### Release Unit (Important)
+
+- A web deploy is a **single swarm stack release**, not separate app/ML rollouts.
+- `IMAGE_TAG` is shared across both GHCR images:
+  - `ghcr.io/asherlc/dofek:<tag>`
+  - `ghcr.io/asherlc/dofek-ml:<tag>`
+- `docker stack deploy` is the only production rollout command for web deploys. It updates `web`, `worker`, and `training-export-worker` together from `deploy/stack.yml`.
+
+### Flow Diagram
+
+```text
+CI (main) -> build dofek + dofek-ml (same tag)
+         -> deploy-web check (both tags must exist)
+         -> deploy-terraform (shared prerequisite)
+         -> deploy-app
+              -> export env via Infisical
+              -> migrate (one-shot container on dofek_default)
+              -> docker stack deploy dofek
+```
+
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
@@ -56,9 +76,10 @@ Deployments are push-based from CI, using a remote Docker context over SSH. CI n
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
-   5. Run migrations as a one-shot container attached to the swarm overlay network:
+   5. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
+   6. Run migrations as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
-   6. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
+   7. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)

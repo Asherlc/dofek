@@ -85,3 +85,15 @@ gh run view <RUN_ID> --job <JOB_ID> --log
 1. Keep `web` startup focused on serving traffic.
 2. Run migrations as a separate explicit deploy step before `rollout web` (for example `compose run --rm web migrate`).
 3. Use `start_period` only as a bounded startup grace window, not as the primary migration strategy.
+
+## Deploy Migration Failures (`database system is in recovery mode`)
+
+If `Deploy App` fails with `[migrate] PostgresError: the database system is in recovery mode`, the migration started before Postgres finished startup/recovery.
+
+### Correct fix pattern
+
+1. Add a pre-migration DB readiness gate that checks writability, not just port reachability.
+2. Use a bounded loop that runs:
+   `SELECT NOT pg_is_in_recovery();`
+3. Run migration only after this returns `t`.
+4. Keep migration retries as a secondary guard for transient failures.
