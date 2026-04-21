@@ -20,7 +20,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
   - **Sentry**: Receives application logs/errors.
   - **Netdata**: Real-time server health and performance monitoring.
-- **Secrets**: Managed via **Infisical**. CI fetches an explicit allowlist of deploy keys into a temporary `.env.prod` file on the runner for `docker stack deploy`. Multiline secrets (for example `APPLE_PRIVATE_KEY`) are injected as dedicated Docker Swarm secrets. The server never stores secrets on disk.
+- **Secrets**: Managed via **Infisical**. CI exports secrets into a temporary `.env.prod` file on the runner for `docker stack deploy` and validates required deploy keys are present. Multiline secrets (for example `APPLE_PRIVATE_KEY`) are injected as dedicated Docker Swarm secrets. The server never stores secrets on disk.
 
 ## Implementation Details
 
@@ -74,7 +74,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
-   1. Install Infisical CLI, fetch required deploy keys into `$RUNNER_TEMP/.env.prod`, and fetch `APPLE_PRIVATE_KEY` separately to a temporary file.
+   1. Install Infisical CLI, export `$RUNNER_TEMP/.env.prod`, validate required deploy keys, and fetch `APPLE_PRIVATE_KEY` separately to a temporary file.
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.

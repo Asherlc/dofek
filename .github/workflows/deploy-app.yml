@@ -79,17 +79,17 @@ jobs:
             R2_ENDPOINT
             R2_SECRET_ACCESS_KEY
           )
-          mapfile -t required_deploy_values < <(
-            infisical secrets get "${required_deploy_keys[@]}" --env=prod --plain --silent
-          )
-          if [ "${#required_deploy_values[@]}" -ne "${#required_deploy_keys[@]}" ]; then
-            echo "::error::Infisical returned ${#required_deploy_values[@]} values for ${#required_deploy_keys[@]} required deploy keys. Check missing keys or multiline values in required deploy keys."
+          infisical export --env=prod --format=dotenv --silent > "$RUNNER_TEMP/.env.prod"
+          missing_deploy_keys=()
+          for key in "${required_deploy_keys[@]}"; do
+            if ! grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
+              missing_deploy_keys+=("$key")
+            fi
+          done
+          if [ "${#missing_deploy_keys[@]}" -gt 0 ]; then
+            echo "::error::Infisical deploy export is missing required keys: ${missing_deploy_keys[*]}"
             exit 1
           fi
-          paste \
-            <(printf '%s\n' "${required_deploy_keys[@]}") \
-            <(printf '%s\n' "${required_deploy_values[@]}") \
-            | sed $'s/\t/=/' > "$RUNNER_TEMP/.env.prod"
           infisical secrets get APPLE_PRIVATE_KEY --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
           if [ ! -s "$RUNNER_TEMP/apple_private_key.pem" ]; then
             echo "::error::APPLE_PRIVATE_KEY is missing or empty in Infisical"
