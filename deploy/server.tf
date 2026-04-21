@@ -62,7 +62,10 @@ resource "hcloud_volume" "dofek_data" {
 # servers, but `user_data` is in `ignore_changes` on `hcloud_server.dofek`, so
 # for the existing live server we apply it explicitly here. Idempotent.
 resource "terraform_data" "swarm_init" {
-  triggers_replace = ["swarm-v1"]
+  triggers_replace = [
+    "swarm-v2",
+    hcloud_server.dofek.id,
+  ]
 
   connection {
     type        = "ssh"

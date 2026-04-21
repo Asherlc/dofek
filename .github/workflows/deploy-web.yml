@@ -77,6 +77,7 @@ jobs:
     uses: ./.github/workflows/deploy-app.yml
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
+      server_host: ${{ needs.terraform.outputs.server_host }}
     secrets: inherit
 
   deploy-ml:
@@ -86,5 +87,6 @@ jobs:
     uses: ./.github/workflows/deploy-ml.yml
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
+      server_host: ${{ needs.terraform.outputs.server_host }}
     secrets: inherit
   # Image cleanup runs on the server via docuum (see stack.yml).

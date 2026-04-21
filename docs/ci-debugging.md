@@ -1,5 +1,7 @@
 # CI Debugging Guide
 
+When fixing failing GitHub Actions checks, prefer using the `github:gh-fix-ci` skill so triage, logs, and fixes follow one consistent workflow.
+
 ## Reading iOS Build Errors
 
 The "iOS Native Build" CI job runs `xcodebuild archive` piped through `tail -40`, which only keeps the last 40 lines. Swift compiler errors are printed **mid-build** and get truncated. The job log only shows the final summary ("The following build commands failed") and exit code 65, not the actual error messages.

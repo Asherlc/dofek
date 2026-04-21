@@ -11,12 +11,20 @@ on:
         description: "Docker image tag to deploy directly (e.g. sha-abc1234)"
         required: false
         type: string
+      server_host:
+        description: "Docker SSH host (defaults to SERVER_HOST secret)"
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       image_tag:
         description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
         required: false
         default: "latest"
+        type: string
+      server_host:
+        description: "Docker SSH host (defaults to SERVER_HOST secret)"
+        required: false
         type: string
 
 concurrency:
@@ -28,7 +36,7 @@ jobs:
     name: Deploy App
     runs-on: ubuntu-latest
     env:
-      DOCKER_HOST: ssh://root@${{ secrets.SERVER_HOST }}
+      DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -50,7 +58,7 @@ jobs:
       - name: Setup SSH and Infisical
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_HOST: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
           INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
         run: |
           mkdir -p ~/.ssh

@@ -7,6 +7,10 @@ on:
         description: "Commit SHA to deploy"
         required: false
         type: string
+    outputs:
+      server_host:
+        description: "Terraform-managed server host/IP for Docker SSH deploys"
+        value: ${{ jobs.terraform.outputs.server_host }}
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -22,6 +26,8 @@ jobs:
   terraform:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    outputs:
+      server_host: ${{ steps.tf_outputs.outputs.server_host }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -45,3 +51,9 @@ jobs:
           # is benign in CI and avoids spurious "workspace already locked" failures.
           terraform init -lock-timeout=5m
           terraform apply -auto-approve -lock-timeout=5m
+
+      - name: Terraform Outputs
+        id: tf_outputs
+        working-directory: deploy
+        run: |
+          echo "server_host=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"

@@ -38,3 +38,8 @@ Dofek specializes in deep integration with fitness platforms that lack public AP
 - `testing.md`: Practical patterns for test assertions with chainable DB mocks (`values(...)` payload checks, guarding against accidental `values([])` inserts).
 - `xcode-cloud.md`: Configuration and troubleshooting for our automated iOS build pipeline.
 - `provider-api-audit.md`: Periodic review of provider API health and data coverage.
+
+## CI Preview Apps
+
+- Storybook previews are active via `review-app-storybook.yml` (PR artifacts uploaded to R2).
+- The old web preview workflow (`review-app-web.yml`) has been removed; do not reintroduce it as commented-out config.
