@@ -84,6 +84,7 @@ jobs:
             exit 1
           fi
           required_deploy_keys=(
+            APPLE_PRIVATE_KEY
             CLOUDFLARE_API_TOKEN
             OTA_JWT_SECRET
             OTA_PRIVATE_KEY_B64
@@ -107,13 +108,7 @@ jobs:
             echo "::error::Infisical deploy export with tag web-env is missing required keys: ${missing_deploy_keys[*]}"
             exit 1
           fi
-          infisical secrets get APPLE_PRIVATE_KEY --projectId="$project_id" --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
-          if [ ! -s "$RUNNER_TEMP/apple_private_key.pem" ]; then
-            echo "::error::APPLE_PRIVATE_KEY is missing or empty in Infisical"
-            exit 1
-          fi
           chmod 600 "$RUNNER_TEMP/.env.prod"
-          chmod 600 "$RUNNER_TEMP/apple_private_key.pem"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -121,21 +116,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Prepare Apple private key secret
-        id: apple_secret
-        env:
-          APPLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/apple_private_key.pem
-        run: |
-          APPLE_PRIVATE_KEY_SECRET_HASH="$(sha256sum "$APPLE_PRIVATE_KEY_FILE" | cut -c1-12)"
-          APPLE_PRIVATE_KEY_SECRET_NAME="dofek_apple_private_key_${APPLE_PRIVATE_KEY_SECRET_HASH}"
-          if ! docker secret inspect "$APPLE_PRIVATE_KEY_SECRET_NAME" >/dev/null 2>&1; then
-            echo "Creating Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
-            docker secret create "$APPLE_PRIVATE_KEY_SECRET_NAME" "$APPLE_PRIVATE_KEY_FILE"
-          else
-            echo "Reusing existing Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
-          fi
-          echo "secret_name=$APPLE_PRIVATE_KEY_SECRET_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Pull deploy images
         env:
@@ -219,7 +199,6 @@ jobs:
       - name: Deploy stack
         env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
-          APPLE_PRIVATE_KEY_SECRET_NAME: ${{ steps.apple_secret.outputs.secret_name }}
         run: |
           while IFS= read -r env_line || [ -n "$env_line" ]; do
             case "$env_line" in
@@ -227,5 +206,4 @@ jobs:
             esac
             export "$env_line"
           done < "$INFISICAL_ENV_FILE"
-          export APPLE_PRIVATE_KEY_SECRET_NAME
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek

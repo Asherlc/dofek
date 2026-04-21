@@ -6,10 +6,6 @@
 # Secrets come from Infisical, exported by CI to a local .env.prod file
 # that `docker stack deploy` reads (env_file) and inlines into the service
 # specs. Shell env is also used for compose-style ${VAR} interpolation.
-#
-# APPLE_PRIVATE_KEY is intentionally excluded from that dotenv file because it
-# is multiline and not compatible with Swarm env_file parsing. CI injects it as
-# a dedicated Docker secret and web reads it via APPLE_PRIVATE_KEY_FILE.
 
 services:
   traefik:
@@ -53,15 +49,11 @@ services:
       PORT: "3000"
       JOB_FILES_DIR: /app/job-files
       PUBLIC_URL: https://dofek.asherlc.com
-      APPLE_PRIVATE_KEY_FILE: /run/secrets/apple_private_key
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-web
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
-    secrets:
-      - source: apple_private_key
-        target: apple_private_key
     volumes:
       - job_files:/app/job-files
     healthcheck:
@@ -281,8 +273,3 @@ networks:
   default:
     driver: overlay
     attachable: true
-
-secrets:
-  apple_private_key:
-    external: true
-    name: ${APPLE_PRIVATE_KEY_SECRET_NAME:?APPLE_PRIVATE_KEY_SECRET_NAME is required}
