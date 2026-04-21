@@ -97,3 +97,5 @@ If `Deploy App` fails with `[migrate] PostgresError: the database system is in r
    `SELECT NOT pg_is_in_recovery();`
 3. Run migration only after this returns `t`.
 4. Keep migration retries as a secondary guard for transient failures.
+
+If recovery mode persists and logs show `No space left on device`, treat it as a storage incident and follow `docs/metric-stream-timescaledb-runbook.md` plus the agent skill `.agents/skills/db-incident-response/SKILL.md`.

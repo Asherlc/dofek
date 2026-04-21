@@ -13,8 +13,9 @@ Use this during a planned maintenance window. Do not run this as an automatic de
 ## Preconditions
 
 1. **Take a fresh backup/snapshot first** (required).
-2. Ensure **free disk headroom** before migration.
-3. Plan a write pause for app services that insert into `metric_stream` (`web`, `worker`, `training-export-worker`).
+2. Ensure **free disk headroom** before migration (target at least 20GB free).
+3. Ensure Terraform-managed data volume is provisioned (`data_volume_size_gb`, default `100`) and applied.
+4. Plan a write pause for app services that insert into `metric_stream` (`web`, `worker`, `training-export-worker`).
 
 ## 1) Verify current state
 

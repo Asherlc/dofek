@@ -9,7 +9,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - **Compute**: Hetzner Cloud `cax11` ARM64 server running Ubuntu 24.04. The server runs `dockerd` initialized as a single-node swarm manager; it has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
-  - **Volume**: 20GB Hetzner Block Storage for database data, mounted at `/var/lib/postgresql/data`.
+  - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
 - **Networking**:
   - **Firewall**: `hcloud_firewall` allows SSH (port 22) from restricted IPs and HTTP/HTTPS (80/443) from everywhere.
@@ -28,6 +28,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. Two idempotent `terraform_data` resources handle post-provision state:
   - `swarm_init`: ensures the server has `docker swarm init` run exactly once (cloud-init also does this for fresh servers, but `user_data` is in `ignore_changes`, so this covers drift on the live server).
   - `otel_config_sync`: bind-mounts `otel-collector-config.yaml` into `/opt/dofek` on the server and forces the collector service to re-read it.
+  - `hcloud_volume.dofek_data`: attaches persistent block storage for DB growth headroom; size is controlled by `data_volume_size_gb`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
 - `storage.tf`: Manages Cloudflare R2 buckets. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
 
