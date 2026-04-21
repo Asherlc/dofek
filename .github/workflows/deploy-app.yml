@@ -68,12 +68,28 @@ jobs:
           curl -1sLf "https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh" | sudo -E bash
           sudo apt-get install -y "infisical=0.38.0"
           infisical export --env=prod --format=dotenv --tags=deploy-env --silent > "$RUNNER_TEMP/.env.prod"
-          postgres_password="$(infisical secrets get POSTGRES_PASSWORD --env=prod --plain --silent)"
-          if [ -z "$postgres_password" ]; then
-            echo "::error::POSTGRES_PASSWORD is missing in Infisical"
+          required_deploy_keys=(
+            CLOUDFLARE_API_TOKEN
+            OTA_JWT_SECRET
+            OTA_PRIVATE_KEY_B64
+            OTA_PUBLIC_KEY_B64
+            PGADMIN_DEFAULT_EMAIL
+            PGADMIN_DEFAULT_PASSWORD
+            POSTGRES_PASSWORD
+            R2_ACCESS_KEY_ID
+            R2_ENDPOINT
+            R2_SECRET_ACCESS_KEY
+          )
+          missing_deploy_keys=()
+          for key in "${required_deploy_keys[@]}"; do
+            if ! grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
+              missing_deploy_keys+=("$key")
+            fi
+          done
+          if [ "${#missing_deploy_keys[@]}" -gt 0 ]; then
+            echo "::error::Infisical deploy export is missing required deploy-env keys: ${missing_deploy_keys[*]}"
             exit 1
           fi
-          printf "POSTGRES_PASSWORD=%s\n" "$postgres_password" >> "$RUNNER_TEMP/.env.prod"
           infisical secrets get APPLE_PRIVATE_KEY --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
           if [ ! -s "$RUNNER_TEMP/apple_private_key.pem" ]; then
             echo "::error::APPLE_PRIVATE_KEY is missing or empty in Infisical"
