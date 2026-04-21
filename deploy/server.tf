@@ -79,7 +79,9 @@ resource "terraform_data" "swarm_init" {
 
   provisioner "remote-exec" {
     inline = [
-      "docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active || docker swarm init",
+      "if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then exit 0; fi",
+      "if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then docker swarm leave --force; fi",
+      "docker swarm init",
     ]
   }
 }

@@ -43,4 +43,11 @@ runcmd:
   - systemctl restart docker
 
   # Initialize a single-node swarm (idempotent)
-  - docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active || docker swarm init
+  - |
+      if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then
+        exit 0
+      fi
+      if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then
+        docker swarm leave --force
+      fi
+      docker swarm init
