@@ -182,6 +182,7 @@ services:
     image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
+      EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}
       BASE_URL: https://ota.dofek.asherlc.com
       STORAGE_MODE: s3
       S3_BUCKET_NAME: dofek-ota
