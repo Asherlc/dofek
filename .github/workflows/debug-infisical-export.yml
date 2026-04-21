@@ -1,0 +1,96 @@
+name: Debug Infisical Export
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify EXPO_ACCESS_TOKEN export/parsing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Infisical CLI
+        env:
+          INFISICAL_VERSION: 0.43.76
+        run: |
+          curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
+          sudo apt-get install -y "infisical=${INFISICAL_VERSION}"
+          infisical --version
+
+      - name: Export prod env and verify token handling
+        env:
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          project_id="$(jq -r '.workspaceId // empty' .infisical.json)"
+          if [ -z "$project_id" ]; then
+            echo "::error::.infisical.json is missing workspaceId"
+            exit 1
+          fi
+
+          infisical export --projectId="$project_id" --env=prod --format=dotenv --silent > "$RUNNER_TEMP/.env.prod"
+
+          export_line="$(grep '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod" || true)"
+          if [ -z "$export_line" ]; then
+            echo "::error::EXPO_ACCESS_TOKEN is missing from dotenv export"
+            exit 1
+          fi
+
+          export_value="${export_line#EXPO_ACCESS_TOKEN=}"
+          plain_value="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent)"
+
+          export_len=${#export_value}
+          plain_len=${#plain_value}
+
+          export_is_single_quoted=false
+          export_is_double_quoted=false
+          if [ "${export_value#\'}" != "$export_value" ] && [ "${export_value%\'}" != "$export_value" ]; then
+            export_is_single_quoted=true
+          fi
+          if [ "${export_value#\"}" != "$export_value" ] && [ "${export_value%\"}" != "$export_value" ]; then
+            export_is_double_quoted=true
+          fi
+
+          shell_value=""
+          set -a
+          # shellcheck disable=SC1090
+          . "$RUNNER_TEMP/.env.prod"
+          set +a
+          shell_value="${EXPO_ACCESS_TOKEN:-}"
+          shell_len=${#shell_value}
+
+          shell_equals_plain=false
+          if [ "$shell_value" = "$plain_value" ]; then
+            shell_equals_plain=true
+          fi
+
+          docker_len="$(docker run --rm --env-file "$RUNNER_TEMP/.env.prod" alpine:3.20 sh -lc 'printf "%s" "${EXPO_ACCESS_TOKEN:-}" | wc -c')"
+          docker_len="$(printf '%s' "$docker_len" | tr -d '[:space:]')"
+
+          docker_starts_with_quote=false
+          docker_ends_with_quote=false
+          if docker run --rm --env-file "$RUNNER_TEMP/.env.prod" alpine:3.20 sh -lc '[ "${EXPO_ACCESS_TOKEN#\'}" != "$EXPO_ACCESS_TOKEN" ] || [ "${EXPO_ACCESS_TOKEN#\"}" != "$EXPO_ACCESS_TOKEN" ]'; then
+            docker_starts_with_quote=true
+          fi
+          if docker run --rm --env-file "$RUNNER_TEMP/.env.prod" alpine:3.20 sh -lc '[ "${EXPO_ACCESS_TOKEN%\'}" != "$EXPO_ACCESS_TOKEN" ] || [ "${EXPO_ACCESS_TOKEN%\"}" != "$EXPO_ACCESS_TOKEN" ]'; then
+            docker_ends_with_quote=true
+          fi
+
+          docker_len_equals_plain=false
+          if [ "$docker_len" = "$plain_len" ]; then
+            docker_len_equals_plain=true
+          fi
+
+          echo "Infisical dotenv key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
+          echo "export_len=$export_len"
+          echo "plain_len=$plain_len"
+          echo "shell_len=$shell_len"
+          echo "docker_len=$docker_len"
+          echo "export_is_single_quoted=$export_is_single_quoted"
+          echo "export_is_double_quoted=$export_is_double_quoted"
+          echo "shell_equals_plain=$shell_equals_plain"
+          echo "docker_len_equals_plain=$docker_len_equals_plain"
+          echo "docker_starts_with_quote=$docker_starts_with_quote"
+          echo "docker_ends_with_quote=$docker_ends_with_quote"
