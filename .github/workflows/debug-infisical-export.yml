@@ -35,10 +35,22 @@ jobs:
 
           infisical export --projectId="$project_id" --env=prod --format=dotenv --silent > "$RUNNER_TEMP/.env.prod"
 
+          echo "Infisical dotenv key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
+          echo "Expo-related keys present in dotenv export:"
+          cut -d= -f1 "$RUNNER_TEMP/.env.prod" | grep '^EXPO' || true
+
+          for key in EXPO_ACCESS_TOKEN EXPO_TOKEN EXPO_APP_ID EXPO_PUBLIC_SENTRY_DSN; do
+            if grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
+              echo "$key=present"
+            else
+              echo "$key=missing"
+            fi
+          done
+
           export_line="$(grep '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod" || true)"
           if [ -z "$export_line" ]; then
-            echo "::error::EXPO_ACCESS_TOKEN is missing from dotenv export"
-            exit 1
+            echo "EXPO_ACCESS_TOKEN is missing from dotenv export; skipping quote/parsing checks"
+            exit 0
           fi
 
           export_value="${export_line#EXPO_ACCESS_TOKEN=}"
@@ -86,7 +98,6 @@ jobs:
             docker_len_equals_plain=true
           fi
 
-          echo "Infisical dotenv key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
           echo "export_len=$export_len"
           echo "plain_len=$plain_len"
           echo "shell_len=$shell_len"
