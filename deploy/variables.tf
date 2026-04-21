@@ -42,9 +42,3 @@ variable "cloudflare_account_id" {
   description = "Cloudflare account ID"
   type        = string
 }
-
-variable "infisical_token" {
-  description = "Infisical machine identity token for deploy-time secret export"
-  type        = string
-  sensitive   = true
-}

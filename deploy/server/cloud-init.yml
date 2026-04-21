@@ -1,6 +1,7 @@
 #cloud-config
-# Installs Docker CE, docker-rollout, and Infisical CLI on a fresh Ubuntu 24.04 server.
-# After boot, copy the deploy compose file and use run-compose-with-infisical.sh.
+# Installs Docker CE and initializes a single-node Docker Swarm on a fresh
+# Ubuntu 24.04 server. Deploys happen from CI via a remote Docker context
+# (SSH); there are no deploy scripts or secrets on the server.
 
 package_update: true
 
@@ -40,27 +41,11 @@ runcmd:
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-  # Wait for DNS to be fully available before downloading from GitHub
-  - |
-    for i in $(seq 1 30); do
-      getent hosts github.com >/dev/null 2>&1 && break
-      echo "Waiting for DNS... attempt $i"
-      sleep 2
-    done
-    getent hosts github.com >/dev/null 2>&1 || { echo "ERROR: DNS not available after 60s" >&2; exit 1; }
-
-  # Install docker-rollout plugin (shell script, not arch-specific)
-  - mkdir -p /usr/local/lib/docker/cli-plugins
-  - curl -fsSL "https://github.com/Wowu/docker-rollout/releases/download/v0.13/docker-rollout" -o /usr/local/lib/docker/cli-plugins/docker-rollout
-  - chmod +x /usr/local/lib/docker/cli-plugins/docker-rollout
-
-  # Install Infisical CLI
-  - curl -1sLf "https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh" | bash
-  - apt-get update
-  - apt-get install -y "infisical=0.38.0"
-
-  # Create app directory
+  # App directory (used for bind-mounted OTel config)
   - mkdir -p /opt/dofek
 
   # Restart Docker to pick up daemon.json log settings
   - systemctl restart docker
+
+  # Initialize a single-node swarm (idempotent)
+  - docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active || docker swarm init

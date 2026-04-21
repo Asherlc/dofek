@@ -21,7 +21,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 ## Verification & Tooling
 
-- `check-dns-records.sh`: Validates that every domain in `docker-compose.deploy.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
+- `check-dns-records.sh`: Validates that every domain in `deploy/stack.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema (`src/db/schema.ts`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.

@@ -23,16 +23,9 @@ jobs:
   ml:
     name: Deploy ML Worker
     runs-on: ubuntu-latest
+    env:
+      DOCKER_HOST: ssh://root@${{ secrets.SERVER_HOST }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - name: Resolve image tag
-        id: resolve
-        env:
-          INPUT_TAG: ${{ inputs.image_tag }}
-        run: |
-          TAG="${INPUT_TAG:-latest}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Deploying dofek-ml image: $TAG"
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -42,49 +35,19 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Upload deploy helper
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Update training-export-worker
         env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          TAG: ${{ inputs.image_tag || 'latest' }}
         run: |
-          scp deploy/server/run-compose-with-infisical.sh "root@${SERVER_HOST}:/opt/dofek/run-compose-with-infisical.sh"
-          ssh "root@${SERVER_HOST}" "chmod 700 /opt/dofek/run-compose-with-infisical.sh"
-      - name: Deploy training-export-worker
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
-          SHA_TAG: ${{ steps.resolve.outputs.tag }}
-        run: |
-          ssh "root@${SERVER_HOST}" bash -s -- "$GHCR_TOKEN" "$SHA_TAG" "$INFISICAL_TOKEN" <<'DEPLOY'
-            set -euo pipefail
-            GHCR_TOKEN="$1"
-            SHA_TAG="$2"
-            INFISICAL_TOKEN="$3"
-            if [ -z "$INFISICAL_TOKEN" ]; then
-              echo "::error::Missing INFISICAL_TOKEN GitHub secret"
-              exit 1
-            fi
-            cd /opt/dofek
-
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
-
-            docker pull "ghcr.io/asherlc/dofek-ml:${SHA_TAG}"
-
-            echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
-
-            # Ensure db and redis are healthy before deploying.
-            # The error message below intentionally does NOT claim the cause is a healthcheck timeout —
-            # the helper script can also fail before compose runs (e.g. infisical install/export). The
-            # real cause is in the output above; downstream messages must not invent a different cause.
-            up_status=0
-            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh \
-              compose up -d --wait --wait-timeout 120 db redis || up_status=$?
-            if [ $up_status -ne 0 ]; then
-              echo "::error::compose up for db/redis failed (exit $up_status). See output above for the real cause (helper script, infisical export, image pull, or healthcheck timeout)."
-              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose ps || true
-              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose logs --tail=100 db redis || true
-              exit $up_status
-            fi
-
-            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose up -d --force-recreate training-export-worker
-          DEPLOY
+          docker service update \
+            --image "ghcr.io/asherlc/dofek-ml:${TAG}" \
+            --with-registry-auth \
+            dofek_training-export-worker

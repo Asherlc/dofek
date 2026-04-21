@@ -120,26 +120,4 @@ jobs:
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
     secrets: inherit
-
-  cleanup:
-    name: Cleanup Images
-    needs: [app, ml]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Prune unused images
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          ssh "root@${SERVER_HOST}" \
-            'docker image prune -af' \
-            || echo "Image cleanup failed (non-fatal)"
+  # Image cleanup runs via daily cron on the server (see cloud-init.yml).

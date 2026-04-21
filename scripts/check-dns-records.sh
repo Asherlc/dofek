@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Verify every domain in Traefik Host() rules has a matching DNS record in Terraform.
-# Catches drift where a domain is added to docker-compose but not to dns.tf.
+# Catches drift where a domain is added to the stack file but not to dns.tf.
 set -euo pipefail
 
-COMPOSE="deploy/docker-compose.deploy.yml"
+STACK="deploy/stack.yml"
 DNS_TF="deploy/dns.tf"
 
 # Extract all hostnames from Traefik Host(`...`) labels and deduplicate them
-hosts=$(grep -o 'Host(`[^`]*`)' "$COMPOSE" | sed 's/Host(`//;s/`)//' | sort -u)
+hosts=$(grep -o 'Host(`[^`]*`)' "$STACK" | sed 's/Host(`//;s/`)//' | sort -u)
 
 missing=()
 for host in $hosts; do

@@ -27,8 +27,11 @@ jobs:
   app:
     name: Deploy App
     runs-on: ubuntu-latest
+    env:
+      DOCKER_HOST: ssh://root@${{ secrets.SERVER_HOST }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
       - name: Resolve image tag
         id: resolve
         env:
@@ -36,63 +39,45 @@ jobs:
           INPUT_SHA: ${{ inputs.commit_sha }}
         run: |
           if [ -n "$INPUT_TAG" ]; then
-            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-            echo "Using provided image tag: $INPUT_TAG"
+            TAG="$INPUT_TAG"
           elif [ -n "$INPUT_SHA" ]; then
-            SHORT_SHA=$(echo "$INPUT_SHA" | head -c 7)
-            echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "Computed image tag from commit SHA: sha-${SHORT_SHA}"
+            TAG="sha-$(echo "$INPUT_SHA" | head -c 7)"
           else
-            echo "::error::Either image_tag or commit_sha must be provided"
-            exit 1
+            echo "::error::Either image_tag or commit_sha must be provided"; exit 1
           fi
-      - name: Setup SSH
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH and Infisical
         env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
           INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
-          SHA_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          curl -1sLf "https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh" | sudo -E bash
+          sudo apt-get install -y "infisical=0.38.0"
+          infisical export --env=prod --format=dotenv > "$RUNNER_TEMP/.env.prod"
+          chmod 600 "$RUNNER_TEMP/.env.prod"
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GHCR_TOKEN,INFISICAL_TOKEN,SHA_TAG
-          script: |
-            set -euo pipefail
-            if [ -z "$INFISICAL_TOKEN" ]; then
-              echo "::error::Missing INFISICAL_TOKEN GitHub secret"
-              exit 1
-            fi
-            cd /opt/dofek
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
-            # Authenticate with GHCR
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u asherlc --password-stdin
-
-            # Pull the new image
-            docker pull "ghcr.io/asherlc/dofek:${SHA_TAG}"
-
-            # Persist the image tag for future compose operations
-            echo "IMAGE_TAG=${SHA_TAG}" > .env.deploy
-
-            # Ensure db and redis are healthy before rolling out.
-            # The error message below intentionally does NOT claim the cause is a healthcheck timeout —
-            # the helper script can also fail before compose runs (e.g. infisical install/export). The
-            # real cause is in the output above; downstream messages must not invent a different cause.
-            up_status=0
-            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh \
-              compose up -d --wait --wait-timeout 180 db redis || up_status=$?
-            if [ $up_status -ne 0 ]; then
-              echo "::error::compose up for db/redis failed (exit $up_status). See output above for the real cause (helper script, infisical export, image pull, or healthcheck timeout)."
-              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose ps || true
-              INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh compose logs --tail=100 db redis || true
-              exit $up_status
-            fi
-
-            # Apply migrations explicitly before rolling out app services.
-            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh \
-              compose run --rm web migrate
-
-            # Zero-downtime rollout for both services
-            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh rollout web
-
-            INFISICAL_TOKEN="$INFISICAL_TOKEN" /opt/dofek/run-compose-with-infisical.sh rollout worker
+      - name: Migrate and deploy
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+        run: |
+          set -a; . "$INFISICAL_ENV_FILE"; set +a
+          docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+          docker run --rm --network dofek_default \
+            --env-file "$INFISICAL_ENV_FILE" \
+            -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate
+          docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
