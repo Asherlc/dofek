@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
@@ -73,7 +73,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     logger.info(`[auth] User ${userId} completed signup via ${pending.providerId}`);
     res.redirect(sanitizeReturnTo(pending.returnTo) ?? "/");
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     logger.error(`[auth] Completing signup failed: ${err}`);
     res.status(500).send("Signup failed — please try again");
   }

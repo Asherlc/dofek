@@ -1263,7 +1263,7 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("reports error to Sentry when Apple Health connect fails", async () => {
+  it("reports error to telemetry when Apple Health connect fails", async () => {
     const { captureException } = await import("../../lib/telemetry");
     const mockCaptureException = vi.mocked(captureException);
     mockCaptureException.mockClear();
@@ -1339,7 +1339,7 @@ describe("ProvidersScreen", () => {
       expect(card.getByText("Connect")).toBeTruthy();
     });
 
-    // Should report to Sentry
+    // Should report to telemetry
     expect(mockCaptureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining("healthkit entitlement") }),
       expect.objectContaining({ context: "healthkit-connect" }),

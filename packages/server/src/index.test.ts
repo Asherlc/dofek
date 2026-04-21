@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
-  init: vi.fn(),
+  initTelemetry: vi.fn(),
 }));
 vi.mock("@bull-board/api", () => ({
   createBullBoard: vi.fn(),
@@ -97,9 +97,9 @@ vi.mock("dofek/db", () => ({
   })),
 }));
 
-import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
+import * as telemetry from "dofek/telemetry";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
@@ -530,13 +530,13 @@ describe("createApp HTTP routes", () => {
       expect(context.userId).toBeNull();
     });
 
-    it("logs and reports internal server errors to Sentry via onError", () => {
+    it("logs and reports internal server errors to telemetry via onError", () => {
       const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
       if (!middlewareOptions?.onError) {
         throw new Error("Expected onError to be defined");
       }
       vi.mocked(logger.error).mockClear();
-      vi.mocked(Sentry.captureException).mockClear();
+      vi.mocked(telemetry.captureException).mockClear();
 
       const cause = new Error("db connection failed");
       const onError: (opts: {
@@ -549,23 +549,23 @@ describe("createApp HTTP routes", () => {
       });
 
       expect(vi.mocked(logger.error)).toHaveBeenCalledWith("[trpc] user.get: Something went wrong");
-      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(cause, {
+      expect(vi.mocked(telemetry.captureException)).toHaveBeenCalledWith(cause, {
         tags: { trpcPath: "user.get" },
       });
     });
 
-    it("does not report non-internal errors to Sentry", () => {
+    it("does not report non-internal errors to telemetry", () => {
       const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
       if (!middlewareOptions?.onError) {
         throw new Error("Expected onError to be defined");
       }
-      vi.mocked(Sentry.captureException).mockClear();
+      vi.mocked(telemetry.captureException).mockClear();
 
       const onError: (opts: { path: string; error: { message: string; code: string } }) => void =
         middlewareOptions.onError;
       onError({ path: "user.get", error: { message: "Not found", code: "NOT_FOUND" } });
 
-      expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
+      expect(vi.mocked(telemetry.captureException)).not.toHaveBeenCalled();
     });
 
     it("reports the error itself when no cause is present", () => {
@@ -573,7 +573,7 @@ describe("createApp HTTP routes", () => {
       if (!middlewareOptions?.onError) {
         throw new Error("Expected onError to be defined");
       }
-      vi.mocked(Sentry.captureException).mockClear();
+      vi.mocked(telemetry.captureException).mockClear();
 
       const errorObj = {
         message: "Internal failure",
@@ -584,7 +584,7 @@ describe("createApp HTTP routes", () => {
         middlewareOptions.onError;
       onError({ path: "data.list", error: errorObj });
 
-      expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(errorObj, {
+      expect(vi.mocked(telemetry.captureException)).toHaveBeenCalledWith(errorObj, {
         tags: { trpcPath: "data.list" },
       });
     });
@@ -656,7 +656,7 @@ describe("runStartupTasks", () => {
     vi.clearAllMocks();
   });
 
-  it("reports warmCache errors to Sentry", async () => {
+  it("reports warmCache errors to telemetry", async () => {
     const error = new Error("cache boom");
     vi.mocked(warmCache).mockRejectedValueOnce(error);
     vi.mocked(startSlackBot).mockResolvedValueOnce(undefined);
@@ -669,10 +669,10 @@ describe("runStartupTasks", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("cache boom"));
-    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+    expect(vi.mocked(telemetry.captureException)).toHaveBeenCalledWith(error);
   });
 
-  it("reports startSlackBot errors to Sentry", async () => {
+  it("reports startSlackBot errors to telemetry", async () => {
     const error = new Error("slack boom");
     vi.mocked(warmCache).mockResolvedValueOnce(undefined);
     vi.mocked(startSlackBot).mockRejectedValueOnce(error);
@@ -684,7 +684,7 @@ describe("runStartupTasks", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("slack boom"));
-    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+    expect(vi.mocked(telemetry.captureException)).toHaveBeenCalledWith(error);
   });
 });
 

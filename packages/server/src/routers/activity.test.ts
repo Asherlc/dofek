@@ -33,7 +33,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureMessage: vi.fn(),
   captureException: vi.fn(),
 }));

@@ -14,7 +14,7 @@ interface ParseFailure {
 type SafeParseResult<T> = ParseSuccess<T> | ParseFailure;
 
 /**
- * Parse an array of rows with a Zod schema, reporting failures to Sentry
+ * Parse an array of rows with a Zod schema, reporting failures to telemetry
  * instead of silently swallowing them.
  *
  * Returns `{ data, error }` so components can show error UI rather than

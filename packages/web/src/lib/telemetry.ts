@@ -1,30 +1,51 @@
-import * as Sentry from "@sentry/react";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 
 declare const __COMMIT_HASH__: string;
 
-const SENTRY_DSN: string | undefined = import.meta.env.VITE_SENTRY_DSN;
-const TRACE_PROPAGATION_TARGETS = [/^\/api/, /^\/auth/, /^\/callback/];
-
 let initialized = false;
+
+function ensureError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+function withSpan(spanName: string, callback: (span: import("@opentelemetry/api").Span) => void) {
+  const activeSpan = trace.getActiveSpan();
+  if (activeSpan) {
+    callback(activeSpan);
+    return;
+  }
+
+  const span = trace.getTracer("dofek.web.telemetry").startSpan(spanName);
+  try {
+    callback(span);
+  } finally {
+    span.end();
+  }
+}
 
 export function initTelemetry() {
   if (initialized) {
     return;
   }
   initialized = true;
-
-  if (!SENTRY_DSN) {
-    return;
-  }
-
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    release: __COMMIT_HASH__,
-    integrations: [Sentry.browserTracingIntegration()],
-    tracePropagationTargets: TRACE_PROPAGATION_TARGETS,
-  });
 }
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
-  Sentry.captureException(error, { extra: context });
+  initTelemetry();
+  const errorObject = ensureError(error);
+  withSpan("web.error.capture", (span) => {
+    span.recordException(errorObject);
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: errorObject.message,
+    });
+    span.setAttribute("app.release", __COMMIT_HASH__);
+    for (const [key, value] of Object.entries(context)) {
+      if (value === undefined || value === null) continue;
+      span.setAttribute(`error.${key}`, String(value));
+    }
+  });
 }

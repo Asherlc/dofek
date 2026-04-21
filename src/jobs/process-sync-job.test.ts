@@ -3,7 +3,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
 const mockCaptureException = vi.fn();
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
@@ -327,7 +327,7 @@ describe("processSyncJob", () => {
     expect(mockLoggerError).toHaveBeenCalledWith("[worker] Partial sync error: bad record 2");
   });
 
-  it("reports thrown sync errors to Sentry", async () => {
+  it("reports thrown sync errors to telemetry", async () => {
     const thrownError = new Error("API timeout");
     const provider = createMockProvider({
       id: "broken",
@@ -343,7 +343,7 @@ describe("processSyncJob", () => {
     });
   });
 
-  it("reports returned sync errors to Sentry", async () => {
+  it("reports returned sync errors to telemetry", async () => {
     const cause = new Error("original cause");
     const provider = createMockProvider({
       id: "partial",

@@ -6,7 +6,7 @@
 
 ### Development Rules
 - **Job Data Types**: Ensure `SyncJobData`, `ImportJobData`, etc., in `queues.ts` are strictly typed.
-- **Sentry Integration**: All workers must be initialized with Sentry to capture background exceptions.
+- **telemetry integration**: All workers must be initialized with telemetry to capture background exceptions.
 - **Idle Spin-down**: In production, workers spin down after 5 minutes of inactivity (`IDLE_TIMEOUT_MS`).
 - **Graceful Shutdown**: Always handle `SIGTERM` and `SIGINT` to allow in-progress jobs to complete or be moved to the delayed queue.
 

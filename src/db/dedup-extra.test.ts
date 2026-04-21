@@ -10,7 +10,7 @@ vi.mock("drizzle-orm", () => ({
   sql: mockSqlTaggedTemplate,
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
@@ -103,7 +103,7 @@ describe("refreshDedupViews", () => {
 
   it("triggers view sync and retries when a view is missing", async () => {
     const { refreshDedupViews } = await import("./dedup.ts");
-    const Sentry = await import("@sentry/node");
+    const telemetry = await import("dofek/telemetry");
     const mockDb = createMockDb();
 
     const missingError = Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
@@ -124,8 +124,8 @@ describe("refreshDedupViews", () => {
 
     // Should have called syncMaterializedViews
     expect(mockSyncMaterializedViews).toHaveBeenCalledWith("postgres://test:test@localhost/test");
-    // Should have reported to Sentry
-    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(
+    // Should have reported to telemetry
+    expect(vi.mocked(telemetry.captureException)).toHaveBeenCalledWith(
       expect.any(AggregateError),
       expect.objectContaining({ tags: { context: "viewSelfHeal" } }),
     );

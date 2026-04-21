@@ -58,8 +58,8 @@ vi.mock("./queues.ts", () => ({
   POST_SYNC_QUEUE: "post-sync-queue",
 }));
 
-vi.mock("@sentry/node", () => ({
-  init: vi.fn(),
+vi.mock("dofek/telemetry", () => ({
+  initTelemetry: vi.fn(),
   captureException: vi.fn(),
 }));
 
@@ -84,7 +84,6 @@ describe("worker module", () => {
   let clearTimeoutSpy: MockInstance;
 
   beforeAll(async () => {
-    process.env.SENTRY_DSN = "https://test@sentry.io/123";
     setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
     // Import the module to trigger its side effects
@@ -127,12 +126,9 @@ describe("worker module", () => {
     );
   });
 
-  it("initializes Sentry when DSN is set", async () => {
-    const Sentry = await import("@sentry/node");
-    expect(Sentry.init).toHaveBeenCalledWith({
-      dsn: "https://test@sentry.io/123",
-      skipOpenTelemetrySetup: true,
-    });
+  it("initializes telemetry at startup", async () => {
+    const telemetry = await import("dofek/telemetry");
+    expect(telemetry.initTelemetry).toHaveBeenCalledTimes(1);
   });
 
   it("registers event handlers on each worker", () => {
@@ -179,10 +175,10 @@ describe("worker module", () => {
     expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
   });
 
-  it("failed event handler reports to Sentry and logs the error", async () => {
-    const Sentry = await import("@sentry/node");
+  it("failed event handler reports to telemetry and logs the error", async () => {
+    const telemetry = await import("dofek/telemetry");
     const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(telemetry.captureException).mockClear();
     vi.mocked(logger.error).mockClear();
 
     const failedCall = mockOn.mock.calls.find((call) => call[0] === "failed");
@@ -190,14 +186,14 @@ describe("worker module", () => {
     const error = new Error("test failure");
     failedCall?.[1](undefined, error);
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(telemetry.captureException).toHaveBeenCalledWith(error);
     expect(logger.error).toHaveBeenCalledWith("[worker] Job failed: test failure");
   });
 
-  it("error event handler reports to Sentry and logs the error", async () => {
-    const Sentry = await import("@sentry/node");
+  it("error event handler reports to telemetry and logs the error", async () => {
+    const telemetry = await import("dofek/telemetry");
     const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(telemetry.captureException).mockClear();
     vi.mocked(logger.error).mockClear();
 
     const errorCall = mockOn.mock.calls.find((call) => call[0] === "error");
@@ -205,14 +201,14 @@ describe("worker module", () => {
     const error = new Error("test worker error");
     errorCall?.[1](error);
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(telemetry.captureException).toHaveBeenCalledWith(error);
     expect(logger.error).toHaveBeenCalledWith("[worker] Worker error: test worker error");
   });
 
-  it("unhandledRejection handler reports to Sentry and logs", async () => {
-    const Sentry = await import("@sentry/node");
+  it("unhandledRejection handler reports to telemetry and logs", async () => {
+    const telemetry = await import("dofek/telemetry");
     const { logger } = await import("../logger.ts");
-    vi.mocked(Sentry.captureException).mockClear();
+    vi.mocked(telemetry.captureException).mockClear();
     vi.mocked(logger.error).mockClear();
 
     const handlers = process.listeners("unhandledRejection");
@@ -221,7 +217,7 @@ describe("worker module", () => {
     const error = new Error("test unhandled");
     handler?.(error, Promise.resolve());
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(telemetry.captureException).toHaveBeenCalledWith(error);
     expect(logger.error).toHaveBeenCalled();
   });
 

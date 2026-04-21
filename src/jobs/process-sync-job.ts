@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -126,7 +126,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-          Sentry.captureException(err.cause ?? new Error(err.message), {
+          telemetry.captureException(err.cause ?? new Error(err.message), {
             tags: { provider: provider.id },
           });
         }
@@ -157,7 +157,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     } catch (err: unknown) {
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
-      Sentry.captureException(err, { tags: { provider: provider.id } });
+      telemetry.captureException(err, { tags: { provider: provider.id } });
       providerStatus[provider.id] = { status: "error", message };
       await job.updateProgress({
         providers: providerStatus,

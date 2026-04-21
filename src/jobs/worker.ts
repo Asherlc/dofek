@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/node";
 import { Worker } from "bullmq";
+import { captureException, initTelemetry } from "dofek/telemetry";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processExportJob } from "./process-export-job.ts";
@@ -24,10 +24,7 @@ import {
 } from "./queues.ts";
 import { setupScheduledSync } from "./scheduled-sync.ts";
 
-const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-if (sentryDsn) {
-  Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
-}
+initTelemetry();
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -135,13 +132,13 @@ for (const worker of allWorkers) {
 
   worker.on("failed", (_job, err) => {
     activeJobs--;
-    Sentry.captureException(err);
+    captureException(err);
     logger.error(`[worker] Job failed: ${err.message}`);
     if (activeJobs <= 0) startIdleTimer();
   });
 
   worker.on("error", (err) => {
-    Sentry.captureException(err);
+    captureException(err);
     logger.error(`[worker] Worker error: ${err.message}`);
   });
 }
@@ -178,7 +175,7 @@ process.on("SIGINT", shutdown);
 // processor's try/catch (e.g., from concurrent batch inserts via postgres.js).
 // Log the error but keep the worker alive so it can process the next job.
 process.on("unhandledRejection", (err) => {
-  Sentry.captureException(err);
+  captureException(err);
   logger.error(`[worker] Unhandled rejection (worker still running): ${err}`);
 });
 

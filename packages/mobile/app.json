@@ -79,19 +79,6 @@
         }
       ],
       [
-        "@sentry/react-native/expo",
-        {
-          "organization": "east-bay-software",
-          "project": "dofek-mobile",
-          "useNativeInit": true,
-          "options": {
-            "dsn": "https://971f1d756067049f70cdf4a04e8771a4@o4511073249067008.ingest.us.sentry.io/4511073386627073",
-            "enableMetricKit": true,
-            "enableMetricKitRawPayload": true
-          }
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "ios": {

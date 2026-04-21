@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -246,7 +246,7 @@ export class DailyMetricsRepository extends BaseRepository {
 
   /** Try to refresh the materialized view. Returns true on success, false on failure. */
   async #tryRefreshView(reason = "stale view"): Promise<boolean> {
-    Sentry.captureMessage("Stale daily metrics materialized view detected", {
+    telemetry.captureMessage("Stale daily metrics materialized view detected", {
       level: "warning",
       tags: { userId: this.userId },
       extra: { reason },
@@ -262,7 +262,7 @@ export class DailyMetricsRepository extends BaseRepository {
         await this.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
       }
     } catch (refreshError) {
-      Sentry.captureException(refreshError, {
+      telemetry.captureException(refreshError, {
         tags: { userId: this.userId, context: "staleDailyMetricsRefresh" },
       });
       return false;

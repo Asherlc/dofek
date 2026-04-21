@@ -194,11 +194,12 @@ Backend telemetry is initialized in `src/instrumentation.ts` and uses the standa
 - `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
 - `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`
 
-Example OTLP endpoint for Sentry (as a backend destination):
+Node error reporting (`src/telemetry.ts`) sends exceptions to OpenTelemetry spans by default.  
+To switch Node error reporting to Bugsnag:
 
 ```bash
-OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o<ORG_ID>.ingest.sentry.io/api/<PROJECT_ID>/otlp/v1/traces
-OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
+ERROR_REPORTER=bugsnag
+BUGSNAG_API_KEY=<YOUR_BUGSNAG_API_KEY>
 ```
 
 ### Performance instrumentation
@@ -236,9 +237,9 @@ HTTP GET /api/trpc/activity.stream  145ms
 
 Defined in `packages/server/src/lib/typed-sql.ts`.
 
-**3. Sentry browser tracing**
+**3. Browser trace propagation**
 
-The web client (`packages/web/src/lib/telemetry.ts`) uses `browserTracingIntegration()` to capture page navigation timing and propagate trace headers to the API.
+The web client (`packages/web/src/lib/telemetry.ts`) propagates trace context and records frontend exceptions as OpenTelemetry span events.
 
 **Analyzing performance**
 
@@ -467,7 +468,8 @@ For production deploy-time secret injection, the required Infisical `prod` keys,
 - **ECharts** — data visualization (web)
 - **shadcn/ui + Tailwind** — UI components (web)
 - **Winston** — structured logging
-- **Sentry** — error tracking (via OpenTelemetry)
+- **OpenTelemetry** — traces/logs/metrics and default Node error reporting
+- **Bugsnag** — optional Node error-reporting backend (`ERROR_REPORTER=bugsnag`)
 - **Vitest** — unit + integration testing
 - **Cypress** — E2E testing
 - **Stryker** — mutation testing

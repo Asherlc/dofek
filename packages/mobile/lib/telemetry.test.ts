@@ -1,29 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  const mockInit = vi.fn();
-  const mockCaptureException = vi.fn();
-  const mockCaptureMessage = vi.fn();
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
   const mockAddLogRecordProcessor = vi.fn();
   const mockForceFlush = vi.fn().mockResolvedValue(undefined);
   return {
-    mockInit,
-    mockCaptureException,
-    mockCaptureMessage,
     mockEmit,
     mockGetLogger,
     mockAddLogRecordProcessor,
     mockForceFlush,
   };
 });
-
-vi.mock("@sentry/react-native", () => ({
-  init: mocks.mockInit,
-  captureException: mocks.mockCaptureException,
-  captureMessage: mocks.mockCaptureMessage,
-}));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
   LoggerProvider: vi.fn().mockImplementation(() => ({
@@ -47,7 +35,6 @@ vi.mock("@opentelemetry/semantic-conventions", () => ({
 }));
 
 describe("ios telemetry", () => {
-  let originalDsn: string | undefined;
   let originalOtelEndpoint: string | undefined;
   let originalOtelHeaders: string | undefined;
 
@@ -55,17 +42,11 @@ describe("ios telemetry", () => {
     vi.resetModules();
     vi.clearAllMocks();
 
-    originalDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
     originalOtelEndpoint = process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
     originalOtelHeaders = process.env.EXPO_PUBLIC_OTEL_HEADERS;
   });
 
   afterEach(() => {
-    if (originalDsn === undefined) {
-      delete process.env.EXPO_PUBLIC_SENTRY_DSN;
-    } else {
-      process.env.EXPO_PUBLIC_SENTRY_DSN = originalDsn;
-    }
     if (originalOtelEndpoint === undefined) {
       delete process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
     } else {
@@ -78,48 +59,16 @@ describe("ios telemetry", () => {
     }
   });
 
-  it("throws immediately when EXPO_PUBLIC_SENTRY_DSN is not set", async () => {
-    delete process.env.EXPO_PUBLIC_SENTRY_DSN;
-
-    const mod = await import("./telemetry");
-
-    expect(() => mod.initTelemetry()).toThrow(
-      "EXPO_PUBLIC_SENTRY_DSN is not set — Sentry cannot initialize",
-    );
-    expect(mocks.mockInit).not.toHaveBeenCalled();
-  });
-
-  it("initializes Sentry once with DSN and sends a verification message", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
-
-    const mod = await import("./telemetry");
-    mod.initTelemetry();
-    mod.initTelemetry(); // idempotent
-
-    expect(mocks.mockInit).toHaveBeenCalledTimes(1);
-    expect(mocks.mockInit).toHaveBeenCalledWith({
-      dsn: "https://key@sentry.example/789",
-      debug: true,
-    });
-    expect(mocks.mockCaptureMessage).toHaveBeenCalledWith("Sentry initialized on iOS", "info");
-  });
-
-  it("delegates captureException to Sentry with extra context", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+  it("initializes without OTLP endpoint (console-only)", async () => {
+    delete process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
 
     const mod = await import("./telemetry");
     mod.initTelemetry();
 
-    const error = new Error("test error");
-    mod.captureException(error, { "error.source": "react-native.global" });
-
-    expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
-      extra: { "error.source": "react-native.global" },
-    });
+    expect(mocks.mockAddLogRecordProcessor).not.toHaveBeenCalled();
   });
 
-  it("initializes OTel LoggerProvider when endpoint is set", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+  it("initializes LoggerProvider when endpoint is set", async () => {
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
     process.env.EXPO_PUBLIC_OTEL_HEADERS = "Authorization=Bearer tok123,x-axiom-dataset=dofek-logs";
 
@@ -129,43 +78,38 @@ describe("ios telemetry", () => {
     expect(mocks.mockAddLogRecordProcessor).toHaveBeenCalledTimes(1);
   });
 
-  it("logger.info emits OTel log record when provider is initialized", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+  it("captureException emits an exception log record", async () => {
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
 
     const mod = await import("./telemetry");
     mod.initTelemetry();
+    mod.captureException(new Error("test error"), { source: "react-native.global" });
 
-    mod.logger.info("test-category", "hello world", { key: "value" });
-
-    expect(mocks.mockGetLogger).toHaveBeenCalledWith("test-category");
+    expect(mocks.mockGetLogger).toHaveBeenCalledWith("exception");
     expect(mocks.mockEmit).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: "[test-category] hello world",
-        severityText: "INFO",
-        attributes: { key: "value" },
+        body: "[exception] test error",
+        severityText: "ERROR",
       }),
     );
   });
 
-  it("logger works without OTel endpoint (console-only)", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
-    delete process.env.EXPO_PUBLIC_OTEL_ENDPOINT;
+  it("addBreadcrumb emits a telemetry message", async () => {
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
 
     const mod = await import("./telemetry");
     mod.initTelemetry();
+    mod.addBreadcrumb("whoop-ble", "Connected", "info", { deviceId: "strap-1" });
 
-    // Should not throw
-    mod.logger.info("test", "message");
-    mod.logger.warn("test", "warning");
-    mod.logger.error("test", "error");
-
-    // No OTel calls
-    expect(mocks.mockGetLogger).not.toHaveBeenCalled();
+    expect(mocks.mockGetLogger).toHaveBeenCalledWith("telemetry");
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "[telemetry] [whoop-ble] Connected",
+      }),
+    );
   });
 
   it("flushTelemetry flushes the OTel provider", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
 
     const mod = await import("./telemetry");

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import type { Request, Response } from "express";
 import { getSessionIdFromRequest, isValidMobileScheme } from "../../auth/cookies.ts";
 import { validateSession } from "../../auth/session.ts";
@@ -111,7 +111,7 @@ export async function handleDataLoginStart(req: Request, res: Response): Promise
       returnTo,
     });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     logger.error(`[auth] Failed to start data provider login: ${err}`);
     res.status(500).send("Auth error: failed to start login flow");
   }
@@ -143,7 +143,7 @@ export async function handleDataLinkStart(req: Request, res: Response): Promise<
       userId: session.userId,
     });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     logger.error(`[auth] Failed to start data provider link: ${err}`);
     res.status(500).send("Auth error: failed to start link flow");
   }
@@ -182,7 +182,7 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
       userId,
     });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     logger.error(`[auth] Failed to start OAuth flow: ${err}`);
     res.status(500).send("Auth error: failed to start OAuth flow");
   }

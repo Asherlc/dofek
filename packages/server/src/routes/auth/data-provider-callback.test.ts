@@ -14,7 +14,7 @@ vi.mock("dofek/auth/oauth", () => ({
   revokeToken: (...args: unknown[]) => mockRevokeToken(...args),
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
 }));
 

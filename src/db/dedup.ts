@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import { sql } from "drizzle-orm";
 import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
@@ -63,7 +63,7 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
       .filter(isRelationMissingError)
       .map((error) => (error instanceof Error ? error.message : String(error)));
     logger.warn(`[views] Missing materialized views detected: ${missingViews.join("; ")}`);
-    Sentry.captureException(
+    telemetry.captureException(
       new AggregateError(errors, `Missing materialized views triggered self-heal`),
       { tags: { context: "viewSelfHeal" }, extra: { missingViews } },
     );

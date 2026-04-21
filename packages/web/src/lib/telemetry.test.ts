@@ -1,23 +1,42 @@
 // @vitest-environment jsdom
+import { SpanStatusCode } from "@opentelemetry/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  const mockInit = vi.fn();
-  const mockCaptureException = vi.fn();
-  const mockBrowserTracingIntegration = vi.fn(() => ({ name: "BrowserTracing" }));
+  const mockRecordException = vi.fn();
+  const mockSetStatus = vi.fn();
+  const mockSetAttribute = vi.fn();
+  const mockEnd = vi.fn();
+  const mockStartSpan = vi.fn(() => ({
+    recordException: mockRecordException,
+    setStatus: mockSetStatus,
+    setAttribute: mockSetAttribute,
+    end: mockEnd,
+  }));
+  const mockGetActiveSpan = vi.fn();
 
   return {
-    mockInit,
-    mockCaptureException,
-    mockBrowserTracingIntegration,
+    mockRecordException,
+    mockSetStatus,
+    mockSetAttribute,
+    mockEnd,
+    mockStartSpan,
+    mockGetActiveSpan,
   };
 });
 
-vi.mock("@sentry/react", () => ({
-  init: mocks.mockInit,
-  captureException: mocks.mockCaptureException,
-  browserTracingIntegration: mocks.mockBrowserTracingIntegration,
-}));
+vi.mock("@opentelemetry/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@opentelemetry/api")>();
+  return {
+    ...original,
+    trace: {
+      getActiveSpan: mocks.mockGetActiveSpan,
+      getTracer: () => ({
+        startSpan: mocks.mockStartSpan,
+      }),
+    },
+  };
+});
 
 describe("web telemetry", () => {
   beforeEach(() => {
@@ -31,48 +50,46 @@ describe("web telemetry", () => {
     vi.unstubAllEnvs();
   });
 
-  it("does not initialize without a DSN", async () => {
-    vi.stubEnv("VITE_SENTRY_DSN", "");
+  it("records exceptions on active spans", async () => {
+    const activeSpan = {
+      recordException: mocks.mockRecordException,
+      setStatus: mocks.mockSetStatus,
+      setAttribute: mocks.mockSetAttribute,
+      end: mocks.mockEnd,
+    };
+    mocks.mockGetActiveSpan.mockReturnValue(activeSpan);
 
     const mod = await import("./telemetry.ts");
-    mod.initTelemetry();
-    mod.captureException(new Error("boom"));
+    mod.captureException(new Error("boom"), { route: "dashboard" });
 
-    expect(mocks.mockInit).not.toHaveBeenCalled();
-    // captureException still delegates to Sentry (it's a no-op when uninitialised)
-    expect(mocks.mockCaptureException).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ extra: {} }),
-    );
-  });
-
-  it("initializes Sentry once with DSN and browser tracing", async () => {
-    vi.stubEnv("VITE_SENTRY_DSN", "https://key@sentry.example/123");
-
-    const mod = await import("./telemetry.ts");
-    mod.initTelemetry();
-    mod.initTelemetry(); // idempotent
-
-    expect(mocks.mockInit).toHaveBeenCalledTimes(1);
-    expect(mocks.mockInit).toHaveBeenCalledWith({
-      dsn: "https://key@sentry.example/123",
-      release: "abc1234",
-      integrations: [{ name: "BrowserTracing" }],
-      tracePropagationTargets: [/^\/api/, /^\/auth/, /^\/callback/],
+    expect(mocks.mockRecordException).toHaveBeenCalledWith(expect.any(Error));
+    expect(mocks.mockSetStatus).toHaveBeenCalledWith({
+      code: SpanStatusCode.ERROR,
+      message: "boom",
     });
+    expect(mocks.mockSetAttribute).toHaveBeenCalledWith("app.release", "abc1234");
+    expect(mocks.mockSetAttribute).toHaveBeenCalledWith("error.route", "dashboard");
   });
 
-  it("delegates captureException to Sentry with extra context", async () => {
-    vi.stubEnv("VITE_SENTRY_DSN", "https://key@sentry.example/123");
+  it("creates a span when there is no active span", async () => {
+    mocks.mockGetActiveSpan.mockReturnValue(undefined);
 
     const mod = await import("./telemetry.ts");
-    mod.initTelemetry();
+    mod.captureException(new Error("no-active-span"));
 
-    const error = new Error("test error");
-    mod.captureException(error, { "react.component_stack": "<App>" });
+    expect(mocks.mockStartSpan).toHaveBeenCalledWith("web.error.capture");
+    expect(mocks.mockEnd).toHaveBeenCalled();
+  });
 
-    expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
-      extra: { "react.component_stack": "<App>" },
+  it("normalizes non-error exceptions", async () => {
+    mocks.mockGetActiveSpan.mockReturnValue(undefined);
+
+    const mod = await import("./telemetry.ts");
+    mod.captureException("plain-string-error");
+
+    expect(mocks.mockSetStatus).toHaveBeenCalledWith({
+      code: SpanStatusCode.ERROR,
+      message: "plain-string-error",
     });
   });
 });

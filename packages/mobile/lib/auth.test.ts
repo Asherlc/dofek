@@ -320,12 +320,13 @@ describe("logout", () => {
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
   });
 
-  it("reports fetch errors to Sentry", async () => {
-    const Sentry = await import("@sentry/react-native");
+  it("reports fetch errors to telemetry", async () => {
+    const telemetry = await import("./telemetry");
+    const captureExceptionSpy = vi.spyOn(telemetry, "captureException");
     vi.mocked(fetch).mockRejectedValueOnce(new Error("network error"));
 
     await logout("https://srv", "my-token");
 
-    expect(Sentry.captureException).toHaveBeenCalled();
+    expect(captureExceptionSpy).toHaveBeenCalled();
   });
 });

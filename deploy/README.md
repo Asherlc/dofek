@@ -18,7 +18,6 @@ Dofek is deployed as a Docker-based stack on **Hetzner Cloud** (HCloud) with **C
 - **Observability**:
   - **OpenTelemetry**: `otel-collector` gathers traces, logs, and metrics.
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
-  - **Sentry**: Receives application logs/errors.
   - **Netdata**: Real-time server health and performance monitoring.
 - **Secrets**: Managed via **Infisical**. The deployment script fetches secrets at runtime and injects them into the Docker stack.
 
@@ -37,7 +36,7 @@ Dofek is deployed as a Docker-based stack on **Hetzner Cloud** (HCloud) with **C
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
-- Exports to Axiom and Sentry via `otlphttp`.
+- Exports to Axiom via `otlphttp`.
 
 ## Deployment
 

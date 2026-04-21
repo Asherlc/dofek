@@ -1,6 +1,6 @@
-import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
+import * as telemetry from "dofek/telemetry";
 import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
 import { queryCache } from "../lib/cache.ts";
@@ -61,7 +61,7 @@ export const whoopAuthRouter = router({
         logger.error(
           `[whoopAuth] signIn failed userId=${ctx.userId} message=${error instanceof Error ? error.message : String(error)}`,
         );
-        Sentry.captureException(error);
+        telemetry.captureException(error);
         throw error;
       }
     }),
@@ -123,7 +123,7 @@ export const whoopAuthRouter = router({
         logger.error(
           `[whoopAuth] verifyCode failed userId=${ctx.userId} challengeId=${input.challengeId} method=${challenge.method} message=${error instanceof Error ? error.message : String(error)}`,
         );
-        Sentry.captureException(error);
+        telemetry.captureException(error);
         throw error;
       }
     }),

@@ -17,7 +17,7 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **Safe SQL**: Uses `executeWithSchema` (in `src/lib/typed-sql.ts`) which combines Drizzle's `sql` template literal with Zod schema validation to ensure runtime type safety and catch schema drift.
 - **Caching**: Implements a `queryCache` middleware for tRPC procedures (`src/trpc.ts`), with per-user isolation and configurable TTLs.
 - **Authentication**: Supports session-based auth with cookie-based persistence for web and Bearer tokens for mobile. See `src/auth/` and `src/routes/auth/`.
-- **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
+- **Monitoring**: Uses OpenTelemetry for traces/logs and error reporting by default, with optional Bugsnag error reporting via `ERROR_REPORTER=bugsnag` (`src/telemetry.ts`, `src/lib/metrics.ts`).
 - **Slack Integration**: A built-in Slack bot (`src/slack/`) for status updates and basic data interactions.
 
 ## Development

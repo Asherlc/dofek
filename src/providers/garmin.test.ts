@@ -53,7 +53,7 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
@@ -972,7 +972,7 @@ describe("GarminProvider.sync()", () => {
   });
 
   it("does not call captureException for 204 (no data) errors", async () => {
-    const { captureException } = await import("@sentry/node");
+    const { captureException } = await import("dofek/telemetry");
 
     await syncProvider(provider, db, new Date());
 
@@ -980,7 +980,7 @@ describe("GarminProvider.sync()", () => {
   });
 
   it("calls captureException for non-204 errors (once per operation)", async () => {
-    const { captureException } = await import("@sentry/node");
+    const { captureException } = await import("dofek/telemetry");
 
     // Sleep will fail with a real error on every date
     mocks.client.getSleepData.mockRejectedValue(new Error("server error"));

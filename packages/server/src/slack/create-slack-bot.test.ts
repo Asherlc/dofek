@@ -45,7 +45,7 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
@@ -60,8 +60,8 @@ vi.mock("../lib/cache.ts", () => ({
   },
 }));
 
-import * as Sentry from "@sentry/node";
 import bolt from "@slack/bolt";
+import * as telemetry from "dofek/telemetry";
 import { createSlackBot, startSlackBot } from "./bot.ts";
 
 /** Mock fetch for verifyBotConfiguration — returns successful auth.test response with scopes in headers */
@@ -488,7 +488,7 @@ describe("createSlackBot — logger messages", () => {
     );
   });
 
-  it("processEventErrorHandler logs error and reports to Sentry", async () => {
+  it("processEventErrorHandler logs error and reports to telemetry", async () => {
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_APP_TOKEN = "xapp-test-token";
 
@@ -513,7 +513,7 @@ describe("createSlackBot — logger messages", () => {
     expect(logger.error).toHaveBeenCalledWith(
       "[slack] Bolt processEvent error: authorization failed",
     );
-    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+    expect(telemetry.captureException).toHaveBeenCalledWith(testError);
   });
 
   it("processEventErrorHandler wraps non-Error values in Error", async () => {
@@ -533,7 +533,7 @@ describe("createSlackBot — logger messages", () => {
       event: mockAs({}),
     });
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+    expect(telemetry.captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("wraps processEvent with logging", async () => {
@@ -583,7 +583,7 @@ describe("createSlackBot — logger messages", () => {
     expect(logger.error).toHaveBeenCalledWith("[slack] processEvent threw: bolt internal error");
   });
 
-  it("HTTP mode error handler reports to Sentry", async () => {
+  it("HTTP mode error handler reports to telemetry", async () => {
     process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
 
     const db = createMockDb();
@@ -597,10 +597,10 @@ describe("createSlackBot — logger messages", () => {
     const testError = new Error("http mode error");
     await errorHandler(testError);
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+    expect(telemetry.captureException).toHaveBeenCalledWith(testError);
   });
 
-  it("Socket mode error handler reports to Sentry", async () => {
+  it("Socket mode error handler reports to telemetry", async () => {
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_APP_TOKEN = "xapp-test-token";
 
@@ -615,7 +615,7 @@ describe("createSlackBot — logger messages", () => {
     const testError = new Error("socket mode error");
     await errorHandler(testError);
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(testError);
+    expect(telemetry.captureException).toHaveBeenCalledWith(testError);
   });
 
   it("registers slack_event diagnostic listener on socket mode client", () => {

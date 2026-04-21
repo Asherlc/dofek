@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@sentry/react-native", () => ({
-  init: vi.fn(),
-  captureException: vi.fn(),
-  wrap: vi.fn((component: unknown) => component),
-}));
-
 vi.mock("../lib/telemetry", () => ({
   initTelemetry: vi.fn(),
   captureException: vi.fn(),

@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "dofek/db";
+import * as telemetry from "dofek/telemetry";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 import {
@@ -54,7 +54,7 @@ async function revokeTokensOnDisconnect(
         logger.warn(
           `[disconnect] Custom revocation failed for ${providerId}, falling back to standard OAuth revocation: ${message}`,
         );
-        Sentry.captureException(customError);
+        telemetry.captureException(customError);
       }
     }
 
@@ -68,7 +68,7 @@ async function revokeTokensOnDisconnect(
         } catch (accessError) {
           const message = accessError instanceof Error ? accessError.message : String(accessError);
           logger.warn(`[disconnect] Access token revocation failed for ${providerId}: ${message}`);
-          Sentry.captureException(accessError);
+          telemetry.captureException(accessError);
         }
       }
       if (tokens.refreshToken) {
@@ -78,14 +78,14 @@ async function revokeTokensOnDisconnect(
           const message =
             refreshError instanceof Error ? refreshError.message : String(refreshError);
           logger.warn(`[disconnect] Refresh token revocation failed for ${providerId}: ${message}`);
-          Sentry.captureException(refreshError);
+          telemetry.captureException(refreshError);
         }
       }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`[disconnect] Remote token revocation failed for ${providerId}: ${message}`);
-    Sentry.captureException(error);
+    telemetry.captureException(error);
   }
 }
 

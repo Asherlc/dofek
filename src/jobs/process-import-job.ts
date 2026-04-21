@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -121,7 +121,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     await refreshDedupViews(db);
   } catch (err) {
     logger.error(`[worker] Failed to refresh views: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-refresh-views" } });
+    telemetry.captureException(err, { tags: { phase: "post-import-refresh-views" } });
   }
 
   try {
@@ -134,7 +134,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     await updateUserMaxHr(db);
   } catch (err) {
     logger.error(`[worker] Failed to update max HR: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-max-hr" } });
+    telemetry.captureException(err, { tags: { phase: "post-import-max-hr" } });
   }
 
   try {
@@ -152,6 +152,6 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     }
   } catch (err) {
     logger.error(`[worker] Failed to sync provider priorities: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-provider-priorities" } });
+    telemetry.captureException(err, { tags: { phase: "post-import-provider-priorities" } });
   }
 }

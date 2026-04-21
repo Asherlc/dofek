@@ -168,7 +168,7 @@ describe("syncWatchAccelerometerFiles", () => {
     expect(secondBatch.samples).toHaveLength(2500);
   });
 
-  it("reports errors to Sentry for failed files", async () => {
+  it("reports errors to telemetry for failed files", async () => {
     const parseError = new Error("PARSE_ERROR: corrupt");
     mockGetPendingWatchFileNames.mockReturnValue(["corrupt.json.gz"]);
     mockReadWatchFile.mockRejectedValue(parseError);

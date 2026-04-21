@@ -94,7 +94,6 @@ jobs:
         working-directory: packages/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
           DEBUG: true
           RELEASE_CHANNEL: production
         run: npx eoas@2.3.16 publish --branch main --platform ios --nonInteractive

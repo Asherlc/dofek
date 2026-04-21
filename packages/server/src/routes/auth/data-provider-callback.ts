@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/node";
 import { revokeToken } from "dofek/auth/oauth";
+import * as telemetry from "dofek/telemetry";
 import type { Request, Response } from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
 import {
@@ -167,7 +167,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       } catch (loadError) {
         revocationOutcome = `failed to load existing tokens: ${loadError}`;
         logger.warn(`[auth] Pre-exchange token revocation failed for ${providerId}: ${loadError}`);
-        Sentry.captureException(loadError);
+        telemetry.captureException(loadError);
       }
       if (existingTokens) {
         let customRevocationFailed = false;
@@ -346,7 +346,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       ),
     );
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(
       `[auth] OAuth callback failed for ${resolvedProviderName ?? "unknown provider"}: ${message}`,

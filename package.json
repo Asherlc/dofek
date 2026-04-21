@@ -65,6 +65,7 @@
     "./personalization/params": "./src/personalization/params.ts",
     "./personalization/storage": "./src/personalization/storage.ts",
     "./personalization/refit": "./src/personalization/refit.ts",
+    "./telemetry": "./src/telemetry.ts",
     "./sync-metrics": "./src/sync-metrics.ts"
   },
   "scripts": {
@@ -113,6 +114,7 @@
     "check:mobile-update": "./scripts/check-mobile-update.sh"
   },
   "dependencies": {
+    "@bugsnag/js": "8.9.0",
     "@bull-board/api": "6.21.0",
     "@bull-board/express": "6.21.0",
     "@dofek/heart-rate-variability": "workspace:*",
@@ -130,7 +132,6 @@
     "@opentelemetry/sdk-node": "0.214.0",
     "@opentelemetry/sdk-trace-node": "2.6.0",
     "@opentelemetry/winston-transport": "0.23.0",
-    "@sentry/node": "10.45.0",
     "archiver": "7.0.1",
     "bullmq": "5.71.0",
     "drizzle-orm": "0.45.2",
@@ -187,7 +188,6 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@sentry/cli",
       "core-js",
       "cypress",
       "msgpackr-extract",

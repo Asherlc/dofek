@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import type { Request, Response } from "express";
 import {
   getSessionIdFromRequest,
@@ -58,7 +58,7 @@ export async function handleIdentityLink(req: Request, res: Response): Promise<v
 
     res.redirect(url.toString());
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`[auth] Failed to start link flow: ${message}`);
     res.status(500).send("Auth error: failed to start link flow");

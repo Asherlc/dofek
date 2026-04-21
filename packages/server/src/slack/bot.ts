@@ -1,7 +1,7 @@
-import * as Sentry from "@sentry/node";
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
 import type { Database } from "dofek/db";
+import * as telemetry from "dofek/telemetry";
 import { sql } from "drizzle-orm";
 import type express from "express";
 import { z } from "zod";
@@ -80,7 +80,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     });
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
-      Sentry.captureException(error);
+      telemetry.captureException(error);
     });
     registerHandlers(app, repository);
 
@@ -98,12 +98,12 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     const receiver = new SocketModeReceiver({
       appToken,
       // Bolt's default processEventErrorHandler logs to Bolt's internal ConsoleLogger
-      // which isn't captured by our Axiom pipeline. Override to log to our logger + Sentry
+      // which isn't captured by our Axiom pipeline. Override to log to our logger + telemetry
       // so we can see when event processing fails.
       processEventErrorHandler: async ({ error }) => {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error(`[slack] Bolt processEvent error: ${errorMessage}`);
-        Sentry.captureException(error instanceof Error ? error : new Error(errorMessage));
+        telemetry.captureException(error instanceof Error ? error : new Error(errorMessage));
         return true; // ack the event so Slack doesn't retry indefinitely
       },
     });
@@ -140,7 +140,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
 
     app.error(async (error) => {
       logger.error(`[slack] Unhandled Bolt error: ${error.message ?? error}`);
-      Sentry.captureException(error);
+      telemetry.captureException(error);
     });
 
     registerHandlers(app, repository);

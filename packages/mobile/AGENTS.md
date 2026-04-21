@@ -26,4 +26,3 @@
 
 ### Error Handling
 - **Telemetry**: Every catch block MUST call `captureException` from `./lib/telemetry`.
-- **Sentry**: Ensure `sentry.properties` is configured correctly for native crash reports.

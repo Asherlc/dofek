@@ -1,7 +1,6 @@
-import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
-import { captureException, logger } from "./telemetry";
+import { addBreadcrumb, captureException, logger } from "./telemetry";
 
 const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
 const LOG_CATEGORY = "whoop-ble";
@@ -124,7 +123,7 @@ export async function initBackgroundWhoopBleSync(
     syncOnForeground(trpcClient, whoopDeps, realtimeClient)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
-        Sentry.captureException(error, { tags: { source: "whoop-ble-foreground-sync" } });
+        captureException(error, { source: "whoop-ble-foreground-sync" });
       })
       .finally(() => {
         syncing = false;
@@ -141,7 +140,7 @@ export async function initBackgroundWhoopBleSync(
     logger.info(LOG_CATEGORY, "initial sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
-    Sentry.captureException(error, { tags: { source: "whoop-ble-init-sync" } });
+    captureException(error, { source: "whoop-ble-init-sync" });
   }
 
   // Periodically drain the buffer while the app is active so samples
@@ -155,7 +154,7 @@ export async function initBackgroundWhoopBleSync(
     drainBuffer(trpcClient, whoopDeps, realtimeClient)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
-        Sentry.captureException(error, { tags: { source: "whoop-ble-periodic-drain" } });
+        captureException(error, { source: "whoop-ble-periodic-drain" });
       })
       .finally(() => {
         syncing = false;
@@ -181,7 +180,7 @@ export async function syncWhoopBle(
     logger.info(LOG_CATEGORY, "background refresh — sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
-    Sentry.captureException(error, { tags: { source: "whoop-ble-background-refresh" } });
+    captureException(error, { source: "whoop-ble-background-refresh" });
   }
 }
 
@@ -205,21 +204,13 @@ async function syncOnForeground(
     const device = await whoopDeps.findWhoop();
     if (!device) {
       logger.warn(LOG_CATEGORY, "no WHOOP strap found");
-      Sentry.addBreadcrumb({
-        category: "whoop-ble",
-        message: "No WHOOP strap found",
-        level: "warning",
-      });
+      addBreadcrumb("whoop-ble", "No WHOOP strap found", "warning");
       return;
     }
 
     const deviceLabel = device.name ?? device.id;
     logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
-    Sentry.addBreadcrumb({
-      category: "whoop-ble",
-      message: `Connecting to ${deviceLabel}`,
-      level: "info",
-    });
+    addBreadcrumb("whoop-ble", `Connecting to ${deviceLabel}`, "info");
     await whoopDeps.connect(device.id);
     logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
     // Send TOGGLE_IMU_MODE to keep IMU data flowing even when the WHOOP
@@ -234,11 +225,7 @@ async function syncOnForeground(
     }
     connected = true;
     logger.info(LOG_CATEGORY, "listening for IMU data");
-    Sentry.addBreadcrumb({
-      category: "whoop-ble",
-      message: "Connected and streaming",
-      level: "info",
-    });
+    addBreadcrumb("whoop-ble", "Connected and streaming", "info");
   } else {
     logger.info(LOG_CATEGORY, "already connected, uploading buffer");
   }

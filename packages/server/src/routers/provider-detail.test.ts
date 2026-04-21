@@ -78,7 +78,7 @@ vi.mock("../logger.ts", () => ({
     debug: vi.fn(),
   },
 }));
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
 }));
 

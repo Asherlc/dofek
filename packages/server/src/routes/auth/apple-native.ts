@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import type { Request, Response } from "express";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
 import { isNativeAppleConfigured, validateNativeAppleCallback } from "../../auth/providers.ts";
@@ -47,7 +47,7 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
     logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
     res.json({ session: sessionInfo.sessionId });
   } catch (err: unknown) {
-    Sentry.captureException(err);
+    telemetry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`[auth] Native Apple Sign In failed: ${message}`);
     res.status(500).send("Apple Sign In failed — please try again");

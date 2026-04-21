@@ -3,7 +3,7 @@ import {
   POLARIZATION_ZONES,
   ZONE_BOUNDARIES_HRR,
 } from "@dofek/zones/zones";
-import * as Sentry from "@sentry/node";
+import * as telemetry from "dofek/telemetry";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -129,7 +129,7 @@ export class EfficiencyRepository extends BaseRepository {
 
     if (rows.length === 0) {
       this.#logEmptyAerobicEfficiency(days).catch((error) => {
-        Sentry.captureException(error);
+        telemetry.captureException(error);
       });
     }
 

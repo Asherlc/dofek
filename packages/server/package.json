@@ -22,7 +22,6 @@
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@opentelemetry/api": "1.9.0",
-    "@sentry/node": "10.45.0",
     "@slack/bolt": "4.7.0",
     "@slack/socket-mode": "2.0.6",
     "@stdlib/stats-pcorrtest": "0.2.3",

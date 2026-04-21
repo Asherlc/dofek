@@ -55,7 +55,7 @@ vi.mock("../lib/cache.ts", () => ({
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
@@ -106,13 +106,13 @@ vi.mock("dofek/db", () => ({
 }));
 
 import type { AddressInfo } from "node:net";
-import * as Sentry from "@sentry/node";
 import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { loadTokens } from "dofek/db/tokens";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
+import * as telemetry from "dofek/telemetry";
 import express from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../auth/account-linking.ts";
 import {
@@ -500,7 +500,7 @@ describe("createAuthRouter", () => {
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:auth.linkedAccounts");
     });
 
-    it("reports to Sentry and continues when cache invalidation fails during identity linking", async () => {
+    it("reports to telemetry and continues when cache invalidation fails during identity linking", async () => {
       const cacheError = new Error("Redis connection refused");
       vi.mocked(queryCache.invalidateByPrefix).mockRejectedValueOnce(cacheError);
 
@@ -530,7 +530,7 @@ describe("createAuthRouter", () => {
 
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/settings");
-      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(telemetry.captureException).toHaveBeenCalledWith(cacheError);
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining("Failed to invalidate linked-accounts cache"),
       );

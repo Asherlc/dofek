@@ -72,10 +72,10 @@ async function handleParsedMessage(
       try {
         const thread = await getThreadReplies(msgChannel, msgThreadTs);
         const previousConfirmContext = extractLatestConfirmFromThread(thread.messages ?? []);
-        const previousEntryIds = previousConfirmContext?.entryIds ?? null;
+        const priorEntryIds = previousConfirmContext?.entryIds ?? null;
 
-        if (previousEntryIds) {
-          const previousItems = await repository.loadForRefinement(previousEntryIds);
+        if (priorEntryIds) {
+          const previousItems = await repository.loadForRefinement(priorEntryIds);
 
           if (previousItems.length > 0) {
             logger.info(`[slack] Refining ${previousItems.length} items with: "${msgText}"`);
@@ -89,7 +89,7 @@ async function handleParsedMessage(
             const localTime = slackTimestampToLocalTime(msgTs, userTimezone);
             const result = await refineNutritionItems(previousItems, msgText, localTime);
 
-            await repository.deleteUnconfirmed(previousEntryIds);
+            await repository.deleteUnconfirmed(priorEntryIds);
             const confirmationMessageTs =
               thinkingMsg.ts ?? `fallback-refine-${msgThreadTs}-${Date.now()}`;
             const newEntryIds = await repository.saveUnconfirmed(userId, date, result.items, {

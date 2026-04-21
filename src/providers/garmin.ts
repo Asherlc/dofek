@@ -1,5 +1,5 @@
 import { isIndoorCycling } from "@dofek/training/endurance-types";
-import { captureException } from "@sentry/node";
+import { captureException } from "dofek/telemetry";
 import { and, eq } from "drizzle-orm";
 import { GarminApiError, GarminConnectClient } from "garmin-connect/client";
 import {
@@ -153,31 +153,31 @@ function isNoDataError(error: unknown): boolean {
 
 /**
  * Tracks unexpected errors within a sync operation (e.g., "sleep", "stress").
- * Reports only the first error to Sentry to avoid noise when Garmin is down,
+ * Reports only the first error to telemetry to avoid noise when Garmin is down,
  * and collects all errors for a summary message.
  */
 class SyncErrorTracker {
   readonly operation: string;
   readonly errors: Array<{ context: string; error: unknown }> = [];
-  #sentryReported = false;
+  #telemetryReported = false;
 
   constructor(operation: string) {
     this.operation = operation;
   }
 
-  /** Record an error. Only the first error per operation is sent to Sentry. */
+  /** Record an error. Only the first error per operation is sent to telemetry. */
   record(context: string, error: unknown): void {
     if (isNoDataError(error)) return;
 
     this.errors.push({ context, error });
     logger.warn(`[garmin] ${this.operation} failed for ${context}: ${error}`);
 
-    if (!this.#sentryReported) {
+    if (!this.#telemetryReported) {
       captureException(error, {
         tags: { provider: "garmin", operation: this.operation },
         extra: { context },
       });
-      this.#sentryReported = true;
+      this.#telemetryReported = true;
     }
   }
 

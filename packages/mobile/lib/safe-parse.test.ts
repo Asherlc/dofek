@@ -32,7 +32,7 @@ describe("safeParseRows", () => {
     expect(result.error?.message).toContain("test: Zod parse failed");
   });
 
-  it("reports parse failures to Sentry", () => {
+  it("reports parse failures to telemetry", () => {
     safeParseRows(testSchema, [{ id: 123 }], "myContext");
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
     expect(mockCaptureException.mock.calls[0][0]).toBeInstanceOf(Error);

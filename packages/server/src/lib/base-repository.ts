@@ -1,6 +1,6 @@
-import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { ACTIVITY_VIEWS } from "dofek/db/materialized-views";
+import * as telemetry from "dofek/telemetry";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { timestampWindowStart } from "./date-window.ts";
@@ -68,7 +68,7 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
       : await this.#baseActivityCount(today, days);
     if (baseCount === 0) return result;
 
-    Sentry.captureMessage(`Stale activity materialized views detected (${label})`, {
+    telemetry.captureMessage(`Stale activity materialized views detected (${label})`, {
       level: "warning",
       tags: { userId: this.userId },
       extra: { baseCount },
@@ -77,7 +77,7 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
       await this.#refreshActivityViews();
       return queryFn();
     } catch (refreshError) {
-      Sentry.captureException(refreshError, {
+      telemetry.captureException(refreshError, {
         tags: { userId: this.userId, context: "staleViewRefresh" },
       });
       return result;

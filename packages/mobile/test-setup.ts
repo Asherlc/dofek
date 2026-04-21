@@ -16,20 +16,6 @@ console.error = (...args: unknown[]) => {
   originalError.call(console, ...args);
 };
 
-// ── Sentry React Native mock ─────────────────────────────────────────
-// @sentry/react-native internally requires react-native/Libraries/Promise
-// (a sub-path not covered by the react-native mock below). Mocking
-// the whole package avoids loading real react-native internals.
-vi.mock("@sentry/react-native", () => ({
-  init: vi.fn(),
-  captureException: vi.fn(),
-  captureMessage: vi.fn(),
-  addBreadcrumb: vi.fn(),
-  withScope: vi.fn(),
-  setTag: vi.fn(),
-  setExtra: vi.fn(),
-}));
-
 // ── React Native mock ────────────────────────────────────────────────
 // react-native uses Flow syntax that Vitest can't parse. Provide minimal
 // component implementations backed by plain React elements.

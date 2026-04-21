@@ -2,13 +2,13 @@ import type express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  const mockInit = vi.fn();
+  const mockInitTelemetry = vi.fn();
   const mockCaptureException = vi.fn();
-  return { mockInit, mockCaptureException };
+  return { mockInitTelemetry, mockCaptureException };
 });
 
-vi.mock("@sentry/node", () => ({
-  init: mocks.mockInit,
+vi.mock("dofek/telemetry", () => ({
+  initTelemetry: mocks.mockInitTelemetry,
   captureException: mocks.mockCaptureException,
 }));
 
@@ -18,47 +18,32 @@ function mockOf<T extends object>(partial: Partial<T>): T {
   return result;
 }
 
-describe("server sentry", () => {
+describe("server telemetry", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.unstubAllEnvs();
-    const { __resetSentryInitialized } = await import("./sentry.ts");
-    __resetSentryInitialized();
+    const { __resetTelemetryErrorReportingInitialized } = await import(
+      "./telemetry-error-handler.ts"
+    );
+    __resetTelemetryErrorReportingInitialized();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("does not initialize without SENTRY_DSN", async () => {
-    delete process.env.SENTRY_DSN;
+  it("initializes telemetry once", async () => {
+    const { initTelemetryErrorReporting } = await import("./telemetry-error-handler.ts");
+    initTelemetryErrorReporting();
+    initTelemetryErrorReporting(); // idempotent
 
-    const { initSentry } = await import("./sentry.ts");
-    initSentry();
-
-    expect(mocks.mockInit).not.toHaveBeenCalled();
-  });
-
-  it("initializes Sentry once with skipOpenTelemetrySetup", async () => {
-    vi.stubEnv("SENTRY_DSN", "https://key@sentry.example/456");
-
-    const { initSentry } = await import("./sentry.ts");
-    initSentry();
-    initSentry(); // idempotent
-
-    expect(mocks.mockInit).toHaveBeenCalledTimes(1);
-    expect(mocks.mockInit).toHaveBeenCalledWith({
-      dsn: "https://key@sentry.example/456",
-      skipOpenTelemetrySetup: true,
-    });
+    expect(mocks.mockInitTelemetry).toHaveBeenCalledTimes(1);
   });
 
   it("error handler captures exception and returns 500", async () => {
-    vi.stubEnv("SENTRY_DSN", "https://key@sentry.example/456");
-
-    const { sentryErrorHandler } = await import("./sentry.ts");
-    const handler = sentryErrorHandler();
+    const { telemetryErrorHandler } = await import("./telemetry-error-handler.ts");
+    const handler = telemetryErrorHandler();
 
     const error = new Error("boom");
     const mockRes = mockOf<express.Response>({
@@ -77,8 +62,8 @@ describe("server sentry", () => {
   });
 
   it("error handler calls next when headers already sent", async () => {
-    const { sentryErrorHandler } = await import("./sentry.ts");
-    const handler = sentryErrorHandler();
+    const { telemetryErrorHandler } = await import("./telemetry-error-handler.ts");
+    const handler = telemetryErrorHandler();
 
     const error = new Error("boom");
     const mockRes = mockOf<express.Response>({ headersSent: true });

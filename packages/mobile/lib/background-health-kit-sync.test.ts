@@ -147,7 +147,7 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it("reports sync failures to Sentry", async () => {
+  it("reports sync failures to telemetry", async () => {
     vi.useFakeTimers();
     vi.mocked(queryWorkouts).mockResolvedValueOnce([
       {
@@ -176,7 +176,7 @@ describe("initBackgroundHealthKitSync", () => {
     vi.useRealTimers();
   });
 
-  it("does not report locked-device errors to Sentry", async () => {
+  it("does not report locked-device errors to telemetry", async () => {
     vi.useFakeTimers();
     vi.mocked(queryWorkouts).mockRejectedValueOnce(
       new Error("Protected health data is inaccessible"),

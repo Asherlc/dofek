@@ -5,7 +5,6 @@ import { constants as zlibConstants } from "node:zlib";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
-import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -18,13 +17,17 @@ import {
   createSyncQueue,
   createTrainingExportQueue,
 } from "dofek/jobs/queues";
+import * as telemetry from "dofek/telemetry";
 import { sql } from "drizzle-orm";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
-import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
+import {
+  initTelemetryErrorReporting,
+  telemetryErrorHandler,
+} from "./lib/telemetry-error-handler.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { appRouter } from "./router.ts";
@@ -50,11 +53,11 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 
 /** Create the Express app with all routes. */
 export function createApp(db: import("dofek/db").Database): express.Express {
-  initSentry();
+  initTelemetryErrorReporting();
   const app = express();
   setupRoutes(app, db);
-  // Sentry error handler must be after all routes
-  app.use(sentryErrorHandler());
+  // telemetry error handler must be after all routes
+  app.use(telemetryErrorHandler());
   return app;
 }
 
@@ -179,7 +182,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);
         if (error.code === "INTERNAL_SERVER_ERROR") {
-          Sentry.captureException(error.cause ?? error, { tags: { trpcPath: path } });
+          telemetry.captureException(error.cause ?? error, { tags: { trpcPath: path } });
         }
       },
       allowMethodOverride: true,
@@ -225,7 +228,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
 /**
  * Fire-and-forget startup tasks.
- * Errors are logged and reported to Sentry but don't crash the server.
+ * Errors are logged and reported to telemetry but don't crash the server.
  */
 export function runStartupTasks(
   db: ReturnType<typeof createDatabaseFromEnv>,
@@ -233,12 +236,12 @@ export function runStartupTasks(
 ) {
   warmCache(db).catch((err) => {
     logger.error(`[cache] Warm failed: ${err}`);
-    Sentry.captureException(err);
+    telemetry.captureException(err);
   });
 
   startSlackBot(db, app).catch((err) => {
     logger.error(`[slack] Slack bot error: ${err}`);
-    Sentry.captureException(err);
+    telemetry.captureException(err);
   });
 }
 

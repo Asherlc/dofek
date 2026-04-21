@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PostSyncJob } from "./process-post-sync-job.ts";
 
 const mockCaptureException = vi.fn();
-vi.mock("@sentry/node", () => ({
+vi.mock("dofek/telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
@@ -99,7 +99,7 @@ describe("processPostSyncJob", () => {
     expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
   });
 
-  it("reports errors to Sentry when refreshDedupViews fails", async () => {
+  it("reports errors to telemetry when refreshDedupViews fails", async () => {
     const viewError = new Error("view refresh failed");
     mockRefreshDedupViews.mockRejectedValueOnce(viewError);
 
@@ -110,7 +110,7 @@ describe("processPostSyncJob", () => {
     });
   });
 
-  it("reports errors to Sentry when updateUserMaxHr fails", async () => {
+  it("reports errors to telemetry when updateUserMaxHr fails", async () => {
     const maxHrError = new Error("max hr failed");
     mockUpdateUserMaxHr.mockRejectedValueOnce(maxHrError);
 
@@ -121,7 +121,7 @@ describe("processPostSyncJob", () => {
     });
   });
 
-  it("reports errors to Sentry when syncProviderPriorities fails", async () => {
+  it("reports errors to telemetry when syncProviderPriorities fails", async () => {
     const prioritiesError = new Error("priorities failed");
     mockSyncProviderPriorities.mockRejectedValueOnce(prioritiesError);
 
@@ -132,7 +132,7 @@ describe("processPostSyncJob", () => {
     });
   });
 
-  it("reports errors to Sentry when refitAllParams fails", async () => {
+  it("reports errors to telemetry when refitAllParams fails", async () => {
     const refitError = new Error("refit failed");
     mockRefitAllParams.mockRejectedValueOnce(refitError);
 

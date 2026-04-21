@@ -27,7 +27,6 @@ jobs:
         working-directory: packages/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
           PR_NUMBER: ${{ github.event.number }}
           DEBUG: true
           RELEASE_CHANNEL: staging 
@@ -71,4 +70,3 @@ jobs:
         with:
           header: mobile-preview
           path: /tmp/mobile-preview-comment.md
-

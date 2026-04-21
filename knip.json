@@ -52,7 +52,6 @@
       ],
       "ignore": [".rnstorybook/**", ".storybook/mocks/**"],
       "ignoreDependencies": [
-        "@sentry/cli",
         "expo-modules-core",
         "@expo/vector-icons",
         "expo-system-ui"

@@ -1,42 +1,33 @@
-import * as Sentry from "@sentry/node";
+import { captureException, initTelemetry } from "dofek/telemetry";
 import type express from "express";
 
 let initialized = false;
 
 /** @internal - For testing only */
-export function __resetSentryInitialized() {
+export function __resetTelemetryErrorReportingInitialized() {
   initialized = false;
 }
 
 /**
- * Initialize Sentry error capture for the server.
+ * Initialize telemetry error capture for the server.
  * Uses `skipOpenTelemetrySetup` to avoid conflicting with the existing
  * OTel→Axiom pipeline in `src/instrumentation.ts`.
  */
-export function initSentry() {
+export function initTelemetryErrorReporting() {
   if (initialized) {
     return;
   }
   initialized = true;
-
-  const dsn = process.env.SENTRY_DSN;
-  if (!dsn) {
-    return;
-  }
-
-  Sentry.init({
-    dsn,
-    skipOpenTelemetrySetup: true,
-  });
+  initTelemetry();
 }
 
 /**
- * Express error-handling middleware that reports errors to Sentry
+ * Express error-handling middleware that reports errors to telemetry
  * and returns a generic 500 response.
  */
-export function sentryErrorHandler(): express.ErrorRequestHandler {
+export function telemetryErrorHandler(): express.ErrorRequestHandler {
   return (err: unknown, _req, res, next) => {
-    Sentry.captureException(err);
+    captureException(err);
     if (res.headersSent) {
       next(err);
       return;

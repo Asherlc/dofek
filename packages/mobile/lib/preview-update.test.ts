@@ -64,7 +64,7 @@ describe("checkAndApplyPreviewUpdate", () => {
     expect(mockReloadAsync).not.toHaveBeenCalled();
   });
 
-  it("returns 'error' and reports to Sentry on check failure", async () => {
+  it("returns 'error' and reports to telemetry on check failure", async () => {
     const error = new Error("Network error");
     mockCheckForUpdateAsync.mockRejectedValue(error);
 
@@ -76,7 +76,7 @@ describe("checkAndApplyPreviewUpdate", () => {
     });
   });
 
-  it("returns 'error' and reports to Sentry on fetch failure", async () => {
+  it("returns 'error' and reports to telemetry on fetch failure", async () => {
     const error = new Error("Download failed");
     mockCheckForUpdateAsync.mockResolvedValue({ isAvailable: true });
     mockFetchUpdateAsync.mockRejectedValue(error);
