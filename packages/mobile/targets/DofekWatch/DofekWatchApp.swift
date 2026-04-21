@@ -19,7 +19,7 @@ struct DofekWatchApp: App {
     init() {
         #if canImport(Sentry)
         SentrySDK.start { options in
-            options.dsn = "https://971f1d756067049f70cdf4a04e8771a4@o4511073249067008.ingest.us.sentry.io/4511073386627073"
+            options.dsn = "https://42c67c5933a945408e9e164e045c2811@ebsoftware.bugsink.com/3"
             // Disable iOS-specific features that are unavailable on watchOS.
             // The prebuilt XCFramework includes all platforms, but auto-instrumentation
             // (UIViewController tracking, swizzling, network breadcrumbs) relies on
