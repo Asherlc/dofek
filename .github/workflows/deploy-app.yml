@@ -105,11 +105,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Migrate and deploy
+      - name: Prepare Apple private key secret
+        id: apple_secret
+        env:
+          APPLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/apple_private_key.pem
+        run: |
+          APPLE_PRIVATE_KEY_SECRET_HASH="$(sha256sum "$APPLE_PRIVATE_KEY_FILE" | cut -c1-12)"
+          APPLE_PRIVATE_KEY_SECRET_NAME="dofek_apple_private_key_${APPLE_PRIVATE_KEY_SECRET_HASH}"
+          if ! docker secret inspect "$APPLE_PRIVATE_KEY_SECRET_NAME" >/dev/null 2>&1; then
+            echo "Creating Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
+            docker secret create "$APPLE_PRIVATE_KEY_SECRET_NAME" "$APPLE_PRIVATE_KEY_FILE"
+          else
+            echo "Reusing existing Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
+          fi
+          echo "secret_name=$APPLE_PRIVATE_KEY_SECRET_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Pull deploy images
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
+          docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+          docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
+          docker pull "postgres:18-alpine"
+
+      - name: Wait for Postgres writable
+        env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
-          APPLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/apple_private_key.pem
         run: |
           while IFS= read -r env_line || [ -n "$env_line" ]; do
             case "$env_line" in
@@ -121,19 +143,6 @@ jobs:
             echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export (expected tag: deploy-env)"
             exit 1
           fi
-          echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
-          APPLE_PRIVATE_KEY_SECRET_HASH="$(sha256sum "$APPLE_PRIVATE_KEY_FILE" | cut -c1-12)"
-          APPLE_PRIVATE_KEY_SECRET_NAME="dofek_apple_private_key_${APPLE_PRIVATE_KEY_SECRET_HASH}"
-          if ! docker secret inspect "$APPLE_PRIVATE_KEY_SECRET_NAME" >/dev/null 2>&1; then
-            echo "Creating Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
-            docker secret create "$APPLE_PRIVATE_KEY_SECRET_NAME" "$APPLE_PRIVATE_KEY_FILE"
-          else
-            echo "Reusing existing Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
-          fi
-          export APPLE_PRIVATE_KEY_SECRET_NAME
-          docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-          docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
-          docker pull "postgres:18-alpine"
           for attempt in $(seq 1 36); do
             recovery_output=$(timeout 15s docker run --rm --network dofek_default \
               -e "PGPASSWORD=${POSTGRES_PASSWORD}" \
@@ -157,6 +166,18 @@ jobs:
             echo "Postgres readiness attempt ${attempt}/36: ${recovery_state:-unreachable}; detail=${recovery_detail:0:240}; retrying in 5s..."
             sleep 5
           done
+
+      - name: Run migrations
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+        run: |
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            case "$env_line" in
+              ""|\#*) continue
+            esac
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
@@ -177,4 +198,17 @@ jobs:
             echo "Migration attempt $attempt failed; retrying in 5s..."
             sleep 5
           done
+
+      - name: Deploy stack
+        env:
+          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          APPLE_PRIVATE_KEY_SECRET_NAME: ${{ steps.apple_secret.outputs.secret_name }}
+        run: |
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            case "$env_line" in
+              ""|\#*) continue
+            esac
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
+          export APPLE_PRIVATE_KEY_SECRET_NAME
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
