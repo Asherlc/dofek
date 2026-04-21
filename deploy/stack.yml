@@ -1,0 +1,275 @@
+# Production Docker Swarm stack.
+#
+# Deployed from CI via a remote Docker context:
+#   docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek
+#
+# Secrets come from Infisical, exported by CI to a local .env.prod file
+# that `docker stack deploy` reads (env_file) and inlines into the service
+# specs. Shell env is also used for compose-style ${VAR} interpolation.
+
+services:
+  traefik:
+    image: traefik:3.6
+    command:
+      - --api.dashboard=false
+      - --providers.swarm=true
+      - --providers.swarm.exposedbydefault=false
+      - --providers.swarm.network=dofek_default
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.dnschallenge=true
+      - --certificatesresolvers.le.acme.dnschallenge.provider=cloudflare
+      - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --certificatesresolvers.le.acme.dnschallenge.delaybeforecheck=10
+      - --certificatesresolvers.le.acme.email=asherlc@asherlc.com
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    environment:
+      CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.middlewares.authentik-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
+        - traefik.http.middlewares.authentik-auth.forwardAuth.trustForwardHeader=true
+        - traefik.http.middlewares.authentik-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
+
+  web:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["web"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      JOB_FILES_DIR: /app/job-files
+      PUBLIC_URL: https://dofek.asherlc.com
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      REDIS_URL: redis://redis:6379
+      OTEL_SERVICE_NAME: dofek-web
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    volumes:
+      - job_files:/app/job-files
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz | grep -q ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        failure_action: rollback
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.web.rule=Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)
+        - traefik.http.routers.web.entrypoints=websecure
+        - traefik.http.routers.web.tls=true
+        - traefik.http.routers.web.tls.certresolver=le
+        - traefik.http.routers.web.tls.domains[0].main=dofek.asherlc.com
+        - traefik.http.routers.web.tls.domains[0].sans=*.dofek.asherlc.com
+        - traefik.http.routers.web.tls.domains[1].main=dofek.fit
+        - traefik.http.routers.web.tls.domains[1].sans=www.dofek.fit
+        - traefik.http.routers.web.tls.domains[2].main=dofek.live
+        - traefik.http.routers.web.tls.domains[2].sans=www.dofek.live
+        - traefik.http.services.web.loadbalancer.server.port=3000
+
+  worker:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["worker"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      REDIS_URL: redis://redis:6379
+      OTEL_SERVICE_NAME: dofek-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      update_config:
+        order: start-first
+        failure_action: rollback
+
+  training-export-worker:
+    image: ghcr.io/asherlc/dofek-ml:${IMAGE_TAG:-latest}
+    environment:
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      REDIS_URL: redis://redis:6379
+      JOB_FILES_DIR: /app/job-files
+    volumes:
+      - job_files:/app/job-files
+
+  db:
+    image: timescale/timescaledb:2.26.2-pg18
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: health
+      POSTGRES_USER: health
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U health -d health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  databasus:
+    image: databasus/databasus:v3.32.1
+    volumes:
+      - databasus_data:/databasus-data
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.databasus.rule=Host(`databasus.dofek.asherlc.com`)
+        - traefik.http.routers.databasus.entrypoints=websecure
+        - traefik.http.routers.databasus.tls=true
+        - traefik.http.routers.databasus.tls.certresolver=le
+        - traefik.http.routers.databasus.middlewares=authentik-auth
+        - traefik.http.services.databasus.loadbalancer.server.port=4005
+
+  pgadmin:
+    image: dpage/pgadmin4:9.14.0
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL is required}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD is required}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.pgadmin.rule=Host(`pgadmin.dofek.asherlc.com`)
+        - traefik.http.routers.pgadmin.entrypoints=websecure
+        - traefik.http.routers.pgadmin.tls=true
+        - traefik.http.routers.pgadmin.tls.certresolver=le
+        - traefik.http.routers.pgadmin.middlewares=authentik-auth
+        - traefik.http.services.pgadmin.loadbalancer.server.port=80
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.149.0
+    user: "0:0"
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+  ota:
+    image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      BASE_URL: https://ota.dofek.asherlc.com
+      STORAGE_MODE: s3
+      S3_BUCKET_NAME: dofek-ota
+      AWS_REGION: auto
+      AWS_BASE_ENDPOINT: ${R2_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      CACHE_MODE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${OTA_JWT_SECRET}
+      KEYS_STORAGE_TYPE: environment
+      PRIVATE_EXPO_KEY_B64: ${OTA_PRIVATE_KEY_B64}
+      PUBLIC_EXPO_KEY_B64: ${OTA_PUBLIC_KEY_B64}
+      PORT: 3000
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.ota.rule=Host(`ota.dofek.asherlc.com`)
+        - traefik.http.routers.ota.entrypoints=websecure
+        - traefik.http.routers.ota.tls=true
+        - traefik.http.routers.ota.tls.certresolver=le
+        - traefik.http.services.ota.loadbalancer.server.port=3000
+
+  portainer:
+    image: portainer/portainer-ce:2.40.0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.portainer.rule=Host(`portainer.dofek.asherlc.com`)
+        - traefik.http.routers.portainer.entrypoints=websecure
+        - traefik.http.routers.portainer.tls=true
+        - traefik.http.routers.portainer.tls.certresolver=le
+        - traefik.http.routers.portainer.middlewares=authentik-auth
+        - traefik.http.services.portainer.loadbalancer.server.port=9000
+
+  docuum:
+    image: stephanmisc/docuum:0.27.0
+    init: true
+    command: ["--threshold", "10 GB"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docuum_data:/root
+
+  netdata:
+    image: netdata/netdata:v2.5
+    pid: host
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - netdata_config:/etc/netdata
+      - netdata_lib:/var/lib/netdata
+      - netdata_cache:/var/cache/netdata
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.netdata.rule=Host(`netdata.dofek.asherlc.com`)
+        - traefik.http.routers.netdata.entrypoints=websecure
+        - traefik.http.routers.netdata.tls=true
+        - traefik.http.routers.netdata.tls.certresolver=le
+        - traefik.http.routers.netdata.middlewares=authentik-auth
+        - traefik.http.services.netdata.loadbalancer.server.port=19999
+
+volumes:
+  letsencrypt:
+  db_data:
+  databasus_data:
+  pgadmin_data:
+  redis_data:
+  job_files:
+  portainer_data:
+  docuum_data:
+  netdata_config:
+  netdata_lib:
+  netdata_cache:
+
+networks:
+  # attachable so CI can run one-shot migration containers on the overlay
+  default:
+    driver: overlay
+    attachable: true

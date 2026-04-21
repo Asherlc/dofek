@@ -37,69 +37,54 @@ jobs:
           INPUT_TAG: ${{ inputs.image_tag }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TAG="${INPUT_TAG:-latest}"
             echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Deploying image: $TAG"
-          else
-            # Auto-trigger from CI workflow_run
-            SHA="$WORKFLOW_RUN_SHA"
-            SHORT_SHA=$(echo "$SHA" | head -c 7)
-            TAG="sha-${SHORT_SHA}"
-
-            # Verify image exists (CI just built it, but confirm)
-            if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
-                --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "$TAG"; then
-              echo "::error::Docker image $TAG not found. CI may not have pushed it."
-              exit 1
-            fi
-
-            {
-              echo "image_tag=$TAG"
-              echo "should_deploy=true"
-            } >> "$GITHUB_OUTPUT"
-            echo "Deploying CI image: $TAG"
+            exit 0
           fi
 
-  deploy-app:
-    name: Deploy App
+          SHA="$WORKFLOW_RUN_SHA"
+          SHORT_SHA=$(echo "$SHA" | head -c 7)
+          TAG="sha-${SHORT_SHA}"
+          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+
+          require_tag() {
+            local package_name="$1"
+            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
+              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
+              echo "::error::Docker image ${package_name}:$TAG not found. CI may not have pushed it."
+              exit 1
+            fi
+          }
+
+          require_tag "dofek"
+          require_tag "dofek-ml"
+
+          {
+            echo "image_tag=$TAG"
+            echo "should_deploy=true"
+          } >> "$GITHUB_OUTPUT"
+          echo "Deploying CI image tag across stack services: $TAG"
+
+  terraform:
+    name: Deploy Infra
     needs: [check]
+    if: needs.check.outputs.should_deploy == 'true'
+    uses: ./.github/workflows/deploy-terraform.yml
+    secrets: inherit
+
+  deploy-app:
+    name: Deploy Stack
+    needs: [check, terraform]
     if: needs.check.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-app.yml
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
+      server_host: ${{ needs.terraform.outputs.server_host }}
     secrets: inherit
 
-  deploy-ml:
-    name: Deploy ML
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-ml.yml
-    with:
-      image_tag: ${{ needs.check.outputs.image_tag }}
-    secrets: inherit
-
-  cleanup-images:
-    name: Cleanup Images
-    needs: [deploy-app, deploy-ml]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Prune unused images
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        run: |
-          ssh "root@${SERVER_HOST}" \
-            'docker image prune -af' \
-            || echo "Image cleanup failed (non-fatal)"
+  # Image cleanup runs on the server via docuum (see stack.yml).

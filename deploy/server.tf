@@ -58,13 +58,39 @@ resource "hcloud_volume" "dofek_data" {
   automount = true
 }
 
-# Copy compose + OTel config and start infra services.
-# Re-runs whenever the compose file or OTel config changes.
-resource "terraform_data" "deploy_compose" {
+# Initialize Docker Swarm on the server. cloud-init also does this for fresh
+# servers, but `user_data` is in `ignore_changes` on `hcloud_server.dofek`, so
+# for the existing live server we apply it explicitly here. Idempotent.
+resource "terraform_data" "swarm_init" {
   triggers_replace = [
-    filesha256("${path.module}/docker-compose.deploy.yml"),
+    "swarm-v3",
+    hcloud_server.dofek.id,
+    # Reconcile swarm manager state on every terraform apply to self-heal
+    # drift (e.g. node left swarm). The command is idempotent.
+    plantimestamp(),
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then exit 0; fi",
+      "if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then docker swarm leave --force; fi",
+      "docker swarm init",
+    ]
+  }
+}
+
+# Sync otel-collector config to the server (bind-mounted into the collector
+# service by stack.yml). Re-runs whenever the config changes.
+resource "terraform_data" "otel_config_sync" {
+  triggers_replace = [
     filesha256("${path.module}/otel-collector-config.yaml"),
-    filesha256("${path.module}/server/run-compose-with-infisical.sh"),
   ]
 
   connection {
@@ -75,28 +101,14 @@ resource "terraform_data" "deploy_compose" {
   }
 
   provisioner "file" {
-    source      = "${path.module}/docker-compose.deploy.yml"
-    destination = "/opt/dofek/docker-compose.deploy.yml"
-  }
-
-  provisioner "file" {
     source      = "${path.module}/otel-collector-config.yaml"
     destination = "/opt/dofek/otel-collector-config.yaml"
   }
 
-  provisioner "file" {
-    source      = "${path.module}/server/run-compose-with-infisical.sh"
-    destination = "/opt/dofek/run-compose-with-infisical.sh"
-  }
-
+  # If the stack is already deployed, force the collector to pick up the new config.
   provisioner "remote-exec" {
     inline = [
-      "cd /opt/dofek",
-      "chmod 700 /opt/dofek/run-compose-with-infisical.sh",
-      "test -f .env.deploy || printf 'IMAGE_TAG=latest\\n' > .env.deploy",
-      "test -n \"${var.infisical_token}\" || { echo 'ERROR: infisical_token is required' >&2; exit 1; }",
-      "REQUIRED_INFISICAL_VARS='CLOUDFLARE_API_TOKEN POSTGRES_PASSWORD PGADMIN_DEFAULT_EMAIL PGADMIN_DEFAULT_PASSWORD R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY OTA_JWT_SECRET OTA_PRIVATE_KEY_B64 OTA_PUBLIC_KEY_B64' INFISICAL_TOKEN='${var.infisical_token}' /opt/dofek/run-compose-with-infisical.sh compose pull --ignore-pull-failures db redis collector ota databasus pgadmin traefik portainer netdata",
-      "REQUIRED_INFISICAL_VARS='CLOUDFLARE_API_TOKEN POSTGRES_PASSWORD PGADMIN_DEFAULT_EMAIL PGADMIN_DEFAULT_PASSWORD R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY OTA_JWT_SECRET OTA_PRIVATE_KEY_B64 OTA_PUBLIC_KEY_B64' INFISICAL_TOKEN='${var.infisical_token}' /opt/dofek/run-compose-with-infisical.sh compose up -d db redis collector ota databasus pgadmin traefik portainer netdata",
+      "docker service ls --format '{{.Name}}' | grep -qx dofek_collector && docker service update --force dofek_collector || true",
     ]
   }
 }

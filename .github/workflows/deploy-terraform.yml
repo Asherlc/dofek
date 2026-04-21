@@ -1,21 +1,16 @@
 name: Deploy Terraform
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - deploy/docker-compose.deploy.yml
-      - deploy/otel-collector-config.yaml
-      - deploy/server.tf
-      - deploy/main.tf
-      - deploy/variables.tf
-      - deploy/server/**
   workflow_call:
     inputs:
       commit_sha:
         description: "Commit SHA to deploy"
         required: false
         type: string
+    outputs:
+      server_host:
+        description: "Terraform-managed server host/IP for Docker SSH deploys"
+        value: ${{ jobs.terraform.outputs.server_host }}
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -31,6 +26,8 @@ jobs:
   terraform:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    outputs:
+      server_host: ${{ steps.tf_outputs.outputs.server_host }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -46,13 +43,17 @@ jobs:
           TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          TF_VAR_infisical_token: ${{ secrets.INFISICAL_TOKEN }}
         run: |
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
-          test -n "$TF_VAR_infisical_token" || { echo "ERROR: missing required GitHub secret INFISICAL_TOKEN" >&2; exit 1; }
           # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
           # is benign in CI and avoids spurious "workspace already locked" failures.
           terraform init -lock-timeout=5m
           terraform apply -auto-approve -lock-timeout=5m
+
+      - name: Terraform Outputs
+        id: tf_outputs
+        working-directory: deploy
+        run: |
+          echo "server_host=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"

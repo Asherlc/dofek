@@ -78,7 +78,7 @@ WORKDIR /app
 # Docker CLI for worker container management (startWorker)
 RUN apk add --no-cache curl ca-certificates && \
     ARCH=$(uname -m) && \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.4.1.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
 

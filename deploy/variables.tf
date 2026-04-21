@@ -21,9 +21,9 @@ variable "ssh_allowed_ips" {
 }
 
 variable "data_volume_size_gb" {
-  description = "Optional Hetzner block storage size in GB (0 = disabled)"
+  description = "Hetzner block storage size in GB for persistent data (set 0 to disable)"
   type        = number
-  default     = 0
+  default     = 100
 }
 
 variable "data_volume_name" {
@@ -41,10 +41,4 @@ variable "cloudflare_api_token" {
 variable "cloudflare_account_id" {
   description = "Cloudflare account ID"
   type        = string
-}
-
-variable "infisical_token" {
-  description = "Infisical machine identity token for deploy-time secret export"
-  type        = string
-  sensitive   = true
 }
