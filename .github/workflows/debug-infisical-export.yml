@@ -70,9 +70,13 @@ jobs:
           token_plain="$(infisical secrets get EXPO_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
           access_plain_no_override="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --secret-overriding=false || true)"
           access_raw_no_expand="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --expand=false || true)"
+          access_plain_no_imports="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --include-imports=false || true)"
+          access_raw_no_imports_no_expand="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --include-imports=false --expand=false || true)"
           echo "infisical_expo_access_len=${#access_plain}"
           echo "infisical_expo_access_no_override_len=${#access_plain_no_override}"
           echo "infisical_expo_access_no_expand_len=${#access_raw_no_expand}"
+          echo "infisical_expo_access_no_imports_len=${#access_plain_no_imports}"
+          echo "infisical_expo_access_no_imports_no_expand_len=${#access_raw_no_imports_no_expand}"
           if printf "%s" "$access_raw_no_expand" | grep -q "EXPO_TOKEN"; then
             echo "infisical_expo_access_no_expand_mentions_expo_token=true"
           else
@@ -144,6 +148,35 @@ jobs:
             ' "$recursive_json_file"
           else
             echo "recursive_json_valid=false"
+          fi
+
+          non_recursive_json_file="$RUNNER_TEMP/non-recursive-secrets.json"
+          infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --output=json --silent > "$non_recursive_json_file" || true
+          if jq -e . "$non_recursive_json_file" >/dev/null 2>&1; then
+            echo "non_recursive_json_valid=true"
+            echo "non_recursive_expo_access_candidates=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[] | select((.secretKey // .key // .name // "") == "EXPO_ACCESS_TOKEN")] | length
+            ' "$non_recursive_json_file")"
+            echo "non_recursive_expo_access_non_empty_values=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[]
+                | select((.secretKey // .key // .name // "") == "EXPO_ACCESS_TOKEN")
+                | (.secretValue // .value // "")
+                | tostring
+                | select(length > 0)
+              ] | length
+            ' "$non_recursive_json_file")"
+          else
+            echo "non_recursive_json_valid=false"
           fi
 
           folders_json_file="$RUNNER_TEMP/folders.json"
