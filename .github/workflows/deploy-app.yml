@@ -95,10 +95,14 @@ jobs:
             esac
             export "$env_line"
           done < "$INFISICAL_ENV_FILE"
+          echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           APPLE_PRIVATE_KEY_SECRET_HASH="$(sha256sum "$APPLE_PRIVATE_KEY_FILE" | cut -c1-12)"
           APPLE_PRIVATE_KEY_SECRET_NAME="dofek_apple_private_key_${APPLE_PRIVATE_KEY_SECRET_HASH}"
           if ! docker secret inspect "$APPLE_PRIVATE_KEY_SECRET_NAME" >/dev/null 2>&1; then
+            echo "Creating Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
             docker secret create "$APPLE_PRIVATE_KEY_SECRET_NAME" "$APPLE_PRIVATE_KEY_FILE"
+          else
+            echo "Reusing existing Docker secret ${APPLE_PRIVATE_KEY_SECRET_NAME}"
           fi
           export APPLE_PRIVATE_KEY_SECRET_NAME
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
@@ -108,9 +112,10 @@ jobs:
             recovery_state=$(timeout 15s docker run --rm --network dofek_default \
               -e "PGPASSWORD=${POSTGRES_PASSWORD}" \
               postgres:18-alpine \
-              psql --host=db --username=health --dbname=health --no-align --tuples-only \
-              --command "SELECT NOT pg_is_in_recovery();" 2>/dev/null || true)
-            if [ "$(echo "$recovery_state" | tr -d '[:space:]')" = "t" ]; then
+              psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
+              --command "SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;" 2>/dev/null || true)
+            recovery_state="$(echo "$recovery_state" | tr -d '[:space:]')"
+            if [ "$recovery_state" = "writable" ]; then
               echo "Postgres is writable."
               break
             fi
@@ -118,15 +123,22 @@ jobs:
               echo "::error::Postgres did not become writable within 180s"
               exit 1
             fi
-            echo "Postgres still starting/recovering; retrying in 5s..."
+            echo "Postgres readiness attempt ${attempt}/36: ${recovery_state:-unreachable}; retrying in 5s..."
             sleep 5
           done
+          migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
+            echo "Starting migration attempt ${attempt}/12..."
             if timeout 90s docker run --rm --network dofek_default \
               -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \
-              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate; then
+              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate >"$migration_output_file" 2>&1; then
+              echo "Migration attempt ${attempt}/12 succeeded."
               break
             fi
+            migration_exit_code=$?
+            echo "Migration attempt ${attempt}/12 failed (exit code ${migration_exit_code})."
+            echo "Migration output (last 60 lines):"
+            tail -n 60 "$migration_output_file" || true
             if [ "$attempt" -eq 12 ]; then
               echo "::error::Migration failed after 12 attempts"
               exit 1
