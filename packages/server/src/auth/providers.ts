@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import type { OAuth2Tokens } from "arctic";
 import { Apple, decodeIdToken, Google, generateCodeVerifier, generateState } from "arctic";
 import { z } from "zod";
@@ -40,32 +39,8 @@ const providers = new Map<IdentityProviderName, IdentityProvider>();
 
 function getEnvRequired(key: string): string {
   const value = process.env[key];
-  if (value) return value;
-
-  const filePath = process.env[`${key}_FILE`];
-  if (filePath) {
-    const fileValue = readFileSync(filePath, "utf8");
-    if (!fileValue) {
-      throw new Error(`Required env var file is empty: ${key}_FILE=${filePath}`);
-    }
-    return fileValue;
-  }
-
-  throw new Error(`Missing required env var: ${key}`);
-}
-
-function hasEnvValue(key: string): boolean {
-  const value = process.env[key];
-  if (value) return true;
-
-  const filePath = process.env[`${key}_FILE`];
-  if (!filePath) return false;
-
-  try {
-    return readFileSync(filePath, "utf8").length > 0;
-  } catch {
-    return false;
-  }
+  if (!value) throw new Error(`Missing required env var: ${key}`);
+  return value;
 }
 
 function initGoogle(): IdentityProvider {
@@ -167,7 +142,7 @@ const requiredEnvKeys: Record<IdentityProviderName, string[]> = {
 
 /** Check if all required env vars for a provider are set. */
 export function isProviderConfigured(name: IdentityProviderName): boolean {
-  return requiredEnvKeys[name].every(hasEnvValue);
+  return requiredEnvKeys[name].every((key) => !!process.env[key]);
 }
 
 /** Required env vars for native iOS Apple Sign In (uses Bundle ID, not Services ID). */
@@ -180,7 +155,7 @@ const nativeAppleRequiredEnvKeys = [
 
 /** Check if native iOS Apple Sign In is configured. */
 export function isNativeAppleConfigured(): boolean {
-  return nativeAppleRequiredEnvKeys.every(hasEnvValue);
+  return nativeAppleRequiredEnvKeys.every((key) => !!process.env[key]);
 }
 
 /** Get a configured identity provider. Throws if env vars are missing. */
