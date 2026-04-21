@@ -68,6 +68,7 @@ jobs:
 
           access_plain="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
           token_plain="$(infisical secrets get EXPO_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
+          app_id_plain="$(infisical secrets get EXPO_APP_ID --projectId="$project_id" --env=prod --plain --silent || true)"
           access_plain_no_override="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --secret-overriding=false || true)"
           access_raw_no_expand="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --expand=false || true)"
           access_plain_no_imports="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --include-imports=false || true)"
@@ -89,11 +90,15 @@ jobs:
             echo "infisical_expo_access_no_expand_starts_with_dollar=false"
           fi
           echo "infisical_expo_token_len=${#token_plain}"
+          echo "infisical_expo_app_id_len=${#app_id_plain}"
           if [ -n "$access_plain" ]; then
             printf "%s" "$access_plain" | sha256sum | awk '{print "infisical_expo_access_sha256="$1}'
           fi
           if [ -n "$token_plain" ]; then
             printf "%s" "$token_plain" | sha256sum | awk '{print "infisical_expo_token_sha256="$1}'
+          fi
+          if [ -n "$app_id_plain" ]; then
+            printf "%s" "$app_id_plain" | sha256sum | awk '{print "infisical_expo_app_id_sha256="$1}'
           fi
 
           recursive_json_file="$RUNNER_TEMP/recursive-secrets.json"
@@ -175,6 +180,44 @@ jobs:
                 | select(length > 0)
               ] | length
             ' "$non_recursive_json_file")"
+            access_json_value="$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[]
+                | select((.secretKey // .key // .name // "") == "EXPO_ACCESS_TOKEN")
+                | (.secretValue // .value // "")
+                | tostring
+              ] | first // ""
+            ' "$non_recursive_json_file")"
+            token_json_value="$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[]
+                | select((.secretKey // .key // .name // "") == "EXPO_TOKEN")
+                | (.secretValue // .value // "")
+                | tostring
+              ] | first // ""
+            ' "$non_recursive_json_file")"
+            for pair in "access:$access_json_value" "token:$token_json_value"; do
+              label="${pair%%:*}"
+              value="${pair#*:}"
+              value_len=${#value}
+              masked_stars=false
+              contains_redacted=false
+              if printf "%s" "$value" | grep -Eq '^[*]+$'; then
+                masked_stars=true
+              fi
+              if printf "%s" "$value" | grep -Eqi 'redacted|hidden|masked'; then
+                contains_redacted=true
+              fi
+              echo "non_recursive_${label}_json_value_len=$value_len masked_stars=$masked_stars contains_redacted=$contains_redacted"
+            done
           else
             echo "non_recursive_json_valid=false"
           fi
