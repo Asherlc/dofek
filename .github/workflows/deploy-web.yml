@@ -37,31 +37,38 @@ jobs:
           INPUT_TAG: ${{ inputs.image_tag }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TAG="${INPUT_TAG:-latest}"
             echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "Deploying image: $TAG"
-          else
-            # Auto-trigger from CI workflow_run
-            SHA="$WORKFLOW_RUN_SHA"
-            SHORT_SHA=$(echo "$SHA" | head -c 7)
-            TAG="sha-${SHORT_SHA}"
+            exit 0
+          fi
 
-            # Verify image exists (CI just built it, but confirm)
-            if ! gh api "/users/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/packages/container/dofek/versions" \
-                --jq ".[].metadata.container.tags[]" 2>/dev/null | grep -q "$TAG"; then
-              echo "::error::Docker image $TAG not found. CI may not have pushed it."
+          SHA="$WORKFLOW_RUN_SHA"
+          SHORT_SHA=$(echo "$SHA" | head -c 7)
+          TAG="sha-${SHORT_SHA}"
+          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+
+          require_tag() {
+            local package_name="$1"
+            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
+              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
+              echo "::error::Docker image ${package_name}:$TAG not found. CI may not have pushed it."
               exit 1
             fi
+          }
 
-            {
-              echo "image_tag=$TAG"
-              echo "should_deploy=true"
-            } >> "$GITHUB_OUTPUT"
-            echo "Deploying CI image: $TAG"
-          fi
+          require_tag "dofek"
+          require_tag "dofek-ml"
+
+          {
+            echo "image_tag=$TAG"
+            echo "should_deploy=true"
+          } >> "$GITHUB_OUTPUT"
+          echo "Deploying CI image tag across stack services: $TAG"
 
   terraform:
     name: Deploy Infra
@@ -71,7 +78,7 @@ jobs:
     secrets: inherit
 
   deploy-app:
-    name: Deploy App
+    name: Deploy Stack
     needs: [check, terraform]
     if: needs.check.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-app.yml

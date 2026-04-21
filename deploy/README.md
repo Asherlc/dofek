@@ -49,17 +49,16 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 
 Deployments are push-based from CI, using a remote Docker context over SSH. CI never runs shell scripts on the server — it only calls the Docker API.
 
-1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR.
+1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
    1. Install Infisical CLI and export secrets to `$RUNNER_TEMP/.env.prod`.
-   2. Create a remote Docker context: `docker context create prod --docker host=ssh://root@<host>`.
+   2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
-   4. `docker --context prod pull ghcr.io/asherlc/dofek:<tag>`.
+   4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
    5. Run migrations as a one-shot container attached to the swarm overlay network:
-      `docker --context prod run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
-   6. `docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs the rolling update natively.
-4. **Deploy ML** (`deploy-ml.yml`): `docker --context prod service update --image ghcr.io/asherlc/dofek-ml:<tag> --with-registry-auth dofek_training-export-worker`.
+      `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
+   6. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)
