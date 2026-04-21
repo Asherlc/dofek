@@ -68,13 +68,46 @@ jobs:
 
           access_plain="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
           token_plain="$(infisical secrets get EXPO_TOKEN --projectId="$project_id" --env=prod --plain --silent || true)"
+          access_plain_no_override="$(infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --plain --silent --secret-overriding=false || true)"
           echo "infisical_expo_access_len=${#access_plain}"
+          echo "infisical_expo_access_no_override_len=${#access_plain_no_override}"
           echo "infisical_expo_token_len=${#token_plain}"
           if [ -n "$access_plain" ]; then
             printf "%s" "$access_plain" | sha256sum | awk '{print "infisical_expo_access_sha256="$1}'
           fi
           if [ -n "$token_plain" ]; then
             printf "%s" "$token_plain" | sha256sum | awk '{print "infisical_expo_token_sha256="$1}'
+          fi
+
+          recursive_json_file="$RUNNER_TEMP/recursive-secrets.json"
+          infisical secrets get EXPO_ACCESS_TOKEN --projectId="$project_id" --env=prod --output=json --silent --recursive > "$recursive_json_file" || true
+          if jq -e . "$recursive_json_file" >/dev/null 2>&1; then
+            echo "recursive_json_valid=true"
+            echo "recursive_json_top_level_type=$(jq -r 'type' "$recursive_json_file")"
+            echo "recursive_json_top_level_keys=$(jq -r 'if type==\"object\" then keys|join(\",\") else \"n/a\" end' "$recursive_json_file")"
+            echo "recursive_expo_access_candidates=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[] | select((.secretKey // .key // .name // "") == "EXPO_ACCESS_TOKEN")] | length
+            ' "$recursive_json_file")"
+            echo "recursive_expo_access_non_empty_values=$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[]
+                | select((.secretKey // .key // .name // "") == "EXPO_ACCESS_TOKEN")
+                | (.secretValue // .value // "")
+                | tostring
+                | select(length > 0)
+              ] | length
+            ' "$recursive_json_file")"
+          else
+            echo "recursive_json_valid=false"
           fi
 
           export_line="$(grep '^EXPO_ACCESS_TOKEN=' "$RUNNER_TEMP/.env.prod" || true)"
