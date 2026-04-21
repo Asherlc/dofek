@@ -28,11 +28,9 @@ BEGIN
     RETURN;
   END IF;
 
-  PERFORM create_hypertable(
-    'fitness.metric_stream',
-    by_range('recorded_at', INTERVAL '1 day'),
-    migrate_data => FALSE,
-    if_not_exists => TRUE
+  PERFORM public.create_hypertable(
+    'fitness.metric_stream'::regclass,
+    'recorded_at'::name
   );
 END
 $$;
