@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock arctic before importing
@@ -32,6 +35,7 @@ import {
 
 describe("auth/providers", () => {
   const originalEnv = process.env;
+  const tempDirectories: string[] = [];
 
   beforeEach(() => {
     vi.resetModules();
@@ -42,20 +46,40 @@ describe("auth/providers", () => {
       "GOOGLE_CLIENT_ID",
       "GOOGLE_CLIENT_SECRET",
       "GOOGLE_REDIRECT_URI",
+      "GOOGLE_CLIENT_ID_FILE",
+      "GOOGLE_CLIENT_SECRET_FILE",
+      "GOOGLE_REDIRECT_URI_FILE",
       "APPLE_CLIENT_ID",
+      "APPLE_CLIENT_ID_FILE",
       "APPLE_TEAM_ID",
+      "APPLE_TEAM_ID_FILE",
       "APPLE_KEY_ID",
+      "APPLE_KEY_ID_FILE",
       "APPLE_PRIVATE_KEY",
+      "APPLE_PRIVATE_KEY_FILE",
       "APPLE_REDIRECT_URI",
+      "APPLE_REDIRECT_URI_FILE",
       "APPLE_BUNDLE_ID",
+      "APPLE_BUNDLE_ID_FILE",
     ]) {
       delete process.env[key];
     }
   });
 
   afterEach(() => {
+    for (const directoryPath of tempDirectories.splice(0, tempDirectories.length)) {
+      rmSync(directoryPath, { recursive: true, force: true });
+    }
     process.env = originalEnv;
   });
+
+  function createSecretFile(fileName: string, value: string): string {
+    const directoryPath = mkdtempSync(join(tmpdir(), "providers-test-"));
+    tempDirectories.push(directoryPath);
+    const filePath = join(directoryPath, fileName);
+    writeFileSync(filePath, value);
+    return filePath;
+  }
 
   describe("isProviderConfigured", () => {
     it("returns false when no Google env vars are set", () => {
@@ -92,6 +116,18 @@ describe("auth/providers", () => {
       process.env.APPLE_PRIVATE_KEY =
         "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----";
       process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
+      expect(isProviderConfigured("apple")).toBe(true);
+    });
+
+    it("returns true when APPLE_PRIVATE_KEY is provided via APPLE_PRIVATE_KEY_FILE", () => {
+      process.env.APPLE_CLIENT_ID = "id";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_REDIRECT_URI = "http://localhost/callback";
+      process.env.APPLE_PRIVATE_KEY_FILE = createSecretFile(
+        "apple-private-key.pem",
+        "-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----",
+      );
       expect(isProviderConfigured("apple")).toBe(true);
     });
   });
@@ -139,6 +175,14 @@ describe("auth/providers", () => {
       process.env.APPLE_KEY_ID = "key";
       process.env.APPLE_PRIVATE_KEY = "key-content";
       // APPLE_CLIENT_ID and APPLE_REDIRECT_URI are NOT set
+      expect(isNativeAppleConfigured()).toBe(true);
+    });
+
+    it("accepts APPLE_PRIVATE_KEY via APPLE_PRIVATE_KEY_FILE", () => {
+      process.env.APPLE_BUNDLE_ID = "com.dofek.app";
+      process.env.APPLE_TEAM_ID = "team";
+      process.env.APPLE_KEY_ID = "key";
+      process.env.APPLE_PRIVATE_KEY_FILE = createSecretFile("apple-private-key.pem", "key-content");
       expect(isNativeAppleConfigured()).toBe(true);
     });
   });

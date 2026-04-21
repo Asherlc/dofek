@@ -4,7 +4,7 @@
 
 ## High-Level Mandates
 - **Always use Terraform**: Never manually modify infrastructure on Hetzner or Cloudflare.
-- **Secrets via Infisical**: Never hardcode secrets in `.tf` files or `stack.yml`. CI fetches them at deploy time and inlines them into the service spec via `env_file` / shell interpolation.
+- **Secrets via Infisical**: Never hardcode secrets in `.tf` files or `stack.yml`. CI fetches deploy-tagged single-line secrets into an `env_file` for stack deploy; multiline secrets must be injected as Docker Swarm secrets.
 - **Zero-Downtime via Swarm**: `deploy.update_config` on `web`/`worker` uses `order: start-first` + healthcheck-gated `monitor` + `failure_action: rollback`. Never bypass this (e.g., no `docker service rm` + recreate — always `docker stack deploy` or `docker service update`).
 - **Deterministic Migrations**: Migrations run in CI **before** `stack deploy` as a one-shot container against the remote swarm (`docker --context prod run --rm --network dofek_default ... migrate`). Do not run migrations inside `web` startup in production.
 - **No Server-Side Deploy Scripts**: The server only runs `dockerd` + swarm. All deploy logic lives in CI and talks to the remote Docker API over SSH. Do not add bash helpers to `/opt/dofek`.

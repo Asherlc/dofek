@@ -67,11 +67,14 @@ jobs:
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           curl -1sLf "https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh" | sudo -E bash
           sudo apt-get install -y "infisical=0.38.0"
-          infisical --silent export --env=prod --format=json > "$RUNNER_TEMP/.env.prod.json"
-          jq -r 'to_entries[] | "\(.key)=\(.value | @json)"' "$RUNNER_TEMP/.env.prod.json" > "$RUNNER_TEMP/.env.prod"
-          jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' "$RUNNER_TEMP/.env.prod.json" > "$RUNNER_TEMP/.env.prod.sh"
+          infisical export --env=prod --format=dotenv --tags=deploy-env --silent > "$RUNNER_TEMP/.env.prod"
+          infisical secrets get APPLE_PRIVATE_KEY --env=prod --plain --silent > "$RUNNER_TEMP/apple_private_key.pem"
+          if [ ! -s "$RUNNER_TEMP/apple_private_key.pem" ]; then
+            echo "::error::APPLE_PRIVATE_KEY is missing or empty in Infisical"
+            exit 1
+          fi
           chmod 600 "$RUNNER_TEMP/.env.prod"
-          chmod 600 "$RUNNER_TEMP/.env.prod.sh"
+          chmod 600 "$RUNNER_TEMP/apple_private_key.pem"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -84,9 +87,20 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
-          INFISICAL_SHELL_ENV_FILE: ${{ runner.temp }}/.env.prod.sh
+          APPLE_PRIVATE_KEY_FILE: ${{ runner.temp }}/apple_private_key.pem
         run: |
-          . "$INFISICAL_SHELL_ENV_FILE"
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            case "$env_line" in
+              ""|\#*) continue
+            esac
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
+          APPLE_PRIVATE_KEY_SECRET_HASH="$(sha256sum "$APPLE_PRIVATE_KEY_FILE" | cut -c1-12)"
+          APPLE_PRIVATE_KEY_SECRET_NAME="dofek_apple_private_key_${APPLE_PRIVATE_KEY_SECRET_HASH}"
+          if ! docker secret inspect "$APPLE_PRIVATE_KEY_SECRET_NAME" >/dev/null 2>&1; then
+            docker secret create "$APPLE_PRIVATE_KEY_SECRET_NAME" "$APPLE_PRIVATE_KEY_FILE"
+          fi
+          export APPLE_PRIVATE_KEY_SECRET_NAME
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
           docker pull "postgres:18-alpine"
