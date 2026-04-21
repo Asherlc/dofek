@@ -67,8 +67,11 @@ jobs:
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           curl -1sLf "https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh" | sudo -E bash
           sudo apt-get install -y "infisical=0.38.0"
-          infisical export --env=prod --format=dotenv > "$RUNNER_TEMP/.env.prod"
+          infisical --silent export --env=prod --format=json > "$RUNNER_TEMP/.env.prod.json"
+          jq -r 'to_entries[] | "\(.key)=\(.value | @json)"' "$RUNNER_TEMP/.env.prod.json" > "$RUNNER_TEMP/.env.prod"
+          jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"' "$RUNNER_TEMP/.env.prod.json" > "$RUNNER_TEMP/.env.prod.sh"
           chmod 600 "$RUNNER_TEMP/.env.prod"
+          chmod 600 "$RUNNER_TEMP/.env.prod.sh"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -81,8 +84,9 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_SHELL_ENV_FILE: ${{ runner.temp }}/.env.prod.sh
         run: |
-          set -a; . "$INFISICAL_ENV_FILE"; set +a
+          . "$INFISICAL_SHELL_ENV_FILE"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
           docker pull "postgres:18-alpine"
