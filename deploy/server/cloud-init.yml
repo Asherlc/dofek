@@ -44,7 +44,3 @@ runcmd:
 
   # Initialize a single-node swarm (idempotent)
   - docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active || docker swarm init
-
-  # LRU image eviction. Watches the Docker socket and deletes least-recently-used
-  # images when total image disk usage exceeds --threshold.
-  - docker run -d --name docuum --init --restart always -v /var/run/docker.sock:/var/run/docker.sock -v docuum:/root stephanmisc/docuum:0.27.0 --threshold "10 GB"

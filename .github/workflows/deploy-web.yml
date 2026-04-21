@@ -87,4 +87,4 @@ jobs:
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
     secrets: inherit
-  # Image cleanup runs on the server via docuum (see cloud-init.yml / server.tf).
+  # Image cleanup runs on the server via docuum (see stack.yml).

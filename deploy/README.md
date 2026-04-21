@@ -25,15 +25,14 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 ## Implementation Details
 
 ### Terraform (`*.tf`)
-- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. Idempotent `terraform_data` resources handle post-provision state (cloud-init also does most of this on fresh servers, but `user_data` is in `ignore_changes`, so these cover the live server):
-  - `swarm_init`: ensures `docker swarm init` has been run.
-  - `docuum`: runs [docuum](https://github.com/stepchowfun/docuum) for LRU image eviction. Re-runs when the pinned version or threshold changes.
+- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. Two idempotent `terraform_data` resources handle post-provision state:
+  - `swarm_init`: ensures the server has `docker swarm init` run exactly once (cloud-init also does this for fresh servers, but `user_data` is in `ignore_changes`, so this covers drift on the live server).
   - `otel_config_sync`: bind-mounts `otel-collector-config.yaml` into `/opt/dofek` on the server and forces the collector service to re-read it.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
 - `storage.tf`: Manages Cloudflare R2 buckets. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
 
 ### Server Configuration (`server/`)
-- `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), idempotently runs `docker swarm init`, and starts [docuum](https://github.com/stepchowfun/docuum) for LRU image eviction (threshold 10 GB). No deploy helpers, no Infisical CLI.
+- `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
 - Single file defining all services: `web`, `worker`, `training-export-worker`, `traefik`, `db`, `redis`, `collector`, `ota`, `databasus`, `pgadmin`, `portainer`, `netdata`.

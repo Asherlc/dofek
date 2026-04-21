@@ -221,6 +221,14 @@ services:
         - traefik.http.routers.portainer.middlewares=authentik-auth
         - traefik.http.services.portainer.loadbalancer.server.port=9000
 
+  docuum:
+    image: stephanmisc/docuum:0.27.0
+    init: true
+    command: ["--threshold", "10 GB"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docuum_data:/root
+
   netdata:
     image: netdata/netdata:v2.5
     pid: host
@@ -255,6 +263,7 @@ volumes:
   redis_data:
   job_files:
   portainer_data:
+  docuum_data:
   netdata_config:
   netdata_lib:
   netdata_cache:
