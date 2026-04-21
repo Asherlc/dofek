@@ -78,6 +78,27 @@ resource "terraform_data" "swarm_init" {
   }
 }
 
+# Run docuum for LRU image eviction. cloud-init starts it on fresh servers;
+# this block covers the live server (whose user_data is in ignore_changes) and
+# re-runs whenever the pinned version or threshold changes.
+resource "terraform_data" "docuum" {
+  triggers_replace = ["stephanmisc/docuum:0.27.0", "10 GB"]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "docker rm -f docuum 2>/dev/null || true",
+      "docker run -d --name docuum --init --restart always -v /var/run/docker.sock:/var/run/docker.sock -v docuum:/root stephanmisc/docuum:0.27.0 --threshold '10 GB'",
+    ]
+  }
+}
+
 # Sync otel-collector config to the server (bind-mounted into the collector
 # service by stack.yml). Re-runs whenever the config changes.
 resource "terraform_data" "otel_config_sync" {

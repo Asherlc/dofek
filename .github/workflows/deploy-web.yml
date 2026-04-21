@@ -87,4 +87,4 @@ jobs:
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
     secrets: inherit
-  # Image cleanup runs via daily cron on the server (see cloud-init.yml).
+  # Image cleanup runs on the server via docuum (see cloud-init.yml / server.tf).
