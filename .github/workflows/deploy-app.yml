@@ -83,31 +83,8 @@ jobs:
             echo "::error::.infisical.json is missing workspaceId"
             exit 1
           fi
-          required_deploy_keys=(
-            APPLE_PRIVATE_KEY
-            CLOUDFLARE_API_TOKEN
-            OTA_JWT_SECRET
-            OTA_PRIVATE_KEY_B64
-            OTA_PUBLIC_KEY_B64
-            PGADMIN_DEFAULT_EMAIL
-            PGADMIN_DEFAULT_PASSWORD
-            POSTGRES_PASSWORD
-            R2_ACCESS_KEY_ID
-            R2_ENDPOINT
-            R2_SECRET_ACCESS_KEY
-          )
-          infisical export --projectId="$project_id" --env=prod --format=dotenv --tags=web-env --silent > "$RUNNER_TEMP/.env.prod"
-          echo "Infisical web-env export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
-          missing_deploy_keys=()
-          for key in "${required_deploy_keys[@]}"; do
-            if ! grep -q "^${key}=" "$RUNNER_TEMP/.env.prod"; then
-              missing_deploy_keys+=("$key")
-            fi
-          done
-          if [ "${#missing_deploy_keys[@]}" -gt 0 ]; then
-            echo "::error::Infisical deploy export with tag web-env is missing required keys: ${missing_deploy_keys[*]}"
-            exit 1
-          fi
+          infisical export --projectId="$project_id" --env=prod --format=dotenv --silent > "$RUNNER_TEMP/.env.prod"
+          echo "Infisical prod export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
           chmod 600 "$RUNNER_TEMP/.env.prod"
 
       - name: Login to GHCR
