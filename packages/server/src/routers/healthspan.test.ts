@@ -28,8 +28,8 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+import { healthspanRouter } from "./healthspan.ts";
 import {
-  healthspanRouter,
   scoreAerobicMinutes,
   scoreHighIntensityMinutes,
   scoreLeanMassPct,
@@ -40,7 +40,7 @@ import {
   scoreStrengthFrequency,
   scoreToStatus,
   scoreVo2Max,
-} from "./healthspan.ts";
+} from "./healthspan-scoring.ts";
 
 // --- scoreToStatus ---
 
