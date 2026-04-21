@@ -38,6 +38,7 @@ Dofek specializes in deep integration with fitness platforms that lack public AP
 - `testing.md`: Practical patterns for test assertions with chainable DB mocks (`values(...)` payload checks, guarding against accidental `values([])` inserts).
 - `xcode-cloud.md`: Configuration and troubleshooting for our automated iOS build pipeline.
 - `provider-api-audit.md`: Periodic review of provider API health and data coverage.
+- `metric-stream-timescaledb-runbook.md`: Production runbook to convert `fitness.metric_stream` to a Timescale hypertable and enable compression safely.
 
 ## CI Preview Apps
 
