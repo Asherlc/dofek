@@ -85,7 +85,6 @@ jobs:
           set -a; . "$INFISICAL_ENV_FILE"; set +a
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker run --rm --network dofek_default \
-            --env-file "$INFISICAL_ENV_FILE" \
             -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
