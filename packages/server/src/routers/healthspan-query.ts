@@ -27,7 +27,6 @@ const rawRowSchema = z.object({
 });
 
 export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
-export type HealthspanHistoryRow = z.infer<typeof historyRowSchema>;
 
 /**
  * Fetch the raw aggregates and weekly history needed to compute a Healthspan score.
