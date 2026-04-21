@@ -256,6 +256,30 @@ jobs:
                 else [] end;
               [items[] | select((.secretKey // .key // .name // "") == "'"$key"'") | (.secretValue // .value // "") | tostring | length] | first // 0
             ' "$key_json_file")"
+            json_candidate_value="$(jq -r '
+              def items:
+                if type=="array" then .
+                elif type=="object" and has("secrets") and (.secrets|type)=="array" then .secrets
+                elif type=="object" and has("data") and (.data|type)=="array" then .data
+                else [] end;
+              [items[] | select((.secretKey // .key // .name // "") == "'"$key"'") | (.secretValue // .value // "") | tostring] | first // ""
+            ' "$key_json_file")"
+            starts_with_dollar=false
+            dollar_identifier=false
+            dollar_brace_identifier=false
+            referenced_identifier=""
+            if [ -n "$json_candidate_value" ] && [ "${json_candidate_value#\$}" != "$json_candidate_value" ]; then
+              starts_with_dollar=true
+              if printf "%s" "$json_candidate_value" | grep -Eq '^\$[A-Za-z_][A-Za-z0-9_]*$'; then
+                dollar_identifier=true
+                referenced_identifier="$(printf "%s" "$json_candidate_value" | sed 's/^\$//')"
+              fi
+              if printf "%s" "$json_candidate_value" | grep -Eq '^\$\{[A-Za-z_][A-Za-z0-9_]*\}$'; then
+                dollar_brace_identifier=true
+                referenced_identifier="$(printf "%s" "$json_candidate_value" | sed 's/^\${//; s/}$//')"
+              fi
+            fi
+            echo "json_shape key=$key starts_with_dollar=$starts_with_dollar dollar_identifier=$dollar_identifier dollar_brace_identifier=$dollar_brace_identifier referenced_identifier=$referenced_identifier"
           done
           echo "json_shape_probe_end"
 
