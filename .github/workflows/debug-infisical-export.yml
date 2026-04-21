@@ -1,6 +1,9 @@
 name: Debug Infisical Export
 
 on:
+  push:
+    branches:
+      - Asherlc/ota-pr-deploy
   workflow_dispatch:
 
 jobs:
