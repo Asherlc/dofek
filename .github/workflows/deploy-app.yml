@@ -155,8 +155,9 @@ jobs:
             echo "Starting migration attempt ${attempt}/12..."
             if timeout 90s docker run --rm --network dofek_default \
               --env-file "$INFISICAL_ENV_FILE" \
-              -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \
-              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate >"$migration_output_file" 2>&1; then
+              --entrypoint sh \
+              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+              -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh migrate' >"$migration_output_file" 2>&1; then
               echo "Migration attempt ${attempt}/12 succeeded."
               break
             fi
