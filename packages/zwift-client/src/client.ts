@@ -59,6 +59,10 @@ export class ZwiftClient {
     return this.#get<ZwiftProfile>(`/api/profiles/${this.#athleteId}`);
   }
 
+  async getAuthenticatedProfile(): Promise<ZwiftProfile> {
+    return this.#get<ZwiftProfile>("/api/profiles/me");
+  }
+
   async getActivities(start = 0, limit = 20): Promise<ZwiftActivitySummary[]> {
     return this.#get<ZwiftActivitySummary[]>(
       `/api/profiles/${this.#athleteId}/activities?start=${start}&limit=${limit}`,

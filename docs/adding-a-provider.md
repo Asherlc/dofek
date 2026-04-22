@@ -92,5 +92,6 @@ Run `pnpm test:watch` while developing.
 - **Zod at boundaries**: validate external API payloads with Zod instead of trusting TypeScript-only types.
 - **Raw data first**: store raw/provider-native records and leave deduplication/aggregation to query-time logic.
 - **Repository-only DB secret crypto**: if a provider uses stored credentials/tokens, encryption/decryption must happen in repository/data-access code. Provider/service logic should only work with plaintext values returned by repository helpers.
+- **JWT subject caveat**: for OAuth/JWT providers, `sub` may not be the numeric profile ID required by downstream endpoints; canonicalize with a profile lookup when needed.
 - **Error handling**: collect per-record errors in `SyncResult.errors` instead of aborting the whole sync.
 - **Tests stay colocated**: keep unit tests next to the provider file as `<provider>.test.ts`.

@@ -35,6 +35,12 @@ password=<password>
 - Use `Authorization: Bearer <access_token>` on all API calls.
 - Refresh before expiry using the same endpoint with `grant_type=refresh_token` and `refresh_token=<token>`.
 
+### Athlete ID canonicalization
+
+- Do not assume JWT `sub` is the numeric profile ID used by `/api/profiles/{athleteId}/...`.
+- In some accounts, `sub` can be a non-numeric UUID-like identifier.
+- If `sub` is non-numeric, resolve the authenticated profile via `GET /api/profiles/me` and use `profile.id` as the canonical athlete ID for profile/activity endpoints.
+
 ### Refresh flow
 
 ```

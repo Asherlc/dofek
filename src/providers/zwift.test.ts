@@ -14,6 +14,8 @@ import { ZwiftProvider } from "./zwift.ts";
 
 const { MockZwiftClient } = vi.hoisted(() => {
   class MockZwiftClient {
+    athleteId: string;
+
     static signInResult = {
       accessToken: "fake-header.eyJzdWIiOiI5OTk5OSJ9.fake",
       refreshToken: "refresh-token",
@@ -28,14 +30,38 @@ const { MockZwiftClient } = vi.hoisted(() => {
     static activityDetail: Record<string, unknown> = {};
     static fitnessData: Record<string, unknown> = {};
     static powerCurve: Record<string, unknown> = {};
+    static authenticatedProfile: Record<string, unknown> = {
+      id: 12345,
+      firstName: "Test",
+      lastName: "User",
+      ftp: 250,
+      weight: 72000,
+      height: 180,
+    };
+    static getAuthenticatedProfileCalls = 0;
+
+    constructor(_accessToken = "test-token", athleteId = "12345") {
+      this.athleteId = athleteId;
+    }
 
     static signIn = vi.fn().mockImplementation(async () => MockZwiftClient.signInResult);
     static refreshToken = vi.fn().mockImplementation(async () => MockZwiftClient.refreshResult);
 
-    getActivities = vi.fn().mockImplementation(async () => MockZwiftClient.activities);
+    getActivities = vi.fn().mockImplementation(async () => {
+      if (!/^\d+$/.test(this.athleteId)) {
+        throw new Error(
+          `Zwift API error (404): RESTEASY003210: Could not find resource for full path: https://us-or-rly101.zwift.com/api/profiles/${this.athleteId}/activities`,
+        );
+      }
+      return MockZwiftClient.activities;
+    });
     getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
     getPowerCurve = vi.fn().mockImplementation(async () => MockZwiftClient.powerCurve);
+    getAuthenticatedProfile = vi.fn().mockImplementation(async () => {
+      MockZwiftClient.getAuthenticatedProfileCalls += 1;
+      return MockZwiftClient.authenticatedProfile;
+    });
   }
   return { MockZwiftClient };
 });
@@ -308,9 +334,18 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     expect(result.provider).toBe("zwift");
   });
 
-  it("handles UUID-based athlete ID in scopes (non-numeric sub claim)", async () => {
+  it("resolves UUID athlete ID in scopes to numeric profile ID", async () => {
     MockZwiftClient.activities = [];
     MockZwiftClient.powerCurve = {};
+    MockZwiftClient.getAuthenticatedProfileCalls = 0;
+    MockZwiftClient.authenticatedProfile = {
+      id: 12345,
+      firstName: "Test",
+      lastName: "User",
+      ftp: 250,
+      weight: 72000,
+      height: 180,
+    };
 
     const db = makeMockDb({
       tokens: {
@@ -325,6 +360,7 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     const result = await provider.sync(db, new Date("2026-01-01"));
     expect(result.provider).toBe("zwift");
     expect(result.errors).toHaveLength(0);
+    expect(MockZwiftClient.getAuthenticatedProfileCalls).toBeGreaterThan(0);
   });
 });
 
@@ -460,6 +496,15 @@ describe("ZwiftProvider.authSetup() — automatedLogin", () => {
     const uuidPayload = Buffer.from(
       JSON.stringify({ sub: "a1b2c3d4-e5f6-7890-abcd-ef1234567890" }),
     ).toString("base64url");
+    MockZwiftClient.getAuthenticatedProfileCalls = 0;
+    MockZwiftClient.authenticatedProfile = {
+      id: 12345,
+      firstName: "Test",
+      lastName: "User",
+      ftp: 250,
+      weight: 72000,
+      height: 180,
+    };
 
     MockZwiftClient.signIn.mockResolvedValueOnce({
       accessToken: `fake-header.${uuidPayload}.fake`,
@@ -471,7 +516,8 @@ describe("ZwiftProvider.authSetup() — automatedLogin", () => {
     const setup = provider.authSetup();
     const result = await setup.automatedLogin?.("rider@example.com", "fake-test-pw");
 
-    expect(result?.scopes).toBe("athleteId:a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    expect(result?.scopes).toBe("athleteId:12345");
+    expect(MockZwiftClient.getAuthenticatedProfileCalls).toBeGreaterThan(0);
   });
 
   it("throws when JWT has no sub claim", async () => {
