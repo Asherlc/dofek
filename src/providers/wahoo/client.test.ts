@@ -95,6 +95,15 @@ describe("Wahoo schemas", () => {
       const { workout_type_id: _, ...missing } = validWorkout;
       expect(() => schema.parse(missing)).toThrow();
     });
+
+    it("accepts workout_summary when null", () => {
+      const schema = createWahooWorkoutSchema();
+      const result = schema.parse({
+        ...validWorkout,
+        workout_summary: null,
+      });
+      expect(result.workout_summary).toBeUndefined();
+    });
   });
 
   describe("wahooWorkoutListResponseSchema", () => {
