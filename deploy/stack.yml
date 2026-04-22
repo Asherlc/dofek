@@ -121,7 +121,7 @@ services:
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - /mnt/HC_Volume_105292545/postgres:/var/lib/postgresql/data
+      - /mnt/dofek-data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U health -d health"]
       interval: 5s
