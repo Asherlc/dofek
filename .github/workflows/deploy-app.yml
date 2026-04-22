@@ -89,6 +89,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      - name: Docker disk preflight
+        run: |
+          echo "Docker disk usage snapshot before pulls:"
+          docker system df || true
+          echo "Docuum service snapshot:"
+          docker service ps dofek_docuum --no-trunc || true
+
       - name: Pull deploy images
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
