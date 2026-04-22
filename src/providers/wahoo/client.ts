@@ -54,7 +54,10 @@ export function createWahooWorkoutSchema() {
     minutes: z.number().optional(),
     created_at: z.string(),
     updated_at: z.string(),
-    workout_summary: wahooWorkoutSummarySchema.optional(),
+    workout_summary: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      wahooWorkoutSummarySchema.optional(),
+    ),
   });
 }
 
