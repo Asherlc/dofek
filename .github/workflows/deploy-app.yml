@@ -71,7 +71,7 @@ jobs:
 
       - name: Snapshot env var names before Infisical
         run: |
-          env | cut -d= -f1 | sort > "$RUNNER_TEMP/env-before-infisical.txt"
+          env -0 | tr '\0' '\n' | cut -d= -f1 | sort > "$RUNNER_TEMP/env-before-infisical.txt"
 
       - name: Load Infisical secrets as environment variables
         uses: Infisical/secrets-action@8802effbe453d0576cd923567dcc2c97a1f54058 # v1.0.15
@@ -83,7 +83,7 @@ jobs:
 
       - name: Export deploy secrets file from injected env vars
         run: |
-          env | cut -d= -f1 | sort > "$RUNNER_TEMP/env-after-infisical.txt"
+          env -0 | tr '\0' '\n' | cut -d= -f1 | sort > "$RUNNER_TEMP/env-after-infisical.txt"
           comm -13 "$RUNNER_TEMP/env-before-infisical.txt" "$RUNNER_TEMP/env-after-infisical.txt" > "$RUNNER_TEMP/infisical-secret-keys.txt"
           if [ ! -s "$RUNNER_TEMP/infisical-secret-keys.txt" ]; then
             echo "::error::No secrets were injected by Infisical Secrets Action"
