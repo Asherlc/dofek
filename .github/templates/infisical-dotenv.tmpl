@@ -2,5 +2,5 @@
 adds single quotes around values, and Docker keeps those quotes literally. */}}
 {{$secrets := secret "54712f56-98a9-4531-9e97-0b588d2e5a88" "prod" "/"}}
 {{- range $secret := $secrets }}
-{{ $secret.Key }}={{ if and $secret.IsMultilineEncodingEnabled (contains "\n" $secret.Value) }}{{ replace "\n" "\\n" $secret.Value }}{{ else }}{{ $secret.Value }}{{ end }}
+{{ $secret.Key }}={{ if contains "\n" $secret.Value }}{{ replace "\n" "\\n" $secret.Value }}{{ else }}{{ $secret.Value }}{{ end }}
 {{- end }}
