@@ -19,6 +19,7 @@ function runningTypeFilter(alias: string) {
 // ---------------------------------------------------------------------------
 
 export interface RunningDynamicsActivityRow {
+  activityId: string;
   date: string;
   activityName: string;
   avgCadence: number;
@@ -39,6 +40,10 @@ export class RunningDynamicsActivity {
 
   get date(): string {
     return this.#row.date;
+  }
+
+  get activityId(): string {
+    return this.#row.activityId;
   }
 
   get activityName(): string {
@@ -73,6 +78,7 @@ export class RunningDynamicsActivity {
 
   toDetail() {
     return {
+      activityId: this.activityId,
       date: this.date,
       activityName: this.activityName,
       cadence: this.cadence,
@@ -140,6 +146,7 @@ export class PaceTrendActivity {
 // ---------------------------------------------------------------------------
 
 const dynamicsRowSchema = z.object({
+  activity_id: z.string(),
   date: dateStringSchema,
   name: z.string(),
   avg_cadence: z.coerce.number(),
@@ -180,6 +187,7 @@ export class RunningRepository {
       this.#db,
       dynamicsRowSchema,
       sql`SELECT
+            asum.activity_id,
             (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
             asum.name,
             asum.avg_cadence,
@@ -200,6 +208,7 @@ export class RunningRepository {
     return rows.map(
       (row) =>
         new RunningDynamicsActivity({
+          activityId: row.activity_id,
           date: row.date,
           activityName: row.name,
           avgCadence: row.avg_cadence,

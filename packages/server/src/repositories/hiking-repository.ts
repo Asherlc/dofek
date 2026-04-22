@@ -9,6 +9,7 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 // ---------------------------------------------------------------------------
 
 export interface HikingActivityRow {
+  activityId: string;
   date: string;
   activityName: string;
   activityType: string;
@@ -30,6 +31,10 @@ export class HikingActivity {
 
   get date(): string {
     return this.row.date;
+  }
+
+  get activityId(): string {
+    return this.row.activityId;
   }
 
   get activityName(): string {
@@ -67,6 +72,7 @@ export class HikingActivity {
 
   toDetail() {
     return {
+      activityId: this.activityId,
       date: this.date,
       activityName: this.activityName,
       activityType: this.activityType,
@@ -169,6 +175,7 @@ export class RepeatedRoute {
 // ---------------------------------------------------------------------------
 
 const gradeRowSchema = z.object({
+  activity_id: z.string(),
   date: dateStringSchema,
   activity_name: z.string(),
   activity_type: z.string(),
@@ -226,6 +233,7 @@ export class HikingRepository {
       this.#db,
       gradeRowSchema,
       sql`SELECT
+            a.id AS activity_id,
             (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
             a.name AS activity_name,
             a.activity_type,
@@ -250,6 +258,7 @@ export class HikingRepository {
     return rows.map(
       (row) =>
         new HikingActivity({
+          activityId: row.activity_id,
           date: String(row.date),
           activityName: String(row.activity_name),
           activityType: String(row.activity_type),

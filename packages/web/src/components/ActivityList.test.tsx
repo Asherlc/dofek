@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import type { UnitSystem } from "@dofek/format/units";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList";
 
@@ -22,6 +22,14 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
 }
 
 describe("ActivityList", () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   const mockActivities: Activity[] = [
     {
       id: "1",

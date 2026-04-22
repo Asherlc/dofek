@@ -14,6 +14,7 @@ import {
 describe("HikingActivity", () => {
   function makeRow(overrides: Partial<HikingActivity["row"]> = {}) {
     return {
+      activityId: "hike-1",
       date: "2024-01-15",
       activityName: "Morning Hike",
       activityType: "hiking",
@@ -62,6 +63,7 @@ describe("HikingActivity", () => {
     const activity = new HikingActivity(makeRow());
     const detail = activity.toDetail();
 
+    expect(detail.activityId).toBe("hike-1");
     expect(detail.date).toBe("2024-01-15");
     expect(detail.activityName).toBe("Morning Hike");
     expect(detail.activityType).toBe("hiking");
@@ -193,6 +195,7 @@ describe("HikingRepository", () => {
     it("returns HikingActivity instances", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "hike-2",
           date: "2024-01-15",
           activity_name: "Morning Hike",
           activity_type: "hiking",

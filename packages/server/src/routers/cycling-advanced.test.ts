@@ -365,7 +365,14 @@ describe("cyclingAdvancedRouter", () => {
       execute.mockResolvedValueOnce([{ ftp: 250 }]);
       // Second call: NP/avg power per activity (with total_count from COUNT(*) OVER())
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200, total_count: 1 },
+        {
+          activity_id: "ride-1",
+          date: "2024-01-15",
+          name: "Ride",
+          np: 230,
+          avg_power: 200,
+          total_count: 1,
+        },
       ]);
 
       const caller = createCaller({
@@ -388,7 +395,14 @@ describe("cyclingAdvancedRouter", () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ ftp: 300 }]);
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Ride", np: 280, avg_power: 250, total_count: 1 },
+        {
+          activity_id: "ride-2",
+          date: "2024-01-15",
+          name: "Ride",
+          np: 280,
+          avg_power: 250,
+          total_count: 1,
+        },
       ]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
@@ -404,12 +418,20 @@ describe("cyclingAdvancedRouter", () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ ftp: 200 }]);
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Zwift Race", np: 190, avg_power: 180, total_count: 1 },
+        {
+          activity_id: "ride-3",
+          date: "2024-01-15",
+          name: "Zwift Race",
+          np: 190,
+          avg_power: 180,
+          total_count: 1,
+        },
       ]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.activityVariability({ days: 90 });
 
+      expect(result.rows[0]?.activityId).toBe("ride-3");
       expect(result.rows[0]?.activityName).toBe("Zwift Race");
       expect(result.rows[0]?.date).toBe("2024-01-15");
       expect(result.rows[0]?.averagePower).toBe(180);
@@ -419,8 +441,22 @@ describe("cyclingAdvancedRouter", () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ ftp: 250 }]);
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Ride 1", np: 230, avg_power: 200, total_count: 5 },
-        { date: "2024-01-16", name: "Ride 2", np: 240, avg_power: 210, total_count: 5 },
+        {
+          activity_id: "ride-4",
+          date: "2024-01-15",
+          name: "Ride 1",
+          np: 230,
+          avg_power: 200,
+          total_count: 5,
+        },
+        {
+          activity_id: "ride-5",
+          date: "2024-01-16",
+          name: "Ride 2",
+          np: 240,
+          avg_power: 210,
+          total_count: 5,
+        },
       ]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
@@ -445,7 +481,14 @@ describe("cyclingAdvancedRouter", () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]);
       execute.mockResolvedValueOnce([
-        { date: "2024-01-15", name: "Ride", np: 230, avg_power: 200, total_count: 1 },
+        {
+          activity_id: "ride-6",
+          date: "2024-01-15",
+          name: "Ride",
+          np: 230,
+          avg_power: 200,
+          total_count: 1,
+        },
       ]);
 
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
