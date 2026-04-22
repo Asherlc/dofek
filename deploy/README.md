@@ -20,7 +20,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
   - **Sentry**: Receives application logs/errors.
   - **Netdata**: Real-time server health and performance monitoring.
-- **Secrets**: Managed via **Infisical**. CI exports all `prod` secrets from the project ID in `.infisical.json` into a temporary `.env.prod` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
+- **Secrets**: Managed via **Infisical**. CI fetches `prod` secrets at runtime with `Infisical/secrets-action` (OIDC machine identity), injects them as environment variables, and writes a temporary `.env.prod` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 
 ## Implementation Details
 
@@ -66,7 +66,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
          -> deploy-web check (both tags must exist)
          -> deploy-terraform (shared prerequisite)
          -> deploy-app
-              -> export env via Infisical
+              -> fetch env via Infisical Secrets Action
               -> bootstrap stack if dofek_db is missing
               -> wait for postgres writable
               -> migrate (one-shot container on dofek_default)
@@ -76,7 +76,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
-   1. Install Infisical CLI and export all `prod` secrets to `$RUNNER_TEMP/.env.prod`.
+   1. Run `Infisical/secrets-action` with OIDC (`INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_SLUG`, `env-slug=prod`) to inject secrets into the job env, then write them to `$RUNNER_TEMP/.env.prod`.
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.

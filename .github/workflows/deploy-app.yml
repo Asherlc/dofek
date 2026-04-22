@@ -35,6 +35,10 @@ jobs:
   app:
     name: Deploy App
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     env:
       DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
     steps:
@@ -65,22 +69,39 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Setup Infisical and export deploy secrets
-        env:
-          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
-          INFISICAL_VERSION: 0.43.76
+      - name: Snapshot env var names before Infisical
         run: |
-          curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
-          sudo apt-get install -y "infisical=${INFISICAL_VERSION}"
-          installed_infisical_version="$(infisical --version | awk '{print $3}')"
-          echo "Infisical CLI version: ${installed_infisical_version}"
-          if [ "$installed_infisical_version" != "$INFISICAL_VERSION" ]; then
-            echo "::error::Expected Infisical ${INFISICAL_VERSION}, got ${installed_infisical_version}"
+          env | cut -d= -f1 | sort > "$RUNNER_TEMP/env-before-infisical.txt"
+
+      - name: Load Infisical secrets as environment variables
+        uses: Infisical/secrets-action@8802effbe453d0576cd923567dcc2c97a1f54058 # v1.0.15
+        with:
+          method: oidc
+          identity-id: ${{ secrets.INFISICAL_IDENTITY_ID }}
+          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          env-slug: prod
+
+      - name: Export deploy secrets file from injected env vars
+        run: |
+          env | cut -d= -f1 | sort > "$RUNNER_TEMP/env-after-infisical.txt"
+          comm -13 "$RUNNER_TEMP/env-before-infisical.txt" "$RUNNER_TEMP/env-after-infisical.txt" > "$RUNNER_TEMP/infisical-secret-keys.txt"
+          if [ ! -s "$RUNNER_TEMP/infisical-secret-keys.txt" ]; then
+            echo "::error::No secrets were injected by Infisical Secrets Action"
             exit 1
           fi
-          infisical export --template=.github/templates/infisical-dotenv.tmpl --silent > "$RUNNER_TEMP/.env.prod"
-          echo "Infisical prod export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
-          chmod 600 "$RUNNER_TEMP/.env.prod"
+
+          infisical_env_file="$RUNNER_TEMP/.env.prod"
+          : > "$infisical_env_file"
+          while IFS= read -r secret_key || [ -n "$secret_key" ]; do
+            [ -z "$secret_key" ] && continue
+            secret_value="$(printenv "$secret_key")"
+            escaped_secret_value="${secret_value//$'\n'/\\n}"
+            printf '%s=%s\n' "$secret_key" "$escaped_secret_value" >> "$infisical_env_file"
+          done < "$RUNNER_TEMP/infisical-secret-keys.txt"
+
+          key_count="$(wc -l < "$RUNNER_TEMP/infisical-secret-keys.txt")"
+          echo "Infisical prod export key count: ${key_count}"
+          chmod 600 "$infisical_env_file"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -110,11 +131,6 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            [ -z "$env_line" ] && continue
-            [ "${env_line#\#}" != "$env_line" ] && continue
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
           if docker service inspect dofek_db >/dev/null 2>&1; then
             echo "Swarm DB service already exists; skipping bootstrap deploy."
           else
@@ -126,11 +142,6 @@ jobs:
         env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            [ -z "$env_line" ] && continue
-            [ "${env_line#\#}" != "$env_line" ] && continue
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
           echo "Docker disk usage snapshot:"
           docker system df || true
           echo "Docuum service snapshot:"
@@ -177,11 +188,6 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            [ -z "$env_line" ] && continue
-            [ "${env_line#\#}" != "$env_line" ] && continue
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
@@ -208,9 +214,4 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          while IFS= read -r env_line || [ -n "$env_line" ]; do
-            [ -z "$env_line" ] && continue
-            [ "${env_line#\#}" != "$env_line" ] && continue
-            export "$env_line"
-          done < "$INFISICAL_ENV_FILE"
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
