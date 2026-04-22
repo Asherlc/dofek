@@ -103,6 +103,12 @@ The deploy workflow handles this with a bootstrap gate:
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.
 
+### Deployment Runbook: Traefik Subdomain 404
+
+If management subdomains return `404 page not found`, use:
+
+- `docs/traefik-subdomain-404-runbook.md`
+
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)
 - **Netdata**: `https://netdata.dofek.asherlc.com` (Protected by Authentik)
