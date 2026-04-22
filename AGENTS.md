@@ -12,6 +12,8 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## General
 - **Apply minimum fix**: Only perform the minimum fix required to resolve the issue at hand. Do not add extra error handling, validation, or infrastructure unless explicitly requested. The user will ask if they want more far-reaching changes.
+- **YAGNI first**: Follow "You Aren't Gonna Need It" — do not add abstractions, options, flags, or future-proofing for hypothetical needs unless there is a current, concrete requirement.
+- **Ask before deviating from YAGNI**: If a non-YAGNI change appears important, stop and ask the user before implementing it.
 - **Prefer elegant solutions**: Favor clear, maintainable, first-principles fixes over ad-hoc patches or layered self-healing workarounds. If a fix feels hacky, stop and propose a cleaner alternative.
 - **Check with user before choosing approach**: Before committing to a specific implementation approach, strategy, or workaround for a non-trivial task, confirm the direction with the user first. Do not independently choose a strategy and run with it without user alignment.
 - **Persist on chosen strategy; ask before pivoting**: When pursuing a specific user-requested strategy/tactic, continue until you have exhausted reasonable debugging and implementation options for that strategy. Do not switch to a different approach on your own. If the strategy appears blocked after reasonable attempts, stop and check with the user before pivoting.

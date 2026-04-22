@@ -35,6 +35,10 @@ jobs:
   app:
     name: Deploy App
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     env:
       DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
     steps:
@@ -65,22 +69,28 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Setup Infisical and export deploy secrets
-        env:
-          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
-          INFISICAL_VERSION: 0.43.76
+      - name: Export Infisical deploy secrets file via OIDC
         run: |
           curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
-          sudo apt-get install -y "infisical=${INFISICAL_VERSION}"
-          installed_infisical_version="$(infisical --version | awk '{print $3}')"
-          echo "Infisical CLI version: ${installed_infisical_version}"
-          if [ "$installed_infisical_version" != "$INFISICAL_VERSION" ]; then
-            echo "::error::Expected Infisical ${INFISICAL_VERSION}, got ${installed_infisical_version}"
-            exit 1
-          fi
-          infisical export --template=.github/templates/infisical-dotenv.tmpl --silent > "$RUNNER_TEMP/.env.prod"
-          echo "Infisical prod export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
-          chmod 600 "$RUNNER_TEMP/.env.prod"
+          sudo apt-get install -y infisical
+
+          oidc_token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
+          infisical_access_token="$(infisical login \
+            --method=oidc-auth \
+            --machine-identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7 \
+            --jwt="$oidc_token" \
+            --plain \
+            --silent)"
+
+          infisical export \
+            --token="$infisical_access_token" \
+            --env=prod \
+            --template=.github/templates/infisical-dotenv.tmpl \
+            --silent > "${{ github.workspace }}/.env.prod"
+
+      - name: Export deploy env for stack interpolation
+        run: |
+          cat "${{ github.workspace }}/.env.prod" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -101,42 +111,28 @@ jobs:
       - name: Bootstrap stack (if DB service is missing)
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
-          if docker service inspect dofek_db >/dev/null 2>&1; then
-            echo "Swarm DB service already exists; skipping bootstrap deploy."
+          if docker service inspect dofek_db >/dev/null 2>&1 && \
+            docker service ps dofek_db --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
+            echo "Swarm DB service exists with a running task; skipping bootstrap deploy."
           else
-            echo "Swarm DB service is missing; running bootstrap stack deploy."
+            echo "Swarm DB service is missing or not running; running bootstrap stack deploy."
             docker stack deploy -c deploy/stack.yml --with-registry-auth dofek
           fi
 
       - name: Wait for Postgres writable
         env:
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
-          if [ -z "${POSTGRES_PASSWORD:-}" ]; then
-            echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export"
-            exit 1
-          fi
           for attempt in $(seq 1 36); do
             recovery_output=$(timeout 15s docker run --rm --network dofek_default \
-              -e "PGPASSWORD=${POSTGRES_PASSWORD}" \
-              postgres:18-alpine \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              'PGPASSWORD="$POSTGRES_PASSWORD" \
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
-              --command "SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;" 2>&1 || true)
+              --command "SELECT CASE WHEN pg_is_in_recovery() THEN '\''recovery'\'' ELSE '\''writable'\'' END;"' 2>&1 || true)
             recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
-            if printf '%s' "$recovery_output" | grep -Eqi "password authentication failed|no password supplied|role \"health\" does not exist|database \"health\" does not exist"; then
-              echo "::error::Postgres readiness hard failure: $(printf '%s' "$recovery_output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | cut -c1-240)"
-              exit 1
-            fi
             if [ "$recovery_state" = "writable" ]; then
               echo "Postgres is writable."
               break
@@ -145,30 +141,23 @@ jobs:
               echo "::error::Postgres did not become writable within 180s"
               exit 1
             fi
-            if [ "$attempt" -eq 1 ]; then
-              echo "DB service task snapshot (first failed readiness check):"
-              docker service ps dofek_db --no-trunc || true
-            fi
-            recovery_detail="$(printf '%s' "$recovery_output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
-            echo "Postgres readiness attempt ${attempt}/36: ${recovery_state:-unreachable}; detail=${recovery_detail:0:240}; retrying in 5s..."
+            echo "Postgres readiness attempt ${attempt}/36: retrying in 5s..."
             sleep 5
           done
 
       - name: Run migrations
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
             if timeout 90s docker run --rm --network dofek_default \
-              -e "DATABASE_URL=postgres://health:${POSTGRES_PASSWORD}@db:5432/health" \
-              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate >"$migration_output_file" 2>&1; then
+              --env-file "$INFISICAL_ENV_FILE" \
+              --entrypoint sh \
+              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+              -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh migrate' >"$migration_output_file" 2>&1; then
               echo "Migration attempt ${attempt}/12 succeeded."
               break
             fi
@@ -187,10 +176,6 @@ jobs:
       - name: Deploy stack
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
