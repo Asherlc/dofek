@@ -77,6 +77,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
    1. Install Infisical CLI and export all `prod` secrets to `$RUNNER_TEMP/.env.prod`.
+      - Must include `CREDENTIAL_ENCRYPTION_KEY_BASE64` (base64-encoded 32-byte key).
+      - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.

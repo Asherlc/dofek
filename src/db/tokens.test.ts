@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
+import {
+  encryptCredentialValue,
+  isEncryptedCredentialValue,
+} from "../security/credential-encryption.ts";
 import { TEST_USER_ID } from "./schema.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
@@ -91,13 +95,33 @@ describe("saveTokens", () => {
       expect.objectContaining({
         userId: TEST_USER_ID,
         providerId: "wahoo",
-        accessToken: "access-123",
-        refreshToken: "refresh-456",
         expiresAt: new Date("2026-04-01T00:00:00Z"),
         scopes: "read write",
       }),
     );
     expect(mock.spies.onConflictDoUpdate).toHaveBeenCalled();
+  });
+
+  it("encrypts access and refresh tokens before persisting", async () => {
+    const tokens = {
+      accessToken: "access-plain",
+      refreshToken: "refresh-plain",
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: "read write",
+    };
+
+    await saveTokens(mock.db, "wahoo", tokens, TEST_USER_ID);
+
+    const firstCall = mock.spies.values.mock.calls[0];
+    const firstInsert = firstCall?.[0];
+    if (!firstInsert) {
+      throw new Error("Expected saveTokens to call db.insert(...).values(...)");
+    }
+
+    expect(firstInsert.accessToken).not.toBe("access-plain");
+    expect(firstInsert.refreshToken).not.toBe("refresh-plain");
+    expect(isEncryptedCredentialValue(firstInsert.accessToken)).toBe(true);
+    expect(isEncryptedCredentialValue(firstInsert.refreshToken)).toBe(true);
   });
 
   it("handles null refreshToken and scopes", async () => {
@@ -147,6 +171,36 @@ describe("loadTokens", () => {
       {
         accessToken: "access-123",
         refreshToken: "refresh-456",
+        expiresAt: new Date("2026-04-01T00:00:00Z"),
+        scopes: "read",
+      },
+    ]);
+
+    const result = await loadTokens(mock.db, "wahoo", TEST_USER_ID);
+
+    expect(result).toEqual({
+      accessToken: "access-123",
+      refreshToken: "refresh-456",
+      expiresAt: new Date("2026-04-01T00:00:00Z"),
+      scopes: "read",
+    });
+  });
+
+  it("decrypts encrypted token fields when rows are encrypted", async () => {
+    const encryptedAccessToken = await encryptCredentialValue("access-123", {
+      tableName: "fitness.oauth_token",
+      columnName: "access_token",
+      scopeId: `${TEST_USER_ID}:wahoo`,
+    });
+    const encryptedRefreshToken = await encryptCredentialValue("refresh-456", {
+      tableName: "fitness.oauth_token",
+      columnName: "refresh_token",
+      scopeId: `${TEST_USER_ID}:wahoo`,
+    });
+    mock.spies.limit.mockResolvedValue([
+      {
+        accessToken: encryptedAccessToken,
+        refreshToken: encryptedRefreshToken,
         expiresAt: new Date("2026-04-01T00:00:00Z"),
         scopes: "read",
       },

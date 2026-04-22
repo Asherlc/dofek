@@ -1,5 +1,6 @@
 import type { AddressInfo } from "node:net";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
+import { encryptCredentialValue } from "dofek/security/credential-encryption";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -225,6 +226,36 @@ describe("GET /api/webhooks/:providerName — validation challenges", () => {
       }),
       "my-token",
     );
+  });
+
+  it("decrypts encrypted verify_token before challenge handling", async () => {
+    const challengeSpy = vi.fn(() => ({ ok: true }));
+    const provider = createMockWebhookProvider({
+      handleValidationChallenge: challengeSpy,
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    const encryptedVerifyToken = await encryptCredentialValue("my-token", {
+      tableName: "fitness.webhook_subscription",
+      columnName: "verify_token",
+      scopeId: "test-provider",
+    });
+    mockExecuteWithSchema.mockResolvedValue([
+      {
+        id: "sub-1",
+        provider_id: "test-provider",
+        verify_token: encryptedVerifyToken,
+        signing_secret: null,
+      },
+    ]);
+
+    const res = await request(
+      createTestApp(),
+      "get",
+      "/api/webhooks/test-provider?hub.mode=subscribe&hub.challenge=test-challenge&hub.verify_token=my-token",
+    );
+
+    expect(res.status).toBe(200);
+    expect(challengeSpy).toHaveBeenCalledWith(expect.any(Object), "my-token");
   });
 
   it("returns 500 on internal error", async () => {

@@ -57,6 +57,7 @@
     "./db/migrate": "./src/db/migrate.ts",
     "./db/token-user-context": "./src/db/token-user-context.ts",
     "./db/tokens": "./src/db/tokens.ts",
+    "./security/credential-encryption": "./src/security/credential-encryption.ts",
     "./auth/oauth": "./src/auth/oauth.ts",
     "./db/sync-log": "./src/db/sync-log.ts",
     "./jobs/queues": "./src/jobs/queues.ts",
@@ -113,6 +114,7 @@
     "check:mobile-update": "./scripts/check-mobile-update.sh"
   },
   "dependencies": {
+    "@aws-crypto/client-node": "4.2.2",
     "@bull-board/api": "6.21.0",
     "@bull-board/express": "6.21.0",
     "@dofek/heart-rate-variability": "workspace:*",

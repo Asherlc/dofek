@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+const testCredentialEncryptionKey = Buffer.from("a".repeat(32), "utf8").toString("base64");
+
 export default defineConfig({
   esbuild: {
     jsx: "automatic",
@@ -12,6 +14,9 @@ export default defineConfig({
     fileParallelism: true,
     env: {
       TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
+      CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
+      CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
+      CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
     },
     include: [
       "src/**/*.test.ts",

@@ -1,3 +1,4 @@
+import { encryptCredentialValue } from "dofek/security/credential-encryption";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../logger.ts", () => ({
@@ -83,6 +84,25 @@ describe("createInstallationStore", () => {
       const store = createInstallationStore(db);
       const result = await store.fetchInstallation({ teamId: "T123", isEnterpriseInstall: false });
       expect(result.team?.id).toBe("T123");
+    });
+
+    it("decrypts encrypted raw_installation payloads", async () => {
+      const rawInstallation = {
+        team: { id: "T123", name: "Test" },
+        bot: { token: "xoxb-fake", id: "B1", userId: "U1" },
+        user: { id: "U1" },
+      };
+      const encryptedPayload = await encryptCredentialValue(JSON.stringify(rawInstallation), {
+        tableName: "fitness.slack_installation",
+        columnName: "raw_installation",
+        scopeId: "T123",
+      });
+      const db = mockDb([{ raw_installation: encryptedPayload }]);
+      const store = createInstallationStore(db);
+
+      const result = await store.fetchInstallation({ teamId: "T123", isEnterpriseInstall: false });
+      expect(result.team?.id).toBe("T123");
+      expect(result.bot?.token).toBe("xoxb-fake");
     });
 
     it("throws when no team ID provided", async () => {

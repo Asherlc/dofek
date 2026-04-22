@@ -21,13 +21,7 @@ import { Router, raw } from "express";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
-
-const webhookSubscriptionRow = z.object({
-  id: z.string(),
-  provider_id: z.string().nullable(),
-  verify_token: z.string(),
-  signing_secret: z.string().nullable(),
-});
+import { WebhookSubscriptionRepository } from "../repositories/webhook-subscription-repository.ts";
 
 const providerUserRow = z.object({
   provider_id: z.string(),
@@ -41,6 +35,7 @@ interface WebhookRouterDeps {
 
 export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Router {
   const router = Router();
+  const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
 
   // Use raw body parser for all webhook routes — needed for HMAC signature verification.
   // Must come before any json() middleware.
@@ -71,16 +66,7 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
         return;
       }
 
-      // Look up stored verify token
-      const subscriptions = await executeWithSchema(
-        db,
-        webhookSubscriptionRow,
-        sql`SELECT id, provider_id, verify_token, signing_secret
-            FROM fitness.webhook_subscription
-            WHERE provider_name = ${providerName} AND status = 'active'
-            LIMIT 1`,
-      );
-      const sub = subscriptions[0];
+      const sub = await webhookSubscriptionRepository.getActiveByProviderName(providerName);
       if (!sub) {
         logger.warn(`[webhook] No active subscription for ${providerName} challenge`);
         res.status(404).send("No subscription");
@@ -88,7 +74,7 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
       }
 
       const query = Object.fromEntries(Object.entries(req.query).map(([k, v]) => [k, String(v)]));
-      const response = provider.handleValidationChallenge(query, sub.verify_token);
+      const response = provider.handleValidationChallenge(query, sub.verifyToken);
 
       if (response === null) {
         res.status(400).send("Challenge failed");
@@ -123,16 +109,7 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
         return;
       }
 
-      // Look up subscription for signature verification
-      const subscriptions = await executeWithSchema(
-        db,
-        webhookSubscriptionRow,
-        sql`SELECT id, provider_id, verify_token, signing_secret
-            FROM fitness.webhook_subscription
-            WHERE provider_name = ${providerName} AND status = 'active'
-            LIMIT 1`,
-      );
-      const sub = subscriptions[0];
+      const sub = await webhookSubscriptionRepository.getActiveByProviderName(providerName);
       if (!sub) {
         logger.warn(`[webhook] No active subscription for ${providerName}`);
         res.status(404).send("No subscription");
@@ -140,7 +117,7 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
       }
 
       // Verify signature if provider has a signing secret
-      const signingSecret = sub.signing_secret ?? sub.verify_token;
+      const signingSecret = sub.signingSecret ?? sub.verifyToken;
       const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body));
 
       if (!provider.verifyWebhookSignature(rawBody, req.headers, signingSecret)) {
@@ -283,48 +260,29 @@ export async function registerWebhookForProvider(
   db: import("dofek/db").Database,
   provider: WebhookProvider,
 ): Promise<void> {
+  const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
   const publicUrl = process.env.PUBLIC_URL ?? "https://dofek.asherlc.com";
   const callbackUrl = `${publicUrl}/api/webhooks/${provider.id}`;
 
   // For app-level webhooks, check if we already have an active subscription
   if (provider.webhookScope === "app") {
-    const existing = await executeWithSchema(
-      db,
-      z.object({ id: z.string() }),
-      sql`SELECT id FROM fitness.webhook_subscription
-          WHERE provider_name = ${provider.id} AND status = 'active'
-          LIMIT 1`,
+    const hasExistingSubscription = await webhookSubscriptionRepository.hasActiveByProviderName(
+      provider.id,
     );
-    if (existing.length > 0) {
+    if (hasExistingSubscription) {
       logger.info(`[webhook] ${provider.id}: app-level subscription already exists, skipping`);
       return;
     }
   }
 
   const verifyToken = randomBytes(32).toString("hex");
-
   const result = await provider.registerWebhook(callbackUrl, verifyToken);
-
-  await db.execute(
-    sql`INSERT INTO fitness.webhook_subscription (
-          provider_name, subscription_external_id, verify_token,
-          signing_secret, status, expires_at, metadata
-        ) VALUES (
-          ${provider.id},
-          ${result.subscriptionId},
-          ${verifyToken},
-          ${result.signingSecret ?? null},
-          'active',
-          ${result.expiresAt ?? null},
-          ${JSON.stringify({ callbackUrl })}::jsonb
-        )
-        ON CONFLICT (provider_id) DO UPDATE SET
-          subscription_external_id = EXCLUDED.subscription_external_id,
-          verify_token = EXCLUDED.verify_token,
-          signing_secret = EXCLUDED.signing_secret,
-          status = 'active',
-          expires_at = EXCLUDED.expires_at,
-          metadata = EXCLUDED.metadata,
-          updated_at = NOW()`,
-  );
+  await webhookSubscriptionRepository.upsertActiveSubscription({
+    providerName: provider.id,
+    subscriptionExternalId: result.subscriptionId,
+    verifyToken,
+    signingSecret: result.signingSecret ?? null,
+    expiresAt: result.expiresAt ?? null,
+    metadata: { callbackUrl },
+  });
 }

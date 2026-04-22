@@ -91,5 +91,6 @@ Run `pnpm test:watch` while developing.
 - **Incremental sync**: use the `since` parameter to fetch only new or updated records when the provider API supports it.
 - **Zod at boundaries**: validate external API payloads with Zod instead of trusting TypeScript-only types.
 - **Raw data first**: store raw/provider-native records and leave deduplication/aggregation to query-time logic.
+- **Repository-only DB secret crypto**: if a provider uses stored credentials/tokens, encryption/decryption must happen in repository/data-access code. Provider/service logic should only work with plaintext values returned by repository helpers.
 - **Error handling**: collect per-record errors in `SyncResult.errors` instead of aborting the whole sync.
 - **Tests stay colocated**: keep unit tests next to the provider file as `<provider>.test.ts`.
