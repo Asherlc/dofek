@@ -71,6 +71,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Deploying CI image tag across stack services: $TAG"
 
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
