@@ -1,6 +1,7 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { getConfiguredAiProviders, runWithProviderFallback } from "./ai-client.ts";
+import { runWithProviderFallback } from "./ai/fallback-runner.ts";
+import { getConfiguredAiProviders } from "./ai/providers.ts";
 
 /** Schema for the nutrition breakdown returned by AI */
 export const aiNutritionSchema = z.object({

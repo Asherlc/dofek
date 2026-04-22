@@ -8,11 +8,9 @@ vi.mock("@ai-sdk/mistral", () => ({
   createMistral: vi.fn(() => vi.fn(() => "mistral-model")),
 }));
 
-import {
-  getConfiguredAiProviders,
-  isRetryableProviderError,
-  runWithProviderFallback,
-} from "./ai-client.ts";
+import { runWithProviderFallback } from "./fallback-runner.ts";
+import { getConfiguredAiProviders } from "./providers.ts";
+import { isRetryableProviderError } from "./retryable-errors.ts";
 
 describe("getConfiguredAiProviders", () => {
   afterEach(() => {
