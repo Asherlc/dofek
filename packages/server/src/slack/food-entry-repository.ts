@@ -352,6 +352,13 @@ export class FoodEntryRepository {
     await this.#pendingEntryStore.deleteByIds(entryIds);
   }
 
+  async findPendingIdsByMessage(
+    channelId: string,
+    confirmationMessageTs: string,
+  ): Promise<string[]> {
+    return this.#pendingEntryStore.findIdsByMessage(channelId, confirmationMessageTs);
+  }
+
   /** Load food entries by IDs for display after confirmation */
   async loadConfirmedSummary(
     entryIds: string[],

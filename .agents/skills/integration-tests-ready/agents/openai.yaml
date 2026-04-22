@@ -1,0 +1,3 @@
+interface:
+  display_name: "Integration Test Setup"
+  short_description: "Start deps and debug integration test failures"

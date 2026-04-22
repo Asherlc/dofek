@@ -911,6 +911,46 @@ describe("bot.ts — registerHandlers", () => {
       );
     });
 
+    it("prefers message-index IDs over stale button value on confirm", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      const findPendingIdsSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "findPendingIdsByMessage")
+        .mockResolvedValueOnce(["entry-fresh-1"]);
+
+      const { confirmHandler } = setupHandlers(db);
+
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            actions: [{ action_id: "confirm_food", value: "entry-stale-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalled();
+        expect(findPendingIdsSpy).toHaveBeenCalledWith("C123", "1700000000.000000");
+        expect(chatUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Toast: 80 cal"),
+          }),
+        );
+      } finally {
+        findPendingIdsSpy.mockRestore();
+      }
+    });
+
     it("shows expired confirmation message when entries were deleted", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
