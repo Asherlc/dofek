@@ -1,11 +1,17 @@
 /** @vitest-environment jsdom */
 
 import type { UnitSystem } from "@dofek/format/units";
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 import { GradeAdjustedPaceTable } from "./GradeAdjustedPaceTable.tsx";
+
+const mockNavigate = vi.fn();
+
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mockNavigate,
+}));
 
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   return render(
@@ -17,6 +23,7 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
 
 const mockData = [
   {
+    activityId: "hike-1",
     date: "2026-03-15",
     activityName: "Hill Hike",
     activityType: "hiking",
@@ -30,12 +37,48 @@ const mockData = [
 ];
 
 describe("GradeAdjustedPaceTable", () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("navigates to activity detail on row click", () => {
+    const rowsWithIds = [
+      {
+        activityId: "activity-1",
+        date: "2026-03-15",
+        activityName: "Hill Hike",
+        activityType: "hiking",
+        distanceKm: 10,
+        durationMinutes: 120,
+        averagePaceMinPerKm: 12,
+        gradeAdjustedPaceMinPerKm: 10,
+        elevationGainMeters: 500,
+        elevationLossMeters: 400,
+      },
+    ];
+
+    renderWithUnits(<GradeAdjustedPaceTable data={rowsWithIds} />);
+
+    const row = screen.getByText("Hill Hike").closest("tr");
+    if (!row) throw new Error("Row not found");
+
+    fireEvent.click(row);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/activity/$id",
+      params: { id: "activity-1" },
+    });
+  });
+
   it("renders metric distance, pace, and elevation labels", () => {
     renderWithUnits(<GradeAdjustedPaceTable data={mockData} />);
-    expect(screen.getByText(/10\.0/)).toBeDefined();
+    expect(screen.getAllByText(/10\.0/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/km/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/\/km/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/500/)).toBeDefined();
+    expect(screen.getAllByText(/500/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/\bm\b/).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -61,6 +104,7 @@ describe("GradeAdjustedPaceTable", () => {
   it("highlights GAP when it differs from actual pace by more than 15%", () => {
     const dataWithBigGap = [
       {
+        activityId: "hike-2",
         date: "2026-03-15",
         activityName: "Steep Hike",
         activityType: "hiking",

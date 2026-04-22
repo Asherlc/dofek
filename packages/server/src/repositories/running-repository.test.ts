@@ -14,6 +14,7 @@ describe("RunningDynamicsActivity", () => {
     overrides: Partial<RunningDynamicsActivity["toDetail"]> & Record<string, unknown> = {},
   ) {
     return {
+      activityId: "run-1",
       date: "2024-06-10",
       activityName: "Morning Run",
       avgCadence: 180,
@@ -143,6 +144,7 @@ describe("RunningDynamicsActivity", () => {
     const detail = activity.toDetail();
 
     expect(detail).toEqual({
+      activityId: "run-1",
       date: "2024-06-10",
       activityName: "Morning Run",
       cadence: 180,
@@ -296,6 +298,7 @@ describe("RunningRepository", () => {
     it("returns RunningDynamicsActivity instances", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "run-2",
           date: "2024-06-10",
           name: "Morning Run",
           avg_cadence: 180,

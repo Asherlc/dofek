@@ -2,9 +2,9 @@
 
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -16,9 +16,11 @@ vi.mock("echarts-for-react", () => ({
   },
 }));
 
+const mockNavigate = vi.fn();
+
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => null,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
 }));
 
 const mockPaceCurveData = {
@@ -45,6 +47,7 @@ const mockPaceTrendData = [
 
 const mockDynamicsData = [
   {
+    activityId: "activity-1",
     date: "2026-03-15",
     activityName: "Morning Run",
     cadence: 180,
@@ -90,7 +93,29 @@ async function importRunningTab() {
 }
 
 describe("RunningTab", () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   describe("RunningDynamicsTable unit display", () => {
+    it("navigates to activity detail on row click", async () => {
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      const row = screen.getByText("Morning Run").closest("tr");
+      if (!row) throw new Error("Row not found");
+      fireEvent.click(row);
+
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: "/activity/$id",
+        params: { id: "activity-1" },
+      });
+    });
+
     it("shows metric pace and distance labels", async () => {
       const RunningTab = await importRunningTab();
       renderWithUnits(<RunningTab />, "metric");

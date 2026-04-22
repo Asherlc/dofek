@@ -8,6 +8,7 @@ import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 // ---------------------------------------------------------------------------
 
 export interface GradeAdjustedPaceRow {
+  activityId: string;
   date: string;
   activityName: string;
   activityType: string;

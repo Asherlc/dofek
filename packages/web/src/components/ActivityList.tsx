@@ -1,7 +1,7 @@
 import { formatNumber, parseValidDate } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { useNavigate } from "@tanstack/react-router";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 export interface Activity {
@@ -49,7 +49,6 @@ export function ActivityList({
   pageSize,
   onPageChange,
 }: ActivityListProps) {
-  const navigate = useNavigate();
   const units = useUnitConverter();
 
   if (loading) {
@@ -67,102 +66,103 @@ export function ActivityList({
   const totalPages =
     totalCount != null && pageSize != null ? Math.ceil(totalCount / pageSize) : undefined;
   const currentPage = page ?? 0;
+  const columns: ActivityTableColumn<Activity>[] = [
+    {
+      key: "date",
+      label: "Date",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 text-foreground whitespace-nowrap",
+      renderCell: (activity) => formatActivityDate(activity.started_at),
+    },
+    {
+      key: "type",
+      label: "Type",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 whitespace-nowrap",
+      renderCell: (activity) => formatActivityTypeLabel(activity.activity_type),
+    },
+    {
+      key: "name",
+      label: "Name",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 text-foreground max-w-[200px] truncate",
+      renderCell: (activity) => activity.name ?? "—",
+    },
+    {
+      key: "duration",
+      label: "Duration",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap",
+      renderCell: (activity) => formatActivityDuration(activity.started_at, activity.ended_at),
+    },
+    {
+      key: "distance",
+      label: "Distance",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
+      renderCell: (activity) =>
+        activity.distance_meters
+          ? `${formatNumber(units.convertDistance(activity.distance_meters / 1000))} ${units.distanceLabel}`
+          : "—",
+    },
+    {
+      key: "calories",
+      label: "Calories",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
+      renderCell: (activity) => (activity.calories ? `${Math.round(activity.calories)} kcal` : "—"),
+    },
+    {
+      key: "provider",
+      label: "Provider",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 text-muted whitespace-nowrap",
+      renderCell: (activity) => activity.provider_id,
+    },
+    {
+      key: "sources",
+      label: "Sources",
+      headerClassName: "pb-2 whitespace-nowrap",
+      cellClassName: "py-2 text-subtle text-xs whitespace-nowrap",
+      renderCell: (activity) => activity.source_providers?.join(", "),
+    },
+  ];
+  const footer =
+    totalPages != null && totalPages > 1 && onPageChange ? (
+      <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
+        <span className="text-xs text-subtle tabular-nums">{totalCount} activities</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage <= 0}
+            className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            Previous
+          </button>
+          <span className="text-xs text-subtle tabular-nums">
+            {currentPage + 1} / {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage >= totalPages - 1}
+            className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    ) : null;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-left text-xs text-muted uppercase tracking-wider">
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Date
-            </th>
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Type
-            </th>
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Name
-            </th>
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Duration
-            </th>
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Distance
-            </th>
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Calories
-            </th>
-            <th scope="col" className="pb-2 pr-4 whitespace-nowrap">
-              Provider
-            </th>
-            <th scope="col" className="pb-2 whitespace-nowrap">
-              Sources
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {activities.map((a) => {
-            return (
-              <tr
-                key={a.id}
-                onClick={() => navigate({ to: "/activity/$id", params: { id: a.id } })}
-                className="border-b border-border/50 hover:bg-surface-hover cursor-pointer activity-row"
-              >
-                <td className="py-2 pr-4 text-foreground whitespace-nowrap">
-                  {formatActivityDate(a.started_at)}
-                </td>
-                <td className="py-2 pr-4 whitespace-nowrap">
-                  {formatActivityTypeLabel(a.activity_type)}
-                </td>
-                <td className="py-2 pr-4 text-foreground max-w-[200px] truncate">
-                  {a.name ?? "—"}
-                </td>
-                <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
-                  {formatActivityDuration(a.started_at, a.ended_at)}
-                </td>
-                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-foreground">
-                  {a.distance_meters
-                    ? `${formatNumber(units.convertDistance(a.distance_meters / 1000))} ${units.distanceLabel}`
-                    : "—"}
-                </td>
-                <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-foreground">
-                  {a.calories ? `${Math.round(a.calories)} kcal` : "—"}
-                </td>
-                <td className="py-2 pr-4 text-muted whitespace-nowrap">{a.provider_id}</td>
-                <td className="py-2 text-subtle text-xs whitespace-nowrap">
-                  {a.source_providers?.join(", ")}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      {totalPages != null && totalPages > 1 && onPageChange && (
-        <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
-          <span className="text-xs text-subtle tabular-nums">{totalCount} activities</span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onPageChange(currentPage - 1)}
-              disabled={currentPage <= 0}
-              className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              Previous
-            </button>
-            <span className="text-xs text-subtle tabular-nums">
-              {currentPage + 1} / {totalPages}
-            </span>
-            <button
-              type="button"
-              onClick={() => onPageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages - 1}
-              className="px-2 py-1 text-xs text-muted hover:text-foreground disabled:text-dim disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    <ActivityTable
+      rows={activities}
+      columns={columns}
+      getRowKey={(activity) => activity.id}
+      getActivityId={(activity) => activity.id}
+      rowClassName="border-b border-border/50 hover:bg-surface-hover cursor-pointer activity-row"
+      footer={footer}
+    />
   );
 }

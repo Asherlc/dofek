@@ -81,6 +81,7 @@ export class TrainingMonotonyWeekModel {
 }
 
 export interface ActivityVariabilityRowData {
+  activityId: string;
   date: string;
   activityName: string;
   normalizedPower: number;
@@ -99,6 +100,10 @@ export class ActivityVariabilityModel {
 
   get date(): string {
     return this.#row.date;
+  }
+
+  get activityId(): string {
+    return this.#row.activityId;
   }
 
   get activityName(): string {
@@ -123,6 +128,7 @@ export class ActivityVariabilityModel {
 
   toDetail() {
     return {
+      activityId: this.activityId,
       date: this.date,
       activityName: this.activityName,
       normalizedPower: this.normalizedPower,
@@ -227,6 +233,7 @@ const monotonyRowSchema = z.object({
 const ftpSchema = z.object({ ftp: z.coerce.number() });
 
 const variabilityRowSchema = z.object({
+  activity_id: z.string(),
   date: dateStringSchema,
   name: z.string(),
   np: z.coerce.number(),
@@ -534,6 +541,7 @@ export class CyclingAdvancedRepository {
           ),
           grouped AS (
             SELECT
+              a.id AS activity_id,
               (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
               a.name,
               a.started_at,
@@ -544,7 +552,7 @@ export class CyclingAdvancedRepository {
             GROUP BY a.id, a.started_at, a.name
             HAVING COUNT(*) >= 60
           )
-          SELECT date, name, np, avg_power,
+          SELECT activity_id, date, name, np, avg_power,
                  COUNT(*) OVER()::int AS total_count
           FROM grouped
           ORDER BY started_at DESC
@@ -559,6 +567,7 @@ export class CyclingAdvancedRepository {
         (row) =>
           new ActivityVariabilityModel(
             {
+              activityId: row.activity_id,
               date: row.date,
               activityName: row.name,
               normalizedPower: row.np,
