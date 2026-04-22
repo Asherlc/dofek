@@ -57,6 +57,11 @@ export function initTelemetry() {
 
 export function captureException(error: unknown, context: Record<string, unknown> = {}) {
   Sentry.captureException(error, { extra: context });
+  const errorMessage =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
+  const attributes =
+    error instanceof Error ? { ...context, errorName: error.name } : { ...context };
+  emitLog(SeverityNumber.ERROR, "ERROR", "exception", errorMessage, attributes);
 }
 
 function emitLog(
