@@ -16,6 +16,7 @@ on:
 permissions:
   contents: read
   packages: read
+  id-token: write
 
 concurrency:
   group: deploy-web
