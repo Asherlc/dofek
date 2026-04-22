@@ -73,8 +73,8 @@ jobs:
         uses: Infisical/secrets-action@8802effbe453d0576cd923567dcc2c97a1f54058 # v1.0.15
         with:
           method: oidc
-          identity-id: ${{ vars.INFISICAL_IDENTITY_ID != '' && vars.INFISICAL_IDENTITY_ID || '46b66f72-0c77-4cfe-be1b-a43395e77be7' }}
-          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG != '' && vars.INFISICAL_PROJECT_SLUG || 'dofek' }}
+          identity-id: 46b66f72-0c77-4cfe-be1b-a43395e77be7
+          project-slug: dofek
           env-slug: prod
           export-type: file
           file-output-path: /.env.prod
