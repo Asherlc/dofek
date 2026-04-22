@@ -157,7 +157,8 @@ function isRateLimitError(error: unknown): boolean {
       message.includes("quota") ||
       message.includes("429") ||
       message.includes("too many requests") ||
-      message.includes("resource_exhausted")
+      message.includes("resource_exhausted") ||
+      message.includes("high demand")
     );
   }
   return false;
