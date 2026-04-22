@@ -77,7 +77,7 @@ jobs:
           project-slug: ${{ vars.INFISICAL_PROJECT_SLUG != '' && vars.INFISICAL_PROJECT_SLUG || 'dofek' }}
           env-slug: prod
           export-type: file
-          file-output-path: .env.prod
+          file-output-path: /.env.prod
 
       - name: Validate exported Infisical env file
         run: |
