@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { decryptCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
@@ -104,6 +105,18 @@ function buildHrvAnomaly(
     baselineStddev: Math.round(stddev * 10) / 10,
     zScore: Math.round(zScore * 100) / 100,
     severity: zScore < -ALERT_THRESHOLD ? "alert" : "warning",
+  };
+}
+
+function slackBotTokenContext(teamId: string): {
+  tableName: string;
+  columnName: string;
+  scopeId: string;
+} {
+  return {
+    tableName: "fitness.slack_installation",
+    columnName: "bot_token",
+    scopeId: teamId,
   };
 }
 
@@ -378,14 +391,18 @@ export async function sendAnomalyAlertToSlack(
   // Look up Slack credentials and user link
   const slackRows = await executeWithSchema(
     db,
-    z.object({ bot_token: z.string() }),
-    sql`SELECT bot_token FROM fitness.slack_installation LIMIT 1`,
+    z.object({ bot_token: z.string(), team_id: z.string().optional() }),
+    sql`SELECT bot_token, team_id FROM fitness.slack_installation LIMIT 1`,
   );
   const slackRow = slackRows[0];
   if (!slackRow) {
     logger.debug("[anomaly] No Slack installation found, skipping alert");
     return false;
   }
+  const decryptedBotToken = await decryptCredentialValue(
+    slackRow.bot_token,
+    slackBotTokenContext(slackRow.team_id ?? "default"),
+  );
 
   const accountRows = await executeWithSchema(
     db,
@@ -443,7 +460,7 @@ export async function sendAnomalyAlertToSlack(
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${slackRow.bot_token}`,
+        Authorization: `Bearer ${decryptedBotToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

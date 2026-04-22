@@ -1,3 +1,4 @@
+import { isEncryptedCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -314,7 +315,8 @@ describe("whoopAuth router", () => {
       );
       expect(tokenRows.length).toBe(1);
       expect(tokenRows[0]?.user_id).toBe(TEST_USER_ID);
-      expect(tokenRows[0]?.access_token).toBe("saved-access-token");
+      expect(tokenRows[0]?.access_token).not.toBe("saved-access-token");
+      expect(isEncryptedCredentialValue(tokenRows[0]?.access_token ?? "")).toBe(true);
       expect(tokenRows[0]?.scopes).toBe("userId:42");
     });
 

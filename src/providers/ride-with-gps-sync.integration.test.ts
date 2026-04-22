@@ -4,7 +4,8 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, metricStream, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type RideWithGpsApiTrackPoint,
@@ -456,8 +457,13 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       .select()
       .from(oauthToken)
       .where(eq(oauthToken.providerId, "ride-with-gps"));
-    expect(rows[0]?.accessToken).toBe("refreshed-token");
-    expect(rows[0]?.refreshToken).toBe("new-refresh");
+    expect(rows[0]?.accessToken).not.toBe("refreshed-token");
+    expect(rows[0]?.refreshToken).not.toBe("new-refresh");
+    expect(isEncryptedCredentialValue(rows[0]?.accessToken ?? "")).toBe(true);
+    expect(isEncryptedCredentialValue(rows[0]?.refreshToken ?? "")).toBe(true);
+    const loadedTokens = await loadTokens(ctx.db, "ride-with-gps");
+    expect(loadedTokens?.accessToken).toBe("refreshed-token");
+    expect(loadedTokens?.refreshToken).toBe("new-refresh");
   });
 
   it("returns error when token is expired and no refresh token exists", async () => {

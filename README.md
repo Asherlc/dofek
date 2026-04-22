@@ -448,6 +448,41 @@ infisical secrets get KEY --env=prod
 infisical secrets delete KEY --env=prod --type shared
 ```
 
+### Credential encryption at rest (provider credentials)
+
+Provider credentials stored in the database are encrypted in the application layer before insert/update using the AWS Encryption SDK with a raw AES keyring.
+
+Required Infisical key:
+
+- `CREDENTIAL_ENCRYPTION_KEY_BASE64` (required): base64-encoded 32-byte AES key
+
+Optional Infisical keys:
+
+- `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default: `dofek`)
+- `CREDENTIAL_ENCRYPTION_KEY_NAME` (default: `provider-credentials`)
+
+Generate a new key:
+
+```bash
+openssl rand -base64 32
+```
+
+Set/update in Infisical:
+
+```bash
+infisical secrets set --env=prod CREDENTIAL_ENCRYPTION_KEY_BASE64='<base64-32-byte-key>'
+infisical secrets set --env=prod CREDENTIAL_ENCRYPTION_KEY_NAMESPACE='dofek'
+infisical secrets set --env=prod CREDENTIAL_ENCRYPTION_KEY_NAME='provider-credentials'
+```
+
+Encryption uses authenticated context (`table`, `column`, `scope`) so ciphertext copied to a different row/column/scope will fail decryption.
+Legacy plaintext values remain readable and are encrypted when rewritten by normal flows.
+
+Repository boundary rule:
+
+- Only repository/data-access code may call credential crypto helpers (`encryptCredentialValue`, `decryptCredentialValue`).
+- Routes, routers, services, and provider sync logic must consume plaintext domain values from repositories and must not perform DB secret decryption directly.
+
 ### Adding a new env var
 
 - **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`, then redeploy (`gh workflow run deploy-web.yml -f image_tag=latest`).
