@@ -39,7 +39,6 @@ services:
     user: "0:0"
     environment:
       AXIOM_API_TOKEN: ${AXIOM_API_TOKEN}
-      SENTRY_OTLP_LOGS_ENDPOINT: ${SENTRY_OTLP_LOGS_ENDPOINT:-}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./deploy/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro

@@ -194,13 +194,6 @@ Backend telemetry is initialized in `src/instrumentation.ts` and uses the standa
 - `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
 - `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`
 
-Example OTLP endpoint for Sentry (as a backend destination):
-
-```bash
-OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://o<ORG_ID>.ingest.sentry.io/api/<PROJECT_ID>/otlp/v1/traces
-OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer <SENTRY_AUTH_TOKEN>
-```
-
 ### Performance instrumentation
 
 The API server has three layers of performance instrumentation:
