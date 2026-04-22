@@ -77,24 +77,25 @@ jobs:
           project-slug: ${{ vars.INFISICAL_PROJECT_SLUG != '' && vars.INFISICAL_PROJECT_SLUG || 'dofek' }}
           env-slug: prod
           export-type: file
-          file-output-path: ${{ runner.temp }}/.env.prod
+          file-output-path: .env.prod
 
       - name: Validate exported Infisical env file
         run: |
-          if [ ! -s "$RUNNER_TEMP/.env.prod" ]; then
+          infisical_env_file="$GITHUB_WORKSPACE/.env.prod"
+          if [ ! -s "$infisical_env_file" ]; then
             echo "::error::Infisical did not export a non-empty .env.prod file"
             exit 1
           fi
-          if ! grep -q '^POSTGRES_PASSWORD=' "$RUNNER_TEMP/.env.prod"; then
+          if ! grep -q '^POSTGRES_PASSWORD=' "$infisical_env_file"; then
             echo "::error::POSTGRES_PASSWORD is missing from exported .env.prod"
             exit 1
           fi
-          if ! grep -q '^DATABASE_URL=' "$RUNNER_TEMP/.env.prod"; then
+          if ! grep -q '^DATABASE_URL=' "$infisical_env_file"; then
             echo "::error::DATABASE_URL is missing from exported .env.prod"
             exit 1
           fi
-          echo "Infisical .env.prod key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
-          chmod 600 "$RUNNER_TEMP/.env.prod"
+          echo "Infisical .env.prod key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$infisical_env_file" || true)"
+          chmod 600 "$infisical_env_file"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -122,7 +123,7 @@ jobs:
       - name: Bootstrap stack (if DB service is missing)
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           if docker service inspect dofek_db >/dev/null 2>&1; then
             echo "Swarm DB service already exists; skipping bootstrap deploy."
@@ -133,7 +134,7 @@ jobs:
 
       - name: Wait for Postgres writable
         env:
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           echo "Docker disk usage snapshot:"
           docker system df || true
@@ -176,7 +177,7 @@ jobs:
       - name: Run migrations
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
@@ -202,6 +203,6 @@ jobs:
       - name: Deploy stack
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
