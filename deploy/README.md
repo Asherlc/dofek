@@ -92,6 +92,11 @@ CI (main) -> build dofek + dofek-ml (same tag)
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
    8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
 
+### Collector Config Changes
+
+`otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-app`.
+`deploy-app` updates swarm services, but collector reads the bind-mounted host file at `/opt/dofek/otel-collector-config.yaml`.
+
 ### Deployment Runbook: Cold-Start and DB Availability
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `dofek_db` and `dofek_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
