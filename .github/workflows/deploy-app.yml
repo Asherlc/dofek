@@ -15,6 +15,10 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
+      dispatcher_run_url:
+        description: "URL of the workflow run that dispatched this workflow"
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       image_tag:
@@ -179,3 +183,9 @@ jobs:
           INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
+
+      - uses: ./.github/actions/append-dispatcher-run-summary
+        if: always()
+        with:
+          dispatcher_run_url: ${{ inputs.dispatcher_run_url }}
+          workflow_run_url: ${{ github.event.workflow_run.html_url }}

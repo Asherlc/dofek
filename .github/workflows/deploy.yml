@@ -25,6 +25,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  DISPATCHER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
   terraform:
@@ -33,6 +34,7 @@ jobs:
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      dispatcher_run_url: ${{ env.DISPATCHER_RUN_URL }}
     secrets: inherit
 
   docker:
@@ -141,6 +143,7 @@ jobs:
     with:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host || '' }}
+      dispatcher_run_url: ${{ env.DISPATCHER_RUN_URL }}
     secrets: inherit
 
   ios:
@@ -149,6 +152,7 @@ jobs:
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ inputs.commit_sha }}
+      dispatcher_run_url: ${{ env.DISPATCHER_RUN_URL }}
     secrets: inherit
 
   ota:
@@ -157,5 +161,6 @@ jobs:
     uses: ./.github/workflows/deploy-ota.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      dispatcher_run_url: ${{ env.DISPATCHER_RUN_URL }}
     secrets: inherit
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).
