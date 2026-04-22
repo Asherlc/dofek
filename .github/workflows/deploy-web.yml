@@ -18,9 +18,6 @@ permissions:
   packages: read
   id-token: write
 
-env:
-  DISPATCHER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
 concurrency:
   group: deploy-web
   cancel-in-progress: true
@@ -85,7 +82,7 @@ jobs:
     if: needs.check.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
-      dispatcher_run_url: ${{ env.DISPATCHER_RUN_URL }}
+      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
 
   deploy-app:
@@ -96,7 +93,7 @@ jobs:
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host }}
-      dispatcher_run_url: ${{ env.DISPATCHER_RUN_URL }}
+      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
 
   # Image cleanup runs on the server via docuum (see stack.yml).
