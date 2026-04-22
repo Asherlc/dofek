@@ -47,7 +47,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
-- Exports to Axiom and Sentry via `otlphttp`.
+- Exports to Axiom via `otlphttp`.
 
 ## Deployment
 
