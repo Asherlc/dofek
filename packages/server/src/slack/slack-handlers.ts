@@ -40,6 +40,49 @@ interface ParsedMessageArgs {
   msgThreadTs?: string;
 }
 
+function splitEntryIds(rawValue: string): string[] {
+  return rawValue
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+async function resolveConfirmEntryIds(
+  repository: FoodEntryRepository,
+  actionValue: string,
+  channelId: string | undefined,
+  messageTs: string | undefined,
+): Promise<string[]> {
+  const actionEntryIds = splitEntryIds(actionValue);
+  const messageIndexedEntryIds =
+    channelId && messageTs ? await repository.findPendingIdsByMessage(channelId, messageTs) : [];
+  return messageIndexedEntryIds.length > 0 ? messageIndexedEntryIds : actionEntryIds;
+}
+
+async function updateConfirmationStateMessage(
+  updateMessage: (channelId: string, messageTs: string, text: string) => Promise<unknown>,
+  channelId: string | undefined,
+  messageTs: string | undefined,
+  text: string,
+): Promise<void> {
+  if (!channelId || !messageTs) return;
+  await updateMessage(channelId, messageTs, text);
+}
+
+async function invalidateConfirmedFoodCaches(
+  repository: FoodEntryRepository,
+  confirmation: {
+    userId: string | null;
+  },
+  confirmedEntryIds: string[],
+): Promise<void> {
+  const entryUserId =
+    confirmation.userId ?? (await repository.lookupUserIdForEntries(confirmedEntryIds));
+  if (!entryUserId) return;
+  await queryCache.invalidateByPrefix(`${entryUserId}:food.`);
+  await queryCache.invalidateByPrefix(`${entryUserId}:nutrition.`);
+}
+
 async function handleParsedMessage(
   repository: FoodEntryRepository,
   args: ParsedMessageArgs,
@@ -326,24 +369,28 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
 
-    const entryIds = action.value.split(",").filter(Boolean);
+    const channelId = body.channel?.id;
+    const messageTs = body.message?.ts;
+    const updateMessage = (updateChannelId: string, updateMessageTs: string, updateText: string) =>
+      client.chat.update({
+        channel: updateChannelId,
+        ts: updateMessageTs,
+        text: updateText,
+        blocks: [],
+      });
+    const entryIds = await resolveConfirmEntryIds(repository, action.value, channelId, messageTs);
     logger.info(
       `[slack] confirm_food action: entryIds=${JSON.stringify(entryIds)}, buttonValue=${action.value.substring(0, 100)}`,
     );
 
-    const channelId = body.channel?.id;
-    const messageTs = body.message?.ts;
-
     if (entryIds.length === 0) {
       logger.warn("[slack] confirm_food: no entry IDs available for confirmation");
-      if (channelId && messageTs) {
-        await client.chat.update({
-          channel: channelId,
-          ts: messageTs,
-          text: "This confirmation is invalid or expired. Please confirm the latest parsed message.",
-          blocks: [],
-        });
-      }
+      await updateConfirmationStateMessage(
+        updateMessage,
+        channelId,
+        messageTs,
+        "This confirmation is invalid or expired. Please confirm the latest parsed message.",
+      );
       return;
     }
 
@@ -359,14 +406,12 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
 
       if (rows.length === 0) {
         logger.warn(`[slack] confirm_food: no entries found for IDs ${entryIds.join(",")}`);
-        if (channelId && messageTs) {
-          await client.chat.update({
-            channel: channelId,
-            ts: messageTs,
-            text: "This confirmation has expired. Please confirm the latest parsed message.",
-            blocks: [],
-          });
-        }
+        await updateConfirmationStateMessage(
+          updateMessage,
+          channelId,
+          messageTs,
+          "This confirmation has expired. Please confirm the latest parsed message.",
+        );
         return;
       }
 
@@ -386,12 +431,7 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
       }
 
       // Invalidate cached food/nutrition queries so the UI reflects the new entries.
-      const entryUserId =
-        confirmation.userId ?? (await repository.lookupUserIdForEntries(confirmedEntryIds));
-      if (entryUserId) {
-        await queryCache.invalidateByPrefix(`${entryUserId}:food.`);
-        await queryCache.invalidateByPrefix(`${entryUserId}:nutrition.`);
-      }
+      await invalidateConfirmedFoodCaches(repository, confirmation, confirmedEntryIds);
 
       logger.info(`[slack] Confirmed ${confirmedCount} food entries (${rows.length} total)`);
     } catch (error) {
