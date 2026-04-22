@@ -124,6 +124,10 @@ jobs:
             [ "${env_line#\#}" != "$env_line" ] && continue
             export "$env_line"
           done < "$INFISICAL_ENV_FILE"
+          echo "Docker disk usage snapshot:"
+          docker system df || true
+          echo "Docuum service snapshot:"
+          docker service ps dofek_docuum --no-trunc || true
           if [ -z "${POSTGRES_PASSWORD:-}" ]; then
             echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export"
             exit 1
@@ -149,7 +153,12 @@ jobs:
             fi
             if [ "$attempt" -eq 1 ]; then
               echo "DB service task snapshot (first failed readiness check):"
-              docker service ps dofek_db --no-trunc || true
+              db_service_snapshot="$(docker service ps dofek_db --no-trunc || true)"
+              printf '%s\n' "$db_service_snapshot"
+              if printf '%s' "$db_service_snapshot" | grep -Eqi "no space left on device"; then
+                echo "::error::Postgres service failed to start because the Docker host is out of disk space"
+                exit 1
+              fi
             fi
             recovery_detail="$(printf '%s' "$recovery_output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
             echo "Postgres readiness attempt ${attempt}/36: ${recovery_state:-unreachable}; detail=${recovery_detail:0:240}; retrying in 5s..."
