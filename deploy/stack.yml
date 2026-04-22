@@ -137,11 +137,14 @@ services:
     deploy:
       labels:
         - traefik.enable=true
+        - traefik.http.middlewares.databasus-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
+        - traefik.http.middlewares.databasus-auth.forwardAuth.trustForwardHeader=true
+        - traefik.http.middlewares.databasus-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.databasus.rule=Host(`databasus.dofek.asherlc.com`)
         - traefik.http.routers.databasus.entrypoints=websecure
         - traefik.http.routers.databasus.tls=true
         - traefik.http.routers.databasus.tls.certresolver=le
-        - traefik.http.routers.databasus.middlewares=authentik-auth
+        - traefik.http.routers.databasus.middlewares=databasus-auth
         - traefik.http.services.databasus.loadbalancer.server.port=4005
 
   pgadmin:
@@ -156,11 +159,14 @@ services:
     deploy:
       labels:
         - traefik.enable=true
+        - traefik.http.middlewares.pgadmin-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
+        - traefik.http.middlewares.pgadmin-auth.forwardAuth.trustForwardHeader=true
+        - traefik.http.middlewares.pgadmin-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.pgadmin.rule=Host(`pgadmin.dofek.asherlc.com`)
         - traefik.http.routers.pgadmin.entrypoints=websecure
         - traefik.http.routers.pgadmin.tls=true
         - traefik.http.routers.pgadmin.tls.certresolver=le
-        - traefik.http.routers.pgadmin.middlewares=authentik-auth
+        - traefik.http.routers.pgadmin.middlewares=pgadmin-auth
         - traefik.http.services.pgadmin.loadbalancer.server.port=80
 
   redis:
@@ -218,11 +224,14 @@ services:
     deploy:
       labels:
         - traefik.enable=true
+        - traefik.http.middlewares.portainer-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
+        - traefik.http.middlewares.portainer-auth.forwardAuth.trustForwardHeader=true
+        - traefik.http.middlewares.portainer-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.portainer.rule=Host(`portainer.dofek.asherlc.com`)
         - traefik.http.routers.portainer.entrypoints=websecure
         - traefik.http.routers.portainer.tls=true
         - traefik.http.routers.portainer.tls.certresolver=le
-        - traefik.http.routers.portainer.middlewares=authentik-auth
+        - traefik.http.routers.portainer.middlewares=portainer-auth
         - traefik.http.services.portainer.loadbalancer.server.port=9000
 
   docuum:
@@ -252,11 +261,14 @@ services:
     deploy:
       labels:
         - traefik.enable=true
+        - traefik.http.middlewares.netdata-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik
+        - traefik.http.middlewares.netdata-auth.forwardAuth.trustForwardHeader=true
+        - traefik.http.middlewares.netdata-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
         - traefik.http.routers.netdata.rule=Host(`netdata.dofek.asherlc.com`)
         - traefik.http.routers.netdata.entrypoints=websecure
         - traefik.http.routers.netdata.tls=true
         - traefik.http.routers.netdata.tls.certresolver=le
-        - traefik.http.routers.netdata.middlewares=authentik-auth
+        - traefik.http.routers.netdata.middlewares=netdata-auth
         - traefik.http.services.netdata.loadbalancer.server.port=19999
 
 volumes:
