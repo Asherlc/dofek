@@ -76,7 +76,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
-   1. Run `Infisical/secrets-action` with OIDC (`INFISICAL_IDENTITY_ID`, `INFISICAL_PROJECT_SLUG`, `env-slug=prod`) to inject secrets into the job env, then write them to `$RUNNER_TEMP/.env.prod`.
+   1. Run `Infisical/secrets-action` with OIDC (`env-slug=prod`) to inject secrets into the job env, then write them to `$RUNNER_TEMP/.env.prod`. The workflow defaults to the production identifiers (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`, `project-slug=dofek`) and can be overridden with repo variables `INFISICAL_IDENTITY_ID` / `INFISICAL_PROJECT_SLUG`.
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.

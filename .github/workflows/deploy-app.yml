@@ -69,16 +69,12 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Snapshot env var names before Infisical
-        run: |
-          env | cut -d= -f1 | sort > "$RUNNER_TEMP/env-before-infisical.txt"
-
       - name: Load Infisical secrets as environment variables
         uses: Infisical/secrets-action@8802effbe453d0576cd923567dcc2c97a1f54058 # v1.0.15
         with:
           method: oidc
-          identity-id: ${{ secrets.INFISICAL_IDENTITY_ID }}
-          project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID != '' && vars.INFISICAL_IDENTITY_ID || '46b66f72-0c77-4cfe-be1b-a43395e77be7' }}
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG != '' && vars.INFISICAL_PROJECT_SLUG || 'dofek' }}
           env-slug: prod
 
       - name: Export deploy secrets file from injected env vars
