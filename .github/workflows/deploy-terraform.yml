@@ -7,6 +7,10 @@ on:
         description: "Commit SHA to deploy"
         required: false
         type: string
+      dispatcher_run_url:
+        description: "URL of the workflow run that dispatched this workflow"
+        required: false
+        type: string
     outputs:
       server_host:
         description: "Terraform-managed server host/IP for Docker SSH deploys"
@@ -57,3 +61,9 @@ jobs:
         working-directory: deploy
         run: |
           echo "server_host=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/append-dispatcher-run-summary
+        if: always()
+        with:
+          dispatcher_run_url: ${{ inputs.dispatcher_run_url }}
+          workflow_run_url: ${{ github.event.workflow_run.html_url }}

@@ -33,6 +33,7 @@ jobs:
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
 
   docker:
@@ -141,6 +142,7 @@ jobs:
     with:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host || '' }}
+      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
 
   ios:
@@ -149,6 +151,7 @@ jobs:
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ inputs.commit_sha }}
+      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
 
   ota:
@@ -157,5 +160,6 @@ jobs:
     uses: ./.github/workflows/deploy-ota.yml
     with:
       commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets: inherit
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).

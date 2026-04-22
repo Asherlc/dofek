@@ -1,4 +1,4 @@
-name: Mobile OTA
+name: Mobile Preview OTA
 
 on:
   pull_request:
@@ -9,12 +9,12 @@ on:
       - 'docs/**'
 
 concurrency:
-  group: mobile-ota-${{ github.event.number }}
+  group: mobile-preview-ota-${{ github.event.number }}
   cancel-in-progress: true
 
 jobs:
   publish:
-    name: Publish Mobile OTA
+    name: Publish Mobile Preview OTA
     runs-on: ubuntu-latest
     permissions:
       contents: read
