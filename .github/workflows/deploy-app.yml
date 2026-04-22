@@ -73,24 +73,6 @@ jobs:
         run: |
           env | cut -d= -f1 | sort > "$RUNNER_TEMP/env-before-infisical.txt"
 
-      - name: Validate Infisical action prerequisites
-        env:
-          INFISICAL_IDENTITY_ID: ${{ secrets.INFISICAL_IDENTITY_ID }}
-          INFISICAL_PROJECT_SLUG: ${{ secrets.INFISICAL_PROJECT_SLUG }}
-        run: |
-          missing_prerequisite=0
-          if [ -z "${INFISICAL_IDENTITY_ID:-}" ]; then
-            echo "::error::Missing required GitHub secret: INFISICAL_IDENTITY_ID"
-            missing_prerequisite=1
-          fi
-          if [ -z "${INFISICAL_PROJECT_SLUG:-}" ]; then
-            echo "::error::Missing required GitHub secret: INFISICAL_PROJECT_SLUG"
-            missing_prerequisite=1
-          fi
-          if [ "$missing_prerequisite" -ne 0 ]; then
-            exit 1
-          fi
-
       - name: Load Infisical secrets as environment variables
         uses: Infisical/secrets-action@8802effbe453d0576cd923567dcc2c97a1f54058 # v1.0.15
         with:
