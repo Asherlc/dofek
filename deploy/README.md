@@ -10,6 +10,8 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
+  - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
+  - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
 - **Networking**:
   - **Firewall**: `hcloud_firewall` allows SSH (port 22) from restricted IPs and HTTP/HTTPS (80/443) from everywhere.
@@ -20,7 +22,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
   - **Sentry**: Receives application logs/errors.
   - **Netdata**: Real-time server health and performance monitoring.
-- **Secrets**: Managed via **Infisical**. CI exports all `prod` secrets from the project ID in `.infisical.json` into a temporary `.env.prod` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
+- **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary `.env.prod` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 
 ## Implementation Details
 
@@ -45,7 +47,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
-- Exports to Axiom and Sentry via `otlphttp`.
+- Exports to Axiom via `otlphttp`.
 
 ## Deployment
 
@@ -66,7 +68,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
          -> deploy-web check (both tags must exist)
          -> deploy-terraform (shared prerequisite)
          -> deploy-app
-              -> export env via Infisical
+              -> fetch env via Infisical Secrets Action
               -> bootstrap stack if dofek_db is missing
               -> wait for postgres writable
               -> migrate (one-shot container on dofek_default)
@@ -76,7 +78,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
-   1. Install Infisical CLI and export all `prod` secrets to `$RUNNER_TEMP/.env.prod`.
+   1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.prod` from `.github/templates/infisical-dotenv.tmpl`.
+      The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
       - Must include `CREDENTIAL_ENCRYPTION_KEY_BASE64` (base64-encoded 32-byte key).
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.

@@ -120,8 +120,9 @@ services:
       POSTGRES_DB: health
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - /mnt/dofek-data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U health -d health"]
       interval: 5s
@@ -258,7 +259,6 @@ services:
 
 volumes:
   letsencrypt:
-  db_data:
   databasus_data:
   pgadmin_data:
   redis_data:

@@ -58,6 +58,33 @@ resource "hcloud_volume" "dofek_data" {
   automount = true
 }
 
+# Keep a stable mount alias for services that bind-mount persistent data.
+resource "terraform_data" "data_volume_mount_alias" {
+  count = var.data_volume_size_gb > 0 ? 1 : 0
+
+  triggers_replace = [
+    "volume-mount-alias-v1",
+    hcloud_volume.dofek_data[0].id,
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -eu",
+      "target=/mnt/HC_Volume_${hcloud_volume.dofek_data[0].id}",
+      "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
+      "ln -sfn \"$target\" /mnt/dofek-data",
+      "mkdir -p /mnt/dofek-data/postgres",
+    ]
+  }
+}
+
 # Initialize Docker Swarm on the server. cloud-init also does this for fresh
 # servers, but `user_data` is in `ignore_changes` on `hcloud_server.dofek`, so
 # for the existing live server we apply it explicitly here. Idempotent.
