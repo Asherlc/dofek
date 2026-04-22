@@ -90,10 +90,6 @@ jobs:
             echo "::error::POSTGRES_PASSWORD is missing from exported .env.prod"
             exit 1
           fi
-          if ! grep -q '^DATABASE_URL=' "$infisical_env_file"; then
-            echo "::error::DATABASE_URL is missing from exported .env.prod"
-            exit 1
-          fi
           echo "Infisical .env.prod key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$infisical_env_file" || true)"
           chmod 600 "$infisical_env_file"
 
@@ -179,11 +175,17 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
+          postgres_password="$(awk -F= '$1==\"POSTGRES_PASSWORD\" {sub(/^[^=]*=/, \"\"); print; exit}' "$INFISICAL_ENV_FILE")"
+          if [ -z "$postgres_password" ]; then
+            echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export"
+            exit 1
+          fi
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
             if timeout 90s docker run --rm --network dofek_default \
               --env-file "$INFISICAL_ENV_FILE" \
+              -e "DATABASE_URL=postgres://health:${postgres_password}@db:5432/health" \
               "ghcr.io/asherlc/dofek:${IMAGE_TAG}" migrate >"$migration_output_file" 2>&1; then
               echo "Migration attempt ${attempt}/12 succeeded."
               break
