@@ -1,6 +1,7 @@
 # CI Debugging Guide
 
 When fixing failing GitHub Actions checks, prefer using the `github:gh-fix-ci` skill so triage, logs, and fixes follow one consistent workflow.
+For production SSH access details used during deploy/incident debugging, see [`deploy/README.md` → "SSH Access (Debugging Only)"](../deploy/README.md#ssh-access-debugging-only).
 
 ## Reading iOS Build Errors
 
