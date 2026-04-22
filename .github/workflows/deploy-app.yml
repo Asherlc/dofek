@@ -103,10 +103,11 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            [ -z "$env_line" ] && continue
+            [ "${env_line#\#}" != "$env_line" ] && continue
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
           if docker service inspect dofek_db >/dev/null 2>&1; then
             echo "Swarm DB service already exists; skipping bootstrap deploy."
           else
@@ -118,10 +119,11 @@ jobs:
         env:
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            [ -z "$env_line" ] && continue
+            [ "${env_line#\#}" != "$env_line" ] && continue
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
           if [ -z "${POSTGRES_PASSWORD:-}" ]; then
             echo "::error::POSTGRES_PASSWORD is missing from Infisical deploy export"
             exit 1
@@ -159,10 +161,11 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            [ -z "$env_line" ] && continue
+            [ "${env_line#\#}" != "$env_line" ] && continue
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
@@ -189,8 +192,9 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ runner.temp }}/.env.prod
         run: |
-          set -a
-          # shellcheck disable=SC1090
-          . "$INFISICAL_ENV_FILE"
-          set +a
+          while IFS= read -r env_line || [ -n "$env_line" ]; do
+            [ -z "$env_line" ] && continue
+            [ "${env_line#\#}" != "$env_line" ] && continue
+            export "$env_line"
+          done < "$INFISICAL_ENV_FILE"
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
