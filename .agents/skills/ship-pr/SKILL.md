@@ -1,12 +1,12 @@
 ---
 name: ship-pr
-description: Run all pre-push checks (lint, typecheck, tests), open a PR, enable auto-merge, and monitor CI until the PR is merged.
+description: Run all pre-push checks (lint, typecheck, tests), open a PR, and monitor CI until checks finish.
 disable-model-invocation: true
 ---
 
 # Ship PR
 
-Run all checks, open a PR, auto-merge, and monitor CI to completion.
+Run all checks, open a PR, and monitor CI to completion.
 
 ## Current state
 
@@ -48,11 +48,11 @@ ALL errors must be fixed before proceeding — regardless of whether they were i
   pr_number="$(gh pr view --json number --jq .number)"
   gh pr edit "$pr_number" --title "$PR_TITLE" --body-file "$pr_body_file"
   ```
-- Use `gh pr merge --auto --squash` to enable auto-merge.
+- Do not enable auto-merge. Never run `gh pr merge --auto --squash` in this skill.
 
 ### 3. Monitor CI and PR comments
 
-After opening the PR, monitor both CI status and PR comments in a loop until the PR is merged or blocked.
+After opening the PR, monitor both CI status and PR comments in a loop until all checks complete or a failure appears.
 
 #### CI monitoring
 
@@ -62,9 +62,9 @@ Poll CI status using `gh pr checks` until all checks pass or one fails:
 gh pr checks --watch
 ```
 
-- If CI passes and the PR merges (auto-merge enabled), report success.
+- If CI passes and the PR is merged manually, report success.
 - If CI fails, report which check failed and show relevant logs using `gh run view <run-id> --log-failed`.
-- If the PR hasn't merged after CI passes (e.g. review required), let the user know what's blocking.
+- If CI passes, report that the PR is ready for manual merge/review.
 
 #### PR comment monitoring
 
@@ -95,5 +95,5 @@ If `$ARGUMENTS` is provided, use it as the PR title. Otherwise, generate one fro
 
 - Never force push or skip hooks.
 - Never merge without CI passing.
-- If auto-merge can't be enabled (repo settings), fall back to manual merge after CI passes.
+- Never enable auto-merge from this skill.
 - For PR descriptions, always use `--body-file`; do not pass multiline markdown directly via `--body`.
