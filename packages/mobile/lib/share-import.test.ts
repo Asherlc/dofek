@@ -138,6 +138,47 @@ describe("importSharedFile", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("handles csv blobs without text() by falling back to arrayBuffer()", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
+    const customReadBlob = vi.fn().mockImplementation(async () => {
+      const blob = new Blob([fileBody], { type: "text/csv" });
+      Object.defineProperty(blob, "text", { value: undefined });
+      return blob;
+    });
+
+    fetchImpl
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-789" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/export.csv",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+      },
+    );
+
+    expect(result.providerId).toBe<ImportProviderId>("strong-csv");
+    expect(result.jobId).toBe("job-789");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("throws for unsupported file extension", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     fetchImpl.mockResolvedValueOnce(new Response("test", { status: 200 }));
