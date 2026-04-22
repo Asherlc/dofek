@@ -70,14 +70,23 @@ jobs:
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Export Infisical deploy secrets file via OIDC
-        uses: Infisical/secrets-action@8802effbe453d0576cd923567dcc2c97a1f54058 # v1.0.15
-        with:
-          method: oidc
-          identity-id: 46b66f72-0c77-4cfe-be1b-a43395e77be7
-          project-slug: dofek
-          env-slug: prod
-          export-type: file
-          file-output-path: /.env.prod
+        run: |
+          curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
+          sudo apt-get install -y infisical
+
+          oidc_token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
+          infisical_access_token="$(infisical login \
+            --method=oidc-auth \
+            --machine-identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7 \
+            --jwt="$oidc_token" \
+            --plain \
+            --silent)"
+
+          infisical export \
+            --token="$infisical_access_token" \
+            --env=prod \
+            --template=.github/templates/infisical-dotenv.tmpl \
+            --silent > "${{ github.workspace }}/.env.prod"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
