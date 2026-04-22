@@ -88,6 +88,10 @@ jobs:
             --template=.github/templates/infisical-dotenv.tmpl \
             --silent > "${{ github.workspace }}/.env.prod"
 
+      - name: Export deploy env for stack interpolation
+        run: |
+          cat "${{ github.workspace }}/.env.prod" >> "$GITHUB_ENV"
+
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -114,9 +118,6 @@ jobs:
             echo "Swarm DB service exists with a running task; skipping bootstrap deploy."
           else
             echo "Swarm DB service is missing or not running; running bootstrap stack deploy."
-            set -a
-            . "$INFISICAL_ENV_FILE"
-            set +a
             docker stack deploy -c deploy/stack.yml --with-registry-auth dofek
           fi
 
@@ -175,7 +176,4 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          set -a
-          . "$INFISICAL_ENV_FILE"
-          set +a
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
