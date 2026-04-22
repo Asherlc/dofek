@@ -10,6 +10,14 @@ const sharedTestConfig = {
   retry: 2,
 };
 
+const testCredentialEncryptionKey = Buffer.from("a".repeat(32), "utf8").toString("base64");
+
+const sharedTestEnv = {
+  CREDENTIAL_ENCRYPTION_KEY_BASE64: testCredentialEncryptionKey,
+  CREDENTIAL_ENCRYPTION_KEY_NAMESPACE: "dofek-test",
+  CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
+};
+
 export default defineConfig({
   test: {
     ...sharedTestConfig,
@@ -27,6 +35,7 @@ export default defineConfig({
             "scripts/**/*.test.ts",
           ],
           exclude: ["**/*.integration.test.ts", "packages/mobile/**"],
+          env: sharedTestEnv,
         },
       },
       "packages/mobile/vitest.config.ts",
@@ -36,6 +45,7 @@ export default defineConfig({
           name: "integration",
           include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
           env: {
+            ...sharedTestEnv,
             TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
           },
         },

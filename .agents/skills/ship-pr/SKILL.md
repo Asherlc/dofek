@@ -33,21 +33,7 @@ ALL errors must be fixed before proceeding — regardless of whether they were i
 ### 2. Push and open PR
 
 - Push the current branch: `git push -u origin HEAD`
-- Build PR body in a temp markdown file and create the PR with `--body-file` (never inline multiline `--body`, to avoid shell interpolation/mangling):
-  ```bash
-  pr_body_file="$(mktemp)"
-  cat > "$pr_body_file" <<'EOF'
-  ## Summary
-  - ...
-  EOF
-  gh pr create --base main --title "$PR_TITLE" --body-file "$pr_body_file"
-  rm -f "$pr_body_file"
-  ```
-- If `gh pr create` reports an existing PR for the branch, update it instead of failing:
-  ```bash
-  pr_number="$(gh pr view --json number --jq .number)"
-  gh pr edit "$pr_number" --title "$PR_TITLE" --body-file "$pr_body_file"
-  ```
+- Create a PR against `main` using `gh pr create`. Write a clear title and summary based on the commits on this branch vs main.
 - Use `gh pr merge --auto --squash` to enable auto-merge.
 
 ### 3. Monitor CI and PR comments
@@ -96,4 +82,3 @@ If `$ARGUMENTS` is provided, use it as the PR title. Otherwise, generate one fro
 - Never force push or skip hooks.
 - Never merge without CI passing.
 - If auto-merge can't be enabled (repo settings), fall back to manual merge after CI passes.
-- For PR descriptions, always use `--body-file`; do not pass multiline markdown directly via `--body`.

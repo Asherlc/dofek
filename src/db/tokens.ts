@@ -1,5 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
+import {
+  decryptCredentialValue,
+  encryptCredentialValue,
+} from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
 import { oauthToken, provider } from "./schema.ts";
 import { getTokenUserId } from "./token-user-context.ts";
@@ -12,6 +16,22 @@ function resolveUserId(userId?: string): string {
     );
   }
   return scopedUserId;
+}
+
+function oauthTokenContext(
+  scopedUserId: string,
+  providerId: string,
+  columnName: "access_token" | "refresh_token",
+): {
+  tableName: string;
+  columnName: string;
+  scopeId: string;
+} {
+  return {
+    tableName: "fitness.oauth_token",
+    columnName,
+    scopeId: `${scopedUserId}:${providerId}`,
+  };
 }
 
 /**
@@ -50,13 +70,23 @@ export async function saveTokens(
   userId?: string,
 ): Promise<void> {
   const scopedUserId = resolveUserId(userId);
+  const encryptedAccessToken = await encryptCredentialValue(
+    tokens.accessToken,
+    oauthTokenContext(scopedUserId, providerId, "access_token"),
+  );
+  const encryptedRefreshToken = tokens.refreshToken
+    ? await encryptCredentialValue(
+        tokens.refreshToken,
+        oauthTokenContext(scopedUserId, providerId, "refresh_token"),
+      )
+    : null;
   await db
     .insert(oauthToken)
     .values({
       userId: scopedUserId,
       providerId,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      accessToken: encryptedAccessToken,
+      refreshToken: encryptedRefreshToken,
       expiresAt: tokens.expiresAt,
       scopes: tokens.scopes,
       updatedAt: new Date(),
@@ -64,8 +94,8 @@ export async function saveTokens(
     .onConflictDoUpdate({
       target: [oauthToken.userId, oauthToken.providerId],
       set: {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        accessToken: encryptedAccessToken,
+        refreshToken: encryptedRefreshToken,
         expiresAt: tokens.expiresAt,
         scopes: tokens.scopes,
         updatedAt: new Date(),
@@ -109,9 +139,19 @@ export async function loadTokens(
 
   const row = rows[0];
   if (!row) return null;
+  const decryptedAccessToken = await decryptCredentialValue(
+    row.accessToken,
+    oauthTokenContext(scopedUserId, providerId, "access_token"),
+  );
+  const decryptedRefreshToken = row.refreshToken
+    ? await decryptCredentialValue(
+        row.refreshToken,
+        oauthTokenContext(scopedUserId, providerId, "refresh_token"),
+      )
+    : null;
   return {
-    accessToken: row.accessToken,
-    refreshToken: row.refreshToken,
+    accessToken: decryptedAccessToken,
+    refreshToken: decryptedRefreshToken,
     expiresAt: row.expiresAt,
     scopes: row.scopes ?? null,
   };

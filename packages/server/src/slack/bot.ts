@@ -2,11 +2,9 @@ import * as Sentry from "@sentry/node";
 import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import type express from "express";
-import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { SlackInstallationRepository } from "../repositories/slack-installation-repository.ts";
 import { FoodEntryRepository } from "./food-entry-repository.ts";
 import { registerSocketModeDiagnostics, verifyBotConfiguration } from "./slack-diagnostics.ts";
 import { registerHandlers } from "./slack-handlers.ts";
@@ -33,6 +31,7 @@ interface SlackBotResult {
  */
 export function createSlackBot(db: Database): SlackBotResult | null {
   const repository = new FoodEntryRepository(db);
+  const slackInstallationRepository = new SlackInstallationRepository(db);
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
   // HTTP mode (multi-workspace) — OAuth handled externally via /auth/provider/slack
@@ -53,28 +52,16 @@ export function createSlackBot(db: Database): SlackBotResult | null {
           throw new Error("Missing teamId in Slack event");
         }
         logger.info(`[slack] authorize: looking up installation for team ${teamId}`);
-        const rows = await executeWithSchema(
-          db,
-          z.object({
-            bot_token: z.string(),
-            bot_id: z.string().nullable(),
-            bot_user_id: z.string().nullable(),
-          }),
-          sql`SELECT bot_token, bot_id, bot_user_id
-              FROM fitness.slack_installation
-              WHERE team_id = ${teamId}
-              LIMIT 1`,
-        );
-        const row = rows[0];
-        if (rows.length === 0 || !row) {
+        const credentials = await slackInstallationRepository.getBotCredentialsByTeamId(teamId);
+        if (!credentials) {
           logger.error(`[slack] authorize: no installation found for team ${teamId}`);
           throw new Error(`No Slack installation found for team ${teamId}`);
         }
         logger.info(`[slack] authorize: found installation for team ${teamId}`);
         return {
-          botToken: row.bot_token,
-          botId: row.bot_id ?? undefined,
-          botUserId: row.bot_user_id ?? undefined,
+          botToken: credentials.botToken,
+          botId: credentials.botId ?? undefined,
+          botUserId: credentials.botUserId ?? undefined,
         };
       },
     });

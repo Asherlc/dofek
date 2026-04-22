@@ -8,6 +8,7 @@ import { validateSession } from "../../auth/session.ts";
 import type { OAuthStateEntry } from "../../lib/oauth-state-store.ts";
 import { executeWithSchema } from "../../lib/typed-sql.ts";
 import { logger } from "../../logger.ts";
+import { SlackInstallationRepository } from "../../repositories/slack-installation-repository.ts";
 import { getDb, getOAuthStateStoreRef, oauthSuccessHtml, SLACK_SCOPES } from "./shared.ts";
 
 export async function handleSlackCallback(
@@ -55,30 +56,18 @@ export async function handleSlackCallback(
     res.status(400).send("Slack OAuth failed");
     return;
   }
+  const slackInstallationRepository = new SlackInstallationRepository(db);
 
-  // Store the installation
-  await db.execute(
-    sql`INSERT INTO fitness.slack_installation (
-          team_id, team_name, bot_token, bot_user_id, app_id,
-          installer_slack_user_id, raw_installation
-        ) VALUES (
-          ${tokenData.team.id},
-          ${tokenData.team.name ?? null},
-          ${tokenData.access_token},
-          ${tokenData.bot_user_id ?? null},
-          ${tokenData.app_id ?? null},
-          ${tokenData.authed_user?.id ?? null},
-          ${JSON.stringify(tokenData)}::jsonb
-        )
-        ON CONFLICT (team_id) DO UPDATE SET
-          team_name = EXCLUDED.team_name,
-          bot_token = EXCLUDED.bot_token,
-          bot_user_id = EXCLUDED.bot_user_id,
-          app_id = EXCLUDED.app_id,
-          installer_slack_user_id = EXCLUDED.installer_slack_user_id,
-          raw_installation = EXCLUDED.raw_installation,
-          updated_at = NOW()`,
-  );
+  await slackInstallationRepository.upsertInstallation({
+    teamId: tokenData.team.id,
+    teamName: tokenData.team.name ?? null,
+    botToken: tokenData.access_token,
+    botId: null,
+    botUserId: tokenData.bot_user_id ?? null,
+    appId: tokenData.app_id ?? null,
+    installerSlackUserId: tokenData.authed_user?.id ?? null,
+    rawInstallation: tokenData,
+  });
 
   // Link the installer's Slack identity to the logged-in dofek user
   // so the bot can immediately identify them when they send a message

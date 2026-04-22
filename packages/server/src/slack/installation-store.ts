@@ -1,9 +1,8 @@
 import type { Installation, InstallationQuery, InstallationStore } from "@slack/bolt";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import { SlackInstallationRepository } from "../repositories/slack-installation-repository.ts";
 
 // Minimal Zod schema for Slack Installation from DB. We validate the structural
 // shape we depend on; @slack/bolt owns the full type (with complex generics that
@@ -38,6 +37,8 @@ const installationParser = z
  * Stores and retrieves per-workspace bot tokens for multi-workspace distribution.
  */
 export function createInstallationStore(db: Database): InstallationStore {
+  const slackInstallationRepository = new SlackInstallationRepository(db);
+
   return {
     storeInstallation: async (installation) => {
       const teamId = installation.team?.id ?? installation.enterprise?.id;
@@ -49,31 +50,16 @@ export function createInstallationStore(db: Database): InstallationStore {
       if (!botToken) {
         throw new Error("Cannot store installation without bot token");
       }
-
-      await db.execute(
-        sql`INSERT INTO fitness.slack_installation (
-              team_id, team_name, bot_token, bot_id, bot_user_id, app_id,
-              installer_slack_user_id, raw_installation
-            ) VALUES (
-              ${teamId},
-              ${installation.team?.name ?? null},
-              ${botToken},
-              ${installation.bot?.id ?? null},
-              ${installation.bot?.userId ?? null},
-              ${installation.appId ?? null},
-              ${installation.user?.id ?? null},
-              ${JSON.stringify(installation)}::jsonb
-            )
-            ON CONFLICT (team_id) DO UPDATE SET
-              team_name = EXCLUDED.team_name,
-              bot_token = EXCLUDED.bot_token,
-              bot_id = EXCLUDED.bot_id,
-              bot_user_id = EXCLUDED.bot_user_id,
-              app_id = EXCLUDED.app_id,
-              installer_slack_user_id = EXCLUDED.installer_slack_user_id,
-              raw_installation = EXCLUDED.raw_installation,
-              updated_at = NOW()`,
-      );
+      await slackInstallationRepository.upsertInstallation({
+        teamId,
+        teamName: installation.team?.name ?? null,
+        botToken,
+        botId: installation.bot?.id ?? null,
+        botUserId: installation.bot?.userId ?? null,
+        appId: installation.appId ?? null,
+        installerSlackUserId: installation.user?.id ?? null,
+        rawInstallation: installation,
+      });
 
       logger.info(`[slack] Stored installation for team ${teamId} (${installation.team?.name})`);
     },
@@ -84,27 +70,19 @@ export function createInstallationStore(db: Database): InstallationStore {
         throw new Error("Cannot fetch installation without team ID");
       }
 
-      const rows = await executeWithSchema(
-        db,
-        z.object({ raw_installation: z.union([z.string(), z.record(z.unknown())]) }),
-        sql`SELECT raw_installation FROM fitness.slack_installation WHERE team_id = ${teamId} LIMIT 1`,
-      );
-
-      const row = rows[0];
-      if (rows.length === 0 || !row) {
+      const rawInstallation = await slackInstallationRepository.getRawInstallationByTeamId(teamId);
+      if (!rawInstallation) {
         throw new Error(`No installation found for team ${teamId}`);
       }
 
-      const raw = row.raw_installation;
-      const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
-      return installationParser.parse(parsed);
+      return installationParser.parse(rawInstallation);
     },
 
     deleteInstallation: async (installQuery: InstallationQuery<boolean>) => {
       const teamId = installQuery.teamId;
       if (!teamId) return;
 
-      await db.execute(sql`DELETE FROM fitness.slack_installation WHERE team_id = ${teamId}`);
+      await slackInstallationRepository.deleteByTeamId(teamId);
 
       logger.info(`[slack] Deleted installation for team ${teamId}`);
     },

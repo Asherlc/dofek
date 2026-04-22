@@ -78,7 +78,12 @@ jobs:
             echo "::error::Expected Infisical ${INFISICAL_VERSION}, got ${installed_infisical_version}"
             exit 1
           fi
-          infisical export --template=.github/templates/infisical-dotenv.tmpl --silent > "$RUNNER_TEMP/.env.prod"
+          project_id="$(jq -r '.workspaceId // empty' .infisical.json)"
+          if [ -z "$project_id" ]; then
+            echo "::error::.infisical.json is missing workspaceId"
+            exit 1
+          fi
+          infisical export --projectId="$project_id" --env=prod --format=dotenv --silent > "$RUNNER_TEMP/.env.prod"
           echo "Infisical prod export key count: $(grep -Ec '^[A-Za-z_][A-Za-z0-9_]*=' "$RUNNER_TEMP/.env.prod" || true)"
           chmod 600 "$RUNNER_TEMP/.env.prod"
 
