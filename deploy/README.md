@@ -53,6 +53,30 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 
 Deployments are push-based from CI, using a remote Docker context over SSH. CI never runs shell scripts on the server — it only calls the Docker API.
 
+### SSH Access (Debugging Only)
+
+For operational debugging, use the SSH host alias `dofek-server` instead of raw IP commands so the correct key is used consistently.
+
+`~/.ssh/config` entry:
+
+```sshconfig
+Host dofek-server
+  HostName 157.90.25.125
+  User root
+  IdentityFile ~/.ssh/id_ed25519_infisical
+  IdentitiesOnly yes
+```
+
+Quick checks:
+
+```bash
+ssh dofek-server 'hostname && whoami'
+ssh dofek-server 'df -h'
+ssh dofek-server 'docker system df'
+```
+
+If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you are using the `dofek-server` host alias (or pass `-i ~/.ssh/id_ed25519_infisical` explicitly).
+
 ### Release Unit (Important)
 
 - A web deploy is a **single swarm stack release**, not separate app/ML rollouts.
