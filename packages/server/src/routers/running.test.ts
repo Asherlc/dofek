@@ -51,6 +51,7 @@ describe("runningRouter", () => {
     it("maps running dynamics fields correctly", async () => {
       const rows = [
         {
+          activity_id: "run-1",
           date: "2026-01-15",
           name: "Morning Run",
           avg_cadence: 172,
@@ -66,6 +67,7 @@ describe("runningRouter", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
+        activityId: "run-1",
         date: "2026-01-15",
         activityName: "Morning Run",
         cadence: 172,
@@ -80,6 +82,7 @@ describe("runningRouter", () => {
     it("returns multiple activities sorted by date", async () => {
       const rows = [
         {
+          activity_id: "run-2",
           date: "2026-01-10",
           name: "Easy Run",
           avg_cadence: 168,
@@ -90,6 +93,7 @@ describe("runningRouter", () => {
           total_distance: 5000,
         },
         {
+          activity_id: "run-3",
           date: "2026-01-12",
           name: "Tempo Run",
           avg_cadence: 178,
@@ -111,6 +115,7 @@ describe("runningRouter", () => {
     it("handles null stride length gracefully", async () => {
       const rows = [
         {
+          activity_id: "run-4",
           date: "2026-01-15",
           name: "Treadmill",
           avg_cadence: 170,

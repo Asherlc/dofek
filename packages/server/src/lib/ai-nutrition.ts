@@ -1,8 +1,7 @@
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createMistral } from "@ai-sdk/mistral";
-import type { LanguageModel } from "ai";
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { runWithProviderFallback } from "./ai/fallback-runner.ts";
+import { getConfiguredAiProviders } from "./ai/providers.ts";
 
 /** Schema for the nutrition breakdown returned by AI */
 export const aiNutritionSchema = z.object({
@@ -117,52 +116,6 @@ Guidelines:
 - Use your knowledge of USDA food composition data.
 - Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
-interface ProviderConfig {
-  name: string;
-  createModel: () => LanguageModel;
-}
-
-function getConfiguredProviders(): ProviderConfig[] {
-  const providers: ProviderConfig[] = [];
-
-  if (process.env.GEMINI_API_KEY) {
-    providers.push({
-      name: "gemini",
-      createModel: () => {
-        const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
-        return google("gemini-2.5-flash");
-      },
-    });
-  }
-
-  if (process.env.MISTRAL_API_KEY) {
-    providers.push({
-      name: "mistral",
-      createModel: () => {
-        const mistral = createMistral({ apiKey: process.env.MISTRAL_API_KEY });
-        return mistral("mistral-small-latest");
-      },
-    });
-  }
-
-  return providers;
-}
-
-/** Rate limit errors that should trigger fallback to next provider */
-function isRateLimitError(error: unknown): boolean {
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
-    return (
-      message.includes("rate limit") ||
-      message.includes("quota") ||
-      message.includes("429") ||
-      message.includes("too many requests") ||
-      message.includes("resource_exhausted")
-    );
-  }
-  return false;
-}
-
 export interface AnalyzeResult {
   nutrition: AiNutritionResult;
   provider: string;
@@ -173,45 +126,28 @@ export interface AnalyzeResult {
  * on rate limit errors: Gemini → Mistral.
  */
 export async function analyzeNutrition(description: string): Promise<AnalyzeResult> {
-  const providers = getConfiguredProviders();
-
-  if (providers.length === 0) {
-    throw new Error(
-      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
-    );
-  }
-
-  let lastError: unknown;
-
-  for (const provider of providers) {
-    try {
-      const result = await generateText({
+  const result = await runWithProviderFallback({
+    providers: getConfiguredAiProviders(),
+    runForProvider: async (provider) => {
+      const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionSchema }),
         system: SYSTEM_PROMPT,
         prompt: description,
       });
 
-      if (!result.output) {
+      if (!generated.output) {
         throw new Error(`AI provider ${provider.name} returned no structured output`);
       }
 
-      return {
-        nutrition: result.output,
-        provider: provider.name,
-      };
-    } catch (error) {
-      lastError = error;
-      if (isRateLimitError(error)) {
-        continue;
-      }
-      throw error;
-    }
-  }
+      return generated.output;
+    },
+  });
 
-  throw new Error(
-    `All AI providers rate-limited. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-  );
+  return {
+    nutrition: result.output,
+    provider: result.provider,
+  };
 }
 
 export interface AnalyzeMultiResult {
@@ -232,14 +168,6 @@ export async function refineNutritionItems(
   refinement: string,
   localTime?: string,
 ): Promise<AnalyzeMultiResult> {
-  const providers = getConfiguredProviders();
-
-  if (providers.length === 0) {
-    throw new Error(
-      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
-    );
-  }
-
   const previousSummary = previousItems
     .map(
       (item) =>
@@ -247,11 +175,10 @@ export async function refineNutritionItems(
     )
     .join("\n");
 
-  let lastError: unknown;
-
-  for (const provider of providers) {
-    try {
-      const result = await generateText({
+  const result = await runWithProviderFallback({
+    providers: getConfiguredAiProviders(),
+    runForProvider: async (provider) => {
+      const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
         system: `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user is refining a previous analysis. Apply their corrections to the items and return the full updated list. If they say to remove an item, omit it. If they correct a quantity or add a new item, adjust accordingly.${localTime ? `\n\nThe user's local time is ${localTime}.` : ""}`,
@@ -262,73 +189,48 @@ export async function refineNutritionItems(
         ],
       });
 
-      if (!result.output) {
+      if (!generated.output) {
         throw new Error(`AI provider ${provider.name} returned no structured output`);
       }
 
-      return {
-        items: result.output.items,
-        provider: provider.name,
-      };
-    } catch (error) {
-      lastError = error;
-      if (isRateLimitError(error)) {
-        continue;
-      }
-      throw error;
-    }
-  }
+      return generated.output.items;
+    },
+  });
 
-  throw new Error(
-    `All AI providers rate-limited. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-  );
+  return {
+    items: result.output,
+    provider: result.provider,
+  };
 }
 
 export async function analyzeNutritionItems(
   description: string,
   localTime?: string,
 ): Promise<AnalyzeMultiResult> {
-  const providers = getConfiguredProviders();
-
-  if (providers.length === 0) {
-    throw new Error(
-      "No AI providers configured. Set at least one of: GEMINI_API_KEY, MISTRAL_API_KEY",
-    );
-  }
-
-  let lastError: unknown;
-
-  for (const provider of providers) {
-    try {
+  const result = await runWithProviderFallback({
+    providers: getConfiguredAiProviders(),
+    runForProvider: async (provider) => {
       const system = localTime
         ? `${MULTI_ITEM_SYSTEM_PROMPT}\n\nThe user's local time is ${localTime}.`
         : MULTI_ITEM_SYSTEM_PROMPT;
 
-      const result = await generateText({
+      const generated = await generateText({
         model: provider.createModel(),
         output: Output.object({ schema: aiNutritionMultiSchema }),
         system,
         prompt: description,
       });
 
-      if (!result.output) {
+      if (!generated.output) {
         throw new Error(`AI provider ${provider.name} returned no structured output`);
       }
 
-      return {
-        items: result.output.items,
-        provider: provider.name,
-      };
-    } catch (error) {
-      lastError = error;
-      if (isRateLimitError(error)) {
-        continue;
-      }
-      throw error;
-    }
-  }
+      return generated.output.items;
+    },
+  });
 
-  throw new Error(
-    `All AI providers rate-limited. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-  );
+  return {
+    items: result.output,
+    provider: result.provider,
+  };
 }

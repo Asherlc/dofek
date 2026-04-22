@@ -3,6 +3,7 @@ import { RunningRepository } from "../repositories/running-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface RunningDynamicsRow {
+  activityId: string;
   date: string;
   activityName: string;
   cadence: number;

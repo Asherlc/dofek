@@ -118,6 +118,29 @@ describe("ios telemetry", () => {
     });
   });
 
+  it("captureException emits an OTel ERROR record when OTel is configured", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    const error = new Error("native apple failed");
+    mod.captureException(error, { source: "login-screen-handle-login" });
+
+    expect(mocks.mockGetLogger).toHaveBeenCalledWith("exception");
+    expect(mocks.mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityText: "ERROR",
+        body: "[exception] native apple failed",
+        attributes: {
+          source: "login-screen-handle-login",
+          errorName: "Error",
+        },
+      }),
+    );
+  });
+
   it("initializes OTel LoggerProvider when endpoint is set", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
     process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";

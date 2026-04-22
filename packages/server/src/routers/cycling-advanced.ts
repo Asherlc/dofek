@@ -23,6 +23,7 @@ export interface TrainingMonotonyWeek {
 }
 
 export interface ActivityVariabilityRow {
+  activityId: string;
   date: string;
   activityName: string;
   normalizedPower: number;

@@ -61,6 +61,7 @@ describe("hikingRouter", () => {
     it("computes grade-adjusted pace for uphill activity", async () => {
       const rows = [
         {
+          activity_id: "hike-1",
           date: "2024-01-15",
           activity_name: "Morning Hike",
           activity_type: "hiking",
@@ -75,6 +76,7 @@ describe("hikingRouter", () => {
       const result = await caller.gradeAdjustedPace({ days: 90 });
 
       expect(result).toHaveLength(1);
+      expect(result[0]?.activityId).toBe("hike-1");
       expect(result[0]?.activityName).toBe("Morning Hike");
       expect(result[0]?.distanceKm).toBe(5);
       expect(result[0]?.durationMinutes).toBe(60);
@@ -86,6 +88,7 @@ describe("hikingRouter", () => {
     it("computes grade-adjusted pace for downhill activity", async () => {
       const rows = [
         {
+          activity_id: "hike-2",
           date: "2024-01-15",
           activity_name: "Downhill Walk",
           activity_type: "walking",

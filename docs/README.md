@@ -40,6 +40,7 @@ Dofek specializes in deep integration with fitness platforms that lack public AP
 - `provider-api-audit.md`: Periodic review of provider API health and data coverage.
 - `metric-stream-timescaledb-runbook.md`: Production runbook to convert `fitness.metric_stream` to a Timescale hypertable and enable compression safely.
 - `bugsink.md`: Runbook for investigating Bugsink issues/events from terminal (auth, canonical API flow, stacktrace retrieval).
+- `traefik-subdomain-404-runbook.md`: Triage runbook for management subdomains returning Traefik `404 page not found`.
 
 ## CI Preview Apps
 

@@ -233,6 +233,8 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("orphaned tokens"));
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Authorized Apps"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Settings"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("wahooligan.com/profile"));
 
     // The final logged error includes both the exchange error and the revocation context
     const allErrorMessages: string[] = mockLogger.error.mock.calls.map((call: unknown[]) =>
@@ -263,6 +265,8 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("orphaned tokens"));
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Authorized Apps"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Settings"));
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("wahooligan.com/profile"));
 
     // Revocation was not attempted (no stored tokens)
     expect(mockRevokeExistingTokens).not.toHaveBeenCalled();

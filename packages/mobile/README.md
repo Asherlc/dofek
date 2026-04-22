@@ -34,3 +34,25 @@ pnpm dev
 
 - **Component tests**: `pnpm test` (Vitest)
 - **Native modules**: Swift tests in `modules/<name>/Tests/` (XCTest)
+
+## Mobile Telemetry
+
+`lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
+
+To export mobile OpenTelemetry logs to Axiom, set both of these public env vars in mobile CI:
+
+- `EXPO_PUBLIC_OTEL_ENDPOINT` (for example, `https://api.axiom.co/v1/logs`)
+- `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`)
+
+Required GitHub repository secrets:
+
+- `EXPO_PUBLIC_OTEL_ENDPOINT`
+- `EXPO_PUBLIC_OTEL_HEADERS`
+
+Use a dedicated write-only ingest token for mobile OTEL headers (do not reuse broad admin/read tokens).
+
+Workflows that must include these vars:
+
+- `.github/workflows/build-mobile.yml`
+- `.github/workflows/deploy-ota.yml`
+- `.github/workflows/mobile-preview-ota.yml`

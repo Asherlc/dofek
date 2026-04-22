@@ -94,6 +94,25 @@ describe("analyzeNutrition", () => {
     expect(mockGenerateText).toHaveBeenCalledTimes(2);
   });
 
+  it("cascades to next provider on high-demand unavailable errors", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    process.env.MISTRAL_API_KEY = "test-key";
+
+    mockGenerateText
+      .mockRejectedValueOnce(
+        new Error(
+          "Failed after 3 attempts. Last error: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+        ),
+      )
+      .mockResolvedValueOnce(mockSuccessResponse());
+
+    const result = await analyzeNutrition("a banana");
+
+    expect(result.provider).toBe("mistral");
+    expect(result.nutrition).toEqual(sampleResult);
+    expect(mockGenerateText).toHaveBeenCalledTimes(2);
+  });
+
   it("throws when all providers are rate-limited", async () => {
     process.env.GEMINI_API_KEY = "test-key";
     process.env.MISTRAL_API_KEY = "test-key";

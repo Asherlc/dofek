@@ -1,0 +1,30 @@
+name: Append Dispatcher Run Summary
+description: Append a dispatcher workflow run link to the GitHub job summary.
+
+inputs:
+  dispatcher_run_url:
+    description: URL passed explicitly by a calling workflow.
+    required: false
+  workflow_run_url:
+    description: URL from github.event.workflow_run.html_url for workflow_run triggers.
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Append dispatcher link
+      shell: bash
+      env:
+        INPUT_DISPATCHER_URL: ${{ inputs.dispatcher_run_url }}
+        INPUT_WORKFLOW_RUN_URL: ${{ inputs.workflow_run_url }}
+      run: |
+        dispatcher_url="$INPUT_DISPATCHER_URL"
+        if [ -z "$dispatcher_url" ] && [ -n "$INPUT_WORKFLOW_RUN_URL" ]; then
+          dispatcher_url="$INPUT_WORKFLOW_RUN_URL"
+        fi
+
+        if [ -z "$dispatcher_url" ]; then
+          exit 0
+        fi
+
+        echo "- Dispatcher workflow run: [Open run](${dispatcher_url})" >> "$GITHUB_STEP_SUMMARY"

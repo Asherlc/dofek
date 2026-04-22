@@ -1,5 +1,6 @@
 import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
+import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
@@ -232,6 +233,7 @@ function PaceTrendChart({
 // ── Cadence Trend Chart ──
 
 interface DynamicsRow {
+  activityId: string;
   date: string;
   activityName: string;
   cadence: number;
@@ -302,57 +304,79 @@ function RunningDynamicsTable({
     );
   }
 
+  const columns: ActivityTableColumn<DynamicsRow>[] = [
+    {
+      key: "date",
+      label: "Date",
+      headerClassName: "py-2 pr-3",
+      cellClassName: "py-1.5 pr-3 text-subtle",
+      renderCell: (row) => row.date,
+    },
+    {
+      key: "activity",
+      label: "Activity",
+      headerClassName: "py-2 pr-3",
+      cellClassName: "py-1.5 pr-3 truncate max-w-[150px]",
+      renderCell: (row) => row.activityName,
+    },
+    {
+      key: "pace",
+      label: "Pace",
+      headerClassName: "py-2 pr-3 text-right",
+      cellClassName: "py-1.5 pr-3 text-right font-mono",
+      renderCell: (row) =>
+        `${formatPace(units.convertPace(row.paceSecondsPerKm))} ${units.paceLabel}`,
+    },
+    {
+      key: "distance",
+      label: "Distance",
+      headerClassName: "py-2 pr-3 text-right",
+      cellClassName: "py-1.5 pr-3 text-right font-mono",
+      renderCell: (row) =>
+        `${formatNumber(units.convertDistance(row.distanceKm))} ${units.distanceLabel}`,
+    },
+    {
+      key: "cadence",
+      label: "Cadence",
+      headerClassName: "py-2 pr-3 text-right",
+      cellClassName: "py-1.5 pr-3 text-right font-mono",
+      renderCell: (row) => row.cadence,
+    },
+    {
+      key: "stride",
+      label: "Stride",
+      headerClassName: "py-2 pr-3 text-right",
+      cellClassName: "py-1.5 pr-3 text-right font-mono",
+      renderCell: (row) =>
+        row.strideLengthMeters != null ? `${formatNumber(row.strideLengthMeters, 2)} m` : "--",
+    },
+    {
+      key: "stanceTime",
+      label: "Stance Time",
+      headerClassName: "py-2 pr-3 text-right",
+      cellClassName: "py-1.5 pr-3 text-right font-mono",
+      renderCell: (row) => (row.stanceTimeMs != null ? `${Math.round(row.stanceTimeMs)} ms` : "--"),
+    },
+    {
+      key: "verticalOscillation",
+      label: "Vert. Osc.",
+      headerClassName: "py-2 text-right",
+      cellClassName: "py-1.5 text-right font-mono",
+      renderCell: (row) =>
+        row.verticalOscillationMm != null ? `${formatNumber(row.verticalOscillationMm)} mm` : "--",
+    },
+  ];
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-border-strong text-subtle text-left">
-            <th className="py-2 pr-3">Date</th>
-            <th className="py-2 pr-3">Activity</th>
-            <th className="py-2 pr-3 text-right">Pace</th>
-            <th className="py-2 pr-3 text-right">Distance</th>
-            <th className="py-2 pr-3 text-right">Cadence</th>
-            <th className="py-2 pr-3 text-right">Stride</th>
-            <th className="py-2 pr-3 text-right">Stance Time</th>
-            <th className="py-2 text-right">Vert. Osc.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data
-            .slice()
-            .reverse()
-            .map((d) => (
-              <tr
-                key={`${d.date}-${d.activityName}`}
-                className="border-b border-border/50 text-foreground"
-              >
-                <td className="py-1.5 pr-3 text-subtle">{d.date}</td>
-                <td className="py-1.5 pr-3 truncate max-w-[150px]">{d.activityName}</td>
-                <td className="py-1.5 pr-3 text-right font-mono">
-                  {formatPace(units.convertPace(d.paceSecondsPerKm))} {units.paceLabel}
-                </td>
-                <td className="py-1.5 pr-3 text-right font-mono">
-                  {formatNumber(units.convertDistance(d.distanceKm))} {units.distanceLabel}
-                </td>
-                <td className="py-1.5 pr-3 text-right font-mono">{d.cadence}</td>
-                <td className="py-1.5 pr-3 text-right font-mono">
-                  {d.strideLengthMeters != null
-                    ? `${formatNumber(d.strideLengthMeters, 2)} m`
-                    : "--"}
-                </td>
-                <td className="py-1.5 pr-3 text-right font-mono">
-                  {d.stanceTimeMs != null ? `${Math.round(d.stanceTimeMs)} ms` : "--"}
-                </td>
-                <td className="py-1.5 text-right font-mono">
-                  {d.verticalOscillationMm != null
-                    ? `${formatNumber(d.verticalOscillationMm)} mm`
-                    : "--"}
-                </td>
-              </tr>
-            ))}
-        </tbody>
-      </table>
-    </div>
+    <ActivityTable
+      rows={data.slice().reverse()}
+      columns={columns}
+      getRowKey={(row) => `${row.activityId}-${row.date}-${row.activityName}`}
+      getActivityId={(row) => row.activityId}
+      tableClassName="w-full text-xs"
+      headerRowClassName="border-b border-border-strong text-subtle text-left"
+      rowClassName="border-b border-border/50 text-foreground hover:bg-surface-hover cursor-pointer"
+    />
   );
 }
 

@@ -53,6 +53,30 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 
 Deployments are push-based from CI, using a remote Docker context over SSH. CI never runs shell scripts on the server — it only calls the Docker API.
 
+### SSH Access (Debugging Only)
+
+For operational debugging, use the SSH host alias `dofek-server` instead of raw IP commands so the correct key is used consistently.
+
+`~/.ssh/config` entry:
+
+```sshconfig
+Host dofek-server
+  HostName 157.90.25.125
+  User root
+  IdentityFile ~/.ssh/id_ed25519_infisical
+  IdentitiesOnly yes
+```
+
+Quick checks:
+
+```bash
+ssh dofek-server 'hostname && whoami'
+ssh dofek-server 'df -h'
+ssh dofek-server 'docker system df'
+```
+
+If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you are using the `dofek-server` host alias (or pass `-i ~/.ssh/id_ed25519_infisical` explicitly).
+
 ### Release Unit (Important)
 
 - A web deploy is a **single swarm stack release**, not separate app/ML rollouts.
@@ -92,6 +116,11 @@ CI (main) -> build dofek + dofek-ml (same tag)
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
    8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
 
+### Collector Config Changes
+
+`otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-app`.
+`deploy-app` updates swarm services, but collector reads the bind-mounted host file at `/opt/dofek/otel-collector-config.yaml`.
+
 ### Deployment Runbook: Cold-Start and DB Availability
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `dofek_db` and `dofek_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
@@ -102,6 +131,12 @@ The deploy workflow handles this with a bootstrap gate:
 - After bootstrap, run DB readiness and migrations, then run the normal prune deploy.
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.
+
+### Deployment Runbook: Traefik Subdomain 404
+
+If management subdomains return `404 page not found`, use:
+
+- `docs/traefik-subdomain-404-runbook.md`
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)

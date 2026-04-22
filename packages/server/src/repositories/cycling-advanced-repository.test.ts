@@ -63,6 +63,7 @@ describe("ActivityVariabilityModel", () => {
   it("computes variability index as NP / avg power", () => {
     const model = new ActivityVariabilityModel(
       {
+        activityId: "ride-1",
         date: "2024-03-15",
         activityName: "Morning Ride",
         normalizedPower: 220,
@@ -76,6 +77,7 @@ describe("ActivityVariabilityModel", () => {
   it("computes intensity factor as NP / FTP", () => {
     const model = new ActivityVariabilityModel(
       {
+        activityId: "ride-1",
         date: "2024-03-15",
         activityName: "Morning Ride",
         normalizedPower: 220,
@@ -89,6 +91,7 @@ describe("ActivityVariabilityModel", () => {
   it("serializes to API shape", () => {
     const model = new ActivityVariabilityModel(
       {
+        activityId: "ride-1",
         date: "2024-03-15",
         activityName: "Morning Ride",
         normalizedPower: 220,
@@ -97,6 +100,7 @@ describe("ActivityVariabilityModel", () => {
       250,
     );
     const detail = model.toDetail();
+    expect(detail.activityId).toBe("ride-1");
     expect(detail.date).toBe("2024-03-15");
     expect(detail.activityName).toBe("Morning Ride");
     expect(detail.normalizedPower).toBe(220);
@@ -108,6 +112,7 @@ describe("ActivityVariabilityModel", () => {
   it("exposes getters", () => {
     const model = new ActivityVariabilityModel(
       {
+        activityId: "ride-1",
         date: "2024-03-15",
         activityName: "Morning Ride",
         normalizedPower: 220,
@@ -115,6 +120,7 @@ describe("ActivityVariabilityModel", () => {
       },
       250,
     );
+    expect(model.activityId).toBe("ride-1");
     expect(model.date).toBe("2024-03-15");
     expect(model.activityName).toBe("Morning Ride");
     expect(model.normalizedPower).toBe(220);
@@ -263,6 +269,7 @@ describe("CyclingAdvancedRepository", () => {
         .mockResolvedValueOnce([{ ftp: 250 }])
         .mockResolvedValueOnce([
           {
+            activity_id: "ride-2",
             date: "2024-03-15",
             name: "Morning Ride",
             np: 220,
