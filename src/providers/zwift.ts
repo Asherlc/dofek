@@ -37,6 +37,46 @@ export class ZwiftProvider implements SyncProvider {
     return `https://www.zwift.com/activity/${externalId}`;
   }
 
+  #extractAthleteIdFromAccessToken(accessToken: string): string | null {
+    try {
+      const jwtPayloadSchema = z.object({ sub: z.string().optional() });
+      const payload = jwtPayloadSchema.parse(
+        JSON.parse(Buffer.from(accessToken.split(".")[1] ?? "", "base64url").toString()),
+      );
+      return payload.sub ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  #isNumericAthleteId(athleteId: string): boolean {
+    return /^\d+$/.test(athleteId);
+  }
+
+  async #resolveAuthenticatedAthleteId(accessToken: string): Promise<string> {
+    const client = new ZwiftClient(accessToken, "me", this.#fetchFn);
+    const profile = await client.getAuthenticatedProfile();
+    const athleteId = String(profile.id);
+    if (!this.#isNumericAthleteId(athleteId)) {
+      throw new Error(
+        `Zwift authenticated profile ID is not numeric (${athleteId}) — re-authenticate`,
+      );
+    }
+    return athleteId;
+  }
+
+  async #canonicalizeAthleteId(accessToken: string, athleteId: string): Promise<string> {
+    if (this.#isNumericAthleteId(athleteId)) {
+      return athleteId;
+    }
+
+    const resolvedAthleteId = await this.#resolveAuthenticatedAthleteId(accessToken);
+    logger.info(
+      `[zwift] Resolved numeric athlete ID ${resolvedAthleteId} from non-numeric athlete ID ${athleteId}`,
+    );
+    return resolvedAthleteId;
+  }
+
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
@@ -50,12 +90,11 @@ export class ZwiftProvider implements SyncProvider {
       automatedLogin: async (email: string, password: string) => {
         const result = await ZwiftClient.signIn(email, password, fetchFn);
 
-        // Decode JWT to get athleteId
-        const jwtPayloadSchema = z.object({ sub: z.string().optional() });
-        const payload = jwtPayloadSchema.parse(
-          JSON.parse(Buffer.from(result.accessToken.split(".")[1] ?? "", "base64url").toString()),
-        );
-        const athleteId = payload.sub;
+        // Decode JWT subject, then canonicalize to numeric profile ID when needed.
+        const subjectAthleteId = this.#extractAthleteIdFromAccessToken(result.accessToken);
+        const athleteId = subjectAthleteId
+          ? await this.#canonicalizeAthleteId(result.accessToken, subjectAthleteId)
+          : null;
         if (!athleteId) {
           throw new Error("Zwift JWT missing athlete ID (sub claim) — cannot authenticate");
         }
@@ -86,37 +125,12 @@ export class ZwiftProvider implements SyncProvider {
     const athleteIdMatch = stored.scopes?.match(/athleteId:(\S+)/);
     let athleteId = athleteIdMatch?.[1];
 
-    // Self-heal: if scopes are missing the athleteId, try to extract it from the JWT
+    // Self-heal: if scopes are missing the athleteId, try to extract it from the JWT.
+    const hadMissingScopes = !athleteId;
     if (!athleteId) {
-      try {
-        const jwtParts = stored.accessToken.split(".");
-        if (jwtParts.length === 3 && jwtParts[1]) {
-          const jwtPayload = JSON.parse(Buffer.from(jwtParts[1], "base64url").toString());
-          const jwtPayloadSchema = z.object({ sub: z.string().optional() });
-          const parsed = jwtPayloadSchema.parse(jwtPayload);
-          if (parsed.sub) {
-            athleteId = parsed.sub;
-          }
-        }
-      } catch {
-        // JWT decode failed — fall through to the error below
-      }
-
+      athleteId = this.#extractAthleteIdFromAccessToken(stored.accessToken) ?? undefined;
       if (athleteId) {
-        const correctedScopes = `athleteId:${athleteId}`;
         logger.info(`[zwift] Self-healed missing athleteId from JWT sub claim: ${athleteId}`);
-        try {
-          await saveTokens(db, this.id, {
-            accessToken: stored.accessToken,
-            refreshToken: stored.refreshToken,
-            expiresAt: stored.expiresAt,
-            scopes: correctedScopes,
-          });
-        } catch (saveError) {
-          logger.error(
-            `[zwift] Failed to persist self-healed scopes: ${saveError instanceof Error ? saveError.message : String(saveError)}`,
-          );
-        }
       }
     }
 
@@ -126,6 +140,10 @@ export class ZwiftProvider implements SyncProvider {
         `Zwift athlete ID not found in scopes (${stored.scopes ?? "null"}) — re-authenticate`,
       );
     }
+
+    let accessToken = stored.accessToken;
+    let refreshToken = stored.refreshToken;
+    let expiresAt = stored.expiresAt;
 
     // Refresh if expired
     const shouldRefresh = forceRefresh || stored.expiresAt <= new Date();
@@ -141,17 +159,38 @@ export class ZwiftProvider implements SyncProvider {
           : "[zwift] Token expired, refreshing...",
       );
       const refreshed = await ZwiftClient.refreshToken(stored.refreshToken, this.#fetchFn);
-      const tokens = {
-        accessToken: refreshed.accessToken,
-        refreshToken: refreshed.refreshToken || stored.refreshToken,
-        expiresAt: new Date(Date.now() + refreshed.expiresIn * 1000),
-        scopes: `athleteId:${athleteId}`,
-      };
-      await saveTokens(db, this.id, tokens);
-      return { accessToken: refreshed.accessToken, athleteId };
+      accessToken = refreshed.accessToken;
+      refreshToken = refreshed.refreshToken || stored.refreshToken;
+      expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000);
     }
 
-    return { accessToken: stored.accessToken, athleteId };
+    // Ensure sync uses the numeric profile ID expected by /api/profiles/{id}/... endpoints.
+    const canonicalAthleteId = await this.#canonicalizeAthleteId(accessToken, athleteId);
+    const shouldPersistSelfHeal = hadMissingScopes || canonicalAthleteId !== athleteId;
+
+    if (shouldRefresh) {
+      await saveTokens(db, this.id, {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        scopes: `athleteId:${canonicalAthleteId}`,
+      });
+    } else if (shouldPersistSelfHeal) {
+      try {
+        await saveTokens(db, this.id, {
+          accessToken,
+          refreshToken,
+          expiresAt,
+          scopes: `athleteId:${canonicalAthleteId}`,
+        });
+      } catch (saveError) {
+        logger.error(
+          `[zwift] Failed to persist self-healed scopes: ${saveError instanceof Error ? saveError.message : String(saveError)}`,
+        );
+      }
+    }
+
+    return { accessToken, athleteId: canonicalAthleteId };
   }
 
   #isAuthenticationError(error: unknown): boolean {

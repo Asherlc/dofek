@@ -327,3 +327,25 @@ describe("ZwiftClient.getProfile", () => {
     expect(url).toContain("/api/profiles/100");
   });
 });
+
+describe("ZwiftClient.getAuthenticatedProfile", () => {
+  it("fetches /api/profiles/me", async () => {
+    const profile: ZwiftProfile = {
+      id: 100,
+      firstName: "Test",
+      lastName: "User",
+      ftp: 250,
+      weight: 72000,
+      height: 180,
+    };
+
+    const fetchFn = mockFetch({ status: 200, ok: true, body: profile });
+    const client = new ZwiftClient("test-token", "ignored-athlete-id", fetchFn);
+
+    const result = await client.getAuthenticatedProfile();
+
+    expect(result).toEqual(profile);
+    const [url]: [string] = fetchFn.mock.calls[0];
+    expect(url).toContain("/api/profiles/me");
+  });
+});
