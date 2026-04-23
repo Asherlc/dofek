@@ -162,6 +162,8 @@ export const adminRouter = router({
         UNION ALL SELECT 'supplement', COUNT(*)::text FROM fitness.supplement
         UNION ALL SELECT 'life_events', COUNT(*)::text FROM fitness.life_events
         UNION ALL SELECT 'nutrition_data', COUNT(*)::text FROM fitness.nutrition_data
+        UNION ALL SELECT 'food_entry_nutrition', COUNT(*)::text FROM fitness.food_entry_nutrition
+        UNION ALL SELECT 'supplement_nutrition', COUNT(*)::text FROM fitness.supplement_nutrition
         UNION ALL SELECT 'metric_stream', COUNT(*)::text FROM fitness.metric_stream
       ) counts ORDER BY row_count DESC`,
     );
@@ -334,7 +336,7 @@ export const adminRouter = router({
                    fe.logged_at::text, fe.provider_id
             FROM fitness.food_entry fe
             LEFT JOIN fitness.user_profile up ON up.id = fe.user_id
-            LEFT JOIN fitness.nutrition_data nd ON nd.id = fe.nutrition_data_id
+            LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
             ORDER BY fe.logged_at DESC NULLS LAST
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),

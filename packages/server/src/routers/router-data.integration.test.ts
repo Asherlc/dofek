@@ -250,44 +250,48 @@ describe("Router data coverage", () => {
     for (let i = 0; i < 10; i++) {
       const dateOffset = i;
       await testCtx.db.execute(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, meal, food_name, food_description, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${dateOffset}::int,
+                'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
+                true
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (
+                food_entry_id,
                 calories, protein_g, carbs_g, fat_g, fiber_g,
                 vitamin_c_mg, calcium_mg, iron_mg
-              ) VALUES (
+              )
+              SELECT id,
                 350, 12, 55, 8, 6,
                 15, 200, 4
-              )
-              RETURNING id
+              FROM new_entry
             )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, food_description,
-              nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${dateOffset}::int,
-              'breakfast', ${`Oatmeal ${i}`}, 'Steel-cut oats with berries',
-              (SELECT id FROM nd), true
-            )`,
+            SELECT 1`,
       );
       await testCtx.db.execute(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (
-                calories, protein_g, carbs_g, fat_g
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, meal, food_name, confirmed
               ) VALUES (
-                500, 35, 20, 25
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${dateOffset}::int,
+                'lunch', ${`Chicken Salad ${i}`}, true
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (
+                food_entry_id,
+                calories, protein_g, carbs_g, fat_g
               )
-              RETURNING id
+              SELECT id, 500, 35, 20, 25
+              FROM new_entry
             )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name,
-              nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${dateOffset}::int,
-              'lunch', ${`Chicken Salad ${i}`},
-              (SELECT id FROM nd), true
-            )`,
+            SELECT 1`,
       );
     }
 
@@ -758,6 +762,14 @@ describe("Router data coverage", () => {
       expect(listResult.length).toBe(2);
       expect(listResult[0]?.name).toBe("Vitamin D3");
       expect(listResult[1]?.name).toBe("Magnesium Glycinate");
+
+      const nutritionRows = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.supplement_nutrition sn
+            JOIN fitness.supplement s ON s.id = sn.supplement_id
+            WHERE s.user_id = ${TEST_USER_ID}`,
+      );
+      expect(nutritionRows[0]?.count).toBe("2");
     });
   });
 

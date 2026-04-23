@@ -205,54 +205,57 @@ describe("Food router", () => {
       expect(found).toBeUndefined();
     });
 
-    it("deletes an entry when its nutrition data is shared by another entry", async () => {
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES ('dofek', 'Dofek App', ${TEST_USER_ID})
-            ON CONFLICT (id) DO NOTHING`,
-      );
-      const nutritionRows = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.nutrition_data (calories) VALUES (225) RETURNING id`,
-      );
-      const nutritionDataId = nutritionRows[0]?.id;
-      expect(nutritionDataId).toBeDefined();
-
-      const firstRows = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek', '2025-02-03'::date, 'lunch', 'Shared Nutrition First',
-              ${nutritionDataId}::uuid, true
-            )
-            RETURNING id`,
-      );
-      const secondRows = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek', '2025-02-03'::date, 'lunch', 'Shared Nutrition Second',
-              ${nutritionDataId}::uuid, true
-            )
-            RETURNING id`,
-      );
-      const firstId = firstRows[0]?.id;
-      const secondId = secondRows[0]?.id;
-      expect(firstId).toBeDefined();
-      expect(secondId).toBeDefined();
+    it("deletes one entry without affecting another entry on the same day", async () => {
+      const first = await mutate("food.create", {
+        date: "2025-02-03",
+        meal: "lunch",
+        foodName: "First Entry",
+        calories: 225,
+      });
+      const second = await mutate("food.create", {
+        date: "2025-02-03",
+        meal: "lunch",
+        foodName: "Second Entry",
+        calories: 225,
+      });
+      const firstId: string = first.result.data.id;
+      const secondId: string = second.result.data.id;
 
       const deleteResult = await mutate("food.delete", { id: firstId });
-      expect(deleteResult.result.data).toBeDefined();
       expect(deleteResult.result.data.success).toBe(true);
 
       const entries = await query("food.byDate", { date: "2025-02-03" });
       const remaining: Array<{ id: string }> = entries.result.data;
       expect(remaining.some((entry) => entry.id === firstId)).toBe(false);
       expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
+    });
 
-      const sharedNutritionRows = await testCtx.db.execute<{ id: string }>(
-        sql`SELECT id FROM fitness.nutrition_data WHERE id = ${nutritionDataId}::uuid`,
+    it("cascades delete to food_entry_nutrition row", async () => {
+      const created = await mutate("food.create", {
+        date: "2025-02-04",
+        meal: "lunch",
+        foodName: "Cascade Test Meal",
+        calories: 420,
+        proteinG: 30,
+      });
+      const cascadeEntryId: string = created.result.data.id;
+
+      const beforeRows = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.food_entry_nutrition
+            WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
-      expect(sharedNutritionRows).toHaveLength(1);
+      expect(beforeRows[0]?.count).toBe("1");
+
+      const deleted = await mutate("food.delete", { id: cascadeEntryId });
+      expect(deleted.result.data.success).toBe(true);
+
+      const afterRows = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.food_entry_nutrition
+            WHERE food_entry_id = ${cascadeEntryId}::uuid`,
+      );
+      expect(afterRows[0]?.count).toBe("0");
     });
   });
 

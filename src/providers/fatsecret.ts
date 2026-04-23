@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry, nutritionData } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrition } from "../db/schema.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -627,8 +627,7 @@ export class FatSecretProvider implements SyncProvider {
 
         if (entries.length > 0) {
           for (const e of entries) {
-            // Skip if food_entry already exists (onConflictDoNothing would leave
-            // a new nutrition_data row orphaned with no FK pointing to it)
+            // Skip if food_entry already exists.
             const existing = await db
               .select({ id: foodEntry.id })
               .from(foodEntry)
@@ -637,10 +636,27 @@ export class FatSecretProvider implements SyncProvider {
               );
             if (existing.length > 0) continue;
 
-            // Insert nutrition_data + food_entry for new entries
-            const [ndRow] = await db
-              .insert(nutritionData)
+            // Insert food_entry + nutrition for new entries
+            const [foodEntryRow] = await db
+              .insert(foodEntry)
               .values({
+                providerId: this.id,
+                externalId: e.externalId,
+                date: e.date,
+                meal: e.meal,
+                foodName: e.foodName,
+                foodDescription: e.foodDescription,
+                category: inferCategory(e.foodName),
+                providerFoodId: e.fatsecretFoodId,
+                providerServingId: e.fatsecretServingId,
+                numberOfUnits: e.numberOfUnits,
+                raw: { ...e },
+              })
+              .onConflictDoNothing()
+              .returning({ id: foodEntry.id });
+            if (foodEntryRow?.id) {
+              await db.insert(foodEntryNutrition).values({
+                foodEntryId: foodEntryRow.id,
                 calories: e.calories,
                 proteinG: e.proteinG,
                 carbsG: e.carbsG,
@@ -657,26 +673,8 @@ export class FatSecretProvider implements SyncProvider {
                 vitaminCMg: e.vitaminCMg,
                 calciumMg: e.calciumMg,
                 ironMg: e.ironMg,
-              })
-              .returning({ id: nutritionData.id });
-
-            await db
-              .insert(foodEntry)
-              .values({
-                providerId: this.id,
-                externalId: e.externalId,
-                date: e.date,
-                meal: e.meal,
-                foodName: e.foodName,
-                foodDescription: e.foodDescription,
-                category: inferCategory(e.foodName),
-                providerFoodId: e.fatsecretFoodId,
-                providerServingId: e.fatsecretServingId,
-                numberOfUnits: e.numberOfUnits,
-                nutritionDataId: ndRow?.id,
-                raw: { ...e },
-              })
-              .onConflictDoNothing();
+              });
+            }
           }
           recordsSynced += entries.length;
         }

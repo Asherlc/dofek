@@ -300,40 +300,43 @@ export class FoodEntryRepository {
       const rows = await executeWithSchema(
         this.#db,
         z.object({ id: z.string() }),
-        sql`WITH new_nutrition AS (
-              INSERT INTO fitness.nutrition_data (
-                ${sql.raw(NUTRIENT_SQL_COLUMNS)}
-              ) VALUES (
-                ${item.calories}, ${item.proteinG},
-                ${item.carbsG}, ${item.fatG},
-                ${item.saturatedFatG}, ${item.polyunsaturatedFatG ?? null},
-                ${item.monounsaturatedFatG ?? null}, ${item.transFatG ?? null},
-                ${item.cholesterolMg ?? null}, ${item.sodiumMg},
-                ${item.potassiumMg ?? null}, ${item.fiberG}, ${item.sugarG},
-                ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
-                ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
-                ${item.vitaminKMcg ?? null},
-                ${item.vitaminB1Mg ?? null}, ${item.vitaminB2Mg ?? null},
-                ${item.vitaminB3Mg ?? null}, ${item.vitaminB5Mg ?? null},
-                ${item.vitaminB6Mg ?? null},
-                ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
-                ${item.vitaminB12Mcg ?? null},
-                ${item.calciumMg ?? null}, ${item.ironMg ?? null},
-                ${item.magnesiumMg ?? null}, ${item.zincMg ?? null},
-                ${item.seleniumMcg ?? null},
-                ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
-                ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
-                ${item.omega3Mg ?? null}, ${item.omega6Mg ?? null}
-              ) RETURNING id
-            )
+        sql`WITH new_entry AS (
             INSERT INTO fitness.food_entry (
               id, user_id, provider_id, date, meal, food_name, food_description,
-              category, nutrition_data_id, confirmed
+              category, confirmed
             ) VALUES (
               ${pendingEntry.id}, ${pendingEntry.userId}, ${DOFEK_PROVIDER_ID}, ${pendingEntry.date}::date,
               ${item.meal}, ${item.foodName}, ${item.foodDescription},
-              ${item.category}, (SELECT id FROM new_nutrition), true
-            ) RETURNING id`,
+              ${item.category}, true
+            ) RETURNING id
+          ),
+          new_nutrition AS (
+            INSERT INTO fitness.food_entry_nutrition (
+              food_entry_id, ${sql.raw(NUTRIENT_SQL_COLUMNS)}
+            )
+            SELECT id, ${item.calories}, ${item.proteinG},
+                   ${item.carbsG}, ${item.fatG},
+                   ${item.saturatedFatG}, ${item.polyunsaturatedFatG ?? null},
+                   ${item.monounsaturatedFatG ?? null}, ${item.transFatG ?? null},
+                   ${item.cholesterolMg ?? null}, ${item.sodiumMg},
+                   ${item.potassiumMg ?? null}, ${item.fiberG}, ${item.sugarG},
+                   ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
+                   ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
+                   ${item.vitaminKMcg ?? null},
+                   ${item.vitaminB1Mg ?? null}, ${item.vitaminB2Mg ?? null},
+                   ${item.vitaminB3Mg ?? null}, ${item.vitaminB5Mg ?? null},
+                   ${item.vitaminB6Mg ?? null},
+                   ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
+                   ${item.vitaminB12Mcg ?? null},
+                   ${item.calciumMg ?? null}, ${item.ironMg ?? null},
+                   ${item.magnesiumMg ?? null}, ${item.zincMg ?? null},
+                   ${item.seleniumMcg ?? null},
+                   ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
+                   ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
+                   ${item.omega3Mg ?? null}, ${item.omega6Mg ?? null}
+            FROM new_entry
+          )
+          SELECT id FROM new_entry`,
       );
       const row = rows[0];
       if (!row) {
@@ -346,7 +349,7 @@ export class FoodEntryRepository {
     return { confirmedCount: confirmedEntryIds.length, confirmedEntryIds, userId };
   }
 
-  /** Delete unconfirmed food entries and their nutrition_data */
+  /** Delete unconfirmed food entries */
   async deleteUnconfirmed(entryIds: string[]): Promise<void> {
     if (entryIds.length === 0) return;
     await this.#pendingEntryStore.deleteByIds(entryIds);
@@ -368,7 +371,7 @@ export class FoodEntryRepository {
       z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
       sql`SELECT fe.food_name, nd.calories
           FROM fitness.food_entry fe
-          LEFT JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+          LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
           WHERE fe.id IN (${sqlIdList(entryIds)})`,
     );
   }

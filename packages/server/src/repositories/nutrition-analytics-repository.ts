@@ -366,7 +366,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               fe.date,
               ${sql.raw(dailyAggregates)}
             FROM fitness.food_entry fe
-            JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+            JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
             WHERE fe.user_id = ${this.userId}
               AND fe.confirmed = true
               AND fe.date > CURRENT_DATE - ${days}::int

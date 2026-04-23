@@ -38,17 +38,18 @@ describe("Slack food entry confirmed flag", () => {
   /** Insert a food entry with the given confirmed status, return its id */
   async function insertEntry(confirmed: boolean, foodName = "Test Food"): Promise<string> {
     const rows = await testCtx.db.execute<{ id: string }>(
-      sql`WITH nd AS (
-            INSERT INTO fitness.nutrition_data (calories)
-            VALUES (500)
-            RETURNING id
+      sql`WITH new_entry AS (
+            INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name, confirmed
+            ) VALUES (
+              ${TEST_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
+              'lunch', ${foodName}, ${confirmed}
+            ) RETURNING id
+          ), new_nutrition AS (
+            INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
+            SELECT id, 500 FROM new_entry
           )
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
-          ) VALUES (
-            ${TEST_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
-            'lunch', ${foodName}, (SELECT id FROM nd), ${confirmed}
-          ) RETURNING id`,
+          SELECT id FROM new_entry`,
     );
     const row = rows[0];
     if (!row) throw new Error("Insert failed");
@@ -77,7 +78,7 @@ describe("Slack food entry confirmed flag", () => {
       const rows = await testCtx.db.execute<{ total: string }>(
         sql`SELECT SUM(nd.calories)::text as total
             FROM fitness.food_entry fe
-            JOIN fitness.nutrition_data nd ON nd.id = fe.nutrition_data_id
+            JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
             WHERE fe.user_id = ${TEST_USER_ID}
               AND fe.confirmed = true`,
       );
@@ -243,17 +244,18 @@ describe("Slack food entry confirmed flag", () => {
   describe("default confirmed value", () => {
     it("defaults to true when not specified (web UI / provider sync path)", async () => {
       const rows = await testCtx.db.execute<{ id: string; confirmed: boolean }>(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (calories)
-              VALUES (400)
-              RETURNING id
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, meal, food_name
+              ) VALUES (
+                ${TEST_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
+                'dinner', 'Web UI Entry'
+              ) RETURNING id, confirmed
+            ), new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
+              SELECT id, 400 FROM new_entry
             )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name, nutrition_data_id
-            ) VALUES (
-              ${TEST_USER_ID}, ${DOFEK_PROVIDER_ID}, '2025-06-15'::date,
-              'dinner', 'Web UI Entry', (SELECT id FROM nd)
-            ) RETURNING id, confirmed`,
+            SELECT id, confirmed FROM new_entry`,
       );
 
       expect(rows[0]?.confirmed).toBe(true);

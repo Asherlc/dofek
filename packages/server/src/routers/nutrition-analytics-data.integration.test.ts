@@ -102,101 +102,109 @@ describe("Nutrition analytics data coverage", () => {
     for (let i = 14; i >= 0; i--) {
       // Breakfast with micronutrients
       await testCtx.db.execute(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, meal, food_name, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                'breakfast', 'Fortified Oatmeal', true
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (
+                food_entry_id,
                 calories, protein_g, carbs_g, fat_g, fiber_g,
                 vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
                 iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              ) VALUES (
+              )
+              SELECT id,
                 350, 12, 55, 8, 8,
                 450, 45, 5, 350,
                 6, 100, 4, 800, 400
-              )
-              RETURNING id
+              FROM new_entry
             )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name,
-              nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              'breakfast', 'Fortified Oatmeal',
-              (SELECT id FROM nd), true
-            )`,
+            SELECT 1`,
       );
 
       // Lunch with micronutrients
       await testCtx.db.execute(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, meal, food_name, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                'lunch', 'Chicken Salad Bowl', true
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (
+                food_entry_id,
                 calories, protein_g, carbs_g, fat_g, fiber_g,
                 vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
                 iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              ) VALUES (
+              )
+              SELECT id,
                 550, 40, 30, 22, 6,
                 300, 30, 3, 250,
                 3, 80, 5, 600, 800
-              )
-              RETURNING id
+              FROM new_entry
             )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name,
-              nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              'lunch', 'Chicken Salad Bowl',
-              (SELECT id FROM nd), true
-            )`,
+            SELECT 1`,
       );
 
       // Dinner with micronutrients
       await testCtx.db.execute(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, meal, food_name, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                'dinner', 'Salmon with Vegetables', true
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (
+                food_entry_id,
                 calories, protein_g, carbs_g, fat_g, fiber_g,
                 vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
                 iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              ) VALUES (
+              )
+              SELECT id,
                 600, 45, 35, 28, 7,
                 200, 25, 8, 300,
                 2, 120, 3, 900, 600
-              )
-              RETURNING id
+              FROM new_entry
             )
-            INSERT INTO fitness.food_entry (
-              user_id, provider_id, date, meal, food_name,
-              nutrition_data_id, confirmed
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              'dinner', 'Salmon with Vegetables',
-              (SELECT id FROM nd), true
-            )`,
+            SELECT 1`,
       );
 
       // An unconfirmed entry that should be excluded from micronutrient calculations
       if (i === 5) {
         await testCtx.db.execute(
-          sql`WITH nd AS (
-                INSERT INTO fitness.nutrition_data (
+          sql`WITH new_entry AS (
+                INSERT INTO fitness.food_entry (
+                  user_id, provider_id, date, meal, food_name, confirmed
+                ) VALUES (
+                  ${TEST_USER_ID}, 'dofek',
+                  CURRENT_DATE - ${i}::int,
+                  'snack', 'Unconfirmed Snack', false
+                ) RETURNING id
+              ),
+              new_nutrition AS (
+                INSERT INTO fitness.food_entry_nutrition (
+                  food_entry_id,
                   calories, protein_g, carbs_g, fat_g,
                   vitamin_c_mg, calcium_mg
-                ) VALUES (
+                )
+                SELECT id,
                   200, 10, 25, 8,
                   999, 999
-                )
-                RETURNING id
+                FROM new_entry
               )
-              INSERT INTO fitness.food_entry (
-                user_id, provider_id, date, meal, food_name,
-                nutrition_data_id, confirmed
-              ) VALUES (
-                ${TEST_USER_ID}, 'dofek',
-                CURRENT_DATE - ${i}::int,
-                'snack', 'Unconfirmed Snack',
-                (SELECT id FROM nd), false
-              )`,
+              SELECT 1`,
         );
       }
     }

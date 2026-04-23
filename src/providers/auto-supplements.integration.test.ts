@@ -1,6 +1,12 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { foodEntry, nutritionData, supplement, TEST_USER_ID, userProfile } from "../db/schema.ts";
+import {
+  foodEntry,
+  supplement,
+  supplementNutrition,
+  TEST_USER_ID,
+  userProfile,
+} from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
 
@@ -19,18 +25,20 @@ async function insertSupplementWithNutrition(
   },
   nutrients: Record<string, number | null>,
 ) {
-  const [ndRow] = await db
-    .insert(nutritionData)
-    .values(nutrients)
-    .returning({ id: nutritionData.id });
-
-  await db
+  const [supplementRow] = await db
     .insert(supplement)
     .values({
       ...suppValues,
-      nutritionDataId: ndRow?.id,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ id: supplement.id });
+
+  if (supplementRow?.id) {
+    await db.insert(supplementNutrition).values({
+      supplementId: supplementRow.id,
+      ...nutrients,
+    });
+  }
 }
 
 // ============================================================
