@@ -557,14 +557,13 @@ describe("FoodRepository", () => {
       expect(execute).toHaveBeenCalledTimes(3);
     });
 
-    it("creates new nutrition_data when entry has no nutrition_data_id", async () => {
+    it("creates food_entry_nutrition when entry has no nutrition_data_id", async () => {
       const foodRow = makeFoodEntryRow({ calories: 300 });
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
-        .mockResolvedValueOnce([{ id: "new-nd-1" }]) // INSERT nutrition_data
-        .mockResolvedValueOnce([]) // UPDATE food_entry set nutrition data id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data set values
+        .mockResolvedValueOnce([]) // INSERT food_entry_nutrition (on conflict do nothing)
+        .mockResolvedValueOnce([]) // UPDATE food_entry_nutrition set values
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
@@ -1244,22 +1243,21 @@ describe("FoodRepository", () => {
     });
   });
 
-  describe("update — nutrient field with null creates new nutrition_data when ndId is null", () => {
-    it("creates new nutrition_data and links it when existing ndId is null", async () => {
+  describe("update — nutrient field with null creates food_entry_nutrition when ndId is null", () => {
+    it("creates food_entry_nutrition when existing ndId is null", async () => {
       const foodRow = makeFoodEntryRow();
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
-        .mockResolvedValueOnce([{ id: "new-nd-99" }]) // INSERT nutrition_data returns new id
-        .mockResolvedValueOnce([]) // UPDATE food_entry set nutrition_data_id
-        .mockResolvedValueOnce([]) // UPDATE nutrition_data set values
+        .mockResolvedValueOnce([]) // INSERT food_entry_nutrition (on conflict do nothing)
+        .mockResolvedValueOnce([]) // UPDATE food_entry_nutrition set values
         .mockResolvedValueOnce([foodRow]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: 200 });
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(5);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
     it("skips creating nutrition_data when ndIdRows is empty (entry not found)", async () => {
@@ -1277,18 +1275,18 @@ describe("FoodRepository", () => {
       expect(result).toBeNull();
     });
 
-    it("skips nutrition_data creation when INSERT returns no id", async () => {
+    it("returns null when create/update path runs but final select is empty", async () => {
       const execute = vi
         .fn()
         .mockResolvedValueOnce([{ nutrition_data_id: null }]) // SELECT returns null ndId
-        .mockResolvedValueOnce([]) // INSERT nutrition_data returns empty (edge case)
+        .mockResolvedValueOnce([]) // INSERT food_entry_nutrition (on conflict do nothing)
+        .mockResolvedValueOnce([]) // UPDATE food_entry_nutrition
         .mockResolvedValueOnce([]); // SELECT from view
       const db = { execute };
       const repo = new FoodRepository(db, "user-1", "UTC");
 
       const result = await repo.update({ id: "entry-1", calories: 200 });
-      // newNd?.id is undefined so the UPDATE calls are skipped
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(result).toBeNull();
     });
   });

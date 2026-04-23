@@ -301,7 +301,7 @@ export class FoodRepository {
             SUM(nd.fat_g)::numeric(10,1) as fat_g,
             SUM(nd.fiber_g)::numeric(10,1) as fiber_g
           FROM fitness.food_entry fe
-          JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+          JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
           WHERE fe.user_id = ${this.#userId}
             AND fe.confirmed = true
             AND fe.date > CURRENT_DATE - ${days}::int
@@ -322,7 +322,7 @@ export class FoodRepository {
             nd.calories, nd.protein_g, nd.carbs_g, nd.fat_g, nd.fiber_g,
             fe.number_of_units
           FROM fitness.food_entry fe
-          LEFT JOIN fitness.nutrition_data nd ON fe.nutrition_data_id = nd.id
+          LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
           WHERE fe.user_id = ${this.#userId}
             AND fe.confirmed = true
             AND fe.food_name ILIKE ${searchPattern}
@@ -350,43 +350,46 @@ export class FoodRepository {
     const idRows = await executeWithSchema(
       this.#db,
       idRowSchema,
-      sql`WITH new_nutrition AS (
-            INSERT INTO fitness.nutrition_data (
-              ${sql.raw(NUTRIENT_SQL_COLUMNS)}
+      sql`WITH new_entry AS (
+            INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name, food_description,
+              category, number_of_units
             ) VALUES (
-              ${input.calories ?? null}, ${input.proteinG ?? null},
-              ${input.carbsG ?? null}, ${input.fatG ?? null},
-              ${input.saturatedFatG ?? null}, ${input.polyunsaturatedFatG ?? null},
-              ${input.monounsaturatedFatG ?? null}, ${input.transFatG ?? null},
-              ${input.cholesterolMg ?? null}, ${input.sodiumMg ?? null},
-              ${input.potassiumMg ?? null}, ${input.fiberG ?? null}, ${input.sugarG ?? null},
-              ${input.vitaminAMcg ?? null}, ${input.vitaminCMg ?? null},
-              ${input.vitaminDMcg ?? null}, ${input.vitaminEMg ?? null},
-              ${input.vitaminKMcg ?? null},
-              ${input.vitaminB1Mg ?? null}, ${input.vitaminB2Mg ?? null},
-              ${input.vitaminB3Mg ?? null}, ${input.vitaminB5Mg ?? null},
-              ${input.vitaminB6Mg ?? null},
-              ${input.vitaminB7Mcg ?? null}, ${input.vitaminB9Mcg ?? null},
-              ${input.vitaminB12Mcg ?? null},
-              ${input.calciumMg ?? null}, ${input.ironMg ?? null},
-              ${input.magnesiumMg ?? null}, ${input.zincMg ?? null},
-              ${input.seleniumMcg ?? null},
-              ${input.copperMg ?? null}, ${input.manganeseMg ?? null},
-              ${input.chromiumMcg ?? null}, ${input.iodineMcg ?? null},
-              ${input.omega3Mg ?? null}, ${input.omega6Mg ?? null}
+              ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+              ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
+              ${input.category ?? null}, ${input.numberOfUnits ?? null}
             ) RETURNING id
+          ),
+          new_nutrition AS (
+            INSERT INTO fitness.food_entry_nutrition (
+              food_entry_id, ${sql.raw(NUTRIENT_SQL_COLUMNS)}
+            )
+            SELECT id, ${input.calories ?? null}, ${input.proteinG ?? null},
+                   ${input.carbsG ?? null}, ${input.fatG ?? null},
+                   ${input.saturatedFatG ?? null}, ${input.polyunsaturatedFatG ?? null},
+                   ${input.monounsaturatedFatG ?? null}, ${input.transFatG ?? null},
+                   ${input.cholesterolMg ?? null}, ${input.sodiumMg ?? null},
+                   ${input.potassiumMg ?? null}, ${input.fiberG ?? null}, ${input.sugarG ?? null},
+                   ${input.vitaminAMcg ?? null}, ${input.vitaminCMg ?? null},
+                   ${input.vitaminDMcg ?? null}, ${input.vitaminEMg ?? null},
+                   ${input.vitaminKMcg ?? null},
+                   ${input.vitaminB1Mg ?? null}, ${input.vitaminB2Mg ?? null},
+                   ${input.vitaminB3Mg ?? null}, ${input.vitaminB5Mg ?? null},
+                   ${input.vitaminB6Mg ?? null},
+                   ${input.vitaminB7Mcg ?? null}, ${input.vitaminB9Mcg ?? null},
+                   ${input.vitaminB12Mcg ?? null},
+                   ${input.calciumMg ?? null}, ${input.ironMg ?? null},
+                   ${input.magnesiumMg ?? null}, ${input.zincMg ?? null},
+                   ${input.seleniumMcg ?? null},
+                   ${input.copperMg ?? null}, ${input.manganeseMg ?? null},
+                   ${input.chromiumMcg ?? null}, ${input.iodineMcg ?? null},
+                   ${input.omega3Mg ?? null}, ${input.omega6Mg ?? null}
+            FROM new_entry
           )
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, food_description,
-            category, number_of_units, nutrition_data_id
-          ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal ?? null}, ${input.foodName}, ${input.foodDescription ?? null},
-            ${input.category ?? null}, ${input.numberOfUnits ?? null},
-            (SELECT id FROM new_nutrition)
-          ) RETURNING id`,
+          SELECT id FROM new_entry`,
     );
     const newId = idRows[0]?.id;
+    if (!newId) throw new Error("Failed to insert food entry");
 
     const rows = await executeWithSchema(
       this.#db,
@@ -453,30 +456,34 @@ export class FoodRepository {
 
     if (foodEntryClauses.length === 0 && nutrientClauses.length === 0 && !nutrients) return null;
 
-    // Update nutrition_data if any nutrient fields changed
+    // Update food_entry_nutrition if any nutrient fields changed
     if (nutrientClauses.length > 0) {
       const nutrientSetExpression = sql.join(nutrientClauses, sql`, `);
       const ndIdRows = await this.#db.execute<{ nutrition_data_id: string | null }>(
-        sql`SELECT nutrition_data_id FROM fitness.food_entry WHERE user_id = ${this.#userId} AND confirmed = true AND id = ${id}`,
+        sql`SELECT nutrition_data_id
+            FROM fitness.v_food_entry_with_nutrition
+            WHERE id = ${id}::uuid
+              AND user_id = ${this.#userId}
+              AND confirmed = true`,
       );
       const existingNdId = ndIdRows[0]?.nutrition_data_id;
       if (existingNdId) {
         await this.#db.execute(
-          sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression} WHERE id = ${existingNdId}`,
+          sql`UPDATE fitness.food_entry_nutrition
+              SET ${nutrientSetExpression}
+              WHERE id = ${existingNdId}::uuid`,
         );
       } else if (ndIdRows.length > 0) {
-        const [newNd] = await this.#db.execute<{ id: string }>(
-          sql`INSERT INTO fitness.nutrition_data (calories) VALUES (NULL) RETURNING id`,
+        await this.#db.execute(
+          sql`INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
+              VALUES (${id}::uuid, NULL)
+              ON CONFLICT (food_entry_id) DO NOTHING`,
         );
-        if (newNd?.id) {
-          await this.#db.execute(
-            sql`UPDATE fitness.food_entry SET nutrition_data_id = ${newNd.id}
-                WHERE user_id = ${this.#userId} AND confirmed = true AND id = ${id}`,
-          );
-          await this.#db.execute(
-            sql`UPDATE fitness.nutrition_data SET ${nutrientSetExpression} WHERE id = ${newNd.id}`,
-          );
-        }
+        await this.#db.execute(
+          sql`UPDATE fitness.food_entry_nutrition
+              SET ${nutrientSetExpression}
+              WHERE food_entry_id = ${id}::uuid`,
+        );
       }
     }
 
@@ -525,13 +532,8 @@ export class FoodRepository {
   /** Delete a food entry by id. */
   async delete(id: string): Promise<{ success: boolean }> {
     await this.#db.execute(
-      sql`WITH deleted_entry AS (
-            DELETE FROM fitness.food_entry
-            WHERE user_id = ${this.#userId} AND confirmed = true AND id = ${id}
-            RETURNING nutrition_data_id
-          )
-          DELETE FROM fitness.nutrition_data
-          WHERE id = (SELECT nutrition_data_id FROM deleted_entry)`,
+      sql`DELETE FROM fitness.food_entry
+          WHERE user_id = ${this.#userId} AND confirmed = true AND id = ${id}`,
     );
     return { success: true };
   }
@@ -545,21 +547,24 @@ export class FoodRepository {
     const idRows = await executeWithSchema(
       this.#db,
       idRowSchema,
-      sql`WITH new_nutrition AS (
-            INSERT INTO fitness.nutrition_data (calories, protein_g, carbs_g, fat_g)
-            VALUES (${input.calories}, ${input.proteinG ?? null},
-                    ${input.carbsG ?? null}, ${input.fatG ?? null})
-            RETURNING id
+      sql`WITH new_entry AS (
+            INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name
+            ) VALUES (
+              ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
+              ${input.meal}, ${input.foodName}
+            ) RETURNING id
+          ),
+          new_nutrition AS (
+            INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories, protein_g, carbs_g, fat_g)
+            SELECT id, ${input.calories}, ${input.proteinG ?? null},
+                   ${input.carbsG ?? null}, ${input.fatG ?? null}
+            FROM new_entry
           )
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, meal, food_name, nutrition_data_id
-          ) VALUES (
-            ${this.#userId}, ${DOFEK_PROVIDER_ID}, ${input.date}::date,
-            ${input.meal}, ${input.foodName},
-            (SELECT id FROM new_nutrition)
-          ) RETURNING id`,
+          SELECT id FROM new_entry`,
     );
     const newId = idRows[0]?.id;
+    if (!newId) return undefined;
 
     const rows = await executeWithSchema(
       this.#db,

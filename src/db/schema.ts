@@ -838,7 +838,6 @@ export const supplement = fitness.table(
     description: text("description"),
     meal: mealEnum("meal"),
     sortOrder: integer("sort_order").notNull().default(0),
-    nutritionDataId: uuid("nutrition_data_id").references(() => nutritionData.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -946,7 +945,6 @@ export const foodEntry = fitness.table(
     barcode: text("barcode"),
     servingUnit: text("serving_unit"),
     servingWeightGrams: real("serving_weight_grams"),
-    nutritionDataId: uuid("nutrition_data_id").references(() => nutritionData.id),
     // Raw API response
     raw: jsonb("raw"),
     confirmed: boolean("confirmed").notNull().default(true),
@@ -962,6 +960,36 @@ export const foodEntry = fitness.table(
     index("food_entry_date_meal_idx").on(table.date, table.meal),
     index("food_entry_user_provider_idx").on(table.userId, table.providerId),
   ],
+);
+
+export const foodEntryNutrition = fitness.table(
+  "food_entry_nutrition",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    foodEntryId: uuid("food_entry_id")
+      .notNull()
+      .unique()
+      .references(() => foodEntry.id, { onDelete: "cascade" }),
+    ...buildNutrientColumns(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("food_entry_nutrition_entry_idx").on(table.foodEntryId)],
+);
+
+export const supplementNutrition = fitness.table(
+  "supplement_nutrition",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    supplementId: uuid("supplement_id")
+      .notNull()
+      .unique()
+      .references(() => supplement.id, { onDelete: "cascade" }),
+    ...buildNutrientColumns(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("supplement_nutrition_supplement_idx").on(table.supplementId)],
 );
 
 // ============================================================

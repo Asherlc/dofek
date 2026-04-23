@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { NUTRIENT_FIELDS, nutrientColumnsToValues } from "../db/nutrient-columns.ts";
-import { foodEntry, nutritionData } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrition } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -143,22 +143,28 @@ export class AutoSupplementsProvider implements SyncProvider {
     let synced = 0;
     for (const entry of entries) {
       try {
-        // Check if food_entry already exists to avoid orphaning nutrition_data rows
+        // Check if food_entry already exists so nutrients can be updated in-place.
         const existing = await db
-          .select({ nutritionDataId: foodEntry.nutritionDataId })
+          .select({ foodEntryId: foodEntry.id })
           .from(foodEntry)
           .where(
             sql`${foodEntry.userId} = ${entry.userId} AND ${foodEntry.providerId} = ${entry.providerId} AND ${foodEntry.externalId} = ${entry.externalId}`,
           );
 
-        if (existing.length > 0 && existing[0]?.nutritionDataId) {
-          // Update existing nutrition_data in-place using raw SQL
+        if (existing.length > 0 && existing[0]?.foodEntryId) {
+          const foodEntryId = existing[0].foodEntryId;
           const setClauses = NUTRIENT_FIELDS.map(
             (f) => sql`${sql.identifier(f.column)} = ${entry.nutrients[f.key] ?? null}`,
           );
           await db.execute(
-            sql`UPDATE fitness.nutrition_data SET ${sql.join(setClauses, sql`, `)}
-                WHERE id = ${existing[0].nutritionDataId}`,
+            sql`INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
+                VALUES (${foodEntryId}, NULL)
+                ON CONFLICT (food_entry_id) DO NOTHING`,
+          );
+          await db.execute(
+            sql`UPDATE fitness.food_entry_nutrition
+                SET ${sql.join(setClauses, sql`, `)}
+                WHERE food_entry_id = ${foodEntryId}`,
           );
           // Update food_entry metadata
           await db.execute(
@@ -167,13 +173,8 @@ export class AutoSupplementsProvider implements SyncProvider {
                 WHERE user_id = ${entry.userId} AND provider_id = ${entry.providerId} AND external_id = ${entry.externalId}`,
           );
         } else {
-          // Insert new nutrition_data + food_entry
-          const [ndRow] = await db
-            .insert(nutritionData)
-            .values(entry.nutrients)
-            .returning({ id: nutritionData.id });
-
-          await db
+          // Insert new food_entry + nutrition row
+          const [foodEntryRow] = await db
             .insert(foodEntry)
             .values({
               providerId: entry.providerId,
@@ -185,9 +186,52 @@ export class AutoSupplementsProvider implements SyncProvider {
               foodDescription: entry.foodDescription,
               category: "supplement",
               numberOfUnits: entry.numberOfUnits,
-              nutritionDataId: ndRow?.id,
             })
-            .onConflictDoNothing();
+            .onConflictDoNothing()
+            .returning({ id: foodEntry.id });
+
+          if (foodEntryRow?.id) {
+            await db.insert(foodEntryNutrition).values({
+              foodEntryId: foodEntryRow.id,
+              calories: entry.nutrients.calories,
+              proteinG: entry.nutrients.proteinG,
+              carbsG: entry.nutrients.carbsG,
+              fatG: entry.nutrients.fatG,
+              saturatedFatG: entry.nutrients.saturatedFatG,
+              polyunsaturatedFatG: entry.nutrients.polyunsaturatedFatG,
+              monounsaturatedFatG: entry.nutrients.monounsaturatedFatG,
+              transFatG: entry.nutrients.transFatG,
+              cholesterolMg: entry.nutrients.cholesterolMg,
+              sodiumMg: entry.nutrients.sodiumMg,
+              potassiumMg: entry.nutrients.potassiumMg,
+              fiberG: entry.nutrients.fiberG,
+              sugarG: entry.nutrients.sugarG,
+              vitaminAMcg: entry.nutrients.vitaminAMcg,
+              vitaminCMg: entry.nutrients.vitaminCMg,
+              vitaminDMcg: entry.nutrients.vitaminDMcg,
+              vitaminEMg: entry.nutrients.vitaminEMg,
+              vitaminKMcg: entry.nutrients.vitaminKMcg,
+              vitaminB1Mg: entry.nutrients.vitaminB1Mg,
+              vitaminB2Mg: entry.nutrients.vitaminB2Mg,
+              vitaminB3Mg: entry.nutrients.vitaminB3Mg,
+              vitaminB5Mg: entry.nutrients.vitaminB5Mg,
+              vitaminB6Mg: entry.nutrients.vitaminB6Mg,
+              vitaminB7Mcg: entry.nutrients.vitaminB7Mcg,
+              vitaminB9Mcg: entry.nutrients.vitaminB9Mcg,
+              vitaminB12Mcg: entry.nutrients.vitaminB12Mcg,
+              calciumMg: entry.nutrients.calciumMg,
+              ironMg: entry.nutrients.ironMg,
+              magnesiumMg: entry.nutrients.magnesiumMg,
+              zincMg: entry.nutrients.zincMg,
+              seleniumMcg: entry.nutrients.seleniumMcg,
+              copperMg: entry.nutrients.copperMg,
+              manganeseMg: entry.nutrients.manganeseMg,
+              chromiumMcg: entry.nutrients.chromiumMcg,
+              iodineMcg: entry.nutrients.iodineMcg,
+              omega3Mg: entry.nutrients.omega3Mg,
+              omega6Mg: entry.nutrients.omega6Mg,
+            });
+          }
         }
         synced++;
       } catch (e) {

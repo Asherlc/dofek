@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { NUTRIENT_FIELDS } from "../db/nutrient-columns.ts";
-import { foodEntry, nutritionDaily, nutritionData } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrition, nutritionDaily } from "../db/schema.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -326,24 +326,30 @@ export async function importCronometerCsv(
         omega6Mg: entry.omega6Mg,
       };
 
-      // Check if food_entry already exists to avoid orphaning nutrition_data rows
+      // Check if food_entry already exists so nutrients can be updated in-place.
       const existingEntry = await db
-        .select({ nutritionDataId: foodEntry.nutritionDataId })
+        .select({ foodEntryId: foodEntry.id })
         .from(foodEntry)
         .where(
           sql`${foodEntry.userId} = ${effectiveUserId} AND ${foodEntry.providerId} = ${CRONOMETER_PROVIDER_ID} AND ${foodEntry.externalId} = ${externalId}`,
         );
 
-      if (existingEntry.length > 0 && existingEntry[0]?.nutritionDataId) {
-        // Update existing nutrition_data in-place using raw SQL
+      if (existingEntry.length > 0 && existingEntry[0]?.foodEntryId) {
+        const foodEntryId = existingEntry[0].foodEntryId;
         const nutritionRecord: Record<string, unknown> = nutritionValues;
         const setClauses = NUTRIENT_FIELDS.map((f) => {
           const value = nutritionRecord[f.key];
           return sql`${sql.identifier(f.column)} = ${value ?? null}`;
         });
         await db.execute(
-          sql`UPDATE fitness.nutrition_data SET ${sql.join(setClauses, sql`, `)}
-              WHERE id = ${existingEntry[0].nutritionDataId}`,
+          sql`INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
+              VALUES (${foodEntryId}, NULL)
+              ON CONFLICT (food_entry_id) DO NOTHING`,
+        );
+        await db.execute(
+          sql`UPDATE fitness.food_entry_nutrition
+              SET ${sql.join(setClauses, sql`, `)}
+              WHERE food_entry_id = ${foodEntryId}`,
         );
         // Update food_entry metadata
         await db.execute(
@@ -353,13 +359,8 @@ export async function importCronometerCsv(
               WHERE user_id = ${effectiveUserId} AND provider_id = ${CRONOMETER_PROVIDER_ID} AND external_id = ${externalId}`,
         );
       } else {
-        // Insert new nutrition_data + food_entry
-        const [ndRow] = await db
-          .insert(nutritionData)
-          .values(nutritionValues)
-          .returning({ id: nutritionData.id });
-
-        await db
+        // Insert new food_entry + nutrition row
+        const [foodEntryRow] = await db
           .insert(foodEntry)
           .values({
             providerId: CRONOMETER_PROVIDER_ID,
@@ -370,9 +371,15 @@ export async function importCronometerCsv(
             foodName: entry.foodName,
             numberOfUnits: entry.amount,
             servingUnit: entry.unit,
-            nutritionDataId: ndRow?.id,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: foodEntry.id });
+        if (foodEntryRow?.id) {
+          await db.insert(foodEntryNutrition).values({
+            foodEntryId: foodEntryRow.id,
+            ...nutritionValues,
+          });
+        }
       }
 
       recordsSynced++;

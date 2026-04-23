@@ -230,7 +230,7 @@ describe("Auto-Supplements Provider", () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
 
-      const where = vi.fn().mockResolvedValue([{ nutritionDataId: "nd-existing" }]);
+      const where = vi.fn().mockResolvedValue([{ foodEntryId: "fe-existing" }]);
       const from = vi.fn().mockReturnValue({ where });
       const select = vi.fn().mockReturnValue({ from });
 
@@ -253,7 +253,7 @@ describe("Auto-Supplements Provider", () => {
       expect(result.duration).toBeLessThan(60_000);
     });
 
-    it("updates existing nutrition data in-place when nutritionDataId exists", async () => {
+    it("updates existing row in-place when an existing food entry is found", async () => {
       vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00.000Z") });
       const provider = new AutoSupplementsProvider();
 
@@ -271,7 +271,7 @@ describe("Auto-Supplements Provider", () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
 
-      const where = vi.fn().mockResolvedValue([{ nutritionDataId: "nd-existing" }]);
+      const where = vi.fn().mockResolvedValue([{ foodEntryId: "fe-existing" }]);
       const from = vi.fn().mockReturnValue({ where });
       const select = vi.fn().mockReturnValue({ from });
       const insert = vi.fn();
@@ -284,10 +284,10 @@ describe("Auto-Supplements Provider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expect(insert).not.toHaveBeenCalled();
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
-    it("inserts nutrition and food rows when existing entry has no nutritionDataId", async () => {
+    it("inserts food and nutrition rows when no existing food entry is found", async () => {
       vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00.000Z") });
       const provider = new AutoSupplementsProvider();
 
@@ -300,18 +300,18 @@ describe("Auto-Supplements Provider", () => {
         }),
       ]);
 
-      const where = vi.fn().mockResolvedValue([{ nutritionDataId: null }]);
+      const where = vi.fn().mockResolvedValue([]);
       const from = vi.fn().mockReturnValue({ where });
       const select = vi.fn().mockReturnValue({ from });
 
-      const nutritionReturning = vi.fn().mockResolvedValue([{ id: "nd-new" }]);
-      const nutritionValues = vi.fn().mockReturnValue({ returning: nutritionReturning });
-      const foodConflict = vi.fn().mockResolvedValue(undefined);
+      const foodReturning = vi.fn().mockResolvedValue([{ id: "fe-new" }]);
+      const foodConflict = vi.fn().mockReturnValue({ returning: foodReturning });
       const foodValues = vi.fn().mockReturnValue({ onConflictDoNothing: foodConflict });
+      const nutritionValues = vi.fn().mockResolvedValue(undefined);
       const insert = vi
         .fn()
-        .mockImplementationOnce(() => ({ values: nutritionValues }))
-        .mockImplementationOnce(() => ({ values: foodValues }));
+        .mockImplementationOnce(() => ({ values: foodValues }))
+        .mockImplementationOnce(() => ({ values: nutritionValues }));
 
       const db = createMockDb({ execute, select, insert });
 
@@ -321,7 +321,7 @@ describe("Auto-Supplements Provider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expect(insert).toHaveBeenCalledTimes(2);
-      expect(nutritionReturning).toHaveBeenCalledTimes(1);
+      expect(foodReturning).toHaveBeenCalledTimes(1);
       expect(foodConflict).toHaveBeenCalledTimes(1);
     });
 

@@ -19,10 +19,10 @@ vi.mock("dofek/db/schema", () => ({
   supplement: {
     userId: "user_id",
     sortOrder: "sort_order",
-    nutritionDataId: "nutrition_data_id",
-  },
-  nutritionData: {
     id: "id",
+  },
+  supplementNutrition: {
+    supplementId: "supplement_id",
   },
 }));
 
@@ -199,7 +199,7 @@ function createMockDb(opts: { viewRows?: Record<string, unknown>[] } = {}) {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
   const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }));
   const mockSelect = vi.fn(() => ({ from: mockSelectFrom }));
-  const mockInsertReturning = vi.fn().mockResolvedValue([{ id: "nd-new-uuid" }]);
+  const mockInsertReturning = vi.fn().mockResolvedValue([{ id: "supp-new-uuid" }]);
   const mockInsertValues = vi.fn(() => ({ returning: mockInsertReturning }));
   const mockInsert = vi.fn(() => ({ values: mockInsertValues }));
 
@@ -291,22 +291,16 @@ describe("supplementsRouter", () => {
       expect(mocks.mockTransaction).toHaveBeenCalledOnce();
     });
 
-    it("deletes existing supplements and their nutrition_data in the transaction", async () => {
+    it("deletes existing supplements in the transaction", async () => {
       const { db, mocks } = createMockDb();
-      // Simulate existing supplements with nutrition_data
-      mocks.mockSelectWhere.mockResolvedValueOnce([
-        { nutritionDataId: "old-nd-1" },
-        { nutritionDataId: "old-nd-2" },
-      ]);
       const caller = createCaller({ db, userId: "user-1" });
 
       await caller.save({ supplements: [{ name: "New Supp" }] });
 
-      // Should call delete for supplement and nutrition_data
-      expect(mocks.mockDelete).toHaveBeenCalledTimes(2);
+      expect(mocks.mockDelete).toHaveBeenCalledTimes(1);
     });
 
-    it("inserts nutrition_data then supplement for each supplement", async () => {
+    it("inserts supplement then supplement nutrition for each supplement", async () => {
       const { db, mocks } = createMockDb();
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -317,10 +311,8 @@ describe("supplementsRouter", () => {
         ],
       });
 
-      // Two nutrition_data inserts
-      expect(mocks.mockInsert).toHaveBeenCalledTimes(2);
-      // Two supplement inserts via execute
-      expect(mocks.mockExecute).toHaveBeenCalledTimes(2);
+      expect(mocks.mockInsert).toHaveBeenCalledTimes(4);
+      expect(mocks.mockExecute).toHaveBeenCalledTimes(0);
     });
 
     it("handles empty supplements array (delete all, no insert)", async () => {
@@ -334,7 +326,7 @@ describe("supplementsRouter", () => {
       expect(mocks.mockInsert).not.toHaveBeenCalled();
     });
 
-    it("passes nutrient values through to nutrition_data insert", async () => {
+    it("passes nutrient values through to supplement nutrition insert", async () => {
       const { db, mocks } = createMockDb();
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -342,7 +334,7 @@ describe("supplementsRouter", () => {
         supplements: [{ name: "Test", vitaminDMcg: 125, calories: 0 }],
       });
 
-      const insertedValues = mocks.mockInsertValues.mock.calls[0]?.[0];
+      const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
       expect(insertedValues.vitaminDMcg).toBe(125);
       expect(insertedValues.calories).toBe(0);
     });
@@ -394,7 +386,7 @@ describe("supplementsRouter", () => {
 
       await caller.save({ supplements: [allNutrients] });
 
-      const insertedValues = mocks.mockInsertValues.mock.calls[0]?.[0];
+      const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
       // Verify every truthy nutrient value is passed through (not coerced to null)
       for (const [key, value] of Object.entries(allNutrients)) {
         if (key === "name") continue;
@@ -402,7 +394,7 @@ describe("supplementsRouter", () => {
       }
     });
 
-    it("passes optional non-nutrient fields through to supplement insert", async () => {
+    it("passes optional non-nutrient fields through to supplement table insert", async () => {
       const { db, mocks } = createMockDb();
       const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
 
@@ -419,16 +411,13 @@ describe("supplementsRouter", () => {
         ],
       });
 
-      // The supplement insert is done via tx.execute with a SQL template
-      const sqlCall = mocks.mockExecute.mock.calls[0]?.[0];
-      // The sql tagged template returns { strings, values }
-      // Values order: userId, name, amount, unit, form, description, meal, sortIndex, ndId
-      expect(sqlCall.values).toContain("Fish Oil");
-      expect(sqlCall.values).toContain(2);
-      expect(sqlCall.values).toContain("caps");
-      expect(sqlCall.values).toContain("softgel");
-      expect(sqlCall.values).toContain("Omega-3");
-      expect(sqlCall.values).toContain("breakfast");
+      const insertedValues = mocks.mockInsertValues.mock.calls[0]?.[0];
+      expect(insertedValues.name).toBe("Fish Oil");
+      expect(insertedValues.amount).toBe(2);
+      expect(insertedValues.unit).toBe("caps");
+      expect(insertedValues.form).toBe("softgel");
+      expect(insertedValues.description).toBe("Omega-3");
+      expect(insertedValues.meal).toBe("breakfast");
     });
   });
 });

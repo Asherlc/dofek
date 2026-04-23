@@ -1,9 +1,11 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 
 describe("Food router", () => {
+  const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
@@ -12,7 +14,6 @@ describe("Food router", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
@@ -202,6 +203,59 @@ describe("Food router", () => {
       const remaining: Array<{ id: string }> = entries.result.data;
       const found = remaining.find((e) => e.id === entryId);
       expect(found).toBeUndefined();
+    });
+
+    it("deletes one entry without affecting another entry on the same day", async () => {
+      const first = await mutate("food.create", {
+        date: "2025-02-03",
+        meal: "lunch",
+        foodName: "First Entry",
+        calories: 225,
+      });
+      const second = await mutate("food.create", {
+        date: "2025-02-03",
+        meal: "lunch",
+        foodName: "Second Entry",
+        calories: 225,
+      });
+      const firstId: string = first.result.data.id;
+      const secondId: string = second.result.data.id;
+
+      const deleteResult = await mutate("food.delete", { id: firstId });
+      expect(deleteResult.result.data.success).toBe(true);
+
+      const entries = await query("food.byDate", { date: "2025-02-03" });
+      const remaining: Array<{ id: string }> = entries.result.data;
+      expect(remaining.some((entry) => entry.id === firstId)).toBe(false);
+      expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
+    });
+
+    it("cascades delete to food_entry_nutrition row", async () => {
+      const created = await mutate("food.create", {
+        date: "2025-02-04",
+        meal: "lunch",
+        foodName: "Cascade Test Meal",
+        calories: 420,
+        proteinG: 30,
+      });
+      const cascadeEntryId: string = created.result.data.id;
+
+      const beforeRows = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.food_entry_nutrition
+            WHERE food_entry_id = ${cascadeEntryId}::uuid`,
+      );
+      expect(beforeRows[0]?.count).toBe("1");
+
+      const deleted = await mutate("food.delete", { id: cascadeEntryId });
+      expect(deleted.result.data.success).toBe(true);
+
+      const afterRows = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.food_entry_nutrition
+            WHERE food_entry_id = ${cascadeEntryId}::uuid`,
+      );
+      expect(afterRows[0]?.count).toBe("0");
     });
   });
 

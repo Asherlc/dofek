@@ -4,7 +4,7 @@ import {
   nutrientFieldsSchema,
   nutrientRowSchema,
 } from "dofek/db/nutrient-columns";
-import { nutritionData, supplement } from "dofek/db/schema";
+import { supplement, supplementNutrition } from "dofek/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -97,82 +97,68 @@ export class SupplementsRepository {
   /** Replace all supplements for this user (transactional). */
   async save(supplements: Supplement[]): Promise<{ success: boolean; count: number }> {
     await this.#db.transaction(async (tx) => {
-      // Delete existing supplements and their nutrition_data
-      const existing = await tx
-        .select({ nutritionDataId: supplement.nutritionDataId })
-        .from(supplement)
-        .where(eq(supplement.userId, this.#userId));
-
+      // Delete existing supplements; supplement_nutrition cascades automatically.
       await tx.delete(supplement).where(eq(supplement.userId, this.#userId));
-
-      // Clean up orphaned nutrition_data rows
-      const nutritionIds = existing
-        .map((row) => row.nutritionDataId)
-        .filter((id): id is string => id != null);
-      if (nutritionIds.length > 0) {
-        await tx.delete(nutritionData).where(
-          sql`id IN (${sql.join(
-            nutritionIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-        );
-      }
 
       if (supplements.length > 0) {
         for (let index = 0; index < supplements.length; index++) {
           const entry = supplements[index];
           if (!entry) continue;
-          // Insert nutrition_data first with explicitly typed nutrient values
-          const [nutritionDataRow] = await tx
-            .insert(nutritionData)
+          const [supplementRow] = await tx
+            .insert(supplement)
             .values({
-              calories: entry.calories ?? null,
-              proteinG: entry.proteinG ?? null,
-              carbsG: entry.carbsG ?? null,
-              fatG: entry.fatG ?? null,
-              saturatedFatG: entry.saturatedFatG ?? null,
-              polyunsaturatedFatG: entry.polyunsaturatedFatG ?? null,
-              monounsaturatedFatG: entry.monounsaturatedFatG ?? null,
-              transFatG: entry.transFatG ?? null,
-              cholesterolMg: entry.cholesterolMg ?? null,
-              sodiumMg: entry.sodiumMg ?? null,
-              potassiumMg: entry.potassiumMg ?? null,
-              fiberG: entry.fiberG ?? null,
-              sugarG: entry.sugarG ?? null,
-              vitaminAMcg: entry.vitaminAMcg ?? null,
-              vitaminCMg: entry.vitaminCMg ?? null,
-              vitaminDMcg: entry.vitaminDMcg ?? null,
-              vitaminEMg: entry.vitaminEMg ?? null,
-              vitaminKMcg: entry.vitaminKMcg ?? null,
-              vitaminB1Mg: entry.vitaminB1Mg ?? null,
-              vitaminB2Mg: entry.vitaminB2Mg ?? null,
-              vitaminB3Mg: entry.vitaminB3Mg ?? null,
-              vitaminB5Mg: entry.vitaminB5Mg ?? null,
-              vitaminB6Mg: entry.vitaminB6Mg ?? null,
-              vitaminB7Mcg: entry.vitaminB7Mcg ?? null,
-              vitaminB9Mcg: entry.vitaminB9Mcg ?? null,
-              vitaminB12Mcg: entry.vitaminB12Mcg ?? null,
-              calciumMg: entry.calciumMg ?? null,
-              ironMg: entry.ironMg ?? null,
-              magnesiumMg: entry.magnesiumMg ?? null,
-              zincMg: entry.zincMg ?? null,
-              seleniumMcg: entry.seleniumMcg ?? null,
-              copperMg: entry.copperMg ?? null,
-              manganeseMg: entry.manganeseMg ?? null,
-              chromiumMcg: entry.chromiumMcg ?? null,
-              iodineMcg: entry.iodineMcg ?? null,
-              omega3Mg: entry.omega3Mg ?? null,
-              omega6Mg: entry.omega6Mg ?? null,
+              userId: this.#userId,
+              name: entry.name,
+              amount: entry.amount ?? null,
+              unit: entry.unit ?? null,
+              form: entry.form ?? null,
+              description: entry.description ?? null,
+              meal: entry.meal ?? null,
+              sortOrder: index,
             })
-            .returning({ id: nutritionData.id });
+            .returning({ id: supplement.id });
 
-          // Insert supplement with FK
-          await tx.execute(
-            sql`INSERT INTO fitness.supplement (user_id, name, amount, unit, form, description, meal, sort_order, nutrition_data_id)
-                VALUES (${this.#userId}, ${entry.name}, ${entry.amount ?? null}, ${entry.unit ?? null},
-                        ${entry.form ?? null}, ${entry.description ?? null}, ${entry.meal ?? null},
-                        ${index}, ${nutritionDataRow?.id})`,
-          );
+          if (!supplementRow?.id) continue;
+          await tx.insert(supplementNutrition).values({
+            supplementId: supplementRow.id,
+            calories: entry.calories ?? null,
+            proteinG: entry.proteinG ?? null,
+            carbsG: entry.carbsG ?? null,
+            fatG: entry.fatG ?? null,
+            saturatedFatG: entry.saturatedFatG ?? null,
+            polyunsaturatedFatG: entry.polyunsaturatedFatG ?? null,
+            monounsaturatedFatG: entry.monounsaturatedFatG ?? null,
+            transFatG: entry.transFatG ?? null,
+            cholesterolMg: entry.cholesterolMg ?? null,
+            sodiumMg: entry.sodiumMg ?? null,
+            potassiumMg: entry.potassiumMg ?? null,
+            fiberG: entry.fiberG ?? null,
+            sugarG: entry.sugarG ?? null,
+            vitaminAMcg: entry.vitaminAMcg ?? null,
+            vitaminCMg: entry.vitaminCMg ?? null,
+            vitaminDMcg: entry.vitaminDMcg ?? null,
+            vitaminEMg: entry.vitaminEMg ?? null,
+            vitaminKMcg: entry.vitaminKMcg ?? null,
+            vitaminB1Mg: entry.vitaminB1Mg ?? null,
+            vitaminB2Mg: entry.vitaminB2Mg ?? null,
+            vitaminB3Mg: entry.vitaminB3Mg ?? null,
+            vitaminB5Mg: entry.vitaminB5Mg ?? null,
+            vitaminB6Mg: entry.vitaminB6Mg ?? null,
+            vitaminB7Mcg: entry.vitaminB7Mcg ?? null,
+            vitaminB9Mcg: entry.vitaminB9Mcg ?? null,
+            vitaminB12Mcg: entry.vitaminB12Mcg ?? null,
+            calciumMg: entry.calciumMg ?? null,
+            ironMg: entry.ironMg ?? null,
+            magnesiumMg: entry.magnesiumMg ?? null,
+            zincMg: entry.zincMg ?? null,
+            seleniumMcg: entry.seleniumMcg ?? null,
+            copperMg: entry.copperMg ?? null,
+            manganeseMg: entry.manganeseMg ?? null,
+            chromiumMcg: entry.chromiumMcg ?? null,
+            iodineMcg: entry.iodineMcg ?? null,
+            omega3Mg: entry.omega3Mg ?? null,
+            omega6Mg: entry.omega6Mg ?? null,
+          });
         }
       }
     });

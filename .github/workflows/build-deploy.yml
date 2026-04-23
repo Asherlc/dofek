@@ -1,0 +1,20 @@
+name: Build + Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target: web = deploy infra + app, app = deploy app only"
+        type: choice
+        required: true
+        options:
+          - web
+          - app
+
+jobs:
+  deploy:
+    name: Build + Deploy
+    uses: ./.github/workflows/deploy.yml
+    with:
+      target: ${{ inputs.target }}
+    secrets: inherit
