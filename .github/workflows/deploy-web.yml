@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: read
   id-token: write
 
@@ -76,7 +77,7 @@ jobs:
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
-          workflow_run_url: ${{ github.event.workflow_run.html_url }}
+          dispatching_run_id: ${{ github.event.workflow_run.id }}
 
   terraform:
     name: Deploy Infra
@@ -84,7 +85,7 @@ jobs:
     if: needs.check.outputs.should_deploy == 'true'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
-      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
   deploy-app:
@@ -95,7 +96,7 @@ jobs:
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host }}
-      dispatcher_run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
   # Image cleanup runs on the server via docuum (see stack.yml).

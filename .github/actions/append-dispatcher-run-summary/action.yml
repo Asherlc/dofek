@@ -2,11 +2,8 @@ name: Append Dispatcher Run Summary
 description: Append a dispatcher workflow run link to the GitHub job summary.
 
 inputs:
-  dispatcher_run_url:
-    description: URL passed explicitly by a calling workflow.
-    required: false
-  workflow_run_url:
-    description: URL from github.event.workflow_run.html_url for workflow_run triggers.
+  dispatching_run_id:
+    description: Run ID for the workflow that dispatched the current run.
     required: false
 
 runs:
@@ -15,16 +12,25 @@ runs:
     - name: Append dispatcher link
       shell: bash
       env:
-        INPUT_DISPATCHER_URL: ${{ inputs.dispatcher_run_url }}
-        INPUT_WORKFLOW_RUN_URL: ${{ inputs.workflow_run_url }}
+        INPUT_DISPATCHING_RUN_ID: ${{ inputs.dispatching_run_id }}
+        GH_TOKEN: ${{ github.token }}
       run: |
-        dispatcher_url="$INPUT_DISPATCHER_URL"
-        if [ -z "$dispatcher_url" ] && [ -n "$INPUT_WORKFLOW_RUN_URL" ]; then
-          dispatcher_url="$INPUT_WORKFLOW_RUN_URL"
-        fi
-
-        if [ -z "$dispatcher_url" ]; then
+        dispatching_run_id="$INPUT_DISPATCHING_RUN_ID"
+        if [ -z "$dispatching_run_id" ]; then
           exit 0
         fi
 
-        echo "- Dispatcher workflow run: [Open run](${dispatcher_url})" >> "$GITHUB_STEP_SUMMARY"
+        dispatcher_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${dispatching_run_id}"
+        dispatcher_title="Run #${dispatching_run_id}"
+
+        if run_metadata=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${dispatching_run_id}" --jq '[.name, .html_url] | @tsv' 2>/dev/null); then
+          IFS=$'\t' read -r fetched_title fetched_url <<< "$run_metadata"
+          if [ -n "$fetched_url" ]; then
+            dispatcher_url="$fetched_url"
+          fi
+          if [ -n "$fetched_title" ]; then
+            dispatcher_title="$fetched_title"
+          fi
+        fi
+
+        echo "- Dispatcher workflow run: [${dispatcher_title}](${dispatcher_url})" >> "$GITHUB_STEP_SUMMARY"
