@@ -1,12 +1,13 @@
 /**
- * Heart rate zone models and utilities.
+ * Heart rate and power zone models and utilities.
  *
- * Two models are supported:
- * 1. **Karvonen 5-zone** (%HRR) — standard 5-zone model for activity analysis
- * 2. **Treff 3-zone** (%HRmax) — simplified model for polarization index
+ * Three models are supported:
+ * 1. **Karvonen 5-zone** HR (%HRR) — standard 5-zone model for activity analysis
+ * 2. **Treff 3-zone** HR (%HRmax) — simplified model for polarization index
+ * 3. **Coggan 7-zone** cycling power (%FTP) — standard model for power analysis
  */
 
-import { statusColors } from "@dofek/scoring/colors";
+import { chartColors, statusColors } from "@dofek/scoring/colors";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -177,4 +178,108 @@ export function computePolarizationIndex(
   const f3 = z3Seconds / total;
   const ratio = (f1 / (f2 * f3)) * 100;
   return Math.round(Math.log10(ratio) * 1000) / 1000;
+}
+
+// ── Coggan 7-Zone Cycling Power Model ───────────────────────────────
+
+export interface PowerZoneDefinition {
+  zone: number;
+  label: string;
+  /** Lower bound as fraction of FTP (e.g. 0.55 = 55% FTP). 0 for zone 1. */
+  minPctFtp: number;
+  /** Upper bound as fraction of FTP. Infinity for the open-ended top zone. */
+  maxPctFtp: number;
+  color: string;
+}
+
+export interface PowerZoneBoundary {
+  zone: number;
+  label: string;
+  minWatts: number;
+  /** null when the zone is open-ended (Z7 has no upper bound). */
+  maxWatts: number | null;
+  color: string;
+}
+
+export interface ActivityPowerZone {
+  zone: number;
+  label: string;
+  /** Lower bound as integer percentage of FTP (e.g. 55). */
+  minPct: number;
+  /** Upper bound as integer percentage of FTP. null for Z7 (open-ended). */
+  maxPct: number | null;
+  seconds: number;
+}
+
+/**
+ * Standard Coggan 7-zone model using % Functional Threshold Power.
+ *
+ * Zone boundary = ftp × fraction.
+ */
+export const POWER_ZONES: PowerZoneDefinition[] = [
+  { zone: 1, label: "Active Recovery", minPctFtp: 0, maxPctFtp: 0.55, color: chartColors.teal },
+  { zone: 2, label: "Endurance", minPctFtp: 0.55, maxPctFtp: 0.75, color: statusColors.info },
+  { zone: 3, label: "Tempo", minPctFtp: 0.75, maxPctFtp: 0.9, color: statusColors.positive },
+  { zone: 4, label: "Threshold", minPctFtp: 0.9, maxPctFtp: 1.05, color: statusColors.warning },
+  { zone: 5, label: "VO2max", minPctFtp: 1.05, maxPctFtp: 1.2, color: statusColors.elevated },
+  { zone: 6, label: "Anaerobic", minPctFtp: 1.2, maxPctFtp: 1.5, color: statusColors.danger },
+  {
+    zone: 7,
+    label: "Neuromuscular",
+    minPctFtp: 1.5,
+    maxPctFtp: Number.POSITIVE_INFINITY,
+    color: chartColors.purple,
+  },
+];
+
+/** Ordered array of zone colors for chart series (indexed 0-6 for zones 1-7). */
+export const POWER_ZONE_COLORS: string[] = POWER_ZONES.map((z) => z.color);
+
+/**
+ * Zone boundary fractions for SQL interpolation.
+ * Upper bounds of each zone except the last (as %FTP fractions):
+ * [0.55, 0.75, 0.9, 1.05, 1.2, 1.5].
+ */
+export const ZONE_BOUNDARIES_FTP = POWER_ZONES.slice(0, -1).map((z) => z.maxPctFtp);
+
+/**
+ * Compute absolute wattage boundaries for each zone given an FTP value.
+ */
+export function powerZoneBoundaries(ftp: number): PowerZoneBoundary[] {
+  return POWER_ZONES.map((z) => ({
+    zone: z.zone,
+    label: z.label,
+    minWatts: Math.round(ftp * z.minPctFtp),
+    maxWatts: Number.isFinite(z.maxPctFtp) ? Math.round(ftp * z.maxPctFtp) : null,
+    color: z.color,
+  }));
+}
+
+/**
+ * Classify a power reading into zone 1-7.
+ */
+export function classifyPowerZone(power: number, ftp: number): number {
+  for (let i = POWER_ZONES.length - 1; i >= 0; i--) {
+    const zone = POWER_ZONES[i];
+    if (!zone) continue;
+    if (power >= ftp * zone.minPctFtp) return zone.zone;
+  }
+  return 1;
+}
+
+/**
+ * Map raw DB zone rows to the full 7-zone structure.
+ * Missing zones get 0 seconds.
+ */
+export function mapPowerZones(rows: { zone: number; seconds: number }[]): ActivityPowerZone[] {
+  return POWER_ZONES.map((z) => {
+    const row = rows.find((r) => Number(r.zone) === z.zone);
+    return {
+      zone: z.zone,
+      label: z.label,
+      minPct: Math.round(z.minPctFtp * 100),
+      maxPct: Number.isFinite(z.maxPctFtp) ? Math.round(z.maxPctFtp * 100) : null,
+      seconds: row ? Number(row.seconds) : 0,
+    };
+  });
 }

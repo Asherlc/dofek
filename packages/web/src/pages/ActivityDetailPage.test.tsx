@@ -41,7 +41,16 @@ const mockActivity = {
   sourceLinks: [],
 };
 
-const mockStreamPoints = [
+const mockStreamPoints: Array<{
+  recordedAt: string;
+  lat: number;
+  lng: number;
+  heartRate: number;
+  power: number | null;
+  speed: number;
+  cadence: number | null;
+  altitude: number;
+}> = [
   {
     recordedAt: "2026-03-18T07:00:00Z",
     lat: 1,
@@ -77,6 +86,10 @@ const mockStreamPoints = [
 const mockStrengthExercisesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
 );
+const mockPowerZonesUseQuery = vi.fn((_input?: unknown, _options?: { enabled?: boolean }) => ({
+  data: null,
+  isLoading: false,
+}));
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -84,6 +97,7 @@ vi.mock("../lib/trpc.ts", () => ({
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
       stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
       hrZones: { useQuery: () => ({ data: [], isLoading: false }) },
+      powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
@@ -103,6 +117,7 @@ vi.mock("leaflet", () => ({
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
   mockStrengthExercisesUseQuery.mockClear();
+  mockPowerZonesUseQuery.mockClear();
   return render(
     <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
       {ui}
@@ -303,6 +318,37 @@ describe("ActivityDetailPage", () => {
       expect(enabled).toBe(true);
 
       Object.assign(mockActivity, originalData);
+    });
+  });
+
+  describe("power zones query gating", () => {
+    it("disables power zones query for non-cycling activities", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const enabled = getQueryEnabledFlag(mockPowerZonesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(false);
+    });
+
+    it("enables power zones query for cycling activities with power data", async () => {
+      const originalActivity = { ...mockActivity };
+      const originalStream = [...mockStreamPoints];
+
+      Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...originalStream.map((point) => ({ ...point, power: 210 })),
+      );
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const enabled = getQueryEnabledFlag(mockPowerZonesUseQuery.mock.calls[0]?.[1]);
+      expect(enabled).toBe(true);
+
+      Object.assign(mockActivity, originalActivity);
+      mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
     });
   });
 });

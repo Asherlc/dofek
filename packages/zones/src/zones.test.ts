@@ -2,13 +2,19 @@ import { statusColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
 import {
   classifyHeartRateZone,
+  classifyPowerZone,
   computeHrRange,
   computePolarizationIndex,
   HEART_RATE_ZONE_COLORS,
   HEART_RATE_ZONES,
   heartRateZoneBoundaries,
   mapHrZones,
+  mapPowerZones,
   POLARIZATION_ZONES,
+  POWER_ZONE_COLORS,
+  POWER_ZONES,
+  powerZoneBoundaries,
+  ZONE_BOUNDARIES_FTP,
   ZONE_BOUNDARIES_HRR,
 } from "./zones.ts";
 
@@ -241,5 +247,101 @@ describe("computePolarizationIndex", () => {
       const decimalPlaces = result.toString().split(".")[1]?.length ?? 0;
       expect(decimalPlaces).toBeLessThanOrEqual(3);
     }
+  });
+});
+
+describe("POWER_ZONES", () => {
+  it("defines exactly 7 Coggan zones", () => {
+    expect(POWER_ZONES).toHaveLength(7);
+  });
+
+  it("has contiguous boundaries from Z1 to Z7", () => {
+    for (let i = 1; i < POWER_ZONES.length; i++) {
+      const prev = POWER_ZONES[i - 1];
+      const curr = POWER_ZONES[i];
+      expect(curr?.minPctFtp).toBe(prev?.maxPctFtp);
+    }
+  });
+
+  it("starts at 0 and has an open-ended top zone", () => {
+    expect(POWER_ZONES[0]?.minPctFtp).toBe(0);
+    expect(POWER_ZONES[6]?.maxPctFtp).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe("ZONE_BOUNDARIES_FTP", () => {
+  it("has 6 boundaries derived from zone maxPctFtp values", () => {
+    expect(ZONE_BOUNDARIES_FTP).toEqual([0.55, 0.75, 0.9, 1.05, 1.2, 1.5]);
+  });
+});
+
+describe("POWER_ZONE_COLORS", () => {
+  it("has 7 hex color strings matching zone definitions", () => {
+    expect(POWER_ZONE_COLORS).toHaveLength(7);
+    for (const color of POWER_ZONE_COLORS) {
+      expect(color).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+  });
+});
+
+describe("powerZoneBoundaries", () => {
+  it("computes absolute watt boundaries from FTP", () => {
+    // ftp=250
+    const boundaries = powerZoneBoundaries(250);
+    expect(boundaries).toHaveLength(7);
+    expect(boundaries[0]).toEqual(expect.objectContaining({ zone: 1, minWatts: 0, maxWatts: 138 }));
+    expect(boundaries[3]).toEqual(
+      expect.objectContaining({ zone: 4, minWatts: 225, maxWatts: 263 }),
+    );
+    expect(boundaries[6]).toEqual(
+      expect.objectContaining({ zone: 7, minWatts: 375, maxWatts: null }),
+    );
+  });
+});
+
+describe("classifyPowerZone", () => {
+  const ftp = 250;
+
+  it("classifies Z1 below 55% FTP", () => {
+    expect(classifyPowerZone(100, ftp)).toBe(1);
+    expect(classifyPowerZone(0, ftp)).toBe(1);
+  });
+
+  it("classifies Z4 at FTP", () => {
+    expect(classifyPowerZone(250, ftp)).toBe(4);
+  });
+
+  it("classifies Z7 for power above 150% FTP", () => {
+    expect(classifyPowerZone(400, ftp)).toBe(7);
+  });
+
+  it("uses lower-inclusive boundaries", () => {
+    // Z2 starts at 55% * 250 = 137.5 → 138 should be Z2
+    expect(classifyPowerZone(138, ftp)).toBe(2);
+  });
+});
+
+describe("mapPowerZones", () => {
+  it("maps raw zone rows to full 7-zone structure", () => {
+    const rows = [
+      { zone: 2, seconds: 600 },
+      { zone: 4, seconds: 120 },
+    ];
+    const result = mapPowerZones(rows);
+    expect(result).toHaveLength(7);
+    expect(result[1]).toEqual({
+      zone: 2,
+      label: "Endurance",
+      minPct: 55,
+      maxPct: 75,
+      seconds: 600,
+    });
+    expect(result[0]?.seconds).toBe(0);
+    expect(result[3]?.seconds).toBe(120);
+  });
+
+  it("returns null maxPct for open-ended Z7", () => {
+    const result = mapPowerZones([]);
+    expect(result[6]?.maxPct).toBeNull();
   });
 });

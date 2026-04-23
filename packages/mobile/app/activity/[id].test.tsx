@@ -131,15 +131,18 @@ vi.mock("@dofek/training/muscle-groups", () => ({}));
 
 vi.mock("@dofek/training/training", () => ({
   formatActivityTypeLabel: (type: string) => type,
+  isCyclingActivity: (type: string) => type === "cycling",
 }));
 
 vi.mock("@dofek/zones/zones", () => ({
   HEART_RATE_ZONE_COLORS: ["green", "lime", "yellow", "orange", "red"],
+  POWER_ZONE_COLORS: ["#0ea5e9", "#2563eb", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#5E35B1"],
 }));
 
 const mockByIdQuery = vi.fn();
 const mockStreamQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
+const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
 
 vi.mock("../../lib/trpc", () => ({
@@ -148,6 +151,7 @@ vi.mock("../../lib/trpc", () => ({
       byId: { useQuery: (...args: unknown[]) => mockByIdQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
+      powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
@@ -189,10 +193,25 @@ const streamPointsWithHrAndPower = Array.from({ length: 5 }, (_, index) => ({
   lng: null,
 }));
 
+function getQueryEnabledFlag(value: unknown): boolean | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const enabled = Reflect.get(value, "enabled");
+  return typeof enabled === "boolean" ? enabled : undefined;
+}
+
 beforeEach(() => {
+  mockByIdQuery.mockClear();
+  mockStreamQuery.mockClear();
+  mockHrZonesQuery.mockClear();
+  mockPowerZonesQuery.mockClear();
+  mockStrengthExercisesQuery.mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false });
+  mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
 });
 
@@ -208,6 +227,8 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Heart Rate")).toBeTruthy();
     expect(screen.getByText("Power")).toBeTruthy();
+    const enabled = getQueryEnabledFlag(mockPowerZonesQuery.mock.calls[0]?.[1]);
+    expect(enabled).toBe(true);
   });
 
   it("renders without crashing for non-cycling workouts with heart rate data but no power", async () => {
@@ -235,5 +256,7 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("Yoga Session")).toBeTruthy();
     expect(screen.getByText("Heart Rate")).toBeTruthy();
+    const enabled = getQueryEnabledFlag(mockPowerZonesQuery.mock.calls[0]?.[1]);
+    expect(enabled).toBe(false);
   });
 });

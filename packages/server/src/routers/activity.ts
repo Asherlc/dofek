@@ -1,3 +1,4 @@
+import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { isRelationMissingError } from "dofek/db/dedup";
 import { getProvider } from "dofek/providers/registry";
@@ -8,6 +9,7 @@ import {
   ActivityRepository,
   StreamPoint as StreamPointModel,
 } from "../repositories/activity-repository.ts";
+import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync.ts";
@@ -33,6 +35,11 @@ export interface StreamPoint {
 }
 
 export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
+
+export interface ActivityPowerZonesResult {
+  zones: import("@dofek/zones/zones").ActivityPowerZone[];
+  ftp: number;
+}
 
 export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
@@ -93,6 +100,25 @@ export const activityRouter = router({
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
       return repo.getHrZones(input.id);
+    }),
+
+  powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
+      const activityRepo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const activity = await activityRepo.findById(input.id);
+      if (!activity) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      }
+      if (!isCyclingActivity(activity.activity_type)) return null;
+      if (activity.avg_power == null && activity.max_power == null) return null;
+
+      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone);
+      const { currentEftp } = await powerRepo.getEftpTrend(90);
+      if (currentEftp == null) return null;
+
+      const zones = await activityRepo.getPowerZones(input.id, currentEftp);
+      return { zones, ftp: currentEftp };
     }),
 
   strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)

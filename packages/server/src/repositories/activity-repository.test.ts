@@ -315,6 +315,42 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("getPowerZones", () => {
+    it("returns mapped power zones", async () => {
+      const { repo } = makeRepository([
+        { zone: 1, seconds: 60 },
+        { zone: 2, seconds: 900 },
+        { zone: 3, seconds: 600 },
+        { zone: 4, seconds: 240 },
+        { zone: 5, seconds: 120 },
+        { zone: 6, seconds: 30 },
+        { zone: 7, seconds: 10 },
+      ]);
+      const result = await repo.getPowerZones("activity-id", 250);
+      expect(result).toHaveLength(7);
+      expect(result[0]?.zone).toBe(1);
+      expect(result[1]?.seconds).toBe(900);
+      expect(result[6]?.maxPct).toBeNull();
+    });
+
+    it("returns all 7 zones with zero seconds when no data", async () => {
+      const { repo } = makeRepository([]);
+      const result = await repo.getPowerZones("activity-id", 250);
+      expect(result).toHaveLength(7);
+      for (const zone of result) {
+        expect(zone.seconds).toBe(0);
+      }
+    });
+
+    it("passes ftp through to the SQL query", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getPowerZones("activity-id", 275);
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiled = dialect.sqlToQuery(sqlObject);
+      expect(compiled.params).toEqual(expect.arrayContaining([275]));
+    });
+  });
+
   describe("delete", () => {
     it("calls execute", async () => {
       const { repo, execute } = makeRepository([]);

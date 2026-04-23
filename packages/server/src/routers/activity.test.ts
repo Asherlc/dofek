@@ -1,7 +1,10 @@
 import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { PowerRepository } from "../repositories/power-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -83,6 +86,32 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
     userId: "user-1",
     timezone: "UTC",
   });
+}
+
+function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
+  return {
+    id: "00000000-0000-0000-0000-000000000001",
+    activity_type: "cycling",
+    started_at: "2026-04-01T10:00:00Z",
+    ended_at: "2026-04-01T11:00:00Z",
+    name: "Ride",
+    notes: null,
+    provider_id: "wahoo",
+    source_providers: ["wahoo"],
+    source_external_ids: null,
+    avg_hr: null,
+    max_hr: null,
+    avg_power: 220,
+    max_power: 340,
+    avg_speed: null,
+    max_speed: null,
+    avg_cadence: null,
+    total_distance: null,
+    elevation_gain_m: null,
+    elevation_loss_m: null,
+    sample_count: null,
+    ...overrides,
+  };
 }
 
 describe("activityRouter", () => {
@@ -449,6 +478,94 @@ describe("activityRouter", () => {
       expect(result[0]?.seconds).toBe(0);
       expect(result[1]?.seconds).toBe(500);
       expect(result[2]?.seconds).toBe(0);
+    });
+  });
+
+  describe("powerZones", () => {
+    it("returns null for non-cycling activities", async () => {
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(
+          makeActivityRow({ activity_type: "running", avg_power: null, max_power: null }),
+        );
+      const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
+      const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
+
+      const caller = makeCaller();
+      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+
+      expect(result).toBeNull();
+      expect(getEftpTrendSpy).not.toHaveBeenCalled();
+      expect(getPowerZonesSpy).not.toHaveBeenCalled();
+
+      findByIdSpy.mockRestore();
+      getEftpTrendSpy.mockRestore();
+      getPowerZonesSpy.mockRestore();
+    });
+
+    it("returns null for cycling activities without power data", async () => {
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(makeActivityRow({ avg_power: null, max_power: null }));
+      const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
+      const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
+
+      const caller = makeCaller();
+      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+
+      expect(result).toBeNull();
+      expect(getEftpTrendSpy).not.toHaveBeenCalled();
+      expect(getPowerZonesSpy).not.toHaveBeenCalled();
+
+      findByIdSpy.mockRestore();
+      getEftpTrendSpy.mockRestore();
+      getPowerZonesSpy.mockRestore();
+    });
+
+    it("returns zones and ftp for cycling activities with power data", async () => {
+      const zones = [
+        { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60 },
+        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120 },
+      ];
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(
+          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 360 }),
+        );
+      const getEftpTrendSpy = vi
+        .spyOn(PowerRepository.prototype, "getEftpTrend")
+        .mockResolvedValue({
+          trend: [],
+          currentEftp: 265,
+          model: null,
+        });
+      const getPowerZonesSpy = vi
+        .spyOn(ActivityRepository.prototype, "getPowerZones")
+        .mockResolvedValue(zones);
+
+      const caller = makeCaller();
+      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+
+      expect(getEftpTrendSpy).toHaveBeenCalledWith(90);
+      expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
+      expect(result).toEqual({ zones, ftp: 265 });
+
+      findByIdSpy.mockRestore();
+      getEftpTrendSpy.mockRestore();
+      getPowerZonesSpy.mockRestore();
+    });
+
+    it("throws NOT_FOUND when activity does not exist", async () => {
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(null);
+      const caller = makeCaller();
+
+      await expect(
+        caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toThrow("Activity not found");
+
+      findByIdSpy.mockRestore();
     });
   });
 });
