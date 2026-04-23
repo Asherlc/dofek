@@ -46,6 +46,7 @@ jobs:
       id-token: write
     env:
       DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+      DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
