@@ -1,3 +1,6 @@
+[features]
+codex_hooks = true
+
 [mcp_servers.chrome_devtools]
 command = "npx"
 args = ["-y", "chrome-devtools-mcp@latest"]
