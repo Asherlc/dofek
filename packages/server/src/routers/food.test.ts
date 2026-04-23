@@ -27,11 +27,33 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => ({
 
 vi.mock("../lib/ai-nutrition.ts", () => ({
   analyzeNutrition: vi.fn().mockResolvedValue({
-    foodName: "Apple",
-    calories: 95,
-    proteinG: 0.5,
-    carbsG: 25,
-    fatG: 0.3,
+    nutrition: {
+      foodName: "Apple",
+      calories: 95,
+      proteinG: 0.5,
+      carbsG: 25,
+      fatG: 0.3,
+    },
+    provider: "test-provider",
+  }),
+  analyzeNutritionItems: vi.fn().mockResolvedValue({
+    items: [
+      {
+        foodName: "Apple",
+        foodDescription: "1 medium",
+        category: "fruit",
+        meal: "snack",
+        calories: 95,
+        proteinG: 0.5,
+        carbsG: 25,
+        fatG: 0.3,
+        fiberG: 4.4,
+        saturatedFatG: 0.1,
+        sugarG: 19,
+        sodiumMg: 2,
+      },
+    ],
+    provider: "test-provider",
   }),
 }));
 
@@ -183,7 +205,18 @@ describe("foodRouter", () => {
     it("calls AI nutrition analysis", async () => {
       const caller = makeCaller([]);
       const result = await caller.analyzeWithAi({ description: "1 medium apple" });
-      expect(result).toHaveProperty("foodName", "Apple");
+      expect(result.nutrition).toHaveProperty("foodName", "Apple");
+    });
+  });
+
+  describe("analyzeItemsWithAi", () => {
+    it("returns parsed nutrition items from Slack-style AI parsing", async () => {
+      const caller = makeCaller([]);
+      const result = await caller.analyzeItemsWithAi({
+        description: "two eggs and toast with butter",
+      });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toHaveProperty("foodName", "Apple");
     });
   });
 

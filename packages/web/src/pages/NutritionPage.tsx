@@ -10,6 +10,7 @@ import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const CALORIES_PER_GRAM = { protein: 4, carbs: 4, fat: 9 } as const;
@@ -61,6 +62,8 @@ export function NutritionPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMealType, setModalMealType] = useState<MealType>("breakfast");
   const [collapsedMeals, setCollapsedMeals] = useState<Set<string>>(new Set());
+  const [aiMealInput, setAiMealInput] = useState("");
+  const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
 
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
   const calorieGoal = Number(calorieGoalQuery.data?.value ?? 2000);
@@ -79,6 +82,8 @@ export function NutritionPage() {
       foodQuery.refetch();
     },
   });
+  const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
+  const createAiEntryMutation = trpc.food.create.useMutation();
 
   const entries = z.array(foodEntrySchema).parse(foodQuery.data ?? []);
 
@@ -147,6 +152,31 @@ export function NutritionPage() {
     });
   }
 
+  async function handleAiMealSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedInput = aiMealInput.trim();
+    if (!trimmedInput) return;
+
+    setAiMealInputError(null);
+    try {
+      const parsedResult = await analyzeItemsMutation.mutateAsync({ description: trimmedInput });
+      for (const parsedItem of parsedResult.items) {
+        await createAiEntryMutation.mutateAsync({
+          date: dateString,
+          nutrients: {},
+          ...parsedItem,
+        });
+      }
+      await foodQuery.refetch();
+      setAiMealInput("");
+    } catch (error) {
+      captureException(error, { context: "nutrition-ai-meal-input" });
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not log this meal with AI input";
+      setAiMealInputError(errorMessage);
+    }
+  }
+
   const calorieProgress = Math.min((dailyTotals.totalCalories / calorieGoal) * 100, 100);
   const calorieColor = dailyTotals.totalCalories > calorieGoal ? "bg-red-500" : "bg-emerald-500";
 
@@ -210,6 +240,41 @@ export function NutritionPage() {
         </div>
 
         <SlackInstallBanner />
+
+        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">AI meal input</h3>
+            <p className="text-xs text-subtle">
+              Describe what you ate and automatically split it into items to log.
+            </p>
+          </div>
+          <form onSubmit={handleAiMealSubmit} className="space-y-3">
+            <textarea
+              value={aiMealInput}
+              onChange={(event) => setAiMealInput(event.target.value)}
+              placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
+              className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            {aiMealInputError && (
+              <div className="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                {aiMealInputError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={
+                !aiMealInput.trim() ||
+                analyzeItemsMutation.isPending ||
+                createAiEntryMutation.isPending
+              }
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {analyzeItemsMutation.isPending || createAiEntryMutation.isPending
+                ? "Logging..."
+                : "Log with AI"}
+            </button>
+          </form>
+        </div>
 
         {/* Daily summary */}
         <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
