@@ -24,23 +24,23 @@ describe("Nutrition page", () => {
   it("renders food entries that have null calories without crashing", () => {
     const today = new Date().toISOString().slice(0, 10);
 
-    // Insert food entries with nutrition_data (one with calories, one without)
+    // Insert food entries with nutrition rows (one with calories, one without)
     cy.task("runQuery", {
       query: `
-        WITH nd1 AS (
-          INSERT INTO fitness.nutrition_data (calories, protein_g)
-          VALUES (350, 40)
+        WITH fe1 AS (
+          INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal)
+          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Chicken breast', 'lunch')
           RETURNING id
         ),
-        nd2 AS (
-          INSERT INTO fitness.nutrition_data (calories, protein_g)
-          VALUES (NULL, NULL)
+        fe2 AS (
+          INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal)
+          VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner')
           RETURNING id
         )
-        INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, meal, nutrition_data_id)
+        INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories, protein_g)
         VALUES
-          ('${TEST_USER_ID}', 'dofek', '${today}', 'Chicken breast', 'lunch', (SELECT id FROM nd1)),
-          ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner', (SELECT id FROM nd2))
+          ((SELECT id FROM fe1), 350, 40),
+          ((SELECT id FROM fe2), NULL, NULL)
       `,
     });
 
