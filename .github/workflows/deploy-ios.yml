@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       ci_run_id:
-        description: "CI run ID that triggered this deploy (for summary links)"
+        description: "CI run ID with ios-xcarchive artifact"
         required: false
         type: string
       dispatching_run_id:
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: "CI run ID to include in deploy summary (optional)."
+        description: "CI run ID with ios-xcarchive. Defaults to latest successful CI run."
         required: false
         type: string
 
@@ -124,13 +124,14 @@ jobs:
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "No iOS native changes since last deploy — skipping"
           fi
-      - name: Resolve triggering CI run ID
+      - name: Find CI run with archive
         id: find-run
         if: steps.detect.outputs.should_deploy == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_RUN_ID: ${{ inputs.ci_run_id }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             echo "run_id=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
@@ -141,10 +142,20 @@ jobs:
           if [ -n "$INPUT_RUN_ID" ]; then
             echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
             echo "Using provided CI run: $INPUT_RUN_ID"
-          else
-            echo "run_id=" >> "$GITHUB_OUTPUT"
-            echo "No CI run ID provided"
+            exit 0
           fi
+
+          # Find the latest ios-xcarchive artifact
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=ios-xcarchive&per_page=1" \
+            --jq '.artifacts[0].workflow_run.id')
+
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "::error::No ios-xcarchive artifact found"
+            exit 1
+          fi
+
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Using latest ios-xcarchive from CI run: $RUN_ID"
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
@@ -159,13 +170,10 @@ jobs:
         needs.check.outputs.should_deploy == 'true'
       )
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
-      EXPO_PUBLIC_OTEL_ENDPOINT: ${{ secrets.EXPO_PUBLIC_OTEL_ENDPOINT }}
-      EXPO_PUBLIC_OTEL_HEADERS: ${{ secrets.EXPO_PUBLIC_OTEL_HEADERS }}
     steps:
       - name: Resolve commit SHA
         id: sha
@@ -183,8 +191,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ steps.sha.outputs.ref }}
-      # Build the archive here with signing enabled so capability entitlements
-      # (for example Sign In with Apple) are preserved in the shipped IPA.
       - uses: ./.github/actions/setup-node-pnpm
       - name: Generate native project
         working-directory: packages/mobile
@@ -204,13 +210,13 @@ jobs:
           DIST_CERT_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
           DIST_CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(uuidgen)
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo -n "$DIST_CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/dist-cert.p12"
-          security import "$RUNNER_TEMP/dist-cert.p12" -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          echo -n "$DIST_CERT_BASE64" | base64 --decode > $RUNNER_TEMP/dist-cert.p12
+          security import $RUNNER_TEMP/dist-cert.p12 -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
       - name: Setup App Store Connect API key
@@ -218,7 +224,7 @@ jobs:
           API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
         run: |
           mkdir -p ~/private_keys
-          echo -n "$API_KEY_BASE64" | base64 --decode > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
       - name: Archive (Release, signed)
         env:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
@@ -228,10 +234,10 @@ jobs:
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
             -configuration Release \
-            -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
             -destination 'generic/platform=iOS' \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             COMPILER_INDEX_STORE_ENABLE=NO \
@@ -240,11 +246,11 @@ jobs:
       - name: Export IPA & Upload to TestFlight
         run: |
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
             -exportOptionsPlist packages/mobile/build/ExportOptions.plist \
-            -exportPath "$RUNNER_TEMP/export" \
+            -exportPath $RUNNER_TEMP/export \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
       - name: Write job summary
@@ -264,10 +270,8 @@ jobs:
             echo "| **Version** | $VERSION |"
             echo "| **Build** | $BUILD_NUMBER |"
             echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
-            if [ -n "$CI_RUN_ID" ]; then
-              echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
-            fi
+            echo "| **Archive from** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Cleanup keychain
         if: always()
-        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
