@@ -7,7 +7,10 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
-import { initBackgroundHealthKitSync } from "../lib/background-health-kit-sync";
+import {
+  initBackgroundHealthKitSync,
+  teardownBackgroundHealthKitSync,
+} from "../lib/background-health-kit-sync";
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
@@ -240,6 +243,7 @@ function AuthGate() {
     });
 
     return () => {
+      teardownBackgroundHealthKitSync();
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
