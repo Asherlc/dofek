@@ -530,8 +530,17 @@ export class FoodRepository {
             WHERE user_id = ${this.#userId} AND confirmed = true AND id = ${id}
             RETURNING nutrition_data_id
           )
-          DELETE FROM fitness.nutrition_data
-          WHERE id = (SELECT nutrition_data_id FROM deleted_entry)`,
+          DELETE FROM fitness.nutrition_data AS nutrition_data
+          WHERE nutrition_data.id IN (
+            SELECT nutrition_data_id
+            FROM deleted_entry
+            WHERE nutrition_data_id IS NOT NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM fitness.food_entry
+            WHERE fitness.food_entry.nutrition_data_id = nutrition_data.id
+          )`,
     );
     return { success: true };
   }
