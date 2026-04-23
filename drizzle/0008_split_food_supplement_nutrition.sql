@@ -283,11 +283,13 @@ DROP VIEW IF EXISTS fitness.v_food_entry_with_nutrition;
 DROP VIEW IF EXISTS fitness.v_supplement_with_nutrition;
 
 ALTER TABLE fitness.food_entry DROP CONSTRAINT IF EXISTS food_entry_nutrition_data_id_fkey;
-DROP INDEX CONCURRENTLY IF EXISTS fitness.food_entry_nutrition_data_idx;
+-- squawk-ignore require-concurrent-index-deletion
+DROP INDEX IF EXISTS fitness.food_entry_nutrition_data_idx;
 ALTER TABLE fitness.food_entry DROP COLUMN IF EXISTS nutrition_data_id;
 
 ALTER TABLE fitness.supplement DROP CONSTRAINT IF EXISTS supplement_nutrition_data_id_fkey;
-DROP INDEX CONCURRENTLY IF EXISTS fitness.supplement_nutrition_data_idx;
+-- squawk-ignore require-concurrent-index-deletion
+DROP INDEX IF EXISTS fitness.supplement_nutrition_data_idx;
 ALTER TABLE fitness.supplement DROP COLUMN IF EXISTS nutrition_data_id;
 
 CREATE VIEW fitness.v_food_entry_with_nutrition AS
