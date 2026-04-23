@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "./dedup.ts";
@@ -91,6 +92,13 @@ interface ActivitySummaryRow extends Record<string, unknown> {
   power_sample_count: number;
   first_sample_at: Date | null;
   last_sample_at: Date | null;
+}
+
+interface DedupedSensorRow extends Record<string, unknown> {
+  activity_id: string;
+  channel: string;
+  recorded_at: string;
+  scalar: number;
 }
 
 describe("Deduplication materialized views", () => {
@@ -456,6 +464,67 @@ describe("Deduplication materialized views", () => {
     expect(summary?.sample_count).toBe(4);
     expect(summary?.hr_sample_count).toBe(2);
     expect(summary?.power_sample_count).toBe(2);
+  });
+
+  it("activity_summary falls back to ambient heart rate up to last linked sample when ended_at is null", async () => {
+    const testExternalId = `wahoo-open-ended-ambient-hr-${randomUUID()}`;
+    const activityRows = await ctx.db
+      .insert(activity)
+      .values({
+        providerId: "wahoo",
+        externalId: testExternalId,
+        activityType: "cycling",
+        startedAt: new Date("2026-03-06T10:00:00Z"),
+        endedAt: null,
+      })
+      .returning({ id: activity.id });
+    const testActivity = activityRows[0];
+    if (!testActivity) throw new Error("Expected activity row");
+
+    // Linked sample establishes the fallback window end (10:20).
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.metric_stream
+          (recorded_at, user_id, provider_id, source_type, channel, activity_id, scalar)
+          VALUES
+          ('2026-03-06T10:20:00Z', ${TEST_USER_ID}, 'wahoo', 'api', 'power', ${testActivity.id}, 230)`,
+    );
+
+    // Ambient HR (activity_id NULL): only samples within [started_at, last_linked_sample_at]
+    // should be used for fallback.
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.metric_stream
+          (recorded_at, user_id, provider_id, source_type, channel, activity_id, scalar)
+          VALUES
+          ('2026-03-06T09:59:00Z', ${TEST_USER_ID}, 'apple_health', 'api', 'heart_rate', NULL, 120),
+          ('2026-03-06T10:05:00Z', ${TEST_USER_ID}, 'apple_health', 'api', 'heart_rate', NULL, 140),
+          ('2026-03-06T10:18:00Z', ${TEST_USER_ID}, 'apple_health', 'api', 'heart_rate', NULL, 150),
+          ('2026-03-06T10:25:00Z', ${TEST_USER_ID}, 'apple_health', 'api', 'heart_rate', NULL, 160)`,
+    );
+
+    await refreshDedupViews(ctx.db);
+
+    const summaryRows = await ctx.db.execute<ActivitySummaryRow>(
+      sql`SELECT * FROM fitness.activity_summary WHERE activity_id = ${testActivity.id}`,
+    );
+    const summary = summaryRows[0];
+    expect(summary).toBeDefined();
+    expect(summary?.hr_sample_count).toBe(2);
+    expect(Number(summary?.avg_hr)).toBeCloseTo(145, 0);
+    expect(summary?.max_hr).toBe(150);
+
+    const dedupedRows = await ctx.db.execute<DedupedSensorRow>(
+      sql`SELECT activity_id, channel, recorded_at, scalar
+          FROM fitness.deduped_sensor
+          WHERE activity_id = ${testActivity.id} AND channel = 'heart_rate'
+          ORDER BY recorded_at`,
+    );
+    expect(dedupedRows).toHaveLength(2);
+    expect(new Date(dedupedRows[0]?.recorded_at ?? "").toISOString()).toBe(
+      "2026-03-06T10:05:00.000Z",
+    );
+    expect(new Date(dedupedRows[1]?.recorded_at ?? "").toISOString()).toBe(
+      "2026-03-06T10:18:00.000Z",
+    );
   });
 
   it("refreshDedupViews can be called multiple times", async () => {

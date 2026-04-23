@@ -67,6 +67,8 @@ The `sensor_sample` table uses a "medium layout" — one row per (timestamp, cha
 
 **Dedup strategy:** When the same metric (e.g., heart_rate) comes from multiple sources (WHOOP API at 1Hz, WHOOP BLE at 50Hz), per (activity_id, channel), the provider with the most samples wins. The most granular source is automatically preferred without any knowledge of source types.
 
+**Ambient fallback heads up:** `fitness.deduped_sensor` uses ambient rows (`activity_id IS NULL`) as a fallback per (activity, channel) only when that activity has zero linked rows for the channel. The fallback window is bounded to `[activity.started_at, COALESCE(activity.ended_at, last_linked_sample_at)]`, where `last_linked_sample_at` is the latest linked sample timestamp for the canonical activity. Ambient rows outside this window are ignored.
+
 **Source type:** The `source_type` column ('ble', 'file', 'api') is informational — for debugging and auditing. It is NOT used for dedup priority.
 
 See `src/db/sensor-channels.ts` for the full list of channel constants.
