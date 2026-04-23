@@ -33,7 +33,11 @@ import {
 import { colors } from "../theme";
 import LoginScreen from "./login";
 
-initTelemetry();
+try {
+  initTelemetry();
+} catch (error: unknown) {
+  captureException(error, { source: "bootstrap-telemetry-init" });
+}
 
 export const rootStackScreenOptions = {
   headerStyle: { backgroundColor: colors.background },
