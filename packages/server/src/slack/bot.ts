@@ -42,14 +42,10 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     );
   }
 
-  if (configuredMode === "http" && !signingSecret) {
-    throw new Error("SLACK_MODE=http requires SLACK_SIGNING_SECRET");
-  }
-
   // HTTP mode (multi-workspace) — OAuth handled externally via /auth/provider/slack
   if (configuredMode === "http" || (!!signingSecret && configuredMode !== "socket")) {
     if (!signingSecret) {
-      throw new Error("SLACK_SIGNING_SECRET is required for HTTP mode");
+      throw new Error("SLACK_MODE=http requires SLACK_SIGNING_SECRET");
     }
     const receiver = new ExpressReceiver({
       signingSecret,

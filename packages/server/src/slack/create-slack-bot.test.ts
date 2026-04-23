@@ -217,6 +217,27 @@ describe("createSlackBot", () => {
 
     expect(() => createSlackBot(db)).toThrow("SLACK_MODE=http requires SLACK_SIGNING_SECRET");
   });
+
+  it("throws when SLACK_MODE has an invalid value", () => {
+    process.env.SLACK_MODE = "invalid-mode";
+
+    const db = createMockDb();
+
+    expect(() => createSlackBot(db)).toThrow(
+      'SLACK_MODE must be "http" or "socket" when set (received "invalid-mode")',
+    );
+  });
+
+  it("throws when SLACK_MODE=socket and one socket token is missing", () => {
+    process.env.SLACK_MODE = "socket";
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+
+    const db = createMockDb();
+
+    expect(() => createSlackBot(db)).toThrow(
+      "SLACK_MODE=socket requires SLACK_BOT_TOKEN and SLACK_APP_TOKEN",
+    );
+  });
 });
 
 describe("startSlackBot", () => {
