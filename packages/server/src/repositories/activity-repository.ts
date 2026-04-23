@@ -295,7 +295,7 @@ export class ActivityRepository extends BaseRepository {
     return mapHrZones(rows);
   }
 
-  /** Cycling power zone distribution for a single activity using Coggan zones relative to FTP. */
+  /** Cycling power zone distribution for a single activity using 7 zones relative to FTP. */
   async getPowerZones(
     activityId: string,
     ftp: number,

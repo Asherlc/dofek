@@ -4,7 +4,7 @@
  * Three models are supported:
  * 1. **Karvonen 5-zone** HR (%HRR) — standard 5-zone model for activity analysis
  * 2. **Treff 3-zone** HR (%HRmax) — simplified model for polarization index
- * 3. **Coggan 7-zone** cycling power (%FTP) — standard model for power analysis
+ * 3. **7-zone** cycling power (%FTP) — standard model for power analysis
  */
 
 import { chartColors, statusColors } from "@dofek/scoring/colors";
@@ -180,7 +180,7 @@ export function computePolarizationIndex(
   return Math.round(Math.log10(ratio) * 1000) / 1000;
 }
 
-// ── Coggan 7-Zone Cycling Power Model ───────────────────────────────
+// ── 7-Zone Cycling Power Model ──────────────────────────────────────
 
 export interface PowerZoneDefinition {
   zone: number;
@@ -212,7 +212,7 @@ export interface ActivityPowerZone {
 }
 
 /**
- * Standard Coggan 7-zone model using % Functional Threshold Power.
+ * Standard 7-zone model using % Functional Threshold Power.
  *
  * Zone boundary = ftp × fraction.
  */

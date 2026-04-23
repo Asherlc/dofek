@@ -469,7 +469,7 @@ interface PowerZone {
   seconds: number;
 }
 
-function PowerZonesChart({ zones, ftp }: { zones: PowerZone[]; ftp: number }) {
+function PowerZonesChart({ zones }: { zones: PowerZone[] }) {
   const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
   if (totalSeconds === 0) return null;
 
@@ -484,7 +484,7 @@ function PowerZonesChart({ zones, ftp }: { zones: PowerZone[]; ftp: number }) {
     <View style={chartStyles.container}>
       <ChartTitleWithTooltip
         title="Power Zones"
-        description={`This chart shows how much time you spent in each Coggan power zone, based on your estimated FTP of ${ftp} W.`}
+        description="This chart shows how much time you spent in each power zone."
         textStyle={chartStyles.title}
       />
       <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
@@ -1041,7 +1041,7 @@ export default function ActivityDetailScreen() {
 
           {/* Power Zones (cycling only, requires eFTP) */}
           {isCycling && hasPower && powerZones.data != null && (
-            <PowerZonesChart zones={powerZones.data.zones} ftp={powerZones.data.ftp} />
+            <PowerZonesChart zones={powerZones.data.zones} />
           )}
         </>
       )}

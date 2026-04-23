@@ -251,7 +251,7 @@ describe("computePolarizationIndex", () => {
 });
 
 describe("POWER_ZONES", () => {
-  it("defines exactly 7 Coggan zones", () => {
+  it("defines exactly 7 power zones", () => {
     expect(POWER_ZONES).toHaveLength(7);
   });
 

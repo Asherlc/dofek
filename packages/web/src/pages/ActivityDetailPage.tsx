@@ -206,7 +206,7 @@ export function ActivityDetailPage() {
         {isCycling && hasPower && powerZones.data != null && (
           <Section
             title="Power Zones"
-            description={`This chart shows how much time you spent in each Coggan power zone, based on your estimated Functional Threshold Power (eFTP) of ${powerZones.data.ftp} W.`}
+            description="This chart shows how much time you spent in each power zone."
           >
             <PowerZonesChart
               zones={powerZones.data.zones}
