@@ -57,6 +57,7 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
   }),
 }));
 
+import { analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { foodRouter } from "./food.ts";
 
 const createCaller = createTestCallerFactory(foodRouter);
@@ -217,6 +218,50 @@ describe("foodRouter", () => {
       });
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty("foodName", "Apple");
+    });
+
+    it("overrides AI meal guess using the current localized time", async () => {
+      const mockedAnalyzeNutritionItems = vi.mocked(analyzeNutritionItems);
+      mockedAnalyzeNutritionItems.mockResolvedValueOnce({
+        items: [
+          {
+            foodName: "Eggs",
+            foodDescription: "2 eggs",
+            category: "eggs",
+            meal: "dinner",
+            calories: 140,
+            proteinG: 12,
+            carbsG: 1,
+            fatG: 10,
+            fiberG: 0,
+            saturatedFatG: 3,
+            sugarG: 1,
+            sodiumMg: 140,
+          },
+        ],
+        provider: "test-provider",
+      });
+
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-15T15:00:00.000Z"));
+      try {
+        const caller = createCaller({
+          db: { execute: vi.fn().mockResolvedValue([]) },
+          userId: "user-1",
+          timezone: "America/Los_Angeles",
+        });
+        const result = await caller.analyzeItemsWithAi({
+          description: "two eggs",
+        });
+
+        const lastCall =
+          mockedAnalyzeNutritionItems.mock.calls[mockedAnalyzeNutritionItems.mock.calls.length - 1];
+        expect(lastCall?.[0]).toBe("two eggs");
+        expect(lastCall?.[1]).toContain("7:00 AM");
+        expect(result.items[0]?.meal).toBe("breakfast");
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
