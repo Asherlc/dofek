@@ -9,8 +9,18 @@ function getBearerToken(authorizationHeader: string | undefined): string | null 
   if (!authorizationHeader) {
     return null;
   }
-  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] ?? null;
+  const firstSpaceIndex = authorizationHeader.indexOf(" ");
+  if (firstSpaceIndex <= 0) {
+    return null;
+  }
+
+  const scheme = authorizationHeader.slice(0, firstSpaceIndex).toLowerCase();
+  if (scheme !== "bearer") {
+    return null;
+  }
+
+  const token = authorizationHeader.slice(firstSpaceIndex + 1).trimStart();
+  return token.length > 0 ? token : null;
 }
 
 export function createMaterializedViewRefreshRouter(): Router {
