@@ -179,6 +179,7 @@ describe("bot.ts — registerHandlers", () => {
     it("analyzes food text and saves unconfirmed entries", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const saveUnconfirmedSpy = vi.spyOn(FoodEntryRepository.prototype, "saveUnconfirmed");
 
       // lookupOrCreateUserId: no existing slack auth link
       mockExecute.mockResolvedValueOnce([]);
@@ -225,16 +226,33 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(mockAnalyze).toHaveBeenCalledWith("Two eggs and toast", expect.any(String));
-      expect(chatPostMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "Analyzing what you ate..." }),
+      expect(client.users.info).toHaveBeenCalledWith({ user: "U123" });
+      expect(chatPostMessage).toHaveBeenCalledWith({
+        channel: "C123",
+        thread_ts: "1700000000.000000",
+        text: "Analyzing what you ate...",
+      });
+      expect(saveUnconfirmedSpy).toHaveBeenCalledWith(
+        "user-123",
+        slackTimestampToDateString("1700000000.000000", "America/New_York"),
+        [item],
+        {
+          channelId: "C123",
+          confirmationMessageTs: "thinking-ts",
+          threadTs: "1700000000.000000",
+          sourceMessageTs: "1700000000.000000",
+          slackUserId: "U123",
+        },
       );
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           ts: "thinking-ts",
+          attachments: [],
           blocks: expect.any(Array),
           text: expect.stringContaining("Test Food: 200 cal"),
         }),
       );
+      saveUnconfirmedSpy.mockRestore();
     });
 
     it("sends error message when AI analysis fails", async () => {
@@ -273,6 +291,7 @@ describe("bot.ts — registerHandlers", () => {
         expect.objectContaining({
           ts: "thinking-ts",
           text: expect.stringContaining("AI provider down"),
+          blocks: [],
         }),
       );
     });
@@ -374,6 +393,74 @@ describe("bot.ts — registerHandlers", () => {
         }),
       ).resolves.not.toThrow();
     });
+
+    it("skips duplicate message events by event_id", async () => {
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      const lookupUserSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "lookupOrCreateUserId")
+        .mockResolvedValue({
+          userId: "user-123",
+          timezone: "America/New_York",
+        });
+      const saveUnconfirmedSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "saveUnconfirmed")
+        .mockResolvedValue(["entry-1"]);
+
+      const item = makeFoodItem();
+      mockAnalyze.mockResolvedValue({ items: [item], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({
+            user: {
+              tz: "America/New_York",
+              real_name: "Test User",
+              profile: { email: "test@test.com" },
+            },
+          }),
+        },
+        conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      try {
+        await messageHandler({
+          body: { event_id: "Ev-duplicate-1" },
+          message: {
+            user: "U123",
+            text: "Two eggs and toast",
+            ts: "1700000000.000000",
+            channel: "C123",
+          },
+          say,
+          client,
+        });
+
+        await messageHandler({
+          body: { event_id: "Ev-duplicate-1" },
+          message: {
+            user: "U123",
+            text: "Two eggs and toast",
+            ts: "1700000000.000000",
+            channel: "C123",
+          },
+          say,
+          client,
+        });
+
+        expect(lookupUserSpy).toHaveBeenCalledTimes(1);
+        expect(saveUnconfirmedSpy).toHaveBeenCalledTimes(1);
+        expect(mockAnalyze).toHaveBeenCalledTimes(1);
+      } finally {
+        lookupUserSpy.mockRestore();
+        saveUnconfirmedSpy.mockRestore();
+      }
+    });
   });
 
   describe("app_mention handler", () => {
@@ -415,15 +502,104 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(mockAnalyze).toHaveBeenCalledWith("two eggs and toast", expect.any(String));
-      expect(chatPostMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "Analyzing what you ate..." }),
-      );
+      expect(client.users.info).toHaveBeenCalledWith({ user: "U123" });
+      expect(chatPostMessage).toHaveBeenCalledWith({
+        channel: "C123",
+        thread_ts: "1700000000.000000",
+        text: "Analyzing what you ate...",
+      });
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           ts: "thinking-ts",
+          attachments: [],
           blocks: expect.any(Array),
         }),
       );
+    });
+
+    it("skips duplicate app_mention events by event_id", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      mockExecute.mockResolvedValueOnce([]);
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { appMentionHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "America/New_York" } }),
+        },
+        conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      const payload = {
+        event_id: "Ev-duplicate-1",
+      };
+
+      await appMentionHandler({
+        body: payload,
+        event: {
+          user: "U123",
+          text: "<@U_BOT> eggs",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client,
+      });
+
+      await appMentionHandler({
+        body: payload,
+        event: {
+          user: "U123",
+          text: "<@U_BOT> eggs",
+          ts: "1700000000.000000",
+          channel: "C123",
+        },
+        say,
+        client,
+      });
+
+      expect(mockAnalyze).toHaveBeenCalledTimes(1);
+      expect(chatPostMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores app_mention events with missing required fields", async () => {
+      const db = createMockDb();
+      const { appMentionHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn();
+      const chatUpdate = vi.fn();
+      const client = {
+        users: {
+          info: vi.fn(),
+        },
+        conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await appMentionHandler({
+        event: {
+          user: "U123",
+          text: "<@U_BOT> eggs",
+          ts: "1700000000.000000",
+        },
+        say,
+        client,
+      });
+
+      expect(client.users.info).not.toHaveBeenCalled();
+      expect(mockAnalyze).not.toHaveBeenCalled();
+      expect(chatPostMessage).not.toHaveBeenCalled();
+      expect(chatUpdate).not.toHaveBeenCalled();
     });
 
     it("ignores mention events with no text beyond the bot mention", async () => {
@@ -630,19 +806,115 @@ describe("bot.ts — registerHandlers", () => {
       expect(loadSpy).toHaveBeenCalledWith(["old-id"]);
       expect(mockRefine).toHaveBeenCalled();
       expect(deleteSpy).toHaveBeenCalledWith(["old-id"]);
-      expect(saveSpy).toHaveBeenCalled();
+      expect(chatPostMessage).toHaveBeenCalledWith({
+        channel: "C1",
+        thread_ts: "1000.000",
+        text: "Updating your entries...",
+      });
+      expect(saveSpy).toHaveBeenCalledWith(
+        "user-123",
+        slackTimestampToDateString("2000.000", "UTC"),
+        [newItem],
+        {
+          channelId: "C1",
+          confirmationMessageTs: "refine-thinking-ts",
+          threadTs: "1000.000",
+          sourceMessageTs: "2000.000",
+          slackUserId: "U1",
+        },
+      );
 
       // Confirmation message updated with refined items
       expect(chatUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ ts: "refine-thinking-ts", blocks: expect.any(Array) }),
+        expect.objectContaining({
+          ts: "refine-thinking-ts",
+          attachments: [],
+          blocks: expect.any(Array),
+        }),
       );
 
       // Old confirmation message retired
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           ts: "old-confirm-ts",
+          attachments: [],
           text: "Superseded by a newer edit below.",
           blocks: [],
+        }),
+      );
+
+      loadSpy.mockRestore();
+      deleteSpy.mockRestore();
+      saveSpy.mockRestore();
+    });
+
+    it("does not retire previous confirmation when previous confirm message has no ts", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+
+      const previousItem = makeFoodItem({ foodName: "Old Pizza", calories: 500 });
+      const newItem = makeFoodItem({ foodName: "New Pizza", calories: 400 });
+
+      const loadSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadForRefinement")
+        .mockResolvedValueOnce([previousItem]);
+      const deleteSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+        .mockResolvedValueOnce(undefined);
+      const saveSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "saveUnconfirmed")
+        .mockResolvedValueOnce(["new-entry-id"]);
+
+      mockRefine.mockResolvedValueOnce({ items: [newItem], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "refine-thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        conversations: {
+          replies: vi.fn().mockResolvedValue({
+            messages: [
+              {
+                bot_id: "B123",
+                blocks: [
+                  { type: "actions", elements: [{ action_id: "confirm_food", value: "old-id" }] },
+                ],
+              },
+            ],
+          }),
+        },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: {
+          user: "U1",
+          text: "actually lower the calories",
+          ts: "2000.000",
+          thread_ts: "1000.000",
+          channel: "C1",
+        },
+        say,
+        client,
+      });
+
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ts: "refine-thinking-ts",
+          attachments: [],
+          blocks: expect.any(Array),
+        }),
+      );
+      expect(chatUpdate).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: "Superseded by a newer edit below.",
         }),
       );
 
@@ -911,6 +1183,59 @@ describe("bot.ts — registerHandlers", () => {
       );
     });
 
+    it("skips duplicate confirm actions for the same message/user/action", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: "user-123",
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80 }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            user: { id: "U123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            user: { id: "U123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalledTimes(2);
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(loadSummarySpy).toHaveBeenCalledTimes(1);
+        expect(chatUpdate).toHaveBeenCalledTimes(1);
+      } finally {
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+      }
+    });
+
     it("prefers message-index IDs over stale button value on confirm", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
@@ -918,6 +1243,7 @@ describe("bot.ts — registerHandlers", () => {
       const findPendingIdsSpy = vi
         .spyOn(FoodEntryRepository.prototype, "findPendingIdsByMessage")
         .mockResolvedValueOnce(["entry-fresh-1"]);
+      const loadSummarySpy = vi.spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary");
 
       const { confirmHandler } = setupHandlers(db);
 
@@ -941,6 +1267,7 @@ describe("bot.ts — registerHandlers", () => {
 
         expect(ack).toHaveBeenCalled();
         expect(findPendingIdsSpy).toHaveBeenCalledWith("C123", "1700000000.000000");
+        expect(loadSummarySpy).toHaveBeenCalledWith(["entry-fresh-1"]);
         expect(chatUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
             text: expect.stringContaining("Toast: 80 cal"),
@@ -948,6 +1275,7 @@ describe("bot.ts — registerHandlers", () => {
         );
       } finally {
         findPendingIdsSpy.mockRestore();
+        loadSummarySpy.mockRestore();
       }
     });
 
@@ -1146,6 +1474,37 @@ describe("bot.ts — registerHandlers", () => {
       expect(chatUpdate).not.toHaveBeenCalled();
     });
 
+    it("does not look up message-index IDs when message.ts is missing", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+      const { confirmHandler } = setupHandlers(db);
+
+      const findPendingIdsSpy = vi.spyOn(FoodEntryRepository.prototype, "findPendingIdsByMessage");
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn();
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            actions: [{ action_id: "confirm_food", value: ",,," }],
+            channel: { id: "C123" },
+            message: {},
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalled();
+        expect(findPendingIdsSpy).not.toHaveBeenCalled();
+        expect(mockExecute).not.toHaveBeenCalled();
+        expect(chatUpdate).not.toHaveBeenCalled();
+      } finally {
+        findPendingIdsSpy.mockRestore();
+      }
+    });
+
     it("confirms entries but does not update when message.ts is missing", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
@@ -1204,6 +1563,9 @@ describe("bot.ts — registerHandlers", () => {
     it("deletes unconfirmed entries and updates message", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const deleteSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+        .mockResolvedValueOnce(undefined);
 
       const { cancelHandler } = setupHandlers(db);
 
@@ -1230,12 +1592,14 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(ack).toHaveBeenCalled();
       expect(mockExecute).not.toHaveBeenCalled();
+      expect(deleteSpy).toHaveBeenCalledWith(["entry-1", "entry-2"]);
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
           text: "Cancelled.",
           blocks: [],
         }),
       );
+      deleteSpy.mockRestore();
     });
 
     it("returns early when body type is not block_actions", async () => {
@@ -1264,6 +1628,7 @@ describe("bot.ts — registerHandlers", () => {
 
     it("handles cancel when body has no message", async () => {
       const db = createMockDb();
+      const deleteSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
       const { cancelHandler } = setupHandlers(db);
 
       const ack = vi.fn();
@@ -1280,11 +1645,14 @@ describe("bot.ts — registerHandlers", () => {
 
       expect(ack).toHaveBeenCalled();
       expect(getMockExecute(db)).not.toHaveBeenCalled();
+      expect(deleteSpy).not.toHaveBeenCalled();
       expect(chatUpdate).not.toHaveBeenCalled();
+      deleteSpy.mockRestore();
     });
 
     it("handles cancel when no blocks/elements match", async () => {
       const db = createMockDb();
+      const deleteSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
       const { cancelHandler } = setupHandlers(db);
 
       const ack = vi.fn();
@@ -1301,7 +1669,9 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(ack).toHaveBeenCalled();
+      expect(deleteSpy).not.toHaveBeenCalled();
       expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+      deleteSpy.mockRestore();
     });
   });
 
@@ -2027,6 +2397,41 @@ describe("bot.ts — registerHandlers", () => {
       // Should NOT have used chat.update (no ts to update)
       expect(chatUpdate).not.toHaveBeenCalled();
       // Should have used say() instead
+      expect(say).toHaveBeenCalledWith(
+        expect.objectContaining({
+          thread_ts: "1700000000.000000",
+          text: expect.stringContaining("Test Food"),
+        }),
+      );
+    });
+
+    it("uses fallback postMessage path when client.chat.postMessage is missing", async () => {
+      const db = createMockDb();
+      const mockExecute = getMockExecute(db);
+
+      mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
+      mockExecute.mockResolvedValueOnce([]);
+      mockExecute.mockResolvedValueOnce([{ id: "entry-1" }]);
+      mockAnalyze.mockResolvedValueOnce({ items: [makeFoodItem()], provider: "gemini" });
+
+      const { messageHandler } = setupHandlers(db);
+
+      const say = vi.fn();
+      const chatUpdate = vi.fn();
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({ user: { tz: "UTC" } }),
+        },
+        chat: { update: chatUpdate },
+      };
+
+      await messageHandler({
+        message: { user: "U1", text: "eggs", ts: "1700000000.000000", channel: "C1" },
+        say,
+        client,
+      });
+
+      expect(chatUpdate).not.toHaveBeenCalled();
       expect(say).toHaveBeenCalledWith(
         expect.objectContaining({
           thread_ts: "1700000000.000000",
@@ -3258,6 +3663,7 @@ describe("bot.ts — registerHandlers", () => {
   describe("cancel_food — blocks with non-matching action_id", () => {
     it("does not delete entries when blocks have non-matching action_id", async () => {
       const db = createMockDb();
+      const deleteSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
       const { cancelHandler } = setupHandlers(db);
 
       const ack = vi.fn();
@@ -3282,13 +3688,16 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(ack).toHaveBeenCalled();
+      expect(deleteSpy).not.toHaveBeenCalled();
       expect(getMockExecute(db)).not.toHaveBeenCalled();
       // Should still update the message with "Cancelled."
       expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+      deleteSpy.mockRestore();
     });
 
     it("does not delete entries when block type is not actions", async () => {
       const db = createMockDb();
+      const deleteSpy = vi.spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed");
       const { cancelHandler } = setupHandlers(db);
 
       const ack = vi.fn();
@@ -3313,8 +3722,10 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(ack).toHaveBeenCalled();
+      expect(deleteSpy).not.toHaveBeenCalled();
       expect(getMockExecute(db)).not.toHaveBeenCalled();
       expect(chatUpdate).toHaveBeenCalledWith(expect.objectContaining({ text: "Cancelled." }));
+      deleteSpy.mockRestore();
     });
   });
 
@@ -3322,6 +3733,9 @@ describe("bot.ts — registerHandlers", () => {
     it("does not call chat.update when no channel available", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const deleteSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+        .mockResolvedValueOnce(undefined);
       const { cancelHandler } = setupHandlers(db);
 
       // deleteUnconfirmedEntries
@@ -3349,7 +3763,10 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(ack).toHaveBeenCalled();
+      expect(deleteSpy).toHaveBeenCalledWith(["entry-1"]);
       expect(chatUpdate).not.toHaveBeenCalled();
+      expect(mockExecute).not.toHaveBeenCalled();
+      deleteSpy.mockRestore();
     });
   });
 
@@ -4201,6 +4618,9 @@ describe("bot.ts — registerHandlers", () => {
     it("handles cancel when body has no channel (does not crash with non-null data)", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
+      const deleteSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "deleteUnconfirmed")
+        .mockResolvedValueOnce(undefined);
 
       const { cancelHandler } = setupHandlers(db);
 
@@ -4226,9 +4646,11 @@ describe("bot.ts — registerHandlers", () => {
       });
 
       expect(ack).toHaveBeenCalled();
+      expect(deleteSpy).toHaveBeenCalledWith(["entry-1", "entry-2"]);
       expect(mockExecute).not.toHaveBeenCalled();
       // But no chat.update since no channel
       expect(chatUpdate).not.toHaveBeenCalled();
+      deleteSpy.mockRestore();
     });
   });
 

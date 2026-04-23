@@ -9,6 +9,7 @@ This directory contains the Slack bot runtime for logging food entries into Dofe
 - Shows a confirmation message with `Confirm` / `Cancel` buttons.
 - On confirm, marks rows `confirmed = true`, updates message, and invalidates cached food/nutrition queries.
 - Supports thread-based refinement: users can reply in thread to modify parsed items before confirming.
+- Deduplicates retried Slack deliveries (event IDs and action keys) to prevent duplicate side effects.
 
 ## Core Files
 - `bot.ts`: Bot creation/startup in HTTP or Socket mode.
@@ -24,6 +25,11 @@ This directory contains the Slack bot runtime for logging food entries into Dofe
 4. `saveUnconfirmed()` inserts `nutrition_data` + `food_entry` (`confirmed = false`) and returns entry IDs.
 5. Bot posts/updates a confirmation block where `confirm_food.value` is comma-separated entry IDs.
 6. On `confirm_food`, bot updates matching entries to `confirmed = true`, loads saved summary, updates Slack message, and invalidates cache.
+
+## Delivery Hardening
+- HTTP mode retry headers (`X-Slack-Retry-Num`, `X-Slack-Retry-Reason`) are logged on `/slack/events` for observability.
+- `event_id` deliveries are deduplicated for 10 minutes.
+- Block action deliveries (`confirm_food`, `cancel_food`) are deduplicated by team/channel/message/action/user for 10 minutes.
 
 ## Known Failure Mode (and Fix)
 Observed symptom: first entry succeeds, later confirms show `These entries were already saved.`

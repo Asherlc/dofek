@@ -3,6 +3,7 @@ import type { App as AppType } from "@slack/bolt";
 import bolt from "@slack/bolt";
 import type { Database } from "dofek/db";
 import type express from "express";
+import type { NextFunction, Request, Response } from "express";
 import { logger } from "../logger.ts";
 import { SlackInstallationRepository } from "../repositories/slack-installation-repository.ts";
 import { FoodEntryRepository } from "./food-entry-repository.ts";
@@ -32,10 +33,20 @@ interface SlackBotResult {
 export function createSlackBot(db: Database): SlackBotResult | null {
   const repository = new FoodEntryRepository(db);
   const slackInstallationRepository = new SlackInstallationRepository(db);
+  const configuredMode = process.env.SLACK_MODE?.trim().toLowerCase();
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
+  if (configuredMode && configuredMode !== "http" && configuredMode !== "socket") {
+    throw new Error(
+      `SLACK_MODE must be "http" or "socket" when set (received "${configuredMode}")`,
+    );
+  }
+
   // HTTP mode (multi-workspace) — OAuth handled externally via /auth/provider/slack
-  if (signingSecret) {
+  if (configuredMode === "http" || (!!signingSecret && configuredMode !== "socket")) {
+    if (!signingSecret) {
+      throw new Error("SLACK_MODE=http requires SLACK_SIGNING_SECRET");
+    }
     const receiver = new ExpressReceiver({
       signingSecret,
       // Router is mounted at /slack, so use /events here → full path /slack/events
@@ -80,6 +91,9 @@ export function createSlackBot(db: Database): SlackBotResult | null {
   // Socket Mode (single workspace)
   const botToken = process.env.SLACK_BOT_TOKEN;
   const appToken = process.env.SLACK_APP_TOKEN;
+  if (configuredMode === "socket" && (!botToken || !appToken)) {
+    throw new Error("SLACK_MODE=socket requires SLACK_BOT_TOKEN and SLACK_APP_TOKEN");
+  }
 
   if (botToken && appToken) {
     const receiver = new SocketModeReceiver({
@@ -149,8 +163,20 @@ export async function startSlackBot(db: Database, expressApp?: express.Express):
 
   try {
     if (result.mode === "http" && result.router && expressApp) {
+      const logSlackRetryHeaders = (req: Request, _res: Response, next: NextFunction) => {
+        const retryNumber = req.get("x-slack-retry-num");
+        const retryReason = req.get("x-slack-retry-reason");
+        if (retryNumber || retryReason) {
+          const requestTimestamp = req.get("x-slack-request-timestamp") ?? "unknown";
+          logger.warn(
+            `[slack] HTTP retry delivery: path=${req.path}, retry_num=${retryNumber ?? "unknown"}, retry_reason=${retryReason ?? "unknown"}, request_ts=${requestTimestamp}`,
+          );
+        }
+        next();
+      };
+
       // Mount Slack event receiver — OAuth is handled by /auth/provider/slack
-      expressApp.use("/slack", result.router);
+      expressApp.use("/slack", logSlackRetryHeaders, result.router);
       logger.info("[slack] Slack bot mounted at /slack/events (HTTP mode)");
     } else if (result.mode === "socket") {
       await result.app.start();
