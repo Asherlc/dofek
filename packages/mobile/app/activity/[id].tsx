@@ -3,8 +3,8 @@ import type { UnitConverter } from "@dofek/format/units";
 import { providerLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
-import { formatActivityTypeLabel } from "@dofek/training/training";
-import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
+import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import { HEART_RATE_ZONE_COLORS, POWER_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -461,6 +461,77 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
   );
 }
 
+interface PowerZone {
+  zone: number;
+  label: string;
+  minPct: number;
+  maxPct: number | null;
+  seconds: number;
+}
+
+function PowerZonesChart({ zones }: { zones: PowerZone[] }) {
+  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
+  if (totalSeconds === 0) return null;
+
+  const barHeight = 22;
+  const gap = 6;
+  const labelWidth = 100;
+  const pctWidth = 44;
+  const barAreaWidth = CHART_WIDTH - labelWidth - pctWidth - 16;
+  const chartTotalHeight = zones.length * (barHeight + gap) - gap;
+
+  return (
+    <View style={chartStyles.container}>
+      <ChartTitleWithTooltip
+        title="Power Zones"
+        description="This chart shows how much time you spent in each power zone."
+        textStyle={chartStyles.title}
+      />
+      <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
+        {zones.map((zone, i) => {
+          const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
+          const barWidth = Math.max(percentage * barAreaWidth, 2);
+          const rowY = i * (barHeight + gap);
+          const zoneColor = POWER_ZONE_COLORS[i] ?? "#71717a";
+
+          return (
+            <G key={zone.zone}>
+              <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
+                {`Z${zone.zone} ${zone.label}`}
+              </SvgText>
+              <Rect
+                x={labelWidth}
+                y={rowY}
+                width={barAreaWidth}
+                height={barHeight}
+                rx={4}
+                fill={colors.surfaceSecondary}
+              />
+              <Rect
+                x={labelWidth}
+                y={rowY}
+                width={barWidth}
+                height={barHeight}
+                rx={4}
+                fill={zoneColor}
+              />
+              <SvgText
+                x={labelWidth + barAreaWidth + 8}
+                y={rowY + barHeight / 2 + 4}
+                fill={colors.text}
+                fontSize={12}
+                fontWeight="600"
+              >
+                {`${Math.round(percentage * 100)}%`}
+              </SvgText>
+            </G>
+          );
+        })}
+      </Svg>
+    </View>
+  );
+}
+
 const chartStyles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
@@ -731,6 +802,13 @@ export default function ActivityDetailScreen() {
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
   const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
   const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const points = stream.data ?? [];
+  const hasPower = points.some((p) => p.power != null);
+  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const powerZones = trpc.activity.powerZones.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id && isCycling && hasPower },
+  );
   const isStrengthActivity =
     detail.data != null && isStrengthActivityType(detail.data.activityType);
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
@@ -738,7 +816,6 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isStrengthActivity },
   );
 
-  const points = stream.data ?? [];
   const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
@@ -781,7 +858,6 @@ export default function ActivityDetailScreen() {
 
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
-  const hasPower = points.some((p) => p.power != null);
   const hasAltitude = points.some((p) => p.altitude != null);
 
   // Build stats array
@@ -962,6 +1038,11 @@ export default function ActivityDetailScreen() {
 
           {/* HR Zones */}
           {zones.length > 0 && <HrZonesChart zones={zones} />}
+
+          {/* Power Zones (cycling only, requires eFTP) */}
+          {isCycling && hasPower && powerZones.data != null && (
+            <PowerZonesChart zones={powerZones.data.zones} />
+          )}
         </>
       )}
 

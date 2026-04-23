@@ -1,4 +1,4 @@
-import { mapHrZones } from "@dofek/zones/zones";
+import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -68,6 +68,11 @@ const streamPointRowSchema = z.object({
 });
 
 const hrZoneRowSchema = z.object({
+  zone: z.coerce.number(),
+  seconds: z.coerce.number(),
+});
+
+const powerZoneRowSchema = z.object({
   zone: z.coerce.number(),
   seconds: z.coerce.number(),
 });
@@ -288,6 +293,41 @@ export class ActivityRepository extends BaseRepository {
     );
 
     return mapHrZones(rows);
+  }
+
+  /** Cycling power zone distribution for a single activity using 7 zones relative to FTP. */
+  async getPowerZones(
+    activityId: string,
+    ftp: number,
+  ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
+    const rows = await this.query(
+      powerZoneRowSchema,
+      sql`WITH power_samples AS (
+            SELECT ds.scalar AS power
+            FROM fitness.deduped_sensor ds
+            WHERE ds.activity_id = ${activityId}
+              AND ds.user_id = ${this.userId}
+              AND ds.channel = 'power'
+          )
+          SELECT
+            z.zone,
+            COUNT(ps.power)::int AS seconds
+          FROM (VALUES (1), (2), (3), (4), (5), (6), (7)) AS z(zone)
+          LEFT JOIN power_samples ps ON
+            CASE z.zone
+              WHEN 1 THEN ps.power < ${ftp} * 0.55
+              WHEN 2 THEN ps.power >= ${ftp} * 0.55 AND ps.power < ${ftp} * 0.75
+              WHEN 3 THEN ps.power >= ${ftp} * 0.75 AND ps.power < ${ftp} * 0.9
+              WHEN 4 THEN ps.power >= ${ftp} * 0.9 AND ps.power < ${ftp} * 1.05
+              WHEN 5 THEN ps.power >= ${ftp} * 1.05 AND ps.power < ${ftp} * 1.2
+              WHEN 6 THEN ps.power >= ${ftp} * 1.2 AND ps.power < ${ftp} * 1.5
+              WHEN 7 THEN ps.power >= ${ftp} * 1.5
+            END
+          GROUP BY z.zone
+          ORDER BY z.zone`,
+    );
+
+    return mapPowerZones(rows);
   }
 
   /** Delete an activity by ID. */

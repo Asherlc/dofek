@@ -10,9 +10,9 @@ import {
   muscleGroupFillColor,
   muscleGroupLabel,
 } from "@dofek/training/muscle-groups";
-import { formatActivityTypeLabel } from "@dofek/training/training";
-import type { ActivityHrZone } from "@dofek/zones/zones";
-import { HEART_RATE_ZONE_COLORS } from "@dofek/zones/zones";
+import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import type { ActivityHrZone, ActivityPowerZone } from "@dofek/zones/zones";
+import { HEART_RATE_ZONE_COLORS, POWER_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
@@ -80,6 +80,10 @@ export function ActivityDetailPage() {
   const detail = trpc.activity.byId.useQuery({ id });
   const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
   const hrZones = trpc.activity.hrZones.useQuery({ id });
+  const points = stream.data ?? [];
+  const hasPower = points.some((p) => p.power != null);
+  const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
+  const powerZones = trpc.activity.powerZones.useQuery({ id }, { enabled: isCycling && hasPower });
   const isStrengthActivity =
     detail.data != null && isStrengthActivityType(detail.data.activityType);
   const strengthExercises = trpc.activity.strengthExercises.useQuery(
@@ -116,11 +120,9 @@ export function ActivityDetailPage() {
   }
 
   const activity = detail.data;
-  const points = stream.data ?? [];
   const zones = hrZones.data ?? [];
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
-  const hasPower = points.some((p) => p.power != null);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
@@ -198,6 +200,19 @@ export function ActivityDetailPage() {
             description="This chart shows how much time you spent in each heart rate zone."
           >
             <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+          </Section>
+        )}
+
+        {isCycling && hasPower && powerZones.data != null && (
+          <Section
+            title="Power Zones"
+            description="This chart shows how much time you spent in each power zone."
+          >
+            <PowerZonesChart
+              zones={powerZones.data.zones}
+              ftp={powerZones.data.ftp}
+              loading={powerZones.isLoading}
+            />
           </Section>
         )}
       </div>
@@ -778,6 +793,88 @@ export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; load
   };
 
   return <DofekChart option={option} height={200} />;
+}
+
+export function PowerZonesChart({
+  zones,
+  ftp,
+  loading,
+}: {
+  zones: ActivityPowerZone[];
+  ftp: number;
+  loading: boolean;
+}) {
+  if (loading) return <ChartLoadingSkeleton height={240} />;
+
+  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
+  if (totalSeconds === 0) {
+    return (
+      <div className="flex items-center justify-center h-[240px]">
+        <span className="text-dim text-sm">No power zone data</span>
+      </div>
+    );
+  }
+
+  const formatTime = (secs: number) => {
+    const minutes = Math.floor(secs / 60);
+    const seconds = secs % 60;
+    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+  };
+
+  const formatRange = (zone: ActivityPowerZone) => {
+    const minWatts = Math.round((zone.minPct / 100) * ftp);
+    const maxWatts = zone.maxPct != null ? Math.round((zone.maxPct / 100) * ftp) : null;
+    const pctLabel =
+      zone.maxPct != null ? `${zone.minPct}–${zone.maxPct}% FTP` : `>${zone.minPct}% FTP`;
+    const wattLabel = maxWatts != null ? `${minWatts}–${maxWatts} W` : `>${minWatts} W`;
+    return `${pctLabel} (${wattLabel})`;
+  };
+
+  const option = {
+    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 120 }),
+    tooltip: dofekTooltip({
+      axisPointer: { type: "shadow" },
+      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
+        const firstParam = params[0];
+        if (!firstParam) return "";
+        const zone = zones[firstParam.dataIndex];
+        if (!zone) return "";
+        const percentage =
+          totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";
+        return `<b>${zone.label}</b> (${formatRange(zone)})<br/>
+          ${formatTime(zone.seconds)} (${percentage}%)`;
+      },
+    }),
+    xAxis: dofekAxis.value({
+      axisLabel: { formatter: (v: number) => formatTime(v) },
+    }),
+    yAxis: dofekAxis.category({
+      data: zones.map((z) => `Z${z.zone} ${z.label}`),
+    }),
+    series: [
+      {
+        type: "bar",
+        data: zones.map((z, i) => ({
+          value: z.seconds,
+          itemStyle: { color: POWER_ZONE_COLORS[i] ?? chartThemeColors.axisLabel },
+        })),
+        barWidth: "60%",
+        label: {
+          show: true,
+          position: "right",
+          color: chartThemeColors.axisLabel,
+          fontSize: 11,
+          formatter: (p: { value: number }) => {
+            const percentage =
+              totalSeconds > 0 ? formatNumber((p.value / totalSeconds) * 100, 0) : "0";
+            return `${percentage}%`;
+          },
+        },
+      },
+    ],
+  };
+
+  return <DofekChart option={option} height={240} />;
 }
 
 function WorkoutMuscleMap({ exercises }: { exercises: StrengthExerciseDetail[] }) {
