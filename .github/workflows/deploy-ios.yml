@@ -11,8 +11,8 @@ on:
         description: "CI run ID with ios-xcarchive artifact"
         required: false
         type: string
-      dispatcher_run_url:
-        description: "URL of the workflow run that dispatched this workflow"
+      dispatching_run_id:
+        description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
   workflow_run:
@@ -156,6 +156,10 @@ jobs:
 
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "Using latest ios-xcarchive from CI run: $RUN_ID"
+      - uses: ./.github/actions/append-dispatcher-run-summary
+        if: always()
+        with:
+          dispatching_run_id: ${{ inputs.dispatching_run_id != '' && inputs.dispatching_run_id || github.event.workflow_run.id }}
 
   deploy:
     name: Upload to TestFlight
@@ -249,11 +253,6 @@ jobs:
             echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
             echo "| **Archive from** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: ./.github/actions/append-dispatcher-run-summary
-        if: success()
-        with:
-          dispatcher_run_url: ${{ inputs.dispatcher_run_url }}
-          workflow_run_url: ${{ github.event.workflow_run.html_url }}
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true

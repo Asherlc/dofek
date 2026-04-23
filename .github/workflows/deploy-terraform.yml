@@ -7,8 +7,8 @@ on:
         description: "Commit SHA to deploy"
         required: false
         type: string
-      dispatcher_run_url:
-        description: "URL of the workflow run that dispatched this workflow"
+      dispatching_run_id:
+        description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
     outputs:
@@ -65,5 +65,4 @@ jobs:
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
-          dispatcher_run_url: ${{ inputs.dispatcher_run_url }}
-          workflow_run_url: ${{ github.event.workflow_run.html_url }}
+          dispatching_run_id: ${{ inputs.dispatching_run_id != '' && inputs.dispatching_run_id || github.event.workflow_run.id }}

@@ -15,8 +15,8 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
-      dispatcher_run_url:
-        description: "URL of the workflow run that dispatched this workflow"
+      dispatching_run_id:
+        description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
   workflow_dispatch:
@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       packages: read
       id-token: write
     env:
@@ -187,5 +188,4 @@ jobs:
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
-          dispatcher_run_url: ${{ inputs.dispatcher_run_url }}
-          workflow_run_url: ${{ github.event.workflow_run.html_url }}
+          dispatching_run_id: ${{ inputs.dispatching_run_id != '' && inputs.dispatching_run_id || github.event.workflow_run.id }}
