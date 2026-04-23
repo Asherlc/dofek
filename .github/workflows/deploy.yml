@@ -146,6 +146,11 @@ jobs:
     name: Deploy App
     needs: [terraform, docker, docker_ml]
     if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
     uses: ./.github/workflows/deploy-app.yml
     with:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
@@ -156,6 +161,10 @@ jobs:
   ios:
     name: Deploy iOS
     if: inputs.target == 'ios' || inputs.target == 'all'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ github.sha }}
@@ -165,6 +174,10 @@ jobs:
   ota:
     name: Deploy OTA
     if: inputs.target == 'ota' || inputs.target == 'all'
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy-ota.yml
     with:
       commit_sha: ${{ github.sha }}
