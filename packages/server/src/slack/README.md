@@ -27,7 +27,7 @@ This directory contains the Slack bot runtime for logging food entries into Dofe
 6. On `confirm_food`, bot updates matching entries to `confirmed = true`, loads saved summary, updates Slack message, and invalidates cache.
 
 ## Delivery Hardening
-- HTTP mode retry headers (`X-Slack-Retry-Num`, `X-Slack-Retry-Reason`) are logged on `/slack/events` for observability.
+- HTTP mode retry headers (`X-Slack-Retry-Num`, `X-Slack-Retry-Reason`) are logged on `/api/slack/events` for observability.
 - `event_id` deliveries are deduplicated for 10 minutes.
 - Block action deliveries (`confirm_food`, `cancel_food`) are deduplicated by team/channel/message/action/user for 10 minutes.
 

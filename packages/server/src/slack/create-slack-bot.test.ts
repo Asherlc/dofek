@@ -271,7 +271,11 @@ describe("startSlackBot", () => {
 
     await startSlackBot(db, mockExpress);
 
-    expect(mockExpress.use).toHaveBeenCalledWith("/slack", expect.any(Function), expect.anything());
+    expect(mockExpress.use).toHaveBeenCalledWith(
+      "/api/slack",
+      expect.any(Function),
+      expect.anything(),
+    );
   });
 
   it("logs Slack retry headers in HTTP mode", async () => {
@@ -388,7 +392,7 @@ describe("startSlackBot", () => {
     await startSlackBot(db, mockExpress);
 
     expect(logger.info).toHaveBeenCalledWith(
-      "[slack] Slack bot mounted at /slack/events (HTTP mode)",
+      "[slack] Slack bot mounted at /api/slack/events (HTTP mode)",
     );
   });
 

@@ -15,7 +15,7 @@ const { App, ExpressReceiver, SocketModeReceiver } = bolt;
 interface SlackBotResult {
   app: AppType;
   mode: "socket" | "http";
-  /** Express router for HTTP mode — mount on your Express app at /slack */
+  /** Express router for HTTP mode — mount on your Express app at /api/slack */
   router?: express.Router;
 }
 
@@ -49,7 +49,7 @@ export function createSlackBot(db: Database): SlackBotResult | null {
     }
     const receiver = new ExpressReceiver({
       signingSecret,
-      // Router is mounted at /slack, so use /events here → full path /slack/events
+      // Router is mounted at /api/slack, so use /events here → full path /api/slack/events
       endpoints: "/events",
       // No clientId/clientSecret — OAuth is handled by the main auth routes
       processBeforeResponse: false,
@@ -176,8 +176,8 @@ export async function startSlackBot(db: Database, expressApp?: express.Express):
       };
 
       // Mount Slack event receiver — OAuth is handled by /auth/provider/slack
-      expressApp.use("/slack", logSlackRetryHeaders, result.router);
-      logger.info("[slack] Slack bot mounted at /slack/events (HTTP mode)");
+      expressApp.use("/api/slack", logSlackRetryHeaders, result.router);
+      logger.info("[slack] Slack bot mounted at /api/slack/events (HTTP mode)");
     } else if (result.mode === "socket") {
       await result.app.start();
       logger.info("[slack] Slack bot connected (Socket Mode)");
