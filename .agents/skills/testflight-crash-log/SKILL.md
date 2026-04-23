@@ -21,33 +21,32 @@ Use this skill when a user asks for TestFlight/App Store Connect crash logs and 
 
 ## Script
 
-- `.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py`
+- `.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.ts`
 
 ## Usage
 
 ```bash
 # Latest crash for default bundle id (com.dofek.app)
-.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py
+pnpm tsx .agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.ts
 
 # Metrics only (no crash log body)
-.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py \
+pnpm tsx .agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.ts \
   --skip-build-metrics
 
 # Different bundle id + keep full log file
-.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py \
+pnpm tsx .agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.ts \
   --bundle-id com.example.app \
   --save-log /tmp/testflight-crash.log
 
 # Fetch a specific submission id
-.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py \
+pnpm tsx .agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.ts \
   --submission-id <BETA_FEEDBACK_CRASH_SUBMISSION_ID>
 ```
 
 ## Required tooling
 
 - `infisical` CLI authenticated (`infisical login`)
-- `python3`
-- Python package `cryptography` (already present in this repo environment)
+- `pnpm` / `tsx` (from repo dependencies)
 
 ## Output expectations
 
