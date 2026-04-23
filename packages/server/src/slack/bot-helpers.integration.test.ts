@@ -49,18 +49,23 @@ describe("Slack Bot — DB helper functions (integration)", () => {
     foodName: string,
   ): Promise<string> {
     const rows = await ctx.db.execute<{ id: string }>(
-      sql`WITH nd AS (
-            INSERT INTO fitness.nutrition_data (
+      sql`WITH new_entry AS (
+            INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, food_name, confirmed
+            ) VALUES (
+              ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
+              ${foodName}, false
+            ) RETURNING id
+          ),
+          new_nutrition AS (
+            INSERT INTO fitness.food_entry_nutrition (
+              food_entry_id,
               calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg
-            ) VALUES (200, 10, 30, 8, 3, 2, 5, 100)
-            RETURNING id
+            )
+            SELECT id, 200, 10, 30, 8, 3, 2, 5, 100
+            FROM new_entry
           )
-          INSERT INTO fitness.food_entry (
-            user_id, provider_id, date, food_name, nutrition_data_id, confirmed
-          ) VALUES (
-            ${userId}, ${DOFEK_PROVIDER_ID}, ${date}::date,
-            ${foodName}, (SELECT id FROM nd), false
-          ) RETURNING id`,
+          SELECT id FROM new_entry`,
     );
     const row = rows[0];
     if (!row) throw new Error("Failed to insert entry");
@@ -171,15 +176,22 @@ describe("Slack Bot — DB helper functions (integration)", () => {
             VALUES (${orphanUserId}, 'slack', 'SLACK_USER_1', 'Slack User', 'real@test.com')`,
       );
 
-      // Insert food entry under orphan (nutrition_data + food_entry)
+      // Insert food entry under orphan
       await ctx.db.execute(
-        sql`WITH nd AS (
-              INSERT INTO fitness.nutrition_data (calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg)
-              VALUES (200, 10, 20, 8, 3, 2, 5, 100)
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, confirmed)
+              VALUES (${orphanUserId}, ${DOFEK_PROVIDER_ID}, '2026-01-15', 'Test Food', true)
               RETURNING id
+            ),
+            new_nutrition AS (
+              INSERT INTO fitness.food_entry_nutrition (
+                food_entry_id,
+                calories, protein_g, carbs_g, fat_g, fiber_g, saturated_fat_g, sugar_g, sodium_mg
+              )
+              SELECT id, 200, 10, 20, 8, 3, 2, 5, 100
+              FROM new_entry
             )
-            INSERT INTO fitness.food_entry (user_id, provider_id, date, food_name, nutrition_data_id, confirmed)
-            VALUES (${orphanUserId}, ${DOFEK_PROVIDER_ID}, '2026-01-15', 'Test Food', (SELECT id FROM nd), true)`,
+            SELECT 1`,
       );
 
       // Simulate the repair: detect the mismatch and fix it
