@@ -1,6 +1,18 @@
 name: Deploy
 
 on:
+  workflow_call:
+    inputs:
+      target:
+        description: "What to deploy"
+        required: false
+        type: string
+        default: all
+      image_tag:
+        description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       target:
@@ -13,10 +25,6 @@ on:
           - app
           - ios
           - ota
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
-        required: false
-        type: string
       image_tag:
         description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
         required: false
@@ -32,7 +40,7 @@ jobs:
     if: inputs.target == 'infra' || inputs.target == 'web' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      commit_sha: ${{ github.sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
@@ -49,13 +57,13 @@ jobs:
       - name: Compute image tag
         id: tag
         env:
-          SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          SHA: ${{ github.sha }}
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
-          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          ref: ${{ github.sha }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           config-inline: |
@@ -71,7 +79,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,value=${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+            type=sha,value=${{ github.sha }}
             type=raw,value=latest
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -81,7 +89,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          build-args: COMMIT_HASH=${{ github.sha }}
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=server
@@ -100,13 +108,13 @@ jobs:
       - name: Compute image tag
         id: tag
         env:
-          SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          SHA: ${{ github.sha }}
         run: |
           SHORT_SHA=$(echo "$SHA" | head -c 7)
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
-          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+          ref: ${{ github.sha }}
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           config-inline: |
@@ -122,7 +130,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-ml
           tags: |
-            type=sha,value=${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+            type=sha,value=${{ github.sha }}
             type=raw,value=latest
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -150,7 +158,7 @@ jobs:
     if: inputs.target == 'ios' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-ios.yml
     with:
-      commit_sha: ${{ inputs.commit_sha }}
+      commit_sha: ${{ github.sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
@@ -159,7 +167,7 @@ jobs:
     if: inputs.target == 'ota' || inputs.target == 'all'
     uses: ./.github/workflows/deploy-ota.yml
     with:
-      commit_sha: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      commit_sha: ${{ github.sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).
