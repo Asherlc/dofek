@@ -238,6 +238,32 @@ describe("createSlackBot", () => {
       "SLACK_MODE=socket requires SLACK_BOT_TOKEN and SLACK_APP_TOKEN",
     );
   });
+
+  it("throws when SLACK_MODE=socket and bot token is missing", () => {
+    process.env.SLACK_MODE = "socket";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+
+    expect(() => createSlackBot(db)).toThrow(
+      "SLACK_MODE=socket requires SLACK_BOT_TOKEN and SLACK_APP_TOKEN",
+    );
+  });
+
+  it("forces socket mode when SLACK_MODE=socket even if signing secret is also set", () => {
+    process.env.SLACK_MODE = "socket";
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const result = createSlackBot(db);
+
+    expect(result?.mode).toBe("socket");
+    expect(result?.router).toBeUndefined();
+    expect(vi.mocked(bolt.ExpressReceiver)).not.toHaveBeenCalled();
+    expect(vi.mocked(bolt.SocketModeReceiver)).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("startSlackBot", () => {
@@ -309,7 +335,63 @@ describe("startSlackBot", () => {
     await retryLoggerMiddleware(req, {}, next);
 
     expect(next).toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("HTTP retry delivery"));
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[slack] HTTP retry delivery: path=/events, retry_num=1, retry_reason=http_timeout, request_ts=1776905657",
+    );
+  });
+
+  it("logs Slack retry headers when only retry number is present", async () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db, mockExpress);
+
+    const retryLoggerMiddleware = mockExpress.use.mock.calls[0]?.[1];
+    if (typeof retryLoggerMiddleware !== "function") {
+      throw new Error("retry logger middleware was not mounted");
+    }
+
+    const req = {
+      path: "/events",
+      get: (name: string) => (name.toLowerCase() === "x-slack-retry-num" ? "2" : undefined),
+    };
+    const next = vi.fn();
+
+    await retryLoggerMiddleware(req, {}, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[slack] HTTP retry delivery: path=/events, retry_num=2, retry_reason=unknown, request_ts=unknown",
+    );
+  });
+
+  it("does not log retry headers when Slack did not mark the request as a retry", async () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db, mockExpress);
+
+    const retryLoggerMiddleware = mockExpress.use.mock.calls[0]?.[1];
+    if (typeof retryLoggerMiddleware !== "function") {
+      throw new Error("retry logger middleware was not mounted");
+    }
+
+    await retryLoggerMiddleware(
+      {
+        path: "/events",
+        get: () => undefined,
+      },
+      {},
+      vi.fn(),
+    );
+
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("warns when HTTP mode but no Express app provided", async () => {
@@ -571,6 +653,16 @@ describe("createSlackBot — logger messages", () => {
     );
   });
 
+  it("sets the socket client ping timeout override", () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    createSlackBot(db);
+
+    expect(mockSocketClient).toMatchObject({ clientPingTimeoutMS: 30_000 });
+  });
+
   it("processEventErrorHandler logs error and reports to Sentry", async () => {
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_APP_TOKEN = "xapp-test-token";
@@ -636,6 +728,38 @@ describe("createSlackBot — logger messages", () => {
     expect(logger.info).toHaveBeenCalledWith("[slack] processEvent called: eventType=message");
   });
 
+  it("processEvent wrapper falls back to top-level body type", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    const wrappedProcessEvent = vi.mocked(bolt.App).mock.results[0]?.value.processEvent;
+    await wrappedProcessEvent({ body: { type: "slash_command" }, ack: vi.fn() });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "[slack] processEvent called: eventType=slash_command",
+    );
+  });
+
+  it("processEvent wrapper falls back to unknown when event body is missing", async () => {
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const { logger } = await import("../logger.ts");
+
+    createSlackBot(db);
+
+    const wrappedProcessEvent = vi.mocked(bolt.App).mock.results[0]?.value.processEvent;
+    await wrappedProcessEvent({ ack: vi.fn() });
+
+    expect(logger.info).toHaveBeenCalledWith("[slack] processEvent called: eventType=unknown");
+  });
+
   it("processEvent wrapper logs and re-throws on error", async () => {
     process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
     process.env.SLACK_APP_TOKEN = "xapp-test-token";
@@ -678,8 +802,10 @@ describe("createSlackBot — logger messages", () => {
     const errorHandler = errorHandlerCall?.[0];
 
     const testError = new Error("http mode error");
+    const { logger } = await import("../logger.ts");
     await errorHandler(testError);
 
+    expect(logger.error).toHaveBeenCalledWith("[slack] Unhandled Bolt error: http mode error");
     expect(Sentry.captureException).toHaveBeenCalledWith(testError);
   });
 
@@ -696,8 +822,10 @@ describe("createSlackBot — logger messages", () => {
     const errorHandler = errorHandlerCall?.[0];
 
     const testError = new Error("socket mode error");
+    const { logger } = await import("../logger.ts");
     await errorHandler(testError);
 
+    expect(logger.error).toHaveBeenCalledWith("[slack] Unhandled Bolt error: socket mode error");
     expect(Sentry.captureException).toHaveBeenCalledWith(testError);
   });
 
