@@ -58,5 +58,6 @@ Use a dedicated write-only ingest token for mobile OTEL headers (do not reuse br
 Workflows that must include these vars:
 
 - `.github/workflows/build-mobile.yml`
+- `.github/workflows/deploy-ios.yml`
 - `.github/workflows/deploy-ota.yml`
 - `.github/workflows/mobile-preview-ota.yml`
