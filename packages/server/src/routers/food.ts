@@ -6,6 +6,32 @@ import { FoodRepository } from "../repositories/food-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
+type MealValue = (typeof mealValues)[number];
+
+function localizedTimeString(timezone: string, date: Date): string {
+  return date.toLocaleString("en-US", {
+    timeZone: timezone,
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function mealFromLocalizedTime(timezone: string, date: Date): MealValue {
+  const hourPart = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    hour12: false,
+  })
+    .formatToParts(date)
+    .find((part) => part.type === "hour")?.value;
+  const localizedHour = Number.parseInt(hourPart ?? "0", 10);
+  if (localizedHour < 10) return "breakfast";
+  if (localizedHour < 14) return "lunch";
+  if (localizedHour < 17) return "snack";
+  return "dinner";
+}
 
 const foodCategoryValues = [
   "beans_and_legumes",
@@ -141,8 +167,19 @@ export const foodRouter = router({
   /** Analyze a natural-language meal and return parsed per-item nutrition entries (Slack parser). */
   analyzeItemsWithAi: protectedProcedure
     .input(z.object({ description: z.string().min(1).max(500) }))
-    .mutation(async ({ input }) => {
-      return analyzeNutritionItems(input.description);
+    .mutation(async ({ ctx, input }) => {
+      const currentTime = new Date();
+      const localTime = localizedTimeString(ctx.timezone, currentTime);
+      const inferredMeal = mealFromLocalizedTime(ctx.timezone, currentTime);
+      const analysis = await analyzeNutritionItems(input.description, localTime);
+
+      return {
+        ...analysis,
+        items: analysis.items.map((item) => ({
+          ...item,
+          meal: inferredMeal,
+        })),
+      };
     }),
 
   /** Quick-add a food entry with minimal details */
