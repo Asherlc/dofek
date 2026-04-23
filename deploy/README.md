@@ -27,8 +27,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 ## Implementation Details
 
 ### Terraform (`*.tf`)
-- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. Two idempotent `terraform_data` resources handle post-provision state:
-  - `swarm_init`: ensures the server has `docker swarm init` run exactly once (cloud-init also does this for fresh servers, but `user_data` is in `ignore_changes`, so this covers drift on the live server).
+- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and one idempotent `terraform_data` resource handles post-provision state:
   - `otel_config_sync`: bind-mounts `otel-collector-config.yaml` into `/opt/dofek` on the server and forces the collector service to re-read it.
   - `hcloud_volume.dofek_data`: attaches persistent block storage for DB growth headroom; size is controlled by `data_volume_size_gb`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
