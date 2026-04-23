@@ -374,6 +374,74 @@ describe("bot.ts — registerHandlers", () => {
         }),
       ).resolves.not.toThrow();
     });
+
+    it("skips duplicate message events by event_id", async () => {
+      const db = createMockDb();
+      const { messageHandler } = setupHandlers(db);
+
+      const lookupUserSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "lookupOrCreateUserId")
+        .mockResolvedValue({
+          userId: "user-123",
+          timezone: "America/New_York",
+        });
+      const saveUnconfirmedSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "saveUnconfirmed")
+        .mockResolvedValue(["entry-1"]);
+
+      const item = makeFoodItem();
+      mockAnalyze.mockResolvedValue({ items: [item], provider: "gemini" });
+
+      const say = vi.fn();
+      const chatPostMessage = vi.fn().mockResolvedValue({ ts: "thinking-ts" });
+      const chatUpdate = vi.fn().mockResolvedValue({});
+      const client = {
+        users: {
+          info: vi.fn().mockResolvedValue({
+            user: {
+              tz: "America/New_York",
+              real_name: "Test User",
+              profile: { email: "test@test.com" },
+            },
+          }),
+        },
+        conversations: { replies: vi.fn() },
+        chat: { postMessage: chatPostMessage, update: chatUpdate },
+      };
+
+      try {
+        await messageHandler({
+          body: { event_id: "Ev-duplicate-1" },
+          message: {
+            user: "U123",
+            text: "Two eggs and toast",
+            ts: "1700000000.000000",
+            channel: "C123",
+          },
+          say,
+          client,
+        });
+
+        await messageHandler({
+          body: { event_id: "Ev-duplicate-1" },
+          message: {
+            user: "U123",
+            text: "Two eggs and toast",
+            ts: "1700000000.000000",
+            channel: "C123",
+          },
+          say,
+          client,
+        });
+
+        expect(lookupUserSpy).toHaveBeenCalledTimes(1);
+        expect(saveUnconfirmedSpy).toHaveBeenCalledTimes(1);
+        expect(mockAnalyze).toHaveBeenCalledTimes(1);
+      } finally {
+        lookupUserSpy.mockRestore();
+        saveUnconfirmedSpy.mockRestore();
+      }
+    });
   });
 
   describe("app_mention handler", () => {
@@ -909,6 +977,59 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Toast: 80 cal"),
         }),
       );
+    });
+
+    it("skips duplicate confirm actions for the same message/user/action", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: "user-123",
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80 }]);
+
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            user: { id: "U123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            team: { id: "T123" },
+            user: { id: "U123" },
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalledTimes(2);
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(loadSummarySpy).toHaveBeenCalledTimes(1);
+        expect(chatUpdate).toHaveBeenCalledTimes(1);
+      } finally {
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+      }
     });
 
     it("prefers message-index IDs over stale button value on confirm", async () => {

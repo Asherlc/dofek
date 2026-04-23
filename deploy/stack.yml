@@ -54,6 +54,7 @@ services:
       OTEL_SERVICE_NAME: dofek-web
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
     healthcheck:

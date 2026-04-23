@@ -2,6 +2,7 @@ import type { App as AppType, SayFn } from "@slack/bolt";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
+import { createSlackDedupeStore, type SlackDedupeStore } from "./dedupe-store.ts";
 import {
   extractLatestConfirmFromThread,
   type FoodEntryRepository,
@@ -11,6 +12,7 @@ import {
 import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
 
 type SayFunction = SayFn;
+const DEDUPE_TTL_MS = 10 * 60 * 1000;
 
 interface ParsedMessageArgs {
   say: SayFunction;
@@ -45,6 +47,93 @@ function splitEntryIds(rawValue: string): string[] {
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+}
+
+function extractEventId(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  if (!("event_id" in body)) return null;
+  const eventId = body.event_id;
+  return typeof eventId === "string" && eventId.length > 0 ? eventId : null;
+}
+
+function buildActionDedupeKey(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  if (!("type" in body) || body.type !== "block_actions") return null;
+
+  const teamId =
+    "team" in body &&
+    body.team &&
+    typeof body.team === "object" &&
+    "id" in body.team &&
+    typeof body.team.id === "string"
+      ? body.team.id
+      : null;
+
+  const userId =
+    "user" in body &&
+    body.user &&
+    typeof body.user === "object" &&
+    "id" in body.user &&
+    typeof body.user.id === "string"
+      ? body.user.id
+      : null;
+
+  const channelId =
+    "channel" in body &&
+    body.channel &&
+    typeof body.channel === "object" &&
+    "id" in body.channel &&
+    typeof body.channel.id === "string"
+      ? body.channel.id
+      : null;
+
+  const messageTs =
+    "message" in body &&
+    body.message &&
+    typeof body.message === "object" &&
+    "ts" in body.message &&
+    typeof body.message.ts === "string"
+      ? body.message.ts
+      : null;
+
+  const actionId =
+    "actions" in body &&
+    Array.isArray(body.actions) &&
+    body.actions[0] &&
+    typeof body.actions[0] === "object" &&
+    "action_id" in body.actions[0] &&
+    typeof body.actions[0].action_id === "string"
+      ? body.actions[0].action_id
+      : null;
+
+  if (!teamId || !userId || !channelId || !messageTs || !actionId) return null;
+  return `${teamId}:${channelId}:${messageTs}:${actionId}:${userId}`;
+}
+
+async function skipDuplicateEvent(dedupeStore: SlackDedupeStore, body: unknown): Promise<boolean> {
+  const eventId = extractEventId(body);
+  if (!eventId) return false;
+
+  const claimed = await dedupeStore.claim(`event:${eventId}`, DEDUPE_TTL_MS);
+  if (claimed) return false;
+
+  logger.warn(`[slack] Duplicate event delivery skipped: event_id=${eventId}`);
+  return true;
+}
+
+async function skipDuplicateAction(
+  dedupeStore: SlackDedupeStore,
+  actionName: string,
+  body: unknown,
+): Promise<boolean> {
+  const actionKey = buildActionDedupeKey(body);
+  if (!actionKey) return false;
+
+  const claimed = await dedupeStore.claim(`action:${actionName}:${actionKey}`, DEDUPE_TTL_MS);
+  if (claimed) return false;
+
+  logger.warn(`[slack] Duplicate action delivery skipped: action=${actionName} key=${actionKey}`);
+  return true;
 }
 
 async function resolveConfirmEntryIds(
@@ -252,7 +341,11 @@ async function handleParsedMessage(
 
 /** Register all Slack Bolt event/action handlers on the given app.
  *  Delegates database operations to the provided repository. */
-export function registerHandlers(app: AppType, repository: FoodEntryRepository): void {
+export function registerHandlers(
+  app: AppType,
+  repository: FoodEntryRepository,
+  dedupeStore: SlackDedupeStore = createSlackDedupeStore(),
+): void {
   // Log all incoming events for diagnostics
   app.use(async (args) => {
     if ("event" in args && args.event && typeof args.event === "object" && "type" in args.event) {
@@ -264,7 +357,9 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
   });
 
   // Handle direct messages (both top-level and thread replies)
-  app.message(async ({ message, say, client }) => {
+  app.message(async ({ message, say, client, body }) => {
+    if (await skipDuplicateEvent(dedupeStore, body)) return;
+
     logger.info(
       `[slack] Message handler invoked: type=${message.type ?? "unknown"}, subtype=${"subtype" in message ? message.subtype : "none"}, has_text=${"text" in message && !!message.text}, has_user=${"user" in message && !!message.user}, has_bot_id=${"bot_id" in message && !!message.bot_id}`,
     );
@@ -316,7 +411,9 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
   });
 
   // Handle app mentions in channels (<@BOT> ...)
-  app.event("app_mention", async ({ event, say, client }) => {
+  app.event("app_mention", async ({ event, say, client, body }) => {
+    if (await skipDuplicateEvent(dedupeStore, body)) return;
+
     if (!event.text || !event.user || !event.ts || !event.channel) return;
 
     const mentionPrefix = /^<@[^>]+>\s*/;
@@ -368,6 +465,8 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
 
     const action = body.actions[0];
     if (!("value" in action) || !action.value) return;
+
+    if (await skipDuplicateAction(dedupeStore, "confirm_food", body)) return;
 
     const channelId = body.channel?.id;
     const messageTs = body.message?.ts;
@@ -507,6 +606,7 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
     await ack();
 
     if (body.type !== "block_actions") return;
+    if (await skipDuplicateAction(dedupeStore, "cancel_food", body)) return;
 
     if (body.message?.blocks) {
       const blocks: Array<{
@@ -517,7 +617,7 @@ export function registerHandlers(app: AppType, repository: FoodEntryRepository):
         if (rawBlock.type !== "actions" || !rawBlock.elements) continue;
         for (const element of rawBlock.elements) {
           if (element.action_id === "confirm_food" && element.value) {
-            const entryIds = element.value.split(",").filter(Boolean);
+            const entryIds = splitEntryIds(element.value);
             await repository.deleteUnconfirmed(entryIds);
             break;
           }

@@ -106,6 +106,7 @@ describe("createSlackBot", () => {
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
+    delete process.env.SLACK_MODE;
   });
 
   afterEach(() => {
@@ -194,6 +195,28 @@ describe("createSlackBot", () => {
 
     expect(result?.mode).toBe("http");
   });
+
+  it("forces HTTP mode when SLACK_MODE=http", () => {
+    process.env.SLACK_MODE = "http";
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+    const result = createSlackBot(db);
+
+    expect(result?.mode).toBe("http");
+  });
+
+  it("throws when SLACK_MODE=http but SLACK_SIGNING_SECRET is missing", () => {
+    process.env.SLACK_MODE = "http";
+    process.env.SLACK_BOT_TOKEN = "xoxb-test-token";
+    process.env.SLACK_APP_TOKEN = "xapp-test-token";
+
+    const db = createMockDb();
+
+    expect(() => createSlackBot(db)).toThrow("SLACK_MODE=http requires SLACK_SIGNING_SECRET");
+  });
 });
 
 describe("startSlackBot", () => {
@@ -204,6 +227,7 @@ describe("startSlackBot", () => {
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_APP_TOKEN;
     delete process.env.SLACK_SIGNING_SECRET;
+    delete process.env.SLACK_MODE;
     mockFetchForSlackVerification();
   });
 
@@ -226,7 +250,41 @@ describe("startSlackBot", () => {
 
     await startSlackBot(db, mockExpress);
 
-    expect(mockExpress.use).toHaveBeenCalledWith("/slack", expect.anything());
+    expect(mockExpress.use).toHaveBeenCalledWith("/slack", expect.any(Function), expect.anything());
+  });
+
+  it("logs Slack retry headers in HTTP mode", async () => {
+    process.env.SLACK_SIGNING_SECRET = "test-signing-secret";
+
+    const db = createMockDb();
+    const mockExpress = mockAs<import("express").Express>({ use: vi.fn() });
+    const { logger } = await import("../logger.ts");
+
+    await startSlackBot(db, mockExpress);
+
+    const useCall = mockExpress.use.mock.calls[0];
+    const retryLoggerMiddleware = useCall?.[1];
+    expect(typeof retryLoggerMiddleware).toBe("function");
+
+    if (typeof retryLoggerMiddleware !== "function") {
+      throw new Error("retry logger middleware was not mounted");
+    }
+
+    const req = {
+      path: "/events",
+      get: (name: string) => {
+        if (name.toLowerCase() === "x-slack-retry-num") return "1";
+        if (name.toLowerCase() === "x-slack-retry-reason") return "http_timeout";
+        if (name.toLowerCase() === "x-slack-request-timestamp") return "1776905657";
+        return undefined;
+      },
+    };
+    const next = vi.fn();
+
+    await retryLoggerMiddleware(req, {}, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("HTTP retry delivery"));
   });
 
   it("warns when HTTP mode but no Express app provided", async () => {
