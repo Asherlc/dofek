@@ -193,23 +193,21 @@ jobs:
             exit 1
           fi
 
+          refresh_url="https://dofek.asherlc.com/api/internal/materialized-views/refresh"
           response_file="${RUNNER_TEMP}/materialized-view-refresh-response.json"
 
           for attempt in $(seq 1 24); do
             echo "Materialized view refresh webhook attempt ${attempt}/24..."
 
             set +e
-            status_code="$(
-              docker run --rm --network dofek_default \
-                -v "${RUNNER_TEMP}:/runner-temp" \
-                curlimages/curl:8.19.0 \
-                --silent --show-error \
-                --output /runner-temp/materialized-view-refresh-response.json \
-                --write-out "%{http_code}" \
-                --request POST \
-                --header "Authorization: Bearer ${MATERIALIZED_VIEW_REFRESH_TOKEN}" \
-                http://web:3000/api/internal/materialized-views/refresh
-            )"
+            status_code="$(curl \
+              --silent \
+              --show-error \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              --request POST \
+              --header "Authorization: Bearer ${MATERIALIZED_VIEW_REFRESH_TOKEN}" \
+              "$refresh_url")"
             curl_exit_code=$?
             set -e
 
