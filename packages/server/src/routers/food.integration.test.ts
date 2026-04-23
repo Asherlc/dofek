@@ -1,9 +1,11 @@
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 
 describe("Food router", () => {
+  const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
@@ -12,7 +14,6 @@ describe("Food router", () => {
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
@@ -202,6 +203,56 @@ describe("Food router", () => {
       const remaining: Array<{ id: string }> = entries.result.data;
       const found = remaining.find((e) => e.id === entryId);
       expect(found).toBeUndefined();
+    });
+
+    it("deletes an entry when its nutrition data is shared by another entry", async () => {
+      await testCtx.db.execute(
+        sql`INSERT INTO fitness.provider (id, name, user_id)
+            VALUES ('dofek', 'Dofek App', ${TEST_USER_ID})
+            ON CONFLICT (id) DO NOTHING`,
+      );
+      const nutritionRows = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.nutrition_data (calories) VALUES (225) RETURNING id`,
+      );
+      const nutritionDataId = nutritionRows[0]?.id;
+      expect(nutritionDataId).toBeDefined();
+
+      const firstRows = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
+            ) VALUES (
+              ${TEST_USER_ID}, 'dofek', '2025-02-03'::date, 'lunch', 'Shared Nutrition First',
+              ${nutritionDataId}::uuid, true
+            )
+            RETURNING id`,
+      );
+      const secondRows = await testCtx.db.execute<{ id: string }>(
+        sql`INSERT INTO fitness.food_entry (
+              user_id, provider_id, date, meal, food_name, nutrition_data_id, confirmed
+            ) VALUES (
+              ${TEST_USER_ID}, 'dofek', '2025-02-03'::date, 'lunch', 'Shared Nutrition Second',
+              ${nutritionDataId}::uuid, true
+            )
+            RETURNING id`,
+      );
+      const firstId = firstRows[0]?.id;
+      const secondId = secondRows[0]?.id;
+      expect(firstId).toBeDefined();
+      expect(secondId).toBeDefined();
+
+      const deleteResult = await mutate("food.delete", { id: firstId });
+      expect(deleteResult.result.data).toBeDefined();
+      expect(deleteResult.result.data.success).toBe(true);
+
+      const entries = await query("food.byDate", { date: "2025-02-03" });
+      const remaining: Array<{ id: string }> = entries.result.data;
+      expect(remaining.some((entry) => entry.id === firstId)).toBe(false);
+      expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
+
+      const sharedNutritionRows = await testCtx.db.execute<{ id: string }>(
+        sql`SELECT id FROM fitness.nutrition_data WHERE id = ${nutritionDataId}::uuid`,
+      );
+      expect(sharedNutritionRows).toHaveLength(1);
     });
   });
 
