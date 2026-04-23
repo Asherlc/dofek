@@ -5,6 +5,10 @@ inputs:
     description: Infisical environment name
     required: false
     default: prod
+  project_id:
+    description: Infisical project/workspace ID. Falls back to .infisical.json workspaceId when omitted.
+    required: false
+    default: ""
   machine_identity_id:
     description: Infisical machine identity ID for OIDC auth
     required: false
@@ -44,6 +48,7 @@ runs:
       shell: bash
       env:
         INFISICAL_ENV: ${{ inputs.env }}
+        INFISICAL_PROJECT_ID: ${{ inputs.project_id }}
         INFISICAL_MACHINE_IDENTITY_ID: ${{ inputs.machine_identity_id }}
         INFISICAL_KEYS: ${{ inputs.keys }}
       run: |
@@ -77,6 +82,15 @@ runs:
           exit 1
         fi
 
+        project_id="$INFISICAL_PROJECT_ID"
+        if [ -z "$project_id" ] && [ -f ".infisical.json" ]; then
+          project_id="$(jq -r '.workspaceId // empty' .infisical.json)"
+        fi
+        if [ -z "$project_id" ]; then
+          echo "::error::Missing Infisical project ID. Set input 'project_id' or add workspaceId to .infisical.json"
+          exit 1
+        fi
+
         keys="$(printf '%s\n' "$INFISICAL_KEYS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d')"
         if [ -z "$keys" ]; then
           echo "::error::No secret keys provided to load-infisical-secrets action"
@@ -84,7 +98,11 @@ runs:
         fi
 
         while IFS= read -r key; do
-          value="$(infisical secrets get "$key" --env="$INFISICAL_ENV" --token="$infisical_access_token" --plain --silent || true)"
+          if ! value="$(infisical secrets get "$key" --env="$INFISICAL_ENV" --projectId="$project_id" --token="$infisical_access_token" --plain --silent 2>&1)"; then
+            echo "::error::Failed to fetch Infisical secret: $key (env=$INFISICAL_ENV, project=$project_id)"
+            echo "$value"
+            exit 1
+          fi
 
           if [ -z "$value" ]; then
             echo "::error::Missing required Infisical secret: $key (env=$INFISICAL_ENV)"
