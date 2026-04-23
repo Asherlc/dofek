@@ -85,34 +85,6 @@ resource "terraform_data" "data_volume_mount_alias" {
   }
 }
 
-# Initialize Docker Swarm on the server. cloud-init also does this for fresh
-# servers, but `user_data` is in `ignore_changes` on `hcloud_server.dofek`, so
-# for the existing live server we apply it explicitly here. Idempotent.
-resource "terraform_data" "swarm_init" {
-  triggers_replace = [
-    "swarm-v3",
-    hcloud_server.dofek.id,
-    # Reconcile swarm manager state on every terraform apply to self-heal
-    # drift (e.g. node left swarm). The command is idempotent.
-    plantimestamp(),
-  ]
-
-  connection {
-    type        = "ssh"
-    host        = hcloud_server.dofek.ipv4_address
-    user        = "root"
-    private_key = var.ssh_private_key
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then exit 0; fi",
-      "if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then docker swarm leave --force; fi",
-      "docker swarm init",
-    ]
-  }
-}
-
 # Sync otel-collector config to the server (bind-mounted into the collector
 # service by stack.yml). Re-runs whenever the config changes.
 resource "terraform_data" "otel_config_sync" {
