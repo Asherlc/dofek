@@ -1,9 +1,18 @@
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { safeParseRows } from "../../lib/safe-parse";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -44,6 +53,8 @@ function isToday(date: Date): boolean {
 export default function FoodScreen() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [aiMealInput, setAiMealInput] = useState("");
+  const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
   const dateString = formatDateForQuery(selectedDate);
 
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
@@ -51,6 +62,8 @@ export default function FoodScreen() {
     typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
 
   const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
+  const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
+  const createAiEntryMutation = trpc.food.create.useMutation();
   const deleteMutation = trpc.food.delete.useMutation({
     onSuccess: () => foodQuery.refetch(),
   });
@@ -107,7 +120,34 @@ export default function FoodScreen() {
     deleteMutation.mutate({ id });
   }
 
+  async function handleLogAiMeal() {
+    const trimmedInput = aiMealInput.trim();
+    if (!trimmedInput) return;
+
+    setAiMealInputError(null);
+    try {
+      const parsedResult = await analyzeItemsMutation.mutateAsync({
+        description: trimmedInput,
+      });
+      for (const parsedItem of parsedResult.items) {
+        await createAiEntryMutation.mutateAsync({
+          date: dateString,
+          nutrients: {},
+          ...parsedItem,
+        });
+      }
+      await foodQuery.refetch();
+      setAiMealInput("");
+    } catch (error) {
+      captureException(error, { source: "food-ai-meal-input" });
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not log this meal with AI input";
+      setAiMealInputError(errorMessage);
+    }
+  }
+
   const { refreshing, onRefresh } = useRefresh();
+  const aiLoggingInProgress = analyzeItemsMutation.isPending || createAiEntryMutation.isPending;
 
   return (
     <View style={styles.container}>
@@ -146,6 +186,37 @@ export default function FoodScreen() {
             style={styles.sectionLinkButton}
           >
             <Text style={styles.sectionLinkText}>Supplements</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.aiInputCard}>
+          <Text style={styles.aiInputTitle}>AI meal input</Text>
+          <Text style={styles.aiInputSubtitle}>
+            Describe what you ate and automatically split it into items to log.
+          </Text>
+          <TextInput
+            style={styles.aiInputField}
+            value={aiMealInput}
+            onChangeText={setAiMealInput}
+            placeholder="two eggs, toast with butter, and coffee with milk"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+          {aiMealInputError && <Text style={styles.aiInputError}>{aiMealInputError}</Text>}
+          <TouchableOpacity
+            style={[
+              styles.aiInputButton,
+              (aiLoggingInProgress || !aiMealInput.trim()) && styles.aiInputButtonDisabled,
+            ]}
+            onPress={handleLogAiMeal}
+            disabled={aiLoggingInProgress || !aiMealInput.trim()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.aiInputButtonText}>
+              {aiLoggingInProgress ? "Logging..." : "Log with AI"}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -248,6 +319,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.accent,
     fontWeight: "600",
+  },
+  aiInputCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 12,
+    gap: 8,
+  },
+  aiInputTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  aiInputSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  aiInputField: {
+    minHeight: 80,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    backgroundColor: colors.background,
+    color: colors.text,
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  aiInputError: {
+    color: "#fca5a5",
+    fontSize: 12,
+  },
+  aiInputButton: {
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  aiInputButtonDisabled: {
+    opacity: 0.5,
+  },
+  aiInputButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
   },
   loadingText: {
     textAlign: "center",

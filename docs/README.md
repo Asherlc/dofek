@@ -7,6 +7,7 @@ Architectural records, provider guides, and reverse engineering research for Dof
 - `schema.md`: Explains the "Raw Data Only" philosophy. Lists columns we intentionally do not store (e.g., distance, calories) because they are derivable from raw sensor streams.
 - `schema.dbml` / `schema.puml`: Automatically generated ER diagrams of the `fitness` schema.
 - `adding-a-provider.md`: Step-by-step guide for implementing new data sources using the `SyncProvider` or `ImportProvider` interfaces.
+- `nutrition-ai-input.md`: End-to-end behavior for natural-language meal logging on web and iOS, including API flow and persistence.
 
 ## Reverse Engineering Guides
 

@@ -14,9 +14,12 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 
 - **tRPC Client**: Configured with `httpBatchStreamLink` in `src/lib/trpc.ts` to support streamed responses from the server. Automatically redirects to `/login` on 401 errors.
 - **Layout Management**: Uses `DashboardLayoutProvider` to manage dashboard widget placement and persistent grid states.
+- **Nutrition AI Input**: The Nutrition page supports natural-language meal logging that parses one message into multiple food items before saving.
 - **Unit System**: A global `UnitProvider` handles conversion between metric and imperial units across the application.
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Error Boundaries**: Granular error handling using `QueryErrorBoundary` and a top-level `ErrorBoundary` in `App.tsx`.
+
+See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
 
 ## Development
 

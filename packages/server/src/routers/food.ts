@@ -1,6 +1,6 @@
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
 import { z } from "zod";
-import { analyzeNutrition } from "../lib/ai-nutrition.ts";
+import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -136,6 +136,13 @@ export const foodRouter = router({
     .input(z.object({ description: z.string().min(1).max(500) }))
     .mutation(async ({ input }) => {
       return analyzeNutrition(input.description);
+    }),
+
+  /** Analyze a natural-language meal and return parsed per-item nutrition entries (Slack parser). */
+  analyzeItemsWithAi: protectedProcedure
+    .input(z.object({ description: z.string().min(1).max(500) }))
+    .mutation(async ({ input }) => {
+      return analyzeNutritionItems(input.description);
     }),
 
   /** Quick-add a food entry with minimal details */

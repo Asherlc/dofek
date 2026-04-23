@@ -8,7 +8,9 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
 - **Activity Recording**: Real-time GPS and sensor recording for workouts, utilizing native `CoreMotion` and `WatchMotion` modules.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
-- **Nutrition Logging**: Rapid meal entry and barcode scanning.
+- **Nutrition Logging**: Rapid meal entry, barcode scanning, and natural-language AI meal input that splits a single message into multiple food items.
+
+See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
 
 ## Project Structure
 
