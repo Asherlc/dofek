@@ -18,12 +18,14 @@ import { SyncRepository } from "../repositories/sync-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 const AUTH_ERROR_PATTERNS = [
-  "authorization failed",
-  "unauthorized",
-  "re-authenticate",
-  "token expired",
-  "session expired",
-  "authentication failed",
+  /\bauthorization failed\b/i,
+  // Match standalone "unauthorized" text while avoiding JSON payload fragments
+  // like {"error":"unauthorized"} that are often endpoint-specific failures.
+  /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i,
+  /\bre-authenticate\b/i,
+  /\btoken expired\b/i,
+  /\bsession expired\b/i,
+  /\bauthentication failed\b/i,
 ] as const;
 
 /**
@@ -32,8 +34,7 @@ const AUTH_ERROR_PATTERNS = [
  */
 export function isAuthError(errorMessage: string | null): boolean {
   if (!errorMessage) return false;
-  const lower = errorMessage.toLowerCase();
-  return AUTH_ERROR_PATTERNS.some((pattern) => lower.includes(pattern));
+  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage));
 }
 
 // ── Input schemas ──

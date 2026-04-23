@@ -350,6 +350,7 @@ describe("syncRouter", () => {
       expect(isAuthError("Network timeout after 30s")).toBe(false);
       expect(isAuthError("Rate limited by provider")).toBe(false);
       expect(isAuthError("Internal server error")).toBe(false);
+      expect(isAuthError('Polar API error (422): {"error":"unauthorized"}')).toBe(false);
     });
 
     it("handles null/empty", () => {
