@@ -3,6 +3,10 @@ name: Build Mobile
 on:
   workflow_call:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   check-mobile-changes:
     name: Check Mobile Changes
@@ -37,11 +41,13 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            EXPO_PUBLIC_SENTRY_DSN
+            EXPO_PUBLIC_OTEL_ENDPOINT
+            EXPO_PUBLIC_OTEL_HEADERS
       - name: Export iOS bundle
-        env:
-          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
-          EXPO_PUBLIC_OTEL_ENDPOINT: ${{ secrets.EXPO_PUBLIC_OTEL_ENDPOINT }}
-          EXPO_PUBLIC_OTEL_HEADERS: ${{ secrets.EXPO_PUBLIC_OTEL_HEADERS }}
         run: cd packages/mobile && pnpm expo export --platform ios --clear
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -56,14 +62,17 @@ jobs:
     runs-on: macos-26
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
-      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
-      EXPO_PUBLIC_OTEL_ENDPOINT: ${{ secrets.EXPO_PUBLIC_OTEL_ENDPOINT }}
-      EXPO_PUBLIC_OTEL_HEADERS: ${{ secrets.EXPO_PUBLIC_OTEL_HEADERS }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            EXPO_PUBLIC_SENTRY_DSN
+            EXPO_PUBLIC_OTEL_ENDPOINT
+            EXPO_PUBLIC_OTEL_HEADERS
       - uses: ./.github/actions/setup-ccache
         with:
           cache-key-prefix: ccache-ios

@@ -19,6 +19,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -34,23 +35,29 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Load mobile preview secrets from Infisical
+        if: steps.mobile-changes.outputs.changed == 'true'
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: |
+            EXPO_TOKEN
+            EXPO_PUBLIC_SENTRY_DSN
+            EXPO_PUBLIC_OTEL_ENDPOINT
+            EXPO_PUBLIC_OTEL_HEADERS
+
       - name: Publish OTA to PR branch
         if: steps.mobile-changes.outputs.changed == 'true'
         working-directory: packages/mobile
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
-          EXPO_PUBLIC_OTEL_ENDPOINT: ${{ secrets.EXPO_PUBLIC_OTEL_ENDPOINT }}
-          EXPO_PUBLIC_OTEL_HEADERS: ${{ secrets.EXPO_PUBLIC_OTEL_HEADERS }}
           PR_NUMBER: ${{ github.event.number }}
           DEBUG: true
-          RELEASE_CHANNEL: staging 
+          RELEASE_CHANNEL: staging
         run: |
           npx eoas@2.3.16 publish \
             --branch "pr-${{ github.event.number }}" \
             --platform ios \
             --nonInteractive \
-            --packageRunner npx 
+            --packageRunner npx
 
       - name: Generate comment body
         if: steps.mobile-changes.outputs.changed == 'true'

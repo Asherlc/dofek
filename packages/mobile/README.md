@@ -41,15 +41,17 @@ pnpm dev
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
 
-To export mobile OpenTelemetry logs to Axiom, set both of these public env vars in mobile CI:
+To export mobile OpenTelemetry logs to Axiom, set both of these public env vars in Infisical (`prod`):
 
 - `EXPO_PUBLIC_OTEL_ENDPOINT` (for example, `https://api.axiom.co/v1/logs`)
 - `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`)
 
-Required GitHub repository secrets:
+Mobile workflows load all runtime env values from Infisical via GitHub OIDC (`.github/actions/load-infisical-secrets`), including:
 
+- `EXPO_PUBLIC_SENTRY_DSN`
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS`
+- `EXPO_TOKEN` (OTA workflows)
 
 Use a dedicated write-only ingest token for mobile OTEL headers (do not reuse broad admin/read tokens).
 
