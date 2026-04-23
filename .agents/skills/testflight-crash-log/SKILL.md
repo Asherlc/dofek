@@ -15,6 +15,7 @@ Use this skill when a user asks for TestFlight/App Store Connect crash logs and 
   - `APP_STORE_CONNECT_KEY_BASE64`
 - Creates an ES256 JWT for App Store Connect API.
 - Resolves app ID from bundle ID.
+- Reads beta build usage metrics for recent builds (`installCount`, `sessionCount`, `crashCount`).
 - Lists latest beta crash submissions.
 - Fetches crash log text for a selected submission.
 
@@ -27,6 +28,10 @@ Use this skill when a user asks for TestFlight/App Store Connect crash logs and 
 ```bash
 # Latest crash for default bundle id (com.dofek.app)
 .agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py
+
+# Metrics only (no crash log body)
+.agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py \
+  --skip-build-metrics
 
 # Different bundle id + keep full log file
 .agents/skills/testflight-crash-log/scripts/fetch_testflight_crash_log.py \
@@ -49,12 +54,14 @@ Use this skill when a user asks for TestFlight/App Store Connect crash logs and 
 The script prints:
 
 1. app name/app id
-2. latest crash submission ids + timestamps/devices
-3. selected submission id
-4. `Exception Type` and `Termination Reason` lines
-5. first N lines of crash log (default 80)
+2. recent build metrics (`installCount`, `sessionCount`, `crashCount`)
+3. latest crash submission ids + timestamps/devices
+4. selected submission id
+5. `Exception Type` and `Termination Reason` lines
+6. first N lines of crash log (default 80)
 
 ## Notes
 
-- Crash submissions are sparse and delayed; "0 submissions" is possible even if users report crashes.
+- `betaBuildUsages` metrics are the reliable first check for whether a build has sessions/crashes.
+- `betaFeedbackCrashSubmissions` are feedback-linked crash logs and may be sparse even when crashes exist.
 - Keep secrets masked in chat output. Do not print full key material.

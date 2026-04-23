@@ -42,6 +42,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", default="prod", help="Infisical environment")
     parser.add_argument("--limit", type=int, default=10, help="Max crash submissions to list")
     parser.add_argument(
+        "--build-limit",
+        type=int,
+        default=8,
+        help="Max recent builds to inspect for beta usage metrics",
+    )
+    parser.add_argument(
         "--submission-id",
         default=None,
         help="Specific betaFeedbackCrashSubmission ID to fetch (defaults to latest)",
@@ -56,6 +62,11 @@ def parse_args() -> argparse.Namespace:
         "--save-log",
         default=None,
         help="Optional path to save full crash log text",
+    )
+    parser.add_argument(
+        "--skip-build-metrics",
+        action="store_true",
+        help="Skip /metrics/betaBuildUsages calls",
     )
     return parser.parse_args()
 
@@ -158,6 +169,52 @@ def list_crashes(app_id: str, token: str, limit: int) -> list[dict[str, Any]]:
     return response.get("data", [])
 
 
+def list_recent_builds(app_id: str, token: str, limit: int) -> list[dict[str, Any]]:
+    response = api_get(
+        "/v1/builds",
+        token,
+        {
+            "filter[app]": app_id,
+            "sort": "-uploadedDate",
+            "limit": str(limit),
+            "fields[builds]": "version,uploadedDate,processingState,expired",
+        },
+    )
+    return response.get("data", [])
+
+
+def read_beta_build_usage(build_id: str, token: str) -> dict[str, int | None]:
+    response = api_get(f"/v1/builds/{build_id}/metrics/betaBuildUsages", token)
+    metric_rows = response.get("data", [])
+    if not metric_rows:
+        return {
+            "installCount": None,
+            "sessionCount": None,
+            "crashCount": None,
+            "feedbackCount": None,
+            "inviteCount": None,
+        }
+
+    points = metric_rows[0].get("dataPoints", [])
+    if not points:
+        return {
+            "installCount": None,
+            "sessionCount": None,
+            "crashCount": None,
+            "feedbackCount": None,
+            "inviteCount": None,
+        }
+
+    values = points[0].get("values", {})
+    return {
+        "installCount": values.get("installCount"),
+        "sessionCount": values.get("sessionCount"),
+        "crashCount": values.get("crashCount"),
+        "feedbackCount": values.get("feedbackCount"),
+        "inviteCount": values.get("inviteCount"),
+    }
+
+
 def read_crash_log(submission_id: str, token: str) -> str:
     response = api_get(
         f"/v1/betaFeedbackCrashSubmissions/{submission_id}/crashLog",
@@ -183,6 +240,27 @@ def main() -> int:
     app_id, app_name = get_app(args.bundle_id, token)
     print(f"App: {app_name} ({args.bundle_id})")
     print(f"App ID: {app_id}")
+
+    if not args.skip_build_metrics:
+        builds = list_recent_builds(app_id, token, args.build_limit)
+        print(f"Recent builds: {len(builds)}")
+        for build in builds:
+            attributes = build.get("attributes", {})
+            usage = read_beta_build_usage(build["id"], token)
+            print(
+                "Build "
+                f"version={attributes.get('version')} "
+                f"uploaded={attributes.get('uploadedDate')} "
+                f"state={attributes.get('processingState')} "
+                f"installs={usage.get('installCount')} "
+                f"sessions={usage.get('sessionCount')} "
+                f"crashes={usage.get('crashCount')} "
+                f"feedback={usage.get('feedbackCount')}"
+            )
+        print(
+            "Note: beta build usage metrics are authoritative for installs/sessions/crash counts; "
+            "betaFeedbackCrashSubmissions below are feedback-linked crash reports only."
+        )
 
     submissions = list_crashes(app_id, token, args.limit)
     print(f"Crash submissions: {len(submissions)}")
