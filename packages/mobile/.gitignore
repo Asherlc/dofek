@@ -6,6 +6,8 @@
 
 # Node
 node_modules/
+.env
+.env.*
 
 # Storybook generated files
 .rnstorybook/storybook.requires.ts

@@ -136,6 +136,35 @@ Deploy now triggers this webhook after stack deploy as a separate async operatio
 `otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-app`.
 `deploy-app` updates swarm services, but collector reads the bind-mounted host file at `/opt/dofek/otel-collector-config.yaml`.
 
+### Mobile CI Secrets (Infisical OIDC)
+
+Mobile/TestFlight workflows now load runtime secrets directly from Infisical via GitHub OIDC using `.github/actions/load-infisical-secrets`.
+
+- Required workflow permission: `id-token: write` (for OIDC token minting).
+- Default machine identity: `46b66f72-0c77-4cfe-be1b-a43395e77be7`.
+- Default environment: `prod`.
+
+Workflows using this path:
+
+- `.github/workflows/build-mobile.yml`
+- `.github/workflows/deploy-ios.yml`
+- `.github/workflows/deploy-ota.yml`
+- `.github/workflows/mobile-preview-ota.yml`
+
+Required Infisical keys for mobile pipelines:
+
+- `EXPO_PUBLIC_SENTRY_DSN`
+- `EXPO_PUBLIC_OTEL_ENDPOINT`
+- `EXPO_PUBLIC_OTEL_HEADERS`
+- `EXPO_TOKEN` (OTA publish workflows)
+- `APP_STORE_CONNECT_KEY_ID` (TestFlight deploy)
+- `APP_STORE_CONNECT_ISSUER_ID` (TestFlight deploy)
+- `APP_STORE_CONNECT_KEY_BASE64` (TestFlight deploy)
+- `IOS_DISTRIBUTION_CERT_BASE64` (TestFlight deploy)
+- `IOS_DISTRIBUTION_CERT_PASSWORD` (TestFlight deploy)
+
+Missing keys fail the workflow immediately with an explicit key name.
+
 ### Deployment Runbook: Cold-Start and DB Availability
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `dofek_db` and `dofek_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
