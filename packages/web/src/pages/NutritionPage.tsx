@@ -9,7 +9,6 @@ import { AddFoodModal, type FoodFormData, type MealType } from "../components/Ad
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
-import { SlackInstallBanner } from "../components/SlackInstallBanner.tsx";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -238,8 +237,6 @@ export function NutritionPage() {
             </button>
           )}
         </div>
-
-        <SlackInstallBanner />
 
         <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-3">
           <div className="space-y-1">
