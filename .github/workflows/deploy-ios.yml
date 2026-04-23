@@ -230,6 +230,7 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: "true"
         run: |
           set -o pipefail
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)
           xcodebuild archive \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
@@ -240,6 +241,7 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
             2>&1 | tail -40
