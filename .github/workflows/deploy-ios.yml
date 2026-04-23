@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       ci_run_id:
-        description: "CI run ID with ios-xcarchive artifact"
+        description: "CI run ID to include in deploy summary (optional)"
         required: false
         type: string
       dispatching_run_id:
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: "CI run ID with ios-xcarchive. Defaults to latest successful CI run."
+        description: "CI run ID to include in deploy summary (optional)."
         required: false
         type: string
 
@@ -124,14 +124,13 @@ jobs:
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
             echo "No iOS native changes since last deploy — skipping"
           fi
-      - name: Find CI run with archive
+      - name: Resolve triggering CI run ID
         id: find-run
         if: steps.detect.outputs.should_deploy == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_RUN_ID: ${{ inputs.ci_run_id }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             echo "run_id=$WORKFLOW_RUN_ID" >> "$GITHUB_OUTPUT"
@@ -142,20 +141,10 @@ jobs:
           if [ -n "$INPUT_RUN_ID" ]; then
             echo "run_id=$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
             echo "Using provided CI run: $INPUT_RUN_ID"
-            exit 0
+          else
+            echo "run_id=" >> "$GITHUB_OUTPUT"
+            echo "No CI run ID provided"
           fi
-
-          # Find the latest ios-xcarchive artifact
-          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=ios-xcarchive&per_page=1" \
-            --jq '.artifacts[0].workflow_run.id')
-
-          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
-            echo "::error::No ios-xcarchive artifact found"
-            exit 1
-          fi
-
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "Using latest ios-xcarchive from CI run: $RUN_ID"
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
@@ -191,17 +180,18 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: ${{ steps.sha.outputs.ref }}
-      - name: Download CI archive
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: ios-xcarchive
-          path: ${{ runner.temp }}/Dofek.xcarchive
-          run-id: ${{ needs.check.outputs.ci_run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Read build number from archive
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Generate native project
+        working-directory: packages/mobile
+        run: npx expo prebuild --clean --platform ios
+      - name: Install CocoaPods dependencies
+        run: cd packages/mobile/ios && pod install
+      - name: Set build number
         id: build-number
         run: |
-          BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleVersion" "$RUNNER_TEMP/Dofek.xcarchive/Info.plist")
+          cd packages/mobile/ios
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + 1200 ))
+          agvtool new-version -all "$BUILD_NUMBER"
           echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Build number: $BUILD_NUMBER"
       - name: Setup code signing
@@ -224,6 +214,26 @@ jobs:
         run: |
           mkdir -p ~/private_keys
           echo -n "$API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+      - name: Archive (Release, signed)
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          set -o pipefail
+          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)
+          xcodebuild archive \
+            -workspace packages/mobile/ios/Dofek.xcworkspace \
+            -scheme Dofek \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
+            2>&1 | tail -40
       - name: Export IPA & Upload to TestFlight
         run: |
           xcodebuild -exportArchive \
@@ -251,7 +261,9 @@ jobs:
             echo "| **Version** | $VERSION |"
             echo "| **Build** | $BUILD_NUMBER |"
             echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
-            echo "| **Archive from** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
+            if [ -n "$CI_RUN_ID" ]; then
+              echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Cleanup keychain
         if: always()
