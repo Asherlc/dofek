@@ -53,13 +53,15 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_SHA: ${{ inputs.commit_sha }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             echo "sha=$WORKFLOW_RUN_SHA" >> "$GITHUB_OUTPUT"
           elif [ -n "$INPUT_SHA" ]; then
             echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "sha=$DISPATCH_SHA" >> "$GITHUB_OUTPUT"
           fi
-          # For manual dispatch without commit_sha, SHA is resolved from CI run later
       - name: Detect iOS native changes
         id: detect
         env:
