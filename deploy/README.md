@@ -112,9 +112,24 @@ CI (main) -> build dofek + dofek-ml (same tag)
    5. Bootstrap step for clean-slate hosts: if `docker service inspect dofek_db` fails, run
       `docker stack deploy -c deploy/stack.yml --with-registry-auth dofek` first so the swarm DB service and overlay network exist.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
-   7. Run migrations as a one-shot container attached to the swarm overlay network:
+   7. Run **schema migrations only** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
+      Materialized view refresh is out-of-band and not a deploy gate.
    8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
+   9. Trigger `POST /api/internal/materialized-views/refresh` over HTTPS from the CI runner (`https://dofek.asherlc.com/...`).
+      This keeps materialized view sync out-of-band from schema migrations while still kicking it off automatically during deploy.
+
+### Materialized View Refresh Webhook
+
+Materialized view syncing is intentionally decoupled from the deploy migration step.
+Deploy now triggers this webhook after stack deploy as a separate async operation.
+
+- Endpoint: `POST /api/internal/materialized-views/refresh`
+- Auth: `Authorization: Bearer <MATERIALIZED_VIEW_REFRESH_TOKEN>`
+- Behavior: starts refresh asynchronously and returns `202`; if one is already running, returns `202` with `already_running`.
+- Required env vars:
+  - `MATERIALIZED_VIEW_REFRESH_TOKEN`
+  - `DATABASE_URL`
 
 ### Collector Config Changes
 

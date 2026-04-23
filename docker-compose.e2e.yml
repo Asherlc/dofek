@@ -39,6 +39,7 @@ services:
       PORT: "3000"
       NODE_ENV: test
       DISABLE_QUERY_CACHE: "true"
+      MATERIALIZED_VIEW_REFRESH_TOKEN: e2e-refresh-token
     depends_on:
       migrate:
         condition: service_completed_successfully
