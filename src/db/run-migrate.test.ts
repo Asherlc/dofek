@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./migrate.ts", () => ({ runMigrations: vi.fn() }));
-vi.mock("./sync-views.ts", () => ({
-  syncMaterializedViews: vi.fn().mockResolvedValue({ synced: 0, skipped: 0, refreshed: 0 }),
-}));
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
@@ -43,6 +40,15 @@ describe("run-migrate main()", () => {
 
     expect(mockRunMigrations).toHaveBeenCalledWith("postgres://test:test@localhost:5432/test");
     expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining("3 migration(s) applied"));
+  });
+
+  it("does not run view synchronization", async () => {
+    process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    mockRunMigrations.mockResolvedValue(0);
+
+    await main();
+
+    expect(mockLogger.info).not.toHaveBeenCalledWith(expect.stringContaining("[views]"));
   });
 
   it("propagates errors from runMigrations", async () => {

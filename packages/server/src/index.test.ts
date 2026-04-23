@@ -75,6 +75,12 @@ vi.mock("./routes/export.ts", () => ({
     return Router();
   }),
 }));
+vi.mock("./routes/materialized-view-refresh.ts", () => ({
+  createMaterializedViewRefreshRouter: vi.fn(() => {
+    const { Router } = require("express");
+    return Router();
+  }),
+}));
 vi.mock("./routes/upload.ts", () => ({
   createUploadRouter: vi.fn(() => {
     const { Router } = require("express");
@@ -109,6 +115,7 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
+import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-refresh.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -647,6 +654,10 @@ describe("createApp HTTP routes", () => {
           db: expect.anything(),
         }),
       );
+    });
+
+    it("mounts materialized view refresh router", () => {
+      expect(vi.mocked(createMaterializedViewRefreshRouter)).toHaveBeenCalled();
     });
   });
 });

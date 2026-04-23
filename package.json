@@ -11,6 +11,7 @@
     "./db/nutrient-columns": "./src/db/nutrient-columns.ts",
     "./db/dedup": "./src/db/dedup.ts",
     "./db/materialized-views": "./src/db/materialized-views.ts",
+    "./db/sync-views": "./src/db/sync-views.ts",
     "./providers/types": "./src/providers/types.ts",
     "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",

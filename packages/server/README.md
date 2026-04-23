@@ -6,6 +6,7 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.
 - **Express Server**: Hosts the tRPC middleware and supplementary REST routes for webhooks, file uploads, and authentication.
+- **Maintenance Webhooks**: Includes internal REST endpoints (for example, materialized-view refresh triggers) that run background maintenance asynchronously.
 - **BullMQ**: Manages distributed background jobs for data synchronization, imports, and exports.
 - **Drizzle ORM**: Type-safe database interactions with TimescaleDB.
 - **Repositories**: Data access layer encapsulated in `src/repositories/`, abstracting SQL logic.

@@ -26,3 +26,4 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - **Deduplication**: `dedup.ts` contains logic to pick the highest-priority provider when multiple sources report the same metric for an activity.
 - **Nutrient Columns**: Shared nutrient columns are generated via `nutrient-columns.ts`.
 - **Views**: Materialized views and database-level views are managed in `sync-views.ts`.
+  View syncing is triggered out-of-band (not in the blocking schema migration path).
