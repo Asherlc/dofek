@@ -186,6 +186,84 @@ jobs:
         run: |
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
 
+      - name: Trigger materialized view refresh webhook
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
+        run: |
+          if [ -z "${MATERIALIZED_VIEW_REFRESH_TOKEN:-}" ]; then
+            echo "::error::MATERIALIZED_VIEW_REFRESH_TOKEN is required"
+            exit 1
+          fi
+
+          for attempt in $(seq 1 24); do
+            echo "Materialized view refresh webhook attempt ${attempt}/24..."
+            if docker run --rm --network dofek_default \
+              --env-file "$INFISICAL_ENV_FILE" \
+              --entrypoint node \
+              "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+              -e '
+                const token = process.env.MATERIALIZED_VIEW_REFRESH_TOKEN;
+                if (!token) {
+                  console.error("MATERIALIZED_VIEW_REFRESH_TOKEN is required");
+                  process.exit(20);
+                }
+
+                const run = async () => {
+                  try {
+                    const response = await fetch("http://web:3000/api/internal/materialized-views/refresh", {
+                      method: "POST",
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    const bodyText = await response.text();
+                    let body;
+                    try {
+                      body = JSON.parse(bodyText);
+                    } catch {
+                      body = bodyText;
+                    }
+
+                    if (response.status === 202 && (body.status === "started" || body.status === "already_running")) {
+                      console.log(`Accepted refresh request (${body.status}).`);
+                      process.exit(0);
+                    }
+
+                    // Retry while web service is still rolling out.
+                    if ([404, 502, 503, 504].includes(response.status)) {
+                      console.error(`Retryable response: HTTP ${response.status} body=${JSON.stringify(body)}`);
+                      process.exit(10);
+                    }
+
+                    // Authentication/config problems should fail immediately.
+                    console.error(`Non-retryable response: HTTP ${response.status} body=${JSON.stringify(body)}`);
+                    process.exit(20);
+                  } catch (error) {
+                    console.error(`Retryable request error: ${error}`);
+                    process.exit(10);
+                  }
+                };
+
+                run();
+              '; then
+              echo "Materialized view refresh webhook accepted."
+              break
+            fi
+
+            exit_code=$?
+            if [ "$exit_code" -eq 20 ]; then
+              echo "::error::Materialized view refresh webhook failed with a non-retryable error"
+              exit 1
+            fi
+
+            if [ "$attempt" -eq 24 ]; then
+              echo "::error::Materialized view refresh webhook did not succeed after 24 attempts"
+              exit 1
+            fi
+
+            echo "Retrying materialized view refresh webhook in 5s..."
+            sleep 5
+          done
+
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
