@@ -48,6 +48,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Evidence requirement**: Before changing behavior, capture and cite (1) the exact failing command/step, (2) the first fatal log line, and (3) the causal explanation for why that failure occurs.
 - **No paper-over PRs**: A fix is incomplete if it only suppresses or delays failure without proving and addressing the underlying cause.
 - **Fail loudly on missing prerequisites**: Missing secrets/config must hard-fail immediately with explicit key names; never continue in degraded mode.
+- **New env vars require Infisical updates**: Whenever code, config, CI, or infrastructure starts referencing a new environment variable, verify that it already exists in Infisical for the relevant environment(s). If it does not exist, create it before considering the task done. Do not merge or deploy code that references a new env var without ensuring Infisical is updated too.
 - **Definition of done for incident fixes**: Include all of the following in the final report: one-sentence root cause, direct fix for that cause, validation run showing success without ad-hoc waits, and a one-line justification for any remaining resilience knob.
 - **Escalation rule**: If root cause remains unknown after initial investigation, stop and ask the user for direction instead of improvising workaround behavior.
 
