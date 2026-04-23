@@ -363,6 +363,7 @@ Each provider is enabled by adding its credentials to Infisical. OAuth providers
 | Auto-Supplements | Config-based | Daily supplement entries | None (configured in UI) |
 
 OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Set `OAUTH_REDIRECT_URI` in Infisical. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
+Provider secrets must be stored in Infisical, not `.env.local`.
 
 ### Reverse-Engineered API Packages (7)
 
