@@ -306,7 +306,7 @@ describe("worker module", () => {
     const { processPostSyncJob } = await import("./process-post-sync-job.ts");
     vi.mocked(processPostSyncJob).mockClear();
 
-    await invokeProcessor("post-sync-queue", { userId: "u" });
+    await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" });
 
     expect(processPostSyncJob).toHaveBeenCalled();
   });

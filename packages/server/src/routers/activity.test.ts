@@ -305,6 +305,7 @@ describe("activityRouter", () => {
         name: "Morning Ride",
         notes: null,
         provider_id: "wahoo",
+        subsource: null,
         source_providers: ["strava", "wahoo"],
         source_external_ids: [
           { providerId: "strava", externalId: "99999" },
@@ -330,6 +331,7 @@ describe("activityRouter", () => {
       expect(result.avgHr).toBe(150);
       expect(result.maxPower).toBe(350);
       expect(result.elevationGain).toBe(300);
+      expect(result.subsource).toBeNull();
       expect(result.sourceLinks).toEqual([
         { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
         { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
@@ -352,6 +354,7 @@ describe("activityRouter", () => {
         name: null,
         notes: null,
         provider_id: "manual",
+        subsource: null,
         source_providers: null,
         source_external_ids: null,
         avg_hr: null,

@@ -29,6 +29,7 @@ const fullRow: ActivityRow = {
   name: "Morning Ride",
   notes: "Felt good",
   provider_id: "wahoo",
+  subsource: null,
   source_providers: ["wahoo", "strava"],
   source_external_ids: [
     { providerId: "strava", externalId: "99999" },
@@ -58,6 +59,7 @@ describe("Activity", () => {
     expect(activity.name).toBe("Morning Ride");
     expect(activity.notes).toBe("Felt good");
     expect(activity.providerId).toBe("wahoo");
+    expect(activity.subsource).toBeNull();
     expect(activity.sourceProviders).toEqual(["wahoo", "strava"]);
     expect(activity.avgHr).toBe(145);
     expect(activity.maxHr).toBe(175);
@@ -146,6 +148,13 @@ describe("Activity", () => {
     expect(activity.sourceProviders).toEqual([]);
   });
 
+  it("exposes the subsource when present", () => {
+    const row: ActivityRow = { ...fullRow, provider_id: "apple_health", subsource: "Strong" };
+    const activity = new Activity(row, mockLookup);
+
+    expect(activity.subsource).toBe("Strong");
+  });
+
   describe("toDetail", () => {
     it("serializes to ActivityDetail shape", () => {
       const activity = new Activity(fullRow, mockLookup);
@@ -159,6 +168,7 @@ describe("Activity", () => {
         name: "Morning Ride",
         notes: "Felt good",
         providerId: "wahoo",
+        subsource: null,
         sourceProviders: ["wahoo", "strava"],
         sourceLinks: [
           {

@@ -100,6 +100,12 @@ A single export may contain records from multiple health systems (e.g., UCSF Hea
 
 As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live sync) was consolidated into `apple_health` (XML export import). Both are ingestion paths for the same Apple Watch data, so they now share a single provider ID. The migration merges overlapping `daily_metrics` rows with `COALESCE`, preferring XML export values.
 
+## Workout Source Attribution
+
+Apple Health workouts can preserve the upstream app name inside the workout JSON (`raw.sourceName`) even when the canonical `source_name` column is null. In production this is how workouts imported through Apple Health can still identify apps like Strong or WHOOP on the activity detail page.
+
+This attribution is still workout-level only. For Strong-backed Apple Health workouts, the stored JSON can tell us that the workout came from Strong, but it does **not** include per-exercise details like exercise names, sets, reps, or weights. That richer breakdown only exists in the Strong CSV/import path.
+
 ## Heart Rate Variability (HRV) Selection
 
 Apple Watch records SDNN (the standard HRV metric) during both overnight sleep and Breathe/Mindfulness sessions. Breathe session values are typically ~2x the overnight baseline because deliberate slow breathing maximises parasympathetic tone.

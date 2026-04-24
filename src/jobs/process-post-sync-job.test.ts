@@ -33,8 +33,12 @@ vi.mock("../logger.ts", () => ({
 // Lazy import to respect vi.mock ordering
 const { processPostSyncJob } = await import("./process-post-sync-job.ts");
 
-function makeJob(userId: string): PostSyncJob {
-  return { data: { userId } };
+function makeGlobalMaintenanceJob(): PostSyncJob {
+  return { data: { type: "global-maintenance" } };
+}
+
+function makeUserRefitJob(userId: string): PostSyncJob {
+  return { data: { type: "user-refit", userId } };
 }
 
 // All DB calls are mocked via vi.mock above, so an empty object satisfies the contract at runtime.
@@ -45,56 +49,67 @@ describe("processPostSyncJob", () => {
     vi.clearAllMocks();
   });
 
-  it("runs all four post-sync operations", async () => {
-    await processPostSyncJob(makeJob("user-1"), fakeDb);
+  it("runs only global maintenance operations for a global maintenance job", async () => {
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
     expect(mockUpdateUserMaxHr).toHaveBeenCalledWith(fakeDb);
     expect(mockLoadProviderPriorityConfig).toHaveBeenCalled();
     expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
     expect(mockRefreshDedupViews).toHaveBeenCalledWith(fakeDb);
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
+  });
+
+  it("runs only per-user refit for a user refit job", async () => {
+    await processPostSyncJob(makeUserRefitJob("user-1"), fakeDb);
+
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1");
+    expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
+    expect(mockLoadProviderPriorityConfig).not.toHaveBeenCalled();
+    expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
+    expect(mockRefreshDedupViews).not.toHaveBeenCalled();
   });
 
   it("continues when updateUserMaxHr fails", async () => {
     mockUpdateUserMaxHr.mockRejectedValueOnce(new Error("max hr failed"));
 
-    await processPostSyncJob(makeJob("user-2"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
-    // Other operations still called
     expect(mockRefreshDedupViews).toHaveBeenCalled();
-    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-2");
+    expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
   });
 
   it("continues when refreshDedupViews fails", async () => {
     mockRefreshDedupViews.mockRejectedValueOnce(new Error("views failed"));
 
-    await processPostSyncJob(makeJob("user-3"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
-    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-3");
+    expect(mockUpdateUserMaxHr).toHaveBeenCalled();
+    expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
   });
 
   it("continues when syncProviderPriorities fails", async () => {
     mockSyncProviderPriorities.mockRejectedValueOnce(new Error("priorities failed"));
 
-    await processPostSyncJob(makeJob("user-4"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
     expect(mockRefreshDedupViews).toHaveBeenCalled();
-    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-4");
+    expect(mockUpdateUserMaxHr).toHaveBeenCalled();
   });
 
   it("continues when refitAllParams fails", async () => {
     mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
 
     // Should not throw
-    await processPostSyncJob(makeJob("user-5"), fakeDb);
+    await processPostSyncJob(makeUserRefitJob("user-5"), fakeDb);
 
-    expect(mockUpdateUserMaxHr).toHaveBeenCalled();
+    expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
   });
 
   it("skips syncProviderPriorities when config is null", async () => {
     mockLoadProviderPriorityConfig.mockReturnValueOnce(null);
 
-    await processPostSyncJob(makeJob("user-6"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
     expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
   });
@@ -103,7 +118,7 @@ describe("processPostSyncJob", () => {
     const viewError = new Error("view refresh failed");
     mockRefreshDedupViews.mockRejectedValueOnce(viewError);
 
-    await processPostSyncJob(makeJob("user-7"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
     expect(mockCaptureException).toHaveBeenCalledWith(viewError, {
       tags: { postSyncStep: "refreshDedupViews" },
@@ -114,7 +129,7 @@ describe("processPostSyncJob", () => {
     const maxHrError = new Error("max hr failed");
     mockUpdateUserMaxHr.mockRejectedValueOnce(maxHrError);
 
-    await processPostSyncJob(makeJob("user-8"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
     expect(mockCaptureException).toHaveBeenCalledWith(maxHrError, {
       tags: { postSyncStep: "updateMaxHr" },
@@ -125,7 +140,7 @@ describe("processPostSyncJob", () => {
     const prioritiesError = new Error("priorities failed");
     mockSyncProviderPriorities.mockRejectedValueOnce(prioritiesError);
 
-    await processPostSyncJob(makeJob("user-9"), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
 
     expect(mockCaptureException).toHaveBeenCalledWith(prioritiesError, {
       tags: { postSyncStep: "syncProviderPriorities" },
@@ -136,7 +151,7 @@ describe("processPostSyncJob", () => {
     const refitError = new Error("refit failed");
     mockRefitAllParams.mockRejectedValueOnce(refitError);
 
-    await processPostSyncJob(makeJob("user-10"), fakeDb);
+    await processPostSyncJob(makeUserRefitJob("user-10"), fakeDb);
 
     expect(mockCaptureException).toHaveBeenCalledWith(refitError, {
       tags: { postSyncStep: "refitParams" },

@@ -45,6 +45,14 @@ export function providerLabel(id: string): string {
   return PROVIDER_LABELS[id] ?? id;
 }
 
+/** Human-readable label for a provider/source combination. */
+export function providerSourceLabel(id: string, subsource?: string | null): string {
+  if (id === "apple_health" && subsource) {
+    return `${subsource} (via Apple Health)`;
+  }
+  return providerLabel(id);
+}
+
 /**
  * Providers that have an SVG logo file (Simple Icons).
  * Files live in public/logos/{id}.svg on web.

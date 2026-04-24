@@ -1,7 +1,7 @@
 # CI Debugging Guide
 
-When fixing failing GitHub Actions checks, prefer using the `github:gh-fix-ci` skill so triage, logs, and fixes follow one consistent workflow.
-For production SSH access details used during deploy/incident debugging, see [`deploy/README.md` → "SSH Access (Debugging Only)"](../deploy/README.md#ssh-access-debugging-only).
+This guide assumes you are debugging from a terminal with the `gh` CLI installed.
+For production SSH access details used during deploy or incident debugging, see [`deploy/README.md` → "SSH Access (Debugging Only)"](../deploy/README.md#ssh-access-debugging-only).
 
 ## Reading iOS Build Errors
 
@@ -9,20 +9,14 @@ The "iOS Native Build" CI job runs `xcodebuild archive` piped through `tail -40`
 
 ### How to get the actual Swift errors
 
-**Option 1: Check annotations**
+**Option 1: Download the full job log and search it**
 ```bash
-gh api repos/Asherlc/dofek/check-runs/<JOB_ID>/annotations
-```
-Sometimes Xcode errors show up as GitHub annotations, but usually only the exit code is annotated.
-
-**Option 2: Download the full log and search**
-```bash
-gh api repos/Asherlc/dofek/actions/jobs/<JOB_ID>/logs > /tmp/ios-build-log.txt
+gh run view <RUN_ID> --job <JOB_ID> --log > /tmp/ios-build-log.txt
 grep "error:" /tmp/ios-build-log.txt | grep -v "Werror\|error_\|error-limit\|error="
 ```
-Note: even the full log may not contain inline Swift errors because the `| tail -40` in the workflow truncates the xcodebuild output before it reaches the log.
+Note: even the full job log may not contain inline Swift errors because the workflow itself pipes `xcodebuild` through `tail -40` before the output reaches GitHub.
 
-**Option 3: Reproduce locally**
+**Option 2: Reproduce locally**
 The most reliable approach — build the iOS project locally:
 ```bash
 cd packages/mobile/ios
@@ -34,7 +28,7 @@ xcodebuild build \
   CODE_SIGNING_ALLOWED=NO 2>&1 | grep "error:"
 ```
 
-**Option 4: Look at the "build commands failed" section**
+**Option 3: Look at the "build commands failed" section**
 The last 40 lines usually include which **target** failed (e.g., `ExpoHealthKit`, `ExpoWhoopBle`). From the target name, you can infer which Swift files have errors and check them manually.
 
 ### Common iOS build failures
@@ -51,10 +45,7 @@ The last 40 lines usually include which **target** failed (e.g., `ExpoHealthKit`
 # List failed checks for a PR
 gh pr checks <PR_NUMBER> | grep fail
 
-# The URL at the end contains the run ID and job ID
-# Format: https://github.com/Asherlc/dofek/actions/runs/<RUN_ID>/job/<JOB_ID>
-
-# Or get job IDs programmatically
+# Or get failed job IDs programmatically from a run
 gh run view <RUN_ID> --json jobs -q '.jobs[] | select(.conclusion == "failure") | "\(.name): \(.databaseId)"'
 ```
 
@@ -62,9 +53,9 @@ gh run view <RUN_ID> --json jobs -q '.jobs[] | select(.conclusion == "failure") 
 
 | Check | How to debug |
 |-------|-------------|
-| Migration Lint | `gh api repos/Asherlc/dofek/actions/jobs/<JOB_ID>/logs` — squawk errors are inline |
+| Migration Lint | `gh run view <RUN_ID> --job <JOB_ID> --log` — squawk errors are inline |
 | Spell Check | Same — cspell errors are inline with `Unknown word (...)` format |
-| Swift Tests | Same — XCTAssert failures are inline |
+| Swift Tests | Same — XCTest failures are inline |
 | Coverage | Usually fails because upstream test/build jobs failed; fix those first |
 | Unit & Integration Tests | Depends on unit/integration test jobs; check if they passed individually |
 
@@ -99,4 +90,4 @@ If `Deploy App` fails with `[migrate] PostgresError: the database system is in r
 3. Run migration only after this returns `t`.
 4. Keep migration retries as a secondary guard for transient failures.
 
-If recovery mode persists and logs show `No space left on device`, treat it as a storage incident and follow `docs/metric-stream-timescaledb-runbook.md` plus the agent skill `.agents/skills/db-incident-response/SKILL.md`.
+If recovery mode persists and logs show `No space left on device`, treat it as a storage incident. Follow [`metric-stream-timescaledb-runbook.md`](metric-stream-timescaledb-runbook.md), then inspect disk usage and Docker volume usage on the server before changing deploy logic.
