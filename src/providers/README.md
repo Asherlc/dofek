@@ -14,13 +14,11 @@ This directory contains implementations for various data providers (fitness trac
 - **Registry**: All active providers are registered in `index.ts`.
 - **HTTP Client**: A shared `HttpClient` in `http-client.ts` handles rate limiting, retries, and logging.
 - **Validation**: Each provider has a `validate()` method to ensure environment variables (API keys) are present.
+- **UI visibility**: Providers that fail `validate()` are intentionally hidden from the UI until their required config is present.
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema (see `src/db/schema.ts`).
 
 ## Supported Providers
 
-- **Wearables**: Apple Health, Fitbit, Oura, Garmin, WHOOP, Polar, Suunto.
-- **Nutrition**: Cronometer (CSV), FatSecret.
-- **Fitness**: Peloton, Strava, Zwift, TrainerRoad, Concept2, Ride with GPS.
-- **Body Comp**: BodySpec (DEXA), Withings.
-- **Recovery**: Eight Sleep.
-- **Strength**: Strong (CSV), Wger.
+- **API sync providers**: BodySpec, Concept2, Coros, Cycling Analytics, Decathlon, Eight Sleep, FatSecret, Garmin, Komoot, MapMyFitness, Peloton, Ride with GPS, Strava, Suunto, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, Withings, Xert, Zwift.
+- **Import-only providers**: Cronometer CSV, Strong CSV.
+- **Planned via native/mobile flows rather than this directory**: Apple Health and WHOOP BLE capture live in the mobile app and native modules.

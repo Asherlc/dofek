@@ -31,6 +31,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Symlinks**: `AGENTS.md` must be symlinked to `GEMINI.md` and `CLAUDE.md` in the same directory.
 - **Agent-only content**: Populate `AGENTS.md` with information useful *only* to an agent.
 - **Shared content**: Use `README.md` for information relevant to both agents and humans.
+- **Human docs must stand alone**: `README.md` and files in `docs/` must not depend on agent skills, agent-only workflows, or instructions that assume an agent is present.
 - **README reference**: `AGENTS.md` must always instruct the agent to read the `README.md`.
 
 ## End-of-Task Retrospective

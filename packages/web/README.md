@@ -24,8 +24,8 @@ See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
 ## Development
 
 ```bash
-pnpm dev      # Start Vite dev server (proxies /api to server)
-pnpm build    # Build for production (outputs to dist/)
-pnpm test     # Run Vitest unit tests
-pnpm storybook # Start Storybook
+cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)
+cd packages/web && pnpm build    # Build for production (outputs to dist/)
+cd packages/web && pnpm storybook # Start Storybook
+pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
