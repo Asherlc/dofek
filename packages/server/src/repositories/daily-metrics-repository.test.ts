@@ -386,12 +386,13 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("returns parsed trends", async () => {
-      const { repo } = makeRepository([makeTrendsRow()]);
+      const { repo, execute } = makeRepository([makeTrendsRow()]);
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result).not.toBeNull();
       expect(result?.avg_hrv).toBe(43.8);
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_date).toBe("2025-03-15");
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("logs warning when trends returns all nulls but base table has data (stale view)", async () => {
@@ -445,9 +446,10 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("does not log warning when trends has data", async () => {
-      const { repo } = makeRepository([makeTrendsRow()]);
+      const { repo, execute } = makeRepository([makeTrendsRow()]);
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("refreshes trends when latest steps are null but the base table has steps for the latest date", async () => {
@@ -501,6 +503,7 @@ describe("DailyMetricsRepository", () => {
       const sqlText = JSON.stringify(sqlArg);
       expect(sqlText).toContain("latest");
       expect(sqlText).toContain("ARRAY_AGG");
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("handles all-null trends row", async () => {
