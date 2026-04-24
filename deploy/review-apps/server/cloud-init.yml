@@ -1,7 +1,7 @@
 #cloud-config
-# Installs Docker CE and initializes a single-node Docker Swarm on a fresh
-# Ubuntu 24.04 server. Deploys happen from CI via a remote Docker context
-# (SSH); there are no deploy scripts or secrets on the server.
+# Installs Docker CE on a fresh Ubuntu 24.04 Hetzner server for PR review apps.
+# Deploys happen from GitHub Actions via Docker over SSH; the server stores no
+# deploy scripts or secrets outside Docker volumes.
 
 package_update: true
 
@@ -11,11 +11,6 @@ packages:
   - gnupg
 
 write_files:
-  - path: /opt/dofek/otel-collector-config.yaml
-    permissions: "0644"
-    content: |
-      ${indent(6, otel_collector_content)}
-
   - path: /etc/docker/daemon.json
     permissions: "0644"
     content: |
@@ -28,27 +23,11 @@ write_files:
       }
 
 runcmd:
-  # Install Docker CE
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   - chmod a+r /etc/apt/keyrings/docker.asc
   - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-  # App directory (used for bind-mounted OTel config)
-  - mkdir -p /opt/dofek
-  - mkdir -p /opt/dofek/traefik-dynamic
-
-  # Restart Docker to pick up daemon.json log settings
+  - systemctl enable docker
   - systemctl restart docker
-
-  # Initialize a single-node swarm (idempotent)
-  - |
-      if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then
-        exit 0
-      fi
-      if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then
-        docker swarm leave --force
-      fi
-      docker swarm init

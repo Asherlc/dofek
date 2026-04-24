@@ -17,6 +17,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Firewall**: `hcloud_firewall` allows SSH (port 22) from restricted IPs and HTTP/HTTPS (80/443) from everywhere.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
   - **Reverse Proxy**: Traefik handles SSL termination via Let's Encrypt (DNS-01 challenge) and routes traffic based on `Host()` rules declared in `deploy.labels` on each swarm service. Traefik's `providers.swarm` watches the Docker API for service changes.
+  - **Review app ingress**: Traefik also watches `/opt/dofek/traefik-dynamic` through the file provider for PR-specific routes like `pr-123.dofek.asherlc.com`.
 - **Observability**:
   - **OpenTelemetry**: `otel-collector` gathers traces, logs, and metrics.
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
@@ -27,9 +28,11 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 ## Implementation Details
 
 ### Terraform (`*.tf`)
-- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and one idempotent `terraform_data` resource handles post-provision state:
+- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and idempotent `terraform_data` resources handle post-provision state:
+  - `app_directories_sync`: ensures bind-mount directories such as `/opt/dofek/traefik-dynamic` exist on the live host even when cloud-init does not rerun.
   - `otel_config_sync`: bind-mounts `otel-collector-config.yaml` into `/opt/dofek` on the server and forces the collector service to re-read it.
   - `hcloud_volume.dofek_data`: attaches persistent block storage for DB growth headroom; size is controlled by `data_volume_size_gb`.
+- `review-apps/`: Separate Terraform root for PR-scoped Hetzner review servers and the corresponding Traefik dynamic route files on the shared front door. See [docs/review-apps.md](../docs/review-apps.md).
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
 - `storage.tf`: Manages Cloudflare R2 buckets. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
 
@@ -38,6 +41,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 
 ### Swarm Stack (`stack.yml`)
 - Single file defining all services: `web`, `worker`, `training-export-worker`, `traefik`, `db`, `redis`, `collector`, `ota`, `databasus`, `pgadmin`, `portainer`, `netdata`.
+- Traefik consumes both the swarm provider and a bind-mounted dynamic-config directory at `/opt/dofek/traefik-dynamic` so review-app workspaces can add exact PR host routes without modifying the stack for every PR.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
@@ -181,6 +185,7 @@ This preserves migration gating while remaining safe for both warm updates and s
 If management subdomains return `404 page not found`, use:
 
 - `docs/traefik-subdomain-404-runbook.md`
+- `docs/review-apps.md` for PR-specific shared-front-door routes
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)

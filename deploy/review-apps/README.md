@@ -1,0 +1,42 @@
+# Review Apps
+
+PR review apps run on dedicated Hetzner servers and are reached through the
+shared production front door at `pr-<number>.dofek.asherlc.com`.
+
+## How It Works
+
+- Terraform workspace: one workspace per PR, using the `dofek-review-` prefix.
+- Review app server: one Hetzner `cax11` server per PR.
+- App stack: `web`, `db`, and `redis` via Docker Compose on the review server.
+- Routing: Terraform writes a Traefik dynamic-config file onto the shared front
+  door host so only that PR hostname is forwarded to the PR server.
+- DNS: the wildcard `*.dofek.asherlc.com` points at the shared front door. Exact
+  records like `portainer.dofek.asherlc.com` still take precedence.
+
+## Lifecycle
+
+- `review-app.yml` handles PR `opened`, `synchronize`, and `reopened`.
+- `review-app-destroy.yml` handles PR `closed`.
+- The deploy workflow:
+  - builds `ghcr.io/asherlc/dofek:pr-<number>`
+  - applies the PR Terraform workspace
+  - exports review env vars from Infisical
+  - runs migrations and the seed script
+  - starts the review stack
+- The destroy workflow tears down the PR workspace, which removes the server and
+  the front door route file.
+
+## Reviewer Login
+
+- Review apps enable `/auth/dev-login`.
+- The seed step creates the `dev-session` and demo data so reviewers can jump
+  directly into the dashboard without provider OAuth setup.
+
+## Guardrails
+
+- Review app port `3000` only accepts traffic from the shared front door IP.
+- Exact management hosts are not matched by review routers because each route is
+  a concrete `Host(pr-<number>.dofek.asherlc.com)` rule.
+- Review apps are only created for same-repo PRs. Fork PRs do not receive
+  review apps because the required package and secret permissions are not safe
+  to grant to untrusted code.

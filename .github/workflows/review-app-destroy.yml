@@ -1,0 +1,69 @@
+name: Review App Destroy
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: review-app-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  destroy:
+    name: Destroy Review App
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKSPACE: pr-${{ github.event.pull_request.number }}
+      REVIEW_ROUTE_FILE: /opt/dofek/traefik-dynamic/review-app-pr-${{ github.event.pull_request.number }}.yml
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Resolve front door IPv4
+        id: front_door
+        uses: ./.github/actions/resolve-host-ipv4
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Remove front door route file
+        env:
+          FRONT_DOOR_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          set -euo pipefail
+
+          ssh "root@${FRONT_DOOR_HOST}" "rm -f '${REVIEW_ROUTE_FILE}'"
+
+      - name: Destroy review app infrastructure
+        working-directory: deploy/review-apps
+        env:
+          TF_VAR_front_door_host: ${{ secrets.SERVER_HOST }}
+          TF_VAR_front_door_ipv4: ${{ steps.front_door.outputs.ipv4 }}
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          TF_VAR_pr_number: ${{ github.event.pull_request.number }}
+          TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+
+          terraform init -lock-timeout=5m
+
+          if ! terraform workspace select "$TF_WORKSPACE"; then
+            echo "No review-app workspace found for ${TF_WORKSPACE}; nothing to destroy."
+            exit 0
+          fi
+
+          terraform destroy -auto-approve -lock-timeout=5m

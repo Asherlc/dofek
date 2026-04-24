@@ -15,6 +15,8 @@ services:
       - --providers.swarm=true
       - --providers.swarm.exposedbydefault=false
       - --providers.swarm.network=dofek_default
+      - --providers.file.directory=/dynamic
+      - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
@@ -33,6 +35,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
+      - /opt/dofek/traefik-dynamic:/dynamic:ro
     deploy:
       labels:
         - traefik.enable=true

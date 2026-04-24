@@ -1,0 +1,24 @@
+name: Setup SSH Host
+description: Install a private key and trust a host in known_hosts
+inputs:
+  host:
+    description: SSH host to trust
+    required: true
+  private_key:
+    description: Private SSH key content
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Setup SSH key and known_hosts
+      shell: bash
+      env:
+        SSH_HOST: ${{ inputs.host }}
+        SSH_PRIVATE_KEY: ${{ inputs.private_key }}
+      run: |
+        set -euo pipefail
+
+        mkdir -p ~/.ssh
+        printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null

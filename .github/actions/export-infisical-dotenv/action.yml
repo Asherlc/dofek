@@ -1,0 +1,84 @@
+name: Export Infisical Dotenv
+description: Login with GitHub OIDC and render an Infisical dotenv template to a local file
+inputs:
+  env:
+    description: Infisical environment name
+    required: false
+    default: prod
+  machine_identity_id:
+    description: Infisical machine identity ID for OIDC auth
+    required: false
+    default: 46b66f72-0c77-4cfe-be1b-a43395e77be7
+  template:
+    description: Path to the Infisical export template file
+    required: true
+  output_path:
+    description: Path where the rendered dotenv file should be written
+    required: true
+outputs:
+  output_path:
+    description: Path to the rendered dotenv file
+    value: ${{ steps.export.outputs.output_path }}
+runs:
+  using: composite
+  steps:
+    - name: Install Infisical CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if command -v infisical >/dev/null 2>&1; then
+          exit 0
+        fi
+
+        curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
+        sudo apt-get update
+        sudo apt-get install -y infisical
+
+    - name: Render dotenv file
+      id: export
+      shell: bash
+      env:
+        INFISICAL_ENV: ${{ inputs.env }}
+        INFISICAL_MACHINE_IDENTITY_ID: ${{ inputs.machine_identity_id }}
+        INFISICAL_OUTPUT_PATH: ${{ inputs.output_path }}
+        INFISICAL_TEMPLATE_PATH: ${{ inputs.template }}
+      run: |
+        set -euo pipefail
+
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "::error::Missing jq; required for OIDC token parsing"
+          exit 1
+        fi
+
+        if [ ! -f "$INFISICAL_TEMPLATE_PATH" ]; then
+          echo "::error::Infisical template file not found: $INFISICAL_TEMPLATE_PATH"
+          exit 1
+        fi
+
+        oidc_token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
+        if [ -z "$oidc_token" ] || [ "$oidc_token" = "null" ]; then
+          echo "::error::Failed to mint GitHub OIDC token"
+          exit 1
+        fi
+
+        infisical_access_token="$(infisical login \
+          --method=oidc-auth \
+          --machine-identity-id="$INFISICAL_MACHINE_IDENTITY_ID" \
+          --jwt="$oidc_token" \
+          --plain \
+          --silent)"
+
+        if [ -z "$infisical_access_token" ]; then
+          echo "::error::Infisical OIDC login returned empty access token"
+          exit 1
+        fi
+
+        mkdir -p "$(dirname "$INFISICAL_OUTPUT_PATH")"
+        infisical export \
+          --token="$infisical_access_token" \
+          --env="$INFISICAL_ENV" \
+          --template="$INFISICAL_TEMPLATE_PATH" \
+          --silent > "$INFISICAL_OUTPUT_PATH"
+
+        echo "output_path=$INFISICAL_OUTPUT_PATH" >> "$GITHUB_OUTPUT"

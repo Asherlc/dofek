@@ -48,6 +48,25 @@ resource "hcloud_server" "dofek" {
   }
 }
 
+resource "terraform_data" "app_directories_sync" {
+  triggers_replace = [
+    "app-directories-v1",
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /opt/dofek /opt/dofek/traefik-dynamic",
+    ]
+  }
+}
+
 resource "hcloud_volume" "dofek_data" {
   count = var.data_volume_size_gb > 0 ? 1 : 0
 
