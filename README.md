@@ -135,6 +135,8 @@ pnpm storybook:mobile
 
 Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/pr-<PR number>/index.html`. Closed PR previews are deleted by workflow, with R2 lifecycle rules as a fallback safety net. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
 
+Same-repo pull requests can also bring up a full review app on dedicated Hetzner infrastructure at `https://pr-<PR number>.dofek.asherlc.com`. See [docs/review-apps.md](docs/review-apps.md) for the shared-front-door architecture and lifecycle.
+
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
 
 ### Migration Baseline (Squashed History)

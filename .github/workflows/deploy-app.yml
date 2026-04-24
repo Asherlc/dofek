@@ -66,33 +66,16 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SERVER_HOST: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Export Infisical deploy secrets file via OIDC
-        run: |
-          curl -1sLf "https://artifacts-cli.infisical.com/setup.deb.sh" | sudo -E bash
-          sudo apt-get install -y infisical
-
-          oidc_token="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
-          infisical_access_token="$(infisical login \
-            --method=oidc-auth \
-            --machine-identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7 \
-            --jwt="$oidc_token" \
-            --plain \
-            --silent)"
-
-          infisical export \
-            --token="$infisical_access_token" \
-            --env=prod \
-            --template=.github/templates/infisical-dotenv.tmpl \
-            --silent > "${{ github.workspace }}/.env.prod"
+        uses: ./.github/actions/export-infisical-dotenv
+        with:
+          template: .github/templates/infisical-dotenv.tmpl
+          output_path: ${{ github.workspace }}/.env.prod
 
       - name: Export deploy env for stack interpolation
         run: |
