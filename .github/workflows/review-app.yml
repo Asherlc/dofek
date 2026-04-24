@@ -228,11 +228,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker compose -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db redis
-          docker compose -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db redis
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db redis
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db redis
 
           for attempt in $(seq 1 36); do
-            if docker compose -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T db pg_isready -U health -d health; then
+            if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T db pg_isready -U health -d health; then
               break
             fi
             if [ "$attempt" -eq 36 ]; then
@@ -242,9 +242,9 @@ jobs:
             sleep 5
           done
 
-          docker compose -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --rm web migrate
-          docker compose -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --rm web seed
-          docker compose -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d web
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --rm web migrate
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --rm web seed
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d web
 
       - name: Wait for public review app healthcheck
         env:
