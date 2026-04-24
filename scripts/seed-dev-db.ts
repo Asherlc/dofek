@@ -109,6 +109,12 @@ async function seedData() {
   await sql`DELETE FROM fitness.nutrition_daily WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.body_measurement WHERE provider_id IN ('whoop', 'apple_health')`;
 
+  await sql`
+		INSERT INTO fitness.user_profile (id, name)
+		VALUES (${USER_ID}, 'Baseline User')
+		ON CONFLICT (id) DO NOTHING
+	`;
+
   // Providers
   await sql`
 		INSERT INTO fitness.provider (id, name, user_id) VALUES
