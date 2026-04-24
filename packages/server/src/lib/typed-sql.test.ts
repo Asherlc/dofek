@@ -131,6 +131,24 @@ describe("dateStringSchema", () => {
     expect(() => dateStringSchema.parse("not-a-date")).toThrow(z.ZodError);
     expect(() => dateStringSchema.parse("hello")).toThrow(z.ZodError);
   });
+
+  it("rejects malformed YYYY-MM-DD strings", () => {
+    const malformedDates = [
+      "x2024-01-15",
+      "2024-01-15x",
+      "2-01-15",
+      "text-01-15",
+      "2024-1-15",
+      "2024-aa-15",
+      "2024-01-5",
+      "2024-01-aa",
+      "2024-01-15T00:00:00.000Z",
+    ];
+
+    for (const malformedDate of malformedDates) {
+      expect(() => dateStringSchema.parse(malformedDate)).toThrow(z.ZodError);
+    }
+  });
 });
 
 describe("timestampStringSchema", () => {
@@ -153,6 +171,10 @@ describe("timestampStringSchema", () => {
     expect(timestampStringSchema.parse("2024-01-15 10:30:00.678162+00")).toBe(
       "2024-01-15T10:30:00.678Z",
     );
+  });
+
+  it("passes through an unparseable timestamp string unchanged", () => {
+    expect(timestampStringSchema.parse("not-a-timestamp")).toBe("not-a-timestamp");
   });
 
   it("rejects non-string non-date values", () => {

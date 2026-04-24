@@ -1,12 +1,36 @@
+import * as Sentry from "@sentry/node";
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { sql } from "drizzle-orm";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { BaseRepository } from "./base-repository.ts";
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+  captureMessage: vi.fn(),
+}));
+
+vi.mock("dofek/db/materialized-view-refresh", () => ({
+  refreshMaterializedView: vi.fn(),
+}));
+
+vi.mock("dofek/db/materialized-views", () => ({
+  ACTIVITY_VIEWS: ["fitness.activity_summary", "fitness.v_activity"],
+}));
 
 // Concrete subclass for testing
 class TestRepository extends BaseRepository {
   async runQuery(schema: z.ZodType, sqlQuery: ReturnType<typeof sql>) {
     return this.query(schema, sqlQuery);
+  }
+
+  async runQueryWithViewRefresh<TResult>(
+    queryFn: () => Promise<TResult[]>,
+    days: number,
+    label: string,
+    baseCountSql?: ReturnType<typeof sql>,
+  ) {
+    return this.queryWithViewRefresh(queryFn, days, label, baseCountSql);
   }
 
   // Expose protected fields for assertions
@@ -23,6 +47,10 @@ class TestRepository extends BaseRepository {
 
 describe("BaseRepository", () => {
   const mockDb = { execute: vi.fn() };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("stores db, userId, and timezone", () => {
     const repo = new TestRepository(mockDb, "user-1", "America/New_York");
@@ -53,5 +81,66 @@ describe("BaseRepository", () => {
 
     const repo = new TestRepository(mockDb, "user-1");
     await expect(repo.runQuery(schema, sql`SELECT 'bad'`)).rejects.toThrow();
+  });
+
+  it("refreshes stale activity views, logs warning context, and retries the query", async () => {
+    const repo = new TestRepository(mockDb, "user-1");
+    const queryFn = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 1 }]);
+
+    mockDb.execute.mockResolvedValueOnce([{ count: "2" }]);
+    vi.mocked(refreshMaterializedView).mockResolvedValue({
+      durationMs: 10,
+      fallbackUsed: false,
+      mode: "concurrent",
+    });
+
+    const result = await repo.runQueryWithViewRefresh(
+      queryFn,
+      30,
+      "activityList",
+      sql`SELECT 2 AS count`,
+    );
+
+    expect(result).toEqual([{ id: 1 }]);
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      "Stale activity materialized views detected (activityList)",
+      {
+        level: "warning",
+        tags: { userId: "user-1" },
+        extra: { baseCount: 2 },
+      },
+    );
+    expect(refreshMaterializedView).toHaveBeenNthCalledWith(1, mockDb, "fitness.activity_summary", {
+      source: "server.activity_view_self_heal",
+    });
+    expect(refreshMaterializedView).toHaveBeenNthCalledWith(2, mockDb, "fitness.v_activity", {
+      source: "server.activity_view_self_heal",
+    });
+  });
+
+  it("captures refresh failures with user context and returns the original empty result", async () => {
+    const repo = new TestRepository(mockDb, "user-1");
+    const queryFn = vi.fn().mockResolvedValueOnce([]);
+    const refreshError = new Error("refresh failed");
+
+    mockDb.execute.mockResolvedValueOnce([{ count: "1" }]);
+    vi.mocked(refreshMaterializedView).mockRejectedValue(refreshError);
+
+    const result = await repo.runQueryWithViewRefresh(
+      queryFn,
+      30,
+      "activityList",
+      sql`SELECT 1 AS count`,
+    );
+
+    expect(result).toEqual([]);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException).toHaveBeenCalledWith(refreshError, {
+      tags: { userId: "user-1", context: "staleViewRefresh" },
+    });
   });
 });
