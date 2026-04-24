@@ -184,7 +184,7 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
           INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek
+          docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek
 
       - name: Trigger materialized view refresh webhook
         run: |
