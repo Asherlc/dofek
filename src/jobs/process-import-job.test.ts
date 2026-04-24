@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportJobData } from "./queues.ts";
 
+const mockCaptureException = vi.fn();
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 let realUnlink: typeof import("node:fs/promises").unlink;
 const mockUnlink = vi.fn<(path: string) => Promise<void>>();
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -33,18 +38,12 @@ vi.mock("../db/sync-log.ts", () => ({
   logSync: (...args: unknown[]) => mockLogSync(...args),
 }));
 
-const mockUpdateUserMaxHr = vi.fn().mockResolvedValue(undefined);
-const mockRefreshDedupViews = vi.fn().mockResolvedValue(undefined);
-vi.mock("../db/dedup.ts", () => ({
-  updateUserMaxHr: (...args: unknown[]) => mockUpdateUserMaxHr(...args),
-  refreshDedupViews: (...args: unknown[]) => mockRefreshDedupViews(...args),
-}));
-
-const mockLoadPriorityConfig = vi.fn().mockReturnValue(null);
-const mockSyncProviderPriorities = vi.fn().mockResolvedValue(undefined);
-vi.mock("../db/provider-priority.ts", () => ({
-  loadProviderPriorityConfig: (...args: unknown[]) => mockLoadPriorityConfig(...args),
-  syncProviderPriorities: (...args: unknown[]) => mockSyncProviderPriorities(...args),
+const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
+vi.mock("./queues.ts", () => ({
+  enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
+    mockEnqueueDebouncedPostSyncMaintenance(...args),
+  enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
 }));
 
 const mockImportAppleHealthFile = vi.fn().mockResolvedValue({
@@ -121,13 +120,12 @@ describe("processImportJob", () => {
 
     // Restore default return values after clearAllMocks
     mockLogSync.mockResolvedValue(undefined);
-    mockUpdateUserMaxHr.mockResolvedValue(undefined);
-    mockRefreshDedupViews.mockResolvedValue(undefined);
+    mockCaptureException.mockReset();
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
-    mockLoadPriorityConfig.mockReturnValue(null);
-    mockSyncProviderPriorities.mockResolvedValue(undefined);
+    mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
+    mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -410,80 +408,54 @@ describe("processImportJob", () => {
   });
 
   describe("post-import refresh", () => {
-    it("calls updateUserMaxHr and refreshDedupViews", async () => {
+    it("enqueues debounced global maintenance and per-user refit", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(mockUpdateUserMaxHr).toHaveBeenCalledWith(mockDb);
-      expect(mockRefreshDedupViews).toHaveBeenCalledWith(mockDb);
+      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     });
 
-    it("reports progress during post-import steps (92%, 95%, 97%)", async () => {
+    it("reports scheduling progress during post-import enqueue", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(job.updateProgress).toHaveBeenCalledWith({
-        percentage: 92,
-        message: "Refreshing views...",
-      });
       expect(job.updateProgress).toHaveBeenCalledWith({
         percentage: 95,
-        message: "Updating max heart rate...",
-      });
-      expect(job.updateProgress).toHaveBeenCalledWith({
-        percentage: 97,
-        message: "Syncing provider priorities...",
+        message: "Scheduling post-import processing...",
       });
     });
 
-    it("handles post-import refresh failures gracefully and logs errors", async () => {
-      mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
-      mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
+    it("handles global maintenance enqueue failures gracefully", async () => {
+      mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
-      // Should not throw
       await runImportJob(job, mockDb);
 
-      expect(mockUpdateUserMaxHr).toHaveBeenCalled();
-      expect(mockRefreshDedupViews).toHaveBeenCalled();
+      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
       expect(mockLoggerError).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to update max HR"),
+        expect.stringContaining("Failed to enqueue global post-import maintenance"),
       );
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to refresh views"),
-      );
-    });
-
-    it("syncs provider priorities before refreshing views", async () => {
-      const fakeConfig = { providers: { wahoo: { activity: 10 } } };
-      mockLoadPriorityConfig.mockReturnValue(fakeConfig);
-
-      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
-      await runImportJob(job, mockDb);
-
-      expect(mockLoadPriorityConfig).toHaveBeenCalled();
-      expect(mockSyncProviderPriorities).toHaveBeenCalledWith(mockDb, fakeConfig);
-    });
-
-    it("skips priority sync when config is null", async () => {
-      mockLoadPriorityConfig.mockReturnValue(null);
-
-      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
-      await runImportJob(job, mockDb);
-
-      expect(mockLoadPriorityConfig).toHaveBeenCalled();
-      expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
-    });
-
-    it("handles priority sync errors gracefully", async () => {
-      mockLoadPriorityConfig.mockImplementation(() => {
-        throw new Error("config read failed");
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { phase: "post-import-global-maintenance-enqueue" },
       });
+    });
+
+    it("handles user refit enqueue failures gracefully", async () => {
+      mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
 
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
 
-      expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("provider priorities"));
+      expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to enqueue post-import user refit"),
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { phase: "post-import-user-refit-enqueue" },
+      });
     });
   });
 

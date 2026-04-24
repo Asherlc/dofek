@@ -180,40 +180,19 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     }
   }
 
-  // Post-sync: refresh views first, then update max HR (reads from activity_summary)
   try {
-    const { refreshDedupViews } = await import("../db/dedup.ts");
-    await refreshDedupViews(db);
+    const { enqueueDebouncedPostSyncMaintenance } = await import("./queues.ts");
+    await enqueueDebouncedPostSyncMaintenance();
   } catch (err) {
-    logger.error(`[worker] Failed to refresh views: ${err}`);
+    logger.error(`[worker] Failed to enqueue global post-sync maintenance: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-sync-global-maintenance-enqueue" } });
   }
 
   try {
-    const { updateUserMaxHr } = await import("../db/dedup.ts");
-    await updateUserMaxHr(db);
+    const { enqueueDebouncedUserRefit } = await import("./queues.ts");
+    await enqueueDebouncedUserRefit(job.data.userId);
   } catch (err) {
-    logger.error(`[worker] Failed to update max HR: ${err}`);
-  }
-
-  try {
-    const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
-      "../db/provider-priority.ts"
-    );
-    const config = loadProviderPriorityConfig();
-    if (config) {
-      await syncProviderPriorities(db, config);
-    }
-  } catch (err) {
-    logger.error(`[worker] Failed to sync provider priorities: ${err}`);
-  }
-
-  // Refit personalized algorithm parameters from updated data
-  try {
-    const { refitAllParams } = await import("../personalization/refit.ts");
-    logger.info("[worker] Refitting personalized parameters...");
-    await refitAllParams(db, job.data.userId);
-    logger.info("[worker] Personalized parameters updated.");
-  } catch (err) {
-    logger.error(`[worker] Failed to refit parameters: ${err}`);
+    logger.error(`[worker] Failed to enqueue user refit: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-sync-user-refit-enqueue" } });
   }
 }

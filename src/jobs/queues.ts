@@ -34,9 +34,16 @@ export interface ScheduledSyncJobData {
   intervalMs?: number;
 }
 
-export interface PostSyncJobData {
+export interface GlobalMaintenancePostSyncJobData {
+  type: "global-maintenance";
+}
+
+export interface UserRefitPostSyncJobData {
+  type: "user-refit";
   userId: string;
 }
+
+export type PostSyncJobData = GlobalMaintenancePostSyncJobData | UserRefitPostSyncJobData;
 
 export interface TrainingExportJobData {
   /** Optional: only export data after this timestamp */
@@ -54,6 +61,11 @@ export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
 export const TRAINING_EXPORT_QUEUE = "training-export";
+export const POST_SYNC_DEBOUNCE_MS = 60_000;
+
+const GLOBAL_POST_SYNC_JOB_NAME = "global-maintenance";
+const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";
+const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 /** Get the per-provider queue name for a given provider ID. */
 export function providerSyncQueueName(providerId: string): string {
@@ -121,6 +133,54 @@ export function createScheduledSyncQueue(
 
 export function createPostSyncQueue(connection?: ConnectionOptions): Queue<PostSyncJobData> {
   return new Queue(POST_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
+
+export function getPostSyncQueue(): Queue<PostSyncJobData> {
+  if (!cachedPostSyncQueue) {
+    cachedPostSyncQueue = createPostSyncQueue();
+  }
+  return cachedPostSyncQueue;
+}
+
+export async function enqueueDebouncedPostSyncMaintenance(
+  queue: Queue<PostSyncJobData> = getPostSyncQueue(),
+): Promise<void> {
+  await queue.add(
+    GLOBAL_POST_SYNC_JOB_NAME,
+    { type: "global-maintenance" },
+    {
+      delay: POST_SYNC_DEBOUNCE_MS,
+      deduplication: {
+        id: GLOBAL_POST_SYNC_DEDUPLICATION_ID,
+        ttl: POST_SYNC_DEBOUNCE_MS,
+        extend: true,
+        replace: true,
+      },
+      removeOnComplete: true,
+    },
+  );
+}
+
+export async function enqueueDebouncedUserRefit(
+  userId: string,
+  queue: Queue<PostSyncJobData> = getPostSyncQueue(),
+): Promise<void> {
+  await queue.add(
+    USER_REFIT_POST_SYNC_JOB_NAME,
+    { type: "user-refit", userId },
+    {
+      delay: POST_SYNC_DEBOUNCE_MS,
+      deduplication: {
+        id: `post-sync:user-refit:${userId}`,
+        ttl: POST_SYNC_DEBOUNCE_MS,
+        extend: true,
+        replace: true,
+      },
+      removeOnComplete: true,
+    },
+  );
 }
 
 export function createTrainingExportQueue(
