@@ -25,7 +25,12 @@ export async function executeWithSchema<T extends z.ZodType>(
 /**
  * Zod schema for SQL date columns (::date).
  * Database drivers may return Date objects or strings. This schema normalizes
- * both to YYYY-MM-DD.
+ * both to YYYY-MM-DD strings.
+ *
+ * We intentionally do not normalize SQL DATE values to JavaScript Date objects:
+ * a date-only value gains an implicit timezone once coerced to Date, which can
+ * shift the calendar day in clients. Keeping YYYY-MM-DD as the canonical shape
+ * preserves the exact date across JSON boundaries.
  */
 export const dateStringSchema = z
   .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date string"), z.date()])
@@ -35,6 +40,10 @@ export const dateStringSchema = z
  * Zod schema for SQL timestamp/timestamptz columns.
  * Database drivers may return Date objects or strings. This schema normalizes
  * both to ISO 8601 strings that all browsers (including Safari) can parse.
+ *
+ * We also keep timestamps as strings instead of Date objects because these rows
+ * are commonly returned through JSON APIs, where Date instances serialize to
+ * strings anyway. Normalizing here gives every client one stable wire format.
  */
 export const timestampStringSchema = z.union([z.string(), z.date()]).transform((value) => {
   if (value instanceof Date) return value.toISOString();
