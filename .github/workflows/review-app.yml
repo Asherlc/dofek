@@ -248,12 +248,16 @@ jobs:
 
       - name: Wait for public review app healthcheck
         env:
+          FRONT_DOOR_IPV4: ${{ steps.front_door.outputs.ipv4 }}
+          REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
           REVIEW_URL: ${{ steps.terraform.outputs.review_url }}
         run: |
           set -euo pipefail
 
           for attempt in $(seq 1 36); do
-            if curl --fail --silent --show-error "${REVIEW_URL}/healthz" | grep -q ok; then
+            if curl --fail --silent --show-error \
+              --resolve "${REVIEW_HOST}:443:${FRONT_DOOR_IPV4}" \
+              "${REVIEW_URL}/healthz" | grep -q ok; then
               exit 0
             fi
             if [ "$attempt" -eq 36 ]; then
