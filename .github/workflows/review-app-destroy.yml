@@ -20,10 +20,40 @@ jobs:
     env:
       REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ github.event.pull_request.number }}
       REVIEW_ROUTE_FILE: /opt/dofek/traefik-dynamic/review-app-pr-${{ github.event.pull_request.number }}.yml
+      TERRAFORM_ORGANIZATION: dofek
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
+      - name: Lookup review app Terraform workspace
+        id: workspace
+        env:
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          workspace_url="https://app.terraform.io/api/v2/organizations/${TERRAFORM_ORGANIZATION}/workspaces/${REVIEW_TERRAFORM_WORKSPACE}"
+          status_code="$(curl --silent --show-error --output /tmp/review-workspace.json --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${TF_API_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            "${workspace_url}")"
+
+          case "$status_code" in
+            200)
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "workspace_id=$(jq -r '.data.id' /tmp/review-workspace.json)" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unexpected Terraform workspace lookup status ${status_code}"
+              cat /tmp/review-workspace.json
+              exit 1
+              ;;
+          esac
+
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        if: steps.workspace.outputs.exists == 'true'
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
@@ -48,6 +78,7 @@ jobs:
           ssh "root@${FRONT_DOOR_HOST}" "rm -f '${REVIEW_ROUTE_FILE}'"
 
       - name: Destroy review app infrastructure
+        if: steps.workspace.outputs.exists == 'true'
         working-directory: deploy/review-apps
         env:
           TF_VAR_front_door_host: ${{ secrets.SERVER_HOST }}
@@ -67,3 +98,17 @@ jobs:
           fi
 
           terraform destroy -auto-approve -lock-timeout=5m
+
+      - name: Delete review app Terraform workspace
+        if: steps.workspace.outputs.exists == 'true'
+        env:
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          TERRAFORM_WORKSPACE_ID: ${{ steps.workspace.outputs.workspace_id }}
+        run: |
+          set -euo pipefail
+
+          curl --silent --show-error --fail \
+            --request POST \
+            --header "Authorization: Bearer ${TF_API_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/workspaces/${TERRAFORM_WORKSPACE_ID}/actions/safe-delete"

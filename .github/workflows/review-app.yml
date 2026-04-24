@@ -61,8 +61,83 @@ jobs:
       FRONT_DOOR_HOST: ${{ secrets.SERVER_HOST }}
       IMAGE_TAG: pr-${{ github.event.pull_request.number }}
       REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ github.event.pull_request.number }}
+      TERRAFORM_ORGANIZATION: dofek
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Ensure review app Terraform workspace exists
+        env:
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          workspace_url="https://app.terraform.io/api/v2/organizations/${TERRAFORM_ORGANIZATION}/workspaces/${REVIEW_TERRAFORM_WORKSPACE}"
+          status_code="$(curl --silent --show-error --output /tmp/review-workspace.json --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${TF_API_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            "${workspace_url}")"
+
+          case "$status_code" in
+            200)
+              exit 0
+              ;;
+            404)
+              ;;
+            *)
+              echo "::error::Unexpected Terraform workspace lookup status ${status_code}"
+              cat /tmp/review-workspace.json
+              exit 1
+              ;;
+          esac
+
+          create_payload="$(mktemp)"
+          cat <<EOF > "$create_payload"
+          {
+            "data": {
+              "type": "workspaces",
+              "attributes": {
+                "name": "${REVIEW_TERRAFORM_WORKSPACE}"
+              }
+            }
+          }
+          EOF
+
+          curl --silent --show-error --fail \
+            --request POST \
+            --header "Authorization: Bearer ${TF_API_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            --data @"$create_payload" \
+            "https://app.terraform.io/api/v2/organizations/${TERRAFORM_ORGANIZATION}/workspaces" \
+            > /tmp/review-workspace.json
+
+          workspace_id="$(jq -r '.data.id' /tmp/review-workspace.json)"
+          if [ -z "$workspace_id" ] || [ "$workspace_id" = "null" ]; then
+            echo "::error::Terraform workspace creation did not return a workspace id"
+            cat /tmp/review-workspace.json
+            exit 1
+          fi
+
+          tag_payload="$(mktemp)"
+          cat <<EOF > "$tag_payload"
+          {
+            "data": [
+              {
+                "type": "tags",
+                "attributes": {
+                  "name": "review-app"
+                }
+              }
+            ]
+          }
+          EOF
+
+          curl --silent --show-error --fail \
+            --request POST \
+            --header "Authorization: Bearer ${TF_API_TOKEN}" \
+            --header "Content-Type: application/vnd.api+json" \
+            --data @"$tag_payload" \
+            "https://app.terraform.io/api/v2/workspaces/${workspace_id}/relationships/tags" \
+            > /dev/null
 
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:

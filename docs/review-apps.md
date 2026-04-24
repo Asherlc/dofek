@@ -23,13 +23,15 @@ existing explicit records and Traefik routes.
 `.github/workflows/review-app.yml` does the following for same-repo PRs:
 
 1. Build `ghcr.io/asherlc/dofek:pr-<number>`.
-2. Apply the Terraform workspace `dofek-review-pr-<number>`.
-3. Wait for Docker on the new Hetzner server.
-4. Export review env vars from Infisical.
-5. Start `db` and `redis`, run migrations, seed the preview DB, then start
+2. Create the tagged HCP Terraform workspace `dofek-review-pr-<number>` if it
+   does not exist yet.
+3. Apply the Terraform workspace `dofek-review-pr-<number>`.
+4. Wait for Docker on the new Hetzner server.
+5. Export review env vars from Infisical.
+6. Start `db` and `redis`, run migrations, seed the preview DB, then start
    `web`.
-6. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
-7. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
+7. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
+8. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
 
 ### Close
 
@@ -40,6 +42,7 @@ workspace and runs `terraform destroy`. That removes:
 - the review firewall
 - the SSH key resource for that PR workspace
 - the Traefik dynamic route file on the shared front door
+- the HCP Terraform workspace after destroy completes
 
 ## Reviewer Access
 

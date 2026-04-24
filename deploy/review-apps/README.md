@@ -13,6 +13,9 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   door host so only that PR hostname is forwarded to the PR server.
 - DNS: the wildcard `*.dofek.asherlc.com` points at the shared front door. Exact
   records like `portainer.dofek.asherlc.com` still take precedence.
+- Workspace bootstrap: the GitHub workflow creates the tagged HCP Terraform
+  workspace before `terraform init` so non-interactive CI never blocks on the
+  first PR.
 
 ## Lifecycle
 
@@ -25,7 +28,7 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   - runs migrations and the seed script
   - starts the review stack
 - The destroy workflow tears down the PR workspace, which removes the server and
-  the front door route file.
+  the front door route file, then deletes the HCP Terraform workspace itself.
 
 ## Reviewer Login
 
