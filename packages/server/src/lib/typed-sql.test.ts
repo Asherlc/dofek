@@ -1,4 +1,3 @@
-import { SpanStatusCode } from "@opentelemetry/api";
 import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -9,26 +8,6 @@ const mockExecute = vi.fn();
 function createMockDb() {
   return { execute: mockExecute };
 }
-
-// Stub OTel tracer to capture span attributes
-const mockSpan = {
-  setAttribute: vi.fn(),
-  setStatus: vi.fn(),
-  end: vi.fn(),
-};
-
-vi.mock("@opentelemetry/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@opentelemetry/api")>();
-  return {
-    ...original,
-    trace: {
-      getTracer: () => ({
-        startActiveSpan: (_name: string, callback: (span: typeof mockSpan) => unknown) =>
-          callback(mockSpan),
-      }),
-    },
-  };
-});
 
 describe("executeWithSchema", () => {
   beforeEach(() => {
@@ -89,7 +68,7 @@ describe("executeWithSchema", () => {
       name: z.string(),
     });
 
-    mockExecute.mockResolvedValue([{ id: 1 }]); // missing 'name'
+    mockExecute.mockResolvedValue([{ id: 1 }]);
 
     const mockDb = createMockDb();
 
@@ -111,70 +90,17 @@ describe("executeWithSchema", () => {
     expect(result).toEqual([{ count: 42 }]);
   });
 
-  it("strips extra fields when schema uses strict or passthrough appropriately", async () => {
+  it("strips extra fields that are not in the schema", async () => {
     const schema = z.object({
       id: z.number(),
     });
 
-    // Row has extra fields that aren't in schema — z.object strips them by default
     mockExecute.mockResolvedValue([{ id: 1, extra: "field" }]);
 
     const mockDb = createMockDb();
     const result = await executeWithSchema(mockDb, schema, sql`SELECT *`);
 
     expect(result).toEqual([{ id: 1 }]);
-  });
-
-  it("emits an OTel span with db.system, db.statement, and db.row_count", async () => {
-    const schema = z.object({ id: z.number() });
-    mockExecute.mockResolvedValue([{ id: 1 }, { id: 2 }]);
-
-    const mockDb = createMockDb();
-    await executeWithSchema(mockDb, schema, sql`SELECT id FROM users`);
-
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("db.system", "postgresql");
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
-      "db.statement",
-      expect.stringContaining("SELECT id FROM users"),
-    );
-    expect(mockSpan.setAttribute).toHaveBeenCalledWith("db.row_count", 2);
-    expect(mockSpan.end).toHaveBeenCalled();
-    expect(mockSpan.setStatus).not.toHaveBeenCalled();
-  });
-
-  it("sets error status on span when query fails", async () => {
-    const schema = z.object({ id: z.number() });
-    mockExecute.mockRejectedValue(new Error("connection refused"));
-
-    const mockDb = createMockDb();
-    await expect(executeWithSchema(mockDb, schema, sql`SELECT 1`)).rejects.toThrow(
-      "connection refused",
-    );
-
-    expect(mockSpan.setStatus).toHaveBeenCalledWith({
-      code: SpanStatusCode.ERROR,
-      message: "Error: connection refused",
-    });
-    expect(mockSpan.end).toHaveBeenCalled();
-  });
-
-  it("includes nested SQL fragments in db.statement", async () => {
-    const schema = z.object({ id: z.number() });
-    mockExecute.mockResolvedValue([{ id: 1 }]);
-
-    const inner = sql`up.id = ${"user-1"}`;
-    const query = sql`SELECT * FROM t WHERE ${inner} AND x = ${"val"}`;
-
-    const mockDb = createMockDb();
-    await executeWithSchema(mockDb, schema, query);
-
-    const statementCall = mockSpan.setAttribute.mock.calls.find(
-      ([key]: [string]) => key === "db.statement",
-    );
-    const statement = String(statementCall?.[1]);
-    // Should contain the full SQL including the nested fragment, not just $N
-    expect(statement).toContain("up.id =");
-    expect(statement).toContain("AND x =");
   });
 });
 

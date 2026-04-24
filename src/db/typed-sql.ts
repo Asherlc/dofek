@@ -29,8 +29,8 @@ export async function executeWithSchema<T extends z.ZodType>(
 
 /**
  * Zod schema for SQL date columns (::date).
- * The postgres-js driver returns Date objects on some platforms (Linux/ARM)
- * and strings on others (macOS). This schema normalizes both to YYYY-MM-DD.
+ * Database drivers may return Date objects or strings. This schema normalizes
+ * both to YYYY-MM-DD.
  */
 export const dateStringSchema = z
   .union([z.string(), z.date()])
@@ -38,9 +38,8 @@ export const dateStringSchema = z
 
 /**
  * Zod schema for SQL timestamp/timestamptz columns.
- * The postgres-js driver returns Date objects on some platforms (Linux/ARM)
- * and strings on others (macOS). This schema normalizes both to ISO 8601
- * strings that all browsers (including Safari) can parse.
+ * Database drivers may return Date objects or strings. This schema normalizes
+ * both to ISO 8601 strings that all browsers (including Safari) can parse.
  */
 export const timestampStringSchema = z.union([z.string(), z.date()]).transform((value) => {
   if (value instanceof Date) return value.toISOString();
