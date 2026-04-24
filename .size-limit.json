@@ -4,7 +4,7 @@
       "packages/web/dist/assets/*.js",
       "!packages/web/dist/assets/*.lazy-*.js"
     ],
-    "limit": "697 kB",
+    "limit": "697.1 kB",
     "gzip": true,
     "name": "Web JS (gzipped)"
   },

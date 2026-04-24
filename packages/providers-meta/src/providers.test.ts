@@ -5,6 +5,7 @@ import {
   PROVIDER_LABELS,
   providerLabel,
   providerLogoType,
+  providerSourceLabel,
   SVG_LOGOS,
 } from "./providers.ts";
 
@@ -35,6 +36,17 @@ describe("providerLabel", () => {
 
   it("falls back to the raw ID for unknown providers", () => {
     expect(providerLabel("unknown-provider")).toBe("unknown-provider");
+  });
+});
+
+describe("providerSourceLabel", () => {
+  it("shows Apple Health upstream app names when present", () => {
+    expect(providerSourceLabel("apple_health", "Strong")).toBe("Strong (via Apple Health)");
+  });
+
+  it("falls back to the provider label in other cases", () => {
+    expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
+    expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP");
   });
 });
 

@@ -1,6 +1,6 @@
 import { formatDurationRange, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { providerLabel } from "@dofek/providers/providers";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
@@ -968,7 +968,7 @@ export default function ActivityDetailScreen() {
               return (
                 <Text key={providerId} style={styles.source}>
                   {index > 0 && ", "}
-                  {providerLabel(providerId)}
+                  {providerSourceLabel(providerId, activity.subsource)}
                 </Text>
               );
             })}

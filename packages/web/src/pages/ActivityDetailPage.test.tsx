@@ -29,6 +29,8 @@ const mockActivity = {
   activityType: "running",
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
+  providerId: "whoop",
+  subsource: null,
   totalDistance: 10000,
   elevationGain: 200,
   avgHr: 150,
@@ -212,9 +214,28 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText(/Apple Health/)).toBeDefined();
     });
 
+    it("shows Apple Health upstream app names when subsource is present", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        providerId: "apple_health",
+        subsource: "Strong",
+        sourceProviders: ["apple_health"],
+        sourceLinks: [],
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
+
+      Object.assign(mockActivity, originalData);
+    });
+
     it("renders source links as clickable anchors", async () => {
       const originalData = { ...mockActivity };
       Object.assign(mockActivity, {
+        providerId: "wahoo",
+        subsource: null,
         sourceProviders: ["strava", "garmin"],
         sourceLinks: [
           { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/123" },

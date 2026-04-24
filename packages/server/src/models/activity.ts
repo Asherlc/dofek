@@ -12,6 +12,7 @@ export interface ActivityDetail {
   name: string | null;
   notes: string | null;
   providerId: string;
+  subsource: string | null;
   sourceProviders: string[];
   sourceLinks: SourceLink[];
   avgHr: number | null;
@@ -35,6 +36,7 @@ export interface ActivityRow {
   name: string | null;
   notes: string | null;
   provider_id: string;
+  subsource: string | null;
   source_providers: string[] | null;
   source_external_ids: Array<{ providerId: string; externalId: string }> | null;
   avg_hr: number | null;
@@ -90,6 +92,10 @@ export class Activity {
 
   get providerId(): string {
     return String(this.#row.provider_id);
+  }
+
+  get subsource(): string | null {
+    return this.#row.subsource ? String(this.#row.subsource) : null;
   }
 
   get sourceProviders(): string[] {
@@ -166,6 +172,7 @@ export class Activity {
       name: this.name,
       notes: this.notes,
       providerId: this.providerId,
+      subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks: this.sourceLinks,
       avgHr: this.avgHr,

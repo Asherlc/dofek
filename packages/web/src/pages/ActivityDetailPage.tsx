@@ -1,6 +1,6 @@
 import { formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { providerLabel } from "@dofek/providers/providers";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
   computeIntensities,
@@ -380,7 +380,7 @@ function SourceLinks({ activity }: { activity: ActivityDetail }) {
                 {link.label}
               </a>
             ) : (
-              providerLabel(providerId)
+              providerSourceLabel(providerId, activity.subsource)
             )}
           </span>
         );
