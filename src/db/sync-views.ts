@@ -59,7 +59,7 @@ export async function viewExistsInCatalog(
 /**
  * Check whether a materialized view has been populated (has data loaded).
  * A view created with WITH NO DATA, or one whose population was interrupted
- * by a crash, will report `ispopulated = false` in pg_matviews. // cspell:disable-line
+ * by a crash, will report a false populated flag in pg_matviews.
  */
 export async function isViewPopulated(
   client: Pick<Client, "query">,
@@ -68,12 +68,11 @@ export async function isViewPopulated(
   const dotIndex = viewName.indexOf(".");
   const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
   const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
-  const result =
+  const result = await client.query<{ populated: boolean }>(
     // cspell:disable-next-line -- Postgres system catalog column name
-    await client.query<{ populated: boolean }>(
-      "SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
-      [schema, name],
-    );
+    "SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
+    [schema, name],
+  );
   // If the view doesn't exist in pg_matviews, treat as not populated
   return result.rows[0]?.populated === true;
 }

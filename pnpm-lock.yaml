@@ -74,7 +74,7 @@ importers:
         version: 5.71.0
       drizzle-orm:
         specifier: 0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.8)
+        version: 0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.9)
       eight-sleep-client:
         specifier: workspace:*
         version: link:packages/eight-sleep
@@ -162,7 +162,7 @@ importers:
         version: 17.3.10
       drizzle-dbml-generator:
         specifier: 0.10.0
-        version: 0.10.0(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.8))
+        version: 0.10.0(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.9))
       drizzle-kit:
         specifier: 0.30.6
         version: 0.30.6
@@ -440,9 +440,6 @@ importers:
       '@dofek/zones':
         specifier: workspace:*
         version: link:../zones
-      '@opentelemetry/api':
-        specifier: 1.9.0
-        version: 1.9.0
       '@sentry/node':
         specifier: 10.45.0
         version: 10.45.0
@@ -10400,8 +10397,8 @@ packages:
     resolution: {integrity: sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ==}
     engines: {node: '>=0.10.0'}
 
-  postgres@3.4.8:
-    resolution: {integrity: sha512-d+JFcLM17njZaOLkv6SCev7uoLaBtfK86vMUXhW1Z4glPWh4jozno9APvW/XKFJ3CCxVoC7OL38BqRydtu5nGg==}
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
     engines: {node: '>=12'}
 
   posthog-js@1.361.1:
@@ -21473,9 +21470,9 @@ snapshots:
 
   dotenv@16.4.7: {}
 
-  drizzle-dbml-generator@0.10.0(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.8)):
+  drizzle-dbml-generator@0.10.0(drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.9)):
     dependencies:
-      drizzle-orm: 0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.8)
+      drizzle-orm: 0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.9)
 
   drizzle-kit@0.30.6:
     dependencies:
@@ -21487,13 +21484,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.8):
+  drizzle-orm@0.45.2(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(gel@2.2.0)(pg@8.16.0)(postgres@3.4.9):
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       '@types/pg': 8.15.5
       gel: 2.2.0
       pg: 8.16.0
-      postgres: 3.4.8
+      postgres: 3.4.9
 
   dunder-proto@1.0.1:
     dependencies:
@@ -23889,7 +23886,7 @@ snapshots:
     dependencies:
       xtend: 4.0.2
 
-  postgres@3.4.8:
+  postgres@3.4.9:
     optional: true
 
   posthog-js@1.361.1:
