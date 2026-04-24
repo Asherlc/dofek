@@ -44,5 +44,7 @@ Tests verify both the UI and the underlying API:
 
 ## Running Tests
 
-- **Open Mode**: `pnpm cypress open` (interactive)
-- **Run Mode**: `pnpm cypress run` (CI/headless)
+- **Bring the stack up**: `pnpm e2e:web:up`
+- **Open Mode**: `pnpm e2e:web:open` (interactive)
+- **Run Mode**: `pnpm e2e:web:run` (CI/headless)
+- **Tear the stack down**: `pnpm e2e:web:down`

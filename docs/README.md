@@ -1,50 +1,60 @@
 # Documentation
 
-Architectural records, provider guides, and reverse engineering research for Dofek.
+Human-facing architecture notes, provider research, and operational runbooks for Dofek.
 
-## Architecture & Schema
+## Start Here
 
-- `schema.md`: Explains the "Raw Data Only" philosophy. Lists columns we intentionally do not store (e.g., distance, calories) because they are derivable from raw sensor streams.
-  - Heads up: `schema.md` documents `deduped_sensor` ambient fallback behavior, including the bounded window used when `activity.ended_at` is `NULL`.
-- `schema.dbml` / `schema.puml`: Automatically generated ER diagrams of the `fitness` schema.
-- `adding-a-provider.md`: Step-by-step guide for implementing new data sources using the `SyncProvider` or `ImportProvider` interfaces.
-- `nutrition-ai-input.md`: End-to-end behavior for natural-language meal logging on web and iOS, including API flow and persistence.
+- [../README.md](../README.md): repository overview, local development, and the high-level architecture.
+- [../deploy/README.md](../deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
+- [schema.md](schema.md): canonical database model and storage philosophy.
+- [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
+- [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 
-## Reverse Engineering Guides
+## Architecture And Product Flows
 
-Dofek specializes in deep integration with fitness platforms that lack public APIs.
+| Doc | What it is for |
+|-----|----------------|
+| [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
+| [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |
+| [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
+| [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |
+| [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
+| [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 
-- `reverse-engineering-apis.md`: The canonical guide to our research methods:
-  - **APK Decompilation**: Using `jadx` to extract internal API endpoints and data models from Android apps.
-  - **Browser Inspection**: Capturing XHR/Fetch traffic from web applications.
-  - **Proxy Interception**: Using `mitmproxy` or PacketLogger for mobile traffic.
-- `reverse-engineering-walkthrough.md`: A complete end-to-end example of reverse-engineering a new service.
-- `whoop-ble-protocol.md`: Detailed breakdown of the WHOOP 4.0 BLE protocol, including frame formats (Maverick 8-byte header), CRC16-MODBUS/CRC32 implementation, and sensor packet structures (types 0x2B, 0x33, 0x34).
+## Provider Research
 
-## Provider Specifics
+| Provider | Doc | Focus |
+|----------|-----|-------|
+| WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
+| WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
+| Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
+| BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
+| FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
+| Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
+| Peloton | [peloton.md](peloton.md) | Auth and workout sync notes. |
+| Ride with GPS | [ride-with-gps.md](ride-with-gps.md) | OAuth flow and activity import notes. |
+| TrainerRoad | [trainerroad.md](trainerroad.md) | Cookie auth, workouts, and parsing details. |
+| Wahoo | [wahoo.md](wahoo.md) | OAuth and workout ingestion notes. |
+| Withings | [withings.md](withings.md) | Sleep/body sync and webhook details. |
+| Zwift | [zwift.md](zwift.md) | Keycloak auth and activity details. |
 
-| Provider | Key Features / Research |
-|----------|------------------------|
-| **WHOOP** (`whoop.md`) | Internal Cognito auth, `weightlifting-service` for Strength Trainer sets/reps, R21 raw IMU data capture. |
-| **Apple Health** (`apple-health.md`) | Detailed mapping of `HKQuantityType` to `sensor_sample` channels. |
-| **Oura** (`oura.md`) | Focus on readiness, sleep stages, and proprietary stress/resilience metrics. |
-| **Garmin Connect** | Research into the complex 5-step SSO flow (OAuth1 → OAuth2 exchange). |
-| **Zwift** (`zwift.md`) | Reverse-engineered Keycloak auth and activity detail endpoints. |
-| **TrainerRoad** (`trainerroad.md`) | Cookie-based form login with CSRF extraction. |
-| **Peloton** (`peloton.md`) | WebSocket-based real-time metrics capture research. |
-| **Eight Sleep** (`bodyspec.md`) | Hardcoded client credentials discovered via APK. |
+Cross-provider reverse-engineering references:
 
-## Operations
+- [reverse-engineering-apis.md](reverse-engineering-apis.md): repeatable research techniques for closed or unofficial APIs.
+- [reverse-engineering-walkthrough.md](reverse-engineering-walkthrough.md): one end-to-end example, from traffic capture to implementation.
+- [provider-api-audit.md](provider-api-audit.md): current provider feasibility and coverage audit.
 
-- `ci-debugging.md`: Pro-tips for diagnosing CI failures, specifically how to extract Swift compiler errors from truncated iOS build logs using `gh api`.
-- `testing.md`: Practical patterns for test assertions with chainable DB mocks (`values(...)` payload checks, guarding against accidental `values([])` inserts).
-- `xcode-cloud.md`: Configuration and troubleshooting for our automated iOS build pipeline.
-- `provider-api-audit.md`: Periodic review of provider API health and data coverage.
-- `metric-stream-timescaledb-runbook.md`: Production runbook to convert `fitness.metric_stream` to a Timescale hypertable and enable compression safely.
-- `bugsink.md`: Runbook for investigating Bugsink issues/events from terminal (auth, canonical API flow, stacktrace retrieval).
-- `traefik-subdomain-404-runbook.md`: Triage runbook for management subdomains returning Traefik `404 page not found`.
+## Operations And Runbooks
 
-## CI Preview Apps
+| Doc | What it is for |
+|-----|----------------|
+| [ci-debugging.md](ci-debugging.md) | Debugging GitHub Actions failures with `gh` CLI. |
+| [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
+| [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |
+| [bugsink.md](bugsink.md) | Investigating Bugsink issues and stack traces from terminal. |
+| [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Fixing management subdomains that return Traefik 404s. |
 
-- Storybook previews are active via `review-app-storybook.yml` (PR artifacts uploaded to R2).
-- The old web preview workflow (`review-app-web.yml`) has been removed; do not reintroduce it as commented-out config.
+## Notes
+
+- Storybook previews are active via `review-app-storybook.yml` and published to R2.
+- The old web preview workflow (`review-app-web.yml`) has been removed and should stay removed.
