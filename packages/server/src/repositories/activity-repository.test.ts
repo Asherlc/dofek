@@ -223,6 +223,7 @@ describe("ActivityRepository", () => {
           name: "Easy Run",
           notes: "Felt good",
           provider_id: "garmin",
+          subsource: "Strong",
           source_providers: ["garmin"],
           source_external_ids: [{ providerId: "garmin", externalId: "ext-1" }],
           avg_hr: 135,
@@ -243,6 +244,7 @@ describe("ActivityRepository", () => {
       expect(result?.id).toBe("abc-123");
       expect(result?.activity_type).toBe("running");
       expect(result?.name).toBe("Easy Run");
+      expect(result?.subsource).toBe("Strong");
     });
 
     it("calls execute once", async () => {

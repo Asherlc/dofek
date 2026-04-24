@@ -13,6 +13,7 @@ const baseActivity: ActivityDetail = {
   name: "Morning Ride",
   notes: null,
   providerId: "wahoo",
+  subsource: null,
   sourceProviders: ["wahoo", "apple_health"],
   sourceLinks: [
     { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },

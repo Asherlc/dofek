@@ -120,6 +120,8 @@ vi.mock("@dofek/format/units", () => ({}));
 
 vi.mock("@dofek/providers/providers", () => ({
   providerLabel: (id: string) => id,
+  providerSourceLabel: (id: string, subsource?: string | null) =>
+    id === "apple_health" && subsource ? `${subsource} (via Apple Health)` : id,
 }));
 
 vi.mock("@dofek/scoring/colors", () => ({
@@ -167,6 +169,7 @@ const baseCyclingActivity = {
   name: "Morning Ride",
   notes: null,
   providerId: "wahoo",
+  subsource: null,
   sourceProviders: ["wahoo"],
   sourceLinks: [],
   avgHr: 145,
@@ -258,5 +261,23 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Heart Rate")).toBeTruthy();
     const enabled = getQueryEnabledFlag(mockPowerZonesQuery.mock.calls[0]?.[1]);
     expect(enabled).toBe(false);
+  });
+
+  it("shows Apple Health upstream app names when subsource is present", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        providerId: "apple_health",
+        subsource: "Strong",
+        sourceProviders: ["apple_health"],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();
   });
 });
