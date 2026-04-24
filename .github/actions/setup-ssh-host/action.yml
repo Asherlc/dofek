@@ -21,4 +21,17 @@ runs:
         mkdir -p ~/.ssh
         printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
         chmod 600 ~/.ssh/id_ed25519
-        ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+        known_hosts_entry=""
+        for attempt in $(seq 1 24); do
+          known_hosts_entry="$(ssh-keyscan -T 5 -H "$SSH_HOST" 2>/dev/null || true)"
+          if [ -n "$known_hosts_entry" ]; then
+            printf '%s\n' "$known_hosts_entry" >> ~/.ssh/known_hosts
+            exit 0
+          fi
+          if [ "$attempt" -eq 24 ]; then
+            echo "::error::SSH host key for $SSH_HOST did not become available within 120s"
+            exit 1
+          fi
+          sleep 5
+        done
