@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockQueueInstance = { name: "mock-queue" };
+const mockQueueAdd = vi.fn();
+const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd };
 const MockQueue = vi.fn(() => mockQueueInstance);
 
 vi.mock("bullmq", () => ({
@@ -11,6 +12,7 @@ describe("queues", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.REDIS_URL;
+    mockQueueAdd.mockResolvedValue(undefined);
   });
 
   describe("constants", () => {
@@ -164,6 +166,56 @@ describe("queues", () => {
       expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
         connection: { host: "test", port: 9999 },
       });
+    });
+  });
+
+  describe("enqueueDebouncedPostSyncMaintenance", () => {
+    it("adds one delayed deduplicated global maintenance job", async () => {
+      const { enqueueDebouncedPostSyncMaintenance, POST_SYNC_DEBOUNCE_MS, createPostSyncQueue } =
+        await import("./queues.ts");
+
+      const queue = createPostSyncQueue({ host: "test", port: 9999 });
+      await enqueueDebouncedPostSyncMaintenance(queue);
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "global-maintenance",
+        { type: "global-maintenance" },
+        {
+          delay: POST_SYNC_DEBOUNCE_MS,
+          deduplication: {
+            id: "post-sync:global-maintenance",
+            ttl: POST_SYNC_DEBOUNCE_MS,
+            extend: true,
+            replace: true,
+          },
+          removeOnComplete: true,
+        },
+      );
+    });
+  });
+
+  describe("enqueueDebouncedUserRefit", () => {
+    it("adds one delayed deduplicated per-user refit job", async () => {
+      const { enqueueDebouncedUserRefit, POST_SYNC_DEBOUNCE_MS, createPostSyncQueue } =
+        await import("./queues.ts");
+
+      const queue = createPostSyncQueue({ host: "test", port: 9999 });
+      await enqueueDebouncedUserRefit("user-123", queue);
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "user-refit",
+        { type: "user-refit", userId: "user-123" },
+        {
+          delay: POST_SYNC_DEBOUNCE_MS,
+          deduplication: {
+            id: "post-sync:user-refit:user-123",
+            ttl: POST_SYNC_DEBOUNCE_MS,
+            extend: true,
+            replace: true,
+          },
+          removeOnComplete: true,
+        },
+      );
     });
   });
 });

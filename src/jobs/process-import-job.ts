@@ -110,48 +110,24 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     });
   }
 
-  // Post-import: refresh views first, then update max HR (reads from activity_summary)
   try {
     job
-      .updateProgress({ percentage: 92, message: "Refreshing views..." })
+      .updateProgress({ percentage: 95, message: "Scheduling post-import processing..." })
       .catch((error: unknown) => {
         logger.warn("Failed to update progress: %s", error);
       });
-    const { refreshDedupViews } = await import("../db/dedup.ts");
-    await refreshDedupViews(db);
+    const { enqueueDebouncedPostSyncMaintenance } = await import("./queues.ts");
+    await enqueueDebouncedPostSyncMaintenance();
   } catch (err) {
-    logger.error(`[worker] Failed to refresh views: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-refresh-views" } });
+    logger.error(`[worker] Failed to enqueue global post-import maintenance: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-import-global-maintenance-enqueue" } });
   }
 
   try {
-    job
-      .updateProgress({ percentage: 95, message: "Updating max heart rate..." })
-      .catch((error: unknown) => {
-        logger.warn("Failed to update progress: %s", error);
-      });
-    const { updateUserMaxHr } = await import("../db/dedup.ts");
-    await updateUserMaxHr(db);
+    const { enqueueDebouncedUserRefit } = await import("./queues.ts");
+    await enqueueDebouncedUserRefit(userId);
   } catch (err) {
-    logger.error(`[worker] Failed to update max HR: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-max-hr" } });
-  }
-
-  try {
-    job
-      .updateProgress({ percentage: 97, message: "Syncing provider priorities..." })
-      .catch((error: unknown) => {
-        logger.warn("Failed to update progress: %s", error);
-      });
-    const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
-      "../db/provider-priority.ts"
-    );
-    const config = loadProviderPriorityConfig();
-    if (config) {
-      await syncProviderPriorities(db, config);
-    }
-  } catch (err) {
-    logger.error(`[worker] Failed to sync provider priorities: ${err}`);
-    Sentry.captureException(err, { tags: { phase: "post-import-provider-priorities" } });
+    logger.error(`[worker] Failed to enqueue post-import user refit: ${err}`);
+    Sentry.captureException(err, { tags: { phase: "post-import-user-refit-enqueue" } });
   }
 }

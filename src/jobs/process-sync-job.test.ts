@@ -57,11 +57,12 @@ vi.mock("../db/tokens.ts", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
 }));
 
-const mockUpdateUserMaxHr = vi.fn().mockResolvedValue(undefined);
-const mockRefreshDedupViews = vi.fn().mockResolvedValue(undefined);
-vi.mock("../db/dedup.ts", () => ({
-  updateUserMaxHr: (...args: unknown[]) => mockUpdateUserMaxHr(...args),
-  refreshDedupViews: (...args: unknown[]) => mockRefreshDedupViews(...args),
+const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
+vi.mock("./queues.ts", () => ({
+  enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
+    mockEnqueueDebouncedPostSyncMaintenance(...args),
+  enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
 }));
 
 const mockSyncRecordsTotal = { add: vi.fn() };
@@ -136,8 +137,8 @@ describe("processSyncJob", () => {
       expiresAt: new Date("2099-01-01"),
       scopes: null,
     });
-    mockUpdateUserMaxHr.mockResolvedValue(undefined);
-    mockRefreshDedupViews.mockResolvedValue(undefined);
+    mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
+    mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -385,30 +386,39 @@ describe("processSyncJob", () => {
     );
   });
 
-  it("calls updateUserMaxHr and refreshDedupViews post-sync", async () => {
+  it("enqueues debounced global maintenance and per-user refit after sync", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([]);
 
     await runSyncJob(createMockJob(), mockDb);
 
-    expect(mockUpdateUserMaxHr).toHaveBeenCalledWith(mockDb);
-    expect(mockRefreshDedupViews).toHaveBeenCalledWith(mockDb);
+    expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
   });
 
-  it("handles post-sync cleanup failures gracefully and logs errors", async () => {
+  it("continues when global post-sync enqueue fails", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([]);
-    mockUpdateUserMaxHr.mockRejectedValue(new Error("db gone"));
-    mockRefreshDedupViews.mockRejectedValue(new Error("db gone"));
+    mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));
 
     // Should not throw
     await runSyncJob(createMockJob(), mockDb);
 
-    expect(mockUpdateUserMaxHr).toHaveBeenCalled();
-    expect(mockRefreshDedupViews).toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to update max HR"),
+      expect.stringContaining("Failed to enqueue global post-sync maintenance"),
     );
+  });
+
+  it("continues when per-user refit enqueue fails", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockEnqueueDebouncedUserRefit.mockRejectedValue(new Error("queue gone"));
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
+    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
     expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to refresh views"),
+      expect.stringContaining("Failed to enqueue user refit"),
     );
   });
 
