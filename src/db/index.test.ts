@@ -1,51 +1,62 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockDrizzleReturn = { query: {} };
+const mockDrizzleReturn = {
+  query: {},
+  execute: vi.fn(),
+  $client: { end: vi.fn() },
+};
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
-const mockPostgresReturn = { end: vi.fn() };
-const mockPostgres = vi.fn(() => mockPostgresReturn);
+const mockPoolInstance = {};
+const mockPool = vi.fn(() => mockPoolInstance);
 
-vi.mock("drizzle-orm/postgres-js", () => ({
+vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: mockDrizzle,
 }));
 
-vi.mock("postgres", () => ({
-  default: mockPostgres,
+vi.mock("pg", () => ({
+  Pool: mockPool,
 }));
 
 describe("db/index", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDrizzleReturn.execute = vi.fn();
+    mockDrizzleReturn.$client = { end: vi.fn() };
     delete process.env.DATABASE_URL;
   });
 
   describe("createDatabase", () => {
-    it("creates a postgres client with the given connection string", async () => {
+    it("creates a pool with the given connection string", async () => {
       const { createDatabase } = await import("./index.ts");
       createDatabase("postgres://localhost:5432/test");
 
-      expect(mockPostgres).toHaveBeenCalledWith("postgres://localhost:5432/test", {
+      expect(mockPool).toHaveBeenCalledWith({
+        connectionString: "postgres://localhost:5432/test",
         max: 5,
-        idle_timeout: 300,
-        connect_timeout: 10,
-        max_lifetime: 600,
-        keep_alive: 60,
+        idleTimeoutMillis: 300_000,
+        connectionTimeoutMillis: 10_000,
+        maxLifetimeSeconds: 600,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 60_000,
       });
     });
 
-    it("creates a drizzle instance with the postgres client and schema", async () => {
+    it("creates a drizzle instance with the pool and schema", async () => {
       const { createDatabase } = await import("./index.ts");
       const schema = await import("./schema.ts");
       createDatabase("postgres://localhost:5432/test");
 
-      expect(mockDrizzle).toHaveBeenCalledWith(mockPostgresReturn, { schema });
+      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema });
     });
 
-    it("returns the drizzle instance", async () => {
+    it("preserves the existing row-array execute contract", async () => {
       const { createDatabase } = await import("./index.ts");
-      const db = createDatabase("postgres://localhost:5432/test");
+      mockDrizzleReturn.execute.mockResolvedValueOnce({ rows: [{ id: 1 }] });
 
-      expect(db).toBe(mockDrizzleReturn);
+      const db = createDatabase("postgres://localhost:5432/test");
+      const rows = await db.execute<{ id: number }>("SELECT 1 AS id");
+
+      expect(rows).toEqual([{ id: 1 }]);
     });
   });
 
@@ -62,9 +73,11 @@ describe("db/index", () => {
       const { createDatabaseFromEnv } = await import("./index.ts");
       const db = createDatabaseFromEnv();
 
-      expect(mockPostgres).toHaveBeenCalledWith(
-        "postgres://envhost:5432/envdb",
-        expect.objectContaining({ max: 5 }),
+      expect(mockPool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionString: "postgres://envhost:5432/envdb",
+          max: 5,
+        }),
       );
       expect(db).toBe(mockDrizzleReturn);
     });

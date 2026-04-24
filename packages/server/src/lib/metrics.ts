@@ -49,3 +49,10 @@ export const cacheMissesTotal = new Counter({
   labelNames: ["procedure"] as const,
   registers: [registry],
 });
+
+export const trpcSlowQueriesTotal = new Counter({
+  name: "trpc_slow_queries_total",
+  help: "Total number of slow tRPC procedure database operations",
+  labelNames: ["procedure", "type"] as const,
+  registers: [registry],
+});

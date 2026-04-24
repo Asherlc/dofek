@@ -1,3 +1,4 @@
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -38,15 +39,6 @@ async function ensureProvider(db: Database, userId: string) {
         VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
-}
-
-/** Refresh a single materialized view (CONCURRENTLY if possible). */
-async function refreshView(db: Database, view: string): Promise<void> {
-  try {
-    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-  } catch {
-    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-  }
 }
 
 /** Route a sample to its destination category */
@@ -169,14 +161,18 @@ export const healthKitSyncRouter = router({
       // Refresh materialized views so the dashboard picks up new data immediately
       if (needsDailyMetricsRefresh) {
         try {
-          await refreshView(ctx.db, "fitness.v_daily_metrics");
+          await refreshMaterializedView(ctx.db, "fitness.v_daily_metrics", {
+            source: "server.healthkit_push_quantity",
+          });
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh v_daily_metrics: ${error}`);
         }
       }
       if (bodyMeasurements.length > 0) {
         try {
-          await refreshView(ctx.db, "fitness.v_body_measurement");
+          await refreshMaterializedView(ctx.db, "fitness.v_body_measurement", {
+            source: "server.healthkit_push_quantity",
+          });
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh v_body_measurement: ${error}`);
         }
@@ -220,8 +216,12 @@ export const healthKitSyncRouter = router({
       // Refresh activity views so dashboard picks up new workouts immediately
       if (inserted > 0) {
         try {
-          await refreshView(ctx.db, "fitness.v_activity");
-          await refreshView(ctx.db, "fitness.activity_summary");
+          await refreshMaterializedView(ctx.db, "fitness.v_activity", {
+            source: "server.healthkit_push_workouts",
+          });
+          await refreshMaterializedView(ctx.db, "fitness.activity_summary", {
+            source: "server.healthkit_push_workouts",
+          });
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh activity views: ${error}`);
         }
@@ -263,7 +263,9 @@ export const healthKitSyncRouter = router({
       // Refresh v_sleep so sleep queries pick up new data immediately
       if (inserted > 0) {
         try {
-          await refreshView(ctx.db, "fitness.v_sleep");
+          await refreshMaterializedView(ctx.db, "fitness.v_sleep", {
+            source: "server.healthkit_push_sleep",
+          });
         } catch (error) {
           logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
         }

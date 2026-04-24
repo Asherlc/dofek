@@ -115,6 +115,12 @@ services:
 
   db:
     image: timescale/timescaledb:2.26.2-pg18
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_stat_statements
+      - -c
+      - log_min_duration_statement=1000
     ports:
       - "127.0.0.1:5432:5432"
     environment:

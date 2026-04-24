@@ -1,3 +1,4 @@
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
 import { createTrainingExportQueue } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
@@ -454,11 +455,7 @@ export const adminRouter = router({
     const failed: Array<{ view: string; error: string }> = [];
     for (const view of ALL_MATERIALIZED_VIEWS) {
       try {
-        try {
-          await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-        } catch {
-          await ctx.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-        }
+        await refreshMaterializedView(ctx.db, view, { source: "server.admin_refresh_views" });
         refreshed.push(view);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

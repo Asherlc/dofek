@@ -268,6 +268,13 @@ axiom query 'dofek-logs' --filter 'span.name == "db.query" AND duration > 200ms'
 axiom query 'dofek-logs' --filter 'message contains "Slow query"'
 ```
 
+Production Postgres also records statement-level diagnostics:
+
+- `pg_stat_statements` retains aggregated execution stats for SQL fingerprints.
+- `log_min_duration_statement=1000` writes any SQL statement taking 1 second or longer to Postgres logs.
+
+Use the commands in [deploy/README.md](deploy/README.md#postgres-statement-diagnostics) during incidents to inspect current statements, top cumulative queries, and recent slow SQL directly from production.
+
 ### Production secrets and deploy-time injection
 
 See [`deploy/README.md`](deploy/README.md#production-secrets) for how Infisical secrets are exported to the production stack at deploy time, the list of required Infisical keys, and the production machine identity setup.

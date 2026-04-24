@@ -386,12 +386,13 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("returns parsed trends", async () => {
-      const { repo } = makeRepository([makeTrendsRow()]);
+      const { repo, execute } = makeRepository([makeTrendsRow()]);
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result).not.toBeNull();
       expect(result?.avg_hrv).toBe(43.8);
       expect(result?.latest_hrv).toBe(48);
       expect(result?.latest_date).toBe("2025-03-15");
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("logs warning when trends returns all nulls but base table has data (stale view)", async () => {
@@ -445,9 +446,10 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("does not log warning when trends has data", async () => {
-      const { repo } = makeRepository([makeTrendsRow()]);
+      const { repo, execute } = makeRepository([makeTrendsRow()]);
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("refreshes trends when latest steps are null but the base table has steps for the latest date", async () => {
@@ -484,6 +486,61 @@ describe("DailyMetricsRepository", () => {
       );
     });
 
+    it("does not check latest missing metrics when the trends row has no latest date", async () => {
+      const rowWithoutLatestDate = makeTrendsRow({
+        latest_steps: null,
+        latest_active_energy: null,
+        latest_date: null,
+        latest_steps_date: null,
+        latest_active_energy_date: null,
+      });
+      const { repo, execute } = makeRepository([rowWithoutLatestDate]);
+
+      const result = await repo.getTrends(30, "2025-03-15");
+
+      expect(result?.latest_date).toBeNull();
+      expect(result?.latest_steps).toBeNull();
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("refreshes trends when latest metric dates are older than the end date but base table has newer data", async () => {
+      const staleMetricDatesRow = makeTrendsRow({
+        latest_date: "2025-03-15",
+        latest_steps: "9100",
+        latest_steps_date: "2025-03-13",
+        latest_active_energy: "430",
+        latest_active_energy_date: "2025-03-13",
+      });
+      const refreshedRow = makeTrendsRow({
+        latest_date: "2025-03-15",
+        latest_steps: "9400",
+        latest_steps_date: "2025-03-15",
+        latest_active_energy: "460",
+        latest_active_energy_date: "2025-03-15",
+      });
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([staleMetricDatesRow])
+        .mockResolvedValueOnce([{ exists: 1 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([refreshedRow]);
+      const repo = new DailyMetricsRepository({ execute }, "user-1");
+
+      const result = await repo.getTrends(30, "2025-03-15");
+
+      expect(result?.latest_steps).toBe(9400);
+      expect(result?.latest_steps_date).toBe("2025-03-15");
+      expect(result?.latest_active_energy).toBe(460);
+      expect(mockSentryCapture).toHaveBeenCalledWith(
+        expect.stringContaining("Stale daily metrics"),
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            reason: expect.stringContaining("outdated"),
+          }),
+        }),
+      );
+    });
+
     it("returns latest values from most recent day in window when endDate has no data", async () => {
       // Simulates: stats are populated (data in 30-day window) but latest comes
       // from yesterday, not today — the query should use the most recent row
@@ -501,6 +558,7 @@ describe("DailyMetricsRepository", () => {
       const sqlText = JSON.stringify(sqlArg);
       expect(sqlText).toContain("latest");
       expect(sqlText).toContain("ARRAY_AGG");
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("handles all-null trends row", async () => {

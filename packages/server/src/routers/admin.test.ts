@@ -482,7 +482,10 @@ describe("adminRouter", () => {
       const result = await caller.refreshViews();
       expect(result.refreshed).toHaveLength(6);
       expect(result.failed).toEqual([
-        { view: "fitness.v_body_measurement", error: "does not exist" },
+        {
+          view: "fitness.v_body_measurement",
+          error: "Failed to refresh fitness.v_body_measurement (both CONCURRENT and blocking)",
+        },
       ]);
     });
   });

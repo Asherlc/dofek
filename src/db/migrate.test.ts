@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Create mock functions with the specific signatures we need
 const mockReaddirSync = vi.fn<(path: string) => string[]>().mockReturnValue([]);
 const mockReadFileSync = vi.fn<(path: string, encoding: string) => string>().mockReturnValue("");
 const mockExistsSync = vi.fn<(path: string) => boolean>().mockReturnValue(false);
 
-// Mock node:fs
 vi.mock("node:fs", () => ({
   readdirSync: mockReaddirSync,
   readFileSync: mockReadFileSync,
@@ -22,43 +20,50 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
-const mockSqlUnsafe = vi.fn().mockResolvedValue([]);
+const { mockClientConnect, mockClientEnd, mockClientQuery, mockClientConstructor } = vi.hoisted(
+  () => {
+    const connect = vi.fn().mockResolvedValue(undefined);
+    const end = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const clientInstance = {
+      connect,
+      end,
+      query,
+    };
+    return {
+      mockClientConnect: connect,
+      mockClientEnd: end,
+      mockClientQuery: query,
+      mockClientConstructor: vi.fn(() => clientInstance),
+    };
+  },
+);
 
-// Tagged template function mock — returns a promise with rows
-function createMockSql() {
-  return Object.assign(vi.fn().mockResolvedValue([]), {
-    unsafe: mockSqlUnsafe,
-    end: mockSqlEnd,
+vi.mock("pg", () => ({
+  Client: mockClientConstructor,
+}));
+
+function buildCallLog(): string[] {
+  return mockClientQuery.mock.calls.flatMap(([text]) => {
+    const sql = String(text);
+    const events: string[] = [];
+    if (sql.includes("pg_advisory_lock") && !sql.includes("unlock")) events.push("lock");
+    if (sql.includes("pg_advisory_unlock")) events.push("unlock");
+    if (sql.includes("CREATE SCHEMA")) events.push("schema");
+    return events;
   });
 }
 
-const mockSql = createMockSql();
-
-vi.mock("postgres", () => ({
-  default: vi.fn(() => mockSql),
-}));
-
-/** Build an ordered log of advisory lock and schema calls from mock.calls */
-function buildCallLog(): string[] {
-  const log: string[] = [];
-  for (const call of mockSql.mock.calls) {
-    const first = call[0];
-    if (!Array.isArray(first)) continue;
-    const raw = first.join("?").trim();
-    if (raw.includes("pg_advisory_lock") && !raw.includes("unlock")) log.push("lock");
-    if (raw.includes("pg_advisory_unlock")) log.push("unlock");
-    if (raw.includes("CREATE SCHEMA")) log.push("schema");
-  }
-  return log;
+function executedQueries(): string[] {
+  return mockClientQuery.mock.calls.map(([text]) => String(text));
 }
 
 describe("runMigrations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSql.mockResolvedValue([]);
-    mockSqlUnsafe.mockResolvedValue([]);
-    mockSqlEnd.mockResolvedValue(undefined);
+    mockClientConnect.mockResolvedValue(undefined);
+    mockClientEnd.mockResolvedValue(undefined);
+    mockClientQuery.mockResolvedValue({ rows: [] });
   });
 
   it("creates schemas and migrations table", async () => {
@@ -67,32 +72,36 @@ describe("runMigrations", () => {
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // Should call sql tagged template 3 times for setup (CREATE SCHEMA x2, CREATE TABLE)
-    // plus 1 for SELECT applied migrations
-    expect(mockSql).toHaveBeenCalled();
-    expect(mockSqlEnd).toHaveBeenCalled();
+    expect(mockClientConnect).toHaveBeenCalled();
+    expect(executedQueries()).toContain("CREATE SCHEMA IF NOT EXISTS health");
+    expect(executedQueries()).toContain("CREATE SCHEMA IF NOT EXISTS drizzle");
+    expect(
+      executedQueries().some((query) =>
+        query.includes("CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations"),
+      ),
+    ).toBe(true);
+    expect(mockClientEnd).toHaveBeenCalled();
   });
 
   it("applies pending migrations and skips already-applied ones", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0001_init.sql", "0002_add_col.sql", "0003_new.sql"]);
-
-    // Already applied: 0001 and 0002
-    mockSql.mockImplementation((..._args: unknown[]) => {
-      // The 4th call is the SELECT for applied migrations
-      return Promise.resolve([{ hash: "0001_init.sql" }, { hash: "0002_add_col.sql" }]);
-    });
-
     mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({
+          rows: [{ hash: "0001_init.sql" }, { hash: "0002_add_col.sql" }],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // Only 0003_new.sql should be applied
     expect(count).toBe(1);
     expect(mockReadFileSync).toHaveBeenCalledTimes(1);
     expect(mockReadFileSync).toHaveBeenCalledWith("/tmp/migrations/0003_new.sql", "utf-8");
-
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applying: 0003_new.sql"));
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("Applied 1 migration"));
   });
@@ -101,30 +110,31 @@ describe("runMigrations", () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0001_multi.sql"]);
-    mockSql.mockResolvedValue([]);
     mockReadFileSync.mockReturnValue(
       "CREATE TABLE a (id INT)--> statement-breakpoint\nCREATE TABLE b (id INT)",
     );
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // Should call sql.unsafe twice — once per statement
-    expect(mockSqlUnsafe).toHaveBeenCalledTimes(2);
-    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE a (id INT)");
-    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE b (id INT)");
+    expect(executedQueries()).toContain("CREATE TABLE a (id INT)");
+    expect(executedQueries()).toContain("CREATE TABLE b (id INT)");
   });
 
   it("returns 0 when no pending migrations exist", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockSql.mockResolvedValue([{ hash: "0001_init.sql" }]);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ hash: "0001_init.sql" }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
     expect(count).toBe(0);
     expect(mockReadFileSync).not.toHaveBeenCalled();
-    // Should NOT log "Applied" when nothing was applied
     const infoMessages = mockLoggerInfo.mock.calls.map((call) => String(call[0]));
     expect(infoMessages.every((message) => !message.includes("Applied"))).toBe(true);
   });
@@ -133,7 +143,6 @@ describe("runMigrations", () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0001_init.sql", "README.md", "meta.json", "0002_next.sql"]);
-    mockSql.mockResolvedValue([]);
     mockReadFileSync.mockReturnValue("SELECT 1");
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
@@ -153,7 +162,7 @@ describe("runMigrations", () => {
       "fs error",
     );
 
-    expect(mockSqlEnd).toHaveBeenCalled();
+    expect(mockClientEnd).toHaveBeenCalled();
   });
 
   it("acquires advisory lock before schema setup and releases it after", async () => {
@@ -187,13 +196,11 @@ describe("runMigrations", () => {
     const { runMigrations } = await import("./migrate.ts");
     mockReaddirSync.mockReturnValue([]);
 
-    // Make the advisory unlock call reject
-    mockSql.mockImplementation((...args: unknown[]) => {
-      const first = args[0];
-      if (Array.isArray(first) && first.join("").includes("pg_advisory_unlock")) {
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("pg_advisory_unlock")) {
         return Promise.reject(new Error("connection lost"));
       }
-      return Promise.resolve([]);
+      return Promise.resolve({ rows: [] });
     });
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
@@ -205,19 +212,15 @@ describe("runMigrations", () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0001_init.sql"]);
-    mockSql.mockResolvedValue([]);
     mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // The INSERT should include a content_hash parameter
-    const insertCalls = mockSql.mock.calls.filter(
-      (call) => Array.isArray(call[0]) && call[0].join("").includes("INSERT"),
+    const insertCalls = mockClientQuery.mock.calls.filter(([text]) =>
+      String(text).includes("INSERT INTO drizzle.__drizzle_migrations"),
     );
     expect(insertCalls.length).toBeGreaterThan(0);
-    // Tagged template: sql`...VALUES (${file}, ${dateNow}, ${contentHash})`
-    // call[0] = template strings, call[1] = file, call[2] = Date.now(), call[3] = contentHash
-    const hashArg = insertCalls[0]?.[3];
+    const hashArg = insertCalls[0]?.[1]?.[2];
     expect(hashArg).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -227,14 +230,19 @@ describe("runMigrations", () => {
     mockReaddirSync.mockReturnValue(["0001_init.sql"]);
     mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT) -- modified");
     mockExistsSync.mockReturnValue(true);
-
-    // Return applied migration with a DIFFERENT content hash
-    mockSql.mockResolvedValue([
-      {
-        hash: "0001_init.sql",
-        content_hash: "0000000000000000000000000000000000000000000000000000000000000000",
-      },
-    ]);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({
+          rows: [
+            {
+              hash: "0001_init.sql",
+              content_hash: "0000000000000000000000000000000000000000000000000000000000000000",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
@@ -248,13 +256,15 @@ describe("runMigrations", () => {
 
     mockReaddirSync.mockReturnValue(["0001_init.sql"]);
     mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
-
-    // Applied migration without content_hash (legacy row)
-    mockSql.mockResolvedValue([{ hash: "0001_init.sql", content_hash: null }]);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ hash: "0001_init.sql", content_hash: null }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // Should NOT warn about modification
     const warnMessages = mockLoggerWarn.mock.calls.map((call) => String(call[0]));
     expect(warnMessages.every((message) => !message.includes("modified"))).toBe(true);
   });
@@ -268,7 +278,12 @@ describe("runMigrations", () => {
     mockExistsSync.mockReturnValue(true);
 
     const expectedHash = computeContentHash(content);
-    mockSql.mockResolvedValue([{ hash: "0001_init.sql", content_hash: expectedHash }]);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ hash: "0001_init.sql", content_hash: expectedHash }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
@@ -281,15 +296,12 @@ describe("runMigrations", () => {
 
     mockReaddirSync.mockReturnValue(["0049_add_timezone.sql", "0049_source_external_ids.sql"]);
     mockReadFileSync.mockReturnValue("SELECT 1");
-    mockSql.mockResolvedValue([]);
 
-    // Should not throw — just log a warning
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       expect.stringContaining("Duplicate migration prefixes"),
     );
-    // Verify details include the actual prefix and filenames
     expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049"));
     expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("0049_add_timezone.sql"));
   });
@@ -299,24 +311,18 @@ describe("runMigrations", () => {
 
     mockReaddirSync.mockReturnValue([]);
     mockExistsSync.mockReturnValue(true);
-    mockSql.mockResolvedValue([]);
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    const unsafeCalls = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
-    const dropCalls = unsafeCalls.filter((call) => call.includes("DROP MATERIALIZED"));
-    const createCalls = unsafeCalls.filter((call) => call.includes("CREATE MATERIALIZED"));
-
-    // runMigrations should NOT touch materialized views
-    expect(dropCalls).toHaveLength(0);
-    expect(createCalls).toHaveLength(0);
+    const queries = executedQueries();
+    expect(queries.some((query) => query.includes("DROP MATERIALIZED"))).toBe(false);
+    expect(queries.some((query) => query.includes("CREATE MATERIALIZED"))).toBe(false);
   });
 
   it("applies baseline migrations on fresh databases", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
-    mockSql.mockResolvedValue([]);
     mockReadFileSync.mockImplementation((path: string) => {
       if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
       if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
@@ -326,8 +332,8 @@ describe("runMigrations", () => {
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
     expect(count).toBe(2);
-    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE baseline_table (id INT)");
-    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE TABLE additional_table (id INT)");
+    expect(executedQueries()).toContain("CREATE TABLE baseline_table (id INT)");
+    expect(executedQueries()).toContain("CREATE TABLE additional_table (id INT)");
   });
 
   it("skips baseline when migration tracking is empty but schema has tables", async () => {
@@ -339,23 +345,18 @@ describe("runMigrations", () => {
       if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
       return "";
     });
-
-    // No applied migrations, but schema has tables (e.g., migration tracking reset)
-    mockSql.mockImplementation((...args: unknown[]) => {
-      const first = args[0];
-      if (Array.isArray(first) && first.join("").includes("information_schema")) {
-        return Promise.resolve([{ has_tables: true }]);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("information_schema.tables")) {
+        return Promise.resolve({ rows: [{ has_tables: true }] });
       }
-      return Promise.resolve([]);
+      return Promise.resolve({ rows: [] });
     });
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    // Baseline should be skipped (marked as applied), only 0001 should execute
     expect(count).toBe(1);
-    const unsafeStatements = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
-    expect(unsafeStatements).not.toContain("CREATE TABLE baseline_table (id INT)");
-    expect(unsafeStatements).toContain("CREATE TABLE additional_table (id INT)");
+    expect(executedQueries()).not.toContain("CREATE TABLE baseline_table (id INT)");
+    expect(executedQueries()).toContain("CREATE TABLE additional_table (id INT)");
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Marking baseline migration as applied"),
     );
@@ -365,19 +366,23 @@ describe("runMigrations", () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0000_baseline.sql", "0001_additional.sql"]);
-    mockSql.mockResolvedValue([{ hash: "0059_previous.sql", content_hash: null }]);
     mockReadFileSync.mockImplementation((path: string) => {
       if (path.endsWith("0000_baseline.sql")) return "CREATE TABLE baseline_table (id INT)";
       if (path.endsWith("0001_additional.sql")) return "CREATE TABLE additional_table (id INT)";
       return "";
     });
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "SELECT hash, content_hash FROM drizzle.__drizzle_migrations") {
+        return Promise.resolve({ rows: [{ hash: "0059_previous.sql", content_hash: null }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     const count = await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
     expect(count).toBe(1);
-    const unsafeStatements = mockSqlUnsafe.mock.calls.map((call) => String(call[0]));
-    expect(unsafeStatements).not.toContain("CREATE TABLE baseline_table (id INT)");
-    expect(unsafeStatements).toContain("CREATE TABLE additional_table (id INT)");
+    expect(executedQueries()).not.toContain("CREATE TABLE baseline_table (id INT)");
+    expect(executedQueries()).toContain("CREATE TABLE additional_table (id INT)");
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringContaining("Marking baseline migration as applied"),
     );

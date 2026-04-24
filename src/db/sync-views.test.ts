@@ -9,21 +9,37 @@ vi.mock("node:fs", () => ({
   readFileSync: (...args: Parameters<typeof mockReadFileSync>) => mockReadFileSync(...args),
 }));
 
-const mockSqlEnd = vi.fn().mockResolvedValue(undefined);
-const mockSqlUnsafe = vi.fn().mockResolvedValue([]);
+const { mockClientConnect, mockClientEnd, mockClientQuery, mockClientConstructor } = vi.hoisted(
+  () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const connect = vi.fn().mockResolvedValue(undefined);
+    const end = vi.fn().mockResolvedValue(undefined);
+    const clientInstance = {
+      connect,
+      end,
+      query,
+    };
+    return {
+      mockClientConnect: connect,
+      mockClientEnd: end,
+      mockClientQuery: query,
+      mockClientInstance: clientInstance,
+      mockClientConstructor: vi.fn(() => clientInstance),
+    };
+  },
+);
 
-function createMockSql() {
-  return Object.assign(vi.fn().mockResolvedValue([]), {
-    unsafe: mockSqlUnsafe,
-    end: mockSqlEnd,
-  });
+vi.mock("pg", async (importOriginal) => {
+  const original = await importOriginal<typeof import("pg")>();
+  return {
+    ...original,
+    Client: mockClientConstructor,
+  };
+});
+
+function executedQueries(): string[] {
+  return mockClientQuery.mock.calls.map(([text]) => String(text));
 }
-
-const mockSql = createMockSql();
-
-vi.mock("postgres", () => ({
-  default: vi.fn(() => mockSql),
-}));
 
 describe("extractViewName", () => {
   it("extracts simple view name", () => {
@@ -105,7 +121,6 @@ describe("hashViewContent", () => {
   it("keeps inline SQL that starts with non-comment content", () => {
     const sql1 = "SELECT 1 -- inline comment";
     const sql2 = "SELECT 1 -- different comment";
-    // Inline comments are NOT stripped (only full-line comments are)
     expect(hashViewContent(sql1)).not.toBe(hashViewContent(sql2));
   });
 
@@ -122,9 +137,9 @@ describe("hashViewContent", () => {
 describe("syncMaterializedViews", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSql.mockResolvedValue([]);
-    mockSqlUnsafe.mockResolvedValue([]);
-    mockSqlEnd.mockResolvedValue(undefined);
+    mockClientConnect.mockResolvedValue(undefined);
+    mockClientEnd.mockResolvedValue(undefined);
+    mockClientQuery.mockResolvedValue({ rows: [] });
   });
 
   it("returns zeros when no view files exist", async () => {
@@ -134,6 +149,7 @@ describe("syncMaterializedViews", () => {
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 0, skipped: 0, refreshed: 0 });
+    expect(mockClientConstructor).not.toHaveBeenCalled();
   });
 
   it("skips views whose hash matches and are populated", async () => {
@@ -143,16 +159,19 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
-    mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash
-    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // pg_matviews existence check — exists
-    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews populated check
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
+      .mockResolvedValueOnce({ rows: [{ present: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ populated: true }] });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 0, skipped: 1, refreshed: 0 });
-    expect(mockSqlUnsafe).not.toHaveBeenCalled();
+    expect(executedQueries()).not.toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
+    );
   });
 
   it("recreates views whose hash matches but were CASCADE-dropped", async () => {
@@ -162,20 +181,22 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
-    mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
-    mockSql.mockResolvedValueOnce([]); // pg_matviews existence check — NOT found (CASCADE-dropped)
-    mockSql.mockResolvedValueOnce([]); // INSERT hash (upsert)
-    mockSql.mockResolvedValueOnce([{ populated: true }]); // refresh loop — populated after recreate
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ populated: true }] });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(
-      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_test CASCADE",
+    expect(executedQueries()).toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(viewSql);
+    expect(executedQueries()).toContain(viewSql);
   });
 
   it("refreshes views that are unchanged but unpopulated", async () => {
@@ -185,17 +206,18 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
-    mockSql.mockResolvedValueOnce([{ hash: expectedHash }]); // SELECT hash — matches
-    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // pg_matviews existence check — exists (skip check)
-    mockSql.mockResolvedValueOnce([{ populated: false }]); // isViewPopulated — not populated
-    mockSql.mockResolvedValueOnce([{ "?column?": 1 }]); // viewExistsInCatalog in refresh loop — exists
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
+      .mockResolvedValueOnce({ rows: [{ present: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ populated: false }] })
+      .mockResolvedValueOnce({ rows: [{ present: 1 }] });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 0, skipped: 1, refreshed: 1 });
-    expect(mockSqlUnsafe).toHaveBeenCalledWith("REFRESH MATERIALIZED VIEW fitness.v_test");
+    expect(executedQueries()).toContain('REFRESH MATERIALIZED VIEW "fitness"."v_test"');
   });
 
   it("recreates views whose hash has changed", async () => {
@@ -204,19 +226,22 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
-    mockSql.mockResolvedValueOnce([{ hash: "old-hash-that-does-not-match" }]); // SELECT hash
-    mockSql.mockResolvedValueOnce([]); // INSERT hash
-    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ hash: "old-hash-that-does-not-match" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ populated: true }] });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(
-      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_test CASCADE",
+    expect(executedQueries()).toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(viewSql);
+    expect(executedQueries()).toContain(viewSql);
   });
 
   it("creates new views that have no stored hash", async () => {
@@ -225,17 +250,20 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_new.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockResolvedValueOnce([]); // CREATE TABLE
-    mockSql.mockResolvedValueOnce([]); // SELECT hash — no rows
-    mockSql.mockResolvedValueOnce([]); // INSERT hash
-    mockSql.mockResolvedValueOnce([{ populated: true }]); // pg_matviews check
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ populated: true }] });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(
-      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_new CASCADE",
+    expect(executedQueries()).toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_new" CASCADE',
     );
   });
 
@@ -246,12 +274,9 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.a AS SELECT 1")
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.b AS SELECT 2");
-    // All return empty (no stored hashes)
-    mockSql.mockResolvedValue([]);
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    // Verify files read in sorted order
     const readCalls = mockReadFileSync.mock.calls.map((call) => call[0]);
     expect(readCalls[0]).toContain("01_a.sql");
     expect(readCalls[1]).toContain("02_b.sql");
@@ -264,18 +289,14 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValue([]);
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    // Should have DROP + 2 statements (CREATE VIEW + CREATE INDEX) + possibly REFRESH
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(
-      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_test CASCADE",
+    expect(executedQueries()).toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(
-      "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1",
-    );
-    expect(mockSqlUnsafe).toHaveBeenCalledWith("CREATE UNIQUE INDEX idx ON fitness.v_test (id)");
+    expect(executedQueries()).toContain("CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1");
+    expect(executedQueries()).toContain("CREATE UNIQUE INDEX idx ON fitness.v_test (id)");
   });
 
   it("skips files that don't contain a CREATE MATERIALIZED VIEW statement", async () => {
@@ -283,12 +304,11 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_not_a_view.sql"]);
     mockReadFileSync.mockReturnValue("CREATE TABLE foo (id INT)");
-    mockSql.mockResolvedValue([]);
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 0, skipped: 0, refreshed: 0 });
-    expect(mockSqlUnsafe).not.toHaveBeenCalled();
+    expect(executedQueries().some((query) => query.includes("DROP MATERIALIZED VIEW"))).toBe(false);
   });
 
   it("only processes .sql files", async () => {
@@ -296,11 +316,9 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql", "README.md", "meta.json"]);
     mockReadFileSync.mockReturnValue("CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1");
-    mockSql.mockResolvedValue([]);
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    // Should only read the .sql file
     expect(mockReadFileSync).toHaveBeenCalledTimes(1);
   });
 
@@ -311,31 +329,24 @@ describe("syncMaterializedViews", () => {
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockSql.mockResolvedValue([]);
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    // The INSERT/UPSERT should be called with the correct view name and hash
-    const insertCalls = mockSql.mock.calls.filter((call) => {
-      const raw = Array.isArray(call[0]) ? call[0].join("?") : "";
-      return raw.includes("INSERT INTO");
-    });
-    expect(insertCalls.length).toBe(1);
-    // Check that the hash value was passed as a parameter
-    expect(insertCalls[0]?.[1]).toBe("fitness.v_test");
-    expect(insertCalls[0]?.[2]).toBe(expectedHash);
+    const insertCalls = mockClientQuery.mock.calls.filter(([text]) =>
+      String(text).includes("INSERT INTO drizzle.__view_hashes"),
+    );
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.[1]).toEqual(["fitness.v_test", expectedHash]);
   });
 
   it("does not create a database connection when no files exist", async () => {
-    const postgresDefault = (await import("postgres")).default;
     const { syncMaterializedViews } = await import("./sync-views.ts");
-    vi.mocked(postgresDefault).mockClear();
+    mockClientConstructor.mockClear();
     mockReaddirSync.mockReturnValue([]);
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    // postgres() should NOT be called when there are no files
-    expect(postgresDefault).not.toHaveBeenCalled();
+    expect(mockClientConstructor).not.toHaveBeenCalled();
   });
 
   it("continues to next view when one view creation fails", async () => {
@@ -345,53 +356,41 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_first AS SELECT 1")
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_second AS SELECT 2");
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockResolvedValueOnce([]); // CREATE TABLE __view_hashes
-    mockSql.mockResolvedValueOnce([]); // SELECT hash for v_first — no rows (new)
-    // v_first: DROP succeeds, CREATE fails
-    mockSqlUnsafe
-      .mockResolvedValueOnce([]) // DROP v_first
-      .mockRejectedValueOnce(new Error("No space left on device")); // CREATE v_first fails
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error("No space left on device"))
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ populated: true }] });
 
-    mockSql.mockResolvedValueOnce([]); // SELECT hash for v_second — no rows (new)
-    mockSqlUnsafe
-      .mockResolvedValueOnce([]) // DROP v_second
-      .mockResolvedValueOnce([]); // CREATE v_second succeeds
-    mockSql.mockResolvedValueOnce([]); // INSERT hash for v_second
-
-    // Refresh loop: v_first doesn't exist, v_second is populated
-    mockSql
-      .mockResolvedValueOnce([]) // viewExistsInCatalog v_first → false
-      .mockResolvedValueOnce([{ populated: true }]); // isViewPopulated v_second
-
-    // Should throw AggregateError but still have created v_second
     await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
       "Failed to recreate 1 view(s): fitness.v_first",
     );
 
-    // v_second should have been created despite v_first failing
-    expect(mockSqlUnsafe).toHaveBeenCalledWith(
-      "DROP MATERIALIZED VIEW IF EXISTS fitness.v_second CASCADE",
+    expect(executedQueries()).toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_second" CASCADE',
     );
   });
 
   it("always closes the connection in finally block", async () => {
     const { syncMaterializedViews } = await import("./sync-views.ts");
-    mockReaddirSync.mockImplementation(() => {
-      throw new Error("fs error");
-    });
-
-    // When there are no files, it returns early before creating a connection
-    // So test with files that cause an error after connection is created
     mockReaddirSync.mockReturnValue(["01_test.sql"]);
     mockReadFileSync.mockReturnValue("CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1");
-    mockSql.mockResolvedValueOnce([]); // pg_advisory_lock
-    mockSql.mockRejectedValueOnce(new Error("db error")); // CREATE TABLE fails
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error("db error"));
 
     await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
       "db error",
     );
 
-    expect(mockSqlEnd).toHaveBeenCalled();
+    expect(mockClientEnd).toHaveBeenCalled();
   });
 });

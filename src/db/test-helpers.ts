@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { Client, escapeIdentifier } from "pg";
 import { GenericContainer } from "testcontainers";
+import { createDatabase } from "./index.ts";
 import * as schema from "./schema.ts";
 
-export type TestDatabase = ReturnType<typeof drizzle<typeof schema>>;
+export type TestDatabase = ReturnType<typeof createDatabase>;
 
 export interface TestContext {
   db: TestDatabase;
@@ -29,8 +29,9 @@ export async function setupTestDatabase(): Promise<TestContext> {
     // CI: create an isolated database per test file on the shared Postgres instance
     adminUrl = process.env.TEST_DATABASE_URL;
     dbName = `test_${randomBytes(6).toString("hex")}`;
-    const admin = postgres(adminUrl, { max: 1 });
-    await admin.unsafe(`CREATE DATABASE ${dbName}`);
+    const admin = new Client({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${escapeIdentifier(dbName)}`);
     await admin.end();
 
     const url = new URL(adminUrl);
@@ -53,8 +54,9 @@ export async function setupTestDatabase(): Promise<TestContext> {
   // Wait for PostgreSQL to be ready
   for (let attempt = 0; attempt < 30; attempt++) {
     try {
-      const probe = postgres(connectionString, { max: 1 });
-      await probe`SELECT 1`;
+      const probe = new Client({ connectionString });
+      await probe.connect();
+      await probe.query("SELECT 1");
       await probe.end();
       break;
     } catch {
@@ -64,7 +66,8 @@ export async function setupTestDatabase(): Promise<TestContext> {
   }
 
   // Run all migrations in order, then recreate canonical views
-  const migrationClient = postgres(connectionString, { max: 1 });
+  const migrationClient = new Client({ connectionString });
+  await migrationClient.connect();
   const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
   const migrationFiles = readdirSync(drizzleDir)
     .filter((f) => f.endsWith(".sql"))
@@ -78,7 +81,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
       .filter(Boolean);
 
     for (const statement of statements) {
-      await migrationClient.unsafe(statement);
+      await migrationClient.query(statement);
     }
   }
 
@@ -100,7 +103,9 @@ export async function setupTestDatabase(): Promise<TestContext> {
     // Drop managed views in reverse order (dependents first)
     for (const { viewName } of [...parsedViews].reverse()) {
       if (!viewName) continue;
-      await migrationClient.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
+      await migrationClient.query(
+        `DROP MATERIALIZED VIEW IF EXISTS ${escapeIdentifier("fitness")}.${escapeIdentifier(viewName)} CASCADE`,
+      );
     }
 
     // Create in filename order (01_v_activity before 02_activity_summary)
@@ -110,34 +115,35 @@ export async function setupTestDatabase(): Promise<TestContext> {
         .map((s) => s.trim())
         .filter(Boolean);
       for (const statement of statements) {
-        await migrationClient.unsafe(statement);
+        await migrationClient.query(statement);
       }
     }
   }
 
   // Seed the canonical integration-test user.
   // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
-  await migrationClient`
-    INSERT INTO fitness.user_profile (id, name)
-    VALUES (${schema.TEST_USER_ID}, 'Test User')
-    ON CONFLICT (id) DO NOTHING
-  `;
+  await migrationClient.query(
+    `INSERT INTO fitness.user_profile (id, name)
+     VALUES ($1, 'Test User')
+     ON CONFLICT (id) DO NOTHING`,
+    [schema.TEST_USER_ID],
+  );
 
   await migrationClient.end();
 
-  const client = postgres(connectionString);
-  const db = drizzle(client, { schema });
+  const db = createDatabase(connectionString);
 
   return {
     db,
     connectionString,
     cleanup: async () => {
-      await client.end();
+      await db.$client.end();
       if (container) {
         await container.stop();
       } else if (adminUrl && dbName) {
-        const admin = postgres(adminUrl, { max: 1 });
-        await admin.unsafe(`DROP DATABASE ${dbName} WITH (FORCE)`);
+        const admin = new Client({ connectionString: adminUrl });
+        await admin.connect();
+        await admin.query(`DROP DATABASE ${escapeIdentifier(dbName)} WITH (FORCE)`);
         await admin.end();
       }
     },

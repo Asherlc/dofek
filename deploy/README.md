@@ -131,6 +131,30 @@ Deploy now triggers this webhook after stack deploy as a separate async operatio
   - `MATERIALIZED_VIEW_REFRESH_TOKEN`
   - `DATABASE_URL`
 
+### Postgres Statement Diagnostics
+
+Production Postgres enables two built-in diagnostics to support incident triage:
+
+- `pg_stat_statements` is preloaded at server start and enabled via migration.
+- `log_min_duration_statement=1000` logs any SQL statement taking 1 second or longer.
+
+Use them during DB incidents to identify the SQL behind timeouts or OOMs:
+
+```bash
+# Top statements by total execution time
+ssh dofek-server 'container=$(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1); \
+  printf "%s\n" "select queryid, calls, round(total_exec_time::numeric, 2) as total_ms, round(mean_exec_time::numeric, 2) as mean_ms, left(query, 250) as query from pg_stat_statements order by total_exec_time desc limit 20;" \
+  | docker exec -i "$container" sh -lc '\''PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U health -d health -P pager=off -f -'\'''
+
+# Statements currently running
+ssh dofek-server 'container=$(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1); \
+  printf "%s\n" "select pid, state, wait_event_type, wait_event, now() - query_start as duration, left(query, 250) as query from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() order by query_start asc;" \
+  | docker exec -i "$container" sh -lc '\''PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U health -d health -P pager=off -f -'\'''
+
+# Recent slow statements from Postgres logs
+ssh dofek-server 'docker logs $(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1) --since 30m 2>&1 | grep "duration:" | tail -100'
+```
+
 ### Collector Config Changes
 
 `otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-app`.
