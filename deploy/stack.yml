@@ -134,7 +134,7 @@ services:
   databasus:
     image: databasus/databasus:v3.32.1
     volumes:
-      - databasus_data:/databasus-data
+      - /mnt/dofek-data/databasus:/databasus-data
     deploy:
       labels:
         - traefik.enable=true
@@ -274,7 +274,6 @@ services:
 
 volumes:
   letsencrypt:
-  databasus_data:
   pgadmin_data:
   redis_data:
   job_files:

@@ -47,4 +47,5 @@ Dofek specializes in deep integration with fitness platforms that lack public AP
 ## CI Preview Apps
 
 - Storybook previews are active via `review-app-storybook.yml` (PR artifacts uploaded to R2).
+- PR preview artifacts are deleted on close via `cleanup-pr-r2.yml`, with R2 lifecycle rules as a fallback safety net.
 - The old web preview workflow (`review-app-web.yml`) has been removed; do not reintroduce it as commented-out config.
