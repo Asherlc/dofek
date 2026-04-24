@@ -5,7 +5,8 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
 
 ## How It Works
 
-- Terraform workspace: one workspace per PR, using the `dofek-review-` prefix.
+- Terraform workspace: one workspace per PR, named
+  `dofek-review-pr-<number>` and tagged `review-app`.
 - Review app server: one Hetzner `cax11` server per PR.
 - App stack: `web`, `db`, and `redis` via Docker Compose on the review server.
 - Routing: Terraform writes a Traefik dynamic-config file onto the shared front

@@ -2,7 +2,7 @@ terraform {
   cloud {
     organization = "dofek"
     workspaces {
-      prefix = "dofek-review-"
+      tags = ["review-app"]
     }
   }
 

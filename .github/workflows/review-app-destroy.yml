@@ -18,7 +18,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
-      TF_WORKSPACE: pr-${{ github.event.pull_request.number }}
+      REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ github.event.pull_request.number }}
       REVIEW_ROUTE_FILE: /opt/dofek/traefik-dynamic/review-app-pr-${{ github.event.pull_request.number }}.yml
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -61,8 +61,8 @@ jobs:
 
           terraform init -lock-timeout=5m
 
-          if ! terraform workspace select "$TF_WORKSPACE"; then
-            echo "No review-app workspace found for ${TF_WORKSPACE}; nothing to destroy."
+          if ! terraform workspace select "$REVIEW_TERRAFORM_WORKSPACE"; then
+            echo "No review-app workspace found for ${REVIEW_TERRAFORM_WORKSPACE}; nothing to destroy."
             exit 0
           fi
 

@@ -60,7 +60,7 @@ jobs:
     env:
       FRONT_DOOR_HOST: ${{ secrets.SERVER_HOST }}
       IMAGE_TAG: pr-${{ github.event.pull_request.number }}
-      TF_WORKSPACE: pr-${{ github.event.pull_request.number }}
+      REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -88,7 +88,7 @@ jobs:
           set -euo pipefail
 
           terraform init -lock-timeout=5m
-          terraform workspace select "$TF_WORKSPACE" || terraform workspace new "$TF_WORKSPACE"
+          terraform workspace select "$REVIEW_TERRAFORM_WORKSPACE" || terraform workspace new "$REVIEW_TERRAFORM_WORKSPACE"
           terraform apply -auto-approve -lock-timeout=5m
 
           echo "review_host=$(terraform output -raw review_host)" >> "$GITHUB_OUTPUT"
