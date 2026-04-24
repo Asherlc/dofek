@@ -115,8 +115,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
    7. Run **schema migrations only** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
       Materialized view refresh is out-of-band and not a deploy gate.
-   8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune dofek` — swarm performs a single stack-wide update, including `training-export-worker`.
-   9. Trigger `POST /api/internal/materialized-views/refresh` over HTTPS from the CI runner (`https://dofek.asherlc.com/...`).
+   8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
+   9. Trigger `POST /api/internal/materialized-views/refresh` over HTTPS from the CI runner (`https://dofek.asherlc.com/...`) after the stack update completes.
       This keeps materialized view sync out-of-band from schema migrations while still kicking it off automatically during deploy.
 
 ### Materialized View Refresh Webhook
