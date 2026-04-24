@@ -86,7 +86,6 @@ jobs:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_pr_number: ${{ github.event.pull_request.number }}
           TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
           set -euo pipefail
 

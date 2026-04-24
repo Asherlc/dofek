@@ -26,11 +26,6 @@ locals {
     EOT
 }
 
-resource "hcloud_ssh_key" "review" {
-  name       = "${local.review_server_name}-deploy"
-  public_key = var.ssh_public_key
-}
-
 resource "hcloud_firewall" "review" {
   name = local.review_firewall_name
 
@@ -54,7 +49,7 @@ resource "hcloud_server" "review" {
   image        = "ubuntu-24.04"
   server_type  = var.server_type
   location     = var.location
-  ssh_keys     = [hcloud_ssh_key.review.id]
+  ssh_keys     = ["dofek-deploy"]
   firewall_ids = [hcloud_firewall.review.id]
 
   user_data = file("${path.module}/server/cloud-init.yml")

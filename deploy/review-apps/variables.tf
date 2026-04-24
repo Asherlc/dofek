@@ -3,11 +3,6 @@ variable "hcloud_token" {
   sensitive = true
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for review app server access"
-  type        = string
-}
-
 variable "ssh_private_key" {
   description = "SSH private key for review app server provisioning and front door route sync"
   type        = string
