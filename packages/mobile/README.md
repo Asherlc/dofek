@@ -29,12 +29,12 @@ See `../../docs/nutrition-ai-input.md` for end-to-end behavior and API flow.
 
 ```bash
 cd packages/mobile
-pnpm dev
+pnpm start
 ```
 
 ## Testing
 
-- **Component tests**: `pnpm test` (Vitest)
+- **Component tests**: `pnpm test:mobile` from the repo root (Vitest mobile project)
 - **Native modules**: Swift tests in `modules/<name>/Tests/` (XCTest)
 
 ## Mobile Telemetry

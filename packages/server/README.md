@@ -27,9 +27,9 @@ See `../../docs/nutrition-ai-input.md` for full client/server flow details.
 ## Development
 
 ```bash
-pnpm dev      # Start the Express server in development mode
-pnpm test     # Run unit and integration tests
-pnpm lint     # Run Biome linter
+cd packages/server && pnpm dev   # Start the Express server in development mode
+pnpm test                        # Run repo-wide Vitest suites from the repo root
+pnpm lint                        # Run Biome from the repo root
 ```
 
 ## Production Deployment

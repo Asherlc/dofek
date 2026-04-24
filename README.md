@@ -11,6 +11,16 @@
 
 Provider-agnostic fitness and health data pipeline. Pulls data from various APIs (strength training, cardio, body composition, sleep, nutrition, journals) into a TimescaleDB database with a built-in web dashboard.
 
+## Documentation Map
+
+If you are starting cold and do not want to hunt through agent notes, begin here:
+
+- [docs/README.md](docs/README.md): human-facing index of architecture notes, runbooks, and provider research.
+- [deploy/README.md](deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
+- [docs/schema.md](docs/schema.md): canonical database model and storage rules.
+- [docs/adding-a-provider.md](docs/adding-a-provider.md): how to add or extend a provider.
+- [docs/testing.md](docs/testing.md): testing patterns used across the repo.
+
 ## Architecture
 
 ```
@@ -67,11 +77,12 @@ pnpm workspace monorepo:
 ```
 dofek/
 ├── src/                           # Root package — sync runner, providers, DB schema
-│   └── providers/                 # Provider plugin implementations (30 providers)
+│   └── providers/                 # Provider plugin implementations
 ├── packages/
 │   ├── server/                    # dofek-server — Express + tRPC API + BullMQ jobs
 │   ├── web/                       # dofek-web — Vite + React SPA (browser)
 │   ├── mobile/                    # dofek-mobile — Expo + React Native app (iOS)
+│   ├── ios/                       # Shared iOS-native support package(s)
 │   ├── format/                    # @dofek/format — date, duration, number, unit formatting
 │   ├── scoring/                   # @dofek/scoring — score colors, labels, workload helpers
 │   ├── nutrition/                 # @dofek/nutrition — meal types, auto-meal detection
@@ -83,6 +94,7 @@ dofek/
 │   ├── zones/                     # @dofek/zones — HR/power zone calculations
 │   ├── auth/                      # @dofek/auth — shared authentication logic
 │   ├── heart-rate-variability/    # @dofek/heart-rate-variability — HRV analysis
+│   ├── ble-probe/                 # macOS BLE reverse-engineering tool
 │   ├── whoop-whoop/               # RE'd WHOOP internal API client
 │   ├── eight-sleep/               # RE'd Eight Sleep internal API client
 │   ├── zwift-client/              # RE'd Zwift internal API client
@@ -102,15 +114,19 @@ The server imports shared code from the root package via `dofek` workspace depen
 ## Development
 
 ```bash
-pnpm test          # run tests
-pnpm test:watch    # run tests in watch mode
-pnpm dev           # run sync in dev mode
+docker compose up -d db redis   # required for integration tests and local workers
+pnpm test                       # run tests
+pnpm test:watch                 # run tests in watch mode
+pnpm dev                        # run sync runner in dev mode
 
 # Web dashboard — starts Vite dev server (proxies /api to Express)
 cd packages/web && pnpm dev
 
 # API server
 cd packages/server && pnpm dev
+
+# Mobile app
+cd packages/mobile && pnpm start
 
 # Storybook
 pnpm storybook:web
