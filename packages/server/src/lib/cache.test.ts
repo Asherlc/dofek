@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { queryCache } from "./cache.ts";
+import { MemoryCacheStore, NullCacheStore, queryCache } from "./cache.ts";
 
 describe("MemoryCacheStore", () => {
   afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
     await queryCache.invalidateAll();
   });
 
@@ -69,5 +71,46 @@ describe("MemoryCacheStore", () => {
 
     expect(await queryCache.get("a")).toBeUndefined();
     expect(await queryCache.get("b")).toBeUndefined();
+  });
+
+  it("schedules a default sweep interval and unreferences object interval handles", async () => {
+    vi.useFakeTimers();
+
+    const originalSetInterval = globalThis.setInterval;
+    let unrefCallCount = 0;
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((callback, delay, ...rest) => {
+        expect(delay).toBe(5 * 60 * 1000);
+        const intervalHandle = originalSetInterval(callback, delay, ...rest);
+        vi.spyOn(intervalHandle, "unref").mockImplementation(() => {
+          unrefCallCount += 1;
+          return intervalHandle;
+        });
+        return intervalHandle;
+      });
+    const deleteSpy = vi.spyOn(Map.prototype, "delete");
+
+    const store = new MemoryCacheStore();
+    await store.set("expired", "old", 1000);
+    await store.set("fresh", "new", 400_000);
+
+    vi.advanceTimersByTime(60_000);
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(4 * 60 * 1000);
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(unrefCallCount).toBe(1);
+    expect(deleteSpy).toHaveBeenCalledWith("expired");
+    expect(deleteSpy).not.toHaveBeenCalledWith("fresh");
+  });
+});
+
+describe("NullCacheStore", () => {
+  it("always returns undefined", async () => {
+    const store = new NullCacheStore();
+
+    await expect(store.get("missing")).resolves.toBeUndefined();
   });
 });

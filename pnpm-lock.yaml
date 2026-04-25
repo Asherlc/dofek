@@ -313,8 +313,8 @@ importers:
         specifier: 55.0.11
         version: 55.0.11(expo@55.0.17)
       expo-camera:
-        specifier: 55.0.9
-        version: 55.0.9(@types/emscripten@1.41.5)(expo@55.0.17)(react-native-web@0.21.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
+        specifier: 55.0.16
+        version: 55.0.16(@types/emscripten@1.41.5)(expo@55.0.17)(react-native-web@0.21.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
       expo-file-system:
         specifier: 55.0.11
         version: 55.0.11(expo@55.0.17)(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))
@@ -1050,6 +1050,11 @@ packages:
 
   '@babel/parser@7.29.0':
     resolution: {integrity: sha512-IyDgFV5GeDUVX4YdF/3CPULtVGSXXMLh1xVIgdCgxApktqnQV0r7/8Nqthg+8YLGaAtdyIlo2qIdZrbCv4+7ww==}
+    engines: {node: '>=6.0.0'}
+    hasBin: true
+
+  '@babel/parser@7.29.2':
+    resolution: {integrity: sha512-4GgRzy/+fsBa72/RZVJmGKPmZu9Byn8o4MoLpmNe1m8ZfYnz5emHLQz3U4gLud6Zwl0RZIcgiLD7Uq7ySFuDLA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -7538,8 +7543,8 @@ packages:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
 
-  barcode-detector@3.1.1:
-    resolution: {integrity: sha512-ghWlEAV93ZCUniO7Co3ih/01XPm+U30CV+NoPbO6Chj5lZzHydDAqKlrBEd+37TkoR+QTH3tnnwd8k8epGTfIg==}
+  barcode-detector@3.1.2:
+    resolution: {integrity: sha512-Q5kjXpVH5I3ItykNzbWmfWnNryFN1ZTWp10k9/PKJuS0RnoKR7jTrHEJODR4fn04bRomq7TJwie/Dr9fj/GoGQ==}
 
   bare-events@2.8.2:
     resolution: {integrity: sha512-riJjyv1/mHLIPX4RwiK+oW9/4c3TEUeORHKefKAKnZ5kyslbN+HXowtbaVEqt4IMUB7OXlfixcs6gsFeo/jhiQ==}
@@ -8618,8 +8623,8 @@ packages:
     peerDependencies:
       expo: '*'
 
-  expo-camera@55.0.9:
-    resolution: {integrity: sha512-ywjmZChGPqyIginN9K1lEJCSTB6M4the37m56tAcvYs3cu0DAUAlTl4n2MY6S7kGdm3iEi0cGmlDpHFyh7rmwg==}
+  expo-camera@55.0.16:
+    resolution: {integrity: sha512-9c6FGrLVwMLyQ08wqwkH7DXAC8Oj1VD0LXM4hFu62Nuq2f2zIAZwsXxG7J5ex+HHHAGyligGGi6VJWuiib9qNg==}
     peerDependencies:
       expo: '*'
       react: '*'
@@ -11177,6 +11182,10 @@ packages:
     resolution: {integrity: sha512-HVk9X1E0gz3mSpoi60h/saazLKXKaZThMLU3u/aNwoYn8/xQyX2MGxL0ui2eaokkD7tF+Zo+cKTHUbe1mmmGzA==}
     engines: {node: '>=8.0.0'}
 
+  slugify@1.6.9:
+    resolution: {integrity: sha512-vZ7rfeehZui7wQs438JXBckYLkIIdfHOXsaVEUMyS5fHo1483l1bMdo0EDSWYclY0yZKFOipDy4KHuKs6ssvdg==}
+    engines: {node: '>=8.0.0'}
+
   smol-toml@1.6.0:
     resolution: {integrity: sha512-4zemZi0HvTnYwLfrpk/CF9LOd9Lt87kAt50GnqhMpyF9U3poDAP2+iukq2bZsO/ufegbYehBkqINbsWxj4l4cw==}
     engines: {node: '>= 18'}
@@ -11485,6 +11494,10 @@ packages:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
 
+  tinyglobby@0.2.16:
+    resolution: {integrity: sha512-pn99VhoACYR8nFHhxqix+uvsbXineAasWm5ojXoN8xEwK5Kd3/TrhNn1wByuD52UxWRLy8pu+kRMniEi6Eq9Zg==}
+    engines: {node: '>=12.0.0'}
+
   tinypool@1.1.1:
     resolution: {integrity: sha512-Zba82s87IFq9A9XmjiX5uZA/ARWDrB03OHlq+Vw1fSdt0I+4/Kutwy8BP4Y/y/aORMo61FQ0vIb5j44vSo5Pkg==}
     engines: {node: ^18.0.0 || >=20.0.0}
@@ -11626,6 +11639,10 @@ packages:
 
   type-fest@5.4.4:
     resolution: {integrity: sha512-JnTrzGu+zPV3aXIUhnyWJj4z/wigMsdYajGLIYakqyOW1nPllzXEJee0QQbHj+CTIQtXGlAjuK0UY+2xTyjVAw==}
+    engines: {node: '>=20'}
+
+  type-fest@5.6.0:
+    resolution: {integrity: sha512-8ZiHFm91orbSAe2PSAiSVBVko18pbhbiB3U9GglSzF/zCGkR+rxpHx6sEMCUm4kxY4LjDIUGgCfUMtwfZfjfUA==}
     engines: {node: '>=20'}
 
   type-is@2.0.1:
@@ -12189,8 +12206,8 @@ packages:
   zrender@5.6.1:
     resolution: {integrity: sha512-OFXkDJKcrlx5su2XbzJvj/34Q3m6PvyCZkVPHGYpcCJ52ek4U/ymZyfuV1nKE23AyBJ51E/6Yr0mhZ7xGTO4ag==}
 
-  zxing-wasm@3.0.1:
-    resolution: {integrity: sha512-3CLj6iaGkpqPWXAB4pIWkFOR63MwqGekpMzaROFKto4dFowiPmLlC56KoMoOSXzqOCOpI5DAvMdB8ku2va6fUg==}
+  zxing-wasm@3.0.2:
+    resolution: {integrity: sha512-2YMAriaYHX9wrBY2k7H0epSo+dyCaCZg/vOtt+nEDXM9ul480gkXz/9SkwpOeHcD2H5qqDG8lWDSBwpTcZpa6w==}
     peerDependencies:
       '@types/emscripten': '>=1.39.6'
 
@@ -12978,6 +12995,10 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.0
 
+  '@babel/parser@7.29.2':
+    dependencies:
+      '@babel/types': 7.29.0
+
   '@babel/plugin-proposal-decorators@7.29.0(@babel/core@7.29.0)':
     dependencies:
       '@babel/core': 7.29.0
@@ -13417,7 +13438,7 @@ snapshots:
       '@babel/code-frame': 7.29.0
       '@babel/generator': 7.29.1
       '@babel/helper-globals': 7.28.0
-      '@babel/parser': 7.29.0
+      '@babel/parser': 7.29.2
       '@babel/template': 7.28.6
       '@babel/types': 7.29.0
       debug: 4.4.3(supports-color@8.1.1)
@@ -14244,7 +14265,7 @@ snapshots:
       resolve-from: 5.0.0
       semver: 7.7.4
       slash: 3.0.0
-      slugify: 1.6.8
+      slugify: 1.6.9
       xcode: 3.0.1
       xml2js: 0.6.0
     transitivePeerDependencies:
@@ -14267,7 +14288,7 @@ snapshots:
       resolve-from: 5.0.0
       resolve-workspace-root: 2.0.1
       semver: 7.7.4
-      slugify: 1.6.8
+      slugify: 1.6.9
       sucrase: 3.35.0
     transitivePeerDependencies:
       - supports-color
@@ -16545,7 +16566,7 @@ snapshots:
   '@react-native/codegen@0.83.6(@babel/core@7.29.0)':
     dependencies:
       '@babel/core': 7.29.0
-      '@babel/parser': 7.29.0
+      '@babel/parser': 7.29.2
       glob: 7.2.3
       hermes-parser: 0.32.0
       invariant: 2.2.4
@@ -16555,11 +16576,11 @@ snapshots:
   '@react-native/codegen@0.84.1(@babel/core@7.29.0)':
     dependencies:
       '@babel/core': 7.29.0
-      '@babel/parser': 7.29.0
+      '@babel/parser': 7.29.2
       hermes-parser: 0.32.0
       invariant: 2.2.4
       nullthrows: 1.1.1
-      tinyglobby: 0.2.15
+      tinyglobby: 0.2.16
       yargs: 17.7.2
 
   '@react-native/community-cli-plugin@0.83.4(@react-native/metro-config@0.84.1(@babel/core@7.29.0))':
@@ -20818,9 +20839,9 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  barcode-detector@3.1.1(@types/emscripten@1.41.5):
+  barcode-detector@3.1.2(@types/emscripten@1.41.5):
     dependencies:
-      zxing-wasm: 3.0.1(@types/emscripten@1.41.5)
+      zxing-wasm: 3.0.2(@types/emscripten@1.41.5)
     transitivePeerDependencies:
       - '@types/emscripten'
 
@@ -21998,9 +22019,9 @@ snapshots:
       resolve-from: 5.0.0
       semver: 7.7.4
 
-  expo-camera@55.0.9(@types/emscripten@1.41.5)(expo@55.0.17)(react-native-web@0.21.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4):
+  expo-camera@55.0.16(@types/emscripten@1.41.5)(expo@55.0.17)(react-native-web@0.21.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4):
     dependencies:
-      barcode-detector: 3.1.1(@types/emscripten@1.41.5)
+      barcode-detector: 3.1.2(@types/emscripten@1.41.5)
       expo: 55.0.17(@babel/core@7.29.0)(@expo/dom-webview@55.0.5)(expo-router@5.0.7)(react-dom@19.2.4(react@19.2.4))(react-native-worklets@0.8.1(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
       react: 19.2.4
       react-native: 0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4)
@@ -22894,7 +22915,7 @@ snapshots:
   istanbul-lib-instrument@5.2.1:
     dependencies:
       '@babel/core': 7.29.0
-      '@babel/parser': 7.29.0
+      '@babel/parser': 7.29.2
       '@istanbuljs/schema': 0.1.3
       istanbul-lib-coverage: 3.2.2
       semver: 6.3.1
@@ -25073,6 +25094,8 @@ snapshots:
 
   slugify@1.6.8: {}
 
+  slugify@1.6.9: {}
+
   smol-toml@1.6.0: {}
 
   source-map-js@1.2.1: {}
@@ -25432,6 +25455,11 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
 
+  tinyglobby@0.2.16:
+    dependencies:
+      fdir: 6.5.0(picomatch@4.0.4)
+      picomatch: 4.0.4
+
   tinypool@1.1.1: {}
 
   tinyrainbow@2.0.0: {}
@@ -25543,6 +25571,10 @@ snapshots:
   type-fest@0.8.1: {}
 
   type-fest@5.4.4:
+    dependencies:
+      tagged-tag: 1.0.0
+
+  type-fest@5.6.0:
     dependencies:
       tagged-tag: 1.0.0
 
@@ -26036,7 +26068,7 @@ snapshots:
     dependencies:
       tslib: 2.3.0
 
-  zxing-wasm@3.0.1(@types/emscripten@1.41.5):
+  zxing-wasm@3.0.2(@types/emscripten@1.41.5):
     dependencies:
       '@types/emscripten': 1.41.5
-      type-fest: 5.4.4
+      type-fest: 5.6.0

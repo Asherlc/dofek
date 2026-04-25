@@ -79,7 +79,7 @@ jobs:
 
           case "$status_code" in
             200)
-              exit 0
+              workspace_id="$(jq -r '.data.id' /tmp/review-workspace.json)"
               ;;
             404)
               ;;
@@ -90,54 +90,82 @@ jobs:
               ;;
           esac
 
-          create_payload="$(mktemp)"
-          cat <<EOF > "$create_payload"
-          {
-            "data": {
-              "type": "workspaces",
-              "attributes": {
-                "name": "${REVIEW_TERRAFORM_WORKSPACE}"
+          if [ "$status_code" = "404" ]; then
+            create_payload="$(mktemp)"
+            jq -n \
+              --arg workspace_name "${REVIEW_TERRAFORM_WORKSPACE}" \
+              '{
+                data: {
+                  type: "workspaces",
+                  attributes: {
+                    name: $workspace_name,
+                    "execution-mode": "local"
+                  }
+                }
+              }' > "$create_payload"
+
+            curl --silent --show-error --fail \
+              --request POST \
+              --header "Authorization: Bearer ${TF_API_TOKEN}" \
+              --header "Content-Type: application/vnd.api+json" \
+              --data @"$create_payload" \
+              "https://app.terraform.io/api/v2/organizations/${TERRAFORM_ORGANIZATION}/workspaces" \
+              > /tmp/review-workspace.json
+
+            workspace_id="$(jq -r '.data.id' /tmp/review-workspace.json)"
+            if [ -z "$workspace_id" ] || [ "$workspace_id" = "null" ]; then
+              echo "::error::Terraform workspace creation did not return a workspace id"
+              cat /tmp/review-workspace.json
+              exit 1
+            fi
+
+            tag_payload="$(mktemp)"
+            jq -n \
+              '{
+                data: [
+                  {
+                    type: "tags",
+                    attributes: {
+                      name: "review-app"
+                    }
+                  }
+                ]
+              }' > "$tag_payload"
+
+            curl --silent --show-error --fail \
+              --request POST \
+              --header "Authorization: Bearer ${TF_API_TOKEN}" \
+              --header "Content-Type: application/vnd.api+json" \
+              --data @"$tag_payload" \
+              "https://app.terraform.io/api/v2/workspaces/${workspace_id}/relationships/tags" \
+              > /dev/null
+          fi
+
+          patch_payload="$(mktemp)"
+          jq -n \
+            '{
+              data: {
+                type: "workspaces",
+                attributes: {
+                  "execution-mode": "local"
+                }
               }
-            }
-          }
-          EOF
+            }' > "$patch_payload"
 
           curl --silent --show-error --fail \
-            --request POST \
+            --request PATCH \
             --header "Authorization: Bearer ${TF_API_TOKEN}" \
             --header "Content-Type: application/vnd.api+json" \
-            --data @"$create_payload" \
-            "https://app.terraform.io/api/v2/organizations/${TERRAFORM_ORGANIZATION}/workspaces" \
+            --data @"$patch_payload" \
+            "${workspace_url}" \
             > /tmp/review-workspace.json
 
-          workspace_id="$(jq -r '.data.id' /tmp/review-workspace.json)"
-          if [ -z "$workspace_id" ] || [ "$workspace_id" = "null" ]; then
-            echo "::error::Terraform workspace creation did not return a workspace id"
+          execution_mode="$(jq -r '.data.attributes[\"execution-mode\"] // empty' /tmp/review-workspace.json)"
+          if [ "$execution_mode" != "local" ]; then
+            echo "::error::Terraform workspace ${REVIEW_TERRAFORM_WORKSPACE} is not configured for local execution"
             cat /tmp/review-workspace.json
             exit 1
           fi
-
-          tag_payload="$(mktemp)"
-          cat <<EOF > "$tag_payload"
-          {
-            "data": [
-              {
-                "type": "tags",
-                "attributes": {
-                  "name": "review-app"
-                }
-              }
-            ]
-          }
-          EOF
-
-          curl --silent --show-error --fail \
-            --request POST \
-            --header "Authorization: Bearer ${TF_API_TOKEN}" \
-            --header "Content-Type: application/vnd.api+json" \
-            --data @"$tag_payload" \
-            "https://app.terraform.io/api/v2/workspaces/${workspace_id}/relationships/tags" \
-            > /dev/null
 
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
@@ -165,9 +193,11 @@ jobs:
           terraform workspace select "$REVIEW_TERRAFORM_WORKSPACE" || terraform workspace new "$REVIEW_TERRAFORM_WORKSPACE"
           terraform apply -auto-approve -lock-timeout=5m
 
-          echo "review_host=$(terraform output -raw review_host)" >> "$GITHUB_OUTPUT"
-          echo "review_url=$(terraform output -raw review_url)" >> "$GITHUB_OUTPUT"
-          echo "review_server_ip=$(terraform output -raw review_server_ip)" >> "$GITHUB_OUTPUT"
+          {
+            echo "review_host=$(terraform output -raw review_host)"
+            echo "review_url=$(terraform output -raw review_url)"
+            echo "review_server_ip=$(terraform output -raw review_server_ip)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host
