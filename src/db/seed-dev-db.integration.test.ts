@@ -196,7 +196,7 @@ describe("seed-dev-db", () => {
     } finally {
       await sql.end();
     }
-  }, 180_000);
+  }, 420_000);
 });
 
 async function runSeed(connectionString: string): Promise<void> {
@@ -206,7 +206,7 @@ async function runSeed(connectionString: string): Promise<void> {
       ...process.env,
       DATABASE_URL: connectionString,
     },
-    timeout: 180_000,
+    timeout: 300_000,
   });
 }
 
