@@ -102,7 +102,7 @@ jobs:
           set -euo pipefail
 
           curl --silent --show-error --fail \
-            --request POST \
+            --request DELETE \
             --header "Authorization: Bearer ${TF_API_TOKEN}" \
             --header "Content-Type: application/vnd.api+json" \
-            "https://app.terraform.io/api/v2/workspaces/${TERRAFORM_WORKSPACE_ID}/actions/safe-delete"
+            "https://app.terraform.io/api/v2/workspaces/${TERRAFORM_WORKSPACE_ID}"
