@@ -1,7 +1,28 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true
-  }
+  },
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "modules/**/*.ts",
+    "modules/**/*.tsx",
+    "types/**/*.ts",
+    "types/**/*.tsx",
+    "theme.ts"
+  ],
+  "exclude": [
+    ".rnstorybook",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.stories.ts",
+    "**/*.stories.tsx"
+  ]
 }

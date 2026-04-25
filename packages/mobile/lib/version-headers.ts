@@ -13,7 +13,7 @@ function getManifestAppVersion(): string | null {
     return null;
   }
 
-  const version = manifest.version;
+  const version = Reflect.get(manifest, "version");
   return typeof version === "string" && version.trim().length > 0 ? version : null;
 }
 

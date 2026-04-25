@@ -180,31 +180,17 @@ function getCsvHeaderLine(csvText: string): string {
   );
 }
 
-function hasBlobTextReader(blob: Blob): blob is Blob & { text: () => Promise<string> } {
+function hasBlobTextReader(blob: Blob): boolean {
   return typeof Reflect.get(blob, "text") === "function";
 }
 
-function hasBlobArrayBufferReader(
-  blob: Blob,
-): blob is Blob & { arrayBuffer: () => Promise<ArrayBuffer> } {
-  return typeof Reflect.get(blob, "arrayBuffer") === "function";
-}
-
-async function readBlobText(blob: Blob, fileUri: string, fetchImpl: typeof fetch): Promise<string> {
+async function readBlobText(blob: Blob): Promise<string> {
   if (hasBlobTextReader(blob)) {
     return blob.text();
   }
 
-  if (hasBlobArrayBufferReader(blob)) {
-    const buffer = await blob.arrayBuffer();
-    return new TextDecoder().decode(buffer);
-  }
-
-  const response = await fetchImpl(fileUri);
-  if (!response.ok) {
-    throw new Error(`Failed to read shared file (${response.status})`);
-  }
-  return response.text();
+  const arrayBuffer = await blob.arrayBuffer();
+  return new TextDecoder().decode(arrayBuffer);
 }
 
 async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob> {
@@ -389,9 +375,7 @@ export async function importSharedFile(
     const mimeType = blob.type || null;
 
     const csvHeaderLine =
-      fileExtension === ".csv"
-        ? getCsvHeaderLine(await readBlobText(blob, args.fileUri, fetchImpl))
-        : "";
+      fileExtension === ".csv" ? getCsvHeaderLine(await readBlobText(blob)) : "";
 
     const providerId = inferImportProviderFromFile({
       fileName,

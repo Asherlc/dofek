@@ -13,7 +13,9 @@ class MemoryCacheStore implements CacheStore {
   constructor(sweepIntervalMs = 5 * 60 * 1000) {
     this.#sweepInterval = setInterval(() => this.#sweep(), sweepIntervalMs);
     // Don't keep process alive just for cache cleanup
-    if (this.#sweepInterval.unref) this.#sweepInterval.unref();
+    if (typeof this.#sweepInterval !== "number") {
+      this.#sweepInterval.unref();
+    }
   }
 
   async get(key: string): Promise<unknown | undefined> {

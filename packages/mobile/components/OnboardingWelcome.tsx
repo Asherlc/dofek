@@ -4,9 +4,14 @@ import { useRouter } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 
+interface OnboardingWelcomeProps {
+  onDismiss: () => void;
+  providers: Array<{ id: string }>;
+}
+
 export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomeProps) {
   const router = useRouter();
-  const availableProviderIds = new Set(providers.map((p) => p.id));
+  const availableProviderIds = new Set(providers.map((provider) => provider.id));
 
   return (
     <View style={styles.container} testID="onboarding-welcome">

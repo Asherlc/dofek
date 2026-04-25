@@ -33,12 +33,13 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
   );
 
   const region = useMemo(() => {
-    if (gpsPoints.length === 0) return null;
+    const firstPoint = gpsPoints[0];
+    if (!firstPoint) return null;
 
-    let minLat = gpsPoints[0].lat;
-    let maxLat = gpsPoints[0].lat;
-    let minLng = gpsPoints[0].lng;
-    let maxLng = gpsPoints[0].lng;
+    let minLat = firstPoint.lat;
+    let maxLat = firstPoint.lat;
+    let minLng = firstPoint.lng;
+    let maxLng = firstPoint.lng;
 
     for (const point of gpsPoints) {
       if (point.lat < minLat) minLat = point.lat;
@@ -86,7 +87,7 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
             pitchEnabled={false}
             toolbarEnabled={false}
             showsUserLocation={false}
-            showsPointsOfInterest={false}
+            showsPointsOfInterests={false}
           >
             <Polyline
               coordinates={coordinates}

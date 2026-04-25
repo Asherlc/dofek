@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import { type DimensionValue, StyleSheet, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -51,7 +51,7 @@ export function SkeletonRect({
   height,
   borderRadiusOverride,
 }: {
-  width: number | string;
+  width: DimensionValue;
   height: number;
   borderRadiusOverride?: number;
 }) {
