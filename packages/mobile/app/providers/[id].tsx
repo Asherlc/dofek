@@ -1,15 +1,9 @@
 import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
-import {
-  parseWhoopWearLocation,
-  WHOOP_WEAR_LOCATION_SETTING_KEY,
-  WHOOP_WEAR_LOCATIONS,
-  type WhoopWearLocation,
-} from "@dofek/providers/whoop";
 import { statusColors } from "@dofek/scoring/colors";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +13,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -30,6 +23,10 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
+import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals";
+import { ProviderDetailActionsCard } from "./provider-detail-actions-card";
+import { ProviderDetailExtras } from "./provider-detail-extras";
+import { useProviderDetailActions } from "./use-provider-detail-actions";
 
 type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
@@ -670,90 +667,27 @@ export default function ProviderDetailScreen() {
   const router = useRouter();
   const trpcUtils = trpc.useUtils();
 
-  const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
-  const syncMutation = trpc.sync.triggerSync.useMutation();
   const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
-
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [syncProgress, setSyncProgress] = useState<number | null>(null);
-  const [customDays, setCustomDays] = useState("30");
-  const pollingRef = useRef(false);
-
-  const provider = (providers.data ?? []).find((p: { id: string }) => p.id === providerId);
   const providerStats = (stats.data ?? []).find(
     (s: { providerId: string }) => s.providerId === providerId,
   );
-
-  const pollSyncJob = useCallback(
-    async (jobId: string) => {
-      if (pollingRef.current) return;
-      pollingRef.current = true;
-
-      const poll = async (): Promise<void> => {
-        let status: Awaited<ReturnType<typeof trpcUtils.sync.syncStatus.fetch>>;
-        try {
-          status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
-        } catch (error: unknown) {
-          captureException(error, { context: "provider-sync-poll" });
-          pollingRef.current = false;
-          setIsSyncing(false);
-          setSyncMessage("Sync failed");
-          return;
-        }
-
-        if (!status) {
-          pollingRef.current = false;
-          setIsSyncing(false);
-          return;
-        }
-
-        setSyncProgress(status.percentage);
-        const providerStatus = providerId ? status.providers[providerId] : null;
-        if (providerStatus?.message) {
-          setSyncMessage(providerStatus.message);
-        }
-
-        if (status.status === "done" || status.status === "error") {
-          pollingRef.current = false;
-          setIsSyncing(false);
-          setSyncMessage(status.status === "done" ? "Sync complete" : "Sync failed");
-          trpcUtils.sync.providers.invalidate();
-          trpcUtils.sync.providerStats.invalidate();
-          trpcUtils.sync.logs.invalidate();
-          return;
-        }
-
-        await new Promise((r) => setTimeout(r, 1000));
-        return poll();
-      };
-
-      return poll();
-    },
-    [trpcUtils, providerId],
-  );
-
-  const handleSync = useCallback(
-    async (sinceDays: number | undefined) => {
-      if (!providerId || isSyncing) return;
-      setIsSyncing(true);
-      setSyncMessage("Starting sync...");
-      setSyncProgress(0);
-      try {
-        const { jobId } = await syncMutation.mutateAsync({
-          providerId,
-          sinceDays,
-        });
-        await pollSyncJob(jobId);
-      } catch (error: unknown) {
-        captureException(error, { context: "provider-sync-start" });
-        setIsSyncing(false);
-        setSyncMessage("Failed to start sync");
-      }
-    },
-    [providerId, isSyncing, syncMutation, pollSyncJob],
-  );
+  const {
+    provider,
+    displayProvider,
+    isLoading,
+    isConnected,
+    primaryActionLabel,
+    isSyncing,
+    syncMessage,
+    syncProgress,
+    shouldShowActions,
+    shouldShowFullSync,
+    shouldShowAppleHealthPermissionBanner,
+    handlePrimaryAction,
+    handleFullSync,
+    modals,
+  } = useProviderDetailActions(providerId);
 
   const handleDisconnect = useCallback(() => {
     if (!providerId) return;
@@ -788,7 +722,7 @@ export default function ProviderDetailScreen() {
 
   const { refreshing, onRefresh } = useRefresh();
 
-  if (providers.isLoading || !providerId) {
+  if (isLoading || !providerId) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator color={colors.accent} size="large" />
@@ -815,21 +749,22 @@ export default function ProviderDetailScreen() {
             <View style={styles.providerNameRow}>
               <ProviderLogo provider={providerId} serverUrl={serverUrl} size={28} />
               <Text style={styles.providerName}>
-                {provider?.name ?? formatProviderName(providerId)}
+                {displayProvider?.name ?? formatProviderName(providerId)}
               </Text>
             </View>
-            {provider && (
+            {displayProvider && (
               <View style={styles.statusRow}>
-                {provider.authorized ? (
+                {isConnected ? (
                   <Text style={styles.statusConnected}>Connected</Text>
                 ) : (
                   <Text style={styles.statusDisconnected}>Not connected</Text>
                 )}
-                {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
-                  <Text style={styles.lastSync}>
-                    Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-                  </Text>
-                )}
+                {displayProvider.lastSyncedAt &&
+                  formatRelativeTime(displayProvider.lastSyncedAt) && (
+                    <Text style={styles.lastSync}>
+                      Last sync: {formatRelativeTime(displayProvider.lastSyncedAt)}
+                    </Text>
+                  )}
               </View>
             )}
           </View>
@@ -845,71 +780,22 @@ export default function ProviderDetailScreen() {
         </View>
       </View>
 
-      {/* Sync controls */}
-      {provider?.authorized && !provider.importOnly && (
-        <View style={styles.syncControlsCard}>
-          <Text style={styles.syncControlsTitle}>Sync Controls</Text>
-          <View style={styles.syncButtonRow}>
-            <TouchableOpacity
-              style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
-              onPress={() => handleSync(7)}
-              activeOpacity={0.7}
-              disabled={isSyncing}
-            >
-              <Text style={styles.syncButtonText}>Sync Last 7 Days</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
-              onPress={() => handleSync(undefined)}
-              activeOpacity={0.7}
-              disabled={isSyncing}
-            >
-              <Text style={styles.syncButtonText}>Full Sync</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.customSyncRow}>
-            <TextInput
-              style={styles.customDaysInput}
-              value={customDays}
-              onChangeText={setCustomDays}
-              keyboardType="number-pad"
-              placeholder="Days"
-              placeholderTextColor={colors.textTertiary}
-            />
-            <TouchableOpacity
-              style={[
-                styles.syncButton,
-                styles.syncRangeButton,
-                isSyncing && styles.syncButtonDisabled,
-              ]}
-              onPress={() => {
-                const days = Number.parseInt(customDays, 10);
-                if (days >= 1 && days <= 3650) {
-                  handleSync(days);
-                }
-              }}
-              activeOpacity={0.7}
-              disabled={isSyncing}
-            >
-              <Text style={styles.syncButtonText}>Sync Range</Text>
-            </TouchableOpacity>
-          </View>
-          {isSyncing && (
-            <View style={styles.syncProgressContainer}>
-              <View style={styles.syncProgressTrack}>
-                <View style={[styles.syncProgressFill, { width: `${syncProgress ?? 0}%` }]} />
-              </View>
-              {syncMessage != null && <Text style={styles.syncMessageText}>{syncMessage}</Text>}
-            </View>
-          )}
-          {!isSyncing && syncMessage != null && (
-            <Text style={styles.syncMessageText}>{syncMessage}</Text>
-          )}
-        </View>
+      {/* Actions */}
+      {shouldShowActions && (
+        <ProviderDetailActionsCard
+          primaryActionLabel={primaryActionLabel}
+          isSyncing={isSyncing}
+          syncMessage={syncMessage}
+          syncProgress={syncProgress}
+          shouldShowFullSync={shouldShowFullSync}
+          shouldShowAppleHealthPermissionBanner={shouldShowAppleHealthPermissionBanner}
+          onPrimaryAction={() => void handlePrimaryAction()}
+          onFullSync={() => void handleFullSync()}
+        />
       )}
 
-      {/* WHOOP wear location */}
-      {providerId === "whoop" && <WhoopWearLocationPicker />}
+      {/* Provider-specific extras */}
+      <ProviderDetailExtras providerId={providerId} />
 
       {/* Stats overview */}
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
@@ -931,108 +817,23 @@ export default function ProviderDetailScreen() {
           <Text style={styles.disconnectButtonText}>Disconnect Provider</Text>
         </TouchableOpacity>
       )}
+      {modals.credentialAuthProvider && (
+        <CredentialAuthModal
+          providerId={modals.credentialAuthProvider.id}
+          providerName={modals.credentialAuthProvider.name}
+          onClose={modals.closeCredentialAuth}
+          onSuccess={modals.handleCredentialSuccess}
+        />
+      )}
+      {modals.whoopAuthOpen && (
+        <WhoopAuthModal onClose={modals.closeWhoopAuth} onSuccess={modals.handleWhoopSuccess} />
+      )}
+      {modals.garminAuthOpen && (
+        <GarminAuthModal onClose={modals.closeGarminAuth} onSuccess={modals.handleGarminSuccess} />
+      )}
     </ScrollView>
   );
 }
-
-// ── WHOOP Wear Location Picker ──
-
-function WhoopWearLocationPicker() {
-  const setting = trpc.settings.get.useQuery({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
-  const setSettingMutation = trpc.settings.set.useMutation();
-  const trpcUtils = trpc.useUtils();
-
-  const currentLocation = parseWhoopWearLocation(setting.data?.value);
-
-  const handleChange = (location: WhoopWearLocation) => {
-    trpcUtils.settings.get.setData(
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY },
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
-    );
-    setSettingMutation.mutate(
-      { key: WHOOP_WEAR_LOCATION_SETTING_KEY, value: location },
-      {
-        onSettled: () => {
-          trpcUtils.settings.get.invalidate({ key: WHOOP_WEAR_LOCATION_SETTING_KEY });
-        },
-      },
-    );
-  };
-
-  return (
-    <View style={wearStyles.container}>
-      <Text style={wearStyles.title}>Wear Location</Text>
-      <Text style={wearStyles.subtitle}>
-        Where do you wear your WHOOP? This helps us interpret your sensor data.
-      </Text>
-      <View style={wearStyles.optionsContainer}>
-        {WHOOP_WEAR_LOCATIONS.map((location) => {
-          const isSelected = currentLocation === location.id;
-          return (
-            <TouchableOpacity
-              key={location.id}
-              style={[wearStyles.option, isSelected && wearStyles.optionSelected]}
-              onPress={() => handleChange(location.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={[wearStyles.optionLabel, isSelected && wearStyles.optionLabelSelected]}>
-                {location.label}
-              </Text>
-              <Text style={wearStyles.optionDescription}>{location.description}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-const wearStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    gap: 8,
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  optionsContainer: {
-    gap: 8,
-    marginTop: 4,
-  },
-  option: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.surfaceSecondary,
-    backgroundColor: colors.surfaceSecondary,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  optionSelected: {
-    borderColor: colors.positive,
-    backgroundColor: "rgba(52, 211, 153, 0.1)",
-  },
-  optionLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  optionLabelSelected: {
-    color: colors.positive,
-  },
-  optionDescription: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-});
 
 const styles = StyleSheet.create({
   container: {
@@ -1109,74 +910,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-
-  // Sync controls
-  syncControlsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    gap: 12,
-  },
-  syncControlsTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  syncButtonRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  syncButton: {
-    flex: 1,
-    backgroundColor: colors.accent,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  syncButtonDisabled: {
-    opacity: 0.5,
-  },
-  syncButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-  },
-  customSyncRow: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-  },
-  customDaysInput: {
-    flex: 1,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: colors.text,
-  },
-  syncRangeButton: {
-    flex: 0,
-    paddingHorizontal: 16,
-  },
-  syncProgressContainer: {
-    gap: 4,
-  },
-  syncProgressTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-  },
-  syncProgressFill: {
-    height: "100%",
-    borderRadius: 2,
-    backgroundColor: colors.accent,
-  },
-  syncMessageText: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
 
   // Disconnect

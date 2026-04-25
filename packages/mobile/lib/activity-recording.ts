@@ -55,6 +55,9 @@ export function totalDistance(samples: ReadonlyArray<GpsSample>): number {
   for (let i = 1; i < samples.length; i++) {
     const prev = samples[i - 1];
     const curr = samples[i];
+    if (!prev || !curr) {
+      continue;
+    }
     distance += haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng);
   }
   return distance;
@@ -98,9 +101,8 @@ export function createActivityRecorder(
   }
 
   function getCurrentSpeed(): number | null {
-    if (samples.length === 0) return null;
-    const latest = samples[samples.length - 1];
-    return latest.speed;
+    const latest = samples.at(-1);
+    return latest?.speed ?? null;
   }
 
   return {

@@ -40,7 +40,7 @@ import {
   stopImuStreaming,
   connect as whoopConnect,
 } from "../modules/whoop-ble";
-import { colors, fontSize, fonts, fontWeight, radius, spacing } from "../theme";
+import { colors, fontSize, fonts, fontWeight, radius } from "../theme";
 
 /** Activity types available for recording (GPS-based outdoor activities) */
 const RECORDABLE_TYPES = [
@@ -382,40 +382,40 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: spacing[5],
+    padding: 20,
   },
   centered: {
     justifyContent: "center",
     alignItems: "center",
-    padding: spacing[5],
+    padding: 20,
   },
   title: {
     fontFamily: fonts.body,
     fontSize: fontSize.xl,
     fontWeight: fontWeight.semibold,
     color: colors.text,
-    marginBottom: spacing[1],
+    marginBottom: 4,
   },
   subtitle: {
     fontFamily: fonts.body,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
-    marginBottom: spacing[5],
+    marginBottom: 20,
   },
 
   // Activity type picker
   typeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing[3],
+    gap: 12,
   },
   typeButton: {
     width: "47%",
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    padding: spacing[4],
+    padding: 16,
     alignItems: "center",
-    gap: spacing[2],
+    gap: 8,
   },
   typeEmoji: {
     fontSize: 32,
@@ -431,8 +431,8 @@ const styles = StyleSheet.create({
   // Recording
   recordingContainer: {
     justifyContent: "space-between",
-    paddingVertical: spacing[8],
-    paddingHorizontal: spacing[5],
+    paddingVertical: 32,
+    paddingHorizontal: 20,
   },
   activityTypeHeader: {
     fontFamily: fonts.body,
@@ -447,13 +447,13 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.semibold,
     color: colors.warning,
     textAlign: "center",
-    marginTop: spacing[1],
+    marginTop: 4,
   },
 
   // Metrics
   metricsGrid: {
     alignItems: "center",
-    gap: spacing[5],
+    gap: 20,
   },
   timerContainer: {
     alignItems: "center",
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
   },
   metricsRow: {
     flexDirection: "row",
-    gap: spacing[4],
+    gap: 16,
   },
   metricCell: {
     alignItems: "center",
@@ -483,36 +483,36 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: fontSize.xs,
     color: colors.textSecondary,
-    marginTop: spacing[1],
+    marginTop: 4,
   },
 
   // Controls
   controls: {
     flexDirection: "row",
-    gap: spacing[3],
+    gap: 12,
     justifyContent: "center",
   },
   pauseButton: {
     backgroundColor: colors.warning,
     borderRadius: radius.full,
-    paddingVertical: spacing[4],
-    paddingHorizontal: spacing[6],
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     flex: 1,
     alignItems: "center",
   },
   resumeButton: {
     backgroundColor: colors.positive,
     borderRadius: radius.full,
-    paddingVertical: spacing[4],
-    paddingHorizontal: spacing[6],
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     flex: 1,
     alignItems: "center",
   },
   stopButton: {
     backgroundColor: colors.danger,
     borderRadius: radius.full,
-    paddingVertical: spacing[4],
-    paddingHorizontal: spacing[6],
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     flex: 1,
     alignItems: "center",
   },
@@ -533,13 +533,13 @@ const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    padding: spacing[4],
-    marginBottom: spacing[5],
+    padding: 16,
+    marginBottom: 20,
   },
   metricRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: spacing[2],
+    paddingVertical: 8,
   },
   metricRowLabel: {
     fontFamily: fonts.body,
@@ -557,29 +557,29 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: fontWeight.medium,
     color: colors.textSecondary,
-    marginBottom: spacing[1],
+    marginBottom: 4,
   },
   textInput: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    padding: spacing[3],
+    padding: 12,
     fontFamily: fonts.body,
     fontSize: fontSize.base,
     color: colors.text,
-    marginBottom: spacing[4],
+    marginBottom: 16,
   },
   textInputMultiline: {
     minHeight: 80,
     textAlignVertical: "top",
   },
   saveActions: {
-    gap: spacing[3],
-    marginTop: spacing[2],
+    gap: 12,
+    marginTop: 8,
   },
   saveButton: {
     backgroundColor: colors.accent,
     borderRadius: radius.lg,
-    paddingVertical: spacing[4],
+    paddingVertical: 16,
     alignItems: "center",
   },
   saveButtonText: {
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
   },
   discardButton: {
     borderRadius: radius.lg,
-    paddingVertical: spacing[3],
+    paddingVertical: 12,
     alignItems: "center",
   },
   discardButtonText: {
@@ -603,6 +603,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     color: colors.danger,
     textAlign: "center",
-    marginBottom: spacing[4],
+    marginBottom: 16,
   },
 });

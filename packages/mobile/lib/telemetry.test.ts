@@ -6,7 +6,12 @@ const mocks = vi.hoisted(() => {
   const mockCaptureMessage = vi.fn();
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
-  const mockAddLogRecordProcessor = vi.fn();
+  const mockResourceFromAttributes = vi.fn().mockReturnValue({ resource: "mock" });
+  const mockBatchLogRecordProcessor = vi.fn().mockReturnValue({ processor: "mock" });
+  const mockLoggerProvider = vi.fn().mockImplementation(() => ({
+    getLogger: mocks.mockGetLogger,
+    forceFlush: mocks.mockForceFlush,
+  }));
   const mockForceFlush = vi.fn().mockResolvedValue(undefined);
   return {
     mockInit,
@@ -14,7 +19,9 @@ const mocks = vi.hoisted(() => {
     mockCaptureMessage,
     mockEmit,
     mockGetLogger,
-    mockAddLogRecordProcessor,
+    mockResourceFromAttributes,
+    mockBatchLogRecordProcessor,
+    mockLoggerProvider,
     mockForceFlush,
   };
 });
@@ -26,12 +33,8 @@ vi.mock("@sentry/react-native", () => ({
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
-  LoggerProvider: vi.fn().mockImplementation(() => ({
-    getLogger: mocks.mockGetLogger,
-    addLogRecordProcessor: mocks.mockAddLogRecordProcessor,
-    forceFlush: mocks.mockForceFlush,
-  })),
-  BatchLogRecordProcessor: vi.fn(),
+  LoggerProvider: mocks.mockLoggerProvider,
+  BatchLogRecordProcessor: mocks.mockBatchLogRecordProcessor,
 }));
 
 vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
@@ -39,7 +42,7 @@ vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
 }));
 
 vi.mock("@opentelemetry/resources", () => ({
-  Resource: vi.fn(),
+  resourceFromAttributes: mocks.mockResourceFromAttributes,
 }));
 
 vi.mock("@opentelemetry/semantic-conventions", () => ({
@@ -149,7 +152,14 @@ describe("ios telemetry", () => {
     const mod = await import("./telemetry");
     mod.initTelemetry();
 
-    expect(mocks.mockAddLogRecordProcessor).toHaveBeenCalledTimes(1);
+    expect(mocks.mockResourceFromAttributes).toHaveBeenCalledWith({
+      "service.name": "dofek-mobile",
+    });
+    expect(mocks.mockBatchLogRecordProcessor).toHaveBeenCalledTimes(1);
+    expect(mocks.mockLoggerProvider).toHaveBeenCalledWith({
+      resource: { resource: "mock" },
+      processors: [{ processor: "mock" }],
+    });
   });
 
   it("logger.info emits OTel log record when provider is initialized", async () => {

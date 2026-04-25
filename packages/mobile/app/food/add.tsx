@@ -39,8 +39,8 @@ export default function AddFoodScreen() {
   const date = params.date ?? formatDateYmd();
   const { sessionToken } = useAuth();
   const apiUrl = getTrpcUrl(SERVER_URL);
-  const authHeaders = useMemo<Record<string, string>>(
-    () => (sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+  const authorizationHeader = useMemo(
+    () => (sessionToken ? `Bearer ${sessionToken}` : null),
     [sessionToken],
   );
 
@@ -52,7 +52,7 @@ export default function AddFoodScreen() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [scanningBarcode, setScanningBarcode] = useState(false);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Form state (shown after selecting a result or manual entry) ──
   const [showForm, setShowForm] = useState(false);
@@ -91,7 +91,10 @@ export default function AddFoodScreen() {
     Promise.all([
       fetch(`${apiUrl}/food.byDate?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authorizationHeader ? { Authorization: authorizationHeader } : {}),
+        },
         body: JSON.stringify({ "0": { date } }),
       })
         .then((r) => r.json())
@@ -101,7 +104,10 @@ export default function AddFoodScreen() {
         }),
       fetch(`${apiUrl}/food.byDate?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authorizationHeader ? { Authorization: authorizationHeader } : {}),
+        },
         body: JSON.stringify({ "0": { date: yStr } }),
       })
         .then((r) => r.json())
@@ -142,7 +148,7 @@ export default function AddFoodScreen() {
       }
       setRecentFoods(results);
     });
-  }, [date, apiUrl, authHeaders]);
+  }, [date, apiUrl, authorizationHeader]);
 
   const utils = trpc.useUtils();
   const createMutation = trpc.food.create.useMutation({
@@ -187,7 +193,10 @@ export default function AddFoodScreen() {
 
       const historyResults = await fetch(`${apiUrl}/food.search?batch=1`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authorizationHeader ? { Authorization: authorizationHeader } : {}),
+        },
         body: JSON.stringify({ "0": { query, limit: 5 } }),
         signal,
       })
@@ -220,7 +229,7 @@ export default function AddFoodScreen() {
       setSearchResults(historyResults);
       setSearching(false);
     },
-    [apiUrl, authHeaders],
+    [apiUrl, authorizationHeader],
   );
 
   // ── On-demand Open Food Facts search ──
@@ -257,7 +266,7 @@ export default function AddFoodScreen() {
   }, [searchQuery, foodClient]);
 
   // Debounced search with abort support
-  const searchAbortRef = useRef<AbortController>();
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);

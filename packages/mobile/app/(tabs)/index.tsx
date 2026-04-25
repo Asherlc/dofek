@@ -1,9 +1,11 @@
 import {
+  formatDateYmd,
   formatDurationMinutes,
   formatSleepDebtInline,
   isToday,
   isYesterday,
 } from "@dofek/format/format";
+import { autoMealType } from "@dofek/nutrition/meal";
 import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
@@ -115,6 +117,10 @@ export default function TodayScreen() {
     triggerSync.mutate({ sinceDays: 1 });
   });
 
+  function handleLogFood() {
+    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}`);
+  }
+
   return (
     <ScrollView
       style={styles.container}
@@ -146,11 +152,7 @@ export default function TodayScreen() {
       <Text style={styles.date}>{todayString()}</Text>
 
       {/* Log food */}
-      <TouchableOpacity
-        style={styles.quickAddButton}
-        onPress={() => router.push("/food/add")}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={styles.quickAddButton} onPress={handleLogFood} activeOpacity={0.7}>
         <Text style={styles.quickAddPlus}>+</Text>
         <Text style={styles.quickAddLabel}>Log Food</Text>
       </TouchableOpacity>

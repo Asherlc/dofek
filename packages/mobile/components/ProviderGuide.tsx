@@ -17,7 +17,7 @@ interface ProviderGuideProps {
 
 export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
   const router = useRouter();
-  const availableProviderIds = new Set(providers.map((p) => p.id));
+  const availableProviderIds = new Set(providers.map((provider) => provider.id));
 
   return (
     <View style={styles.container} testID="provider-guide">

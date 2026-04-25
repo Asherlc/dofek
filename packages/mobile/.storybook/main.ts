@@ -12,14 +12,29 @@ const config: StorybookConfig = {
   },
   viteFinal: (viteConfig) => {
     viteConfig.resolve ??= {};
+    viteConfig.plugins ??= [];
     const existingAliases =
       typeof viteConfig.resolve.alias === "object" && !Array.isArray(viteConfig.resolve.alias)
         ? viteConfig.resolve.alias
         : {};
     viteConfig.resolve.alias = {
       ...existingAliases,
+      "expo-router": resolve(currentDir, "./mocks/expo-router.ts"),
       [resolve(currentDir, "../lib/auth-context")]: resolve(currentDir, "./mocks/auth-context"),
     };
+    viteConfig.plugins.push({
+      name: "storybook-health-kit-module-mock",
+      enforce: "pre",
+      resolveId(source, importer) {
+        if (
+          (source === "./src/HealthKitModule" || source === "./src/HealthKitModule.ts") &&
+          importer?.endsWith("/modules/health-kit/index.ts")
+        ) {
+          return resolve(currentDir, "./mocks/HealthKitModule.ts");
+        }
+        return null;
+      },
+    });
     return viteConfig;
   },
 };
