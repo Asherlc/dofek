@@ -163,7 +163,6 @@ jobs:
           set -euo pipefail
 
           terraform init -input=false -lock-timeout=5m
-          terraform workspace select "$REVIEW_TERRAFORM_WORKSPACE" || terraform workspace new "$REVIEW_TERRAFORM_WORKSPACE"
           terraform apply -input=false -auto-approve -lock-timeout=5m
 
           echo "review_host=$(terraform output -raw review_host)" >> "$GITHUB_OUTPUT"
