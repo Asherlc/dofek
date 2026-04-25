@@ -27,6 +27,20 @@ describe("MemoryCacheStore", () => {
     vi.useRealTimers();
   });
 
+  it("expires entries exactly at the TTL boundary", async () => {
+    vi.useFakeTimers();
+
+    try {
+      await queryCache.set("expires-at-boundary", "data", 1000);
+
+      vi.advanceTimersByTime(1000);
+
+      expect(await queryCache.get("expires-at-boundary")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("overwrites existing entries", async () => {
     await queryCache.set("key", "first", 60_000);
     await queryCache.set("key", "second", 60_000);

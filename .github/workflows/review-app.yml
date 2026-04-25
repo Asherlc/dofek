@@ -202,22 +202,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Wait for review server Docker
+      - name: Wait for review server bootstrap
         env:
           REVIEW_SERVER_IP: ${{ steps.terraform.outputs.review_server_ip }}
         run: |
           set -euo pipefail
 
-          for attempt in $(seq 1 60); do
-            if ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" 'docker info >/dev/null 2>&1'; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 60 ]; then
-              echo "::error::Review server Docker did not become ready within 300s"
-              exit 1
-            fi
-            sleep 5
-          done
+          if ! timeout 300 ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" \
+            'cloud-init status --wait >/dev/null 2>&1 && docker info >/dev/null 2>&1 && docker compose version >/dev/null 2>&1'; then
+            echo "::error::Review server bootstrap did not complete within 300s"
+            exit 1
+          fi
 
       - name: Deploy review stack
         env:

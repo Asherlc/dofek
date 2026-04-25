@@ -200,6 +200,7 @@
       "sharp"
     ],
     "overrides": {
+      "@expo/dom-webview": "55.0.5",
       "axios": ">=1.15.0",
       "protobufjs": "8.0.1"
     }
