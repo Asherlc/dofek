@@ -9,6 +9,7 @@ import { AddFoodModal, type FoodFormData, type MealType } from "../components/Ad
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -84,7 +85,7 @@ export function NutritionPage() {
   const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
   const createAiEntryMutation = trpc.food.create.useMutation();
 
-  const entries = z.array(foodEntrySchema).parse(foodQuery.data ?? []);
+  const entries = foodQuery.error ? [] : z.array(foodEntrySchema).parse(foodQuery.data ?? []);
 
   const dailyTotals = useMemo(() => computeDailyTotals(entries), [entries]);
 
@@ -273,141 +274,147 @@ export function NutritionPage() {
           </form>
         </div>
 
-        {/* Daily summary */}
-        <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
-          <div className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sm font-medium text-muted">Calories</span>
-              <span className="text-sm text-muted tabular-nums">
-                <span className="text-xl font-semibold text-foreground">
-                  {dailyTotals.totalCalories}
-                </span>
-                <span className="ml-1">/ {calorieGoal} kcal</span>
-              </span>
-            </div>
-            <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
-              <div
-                className={`h-full rounded-full ${calorieColor} transition-all duration-300`}
-                style={{ width: `${calorieProgress}%` }}
-              />
-            </div>
-            <div className="text-xs text-subtle tabular-nums">
-              {calorieGoal - dailyTotals.totalCalories > 0
-                ? `${calorieGoal - dailyTotals.totalCalories} kcal remaining`
-                : `${dailyTotals.totalCalories - calorieGoal} kcal over goal`}
-            </div>
-          </div>
-
-          {/* Macro bars */}
-          <div className="space-y-3">
-            <MacroBar
-              label="Protein"
-              grams={Math.round(dailyTotals.totalProtein)}
-              caloriesFromMacro={dailyTotals.totalProtein * CALORIES_PER_GRAM.protein}
-              totalCalories={dailyTotals.totalCalories}
-              color="blue"
-            />
-            <MacroBar
-              label="Carbs"
-              grams={Math.round(dailyTotals.totalCarbs)}
-              caloriesFromMacro={dailyTotals.totalCarbs * CALORIES_PER_GRAM.carbs}
-              totalCalories={dailyTotals.totalCalories}
-              color="amber"
-            />
-            <MacroBar
-              label="Fat"
-              grams={Math.round(dailyTotals.totalFat)}
-              caloriesFromMacro={dailyTotals.totalFat * CALORIES_PER_GRAM.fat}
-              totalCalories={dailyTotals.totalCalories}
-              color="red"
-            />
-          </div>
-        </div>
-
         {/* Loading state */}
         {foodQuery.isLoading && <ChartLoadingSkeleton height={200} />}
 
-        {/* Meal sections */}
-        {!foodQuery.isLoading &&
-          MEAL_ORDER.map((mealType) => {
-            const mealEntries = mealGroups.get(mealType) ?? [];
-            const mealCalories = computeMealCalories(mealEntries);
-            const isCollapsed = collapsedMeals.has(mealType);
-
-            return (
-              <div
-                key={mealType}
-                className="rounded-xl border border-border bg-surface-solid overflow-hidden"
-              >
-                {/* Meal header */}
-                <button
-                  type="button"
-                  onClick={() => toggleMeal(mealType)}
-                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-hover transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className={`w-4 h-4 text-subtle transition-transform ${isCollapsed ? "" : "rotate-90"}`}
-                    >
-                      <title>Toggle meal section</title>
-                      <path
-                        fillRule="evenodd"
-                        d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    <span className="text-sm font-medium text-foreground">
-                      {MEAL_LABELS[mealType]}
-                    </span>
-                    {mealEntries.length > 0 && (
-                      <span className="text-xs text-subtle">
-                        ({mealEntries.length} {mealEntries.length === 1 ? "item" : "items"})
-                      </span>
-                    )}
-                  </div>
+        {foodQuery.error ? (
+          <QueryStatePanel error={foodQuery.error} height={200} />
+        ) : (
+          <>
+            {/* Daily summary */}
+            <div className="rounded-xl border border-border bg-surface-solid p-5 space-y-5">
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium text-muted">Calories</span>
                   <span className="text-sm text-muted tabular-nums">
-                    {mealCalories > 0 ? `${mealCalories} kcal` : ""}
+                    <span className="text-xl font-semibold text-foreground">
+                      {dailyTotals.totalCalories}
+                    </span>
+                    <span className="ml-1">/ {calorieGoal} kcal</span>
                   </span>
-                </button>
-
-                {/* Meal entries */}
-                {!isCollapsed && (
-                  <div className="border-t border-border">
-                    {mealEntries.length > 0 ? (
-                      <div className="px-2 py-1">
-                        {mealEntries.map((entry) => (
-                          <FoodEntryRow
-                            key={entry.id}
-                            foodName={entry.food_name}
-                            servingDescription={entry.food_description}
-                            calories={entry.calories ?? 0}
-                            onDelete={() => handleDeleteFood(entry.id)}
-                            deleting={deleteMutation.isPending}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="px-5 py-4 text-sm text-dim">No entries yet</div>
-                    )}
-
-                    {/* Add food button */}
-                    <div className="border-t border-border px-5 py-2">
-                      <button
-                        type="button"
-                        onClick={() => openAddFood(mealType)}
-                        className="text-sm text-accent hover:text-accent-secondary transition-colors"
-                      >
-                        + Add food
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </div>
+                <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${calorieColor} transition-all duration-300`}
+                    style={{ width: `${calorieProgress}%` }}
+                  />
+                </div>
+                <div className="text-xs text-subtle tabular-nums">
+                  {calorieGoal - dailyTotals.totalCalories > 0
+                    ? `${calorieGoal - dailyTotals.totalCalories} kcal remaining`
+                    : `${dailyTotals.totalCalories - calorieGoal} kcal over goal`}
+                </div>
               </div>
-            );
-          })}
+
+              {/* Macro bars */}
+              <div className="space-y-3">
+                <MacroBar
+                  label="Protein"
+                  grams={Math.round(dailyTotals.totalProtein)}
+                  caloriesFromMacro={dailyTotals.totalProtein * CALORIES_PER_GRAM.protein}
+                  totalCalories={dailyTotals.totalCalories}
+                  color="blue"
+                />
+                <MacroBar
+                  label="Carbs"
+                  grams={Math.round(dailyTotals.totalCarbs)}
+                  caloriesFromMacro={dailyTotals.totalCarbs * CALORIES_PER_GRAM.carbs}
+                  totalCalories={dailyTotals.totalCalories}
+                  color="amber"
+                />
+                <MacroBar
+                  label="Fat"
+                  grams={Math.round(dailyTotals.totalFat)}
+                  caloriesFromMacro={dailyTotals.totalFat * CALORIES_PER_GRAM.fat}
+                  totalCalories={dailyTotals.totalCalories}
+                  color="red"
+                />
+              </div>
+            </div>
+
+            {/* Meal sections */}
+            {!foodQuery.isLoading &&
+              MEAL_ORDER.map((mealType) => {
+                const mealEntries = mealGroups.get(mealType) ?? [];
+                const mealCalories = computeMealCalories(mealEntries);
+                const isCollapsed = collapsedMeals.has(mealType);
+
+                return (
+                  <div
+                    key={mealType}
+                    className="rounded-xl border border-border bg-surface-solid overflow-hidden"
+                  >
+                    {/* Meal header */}
+                    <button
+                      type="button"
+                      onClick={() => toggleMeal(mealType)}
+                      className="w-full flex items-center justify-between px-5 py-3 hover:bg-surface-hover transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className={`w-4 h-4 text-subtle transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+                        >
+                          <title>Toggle meal section</title>
+                          <path
+                            fillRule="evenodd"
+                            d="M8.22 5.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 010-1.06z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span className="text-sm font-medium text-foreground">
+                          {MEAL_LABELS[mealType]}
+                        </span>
+                        {mealEntries.length > 0 && (
+                          <span className="text-xs text-subtle">
+                            ({mealEntries.length} {mealEntries.length === 1 ? "item" : "items"})
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-sm text-muted tabular-nums">
+                        {mealCalories > 0 ? `${mealCalories} kcal` : ""}
+                      </span>
+                    </button>
+
+                    {/* Meal entries */}
+                    {!isCollapsed && (
+                      <div className="border-t border-border">
+                        {mealEntries.length > 0 ? (
+                          <div className="px-2 py-1">
+                            {mealEntries.map((entry) => (
+                              <FoodEntryRow
+                                key={entry.id}
+                                foodName={entry.food_name}
+                                servingDescription={entry.food_description}
+                                calories={entry.calories ?? 0}
+                                onDelete={() => handleDeleteFood(entry.id)}
+                                deleting={deleteMutation.isPending}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-5 py-4 text-sm text-dim">No entries yet</div>
+                        )}
+
+                        {/* Add food button */}
+                        <div className="border-t border-border px-5 py-2">
+                          <button
+                            type="button"
+                            onClick={() => openAddFood(mealType)}
+                            className="text-sm text-accent hover:text-accent-secondary transition-colors"
+                          >
+                            + Add food
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </>
+        )}
       </div>
 
       <AddFoodModal

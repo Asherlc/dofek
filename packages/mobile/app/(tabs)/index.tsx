@@ -1,5 +1,4 @@
 import {
-  formatDateYmd,
   formatDurationMinutes,
   formatSleepDebtInline,
   isToday,
@@ -8,7 +7,7 @@ import {
 import { readinessLevelColor } from "@dofek/scoring/scoring";
 import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Animated, {
   Easing,
@@ -24,11 +23,13 @@ import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { OnboardingWelcome } from "../../components/OnboardingWelcome";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
 import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
 import { useOnboarding } from "../../lib/useOnboarding";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
 
 function todayString(): string {
@@ -54,11 +55,11 @@ export default function TodayScreen() {
   const router = useRouter();
   const onboarding = useOnboarding();
   const days = 30;
-  const endDate = useMemo(() => formatDateYmd(), []);
+  const endDate = useTodayQueryDate();
 
   // Fetch readiness/recovery score
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days, endDate });
-  const readinessData = readinessQuery.data ?? [];
+  const readinessData = readinessQuery.error ? [] : (readinessQuery.data ?? []);
   const latestReadiness = readinessData[readinessData.length - 1];
   const todayReadiness = (() => {
     if (!latestReadiness) return undefined;
@@ -168,6 +169,13 @@ export default function TodayScreen() {
           />
           {readinessLoading ? (
             <SkeletonCircle size={180} />
+          ) : readinessQuery.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(readinessQuery.error, "Failed to load recovery data.")}
+              minHeight={180}
+              style={styles.ringState}
+            />
           ) : recoveryScore != null ? (
             <RecoveryRing score={recoveryScore} size={180} />
           ) : (
@@ -189,6 +197,13 @@ export default function TodayScreen() {
           />
           {workloadLoading ? (
             <SkeletonCircle size={120} />
+          ) : workloadQuery.error ? (
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(workloadQuery.error, "Failed to load strain data.")}
+              minHeight={120}
+              style={styles.gaugeState}
+            />
           ) : (
             <StrainGauge strain={dailyStrain} size={120} />
           )}
@@ -324,47 +339,65 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep Coach */}
-      {sleepNeed != null && (
+      {sleepNeedQuery.error ? (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Coach">
-            {sleepNeed.canRecommend ? (
-              <>
-                <Text style={styles.sleepNeedTotal}>
-                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
-                </Text>
-                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
-              </>
-            ) : (
-              <Text style={styles.sleepNeedMissing}>
-                Need last night's sleep for recommendation
-              </Text>
-            )}
-            <View style={styles.sleepNeedBreakdown}>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Baseline need</Text>
-                <Text style={styles.sleepNeedValue}>
-                  {formatDurationMinutes(sleepNeed.baselineMinutes)}
-                </Text>
-              </View>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Strain debt</Text>
-                <Text style={styles.sleepNeedValue}>
-                  +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-                </Text>
-              </View>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
-                <Text style={styles.sleepNeedValue}>
-                  +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
-                </Text>
-              </View>
-            </View>
+            <QueryStatePanel
+              variant="error"
+              message={getQueryErrorMessage(
+                sleepNeedQuery.error,
+                "Failed to load sleep coach data.",
+              )}
+            />
           </Card>
         </Animated.View>
+      ) : (
+        sleepNeed != null && (
+          <Animated.View
+            entering={FadeInUp.delay(320)
+              .duration(duration.slow)
+              .easing(Easing.bezier(0.16, 1, 0.3, 1))}
+          >
+            <Card title="Sleep Coach">
+              {sleepNeed.canRecommend ? (
+                <>
+                  <Text style={styles.sleepNeedTotal}>
+                    {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                  </Text>
+                  <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                </>
+              ) : (
+                <Text style={styles.sleepNeedMissing}>
+                  Need last night's sleep for recommendation
+                </Text>
+              )}
+              <View style={styles.sleepNeedBreakdown}>
+                <View style={styles.sleepNeedRow}>
+                  <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                  <Text style={styles.sleepNeedValue}>
+                    {formatDurationMinutes(sleepNeed.baselineMinutes)}
+                  </Text>
+                </View>
+                <View style={styles.sleepNeedRow}>
+                  <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                  <Text style={styles.sleepNeedValue}>
+                    +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+                  </Text>
+                </View>
+                <View style={styles.sleepNeedRow}>
+                  <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                  <Text style={styles.sleepNeedValue}>
+                    +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          </Animated.View>
+        )
       )}
     </ScrollView>
   );
@@ -503,6 +536,12 @@ const styles = StyleSheet.create({
   ringSection: {
     alignItems: "center",
     gap: 8,
+  },
+  ringState: {
+    width: 180,
+  },
+  gaugeState: {
+    width: 140,
   },
   sectionLabel: {
     fontSize: 13,

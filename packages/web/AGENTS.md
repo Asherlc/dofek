@@ -6,6 +6,7 @@
 
 - **Routing**: This project uses TanStack Router. When adding pages, create a file in `src/routes/` and ensure `src/routeTree.gen.ts` is updated (usually automatic during `pnpm dev`).
 - **Data Fetching**: Use the `trpc` object from `src/lib/trpc.ts`. Prefer `useQuery` for data and `useMutation` for actions. Follow the stale time conventions set in `App.tsx`.
+- **Query state handling**: Treat loading, error, and empty as separate UI states. Do not use `query.data ?? []` or similar fallbacks when `query.error` exists. Use `src/components/QueryStatePanel.tsx` for explicit error/empty/loading states on pages and sections.
 - **Components**:
   - Reusable components MUST have a `.stories.tsx` file.
   - Unit tests MUST be colocated and named `<component>.test.tsx`.

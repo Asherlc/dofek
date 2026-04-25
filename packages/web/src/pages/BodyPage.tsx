@@ -1,4 +1,4 @@
-import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
+import { formatDateYmd } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { useMemo } from "react";
 import { z } from "zod";
@@ -85,7 +85,7 @@ function buildSkinTempSeries(
 export function BodyPage() {
   const units = useUnitConverter();
   const { days, setDays } = useBodyDays();
-  const endDate = useMemo(() => formatDateForQuery(), []);
+  const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
