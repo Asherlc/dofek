@@ -91,7 +91,7 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
+            rrIntervalMs: 812,
             quaternionW: 0.02,
             quaternionX: 0.68,
             quaternionY: -0.71,
@@ -102,55 +102,52 @@ describe("whoopBleSyncRouter", () => {
 
       // First db.execute call is the provider upsert (before any data inserts)
       expect(mockDb.execute).toHaveBeenCalled();
-      // 3 calls: provider upsert + HR metric_stream + orientation metric_stream
+      // 3 calls: provider upsert + R-R interval metric_stream + orientation metric_stream
       expect(mockDb.execute.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 
-    it("inserts HR into metric_stream for samples with heartRate > 0", async () => {
+    it("stores R-R intervals without requiring or inserting device heart rate", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
-            quaternionW: 1.0,
-            quaternionX: 0.0,
-            quaternionY: 0.0,
-            quaternionZ: 0.0,
+            rrIntervalMs: 812,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
           },
         ],
       });
 
-      // 3 calls: ensure provider + HR metric_stream + orientation metric_stream
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
-
-      const heartRateInsert = mockDb.execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(heartRateInsert);
-
-      expect(sqlParts).toEqual(
-        expect.arrayContaining(["heart_rate", "2026-03-30T12:00:00.000Z", "WHOOP Strap", 72]),
-      );
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      const allSqlParts = mockDb.execute.mock.calls.flatMap((call) => getSqlParts(call[0]));
+      expect(allSqlParts).toEqual(expect.arrayContaining(["rr_interval_ms", 812]));
+      expect(allSqlParts).not.toContain("heart_rate");
     });
 
-    it("skips heart-rate insert when all heartRate values are 0", async () => {
+    it("ignores legacy heartRate fields instead of storing device-derived HR", async () => {
       const trpcCaller = caller(ctx);
+      const legacySample = {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRate: 72,
+        rrIntervalMs: 812,
+        quaternionW: 0,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+      };
+
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
-        samples: [
-          {
-            timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 0,
-            quaternionW: 1.0,
-            quaternionX: 0.0,
-            quaternionY: 0.0,
-            quaternionZ: 0.0,
-          },
-        ],
+        samples: [legacySample],
       });
 
-      // 2 calls: ensure provider + orientation metric_stream
-      expect(mockDb.execute).toHaveBeenCalledTimes(2);
+      const allSqlParts = mockDb.execute.mock.calls.flatMap((call) => getSqlParts(call[0]));
+      expect(allSqlParts).toEqual(expect.arrayContaining(["rr_interval_ms", 812]));
+      expect(allSqlParts).not.toContain("heart_rate");
     });
 
     it("inserts orientation data into metric_stream", async () => {
@@ -160,7 +157,6 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 80,
             quaternionW: 0.5,
             quaternionX: 0.5,
             quaternionY: 0.5,
@@ -168,7 +164,6 @@ describe("whoopBleSyncRouter", () => {
           },
           {
             timestamp: "2026-03-30T12:00:01.000Z",
-            heartRate: 82,
             quaternionW: 0.5,
             quaternionX: 0.5,
             quaternionY: -0.5,
@@ -179,7 +174,7 @@ describe("whoopBleSyncRouter", () => {
 
       expect(result).toEqual({ inserted: 2 });
 
-      const orientationInsert = mockDb.execute.mock.calls[2]?.[0];
+      const orientationInsert = mockDb.execute.mock.calls[1]?.[0];
       const sqlParts = getSqlParts(orientationInsert);
 
       expect(sqlParts).toEqual(
@@ -200,7 +195,7 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 62,
+            rrIntervalMs: 812,
             quaternionW: 0.0,
             quaternionX: 0.0,
             quaternionY: 0.0,
@@ -209,18 +204,17 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 2 calls: ensure provider + HR metric_stream
+      // 2 calls: ensure provider + R-R interval metric_stream
       expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
-    it("inserts rr interval samples when heart-rate samples include rrIntervalMs", async () => {
+    it("inserts R-R interval samples when samples include rrIntervalMs", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
             rrIntervalMs: 812,
             quaternionW: 0.2,
             quaternionX: 0.3,
@@ -230,10 +224,10 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // ensure provider + heart_rate + rr_interval_ms + orientation
-      expect(mockDb.execute).toHaveBeenCalledTimes(4);
+      // ensure provider + rr_interval_ms + orientation
+      expect(mockDb.execute).toHaveBeenCalledTimes(3);
 
-      const rrInsert = mockDb.execute.mock.calls[2]?.[0];
+      const rrInsert = mockDb.execute.mock.calls[1]?.[0];
       const sqlParts = getSqlParts(rrInsert);
 
       expect(sqlParts).toEqual(
@@ -248,7 +242,6 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
             quaternionW: 0,
             quaternionX: 0.5,
             quaternionY: 0,
@@ -257,8 +250,8 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // 3 calls: ensure provider + HR metric_stream + orientation metric_stream
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      // 2 calls: ensure provider + orientation metric_stream
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
     it("inserts orientation when only quaternionY is non-zero", async () => {
@@ -268,7 +261,6 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0.5,
@@ -277,7 +269,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
     it("inserts orientation when only quaternionZ is non-zero", async () => {
@@ -287,7 +279,6 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0,
@@ -296,7 +287,7 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(3);
+      expect(mockDb.execute).toHaveBeenCalledTimes(2);
     });
 
     it("logs timestamps and sample count on successful push", async () => {
@@ -307,7 +298,7 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
+            rrIntervalMs: 812,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0,
@@ -315,7 +306,7 @@ describe("whoopBleSyncRouter", () => {
           },
           {
             timestamp: "2026-03-30T12:00:01.000Z",
-            heartRate: 74,
+            rrIntervalMs: 810,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0,
@@ -357,7 +348,7 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
-            heartRate: 72,
+            rrIntervalMs: 812,
             quaternionW: 0,
             quaternionX: 0,
             quaternionY: 0,
@@ -369,7 +360,7 @@ describe("whoopBleSyncRouter", () => {
       expect(result).toEqual({ inserted: 1 });
     });
 
-    it("rejects invalid heartRate values", async () => {
+    it("rejects invalid R-R interval values", async () => {
       const trpcCaller = caller(ctx);
 
       await expect(
@@ -378,7 +369,7 @@ describe("whoopBleSyncRouter", () => {
           samples: [
             {
               timestamp: "2026-03-30T12:00:00.000Z",
-              heartRate: 300, // exceeds max 255
+              rrIntervalMs: 32768,
               quaternionW: 1.0,
               quaternionX: 0.0,
               quaternionY: 0.0,
@@ -405,7 +396,7 @@ describe("whoopBleSyncRouter", () => {
       // Create 2500 samples (exceeds INSERT_BATCH_SIZE of 2000)
       const samples = Array.from({ length: 2500 }, (_, index) => ({
         timestamp: new Date(1711800000000 + index * 1000).toISOString(),
-        heartRate: 72,
+        rrIntervalMs: 812,
         quaternionW: 1.0,
         quaternionX: 0.0,
         quaternionY: 0.0,
@@ -418,7 +409,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 2500 });
-      // 1 ensure provider + 2 batches × (HR metric_stream + orientation metric_stream) = 5 calls
+      // 1 ensure provider + 2 batches × (R-R interval metric_stream + orientation metric_stream) = 5 calls
       expect(mockDb.execute).toHaveBeenCalledTimes(5);
     });
   });

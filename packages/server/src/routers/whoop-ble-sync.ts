@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
+import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -11,7 +11,6 @@ const INSERT_BATCH_SIZE = 2000;
 
 const realtimeDataSampleSchema = z.object({
   timestamp: z.string(), // ISO 8601 with millisecond precision
-  heartRate: z.number().int().min(0).max(255),
   /** R-R interval in milliseconds (beat-to-beat timing from PPG). 0 when unavailable. */
   rrIntervalMs: z.number().int().min(0).max(32767).default(0),
   quaternionW: z.number(),
@@ -57,32 +56,17 @@ async function insertRealtimeDataBatch(
   for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
     const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-    // Insert HR samples (only for samples with a valid reading).
-    const heartRateSamples = batch.filter((sample) => sample.heartRate > 0);
-    if (heartRateSamples.length > 0) {
-      const hrSensorValues = heartRateSamples.map(
+    const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
+    if (beatIntervalSamples.length > 0) {
+      const beatIntervalValues = beatIntervalSamples.map(
         (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${HEART_RATE}, ${sample.heartRate}::real)`,
+          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`,
       );
-
       await database.execute(
         sql`INSERT INTO fitness.metric_stream
             (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
-            VALUES ${sql.join(hrSensorValues, sql`, `)}`,
+            VALUES ${sql.join(beatIntervalValues, sql`, `)}`,
       );
-
-      const rrSamples = heartRateSamples.filter((sample) => sample.rrIntervalMs > 0);
-      if (rrSamples.length > 0) {
-        const rrValues = rrSamples.map(
-          (sample) =>
-            sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`,
-        );
-        await database.execute(
-          sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
-              VALUES ${sql.join(rrValues, sql`, `)}`,
-        );
-      }
     }
 
     // Insert quaternion only when it is present (compact 0x28 packets omit it and report all zeros).

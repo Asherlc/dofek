@@ -541,7 +541,7 @@ describe("syncWhoopBle", () => {
   });
 });
 
-describe("realtime data (HR + quaternion) sync", () => {
+describe("realtime data (beat interval + quaternion) sync", () => {
   let whoopDeps: WhoopBleSyncDeps;
   let trpcClient: InertialMeasurementUnitUploadClient;
   let realtimeClient: WhoopBleRealtimeUploadClient;
@@ -576,7 +576,50 @@ describe("realtime data (HR + quaternion) sync", () => {
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
       deviceId: "WHOOP Strap",
-      samples: realtimeSamples,
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 0.02,
+          quaternionX: 0.68,
+          quaternionY: -0.71,
+          quaternionZ: 0.2,
+          rrIntervalMs: 0,
+          opticalRawHex: "000000000000000000000000000000000000",
+        },
+      ],
+    });
+  });
+
+  it("uploads only stored realtime fields and omits device heart rate", async () => {
+    const realtimeSamples = [
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRate: 72,
+        quaternionW: 0,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        rrIntervalMs: 833,
+        opticalRawHex: "000000000000000000000000000000000000",
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce(realtimeSamples);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 0,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+          rrIntervalMs: 833,
+          opticalRawHex: "000000000000000000000000000000000000",
+        },
+      ],
     });
   });
 
@@ -636,7 +679,17 @@ describe("realtime data (HR + quaternion) sync", () => {
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
       deviceId: "WHOOP Strap",
-      samples: realtimeSamples,
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.500Z",
+          quaternionW: 0.5,
+          quaternionX: 0.5,
+          quaternionY: 0.5,
+          quaternionZ: 0.5,
+          rrIntervalMs: 0,
+          opticalRawHex: "000000000000000000000000000000000000",
+        },
+      ],
     });
   });
 
@@ -683,7 +736,17 @@ describe("realtime data (HR + quaternion) sync", () => {
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
       deviceId: "WHOOP Strap",
-      samples: realtimeSamples,
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 1.0,
+          quaternionX: 0.0,
+          quaternionY: 0.0,
+          quaternionZ: 0.0,
+          rrIntervalMs: 0,
+          opticalRawHex: "000000000000000000000000000000000000",
+        },
+      ],
     });
   });
 });

@@ -67,3 +67,37 @@ Use:
 - The shared front door must already have the wildcard DNS record and Traefik
   file provider enabled. Those changes live in the main `deploy/` Terraform and
   swarm stack, not in the PR workspace itself.
+
+## Troubleshooting
+
+### Hetzner `server limit reached`
+
+If `Deploy Review App` fails while applying Terraform, first inspect the failed
+job log:
+
+```bash
+gh run view <RUN_ID> --job <JOB_ID> --log-failed
+```
+
+The quota failure looks like this:
+
+```text
+Error: server limit reached (resource_limit_exceeded, ...)
+  with hcloud_server.review,
+  on server.tf line 47, in resource "hcloud_server" "review":
+```
+
+This means the review app image built successfully, but Hetzner refused to
+create another review server because the account server quota is exhausted. It
+is not a code failure in the PR.
+
+To resolve it:
+
+1. Close or destroy stale review apps for old PRs so their Hetzner servers are
+   removed.
+2. If there are no stale review apps, raise the Hetzner server limit for the
+   account.
+3. Re-run the failed `Deploy Review App` job after capacity is available.
+
+Do not change Terraform timeouts, add retries, or rerun repeatedly until the
+capacity issue is fixed. The first fatal log line above is the root cause.

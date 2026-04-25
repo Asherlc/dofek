@@ -21,6 +21,11 @@ const MAX_SAMPLES = 120;
 /** How often to poll the BLE buffer (ms) */
 const POLL_INTERVAL_MS = 1000;
 
+function heartRateFromBeatInterval(intervalMs: number): number | null {
+  if (intervalMs <= 0) return null;
+  return Math.round(60_000 / intervalMs);
+}
+
 /**
  * Check whether the native BLE module is already connected.
  * Background WHOOP BLE sync may have established the connection before
@@ -69,12 +74,12 @@ export default function HeartRateVisualizationScreen() {
         lastSeenTimestampRef.current = latestSample.timestamp;
 
         const newHeartRates = newSamples
-          .map((sample) => sample.heartRate)
-          .filter((heartRate) => heartRate > 0);
+          .map((sample) => heartRateFromBeatInterval(sample.rrIntervalMs))
+          .filter((heartRate) => heartRate != null);
 
         if (newHeartRates.length === 0) return;
 
-        setCurrentHeartRate(latestSample.heartRate);
+        setCurrentHeartRate(heartRateFromBeatInterval(latestSample.rrIntervalMs));
         if (latestSample.rrIntervalMs > 0) {
           setCurrentRrInterval(latestSample.rrIntervalMs);
         }
@@ -174,7 +179,7 @@ export default function HeartRateVisualizationScreen() {
             <Text style={styles.heroUnit}>bpm</Text>
           </View>
           {currentRrInterval != null && (
-            <Text style={styles.rrText}>R-R: {currentRrInterval} ms</Text>
+            <Text style={styles.rrText}>Beat interval: {currentRrInterval} ms</Text>
           )}
         </View>
 
