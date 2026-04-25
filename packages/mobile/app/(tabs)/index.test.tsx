@@ -74,9 +74,9 @@ vi.mock("../../lib/trpc", () => ({
   },
 }));
 
-vi.mock("../../lib/useOnboarding", () => ({
-  useOnboarding: () => ({
-    showOnboarding: false,
+vi.mock("../../lib/useProviderGuide", () => ({
+  useProviderGuide: () => ({
+    showProviderGuide: false,
     dismiss: vi.fn(),
     isLoading: false,
     providers: [],

@@ -22,12 +22,12 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
-import { OnboardingWelcome } from "../../components/OnboardingWelcome";
+import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
 import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
-import { useOnboarding } from "../../lib/useOnboarding";
+import { useProviderGuide } from "../../lib/useProviderGuide";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
@@ -53,7 +53,7 @@ function capitalize(value: string): string {
 
 export default function TodayScreen() {
   const router = useRouter();
-  const onboarding = useOnboarding();
+  const providerGuide = useProviderGuide();
   const days = 30;
   const endDate = useTodayQueryDate();
 
@@ -127,9 +127,9 @@ export default function TodayScreen() {
         />
       }
     >
-      {/* Onboarding — shown to new users with no connected providers */}
-      {onboarding.showOnboarding && (
-        <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
+      {/* Provider guide — shown to new users with no connected providers */}
+      {providerGuide.showProviderGuide && (
+        <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
       {/* Anomaly Alert Banner */}

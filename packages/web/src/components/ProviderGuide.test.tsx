@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OnboardingWelcome } from "./OnboardingWelcome.tsx";
+import { ProviderGuide } from "./ProviderGuide.tsx";
 
 // Mock TanStack Router Link
 vi.mock("@tanstack/react-router", () => ({
@@ -25,38 +25,38 @@ const mockProviders = [
 
 afterEach(() => cleanup());
 
-describe("OnboardingWelcome", () => {
+describe("ProviderGuide", () => {
   it("renders welcome heading", () => {
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
     expect(screen.getByText("Welcome to Dofek")).toBeTruthy();
   });
 
   it("renders description text", () => {
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
     expect(screen.getByText(/Connect your health and fitness accounts/)).toBeTruthy();
   });
 
   it("renders category titles for categories with available providers", () => {
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
     expect(screen.getByText("Activity Tracking")).toBeTruthy();
     expect(screen.getByText("Sleep & Recovery")).toBeTruthy();
     expect(screen.getByText("Health Metrics")).toBeTruthy();
   });
 
   it("renders the set up data sources link pointing to /providers", () => {
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
     const link = screen.getByText("Set up data sources");
     expect(link.closest("a")?.getAttribute("href")).toBe("/providers");
   });
 
   it("renders skip button", () => {
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
     expect(screen.getByText("Skip for now")).toBeTruthy();
   });
 
   it("calls onDismiss when skip button is clicked", () => {
     const onDismiss = vi.fn();
-    render(<OnboardingWelcome onDismiss={onDismiss} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={onDismiss} providers={mockProviders} />);
     fireEvent.click(screen.getByText("Skip for now"));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
@@ -64,12 +64,12 @@ describe("OnboardingWelcome", () => {
   it("hides categories with no available providers", () => {
     // Only provide strava — no nutrition providers
     const limitedProviders = [{ id: "strava", name: "Strava", authorized: false }];
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={limitedProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={limitedProviders} />);
     expect(screen.queryByText("Nutrition")).toBeNull();
   });
 
   it("shows provider logos for available providers in each category", () => {
-    render(<OnboardingWelcome onDismiss={vi.fn()} providers={mockProviders} />);
+    render(<ProviderGuide onDismiss={vi.fn()} providers={mockProviders} />);
     // Strava should appear in Activity Tracking
     expect(screen.getByText("Strava")).toBeTruthy();
   });

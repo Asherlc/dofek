@@ -425,6 +425,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
+      '@dofek/onboarding':
+        specifier: workspace:*
+        version: link:../onboarding
       '@dofek/providers':
         specifier: workspace:*
         version: link:../providers-meta

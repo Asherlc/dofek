@@ -1,15 +1,26 @@
-import { ONBOARDING_CATEGORIES } from "@dofek/onboarding/onboarding";
+import { PROVIDER_GUIDE_CATEGORIES } from "@dofek/onboarding/provider-guide";
 import { providerLabel } from "@dofek/providers/providers";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 
-export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomeProps) {
+interface ProviderInfo {
+  id: string;
+  name: string;
+  authorized: boolean;
+}
+
+interface ProviderGuideProps {
+  onDismiss: () => void;
+  providers: ProviderInfo[];
+}
+
+export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
   const router = useRouter();
   const availableProviderIds = new Set(providers.map((p) => p.id));
 
   return (
-    <View style={styles.container} testID="onboarding-welcome">
+    <View style={styles.container} testID="provider-guide">
       {/* Welcome header */}
       <View style={styles.header}>
         <Text style={styles.title}>Welcome to Dofek</Text>
@@ -20,7 +31,7 @@ export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomePro
       </View>
 
       {/* Category cards */}
-      {ONBOARDING_CATEGORIES.map((category) => {
+      {PROVIDER_GUIDE_CATEGORIES.map((category) => {
         const categoryProviders = category.providerIds.filter((id) => availableProviderIds.has(id));
         if (categoryProviders.length === 0) return null;
 

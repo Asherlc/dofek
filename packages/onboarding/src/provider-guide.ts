@@ -1,15 +1,15 @@
-/** Settings key used to persist onboarding dismissal in the user_settings table */
-export const ONBOARDING_SETTINGS_KEY = "onboarding_dismissed";
+/** Settings key used to persist provider guide dismissal in the user_settings table */
+export const PROVIDER_GUIDE_SETTINGS_KEY = "provider_guide_dismissed";
 
-export interface OnboardingCategory {
+export interface ProviderGuideCategory {
   title: string;
   description: string;
   /** Provider IDs that belong to this category (subset of available providers) */
   providerIds: string[];
 }
 
-/** Provider categories shown during onboarding to help users understand what they can connect */
-export const ONBOARDING_CATEGORIES: OnboardingCategory[] = [
+/** Provider categories shown in the guide to help users understand what they can connect */
+export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Activity Tracking",
     description: "Record workouts, analyze performance, and track training load",
@@ -58,9 +58,12 @@ export const ONBOARDING_CATEGORIES: OnboardingCategory[] = [
 ];
 
 /**
- * Determine whether to show the onboarding flow.
+ * Determine whether to show the provider guide.
  * Shows when the user has zero connected providers and hasn't dismissed it.
  */
-export function shouldShowOnboarding(connectedProviderCount: number, dismissed: boolean): boolean {
+export function shouldShowProviderGuide(
+  connectedProviderCount: number,
+  dismissed: boolean,
+): boolean {
   return connectedProviderCount === 0 && !dismissed;
 }

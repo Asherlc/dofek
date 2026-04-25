@@ -11,8 +11,8 @@ import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
-import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { ProviderGuide } from "../components/ProviderGuide.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
@@ -32,7 +32,7 @@ import {
 import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { useOnboarding } from "../lib/useOnboarding.ts";
+import { useProviderGuide } from "../lib/useProviderGuide.ts";
 import { assertRows } from "../lib/utils.ts";
 
 type MetricEntry = {
@@ -159,7 +159,7 @@ export function Dashboard() {
   const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const days = 30;
-  const onboarding = useOnboarding();
+  const providerGuide = useProviderGuide();
   const endDate = useTodayQueryDate();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
@@ -566,9 +566,9 @@ export function Dashboard() {
 
   return (
     <PageLayout headerChildren={undefined}>
-      {/* Onboarding — shown to new users with no connected providers */}
-      {onboarding.showOnboarding && (
-        <OnboardingWelcome onDismiss={onboarding.dismiss} providers={onboarding.providers} />
+      {/* Provider guide — shown to new users with no connected providers */}
+      {providerGuide.showProviderGuide && (
+        <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
       {/* Anomaly Alert — always at the top, not reorderable */}
