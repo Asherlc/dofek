@@ -224,6 +224,22 @@ describe("runMigrations", () => {
     expect(hashArg).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("stores whether an applied migration requires materialized view refresh", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0001_refresh_views.sql"]);
+    mockReadFileSync.mockReturnValue(
+      "-- requires_materialized_view_refresh\nALTER TABLE fitness.activity ADD COLUMN source TEXT",
+    );
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const insertCall = mockClientQuery.mock.calls.find(([text]) =>
+      String(text).includes("INSERT INTO drizzle.__drizzle_migrations"),
+    );
+    expect(insertCall?.[1]?.[3]).toBe(true);
+  });
+
   it("warns when an applied migration file has been modified", async () => {
     const { runMigrations } = await import("./migrate.ts");
 

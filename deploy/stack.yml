@@ -124,6 +124,12 @@ services:
       - shared_preload_libraries=timescaledb,pg_stat_statements
       - -c
       - log_min_duration_statement=1000
+      - -c
+      - max_connections=40
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -139,6 +145,10 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   databasus:
     image: databasus/databasus:v3.32.1

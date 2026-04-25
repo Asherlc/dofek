@@ -36,6 +36,10 @@ function isBaselineMigration(file: string): boolean {
   return /^\d+_baseline(?:_.*)?\.sql$/.test(file);
 }
 
+function migrationRequiresMaterializedViewRefresh(content: string): boolean {
+  return content.includes("-- requires_materialized_view_refresh");
+}
+
 /** Parse SQL file into individual statements, split on `--> statement-breakpoint`. */
 function parseStatements(content: string): Array<string> {
   return content
@@ -77,6 +81,10 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     // Add content_hash column for tamper detection (idempotent for existing DBs)
     await client.query(`ALTER TABLE drizzle.__drizzle_migrations
       ADD COLUMN IF NOT EXISTS content_hash TEXT`);
+    await client.query(`ALTER TABLE drizzle.__drizzle_migrations
+      ADD COLUMN IF NOT EXISTS requires_materialized_view_refresh BOOLEAN NOT NULL DEFAULT FALSE`);
+    await client.query(`ALTER TABLE drizzle.__drizzle_migrations
+      ADD COLUMN IF NOT EXISTS materialized_view_refresh_acknowledged_at TIMESTAMPTZ`);
 
     const files = readdirSync(dir)
       .filter((f) => f.endsWith(".sql"))
@@ -122,12 +130,15 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       for (const file of pendingBaselines) {
         const content = readFileSync(join(dir, file), "utf-8");
         const contentHash = computeContentHash(content);
+        const requiresRefresh = migrationRequiresMaterializedViewRefresh(content);
         logger.info(
           `[migrate] Marking baseline migration as applied on existing database: ${file}`,
         );
         await client.query(
-          "INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash) VALUES ($1, $2, $3)",
-          [file, Date.now(), contentHash],
+          `INSERT INTO drizzle.__drizzle_migrations (
+            hash, created_at, content_hash, requires_materialized_view_refresh
+          ) VALUES ($1, $2, $3, $4)`,
+          [file, Date.now(), contentHash, requiresRefresh],
         );
         appliedSet.add(file);
       }
@@ -153,12 +164,15 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       logger.info(`[migrate] Applying: ${file}`);
       const content = readFileSync(join(dir, file), "utf-8");
       const contentHash = computeContentHash(content);
+      const requiresRefresh = migrationRequiresMaterializedViewRefresh(content);
       for (const stmt of parseStatements(content)) {
         await client.query(stmt);
       }
       await client.query(
-        "INSERT INTO drizzle.__drizzle_migrations (hash, created_at, content_hash) VALUES ($1, $2, $3)",
-        [file, Date.now(), contentHash],
+        `INSERT INTO drizzle.__drizzle_migrations (
+          hash, created_at, content_hash, requires_materialized_view_refresh
+        ) VALUES ($1, $2, $3, $4)`,
+        [file, Date.now(), contentHash, requiresRefresh],
       );
       count++;
     }
