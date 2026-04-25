@@ -164,6 +164,7 @@ describe("syncMaterializedViews", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
       .mockResolvedValueOnce({ rows: [{ present: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ definition: " SELECT 1" }] })
       .mockResolvedValueOnce({ rows: [{ populated: true }] });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
@@ -199,6 +200,34 @@ describe("syncMaterializedViews", () => {
     expect(executedQueries()).toContain(viewSql);
   });
 
+  it("recreates views when the live definition is stale despite a matching stored hash", async () => {
+    const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
+    const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
+    const expectedHash = hash(viewSql);
+
+    mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
+    mockReadFileSync.mockReturnValue(viewSql);
+    mockClientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
+      .mockResolvedValueOnce({ rows: [{ present: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ definition: " SELECT 2" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ populated: true }] });
+
+    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+
+    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
+    expect(executedQueries()).toContain("SELECT pg_get_viewdef($1::regclass, true) AS definition");
+    expect(executedQueries()).toContain(
+      'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
+    );
+    expect(executedQueries()).toContain(viewSql);
+  });
+
   it("refreshes views that are unchanged but unpopulated", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
@@ -211,6 +240,7 @@ describe("syncMaterializedViews", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
       .mockResolvedValueOnce({ rows: [{ present: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ definition: " SELECT 1" }] })
       .mockResolvedValueOnce({ rows: [{ populated: false }] })
       .mockResolvedValueOnce({ rows: [{ present: 1 }] });
 
