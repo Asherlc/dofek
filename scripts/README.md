@@ -4,9 +4,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 ## Database & Seeding
 
-- `seed-dev-db.ts`: Seeds a local development database with realistic data.
-  - Generates 90 days of metrics, 30 days of dual-provider sleep (with overlap to test dedup), 30 days of activities with heart rate samples, nutrition, and body weight.
-  - Automatically applies migrations and recreates materialized views (`v_sleep`, `v_daily_metrics`, `activity_summary`).
+- `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
+  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans, cycle data, journal entries, life events, and breathwork sessions.
+  - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
+  - Automatically applies migrations when needed, recreates materialized views, refreshes core views, and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
 - `migrate-raw.mjs`: Utility for running raw SQL migrations or manual data fixes.
 
