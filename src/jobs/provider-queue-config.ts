@@ -61,7 +61,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["fitbit", frequentProvider(2, { max: 150, duration: 60 * 60_000 })],
 
   // ── Realtime tier (no documented rate limit) ──
-  ["garmin", realtimeProvider()],
+  ["garmin", realtimeProvider(1)],
   ["wahoo", realtimeProvider()],
   ["polar", realtimeProvider()],
   ["ride-with-gps", realtimeProvider()],

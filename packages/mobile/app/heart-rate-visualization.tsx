@@ -69,9 +69,8 @@ export default function HeartRateVisualizationScreen() {
         const newSamples = cutoff ? samples.filter((sample) => sample.timestamp > cutoff) : samples;
         if (newSamples.length === 0) return;
 
-        const latestSample = newSamples[newSamples.length - 1];
+        const latestSample = newSamples.at(-1);
         if (!latestSample) return;
-
         lastSeenTimestampRef.current = latestSample.timestamp;
 
         const newHeartRates = newSamples

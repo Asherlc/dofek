@@ -84,7 +84,29 @@ vi.mock("react-native", () => {
       children,
     );
   Pressable.displayName = "Pressable";
-  const TextInput = createMockComponent("TextInput");
+  const TextInput = ({
+    multiline,
+    numberOfLines: _numberOfLines,
+    onChangeText,
+    placeholderTextColor: _placeholderTextColor,
+    style,
+    textAlignVertical: _textAlignVertical,
+    testID,
+    value,
+    ...props
+  }: Record<string, unknown>) => {
+    const tagName = multiline === true ? "textarea" : "input";
+    return React.createElement(tagName, {
+      ...props,
+      "data-testid": testID,
+      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        if (typeof onChangeText === "function") onChangeText(event.target.value);
+      },
+      style: flattenStyle(style),
+      value,
+    });
+  };
+  TextInput.displayName = "TextInput";
   const Image = createMockComponent("Image");
   const FlatList = createMockComponent("FlatList");
   const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>

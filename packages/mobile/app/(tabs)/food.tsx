@@ -64,6 +64,8 @@ export default function FoodScreen() {
   const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
   const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
   const createAiEntryMutation = trpc.food.create.useMutation();
+  type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
+  const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
   const deleteMutation = trpc.food.delete.useMutation({
     onSuccess: () => foodQuery.refetch(),
   });
@@ -129,7 +131,21 @@ export default function FoodScreen() {
       const parsedResult = await analyzeItemsMutation.mutateAsync({
         description: trimmedInput,
       });
-      for (const parsedItem of parsedResult.items) {
+      setPendingAiMealItems(parsedResult.items);
+    } catch (error) {
+      captureException(error, { source: "food-ai-meal-input" });
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not log this meal with AI input";
+      setAiMealInputError(errorMessage);
+    }
+  }
+
+  async function handleConfirmAiMeal() {
+    if (pendingAiMealItems.length === 0) return;
+
+    setAiMealInputError(null);
+    try {
+      for (const parsedItem of pendingAiMealItems) {
         await createAiEntryMutation.mutateAsync({
           date: dateString,
           nutrients: {},
@@ -138,12 +154,18 @@ export default function FoodScreen() {
       }
       await foodQuery.refetch();
       setAiMealInput("");
+      setPendingAiMealItems([]);
     } catch (error) {
-      captureException(error, { source: "food-ai-meal-input" });
+      captureException(error, { source: "food-ai-meal-confirm" });
       const errorMessage =
         error instanceof Error ? error.message : "Could not log this meal with AI input";
       setAiMealInputError(errorMessage);
     }
+  }
+
+  function handleAiMealInputChange(value: string) {
+    setAiMealInput(value);
+    setPendingAiMealItems([]);
   }
 
   const { refreshing, onRefresh } = useRefresh();
@@ -197,7 +219,7 @@ export default function FoodScreen() {
           <TextInput
             style={styles.aiInputField}
             value={aiMealInput}
-            onChangeText={setAiMealInput}
+            onChangeText={handleAiMealInputChange}
             placeholder="two eggs, toast with butter, and coffee with milk"
             placeholderTextColor={colors.textTertiary}
             multiline
@@ -218,6 +240,45 @@ export default function FoodScreen() {
               {aiLoggingInProgress ? "Logging..." : "Log with AI"}
             </Text>
           </TouchableOpacity>
+          {pendingAiMealItems.length > 0 && (
+            <View style={styles.aiReviewCard}>
+              <Text style={styles.aiReviewTitle}>Review AI meal</Text>
+              {pendingAiMealItems.map((item) => (
+                <View
+                  key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
+                  style={styles.aiReviewItem}
+                >
+                  <View style={styles.aiReviewItemText}>
+                    <Text style={styles.aiReviewFoodName}>{item.foodName}</Text>
+                    <Text style={styles.aiReviewDescription}>{item.foodDescription}</Text>
+                  </View>
+                  <Text style={styles.aiReviewCalories}>{item.calories} cal</Text>
+                </View>
+              ))}
+              <View style={styles.aiReviewActions}>
+                <TouchableOpacity
+                  style={styles.aiReviewCancelButton}
+                  onPress={() => setPendingAiMealItems([])}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiReviewCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.aiReviewConfirmButton,
+                    createAiEntryMutation.isPending && styles.aiInputButtonDisabled,
+                  ]}
+                  onPress={handleConfirmAiMeal}
+                  disabled={createAiEntryMutation.isPending}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiReviewConfirmText}>
+                    {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         {!isToday(selectedDate) && (
@@ -366,6 +427,71 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   aiInputButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  aiReviewCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    backgroundColor: colors.background,
+    padding: 10,
+    gap: 8,
+  },
+  aiReviewTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  aiReviewItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    padding: 10,
+  },
+  aiReviewItemText: {
+    flex: 1,
+    gap: 2,
+  },
+  aiReviewFoodName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  aiReviewDescription: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  aiReviewCalories: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  aiReviewActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  aiReviewCancelButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  aiReviewCancelText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  aiReviewConfirmButton: {
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  aiReviewConfirmText: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",

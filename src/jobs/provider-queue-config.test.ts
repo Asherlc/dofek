@@ -55,7 +55,7 @@ describe("getProviderQueueConfig", () => {
     const config = getProviderQueueConfig("garmin");
     expect(config.syncTier).toBe("realtime");
     expect(config.limiter).toBeUndefined();
-    expect(config.concurrency).toBe(3);
+    expect(config.concurrency).toBe(1);
   });
 
   it("returns frequent tier for whoop", () => {

@@ -12,6 +12,11 @@ on:
         required: false
         default: "latest"
         type: string
+      refresh_materialized_views:
+        description: "Trigger materialized-view refresh after stack deploy"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -97,6 +102,7 @@ jobs:
       image_tag: ${{ needs.check.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host }}
       dispatching_run_id: ${{ github.run_id }}
+      refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
     secrets: inherit
 
   # Image cleanup runs on the server via docuum (see stack.yml).

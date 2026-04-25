@@ -36,9 +36,16 @@ export function normalizePercentages(values: number[]): number[] {
     // Adjust the largest value — least noticeable visually
     let maxIndex = 0;
     for (let i = 1; i < rounded.length; i++) {
-      if (rounded[i] > rounded[maxIndex]) maxIndex = i;
+      const currentValue = rounded[i];
+      const maxValue = rounded[maxIndex];
+      if ((currentValue ?? 0) > (maxValue ?? 0)) {
+        maxIndex = i;
+      }
     }
-    rounded[maxIndex] -= diff;
+    const valueToAdjust = rounded[maxIndex];
+    if (valueToAdjust != null) {
+      rounded[maxIndex] = valueToAdjust - diff;
+    }
   }
 
   return rounded;

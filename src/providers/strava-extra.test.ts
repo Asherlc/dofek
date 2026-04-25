@@ -948,7 +948,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it("inserts metric rows in 500-record batches", async () => {
+  it("inserts metric rows in 1000-row batches", async () => {
     setupEnv();
 
     const rowCount = 1001;
@@ -1016,8 +1016,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
-    // 1001 HR samples map to 1001 metric_stream rows in one batch
-    expect(metricBatchSizes).toEqual([1001]);
+    expect(metricBatchSizes).toEqual([1000, 1]);
     expect(result.errors).toHaveLength(0);
   });
 

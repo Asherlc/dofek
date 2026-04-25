@@ -5,6 +5,11 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockAlertFn = vi.fn();
+const mockOpenBrowserAsync = vi.fn();
+const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
+const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
+const mockRequestPermissions = vi.fn().mockResolvedValue(true);
+const mockSyncHealthKit = vi.fn();
 
 vi.mock("react-native", () => ({
   View: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
@@ -126,6 +131,10 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
+vi.mock("expo-web-browser", () => ({
+  openBrowserAsync: (...args: unknown[]) => mockOpenBrowserAsync(...args),
+}));
+
 vi.mock("../../theme", () => ({
   colors: {
     background: "#000",
@@ -194,6 +203,7 @@ vi.mock("../../lib/trpc", () => ({
       set: { useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }) },
     },
     useUtils: () => ({
+      client: {},
       invalidate: vi.fn(),
       sync: {
         providers: { invalidate: mockInvalidateProviders },
@@ -206,6 +216,22 @@ vi.mock("../../lib/trpc", () => ({
       },
     }),
   },
+}));
+
+vi.mock("../../modules/health-kit", () => ({
+  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+  hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
+  isAvailable: () => true,
+  queryDailyStatistics: vi.fn(),
+  queryQuantitySamples: vi.fn(),
+  querySleepSamples: vi.fn(),
+  queryWorkoutRoutes: vi.fn(),
+  queryWorkouts: vi.fn(),
+  requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+}));
+
+vi.mock("../../lib/health-kit-sync", () => ({
+  syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKit(...args),
 }));
 
 const authorizedProvider = {
@@ -238,6 +264,15 @@ const importOnlyProvider = {
   needsReauth: false,
 };
 
+const appleHealthStats = {
+  providerId: "apple_health",
+  activities: 0,
+  bodyMetrics: 0,
+  dailyMetrics: 0,
+  sleepSessions: 0,
+  workouts: 0,
+};
+
 function setupDefaultMocks() {
   mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
   mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
@@ -255,41 +290,50 @@ describe("ProviderDetailScreen", () => {
     mockInvalidateProviderStats.mockReset();
     mockInvalidateLogs.mockReset();
     mockSyncStatusFetch.mockReset();
+    mockOpenBrowserAsync.mockReset();
+    mockGetRequestStatus.mockReset();
+    mockGetRequestStatus.mockResolvedValue("unnecessary");
+    mockHasEverAuthorized.mockReset();
+    mockHasEverAuthorized.mockReturnValue(true);
+    mockRequestPermissions.mockReset();
+    mockRequestPermissions.mockResolvedValue(true);
+    mockSyncHealthKit.mockReset();
     mockAlertFn.mockReset();
     setupDefaultMocks();
   });
 
-  describe("Sync Controls", () => {
-    it("renders sync controls card when provider is authorized and not importOnly", async () => {
+  describe("Actions", () => {
+    it("renders Sync and Full sync actions for connected providers", async () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.getByText("Sync Controls")).toBeTruthy();
-      expect(screen.getByText("Sync Last 7 Days")).toBeTruthy();
-      expect(screen.getByText("Full Sync")).toBeTruthy();
+      expect(screen.getByText("Sync")).toBeTruthy();
+      expect(screen.getByText("Full sync")).toBeTruthy();
+      expect(screen.queryByText("Sync Range")).toBeNull();
     });
 
-    it("does not render sync controls card when provider is not authorized", async () => {
+    it("renders Connect action for disconnected providers", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "strava" });
       mockProvidersQuery.mockReturnValue({ data: [unauthorizedProvider], isLoading: false });
 
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.queryByText("Sync Controls")).toBeNull();
-      expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
-      expect(screen.queryByText("Full Sync")).toBeNull();
+      expect(screen.getByText("Connect")).toBeTruthy();
+      expect(screen.queryByText("Sync")).toBeNull();
+      expect(screen.queryByText("Full sync")).toBeNull();
     });
 
-    it("does not render sync controls card when provider is importOnly", async () => {
+    it("does not render actions for import-only providers", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "strong-csv" });
       mockProvidersQuery.mockReturnValue({ data: [importOnlyProvider], isLoading: false });
 
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      expect(screen.queryByText("Sync Controls")).toBeNull();
-      expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+      expect(screen.queryByText("Connect")).toBeNull();
+      expect(screen.queryByText("Sync")).toBeNull();
+      expect(screen.queryByText("Full sync")).toBeNull();
     });
 
     it("renders re-authorize button when provider needs reauth", async () => {
@@ -304,7 +348,7 @@ describe("ProviderDetailScreen", () => {
       expect(screen.getByText("Re-authorize")).toBeTruthy();
     });
 
-    it("triggers sync with sinceDays=7 when Sync Last 7 Days is clicked", async () => {
+    it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
       mockSyncMutateAsync.mockResolvedValue({ jobId: "job-1" });
       mockSyncStatusFetch.mockResolvedValue({
         status: "done",
@@ -315,7 +359,7 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+      fireEvent.click(screen.getByText("Sync"));
 
       await waitFor(() => {
         expect(mockSyncMutateAsync).toHaveBeenCalledWith({
@@ -325,7 +369,7 @@ describe("ProviderDetailScreen", () => {
       });
     });
 
-    it("triggers sync with sinceDays=undefined when Full Sync is clicked", async () => {
+    it("triggers generic provider full sync when Full sync is clicked", async () => {
       mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
       mockSyncStatusFetch.mockResolvedValue({
         status: "done",
@@ -336,7 +380,7 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
-      fireEvent.click(screen.getByText("Full Sync"));
+      fireEvent.click(screen.getByText("Full sync"));
 
       await waitFor(() => {
         expect(mockSyncMutateAsync).toHaveBeenCalledWith({
@@ -346,82 +390,102 @@ describe("ProviderDetailScreen", () => {
       });
     });
 
-    it("triggers custom days sync with parsed number when valid input is provided", async () => {
-      mockSyncMutateAsync.mockResolvedValue({ jobId: "job-3" });
-      mockSyncStatusFetch.mockResolvedValue({
-        status: "done",
-        percentage: 100,
-        providers: { wahoo: { status: "done", message: "Done" } },
-      });
+    it("opens browser auth when Connect is clicked for an oauth provider", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "strava" });
+      mockProvidersQuery.mockReturnValue({ data: [unauthorizedProvider], isLoading: false });
 
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
-
-      const input = screen.getByPlaceholderText("Days");
-      fireEvent.change(input, { target: { value: "90" } });
-      fireEvent.click(screen.getByText("Sync Range"));
 
       await waitFor(() => {
-        expect(mockSyncMutateAsync).toHaveBeenCalledWith({
-          providerId: "wahoo",
-          sinceDays: 90,
-        });
+        expect(screen.getByText("Connect")).toBeTruthy();
       });
-    });
 
-    it("does not trigger sync when custom days input is not a valid number", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
-      render(<ProviderDetailScreen />);
-
-      const input = screen.getByPlaceholderText("Days");
-      fireEvent.change(input, { target: { value: "abc" } });
-      fireEvent.click(screen.getByText("Sync Range"));
-
-      expect(mockSyncMutateAsync).not.toHaveBeenCalled();
-    });
-
-    it("does not trigger sync when custom days input is zero", async () => {
-      const { default: ProviderDetailScreen } = await import("./[id]");
-      render(<ProviderDetailScreen />);
-
-      const input = screen.getByPlaceholderText("Days");
-      fireEvent.change(input, { target: { value: "0" } });
-      fireEvent.click(screen.getByText("Sync Range"));
-
-      expect(mockSyncMutateAsync).not.toHaveBeenCalled();
-    });
-
-    it("disables sync buttons while syncing", async () => {
-      let resolveFetch!: (value: unknown) => void;
-      mockSyncMutateAsync.mockResolvedValue({ jobId: "job-4" });
-      mockSyncStatusFetch.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            resolveFetch = resolve;
-          }),
-      );
-
-      const { default: ProviderDetailScreen } = await import("./[id]");
-      render(<ProviderDetailScreen />);
-
-      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+      fireEvent.click(screen.getByText("Connect"));
 
       await waitFor(() => {
-        expect(mockSyncMutateAsync).toHaveBeenCalled();
+        expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
+          "https://test.example.com/auth/provider/strava?session=test-token",
+        );
+      });
+    });
+
+    it("triggers Apple Health sync with syncRangeDays: 7 when Sync is clicked", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockSyncHealthKit.mockResolvedValue({ inserted: 12, errors: [] });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Sync")).toBeTruthy();
       });
 
-      const syncLast7Button = screen.getByText("Sync Last 7 Days").closest("button");
-      const fullSyncButton = screen.getByText("Full Sync").closest("button");
-      const syncRangeButton = screen.getByText("Sync Range").closest("button");
+      fireEvent.click(screen.getByText("Sync"));
 
-      expect(syncLast7Button).toHaveProperty("disabled", true);
-      expect(fullSyncButton).toHaveProperty("disabled", true);
-      expect(syncRangeButton).toHaveProperty("disabled", true);
+      await waitFor(() => {
+        expect(mockSyncHealthKit).toHaveBeenCalledWith(
+          expect.objectContaining({ syncRangeDays: 7 }),
+        );
+      });
+    });
 
-      resolveFetch({
-        status: "done",
-        percentage: 100,
-        providers: { wahoo: { status: "done", message: "Done" } },
+    it("triggers Apple Health full sync with syncRangeDays: null when Full sync is clicked", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockSyncHealthKit.mockResolvedValue({ inserted: 12, errors: [] });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Full sync")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Full sync"));
+
+      await waitFor(() => {
+        expect(mockSyncHealthKit).toHaveBeenCalledWith(
+          expect.objectContaining({ syncRangeDays: null }),
+        );
+      });
+    });
+
+    it("shows Connect for Apple Health when it was never authorized", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockHasEverAuthorized.mockReturnValue(false);
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connect")).toBeTruthy();
+      });
+      expect(screen.queryByText("Full sync")).toBeNull();
+    });
+
+    it("requests Apple Health permissions when Connect is clicked", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockHasEverAuthorized.mockReturnValue(false);
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connect")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Connect"));
+
+      await waitFor(() => {
+        expect(mockRequestPermissions).toHaveBeenCalled();
       });
     });
   });
@@ -468,11 +532,13 @@ describe("ProviderDetailScreen", () => {
 
       fireEvent.click(screen.getByText("Disconnect Provider"));
 
+      const alertCall = mockAlertFn.mock.calls[0];
+      if (!alertCall) throw new Error("Disconnect alert was not shown");
       const buttons: Array<{
         text: string;
         style: string;
         onPress?: () => Promise<void>;
-      }> = mockAlertFn.mock.calls[0][2];
+      }> = alertCall[2];
       const disconnectButton = buttons.find((b) => b.text === "Disconnect");
       expect(disconnectButton).toBeDefined();
       if (!disconnectButton) throw new Error("Disconnect button not found");
@@ -493,11 +559,13 @@ describe("ProviderDetailScreen", () => {
 
       fireEvent.click(screen.getByText("Disconnect Provider"));
 
+      const alertCall = mockAlertFn.mock.calls[0];
+      if (!alertCall) throw new Error("Disconnect alert was not shown");
       const buttons: Array<{
         text: string;
         style: string;
         onPress?: () => Promise<void>;
-      }> = mockAlertFn.mock.calls[0][2];
+      }> = alertCall[2];
       const disconnectButton = buttons.find((b) => b.text === "Disconnect");
       if (!disconnectButton) throw new Error("Disconnect button not found");
 

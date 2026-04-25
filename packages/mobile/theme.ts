@@ -23,6 +23,8 @@ export const fonts = {
   body: fontFamily.body,
   /** DM Mono ships as "DMMono" in Expo font assets (no space in filename) */
   mono: "DMMono",
+  /** Legacy alias used by older screens */
+  bold: fontFamily.body,
 } as const;
 
 export const colors = {
@@ -30,8 +32,12 @@ export const colors = {
   background: surfaceColors.background,
   /** Elevated surface (cards) — opaque equivalent for RN (no backdrop-filter) */
   surface: surfaceColors.surface,
+  /** Legacy alias used by older screens */
+  card: surfaceColors.surface,
   /** Subtle divider / secondary surface */
   surfaceSecondary: surfaceColors.surfaceSecondary,
+  /** Legacy alias used by older screens */
+  border: surfaceColors.surfaceSecondary,
   /** Primary accent (links, buttons) */
   accent: surfaceColors.accent,
 
@@ -41,6 +47,8 @@ export const colors = {
   warning: statusColors.warning,
   /** Danger / poor / red */
   danger: statusColors.danger,
+  /** Legacy alias used by older screens */
+  negative: statusColors.danger,
 
   /** Light teal accent */
   teal: chartColors.teal,
@@ -59,4 +67,6 @@ export const colors = {
   textSecondary: textColors.secondary,
   /** Tertiary text / dimmed */
   textTertiary: textColors.tertiary,
+  /** Legacy alias used by older screens */
+  textMuted: textColors.tertiary,
 } as const;

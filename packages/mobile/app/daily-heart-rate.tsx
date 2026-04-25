@@ -12,12 +12,26 @@ import { rootStackScreenOptions } from "./_layout";
 
 /** Parse YYYY-MM-DD as a local date (not UTC) to avoid off-by-one near midnight. */
 function parseLocalDate(dateString: string): Date {
-  const [year, month, day] = dateString.split("-").map(Number);
+  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = dateString
+    .split("-")
+    .map(Number);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    month < 1 ||
+    day < 1
+  ) {
+    return new Date(dateString);
+  }
   return new Date(year, month - 1, day);
 }
 
 function formatDisplayDate(dateString: string): string {
   const [year, month, day] = dateString.split("-");
+  if (!year || !month || !day) {
+    return dateString;
+  }
   return `${month}/${day}/${year}`;
 }
 

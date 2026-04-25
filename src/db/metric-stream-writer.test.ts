@@ -107,4 +107,26 @@ describe("writeMetricStream", () => {
     expect(insertedBatches[1]).toHaveLength(3);
     expect(insertedBatches[2]).toHaveLength(1);
   });
+
+  it("uses a conservative default batch size", async () => {
+    const insertedBatches: MetricStreamInsert[][] = [];
+    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
+      insertedBatches.push(batch);
+    });
+
+    const rows: MetricStreamInsert[] = Array.from({ length: 1001 }, (_, index) => ({
+      recordedAt: new Date(),
+      providerId: "test",
+      sourceType: "api",
+      channel: "heart_rate",
+      scalar: index,
+    }));
+
+    const count = await writeMetricStream(insertBatch, rows);
+
+    expect(count).toBe(1001);
+    expect(insertedBatches).toHaveLength(2);
+    expect(insertedBatches[0]).toHaveLength(1000);
+    expect(insertedBatches[1]).toHaveLength(1);
+  });
 });

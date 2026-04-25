@@ -84,6 +84,8 @@ export function NutritionPage() {
   });
   const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
   const createAiEntryMutation = trpc.food.create.useMutation();
+  type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
+  const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
   const entries = foodQuery.error ? [] : z.array(foodEntrySchema).parse(foodQuery.data ?? []);
 
@@ -160,7 +162,21 @@ export function NutritionPage() {
     setAiMealInputError(null);
     try {
       const parsedResult = await analyzeItemsMutation.mutateAsync({ description: trimmedInput });
-      for (const parsedItem of parsedResult.items) {
+      setPendingAiMealItems(parsedResult.items);
+    } catch (error) {
+      captureException(error, { context: "nutrition-ai-meal-input" });
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not log this meal with AI input";
+      setAiMealInputError(errorMessage);
+    }
+  }
+
+  async function handleConfirmAiMeal() {
+    if (pendingAiMealItems.length === 0) return;
+
+    setAiMealInputError(null);
+    try {
+      for (const parsedItem of pendingAiMealItems) {
         await createAiEntryMutation.mutateAsync({
           date: dateString,
           nutrients: {},
@@ -169,12 +185,18 @@ export function NutritionPage() {
       }
       await foodQuery.refetch();
       setAiMealInput("");
+      setPendingAiMealItems([]);
     } catch (error) {
-      captureException(error, { context: "nutrition-ai-meal-input" });
+      captureException(error, { context: "nutrition-ai-meal-confirm" });
       const errorMessage =
         error instanceof Error ? error.message : "Could not log this meal with AI input";
       setAiMealInputError(errorMessage);
     }
+  }
+
+  function handleAiMealInputChange(value: string) {
+    setAiMealInput(value);
+    setPendingAiMealItems([]);
   }
 
   const calorieProgress = Math.min((dailyTotals.totalCalories / calorieGoal) * 100, 100);
@@ -249,7 +271,7 @@ export function NutritionPage() {
           <form onSubmit={handleAiMealSubmit} className="space-y-3">
             <textarea
               value={aiMealInput}
-              onChange={(event) => setAiMealInput(event.target.value)}
+              onChange={(event) => handleAiMealInputChange(event.target.value)}
               placeholder='e.g. "two eggs, toast with butter, and coffee with milk"'
               className="h-24 w-full rounded-lg border border-border-strong bg-accent/10 px-3 py-2 text-sm text-foreground placeholder-subtle focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             />
@@ -272,6 +294,44 @@ export function NutritionPage() {
                 : "Log with AI"}
             </button>
           </form>
+          {pendingAiMealItems.length > 0 && (
+            <div className="rounded-lg border border-border bg-page/60 p-3 space-y-3">
+              <div className="text-sm font-semibold text-foreground">Review AI meal</div>
+              <div className="space-y-2">
+                {pendingAiMealItems.map((item) => (
+                  <div
+                    key={`${item.meal}-${item.foodName}-${item.foodDescription}`}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-border bg-surface-solid px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">{item.foodName}</div>
+                      <div className="text-xs text-subtle">{item.foodDescription}</div>
+                    </div>
+                    <div className="text-xs font-semibold text-foreground whitespace-nowrap">
+                      {item.calories} kcal
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingAiMealItems([])}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAiMeal}
+                  disabled={createAiEntryMutation.isPending}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {createAiEntryMutation.isPending ? "Logging..." : "Confirm and log"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Loading state */}
