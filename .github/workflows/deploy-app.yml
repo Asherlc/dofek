@@ -19,6 +19,11 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
+      refresh_materialized_views:
+        description: "Trigger the materialized-view refresh webhook after stack deploy"
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       image_tag:
@@ -30,6 +35,11 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
+      refresh_materialized_views:
+        description: "Trigger the materialized-view refresh webhook after stack deploy"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: deploy-app
@@ -168,6 +178,53 @@ jobs:
           INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek
+
+      - name: Trigger materialized view refresh webhook
+        if: inputs.refresh_materialized_views
+        run: |
+          if [ -z "${MATERIALIZED_VIEW_REFRESH_TOKEN:-}" ]; then
+            echo "::error::MATERIALIZED_VIEW_REFRESH_TOKEN is required"
+            exit 1
+          fi
+
+          refresh_url="https://dofek.asherlc.com/api/internal/materialized-views/refresh"
+          response_file="${RUNNER_TEMP}/materialized-view-refresh-response.json"
+
+          for attempt in $(seq 1 24); do
+            echo "Materialized view refresh webhook attempt ${attempt}/24..."
+
+            set +e
+            status_code="$(curl \
+              --silent \
+              --show-error \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              --request POST \
+              --header "Authorization: Bearer ${MATERIALIZED_VIEW_REFRESH_TOKEN}" \
+              "$refresh_url")"
+            curl_exit_code=$?
+            set -e
+
+            response_body="$(cat "$response_file" 2>/dev/null || echo "")"
+
+            if [ "$curl_exit_code" -eq 0 ] && [ "$status_code" = "202" ]; then
+              echo "Materialized view refresh webhook accepted: ${response_body}"
+              break
+            fi
+
+            if [ "$curl_exit_code" -ne 0 ] || [ "$status_code" = "404" ] || [ "$status_code" = "502" ] || [ "$status_code" = "503" ] || [ "$status_code" = "504" ]; then
+              if [ "$attempt" -eq 24 ]; then
+                echo "::error::Materialized view refresh webhook did not succeed after 24 attempts"
+                exit 1
+              fi
+              echo "Retryable webhook failure (curl_exit=${curl_exit_code}, status=${status_code}, body=${response_body}). Retrying in 5s..."
+              sleep 5
+              continue
+            fi
+
+            echo "::error::Materialized view refresh webhook failed with a non-retryable error (status=${status_code}, body=${response_body})"
+            exit 1
+          done
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

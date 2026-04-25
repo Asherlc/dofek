@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: ""
+      refresh_materialized_views:
+        description: "Trigger materialized-view refresh after app deploy"
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       target:
@@ -29,6 +34,11 @@ on:
         description: "Docker image tag to deploy (e.g. sha-abc1234). Skips Docker build when provided."
         required: false
         type: string
+      refresh_materialized_views:
+        description: "Trigger materialized-view refresh after app deploy"
+        required: false
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -156,6 +166,7 @@ jobs:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host || '' }}
       dispatching_run_id: ${{ github.run_id }}
+      refresh_materialized_views: ${{ inputs.refresh_materialized_views }}
     secrets: inherit
 
   ios:

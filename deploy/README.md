@@ -126,8 +126,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
 
 ### Materialized View Refresh Webhook
 
-Materialized view syncing is intentionally decoupled from deploys.
-Normal deploys do not trigger this webhook; use it manually after changing materialized-view definitions or when recovering from stale view state.
+Materialized view syncing is intentionally decoupled from normal deploys.
+Normal deploys do not trigger this webhook; manual deploys can opt in with `refresh_materialized_views=true` after changing materialized-view definitions or when recovering from stale view state.
 Do not use it as a routine deploy gate because it can rebuild heavy views against live data.
 
 - Endpoint: `POST /api/internal/materialized-views/refresh`
