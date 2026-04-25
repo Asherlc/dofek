@@ -153,6 +153,7 @@ jobs:
         id: terraform
         working-directory: deploy/review-apps
         env:
+          TF_WORKSPACE: ${{ env.REVIEW_TERRAFORM_WORKSPACE }}
           TF_VAR_front_door_host: ${{ env.FRONT_DOOR_HOST }}
           TF_VAR_front_door_ipv4: ${{ steps.front_door.outputs.ipv4 }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
@@ -161,9 +162,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          terraform init -lock-timeout=5m
-          terraform workspace select "$REVIEW_TERRAFORM_WORKSPACE" || terraform workspace new "$REVIEW_TERRAFORM_WORKSPACE"
-          terraform apply -auto-approve -lock-timeout=5m
+          terraform init -input=false -lock-timeout=5m
+          terraform apply -input=false -auto-approve -lock-timeout=5m
 
           echo "review_host=$(terraform output -raw review_host)" >> "$GITHUB_OUTPUT"
           echo "review_url=$(terraform output -raw review_url)" >> "$GITHUB_OUTPUT"

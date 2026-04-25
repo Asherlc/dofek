@@ -81,6 +81,7 @@ jobs:
         if: steps.workspace.outputs.exists == 'true'
         working-directory: deploy/review-apps
         env:
+          TF_WORKSPACE: ${{ env.REVIEW_TERRAFORM_WORKSPACE }}
           TF_VAR_front_door_host: ${{ secrets.SERVER_HOST }}
           TF_VAR_front_door_ipv4: ${{ steps.front_door.outputs.ipv4 }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
@@ -89,14 +90,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          terraform init -lock-timeout=5m
-
-          if ! terraform workspace select "$REVIEW_TERRAFORM_WORKSPACE"; then
-            echo "No review-app workspace found for ${REVIEW_TERRAFORM_WORKSPACE}; nothing to destroy."
-            exit 0
-          fi
-
-          terraform destroy -auto-approve -lock-timeout=5m
+          terraform init -input=false -lock-timeout=5m
+          terraform destroy -input=false -auto-approve -lock-timeout=5m
 
       - name: Delete review app Terraform workspace
         if: steps.workspace.outputs.exists == 'true'
