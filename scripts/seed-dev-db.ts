@@ -26,7 +26,10 @@ import { join, resolve } from "node:path";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
 import { SeedRandom, USER_ID } from "./seed/helpers.ts";
+import { seedBodyHealth } from "./seed/body-health.ts";
+import { seedNutrition } from "./seed/nutrition.ts";
 import { seedRecovery } from "./seed/recovery.ts";
+import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
 import { seedTraining } from "./seed/training.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -108,45 +111,9 @@ async function seedData() {
   const random = new SeedRandom(42);
   await seedRecovery(sql, random);
   await seedTraining(sql, random);
-
-  const today = new Date();
-
-  // -----------------------------------------------------------------------
-  // Nutrition (30 days)
-  // -----------------------------------------------------------------------
-  for (let daysAgo = 0; daysAgo <= 30; daysAgo++) {
-    const date = daysBefore(today, daysAgo);
-    await sql`
-			INSERT INTO fitness.nutrition_daily (
-				date, provider_id, user_id,
-				calories, protein_g, carbs_g, fat_g, fiber_g
-			) VALUES (
-				${date}, 'apple_health', ${USER_ID},
-				${randInt(1800, 2800)}, ${randInt(100, 180)},
-				${randInt(150, 350)}, ${randInt(50, 100)}, ${randInt(20, 40)}
-			) ON CONFLICT DO NOTHING
-		`;
-  }
-  console.log("Seeded: 31 days of nutrition");
-
-  // -----------------------------------------------------------------------
-  // Body weight (every 3 days for 90 days)
-  // -----------------------------------------------------------------------
-  let weightKg = 82.0;
-  for (let daysAgo = 90; daysAgo >= 0; daysAgo -= 3) {
-    const date = daysBefore(today, daysAgo);
-    weightKg += randFloat(-0.3, 0.2, 1);
-    await sql`
-			INSERT INTO fitness.body_measurement (
-				provider_id, user_id, external_id,
-				recorded_at, weight_kg, body_fat_pct
-			) VALUES (
-				'apple_health', ${USER_ID}, ${`bw-${daysAgo}`},
-				${localTimestamp(date, "07:30:00")}, ${weightKg}, ${randFloat(14, 18, 1)}
-			) ON CONFLICT DO NOTHING
-		`;
-  }
-  console.log("Seeded: ~30 body weight measurements");
+  await seedNutrition(sql, random);
+  await seedBodyHealth(sql, random);
+  await seedReviewSurfaces(sql, random);
 }
 
 // ---------------------------------------------------------------------------
@@ -173,45 +140,6 @@ async function refreshViews() {
     // activity_summary depends on deduped_sensor
   }
   console.log("Views refreshed");
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Returns YYYY-MM-DD for the local calendar date N days before `from`. */
-function daysBefore(from: Date, daysAgo: number): string {
-  const date = new Date(from);
-  date.setDate(date.getDate() - daysAgo);
-  // Use local date parts (not UTC) so the date matches the user's timezone
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Build an ISO 8601 timestamp with the local timezone offset.
- * e.g. "2026-03-29T22:00:00-07:00" so PostgreSQL stores the correct absolute time
- * and `AT TIME ZONE 'America/Los_Angeles'` yields the intended local date.
- */
-function localTimestamp(dateStr: string, time: string): string {
-  const offsetMin = new Date().getTimezoneOffset(); // e.g. 420 for PDT (UTC-7)
-  const sign = offsetMin <= 0 ? "+" : "-";
-  const absMin = Math.abs(offsetMin);
-  const hours = String(Math.floor(absMin / 60)).padStart(2, "0");
-  const mins = String(absMin % 60).padStart(2, "0");
-  return `${dateStr}T${time}${sign}${hours}:${mins}`;
-}
-
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function randFloat(min: number, max: number, decimals: number): number {
-  const value = Math.random() * (max - min) + min;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
 }
 
 // ---------------------------------------------------------------------------
