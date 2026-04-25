@@ -75,18 +75,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          ssh "root@${FRONT_DOOR_HOST}" "rm -f '${REVIEW_ROUTE_FILE}'"
+          ssh "root@${FRONT_DOOR_HOST}" rm -f "$REVIEW_ROUTE_FILE"
 
       - name: Destroy review app infrastructure
         if: steps.workspace.outputs.exists == 'true'
         working-directory: deploy/review-apps
         env:
           TF_WORKSPACE: ${{ env.REVIEW_TERRAFORM_WORKSPACE }}
-          TF_VAR_front_door_host: ${{ secrets.SERVER_HOST }}
           TF_VAR_front_door_ipv4: ${{ steps.front_door.outputs.ipv4 }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_pr_number: ${{ github.event.pull_request.number }}
-          TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -euo pipefail
 

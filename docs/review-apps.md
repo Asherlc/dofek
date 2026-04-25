@@ -9,8 +9,8 @@ it at `pr-<number>.dofek.asherlc.com`.
   `dofek.asherlc.com`.
 - DNS: `*.dofek.asherlc.com` points at the shared front door as a DNS-only
   Cloudflare record so Traefik can serve the wildcard TLS certificate directly.
-- Routing: each PR Terraform workspace writes one Traefik dynamic-config file
-  for its exact host, forwarding traffic to that PR server's `:3000`.
+- Routing: the review-app deploy workflow writes one Traefik dynamic-config
+  file for the PR's exact host, forwarding traffic to that PR server's `:3000`.
 - Review stack: `web`, `db`, and `redis` via Docker Compose on the PR server.
 
 Exact DNS records still win over the wildcard. Management hosts such as
@@ -27,22 +27,23 @@ existing explicit records and Traefik routes.
 2. Create the tagged HCP Terraform workspace `dofek-review-pr-<number>` if it
    does not exist yet.
 3. Apply the Terraform workspace `dofek-review-pr-<number>`.
-4. Wait for Docker on the new Hetzner server.
-5. Export review env vars from Infisical.
-6. Start `db` and `redis`, run migrations, seed the preview DB with the
+4. Write the exact PR host route on the shared front door.
+5. Wait for Docker on the new Hetzner server.
+6. Export review env vars from Infisical.
+7. Start `db` and `redis`, run migrations, seed the preview DB with the
    deterministic reviewer dataset, then start `web`.
-7. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
-8. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
+8. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
+9. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
 
 ### Close
 
-`.github/workflows/review-app-destroy.yml` selects the matching Terraform
-workspace and runs `terraform destroy`. That removes:
+`.github/workflows/review-app-destroy.yml` removes the front door route file,
+selects the matching Terraform workspace, and runs `terraform destroy`. That
+removes:
 
 - the review Hetzner server
 - the review firewall
 - the SSH key resource for that PR workspace
-- the Traefik dynamic route file on the shared front door
 - the HCP Terraform workspace after destroy completes
 
 ## Reviewer Access
