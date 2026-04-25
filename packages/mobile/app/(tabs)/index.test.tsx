@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockRouterPush = vi.fn();
 let mockReadinessLoading = false;
 let mockWorkloadLoading = false;
 let mockSleepLoading = false;
@@ -10,6 +11,10 @@ let mockSleepData: unknown;
 let mockReadinessError: Error | null = null;
 let mockWorkloadError: Error | null = null;
 let mockSleepNeedError: Error | null = null;
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}));
 
 function q(getData: () => unknown = () => undefined, getError: () => Error | null = () => null) {
   return {
@@ -124,6 +129,7 @@ describe("TodayScreen independent loading states", () => {
     mockReadinessError = null;
     mockWorkloadError = null;
     mockSleepNeedError = null;
+    mockRouterPush.mockClear();
   });
 
   afterEach(() => {
@@ -205,6 +211,18 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
     // No skeleton loading placeholders
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
+  });
+
+  it("opens add food with today's date and auto-selected meal", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 21, 15, 30));
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    fireEvent.click(screen.getByText("Log Food"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith("/food/add?meal=snack&date=2026-03-21");
   });
 
   it("shows a recovery error panel when the readiness query fails", async () => {
