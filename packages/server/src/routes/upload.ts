@@ -10,6 +10,12 @@ import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
 import { startWorker } from "../lib/start-worker.ts";
+import {
+  getUploadStateStore,
+  UPLOAD_SESSION_TTL_MS,
+  UPLOAD_STATUS_TTL_MS,
+  type UploadStatus,
+} from "../lib/upload-state-store.ts";
 import { logger } from "../logger.ts";
 
 /**
@@ -19,29 +25,58 @@ import { logger } from "../logger.ts";
  */
 const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
 mkdirSync(JOB_FILES_DIR, { recursive: true });
+const IN_PROGRESS_UPLOAD_STATUS_TTL_MS = UPLOAD_SESSION_TTL_MS + UPLOAD_STATUS_TTL_MS;
 
-interface UploadChunks {
-  received: Set<number>;
-  total: number;
-  dir: string;
+const uploadStateStore = getUploadStateStore();
+
+async function setUploadStatus(
+  uploadId: string,
+  status: UploadStatus,
+  timeToLiveMs = UPLOAD_STATUS_TTL_MS,
+): Promise<void> {
+  await uploadStateStore.saveUploadStatus(uploadId, status, timeToLiveMs);
 }
 
-const activeUploads = new Map<string, UploadChunks>();
-interface UploadStatus {
-  status: string;
-  progress: number;
-  message: string;
-  userId: string;
+function stripExpiry(status: UploadStatus): Omit<UploadStatus, "expiresAt"> {
+  return {
+    status: status.status,
+    progress: status.progress,
+    message: status.message,
+    userId: status.userId,
+  };
 }
 
-const uploadStatuses = new Map<string, UploadStatus>();
-
-function setUploadStatus(id: string, status: UploadStatus) {
-  uploadStatuses.set(id, status);
+function inProgressStatus(
+  status: "uploading" | "assembling",
+  progress: number,
+  message: string,
+  userId: string,
+): UploadStatus {
+  return {
+    status,
+    progress,
+    message,
+    userId,
+    expiresAt: Date.now() + UPLOAD_SESSION_TTL_MS,
+  };
 }
 
-function cleanupUploadStatus(id: string) {
-  setTimeout(() => uploadStatuses.delete(id), 10 * 60 * 1000);
+async function expireStaleUpload(uploadId: string, userId: string): Promise<UploadStatus> {
+  const staleUpload = await uploadStateStore.getUploadSession(uploadId);
+  await uploadStateStore.deleteUploadSession(uploadId);
+  if (staleUpload) {
+    await rm(staleUpload.dir, { recursive: true, force: true }).catch((error: unknown) => {
+      logger.warn("Failed to clean up stale upload dir %s: %s", staleUpload.dir, error);
+    });
+  }
+  const timeoutStatus: UploadStatus = {
+    status: "error",
+    progress: 0,
+    message: "Upload timed out",
+    userId,
+  };
+  await setUploadStatus(uploadId, timeoutStatus);
+  return timeoutStatus;
 }
 
 async function enqueueImport(
@@ -140,13 +175,17 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const uploadStatus = uploadStatuses.get(req.params.jobId);
+    const uploadStatus = await uploadStateStore.getUploadStatus(req.params.jobId);
     if (uploadStatus) {
       if (uploadStatus.userId !== userId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
-      res.json(uploadStatus);
+      if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
+        res.json(stripExpiry(await expireStaleUpload(req.params.jobId, userId)));
+        return;
+      }
+      res.json(stripExpiry(uploadStatus));
       return;
     }
 
@@ -224,58 +263,53 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
 
     // Chunked upload
     try {
-      let upload = activeUploads.get(uploadId);
+      let upload = await uploadStateStore.getUploadSession(uploadId);
       if (!upload) {
         const dir = join(JOB_FILES_DIR, `apple-health-chunked-${uploadId}`);
         await mkdir(dir, { recursive: true });
-        upload = { received: new Set(), total: chunkTotal, dir };
-        activeUploads.set(uploadId, upload);
-        // Clean up abandoned uploads after 30 minutes
-        setTimeout(
-          async () => {
-            const stale = activeUploads.get(uploadId);
-            if (stale) {
-              activeUploads.delete(uploadId);
-              await rm(stale.dir, { recursive: true, force: true }).catch((error: unknown) => {
-                logger.warn("Failed to clean up stale upload dir %s: %s", stale.dir, error);
-              });
-              setUploadStatus(uploadId, {
-                status: "error",
-                progress: 0,
-                message: "Upload timed out",
-                userId,
-              });
-              cleanupUploadStatus(uploadId);
-            }
-          },
-          30 * 60 * 1000,
+        upload = { total: chunkTotal, dir, userId };
+        await uploadStateStore.saveUploadSession(
+          uploadId,
+          upload,
+          IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
         );
-        setUploadStatus(uploadId, {
-          status: "uploading",
-          progress: 0,
-          message: "Receiving chunks...",
-          userId,
-        });
+        await setUploadStatus(
+          uploadId,
+          inProgressStatus("uploading", 0, "Receiving chunks...", userId),
+          IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+        );
+      } else if (upload.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
       }
 
       const chunkPath = join(upload.dir, `chunk-${String(chunkIndex).padStart(6, "0")}`);
       await streamToFile(req, chunkPath);
-      upload.received.add(chunkIndex);
+      const receivedCount = await uploadStateStore.addReceivedChunk(
+        uploadId,
+        chunkIndex,
+        IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+      );
+      await uploadStateStore.saveUploadSession(uploadId, upload, IN_PROGRESS_UPLOAD_STATUS_TTL_MS);
 
-      const uploadPercentage = Math.round((upload.received.size / upload.total) * 100);
+      const uploadPercentage = Math.round((receivedCount / upload.total) * 100);
       logger.info(`[upload] Chunk ${chunkIndex + 1}/${chunkTotal} for ${uploadId}`);
 
-      if (upload.received.size < upload.total) {
-        setUploadStatus(uploadId, {
-          status: "uploading",
-          progress: uploadPercentage,
-          message: `Received ${upload.received.size}/${upload.total} chunks`,
-          userId,
-        });
+      if (receivedCount < upload.total) {
+        await setUploadStatus(
+          uploadId,
+          inProgressStatus(
+            "uploading",
+            uploadPercentage,
+            `Received ${receivedCount}/${upload.total} chunks`,
+            userId,
+          ),
+          IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+        );
         res.json({
           status: "uploading",
           jobId: uploadId,
-          received: upload.received.size,
+          received: receivedCount,
           total: upload.total,
         });
         return;
@@ -284,13 +318,12 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       // All chunks received — respond immediately, assemble in background.
       // This prevents gateway timeouts when assembly takes a long time for large files.
       const chunkDir = upload.dir;
-      activeUploads.delete(uploadId);
-      setUploadStatus(uploadId, {
-        status: "assembling",
-        progress: 0,
-        message: "Assembling file...",
-        userId,
-      });
+      await uploadStateStore.deleteUploadSession(uploadId);
+      await setUploadStatus(
+        uploadId,
+        inProgressStatus("assembling", 0, "Assembling file...", userId),
+        IN_PROGRESS_UPLOAD_STATUS_TTL_MS,
+      );
       res.json({ status: "assembling", jobId: uploadId });
 
       // Fire-and-forget: assemble chunks → enqueue import
@@ -304,32 +337,35 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
             jobId: uploadId,
           });
           // Clear upload status — BullMQ job status takes over
-          uploadStatuses.delete(uploadId);
+          await uploadStateStore.deleteUploadStatus(uploadId);
         } catch (err: unknown) {
           logger.error(`[upload] Assembly/enqueue failed for ${uploadId}: ${err}`);
           await rm(chunkDir, { recursive: true, force: true }).catch((error: unknown) => {
             logger.warn("Failed to clean up chunk dir %s: %s", chunkDir, error);
           });
-          setUploadStatus(uploadId, {
+          await setUploadStatus(uploadId, {
             status: "error",
             progress: 0,
             message: "Failed to assemble uploaded file",
             userId,
           });
-          cleanupUploadStatus(uploadId);
         }
       })();
     } catch (err: unknown) {
       logger.error(`[upload] Chunked upload failed: ${err}`);
-      const upload = activeUploads.get(uploadId);
+      const upload = await uploadStateStore.getUploadSession(uploadId);
       if (upload) {
-        activeUploads.delete(uploadId);
+        await uploadStateStore.deleteUploadSession(uploadId);
         await rm(upload.dir, { recursive: true, force: true }).catch((error: unknown) => {
           logger.warn("Failed to clean up upload dir %s: %s", upload.dir, error);
         });
       }
-      setUploadStatus(uploadId, { status: "error", progress: 0, message: "Upload failed", userId });
-      cleanupUploadStatus(uploadId);
+      await setUploadStatus(uploadId, {
+        status: "error",
+        progress: 0,
+        message: "Upload failed",
+        userId,
+      });
       res.status(500).json({ error: "Upload failed" });
     }
   });

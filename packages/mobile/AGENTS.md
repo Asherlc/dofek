@@ -13,6 +13,7 @@
 - **Storybook**: Every component MUST have a `.stories.tsx` file (lives in `.storybook` and `.rnstorybook`).
 - **Charts**: Use `react-native-svg` for all chart implementations.
 - **Navigation**: Uses Expo Router. Screen paths map to `app/`.
+- **Query state handling**: Treat loading, error, and empty as separate UI states. Do not use `query.data ?? []` or similar fallbacks when `query.error` exists. Use `components/QueryStatePanel.tsx` for explicit error/empty/loading states on screens and cards.
 
 ### Native Config Consistency
 - **app.json must stay in sync with the filesystem**: When removing or renaming files in `plugins/`, `native/`, or `targets/`, update `app.json` in the same commit. Specifically: plugin paths in `expo.plugins`, pod paths in `expo-build-properties` `extraPods`, and target configs under `@bacons/apple-targets`. A mismatch causes `expo prebuild` to crash, breaking all iOS/watchOS CI jobs.

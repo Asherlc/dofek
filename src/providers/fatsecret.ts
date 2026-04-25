@@ -504,23 +504,36 @@ export class FatSecretProvider implements SyncProvider {
   readonly id = "fatsecret";
   readonly name = "FatSecret";
 
-  #consumerKey: string;
-  #consumerSecret: string;
+  #consumerKey: string | null;
+  #consumerSecret: string | null;
   #fetchFn: FetchFn;
 
   constructor(fetchFn: FetchFn = globalThis.fetch) {
-    const consumerKey = process.env.FATSECRET_CONSUMER_KEY;
-    const consumerSecret = process.env.FATSECRET_CONSUMER_SECRET;
-    if (!consumerKey || !consumerSecret) {
-      throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
-    }
-    this.#consumerKey = consumerKey;
-    this.#consumerSecret = consumerSecret;
+    this.#consumerKey = process.env.FATSECRET_CONSUMER_KEY ?? null;
+    this.#consumerSecret = process.env.FATSECRET_CONSUMER_SECRET ?? null;
     this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
+    if (!this.#consumerKey) return "FATSECRET_CONSUMER_KEY is not set";
+    if (!this.#consumerSecret) return "FATSECRET_CONSUMER_SECRET is not set";
     return null;
+  }
+
+  #getCredentials(): { consumerKey: string; consumerSecret: string } {
+    const validation = this.validate();
+    if (validation !== null) {
+      throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
+    }
+    const consumerKey = this.#consumerKey;
+    const consumerSecret = this.#consumerSecret;
+    if (!consumerKey || !consumerSecret) {
+      throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
+    }
+    return {
+      consumerKey,
+      consumerSecret,
+    };
   }
 
   /**
@@ -529,8 +542,7 @@ export class FatSecretProvider implements SyncProvider {
    * in the existing oauthToken table (OAuth 1.0 tokens don't expire).
    */
   authSetup(options?: { host?: string }) {
-    const consumerKey = this.#consumerKey;
-    const consumerSecret = this.#consumerSecret;
+    const { consumerKey, consumerSecret } = this.#getCredentials();
     const fetchFn = this.#fetchFn;
 
     return {
@@ -590,9 +602,10 @@ export class FatSecretProvider implements SyncProvider {
     }
 
     if (!tokens.refreshToken) throw new Error("No token secret stored for FatSecret");
+    const { consumerKey, consumerSecret } = this.#getCredentials();
     const creds: OAuth1Credentials = {
-      consumerKey: this.#consumerKey,
-      consumerSecret: this.#consumerSecret,
+      consumerKey,
+      consumerSecret,
       token: tokens.accessToken,
       tokenSecret: tokens.refreshToken, // OAuth 1.0 token secret stored as refreshToken
     };

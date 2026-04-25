@@ -382,10 +382,11 @@ describe("FatSecretProvider — constructor and validate()", () => {
     process.env = { ...originalEnv };
   });
 
-  it("throws when env vars are missing", () => {
+  it("constructs and reports missing env vars via validate()", () => {
     delete process.env.FATSECRET_CONSUMER_KEY;
     delete process.env.FATSECRET_CONSUMER_SECRET;
-    expect(() => new FatSecretProvider()).toThrow("FATSECRET_CONSUMER_KEY");
+    const provider = new FatSecretProvider();
+    expect(provider.validate()).toBe("FATSECRET_CONSUMER_KEY is not set");
   });
 
   it("constructs when env vars are set", () => {
@@ -396,7 +397,7 @@ describe("FatSecretProvider — constructor and validate()", () => {
     expect(provider.name).toBe("FatSecret");
   });
 
-  it("validate() always returns null", () => {
+  it("validate() returns null when env vars are set", () => {
     process.env.FATSECRET_CONSUMER_KEY = "key";
     process.env.FATSECRET_CONSUMER_SECRET = "secret";
     const provider = new FatSecretProvider();

@@ -36,6 +36,7 @@ import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
+import { getUploadStateStore } from "../lib/upload-state-store.ts";
 import { logger } from "../logger.ts";
 import { createUploadRouter } from "./upload.ts";
 
@@ -99,8 +100,13 @@ async function request(
 }
 
 describe("createUploadRouter", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const uploadStateStore = getUploadStateStore();
+    await uploadStateStore.deleteUploadSession("upload-abc");
+    await uploadStateStore.deleteUploadStatus("upload-abc");
+    await uploadStateStore.deleteUploadSession("status-job");
+    await uploadStateStore.deleteUploadStatus("status-job");
     vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
     vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
   });
@@ -375,6 +381,27 @@ describe("createUploadRouter", () => {
       expect(data.status).toBe("uploading");
       expect(data.received).toBe(1);
       expect(data.total).toBe(3);
+    });
+
+    it("shares upload status across app instances", async () => {
+      const first = createTestApp();
+      const second = createTestApp();
+
+      await request(first.app, "post", "/api/upload/apple-health", {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-upload-id": "status-job",
+          "x-chunk-index": "0",
+          "x-chunk-total": "3",
+        },
+        body: Buffer.from("chunk-0"),
+      });
+
+      const res = await request(second.app, "get", "/api/upload/apple-health/status/status-job");
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.status).toBe("uploading");
+      expect(data.progress).toBeGreaterThan(0);
     });
 
     it("keeps .xml extension when single-chunk upload falls back to non-chunked", async () => {
@@ -713,8 +740,9 @@ describe("createUploadRouter", () => {
       // Make rm reject when the stale timeout fires
       mockRm.mockRejectedValueOnce(new Error("EPERM"));
 
-      // Advance past the 30-minute stale timeout
+      // Advance past the 30-minute upload-session timeout, then poll status.
       await vi.advanceTimersByTimeAsync(30 * 60 * 1000 + 1);
+      await request(app, "get", "/api/upload/apple-health/status/upload-stale-rm-err");
 
       expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
         "Failed to clean up stale upload dir %s: %s",

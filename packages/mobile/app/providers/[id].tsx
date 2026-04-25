@@ -833,7 +833,7 @@ export default function ProviderDetailScreen() {
               </View>
             )}
           </View>
-          {provider?.needsOAuth && provider.authorized && (
+          {provider?.needsReauth && provider.authorized && (
             <TouchableOpacity
               style={styles.reauthorizeButton}
               onPress={handleReauthorize}

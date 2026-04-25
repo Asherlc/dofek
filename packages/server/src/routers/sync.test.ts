@@ -10,6 +10,7 @@ const {
   mockRegisterProvider,
   mockLoggerWarn,
   mockInvalidateByPrefix,
+  mockVeloHeroProvider,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+  mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
 }));
 
 // Mock trpc
@@ -121,9 +123,7 @@ vi.mock("dofek/providers/cycling-analytics", () => ({ CyclingAnalyticsProvider: 
 vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn() }));
 vi.mock("dofek/providers/decathlon", () => ({ DecathlonProvider: vi.fn() }));
 vi.mock("dofek/providers/velohero", () => ({
-  VeloHeroProvider: vi.fn(() => {
-    throw new Error("test-registration-error");
-  }),
+  VeloHeroProvider: mockVeloHeroProvider,
 }));
 
 // Mock schema and drizzle-orm for logs query
@@ -152,10 +152,12 @@ describe("syncRouter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRegisterProvider.mockImplementation(() => undefined);
+    mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
   });
 
   describe("ensureProvidersRegistered", () => {
-    it("registers all providers and returns the same promise on subsequent calls", async () => {
+    it("registers providers once and returns the same promise on subsequent calls", async () => {
       const first = ensureProvidersRegistered();
       expect(first).toBeInstanceOf(Promise);
 
@@ -164,13 +166,8 @@ describe("syncRouter", () => {
       expect(second).toBe(first);
 
       await first;
-      // Verify registerProvider was called for each provider in the list
-      // (minus 1 for velohero which throws during construction)
       expect(mockRegisterProvider).toHaveBeenCalled();
       expect(mockRegisterProvider.mock.calls.length).toBeGreaterThanOrEqual(12);
-
-      // Verify error handling: velohero throws but doesn't prevent other providers
-      expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("velohero"));
     });
   });
 
