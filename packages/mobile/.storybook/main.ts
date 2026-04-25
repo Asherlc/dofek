@@ -19,6 +19,7 @@ const config: StorybookConfig = {
         : {};
     viteConfig.resolve.alias = {
       ...existingAliases,
+      "expo-router": resolve(currentDir, "./mocks/expo-router.ts"),
       [resolve(currentDir, "../lib/auth-context")]: resolve(currentDir, "./mocks/auth-context"),
     };
     viteConfig.plugins.push({

@@ -1,8 +1,10 @@
 import { ONBOARDING_SETTINGS_KEY } from "@dofek/onboarding/onboarding";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { httpBatchLink } from "@trpc/client";
+import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
+import { trpc } from "../../lib/trpc";
 import TodayScreen from "./index";
 
 function localDateString(dayOffset = 0): string {
@@ -153,8 +155,21 @@ function createSeededProviders() {
 }
 
 function MockProviders({ children }: { children: ReactNode }) {
-  const { queryClient } = createSeededProviders();
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const { queryClient, trpcClient } = useMemo(() => {
+    const seededProviders = createSeededProviders();
+    return {
+      ...seededProviders,
+      trpcClient: trpc.createClient({
+        links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
+      }),
+    };
+  }, []);
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </trpc.Provider>
+  );
 }
 
 const meta = {
