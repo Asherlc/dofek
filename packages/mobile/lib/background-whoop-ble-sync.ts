@@ -28,7 +28,6 @@ export interface WhoopBleSyncDeps {
   peekBufferedRealtimeData(): Promise<
     Array<{
       timestamp: string;
-      heartRate: number;
       rrIntervalMs: number;
       quaternionW: number;
       quaternionX: number;
@@ -44,7 +43,7 @@ export interface WhoopBleSyncDeps {
   disconnect(): void;
 }
 
-/** tRPC client interface for BLE realtime data upload (HR + orientation + optical) */
+/** tRPC client interface for BLE realtime data upload (beat interval + orientation + optical) */
 export interface WhoopBleRealtimeUploadClient {
   whoopBleSync: {
     pushRealtimeData: {
@@ -52,7 +51,6 @@ export interface WhoopBleRealtimeUploadClient {
         deviceId: string;
         samples: Array<{
           timestamp: string;
-          heartRate: number;
           rrIntervalMs: number;
           quaternionW: number;
           quaternionX: number;
@@ -324,7 +322,7 @@ async function drainBuffer(
     logger.info(LOG_CATEGORY, `IMU drain complete: ${totalImuUploaded} samples`);
   }
 
-  // Drain realtime data buffer (HR + quaternion + optical from 0x28 packets)
+  // Drain realtime data buffer (beat interval + quaternion + optical from 0x28 packets)
   const effectiveRealtimeClient = realtimeClient ?? currentRealtimeClient;
   if (effectiveRealtimeClient) {
     let totalRealtimeUploaded = 0;
@@ -334,9 +332,18 @@ async function drainBuffer(
       if (realtimeSamples.length === 0) break;
 
       try {
+        const uploadSamples = realtimeSamples.map((sample) => ({
+          timestamp: sample.timestamp,
+          rrIntervalMs: sample.rrIntervalMs,
+          quaternionW: sample.quaternionW,
+          quaternionX: sample.quaternionX,
+          quaternionY: sample.quaternionY,
+          quaternionZ: sample.quaternionZ,
+          opticalRawHex: sample.opticalRawHex,
+        }));
         const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
           deviceId: "WHOOP Strap",
-          samples: realtimeSamples,
+          samples: uploadSamples,
         });
         whoopDeps.confirmRealtimeDataDrain(realtimeSamples.length);
         totalRealtimeUploaded += realtimeSamples.length;

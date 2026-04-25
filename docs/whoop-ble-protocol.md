@@ -293,12 +293,12 @@ All commands are sent automatically when the iOS app connects to the strap and a
 
 | Data | Packet | Rate | Status |
 |---|---|---|---|
-| Heart Rate (bpm) | 0x28 compact, byte 8 | 1 Hz | **Stored** in `metric_stream.heart_rate` |
+| Heart Rate (bpm) | 0x28 compact, byte 8 | 1 Hz | Parsed by native code only; **not uploaded or stored** because it is device-derived |
 | R-R Interval (ms) | 0x28 compact, bytes 10-11 | 1 Hz | **Stored** in `metric_stream.rr_interval_ms` |
 | Accelerometer (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
 | Gyroscope (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
-| Orientation quaternion | 0x2F R18, bytes 33-48 | During sync | **Not yet parsed** |
-| Historical HR + R-R | 0x2F R18, bytes 14-17 | During sync | **Not yet parsed** |
+| Orientation quaternion | 0x2F R18, bytes 33-48 | During sync | **Stored** in `metric_stream.orientation` when present |
+| Historical R-R | 0x2F R18, bytes 16-17 | During sync | **Stored** in `metric_stream.rr_interval_ms`; historical heart rate is not stored |
 
 ## Next Steps: SpO2 and Skin Temperature
 

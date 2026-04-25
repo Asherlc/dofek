@@ -362,8 +362,8 @@ final class WhoopBleFrameParserTests: XCTestCase {
     }
 
     func testExtractRealtimeDataReturnsNilForTooShortPayload() {
-        // Payload of 56 bytes — one byte short of the minimum (57)
-        let shortPayload = Data(count: 56)
+        // Compact realtime packets need at least 12 bytes for HR validity + R-R interval.
+        let shortPayload = Data(count: 11)
         let frame = WhoopFrame(
             packetType: WhoopBleConstants.packetTypeRealtimeData,
             recordType: 0, dataTimestamp: 1000, subSeconds: 0,
