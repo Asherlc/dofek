@@ -71,7 +71,11 @@ export default function BleProbeScreen() {
       addLog(`> ${trimmed}`, "command");
 
       const parts = trimmed.split(/\s+/);
-      const cmd = parts[0].toLowerCase();
+      const command = parts[0];
+      if (!command) {
+        return;
+      }
+      const cmd = command.toLowerCase();
       const args = parts.slice(1);
 
       try {
@@ -124,6 +128,10 @@ export default function BleProbeScreen() {
             const connected = getConnectedPeripherals(WHOOP_SERVICES);
             if (connected.length > 0) {
               const device = connected[0];
+              if (!device) {
+                addLog("Connected device disappeared before connect.", "error");
+                break;
+              }
               addLog(`Found: ${device.name ?? "unnamed"} [${device.id}]`);
               const result = await connect(device.id);
               setConnectedDevice(result.id);
@@ -154,8 +162,9 @@ export default function BleProbeScreen() {
             } else {
               addLog("Scanning (5s)...");
               const results = await scan(WHOOP_SERVICES, 5);
-              if (results.length > 0) {
-                const result = await connect(results[0].id);
+              const firstResult = results[0];
+              if (firstResult) {
+                const result = await connect(firstResult.id);
                 setConnectedDevice(result.id);
                 addLog(`Connected to ${result.name ?? "unnamed"}`);
               } else {

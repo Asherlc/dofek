@@ -141,7 +141,7 @@ export default function SupplementsScreen() {
         </Text>
       )}
 
-      {supplements.map((supp) => {
+      {supplements.map((supp, index) => {
         const dose = formatDose(supp);
         const mealLabel = MEAL_OPTIONS.find((m) => m.value === supp.meal)?.label;
         return (

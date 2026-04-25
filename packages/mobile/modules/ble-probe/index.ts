@@ -1,7 +1,17 @@
-import { EventEmitter, type Subscription } from "expo-modules-core";
+import { EventEmitter, type EventSubscription } from "expo-modules-core";
 import BleProbeModule from "./src/BleProbeModule";
 
-const emitter = new EventEmitter(BleProbeModule);
+type BleProbeEvents = Record<string, (...args: unknown[]) => void> & {
+  onNotification: (event: BleNotification) => void;
+  onConnectionStateChanged: (event: {
+    state: string;
+    peripheralId: string;
+    error?: string;
+  }) => void;
+  onBluetoothStateChanged: (event: { state: string }) => void;
+};
+
+const emitter = new EventEmitter<BleProbeEvents>(BleProbeModule);
 
 // MARK: - Types
 
@@ -94,19 +104,21 @@ export async function unsubscribe(characteristicSuffix: string): Promise<boolean
   return BleProbeModule.unsubscribe(characteristicSuffix);
 }
 
-export function addNotificationListener(listener: (event: BleNotification) => void): Subscription {
+export function addNotificationListener(
+  listener: (event: BleNotification) => void,
+): EventSubscription {
   return emitter.addListener("onNotification", listener);
 }
 
 export function addConnectionStateListener(
   listener: (event: { state: string; peripheralId: string; error?: string }) => void,
-): Subscription {
+): EventSubscription {
   return emitter.addListener("onConnectionStateChanged", listener);
 }
 
 export function addBluetoothStateListener(
   listener: (event: { state: string }) => void,
-): Subscription {
+): EventSubscription {
   return emitter.addListener("onBluetoothStateChanged", listener);
 }
 
