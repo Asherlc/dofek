@@ -11,8 +11,9 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
 - App stack: `web`, `db`, and `redis` via Docker Compose on the review server.
 - Routing: Terraform writes a Traefik dynamic-config file onto the shared front
   door host so only that PR hostname is forwarded to the PR server.
-- DNS: the wildcard `*.dofek.asherlc.com` points at the shared front door. Exact
-  records like `portainer.dofek.asherlc.com` still take precedence.
+- DNS: the wildcard `*.dofek.asherlc.com` points at the shared front door as a
+  DNS-only Cloudflare record so Traefik can serve TLS directly. Exact records
+  like `portainer.dofek.asherlc.com` still take precedence.
 - Workspace bootstrap: the GitHub workflow creates the tagged HCP Terraform
   workspace before `terraform init` so non-interactive CI never blocks on the
   first PR.
