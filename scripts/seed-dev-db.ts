@@ -24,6 +24,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
+import { clearSeedData, seedCore } from "./seed/core.ts";
+import { USER_ID } from "./seed/helpers.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -32,8 +34,6 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
-
-const USER_ID = "00000000-0000-0000-0000-000000000001";
 
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
@@ -101,41 +101,8 @@ async function applyMigrations() {
 // ---------------------------------------------------------------------------
 
 async function seedData() {
-  // Clear existing seed data (idempotent re-runs)
-  await sql`DELETE FROM fitness.metric_stream WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.sleep_session WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.activity WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.daily_metrics WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.nutrition_daily WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.body_measurement WHERE provider_id IN ('whoop', 'apple_health')`;
-
-  await sql`
-		INSERT INTO fitness.user_profile (id, name)
-		VALUES (${USER_ID}, 'Baseline User')
-		ON CONFLICT (id) DO NOTHING
-	`;
-
-  // Providers
-  await sql`
-		INSERT INTO fitness.provider (id, name, user_id) VALUES
-			('whoop', 'WHOOP', ${USER_ID}),
-			('apple_health', 'Apple Health', ${USER_ID})
-		ON CONFLICT DO NOTHING
-	`;
-  await sql`
-		INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority) VALUES
-			('whoop', 1, 1),
-			('apple_health', 2, 2)
-		ON CONFLICT (provider_id) DO UPDATE
-			SET priority = EXCLUDED.priority, sleep_priority = EXCLUDED.sleep_priority
-	`;
-
-  // Auth session for browser testing
-  await sql`
-		INSERT INTO fitness.session (id, user_id, expires_at)
-		VALUES ('dev-session', ${USER_ID}, NOW() + INTERVAL '365 days')
-		ON CONFLICT DO NOTHING
-	`;
+  await clearSeedData(sql);
+  await seedCore(sql);
 
   const today = new Date();
 
