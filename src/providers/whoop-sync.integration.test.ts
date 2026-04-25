@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -348,6 +348,14 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(session.sleepType).toBe("sleep");
     expect(session.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
     expect(session.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
+
+    const viewRows = await ctx.db.execute<{ count: number }>(
+      sql`SELECT count(*)::int AS count
+          FROM fitness.v_sleep
+          WHERE provider_id = 'whoop'
+            AND started_at = '2026-02-28T23:00:00Z'::timestamptz`,
+    );
+    expect(viewRows[0]?.count).toBeGreaterThan(0);
   });
 
   it("syncs per-stage timings into sleep_stage when session exists for sleep id", async () => {
