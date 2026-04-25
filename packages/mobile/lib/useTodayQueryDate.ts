@@ -1,21 +1,25 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useState } from "react";
 
-export function getMillisecondsUntilNextLocalMidnight(now: Date): number {
+function formatQueryDate(date: Date = new Date()): string {
+  return formatDateYmd(date);
+}
+
+function getMillisecondsUntilNextLocalMidnight(now: Date): number {
   const nextMidnight = new Date(now);
   nextMidnight.setHours(24, 0, 0, 50);
   return nextMidnight.getTime() - now.getTime();
 }
 
 export function useTodayQueryDate(): string {
-  const [todayQueryDate, setTodayQueryDate] = useState(() => formatDateYmd());
+  const [todayQueryDate, setTodayQueryDate] = useState(() => formatQueryDate());
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const scheduleUpdate = () => {
       timeoutId = setTimeout(() => {
-        setTodayQueryDate(formatDateYmd());
+        setTodayQueryDate(formatQueryDate());
         scheduleUpdate();
       }, getMillisecondsUntilNextLocalMidnight(new Date()));
     };

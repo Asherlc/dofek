@@ -1,13 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMillisecondsUntilNextLocalMidnight, useTodayQueryDate } from "./useTodayQueryDate";
-
-describe("getMillisecondsUntilNextLocalMidnight", () => {
-  it("returns the time remaining until just after local midnight", () => {
-    const now = new Date("2026-03-21T23:59:50");
-    expect(getMillisecondsUntilNextLocalMidnight(now)).toBe(10_050);
-  });
-});
+import { useTodayQueryDate } from "./useTodayQueryDate";
 
 describe("useTodayQueryDate", () => {
   afterEach(() => {

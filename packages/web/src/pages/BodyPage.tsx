@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { useMemo } from "react";
 import { z } from "zod";
@@ -17,7 +18,6 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
-import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -85,7 +85,7 @@ function buildSkinTempSeries(
 export function BodyPage() {
   const units = useUnitConverter();
   const { days, setDays } = useBodyDays();
-  const endDate = useTodayQueryDate();
+  const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });

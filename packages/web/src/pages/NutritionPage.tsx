@@ -9,7 +9,7 @@ import { AddFoodModal, type FoodFormData, type MealType } from "../components/Ad
 import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
-import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -278,12 +278,7 @@ export function NutritionPage() {
         {foodQuery.isLoading && <ChartLoadingSkeleton height={200} />}
 
         {foodQuery.error ? (
-          <QueryStatePanel
-            variant="error"
-            title="Could not load food entries"
-            message={getQueryErrorMessage(foodQuery.error, "Failed to load food entries.")}
-            height={200}
-          />
+          <QueryStatePanel error={foodQuery.error} height={200} />
         ) : (
           <>
             {/* Daily summary */}

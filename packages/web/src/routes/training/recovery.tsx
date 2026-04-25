@@ -1,10 +1,11 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
-import { useTodayQueryDate } from "../../hooks/useTodayQueryDate.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { trpc } from "../../lib/trpc.ts";
 
@@ -14,7 +15,7 @@ export const Route = createFileRoute("/training/recovery")({
 
 function RecoveryTab() {
   const { days } = useTrainingDays();
-  const endDate = useTodayQueryDate();
+  const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days });
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });

@@ -527,8 +527,9 @@ export class FatSecretProvider implements SyncProvider {
     }
     const consumerKey = this.#consumerKey;
     const consumerSecret = this.#consumerSecret;
+
     if (!consumerKey || !consumerSecret) {
-      throw new Error("FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required");
+      throw new Error("FatSecret credentials are not configured");
     }
     return {
       consumerKey,

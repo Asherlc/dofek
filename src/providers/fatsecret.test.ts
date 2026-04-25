@@ -424,6 +424,15 @@ describe("FatSecretProvider.authSetup()", () => {
     expect(setup.oauth1Flow.exchangeForAccessToken).toBeTypeOf("function");
   });
 
+  it("throws when authSetup is called without configured credentials", () => {
+    delete process.env.FATSECRET_CONSUMER_KEY;
+    delete process.env.FATSECRET_CONSUMER_SECRET;
+    const provider = new FatSecretProvider();
+    expect(() => provider.authSetup()).toThrow(
+      "FATSECRET_CONSUMER_KEY and FATSECRET_CONSUMER_SECRET are required",
+    );
+  });
+
   it("exchangeCode throws for OAuth 1.0 provider", async () => {
     process.env.FATSECRET_CONSUMER_KEY = "key";
     process.env.FATSECRET_CONSUMER_SECRET = "secret";

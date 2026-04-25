@@ -13,7 +13,7 @@ import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
@@ -294,17 +294,19 @@ export function Dashboard() {
     [metrics],
   );
 
+  const renderQueryError = (queryError: unknown, height: number) => (
+    <QueryStatePanel error={queryError} height={height} />
+  );
+  const renderChartQueryError = (queryError: unknown) => renderQueryError(queryError, 200);
+  const renderChartCard = (content: ReactNode) => <div className="card p-2 sm:p-4">{content}</div>;
+
   // Build a map of section ID -> rendered content
   const sectionContent: Record<string, { title: string; subtitle: string; content: ReactNode }> = {
     healthMonitor: {
       title: "Health Monitor",
       subtitle: healthMonitorSubtitle(),
       content: trends.error ? (
-        <QueryStatePanel
-          variant="error"
-          message={getQueryErrorMessage(trends.error, "Failed to load health monitor data.")}
-          height={160}
-        />
+        renderQueryError(trends.error, 160)
       ) : (
         <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
       ),
@@ -318,11 +320,7 @@ export function Dashboard() {
           <div className="h-48 rounded-lg shimmer" />
         </div>
       ) : insightsQuery.error ? (
-        <QueryStatePanel
-          variant="error"
-          message={getQueryErrorMessage(insightsQuery.error, "Failed to load insights.")}
-          height={192}
-        />
+        renderQueryError(insightsQuery.error, 192)
       ) : topInsights.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {topInsights.map((insight) => (
@@ -378,101 +376,71 @@ export function Dashboard() {
     hrvRhr: {
       title: "Heart Rate Variability & Resting HR",
       subtitle: "60-day baseline band with 7-day rolling average",
-      content: (
-        <div className="card p-2 sm:p-4">
-          {hrvBaseline.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(hrvBaseline.error, "Failed to load HRV baseline data.")}
-              height={200}
-            />
-          ) : (
-            <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
-          )}
-        </div>
+      content: renderChartCard(
+        hrvBaseline.error ? (
+          renderChartQueryError(hrvBaseline.error)
+        ) : (
+          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+        ),
       ),
     },
     spo2Temp: {
       title: spo2TempConfig.title,
       subtitle: spo2TempConfig.subtitle,
-      content: dailyMetrics.error ? (
-        <div className="card p-2 sm:p-4">
-          <QueryStatePanel
-            variant="error"
-            message={getQueryErrorMessage(dailyMetrics.error, "Failed to load daily metrics.")}
-            height={200}
-          />
-        </div>
-      ) : hasSpO2 || hasSkinTemp ? (
-        <div className="card p-2 sm:p-4">
-          <TimeSeriesChart
-            series={[
-              ...(hasSpO2 ? [spo2Series] : []),
-              ...(hasSkinTemp
-                ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                : []),
-            ]}
-            height={200}
-            yAxis={spo2TempConfig.yAxis}
-            loading={dailyMetrics.isLoading}
-          />
-        </div>
-      ) : null,
+      content: dailyMetrics.error
+        ? renderChartCard(renderChartQueryError(dailyMetrics.error))
+        : hasSpO2 || hasSkinTemp
+          ? renderChartCard(
+              <TimeSeriesChart
+                series={[
+                  ...(hasSpO2 ? [spo2Series] : []),
+                  ...(hasSkinTemp
+                    ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                    : []),
+                ]}
+                height={200}
+                yAxis={spo2TempConfig.yAxis}
+                loading={dailyMetrics.isLoading}
+              />,
+            )
+          : null,
     },
     steps: {
       title: "Daily Steps",
       subtitle: "Total daily step count over time",
-      content: (
-        <div className="card p-2 sm:p-4">
-          {dailyMetrics.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(dailyMetrics.error, "Failed to load daily metrics.")}
-              height={200}
-            />
-          ) : (
-            <TimeSeriesChart
-              series={[stepsSeries]}
-              height={200}
-              yAxis={[{ name: "steps" }]}
-              loading={dailyMetrics.isLoading}
-            />
-          )}
-        </div>
+      content: renderChartCard(
+        dailyMetrics.error ? (
+          renderChartQueryError(dailyMetrics.error)
+        ) : (
+          <TimeSeriesChart
+            series={[stepsSeries]}
+            height={200}
+            yAxis={[{ name: "steps" }]}
+            loading={dailyMetrics.isLoading}
+          />
+        ),
       ),
     },
     sleep: {
       title: "Sleep",
       subtitle: `Stage breakdown (${days} days)`,
-      content: (
-        <div className="card p-2 sm:p-4">
-          {sleepData.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(sleepData.error, "Failed to load sleep data.")}
-              height={200}
-            />
-          ) : (
-            <SleepChart data={sleepRows} loading={sleepData.isLoading} />
-          )}
-        </div>
+      content: renderChartCard(
+        sleepData.error ? (
+          renderChartQueryError(sleepData.error)
+        ) : (
+          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
+        ),
       ),
     },
     nutrition: {
       title: "Nutrition",
       subtitle: `Calories & macros (${days} days)`,
-      content: (
-        <div className="card p-2 sm:p-4">
-          {nutritionData.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(nutritionData.error, "Failed to load nutrition data.")}
-              height={200}
-            />
-          ) : (
-            <NutritionChart data={nutritionRows} loading={nutritionData.isLoading} />
-          )}
-        </div>
+      content: renderChartCard(
+        nutritionData.error ? (
+          renderChartQueryError(nutritionData.error)
+        ) : (
+          <NutritionChart data={nutritionRows} loading={nutritionData.isLoading} />
+        ),
       ),
     },
     bodyComp: {
@@ -486,14 +454,7 @@ export function Dashboard() {
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
             </div>
             {smoothedWeight.error ? (
-              <QueryStatePanel
-                variant="error"
-                message={getQueryErrorMessage(
-                  smoothedWeight.error,
-                  "Failed to load weight trend data.",
-                )}
-                height={220}
-              />
+              renderQueryError(smoothedWeight.error, 220)
             ) : (
               <SmoothedWeightChart
                 data={smoothedWeight.data ?? []}
@@ -507,14 +468,7 @@ export function Dashboard() {
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
             {bodyRecomp.error ? (
-              <QueryStatePanel
-                variant="error"
-                message={getQueryErrorMessage(
-                  bodyRecomp.error,
-                  "Failed to load recomposition data.",
-                )}
-                height={220}
-              />
+              renderQueryError(bodyRecomp.error, 220)
             ) : (
               <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
             )}
