@@ -704,26 +704,40 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_first AS SELECT 1")
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_second AS SELECT 2");
-    mockClientQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockRejectedValueOnce(new Error("No space left on device"))
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ populated: true }] });
+    mockClientQuery.mockImplementation(
+      async (text: string, params?: readonly unknown[] | undefined) => {
+        if (text.includes("FROM drizzle.__view_hashes") && text.includes("view_name = $1")) {
+          return { rows: [] };
+        }
+        if (text.includes("jsonb_build_object")) {
+          return { rows: [{ fingerprint_source: "[]" }] };
+        }
+        if (text === "CREATE MATERIALIZED VIEW fitness.v_first AS SELECT 1") {
+          throw new Error("No space left on device");
+        }
+        if (text.includes("FROM pg_matviews")) {
+          const relation = params?.[1];
+          if (text.includes("ispopulated")) {
+            return relation === "v_second" ? { rows: [{ populated: true }] } : { rows: [] };
+          }
+          return relation === "v_second" ? { rows: [{ present: 1 }] } : { rows: [] };
+        }
+        return { rows: [] };
+      },
+    );
 
-    await expect(
-      syncMaterializedViews("postgres://localhost/test", "/tmp/views"),
-    ).rejects.toMatchObject({
+    const error = await syncMaterializedViews("postgres://localhost/test", "/tmp/views").catch(
+      (error: unknown) => error,
+    );
+
+    expect(error).toBeInstanceOf(AggregateError);
+    if (!(error instanceof AggregateError)) {
+      throw error;
+    }
+    expect(error).toMatchObject({
       message: "Failed to recreate 1 view(s): fitness.v_first",
-      errors: [expect.objectContaining({ message: "No space left on device" })],
     });
+    expect(error.errors).toEqual([expect.objectContaining({ message: "No space left on device" })]);
 
     expect(executedQueries()).toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_second" CASCADE',

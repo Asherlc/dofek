@@ -85,6 +85,7 @@ export async function computeViewDependencyFingerprintHash(
   viewName: string,
 ): Promise<string> {
   const { schema, relation } = parseQualifiedName(viewName);
+  // cspell:disable
   const result = await client.query<{ fingerprint_source: string }>(
     `WITH target_view AS (
       SELECT view_class.oid
@@ -131,6 +132,7 @@ export async function computeViewDependencyFingerprintHash(
     FROM dependency_rows`,
     [schema, relation],
   );
+  // cspell:enable
   return hashViewContent(result.rows[0]?.fingerprint_source ?? "[]");
 }
 
