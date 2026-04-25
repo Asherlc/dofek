@@ -13,7 +13,7 @@ export interface MetricStreamSourceRow {
   [key: string]: unknown;
 }
 
-const DEFAULT_BATCH_SIZE = 5000;
+const DEFAULT_BATCH_SIZE = 1000;
 
 /**
  * Callback that receives a batch of rows to insert.

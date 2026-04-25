@@ -45,6 +45,8 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Traefik consumes both the swarm provider and a bind-mounted dynamic-config directory at `/opt/dofek/traefik-dynamic` so review-app workspaces can add exact PR host routes without modifying the stack for every PR.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
+- The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
+- PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, and `maintenance_work_mem=64MB` to keep per-query and per-connection memory bounded on the small single-node host.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 
@@ -121,13 +123,12 @@ CI (main) -> build dofek + dofek-ml (same tag)
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
       Materialized view refresh is out-of-band and not a deploy gate.
    8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
-   9. Trigger `POST /api/internal/materialized-views/refresh` over HTTPS from the CI runner (`https://dofek.asherlc.com/...`) after the stack update completes.
-      This keeps materialized view sync out-of-band from schema migrations while still kicking it off automatically during deploy.
 
 ### Materialized View Refresh Webhook
 
-Materialized view syncing is intentionally decoupled from the deploy migration step.
-Deploy now triggers this webhook after stack deploy as a separate async operation.
+Materialized view syncing is intentionally decoupled from deploys.
+Normal deploys do not trigger this webhook; use it manually after changing materialized-view definitions or when recovering from stale view state.
+Do not use it as a routine deploy gate because it can rebuild heavy views against live data.
 
 - Endpoint: `POST /api/internal/materialized-views/refresh`
 - Auth: `Authorization: Bearer <MATERIALIZED_VIEW_REFRESH_TOKEN>`

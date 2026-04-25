@@ -268,9 +268,9 @@ describe("upsertMetricStreamBatch", () => {
 
     const count = await upsertMetricStreamBatch(db, "p1", records);
     expect(count).toBe(1500);
-    // single metric_stream batch (default batch size is 5000)
-    expect(capture.values).toHaveLength(1);
-    expect(capture.values[0]).toHaveLength(1500);
+    expect(capture.values).toHaveLength(2);
+    expect(capture.values[0]).toHaveLength(1000);
+    expect(capture.values[1]).toHaveLength(500);
   });
 
   it("returns 0 and does not insert when no matching records", async () => {

@@ -990,7 +990,7 @@ describe("RideWithGpsProvider — sync", () => {
     expect(db.delete).not.toHaveBeenCalled();
   });
 
-  it("batches metric inserts in chunks of 500", async () => {
+  it("batches metric inserts in 1000-row chunks", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
@@ -1047,9 +1047,7 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    // 501 points with lat/lng/speed -> 1503 metric_stream rows in one batch
-    expect(metricInsertCalls).toHaveLength(1);
-    expect(metricInsertCalls[0]).toHaveLength(1503);
+    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 503]);
   });
 
   it("handles deleted trip items", async () => {
