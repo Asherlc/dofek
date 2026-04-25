@@ -231,11 +231,8 @@ describe("createAuthRouter", () => {
 
     it("stores validated return_to when provided", async () => {
       const { app } = createTestApp();
-      const res = await request(
-        app,
-        "get",
-        "/auth/login/google?return_to=%2Fdashboard%3FproviderGuide%3Dtrue",
-      );
+      const returnTo = encodeURIComponent("/dashboard?providerGuide=true");
+      const res = await request(app, "get", `/auth/login/google?return_to=${returnTo}`);
       expect(res.status).toBe(302);
       expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(
         expect.anything(),
