@@ -1,8 +1,7 @@
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
-import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -38,8 +37,13 @@ export function startInstrumentation(
       : undefined,
     instrumentations: [
       // Winston logs are bridged via @opentelemetry/winston-transport in logger.ts
-      // (WinstonInstrumentation doesn't work in ESM apps)
-      ...(hasTraceExport ? [new HttpInstrumentation(), new ExpressInstrumentation()] : []),
+      ...(hasTraceExport
+        ? [
+            getNodeAutoInstrumentations({
+              "@opentelemetry/instrumentation-winston": { enabled: false },
+            }),
+          ]
+        : []),
     ],
   });
 

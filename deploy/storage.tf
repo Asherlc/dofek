@@ -22,6 +22,56 @@ resource "cloudflare_r2_bucket" "db_backups" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket_lifecycle" "storybook_preview_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.storybook.name
+
+  rules = [{
+    id      = "expire-pr-previews"
+    enabled = true
+    conditions = {
+      prefix = "pr-"
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 1209600
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 604800
+        type    = "Age"
+      }
+    }
+  }]
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "ota_preview_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.ota.name
+
+  rules = [{
+    id      = "expire-pr-previews"
+    enabled = true
+    conditions = {
+      prefix = "pr-"
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 1209600
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 604800
+        type    = "Age"
+      }
+    }
+  }]
+}
+
 # Managed manually — cloudflare_r2_custom_domain does not support import.
 # The storybook.dofek.fit custom domain is configured in the Cloudflare dashboard.
 # Re-add this resource after the existing domain is removed or import is supported.

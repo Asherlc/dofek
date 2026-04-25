@@ -171,7 +171,9 @@ const NutritionIndexRoute = NutritionIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => NutritionRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/nutrition/index.lazy').then((d) => d.Route),
+)
 const BodyIndexRoute = BodyIndexRouteImport.update({
   id: '/',
   path: '/',

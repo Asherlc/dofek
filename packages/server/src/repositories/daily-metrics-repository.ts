@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -254,12 +255,13 @@ export class DailyMetricsRepository extends BaseRepository {
     logger.warn(`[daily-metrics] View stale for user ${this.userId} (${reason}), refreshing`);
 
     try {
-      try {
-        await this.db.execute(
-          sql.raw("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
+      const refreshResult = await refreshMaterializedView(this.db, "fitness.v_daily_metrics", {
+        source: "server.daily_metrics_stale_view",
+      });
+      if (refreshResult.fallbackUsed) {
+        logger.warn(
+          `[daily-metrics] Fallback to blocking refresh for user ${this.userId} (${reason})`,
         );
-      } catch {
-        await this.db.execute(sql.raw("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics"));
       }
     } catch (refreshError) {
       Sentry.captureException(refreshError, {

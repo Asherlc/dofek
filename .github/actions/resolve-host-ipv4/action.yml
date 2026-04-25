@@ -1,0 +1,28 @@
+name: Resolve Host IPv4
+description: Resolve the first IPv4 address for a host
+inputs:
+  host:
+    description: Hostname to resolve
+    required: true
+outputs:
+  ipv4:
+    description: First resolved IPv4 address
+    value: ${{ steps.resolve.outputs.ipv4 }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve IPv4
+      id: resolve
+      shell: bash
+      env:
+        RESOLVE_HOST: ${{ inputs.host }}
+      run: |
+        set -euo pipefail
+
+        ipv4="$(getent ahostsv4 "$RESOLVE_HOST" | awk 'NR == 1 { print $1 }')"
+        if [ -z "$ipv4" ]; then
+          echo "::error::Failed to resolve IPv4 address for host $RESOLVE_HOST"
+          exit 1
+        fi
+
+        echo "ipv4=$ipv4" >> "$GITHUB_OUTPUT"

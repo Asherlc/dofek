@@ -241,7 +241,7 @@ const authorizedProvider = {
   authorized: true,
   importOnly: false,
   lastSyncedAt: "2026-03-19T12:00:00Z",
-  needsOAuth: false,
+  needsReauth: false,
 };
 
 const unauthorizedProvider = {
@@ -251,7 +251,7 @@ const unauthorizedProvider = {
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
-  needsOAuth: false,
+  needsReauth: false,
 };
 
 const importOnlyProvider = {
@@ -261,7 +261,7 @@ const importOnlyProvider = {
   authorized: true,
   importOnly: true,
   lastSyncedAt: null,
-  needsOAuth: false,
+  needsReauth: false,
 };
 
 const appleHealthStats = {
@@ -334,6 +334,18 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("Connect")).toBeNull();
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Full sync")).toBeNull();
+    });
+
+    it("renders re-authorize button when provider needs reauth", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...authorizedProvider, needsReauth: true }],
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Re-authorize")).toBeTruthy();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
@@ -574,7 +586,7 @@ describe("ProviderDetailScreen", () => {
       authorized: true,
       importOnly: false,
       lastSyncedAt: "2026-03-19T12:00:00Z",
-      needsOAuth: false,
+      needsReauth: false,
     };
 
     beforeEach(() => {

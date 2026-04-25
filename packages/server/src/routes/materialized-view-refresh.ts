@@ -52,26 +52,31 @@ export function createMaterializedViewRefreshRouter(): Router {
     }
 
     if (activeRefreshRun) {
+      logger.warn("[views-refresh] Request ignored: already running");
       res.status(202).json({ status: "already_running" });
       return;
     }
 
     activeRefreshRun = (async () => {
+      const start = performance.now();
       try {
         logger.info("[views-refresh] Started");
         const result = await syncMaterializedViews(databaseUrl);
         logger.info(
-          `[views-refresh] Done — ${result.synced} recreated, ${result.skipped} unchanged` +
+          `[views-refresh] Done duration_ms=${Math.round(performance.now() - start)} — ${result.synced} recreated, ${result.skipped} unchanged` +
             (result.refreshed > 0 ? `, ${result.refreshed} refreshed` : ""),
         );
       } catch (error) {
-        logger.error(`[views-refresh] Failed: ${error}`);
+        logger.error(
+          `[views-refresh] Failed duration_ms=${Math.round(performance.now() - start)}: ${error}`,
+        );
         Sentry.captureException(error);
       } finally {
         activeRefreshRun = null;
       }
     })();
 
+    logger.info("[views-refresh] Accepted refresh request");
     res.status(202).json({ status: "started" });
   });
 

@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
+import { refreshMaterializedView } from "./materialized-view-refresh.ts";
 import { ALL_MATERIALIZED_VIEWS, DEDUP_VIEWS, ROLLUP_VIEWS } from "./materialized-views.ts";
 
 /**
@@ -118,19 +119,11 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
 
 async function refreshView(db: SyncDatabase, view: string): Promise<void> {
   try {
-    await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
+    await refreshMaterializedView(db, view, { source: "sync.post_sync" });
   } catch (concurrentError) {
-    // CONCURRENTLY can fail for many reasons: view not populated, no unique
-    // index, lock conflicts, resource limits, or Drizzle-wrapped errors where
-    // the original Postgres message is obscured. Always fall back to a
-    // blocking refresh rather than giving up entirely.
-    try {
-      await db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-    } catch (blockingError) {
-      throw new AggregateError(
-        [concurrentError, blockingError],
-        `Failed to refresh ${view} (both CONCURRENT and blocking)`,
-      );
-    }
+    logger.warn(
+      `[mv-refresh] source=sync.post_sync view=${view} failed: ${concurrentError instanceof Error ? concurrentError.message : String(concurrentError)}`,
+    );
+    throw concurrentError;
   }
 }

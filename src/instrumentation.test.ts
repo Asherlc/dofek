@@ -1,8 +1,7 @@
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { ExpressInstrumentation } from "@opentelemetry/instrumentation-express";
-import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -11,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockStart = vi.fn();
 const mockShutdown = vi.fn().mockResolvedValue(undefined);
+const mockAutoInstrumentations = { bundle: "auto" };
 
 vi.mock("@opentelemetry/sdk-node", () => ({
   NodeSDK: vi.fn().mockImplementation(() => ({
@@ -43,12 +43,8 @@ vi.mock("@opentelemetry/sdk-metrics", () => ({
   PeriodicExportingMetricReader: vi.fn(),
 }));
 
-vi.mock("@opentelemetry/instrumentation-http", () => ({
-  HttpInstrumentation: vi.fn(),
-}));
-
-vi.mock("@opentelemetry/instrumentation-express", () => ({
-  ExpressInstrumentation: vi.fn(),
+vi.mock("@opentelemetry/auto-instrumentations-node", () => ({
+  getNodeAutoInstrumentations: vi.fn(() => mockAutoInstrumentations),
 }));
 
 function removeExtraListeners(signal: NodeJS.Signals, countBefore: number): void {
@@ -85,8 +81,7 @@ describe("instrumentation", () => {
     vi.mocked(BatchSpanProcessor).mockClear();
     vi.mocked(BatchLogRecordProcessor).mockClear();
     vi.mocked(PeriodicExportingMetricReader).mockClear();
-    vi.mocked(HttpInstrumentation).mockClear();
-    vi.mocked(ExpressInstrumentation).mockClear();
+    vi.mocked(getNodeAutoInstrumentations).mockClear();
     mockStart.mockClear();
     mockShutdown.mockClear();
   });
@@ -157,68 +152,54 @@ describe("instrumentation", () => {
     await sdk?.shutdown();
   });
 
-  it("constructs NodeSDK with span processors, log processors, metric reader, and instrumentations", async () => {
+  it("constructs NodeSDK with span processors, log processors, metric reader, and auto instrumentations", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     startInstrumentation({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318" });
 
     expect(NodeSDK).toHaveBeenCalledOnce();
-    const calls = vi.mocked(NodeSDK).mock.calls;
-    const config = calls[0]?.[0];
-    expect(config).toBeDefined();
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(config?.metricReader).toBeDefined();
-    expect(config?.instrumentations).toHaveLength(2);
+    expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
     expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
       expect.objectContaining({ exporter: expect.any(OTLPMetricExporter) }),
     );
-    expect(HttpInstrumentation).toHaveBeenCalled();
-    expect(ExpressInstrumentation).toHaveBeenCalled();
+    expect(getNodeAutoInstrumentations).toHaveBeenCalledWith({
+      "@opentelemetry/instrumentation-winston": { enabled: false },
+    });
   });
 
-  it("only configures trace processors/instrumentations when only traces endpoint exists", async () => {
+  it("only configures trace processors and auto instrumentations when only traces endpoint exists", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     startInstrumentation({
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://localhost:4318/v1/traces",
     });
 
-    expect(NodeSDK).toHaveBeenCalledOnce();
-    const calls = vi.mocked(NodeSDK).mock.calls;
-    const config = calls[0]?.[0];
-    expect(config).toBeDefined();
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
     expect(config?.spanProcessors).toHaveLength(1);
     expect(config?.logRecordProcessors).toHaveLength(0);
     expect(config?.metricReader).toBeUndefined();
-    expect(config?.instrumentations).toHaveLength(2);
-    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
-    expect(BatchLogRecordProcessor).not.toHaveBeenCalled();
-    expect(PeriodicExportingMetricReader).not.toHaveBeenCalled();
-    expect(HttpInstrumentation).toHaveBeenCalled();
-    expect(ExpressInstrumentation).toHaveBeenCalled();
+    expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
+    expect(getNodeAutoInstrumentations).toHaveBeenCalledOnce();
   });
 
-  it("only configures log processors/instrumentations when only logs endpoint exists", async () => {
+  it("only configures log processors when only logs endpoint exists", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
 
     startInstrumentation({
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "http://localhost:4318/v1/logs",
     });
 
-    expect(NodeSDK).toHaveBeenCalledOnce();
-    const calls = vi.mocked(NodeSDK).mock.calls;
-    const config = calls[0]?.[0];
-    expect(config).toBeDefined();
+    const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(1);
-    expect(config?.instrumentations).toHaveLength(0);
-    expect(BatchSpanProcessor).not.toHaveBeenCalled();
-    expect(BatchLogRecordProcessor).toHaveBeenCalledWith(expect.any(OTLPLogExporter));
-    expect(HttpInstrumentation).not.toHaveBeenCalled();
-    expect(ExpressInstrumentation).not.toHaveBeenCalled();
+    expect(config?.instrumentations).toEqual([]);
+    expect(getNodeAutoInstrumentations).not.toHaveBeenCalled();
   });
 
   it("configures metric reader when only metrics endpoint exists", async () => {
@@ -228,12 +209,11 @@ describe("instrumentation", () => {
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://localhost:4318/v1/metrics",
     });
 
-    expect(sdk).toBeDefined();
-    expect(NodeSDK).toHaveBeenCalledOnce();
     const config = vi.mocked(NodeSDK).mock.calls[0]?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(0);
     expect(config?.metricReader).toBeDefined();
+    expect(config?.instrumentations).toEqual([]);
     expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
       expect.objectContaining({
         exporter: expect.any(OTLPMetricExporter),
@@ -251,7 +231,6 @@ describe("instrumentation", () => {
     expect(process.listenerCount("SIGTERM")).toBe(sigTermCountBefore + 1);
     expect(process.listenerCount("SIGINT")).toBe(sigIntCountBefore + 1);
 
-    // Trigger the SIGTERM handler and verify it calls shutdown
     const sigTermHandler = process.listeners("SIGTERM").at(-1);
     expect(sigTermHandler).toBeDefined();
     if (typeof sigTermHandler === "function") {

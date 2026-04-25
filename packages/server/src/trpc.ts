@@ -8,6 +8,7 @@ import {
   trpcCacheLookupDuration,
   trpcDbQueryDuration,
   trpcProcedureDuration,
+  trpcSlowQueriesTotal,
 } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
 
@@ -93,15 +94,19 @@ function cached(ttlMs: number) {
     const dbStart = performance.now();
     const result = await next();
     const dbDurationMs = performance.now() - dbStart;
+    const totalDurationMs = performance.now() - start;
     trpcDbQueryDuration.observe({ procedure: path }, dbDurationMs / 1000);
 
     if (dbDurationMs > 500) {
-      logger.warn(`Slow query: ${path} took ${Math.round(dbDurationMs)}ms`);
+      trpcSlowQueriesTotal.inc({ procedure: path, type });
+      logger.warn(
+        `[trpc] Slow query procedure=${path} type=${type} user_id=${ctx.userId ?? "anon"} db_duration_ms=${Math.round(dbDurationMs)} total_duration_ms=${Math.round(totalDurationMs)} cache_hit=false app_version=${ctx.appVersion ?? "unknown"} assets_version=${ctx.assetsVersion ?? "unknown"}`,
+      );
     }
 
     trpcProcedureDuration.observe(
       { procedure: path, type, cache_hit: "false" },
-      (performance.now() - start) / 1000,
+      totalDurationMs / 1000,
     );
     if (result.ok) {
       await queryCache.set(key, result.data, ttlMs);

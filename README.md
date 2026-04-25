@@ -133,7 +133,9 @@ pnpm storybook:web
 pnpm storybook:mobile
 ```
 
-Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/storybook/pr-<PR number>/`. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
+Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/pr-<PR number>/index.html`. Closed PR previews are deleted by workflow, with R2 lifecycle rules as a fallback safety net. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
+
+Same-repo pull requests can also bring up a full review app on dedicated Hetzner infrastructure at `https://pr-<PR number>.dofek.asherlc.com`. See [docs/review-apps.md](docs/review-apps.md) for the shared-front-door architecture and lifecycle.
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
 
@@ -195,6 +197,7 @@ docker run dofek:latest sync
 ```
 
 All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. All modes run migrations before starting. In production, the `web` mode now waits for migrations to finish before accepting traffic (no background migration while serving).
+All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
 
 ## Deployment
 
@@ -268,6 +271,13 @@ axiom query 'dofek-logs' --filter 'span.name == "db.query" AND duration > 200ms'
 axiom query 'dofek-logs' --filter 'message contains "Slow query"'
 ```
 
+Production Postgres also records statement-level diagnostics:
+
+- `pg_stat_statements` retains aggregated execution stats for SQL fingerprints.
+- `log_min_duration_statement=1000` writes any SQL statement taking 1 second or longer to Postgres logs.
+
+Use the commands in [deploy/README.md](deploy/README.md#postgres-statement-diagnostics) during incidents to inspect current statements, top cumulative queries, and recent slow SQL directly from production.
+
 ### Production secrets and deploy-time injection
 
 See [`deploy/README.md`](deploy/README.md#production-secrets) for how Infisical secrets are exported to the production stack at deploy time, the list of required Infisical keys, and the production machine identity setup.
@@ -323,6 +333,10 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] Watchtower auto-deploy with Slack notifications
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
 - [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB)
+
+### Resilience
+- [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.
+- [ ] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout.
 
 ### Authentication Follow-ups
 - [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking

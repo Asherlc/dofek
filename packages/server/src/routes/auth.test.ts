@@ -1343,7 +1343,7 @@ describe("createAuthRouter", () => {
       expect(data.data).toEqual(["strava"]);
     });
 
-    it("skips providers whose authSetup throws instead of crashing the list", async () => {
+    it("skips providers whose validate reports they are not configured", async () => {
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "broken",
@@ -1373,17 +1373,33 @@ describe("createAuthRouter", () => {
       expect(data.data).toEqual(["strava"]);
     });
 
-    it("returns fallback when provider listing throws", async () => {
+    it("returns 500 when a configured provider throws during auth setup", async () => {
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "broken",
+          name: "Broken",
+          validate: () => null,
+          authSetup: () => {
+            throw new Error("CLIENT_ID is not set");
+          },
+        },
+      ]);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/auth/providers");
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Failed to initialize auth provider broken");
+      expect(Sentry.captureException).toHaveBeenCalled();
+    });
+
+    it("returns 500 when provider listing throws", async () => {
       vi.mocked(getAllProviders).mockImplementation(() => {
         throw new Error("Registry error");
       });
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/auth/providers");
-      expect(res.status).toBe(200);
-      const data = JSON.parse(res.body);
-      expect(data.identity).toEqual(["google"]);
-      expect(data.data).toEqual([]);
-      expect(data.nativeApple).toBe(false);
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Registry error");
+      expect(Sentry.captureException).toHaveBeenCalled();
     });
   });
 

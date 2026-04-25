@@ -133,6 +133,8 @@ vi.mock("../../theme", () => ({
     green: "#0f0",
     orange: "#f80",
   },
+  radius: { xl: 16, lg: 12, md: 8, sm: 4, full: 9999 },
+  spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
 }));
 
 vi.mock("../../lib/auth-context", () => ({
@@ -303,9 +305,10 @@ function setupDefaultMocks() {
   mockProvidersQuery.mockReturnValue({
     data: [connectedProvider, disconnectedProvider],
     isLoading: false,
+    error: null,
   });
-  mockStatsQuery.mockReturnValue({ data: [], isLoading: false });
-  mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
+  mockStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+  mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
 }
 
@@ -659,10 +662,12 @@ describe("ProvidersScreen", () => {
     mockProvidersQuery.mockReturnValue({
       data: [connectedProvider],
       isLoading: false,
+      error: null,
     });
     mockStatsQuery.mockReturnValue({
       data: [],
       isLoading: true,
+      error: null,
     });
 
     const { default: ProvidersScreen } = await import("./index");
@@ -677,6 +682,7 @@ describe("ProvidersScreen", () => {
     mockProvidersQuery.mockReturnValue({
       data: [disconnectedProvider],
       isLoading: false,
+      error: null,
     });
 
     const { default: ProvidersScreen } = await import("./index");
@@ -692,6 +698,32 @@ describe("ProvidersScreen", () => {
 
     expect(screen.getByText("Sync All")).toBeTruthy();
     expect(screen.getByText("Full Sync All")).toBeTruthy();
+  });
+
+  it("shows an explicit error when providers fail to load", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Providers failed"),
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    expect(screen.getByText("Providers failed")).toBeTruthy();
+  });
+
+  it("shows an explicit error when sync history fails to load", async () => {
+    mockLogsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Logs failed"),
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    expect(screen.getByText("Logs failed")).toBeTruthy();
   });
 
   it("passes sinceDays: 7 when Sync button is clicked", async () => {

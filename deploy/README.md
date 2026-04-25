@@ -12,11 +12,13 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
+  - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
   - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
 - **Networking**:
   - **Firewall**: `hcloud_firewall` allows SSH (port 22) from restricted IPs and HTTP/HTTPS (80/443) from everywhere.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
   - **Reverse Proxy**: Traefik handles SSL termination via Let's Encrypt (DNS-01 challenge) and routes traffic based on `Host()` rules declared in `deploy.labels` on each swarm service. Traefik's `providers.swarm` watches the Docker API for service changes.
+  - **Review app ingress**: Traefik also watches `/opt/dofek/traefik-dynamic` through the file provider for PR-specific routes like `pr-123.dofek.asherlc.com`.
 - **Observability**:
   - **OpenTelemetry**: `otel-collector` gathers traces, logs, and metrics.
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
@@ -27,17 +29,20 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 ## Implementation Details
 
 ### Terraform (`*.tf`)
-- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and one idempotent `terraform_data` resource handles post-provision state:
+- `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and idempotent `terraform_data` resources handle post-provision state:
+  - `app_directories_sync`: ensures bind-mount directories such as `/opt/dofek/traefik-dynamic` exist on the live host even when cloud-init does not rerun.
   - `otel_config_sync`: bind-mounts `otel-collector-config.yaml` into `/opt/dofek` on the server and forces the collector service to re-read it.
   - `hcloud_volume.dofek_data`: attaches persistent block storage for DB growth headroom; size is controlled by `data_volume_size_gb`.
+- `review-apps/`: Separate Terraform root for PR-scoped Hetzner review servers and the corresponding Traefik dynamic route files on the shared front door. See [docs/review-apps.md](../docs/review-apps.md).
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
-- `storage.tf`: Manages Cloudflare R2 buckets. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
+- `storage.tf`: Manages Cloudflare R2 buckets and preview-object lifecycle rules. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
 
 ### Server Configuration (`server/`)
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
 - Single file defining all services: `web`, `worker`, `training-export-worker`, `traefik`, `db`, `redis`, `collector`, `ota`, `databasus`, `pgadmin`, `portainer`, `netdata`.
+- Traefik consumes both the swarm provider and a bind-mounted dynamic-config directory at `/opt/dofek/traefik-dynamic` so review-app workspaces can add exact PR host routes without modifying the stack for every PR.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
@@ -84,6 +89,8 @@ If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you ar
   - `ghcr.io/asherlc/dofek:<tag>`
   - `ghcr.io/asherlc/dofek-ml:<tag>`
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web`, `worker`, and `training-export-worker` together from `deploy/stack.yml`.
+- Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
+- Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
 
 ### Flow Diagram
 
@@ -119,6 +126,13 @@ CI (main) -> build dofek + dofek-ml (same tag)
    9. Trigger `POST /api/internal/materialized-views/refresh` over HTTPS from the CI runner (`https://dofek.asherlc.com/...`) after the stack update completes.
       This keeps materialized view sync out-of-band from schema migrations while still kicking it off automatically during deploy.
 
+### Rollback Boundary
+
+- A failed swarm rollout can revert service specs and image versions.
+- It does **not** revert already-applied database migrations.
+- Treat migrations as forward-only production changes.
+- If a release includes schema changes, use expand/contract discipline: deploy additive/backward-compatible schema first, then ship code that depends on it, and only remove old schema in a later release.
+
 ### Materialized View Refresh Webhook
 
 Materialized view syncing is intentionally decoupled from the deploy migration step.
@@ -130,6 +144,30 @@ Deploy now triggers this webhook after stack deploy as a separate async operatio
 - Required env vars:
   - `MATERIALIZED_VIEW_REFRESH_TOKEN`
   - `DATABASE_URL`
+
+### Postgres Statement Diagnostics
+
+Production Postgres enables two built-in diagnostics to support incident triage:
+
+- `pg_stat_statements` is preloaded at server start and enabled via migration.
+- `log_min_duration_statement=1000` logs any SQL statement taking 1 second or longer.
+
+Use them during DB incidents to identify the SQL behind timeouts or OOMs:
+
+```bash
+# Top statements by total execution time
+ssh dofek-server 'container=$(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1); \
+  printf "%s\n" "select queryid, calls, round(total_exec_time::numeric, 2) as total_ms, round(mean_exec_time::numeric, 2) as mean_ms, left(query, 250) as query from pg_stat_statements order by total_exec_time desc limit 20;" \
+  | docker exec -i "$container" sh -lc '\''PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U health -d health -P pager=off -f -'\'''
+
+# Statements currently running
+ssh dofek-server 'container=$(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1); \
+  printf "%s\n" "select pid, state, wait_event_type, wait_event, now() - query_start as duration, left(query, 250) as query from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() order by query_start asc;" \
+  | docker exec -i "$container" sh -lc '\''PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U health -d health -P pager=off -f -'\'''
+
+# Recent slow statements from Postgres logs
+ssh dofek-server 'docker logs $(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1) --since 30m 2>&1 | grep "duration:" | tail -100'
+```
 
 ### Collector Config Changes
 
@@ -150,6 +188,18 @@ Workflows using this path:
 - `.github/workflows/deploy-ios.yml`
 - `.github/workflows/deploy-ota.yml`
 - `.github/workflows/mobile-preview-ota.yml`
+
+PR preview object cleanup:
+
+- `.github/workflows/cleanup-pr-r2.yml` deletes `pr-<number>/` objects from `dofek-storybook` and `dofek-ota` when a PR closes.
+- R2 lifecycle rules in `deploy/storage.tf` also expire preview prefixes after 14 days as a safety net if a workflow-run cleanup is missed.
+
+Databasus backup state:
+
+- Databasus stores its own users, storage targets, database definitions, schedules, and backup history in `/mnt/dofek-data/databasus`.
+- Terraform creates that directory and performs a one-time copy from the legacy `databasus_data` Docker volume when the bind-mount path is still empty.
+- If that path is empty or replaced, Databasus comes up as a fresh install and scheduled DB backups stop even if the `dofek-db-backups` bucket still exists.
+- After any Databasus storage or deploy change, verify the latest object in `dofek-db-backups` is less than 24 hours old.
 
 Required Infisical keys for mobile pipelines:
 
@@ -181,6 +231,7 @@ This preserves migration gating while remaining safe for both warm updates and s
 If management subdomains return `404 page not found`, use:
 
 - `docs/traefik-subdomain-404-runbook.md`
+- `docs/review-apps.md` for PR-specific shared-front-door routes
 
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)

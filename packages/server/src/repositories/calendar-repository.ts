@@ -71,7 +71,7 @@ export class CalendarRepository {
           (a.started_at AT TIME ZONE ${this.#timezone})::date as date,
           COUNT(*)::int as activity_count,
           ROUND(SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::numeric) as total_minutes,
-          array_agg(DISTINCT a.activity_type) as activity_types
+          array_agg(DISTINCT a.activity_type::text) as activity_types
         FROM fitness.v_activity a
         WHERE a.user_id = ${this.#userId}
           AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'

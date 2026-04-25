@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import postgres from "postgres";
+import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
@@ -30,11 +30,14 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
 
     // Verify the table was created
-    const sql = postgres(ctx.connectionString, { max: 1 });
-    const result = await sql`SELECT table_name FROM information_schema.tables
-                             WHERE table_schema = 'fitness' AND table_name = 'migrate_test'`;
-    expect(result.length).toBe(1);
-    await sql.end();
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    const result = await client.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'fitness' AND table_name = 'migrate_test'`,
+    );
+    expect(result.rows.length).toBe(1);
+    await client.end();
   });
 
   it("skips already-applied migrations on second run", async () => {
@@ -66,12 +69,15 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
 
     // Verify both tables were created
-    const sql = postgres(ctx.connectionString, { max: 1 });
-    const result = await sql`SELECT table_name FROM information_schema.tables
-                             WHERE table_schema = 'fitness'
-                             AND table_name IN ('multi_a', 'multi_b')
-                             ORDER BY table_name`;
-    expect(result.length).toBe(2);
-    await sql.end();
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    const result = await client.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'fitness'
+       AND table_name IN ('multi_a', 'multi_b')
+       ORDER BY table_name`,
+    );
+    expect(result.rows.length).toBe(2);
+    await client.end();
   });
 });

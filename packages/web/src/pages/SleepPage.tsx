@@ -1,4 +1,3 @@
-import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
@@ -13,6 +12,7 @@ import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 
@@ -32,7 +32,7 @@ function isSleepInsight(metric: string): boolean {
 
 export function SleepPage() {
   const [days, setDays] = useState(30);
-  const endDate = useMemo(() => formatDateForQuery(), []);
+  const endDate = useTodayQueryDate();
 
   const sleepData = trpc.sleep.list.useQuery({ days, endDate });
   const latestStages = trpc.sleep.latestStages.useQuery();

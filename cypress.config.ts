@@ -1,5 +1,5 @@
 import { defineConfig } from "cypress";
-import postgres from "postgres";
+import { createTaggedQueryClient } from "./src/db/tagged-query-client.ts";
 
 const E2E_DB_URL = process.env.E2E_DATABASE_URL ?? "postgres://health:health@localhost:5436/health";
 const E2E_SERVER_URL = process.env.E2E_SERVER_URL ?? "http://localhost:3100";
@@ -14,7 +14,7 @@ export default defineConfig({
     defaultCommandTimeout: 10000,
     video: false,
     setupNodeEvents(on) {
-      const sql = postgres(E2E_DB_URL, { max: 2 });
+      const sql = createTaggedQueryClient(E2E_DB_URL, 2);
 
       on("task", {
         async seedTestUser({ userId, name, email }) {
@@ -67,8 +67,7 @@ export default defineConfig({
         },
 
         async runQuery({ query }) {
-          const rows = await sql.unsafe(query);
-          return rows;
+          return sql.unsafe(query);
         },
       });
 

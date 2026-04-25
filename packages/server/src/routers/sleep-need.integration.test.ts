@@ -288,16 +288,16 @@ describe("sleep data consistency: multiple sessions per date", () => {
     }
   });
 
-  it("sleepNeed.calculate must pick the longest session per date, not an arbitrary one", async () => {
+  it("sleepNeed.calculate picks the longest session per date in SQL", async () => {
     await queryCache.invalidateAll();
     const endDate = new Date().toISOString().slice(0, 10);
     const result = await query<SleepNeedResult>("sleepNeed.calculate", { endDate });
 
     // Each recent night should show the WHOOP session's 480 min (the longest),
     // not Apple Health's 330 min.
-    // BUG: the Map(nights.map(n => [n.date, n])) keeps the LAST row per date.
-    // With ORDER BY started_at ASC, the Apple Health session (23:30) comes after
-    // WHOOP (22:00), so the Map overwrites with 330 min.
+    // Regression guard: duplicate sessions are resolved in SQL before the
+    // result reaches the route, so the later JS date map is not choosing
+    // between conflicting rows.
     const nightsWithData = result.recentNights.filter((night) => night.actualMinutes !== null);
     expect(nightsWithData.length).toBeGreaterThan(0);
     for (const night of nightsWithData) {

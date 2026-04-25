@@ -12,6 +12,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## General
 - **Apply minimum fix**: Only perform the minimum fix required to resolve the issue at hand. Do not add extra error handling, validation, or infrastructure unless explicitly requested. The user will ask if they want more far-reaching changes.
+- **Consistency over duplicate tools**: Do not add or keep multiple dependencies that solve the same problem in the same area of the codebase. Choose one canonical library/tool and migrate remaining call sites to it rather than carrying parallel options.
 - **No branch switching without approval**: Never switch branches (`git checkout`, `git switch`, creating a new local branch from another branch, or rebasing onto another branch) unless the user explicitly approves it first.
 - **YAGNI first**: Follow "You Aren't Gonna Need It" — do not add abstractions, options, flags, or future-proofing for hypothetical needs unless there is a current, concrete requirement.
 - **Ask before deviating from YAGNI**: If a non-YAGNI change appears important, stop and ask the user before implementing it.
@@ -99,7 +100,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
   docker network create dofek-test
   docker run -d --name dofek-test-db --network dofek-test 
     -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test 
-    timescale/timescaledb:latest-pg18
+    timescale/timescaledb:2.26.2-pg18
   sleep 5
   docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 
     -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 

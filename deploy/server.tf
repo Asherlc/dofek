@@ -48,6 +48,25 @@ resource "hcloud_server" "dofek" {
   }
 }
 
+resource "terraform_data" "app_directories_sync" {
+  triggers_replace = [
+    "app-directories-v1",
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /opt/dofek /opt/dofek/traefik-dynamic",
+    ]
+  }
+}
+
 resource "hcloud_volume" "dofek_data" {
   count = var.data_volume_size_gb > 0 ? 1 : 0
 
@@ -63,7 +82,7 @@ resource "terraform_data" "data_volume_mount_alias" {
   count = var.data_volume_size_gb > 0 ? 1 : 0
 
   triggers_replace = [
-    "volume-mount-alias-v1",
+    "volume-mount-alias-v3",
     hcloud_volume.dofek_data[0].id,
   ]
 
@@ -80,7 +99,8 @@ resource "terraform_data" "data_volume_mount_alias" {
       "target=/mnt/HC_Volume_${hcloud_volume.dofek_data[0].id}",
       "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
       "ln -sfn \"$target\" /mnt/dofek-data",
-      "mkdir -p /mnt/dofek-data/postgres",
+      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/databasus",
+      "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek_databasus_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/databasus -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/databasus/; fi",
     ]
   }
 }

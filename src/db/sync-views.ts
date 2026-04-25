@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import postgres from "postgres";
+import { Client, escapeIdentifier } from "pg";
 import { logger } from "../logger.ts";
 
 /** Postgres advisory lock key — serializes concurrent view sync runs across containers */
@@ -30,40 +30,51 @@ export function hashViewContent(sqlContent: string): string {
   return createHash("sha256").update(normalized).digest("hex");
 }
 
+function quoteQualifiedIdentifier(name: string): string {
+  return name
+    .split(".")
+    .map((part) => escapeIdentifier(part))
+    .join(".");
+}
+
 /**
  * Check whether a materialized view exists in the PostgreSQL catalog.
  * Returns true if the view is present (regardless of whether it's populated).
  * This catches views that were CASCADE-dropped when a dependency was recreated.
  */
 export async function viewExistsInCatalog(
-  sql: ReturnType<typeof postgres>,
+  client: Pick<Client, "query">,
   viewName: string,
 ): Promise<boolean> {
   const dotIndex = viewName.indexOf(".");
   const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
   const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
-  const rows =
-    await sql`SELECT 1 FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
-  return rows.length > 0;
+  const result = await client.query(
+    "SELECT 1 FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
+    [schema, name],
+  );
+  return result.rows.length > 0;
 }
 
 /**
  * Check whether a materialized view has been populated (has data loaded).
  * A view created with WITH NO DATA, or one whose population was interrupted
- * by a crash, will report `ispopulated = false` in pg_matviews. // cspell:disable-line
+ * by a crash, will report a false populated flag in pg_matviews.
  */
 export async function isViewPopulated(
-  sql: ReturnType<typeof postgres>,
+  client: Pick<Client, "query">,
   viewName: string,
 ): Promise<boolean> {
   const dotIndex = viewName.indexOf(".");
   const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
   const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
-  const rows =
+  const result = await client.query<{ populated: boolean }>(
     // cspell:disable-next-line -- Postgres system catalog column name
-    await sql`SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = ${schema} AND matviewname = ${name}`;
+    "SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
+    [schema, name],
+  );
   // If the view doesn't exist in pg_matviews, treat as not populated
-  return rows[0]?.populated === true;
+  return result.rows[0]?.populated === true;
 }
 
 /**
@@ -93,23 +104,23 @@ export async function syncMaterializedViews(
   }
 
   // Single connection — advisory locks are session-scoped, so the lock, all DDL,
-  // and the unlock must run on the same connection. A pool would scatter queries
-  // across connections, making the lock ineffective.
-  const sql = postgres(databaseUrl, { max: 1 });
+  // and the unlock must run on the same connection.
+  const client = new Client({ connectionString: databaseUrl });
   let lockAcquired = false;
 
   try {
+    await client.connect();
     // Serialize view sync across containers — prevents two containers from
     // racing to DROP/CREATE the same materialized view simultaneously.
-    await sql`SELECT pg_advisory_lock(${VIEW_SYNC_LOCK_KEY})`;
+    await client.query("SELECT pg_advisory_lock($1)", [VIEW_SYNC_LOCK_KEY]);
     lockAcquired = true;
 
     // Ensure tracking table exists
-    await sql`CREATE TABLE IF NOT EXISTS drizzle.__view_hashes (
+    await client.query(`CREATE TABLE IF NOT EXISTS drizzle.__view_hashes (
       view_name TEXT PRIMARY KEY,
       hash TEXT NOT NULL,
       applied_at TIMESTAMPTZ DEFAULT NOW()
-    )`;
+    )`);
 
     let synced = 0;
     let skipped = 0;
@@ -129,13 +140,15 @@ export async function syncMaterializedViews(
       allViewNames.push(viewName);
 
       // Check if this view's definition has changed
-      const existing =
-        await sql`SELECT hash FROM drizzle.__view_hashes WHERE view_name = ${viewName}`;
-      const storedHash = existing[0]?.hash;
+      const existing = await client.query<{ hash: string }>(
+        "SELECT hash FROM drizzle.__view_hashes WHERE view_name = $1",
+        [viewName],
+      );
+      const storedHash = existing.rows[0]?.hash;
       if (storedHash === hash) {
         // Verify the view still exists — it may have been CASCADE-dropped
         // when a dependency was recreated.
-        const exists = await viewExistsInCatalog(sql, viewName);
+        const exists = await viewExistsInCatalog(client, viewName);
         if (exists) {
           logger.info(`[views] ${viewName} unchanged, skipping`);
           skipped++;
@@ -148,23 +161,30 @@ export async function syncMaterializedViews(
 
       // View definition changed (or new) — drop and recreate
       try {
+        const recreateStart = performance.now();
         logger.info(`[views] ${viewName} changed, recreating`);
-        await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS ${viewName} CASCADE`);
+        await client.query(
+          `DROP MATERIALIZED VIEW IF EXISTS ${quoteQualifiedIdentifier(viewName)} CASCADE`,
+        );
 
         const statements = content
           .split("--> statement-breakpoint")
           .map((statement) => statement.trim())
           .filter(Boolean);
         for (const statement of statements) {
-          await sql.unsafe(statement);
+          await client.query(statement);
         }
 
         // Record the hash
-        await sql`
-          INSERT INTO drizzle.__view_hashes (view_name, hash, applied_at)
-          VALUES (${viewName}, ${hash}, NOW())
-          ON CONFLICT (view_name) DO UPDATE SET hash = ${hash}, applied_at = NOW()
-        `;
+        await client.query(
+          `INSERT INTO drizzle.__view_hashes (view_name, hash, applied_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (view_name) DO UPDATE SET hash = $2, applied_at = NOW()`,
+          [viewName, hash],
+        );
+        logger.info(
+          `[views] ${viewName} recreate finished duration_ms=${Math.round(performance.now() - recreateStart)}`,
+        );
         synced++;
       } catch (error) {
         logger.error(`[views] Failed to recreate ${viewName}: ${error}`);
@@ -176,15 +196,19 @@ export async function syncMaterializedViews(
     // that interrupted view population, leaving them marked as not populated in pg_matviews).
     let refreshed = 0;
     for (const viewName of allViewNames) {
-      const populated = await isViewPopulated(sql, viewName);
+      const populated = await isViewPopulated(client, viewName);
       if (!populated) {
-        const exists = await viewExistsInCatalog(sql, viewName);
+        const exists = await viewExistsInCatalog(client, viewName);
         if (!exists) {
           // View doesn't exist (failed creation earlier) — skip refresh
           continue;
         }
+        const refreshStart = performance.now();
         logger.warn(`[views] ${viewName} exists but is not populated, refreshing`);
-        await sql.unsafe(`REFRESH MATERIALIZED VIEW ${viewName}`);
+        await client.query(`REFRESH MATERIALIZED VIEW ${quoteQualifiedIdentifier(viewName)}`);
+        logger.info(
+          `[views] ${viewName} unpopulated refresh finished duration_ms=${Math.round(performance.now() - refreshStart)}`,
+        );
         refreshed++;
       }
     }
@@ -200,10 +224,14 @@ export async function syncMaterializedViews(
     return { synced, skipped, refreshed };
   } finally {
     if (lockAcquired) {
-      await sql`SELECT pg_advisory_unlock(${VIEW_SYNC_LOCK_KEY})`.catch((error: unknown) => {
-        logger.warn("View sync advisory unlock failed: %s", error);
-      });
+      await client
+        .query("SELECT pg_advisory_unlock($1)", [VIEW_SYNC_LOCK_KEY])
+        .catch((error: unknown) => {
+          logger.warn("View sync advisory unlock failed: %s", error);
+        });
     }
-    await sql.end();
+    await client.end().catch((error: unknown) => {
+      logger.warn("View sync client shutdown failed: %s", error);
+    });
   }
 }

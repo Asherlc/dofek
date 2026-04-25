@@ -7,14 +7,31 @@ let mockReadinessLoading = false;
 let mockWorkloadLoading = false;
 let mockSleepLoading = false;
 let mockSleepData: unknown;
+let mockReadinessError: Error | null = null;
+let mockWorkloadError: Error | null = null;
+let mockSleepNeedError: Error | null = null;
 
-function q(getData: () => unknown = () => undefined) {
-  return { useQuery: () => ({ data: getData(), isLoading: false }) };
+function q(getData: () => unknown = () => undefined, getError: () => Error | null = () => null) {
+  return {
+    useQuery: () => ({
+      data: getError() ? undefined : getData(),
+      isLoading: false,
+      error: getError(),
+    }),
+  };
 }
 
-function loadableQuery(getData: () => unknown, getLoading: () => boolean) {
+function loadableQuery(
+  getData: () => unknown,
+  getLoading: () => boolean,
+  getError: () => Error | null = () => null,
+) {
   return {
-    useQuery: () => ({ data: getLoading() ? undefined : getData(), isLoading: getLoading() }),
+    useQuery: () => ({
+      data: getLoading() || getError() ? undefined : getData(),
+      isLoading: getLoading(),
+      error: getError(),
+    }),
   };
 }
 
@@ -24,6 +41,7 @@ vi.mock("../../lib/trpc", () => ({
       readinessScore: loadableQuery(
         () => [],
         () => mockReadinessLoading,
+        () => mockReadinessError,
       ),
       sleepAnalytics: loadableQuery(
         () => mockSleepData,
@@ -32,13 +50,19 @@ vi.mock("../../lib/trpc", () => ({
       workloadRatio: loadableQuery(
         () => [],
         () => mockWorkloadLoading,
+        () => mockWorkloadError,
       ),
     },
     dailyMetrics: {
       trends: { useQuery: () => ({ data: undefined, isLoading: false }) },
     },
     training: { nextWorkout: q() },
-    sleepNeed: { calculate: q() },
+    sleepNeed: {
+      calculate: q(
+        () => undefined,
+        () => mockSleepNeedError,
+      ),
+    },
     anomalyDetection: { check: q() },
     sync: {
       triggerSync: {
@@ -97,6 +121,9 @@ describe("TodayScreen independent loading states", () => {
     mockWorkloadLoading = false;
     mockSleepLoading = false;
     mockSleepData = undefined;
+    mockReadinessError = null;
+    mockWorkloadError = null;
+    mockSleepNeedError = null;
   });
 
   afterEach(() => {
@@ -178,5 +205,25 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
     // No skeleton loading placeholders
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
+  });
+
+  it("shows a recovery error panel when the readiness query fails", async () => {
+    mockReadinessError = new Error("Readiness failed");
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Readiness failed")).toBeTruthy();
+    expect(screen.queryByText("No data yet")).toBeNull();
+  });
+
+  it("shows a sleep coach error card when the sleep-need query fails", async () => {
+    mockSleepNeedError = new Error("Sleep coach failed");
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("SLEEP COACH")).toBeTruthy();
+    expect(screen.getByText("Sleep coach failed")).toBeTruthy();
   });
 });

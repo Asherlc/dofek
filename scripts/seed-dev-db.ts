@@ -23,7 +23,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import postgres from "postgres";
+import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -31,7 +31,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const sql = postgres(databaseUrl, { max: 1 });
+const sql = createTaggedQueryClient(databaseUrl);
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -108,6 +108,12 @@ async function seedData() {
   await sql`DELETE FROM fitness.daily_metrics WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.nutrition_daily WHERE provider_id IN ('whoop', 'apple_health')`;
   await sql`DELETE FROM fitness.body_measurement WHERE provider_id IN ('whoop', 'apple_health')`;
+
+  await sql`
+		INSERT INTO fitness.user_profile (id, name)
+		VALUES (${USER_ID}, 'Baseline User')
+		ON CONFLICT (id) DO NOTHING
+	`;
 
   // Providers
   await sql`

@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { ACTIVITY_VIEWS } from "dofek/db/materialized-views";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -96,11 +97,9 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
 
   async #refreshActivityViews(): Promise<void> {
     for (const view of ACTIVITY_VIEWS) {
-      try {
-        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`));
-      } catch {
-        await this.db.execute(sql.raw(`REFRESH MATERIALIZED VIEW ${view}`));
-      }
+      await refreshMaterializedView(this.db, view, {
+        source: "server.activity_view_self_heal",
+      });
     }
   }
 }
