@@ -27,3 +27,4 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - **Nutrient Columns**: Shared nutrient columns are generated via `nutrient-columns.ts`.
 - **Views**: Materialized views and database-level views are managed in `sync-views.ts`.
   View syncing is triggered out-of-band (not in the blocking schema migration path).
+  Deploys run a cheap planner first and only trigger sync when a view definition hash changed, a stored dependency fingerprint changed, or a migration was tagged with `-- requires_materialized_view_refresh`.

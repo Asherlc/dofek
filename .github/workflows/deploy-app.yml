@@ -179,12 +179,45 @@ jobs:
         run: |
           docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek
 
+      - name: Plan materialized view sync
+        id: view_sync_plan
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
+        run: |
+          planner_output_file="$RUNNER_TEMP/view-sync-plan.log"
+          timeout 90s docker run --rm --network dofek_default \
+            --env-file "$INFISICAL_ENV_FILE" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts' >"$planner_output_file"
+
+          echo "Materialized view sync planner output:"
+          cat "$planner_output_file"
+
+          planner_required="$(sed -n 's/^required=//p' "$planner_output_file" | tail -n 1)"
+          planner_reasons="$(sed -n 's/^reasons=//p' "$planner_output_file" | tail -n 1)"
+
+          if [ -z "$planner_required" ]; then
+            echo "::error::Materialized view sync planner did not emit required=<bool>"
+            exit 1
+          fi
+
+          echo "required=${planner_required}" >> "$GITHUB_OUTPUT"
+          echo "reasons=${planner_reasons}" >> "$GITHUB_OUTPUT"
+
       - name: Trigger materialized view refresh webhook
-        if: inputs.refresh_materialized_views
+        if: inputs.refresh_materialized_views || steps.view_sync_plan.outputs.required == 'true'
         run: |
           if [ -z "${MATERIALIZED_VIEW_REFRESH_TOKEN:-}" ]; then
             echo "::error::MATERIALIZED_VIEW_REFRESH_TOKEN is required"
             exit 1
+          fi
+
+          if [ "${{ inputs.refresh_materialized_views }}" = "true" ]; then
+            echo "Manual materialized view refresh requested by workflow input."
+          else
+            echo "Materialized view refresh required by planner: ${{ steps.view_sync_plan.outputs.reasons }}"
           fi
 
           refresh_url="https://dofek.asherlc.com/api/internal/materialized-views/refresh"

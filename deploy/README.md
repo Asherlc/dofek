@@ -121,14 +121,25 @@ CI (main) -> build dofek + dofek-ml (same tag)
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    7. Run **schema migrations only** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
-      Materialized view refresh is out-of-band and not a deploy gate.
    8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
+   9. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
+      - a canonical `drizzle/_views/*.sql` hash changed
+      - a stored dependency fingerprint for a materialized view changed
+      - an applied migration was marked with `-- requires_materialized_view_refresh` and has not yet been acknowledged by a successful sync
 
 ### Materialized View Refresh Webhook
 
 Materialized view syncing is intentionally decoupled from normal deploys.
-Normal deploys do not trigger this webhook; manual deploys can opt in with `refresh_materialized_views=true` after changing materialized-view definitions or when recovering from stale view state.
+Normal deploys do not trigger this webhook unless the post-migration planner detects one of the conditions above. Manual deploys can still force it with `refresh_materialized_views=true` after changing materialized-view definitions or when recovering from stale view state.
 Do not use it as a routine deploy gate because it can rebuild heavy views against live data.
+
+To explicitly require a post-migration refresh from SQL, add this marker comment to the migration file:
+
+```sql
+-- requires_materialized_view_refresh
+```
+
+The migration runner stores that intent on `drizzle.__drizzle_migrations`, and `syncMaterializedViews()` acknowledges it after a successful sync.
 
 - Endpoint: `POST /api/internal/materialized-views/refresh`
 - Auth: `Authorization: Bearer <MATERIALIZED_VIEW_REFRESH_TOKEN>`

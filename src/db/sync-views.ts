@@ -37,6 +37,80 @@ function quoteQualifiedIdentifier(name: string): string {
     .join(".");
 }
 
+function parseQualifiedName(name: string): { schema: string; relation: string } {
+  const dotIndex = name.indexOf(".");
+  return {
+    schema: dotIndex >= 0 ? name.slice(0, dotIndex) : "public",
+    relation: dotIndex >= 0 ? name.slice(dotIndex + 1) : name,
+  };
+}
+
+export async function ensureMaterializedViewTrackingTables(
+  client: Pick<Client, "query">,
+): Promise<void> {
+  await client.query(`CREATE TABLE IF NOT EXISTS drizzle.__view_hashes (
+    view_name TEXT PRIMARY KEY,
+    hash TEXT NOT NULL,
+    applied_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await client.query(`ALTER TABLE drizzle.__view_hashes
+    ADD COLUMN IF NOT EXISTS dependency_fingerprint_hash TEXT`);
+}
+
+export async function computeViewDependencyFingerprintHash(
+  client: Pick<Client, "query">,
+  viewName: string,
+): Promise<string> {
+  const { schema, relation } = parseQualifiedName(viewName);
+  const result = await client.query<{ fingerprint_source: string }>(
+    `WITH target_view AS (
+      SELECT view_class.oid
+      FROM pg_class AS view_class
+      JOIN pg_namespace AS view_namespace ON view_namespace.oid = view_class.relnamespace
+      WHERE view_namespace.nspname = $1
+        AND view_class.relname = $2
+        AND view_class.relkind = 'm'
+    ), dependency_rows AS (
+      SELECT DISTINCT
+        dependency_namespace.nspname AS schema_name,
+        dependency_class.relname AS table_name,
+        COALESCE(dependency_attribute.attname, '*') AS column_name,
+        COALESCE(
+          format_type(dependency_attribute.atttypid, dependency_attribute.atttypmod),
+          ''
+        ) AS data_type,
+        COALESCE(dependency_attribute.attnotnull, FALSE) AS not_null
+      FROM target_view
+      JOIN pg_rewrite AS rewrite_rule ON rewrite_rule.ev_class = target_view.oid
+      JOIN pg_depend AS dependency ON dependency.objid = rewrite_rule.oid
+      JOIN pg_class AS dependency_class ON dependency_class.oid = dependency.refobjid
+      JOIN pg_namespace AS dependency_namespace ON dependency_namespace.oid = dependency_class.relnamespace
+      LEFT JOIN pg_attribute AS dependency_attribute
+        ON dependency_attribute.attrelid = dependency_class.oid
+       AND dependency_attribute.attnum = dependency.refobjsubid
+       AND dependency.refobjsubid > 0
+      WHERE dependency_class.relkind IN ('r', 'p', 'v', 'm')
+        AND dependency_namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+    )
+    SELECT COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'schema_name', schema_name,
+          'table_name', table_name,
+          'column_name', column_name,
+          'data_type', data_type,
+          'not_null', not_null
+        )
+        ORDER BY schema_name, table_name, column_name, data_type, not_null
+      )::text,
+      '[]'
+    ) AS fingerprint_source
+    FROM dependency_rows`,
+    [schema, relation],
+  );
+  return hashViewContent(result.rows[0]?.fingerprint_source ?? "[]");
+}
+
 /**
  * Check whether a materialized view exists in the PostgreSQL catalog.
  * Returns true if the view is present (regardless of whether it's populated).
@@ -46,12 +120,10 @@ export async function viewExistsInCatalog(
   client: Pick<Client, "query">,
   viewName: string,
 ): Promise<boolean> {
-  const dotIndex = viewName.indexOf(".");
-  const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
-  const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
+  const { schema, relation } = parseQualifiedName(viewName);
   const result = await client.query(
     "SELECT 1 FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
-    [schema, name],
+    [schema, relation],
   );
   return result.rows.length > 0;
 }
@@ -65,13 +137,11 @@ export async function isViewPopulated(
   client: Pick<Client, "query">,
   viewName: string,
 ): Promise<boolean> {
-  const dotIndex = viewName.indexOf(".");
-  const schema = dotIndex >= 0 ? viewName.slice(0, dotIndex) : "public";
-  const name = dotIndex >= 0 ? viewName.slice(dotIndex + 1) : viewName;
+  const { schema, relation } = parseQualifiedName(viewName);
   const result = await client.query<{ populated: boolean }>(
     // cspell:disable-next-line -- Postgres system catalog column name
     "SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
-    [schema, name],
+    [schema, relation],
   );
   // If the view doesn't exist in pg_matviews, treat as not populated
   return result.rows[0]?.populated === true;
@@ -115,12 +185,7 @@ export async function syncMaterializedViews(
     await client.query("SELECT pg_advisory_lock($1)", [VIEW_SYNC_LOCK_KEY]);
     lockAcquired = true;
 
-    // Ensure tracking table exists
-    await client.query(`CREATE TABLE IF NOT EXISTS drizzle.__view_hashes (
-      view_name TEXT PRIMARY KEY,
-      hash TEXT NOT NULL,
-      applied_at TIMESTAMPTZ DEFAULT NOW()
-    )`);
+    await ensureMaterializedViewTrackingTables(client);
 
     let synced = 0;
     let skipped = 0;
@@ -140,12 +205,27 @@ export async function syncMaterializedViews(
       allViewNames.push(viewName);
 
       // Check if this view's definition has changed
-      const existing = await client.query<{ hash: string }>(
-        "SELECT hash FROM drizzle.__view_hashes WHERE view_name = $1",
+      const existing = await client.query<{
+        hash: string;
+        dependency_fingerprint_hash: string | null;
+      }>(
+        `SELECT hash, dependency_fingerprint_hash
+         FROM drizzle.__view_hashes
+         WHERE view_name = $1`,
         [viewName],
       );
-      const storedHash = existing.rows[0]?.hash;
-      if (storedHash === hash) {
+      const stored = existing.rows[0];
+      const storedHash = stored?.hash;
+      const dependencyFingerprintHash = await computeViewDependencyFingerprintHash(
+        client,
+        viewName,
+      );
+      const dependencyFingerprintChanged =
+        stored?.dependency_fingerprint_hash !== null &&
+        stored?.dependency_fingerprint_hash !== undefined &&
+        stored.dependency_fingerprint_hash !== dependencyFingerprintHash;
+
+      if (storedHash === hash && !dependencyFingerprintChanged) {
         // Verify the view still exists — it may have been CASCADE-dropped
         // when a dependency was recreated.
         const exists = await viewExistsInCatalog(client, viewName);
@@ -157,6 +237,9 @@ export async function syncMaterializedViews(
         logger.warn(
           `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), recreating`,
         );
+      }
+      if (storedHash === hash && dependencyFingerprintChanged) {
+        logger.warn(`[views] ${viewName} dependency fingerprint changed, recreating`);
       }
 
       // View definition changed (or new) — drop and recreate
@@ -175,12 +258,16 @@ export async function syncMaterializedViews(
           await client.query(statement);
         }
 
-        // Record the hash
+        // Record the hash and the dependency fingerprint together so the deploy
+        // planner can detect underlying table/column changes cheaply later.
         await client.query(
-          `INSERT INTO drizzle.__view_hashes (view_name, hash, applied_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT (view_name) DO UPDATE SET hash = $2, applied_at = NOW()`,
-          [viewName, hash],
+          `INSERT INTO drizzle.__view_hashes (view_name, hash, dependency_fingerprint_hash, applied_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (view_name) DO UPDATE
+           SET hash = $2,
+               dependency_fingerprint_hash = $3,
+               applied_at = NOW()`,
+          [viewName, hash, dependencyFingerprintHash],
         );
         logger.info(
           `[views] ${viewName} recreate finished duration_ms=${Math.round(performance.now() - recreateStart)}`,
@@ -220,6 +307,11 @@ export async function syncMaterializedViews(
         `Failed to recreate ${failedViews.length} view(s): ${names}`,
       );
     }
+
+    await client.query(`UPDATE drizzle.__drizzle_migrations
+      SET materialized_view_refresh_acknowledged_at = NOW()
+      WHERE requires_materialized_view_refresh = TRUE
+        AND materialized_view_refresh_acknowledged_at IS NULL`);
 
     return { synced, skipped, refreshed };
   } finally {
