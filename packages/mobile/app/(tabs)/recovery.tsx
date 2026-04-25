@@ -1,4 +1,4 @@
-import { formatDateYmd, formatNumber } from "@dofek/format/format";
+import { formatNumber } from "@dofek/format/format";
 import {
   trendDirection as computeTrend,
   SCORE_ZONES,
@@ -7,7 +7,7 @@ import {
   trendColor,
 } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   LayoutAnimation,
   Platform,
@@ -26,6 +26,7 @@ import { MetricCard } from "../../components/MetricCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 
 function withOpacity(hexColor: string, opacityHex: string): string {
@@ -161,7 +162,7 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const [days, setDays] = useState(30);
-  const endDate = useMemo(() => formatDateYmd(), []);
+  const endDate = useTodayQueryDate();
 
   // HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });

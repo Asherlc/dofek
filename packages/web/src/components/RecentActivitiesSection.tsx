@@ -1,4 +1,4 @@
-import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
+import { formatDateYmd } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { useTrainingDays } from "../lib/trainingDaysContext.ts";
@@ -27,7 +27,7 @@ interface RecentActivitiesSectionProps {
 export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSectionProps) {
   const { days } = useTrainingDays();
   const [page, setPage] = useState(0);
-  const endDate = useMemo(() => formatDateForQuery(), []);
+  const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const activities = trpc.activity.list.useQuery({
     days,

@@ -1,4 +1,5 @@
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
+import { captureException } from "@sentry/node";
 import type { Request, Response } from "express";
 import {
   getConfiguredProviders,
@@ -24,6 +25,13 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
         if (!provider.authSetup) {
           return false;
         }
+
+        const validation = provider.validate?.() ?? null;
+        if (validation !== null) {
+          skippedDataProviders.push(`${provider.id}(not configured: ${validation})`);
+          return false;
+        }
+
         try {
           const setup = provider.authSetup({ host: req.get("host") });
           if (!setup) {
@@ -38,9 +46,9 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
             return false;
           }
           return true;
-        } catch (err: unknown) {
-          skippedDataProviders.push(`${provider.id}(threw: ${err})`);
-          return false;
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Failed to initialize auth provider ${provider.id}: ${message}`);
         }
       })
       .map((provider) => provider.id);
@@ -69,12 +77,10 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
       data: dataLoginProviders,
       nativeApple: isNativeAppleConfigured(),
     });
-  } catch (err: unknown) {
-    logger.error(`[auth] Failed to list providers: ${err}`);
-    res.json({
-      identity: getConfiguredProviders(),
-      data: [],
-      nativeApple: isNativeAppleConfigured(),
-    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    captureException(error);
+    logger.error(`[auth] Failed to list providers: ${message}`);
+    res.status(500).send(message);
   }
 }

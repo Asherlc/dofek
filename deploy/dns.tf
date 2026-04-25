@@ -83,7 +83,7 @@ resource "cloudflare_dns_record" "wildcard_dofek_asherlc" {
   type    = "A"
   name    = "*.dofek.asherlc.com"
   content = hcloud_server.dofek.ipv4_address
-  proxied = true
+  proxied = false
   ttl     = 1
 }
 

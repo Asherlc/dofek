@@ -91,6 +91,8 @@ If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you ar
   - `ghcr.io/asherlc/dofek:<tag>`
   - `ghcr.io/asherlc/dofek-ml:<tag>`
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web`, `worker`, and `training-export-worker` together from `deploy/stack.yml`.
+- Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
+- Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
 
 ### Flow Diagram
 
@@ -126,6 +128,13 @@ CI (main) -> build dofek + dofek-ml (same tag)
       - a canonical `drizzle/_views/*.sql` hash changed
       - a stored dependency fingerprint for a materialized view changed
       - an applied migration was marked with `-- requires_materialized_view_refresh` and has not yet been acknowledged by a successful sync
+
+### Rollback Boundary
+
+- A failed swarm rollout can revert service specs and image versions.
+- It does **not** revert already-applied database migrations.
+- Treat migrations as forward-only production changes.
+- If a release includes schema changes, use expand/contract discipline: deploy additive/backward-compatible schema first, then ship code that depends on it, and only remove old schema in a later release.
 
 ### Materialized View Refresh Webhook
 

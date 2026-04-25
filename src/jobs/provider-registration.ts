@@ -1,4 +1,3 @@
-import { logger } from "../logger.ts";
 import { registerProvider } from "../providers/index.ts";
 
 let registrationPromise: Promise<void> | null = null;
@@ -74,8 +73,9 @@ async function doRegisterProviders() {
   for (const [name, loadProvider] of providers) {
     try {
       registerProvider(await loadProvider());
-    } catch (err) {
-      logger.warn(`[worker] Failed to register ${name} provider: ${err}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to register ${name} provider: ${message}`);
     }
   }
 }

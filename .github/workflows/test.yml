@@ -321,7 +321,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg18
+        image: timescale/timescaledb:2.26.2-pg18
         env:
           POSTGRES_DB: test
           POSTGRES_USER: test
@@ -528,7 +528,21 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- packages/mobile/)
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+              packages/mobile/ \
+              packages/auth/ \
+              packages/format/ \
+              packages/nutrition/ \
+              packages/onboarding/ \
+              packages/providers-meta/ \
+              packages/scoring/ \
+              packages/training/ \
+              packages/zones/ \
+              packages/server/ \
+              package.json \
+              pnpm-lock.yaml \
+              pnpm-workspace.yaml \
+              tsconfig.json)
             if [ -n "$CHANGED" ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
             else
@@ -651,7 +665,7 @@ jobs:
     timeout-minutes: 75
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg18
+        image: timescale/timescaledb:2.26.2-pg18
         env:
           POSTGRES_DB: test
           POSTGRES_USER: test

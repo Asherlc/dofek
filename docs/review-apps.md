@@ -7,7 +7,8 @@ it at `pr-<number>.dofek.asherlc.com`.
 
 - Shared front door: the existing production Traefik instance on
   `dofek.asherlc.com`.
-- DNS: `*.dofek.asherlc.com` points at the shared front door.
+- DNS: `*.dofek.asherlc.com` points at the shared front door as a DNS-only
+  Cloudflare record so Traefik can serve the wildcard TLS certificate directly.
 - Routing: each PR Terraform workspace writes one Traefik dynamic-config file
   for its exact host, forwarding traffic to that PR server's `:3000`.
 - Review stack: `web`, `db`, and `redis` via Docker Compose on the PR server.

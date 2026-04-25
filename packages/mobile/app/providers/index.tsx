@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import type { SyncTrpcClient } from "../../lib/health-kit-sync";
 import { syncHealthKitToServer } from "../../lib/health-kit-sync";
@@ -411,7 +412,7 @@ export default function ProvidersScreen() {
 
   const healthKitAvailable = isHealthKitAvailable();
 
-  const providerList: Provider[] = (providers.data ?? []).map((p) => ({
+  const providerList: Provider[] = (providers.error ? [] : (providers.data ?? [])).map((p) => ({
     id: p.id,
     label: p.name,
     enabled: p.authorized && !p.importOnly,
@@ -421,10 +422,10 @@ export default function ProvidersScreen() {
     importOnly: p.importOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
-  for (const s of stats.data ?? []) {
+  for (const s of stats.error ? [] : (stats.data ?? [])) {
     statsMap[s.providerId] = s;
   }
-  const logList: SyncLog[] = logs.data ?? [];
+  const logList: SyncLog[] = logs.error ? [] : (logs.data ?? []);
 
   const { refreshing, onRefresh } = useRefresh();
 
@@ -547,6 +548,24 @@ export default function ProvidersScreen() {
             </Text>
           </TouchableOpacity>
         )}
+      {providers.error ? (
+        <View style={styles.card}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load data sources"
+            message={getQueryErrorMessage(providers.error, "Failed to load providers.")}
+          />
+        </View>
+      ) : null}
+      {stats.error ? (
+        <View style={styles.card}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load provider stats"
+            message={getQueryErrorMessage(stats.error, "Failed to load provider stats.")}
+          />
+        </View>
+      ) : null}
       {providerList.map((provider) => (
         <ProviderCard
           key={provider.id}
@@ -565,6 +584,14 @@ export default function ProvidersScreen() {
       <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
       {logs.isLoading ? (
         <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
+      ) : logs.error ? (
+        <View style={styles.card}>
+          <QueryStatePanel
+            variant="error"
+            title="Could not load sync history"
+            message={getQueryErrorMessage(logs.error, "Failed to load sync history.")}
+          />
+        </View>
       ) : logList.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.emptyText}>No sync history yet.</Text>

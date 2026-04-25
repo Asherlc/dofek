@@ -30,6 +30,29 @@ export function hashViewContent(sqlContent: string): string {
   return createHash("sha256").update(normalized).digest("hex");
 }
 
+function splitSqlStatements(sqlContent: string): string[] {
+  return sqlContent
+    .split("--> statement-breakpoint")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
+
+function normalizeComparableSql(sqlContent: string): string {
+  return sqlContent.replace(/\s+/g, " ").replace(/;\s*$/, "").trim();
+}
+
+function extractViewDefinitionBody(sqlContent: string): string | null {
+  const createStatement = splitSqlStatements(sqlContent)[0];
+  if (!createStatement) {
+    return null;
+  }
+
+  const match = createStatement.match(
+    /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?\S+\s+AS\s+([\s\S]*)$/i,
+  );
+  return match?.[1]?.trim() ?? null;
+}
+
 function quoteQualifiedIdentifier(name: string): string {
   return name
     .split(".")
@@ -147,6 +170,18 @@ export async function isViewPopulated(
   return result.rows[0]?.populated === true;
 }
 
+async function getMaterializedViewDefinition(
+  client: Pick<Client, "query">,
+  viewName: string,
+): Promise<string | null> {
+  const result = await client.query<{ definition: string }>(
+    "SELECT pg_get_viewdef($1::regclass, true) AS definition",
+    [viewName],
+  );
+  const definition = result.rows[0]?.definition;
+  return typeof definition === "string" ? definition : null;
+}
+
 /**
  * Synchronize materialized view definitions from drizzle/_views/ SQL files.
  *
@@ -230,13 +265,23 @@ export async function syncMaterializedViews(
         // when a dependency was recreated.
         const exists = await viewExistsInCatalog(client, viewName);
         if (exists) {
-          logger.info(`[views] ${viewName} unchanged, skipping`);
-          skipped++;
-          continue;
+          const canonicalDefinition = extractViewDefinitionBody(content);
+          const liveDefinition = await getMaterializedViewDefinition(client, viewName);
+          if (
+            canonicalDefinition &&
+            liveDefinition &&
+            normalizeComparableSql(canonicalDefinition) === normalizeComparableSql(liveDefinition)
+          ) {
+            logger.info(`[views] ${viewName} unchanged, skipping`);
+            skipped++;
+            continue;
+          }
+          logger.warn(`[views] ${viewName} hash matches but live definition differs, recreating`);
+        } else {
+          logger.warn(
+            `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), recreating`,
+          );
         }
-        logger.warn(
-          `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), recreating`,
-        );
       }
       if (storedHash === hash && dependencyFingerprintChanged) {
         logger.warn(`[views] ${viewName} dependency fingerprint changed, recreating`);
@@ -250,10 +295,7 @@ export async function syncMaterializedViews(
           `DROP MATERIALIZED VIEW IF EXISTS ${quoteQualifiedIdentifier(viewName)} CASCADE`,
         );
 
-        const statements = content
-          .split("--> statement-breakpoint")
-          .map((statement) => statement.trim())
-          .filter(Boolean);
+        const statements = splitSqlStatements(content);
         for (const statement of statements) {
           await client.query(statement);
         }
