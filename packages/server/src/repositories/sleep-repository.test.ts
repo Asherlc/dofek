@@ -1,9 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
 import { SleepRepository } from "./sleep-repository.ts";
 
+const mockRefreshMaterializedView = vi.hoisted(() => vi.fn());
+const mockSentryCaptureException = vi.hoisted(() => vi.fn());
+const mockSentryCaptureMessage = vi.hoisted(() => vi.fn());
+
+vi.mock("dofek/db/materialized-view-refresh", () => ({
+  refreshMaterializedView: mockRefreshMaterializedView,
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockSentryCaptureException,
+  captureMessage: mockSentryCaptureMessage,
+}));
+
 describe("SleepRepository", () => {
+  beforeEach(() => {
+    mockRefreshMaterializedView.mockReset();
+    mockRefreshMaterializedView.mockResolvedValue({ fallbackUsed: false, mode: "concurrent" });
+    mockSentryCaptureException.mockClear();
+    mockSentryCaptureMessage.mockClear();
+  });
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
+    const execute = vi.fn().mockResolvedValueOnce(rows).mockResolvedValue([]);
     const repo = new SleepRepository({ execute }, "user-1", "America/New_York");
     return { repo, execute };
   }
@@ -57,10 +77,49 @@ describe("SleepRepository", () => {
       expect(result[0]?.efficiency_pct).toBeNull();
     });
 
-    it("calls execute once", async () => {
+    it("checks raw sleep freshness after querying the view", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.list(30, "2026-03-28");
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes v_sleep and retries when raw sleep has newer rows than the view", async () => {
+      const staleRow = {
+        started_at: "2026-04-24T12:00:00",
+        duration_minutes: "470",
+        deep_minutes: "0",
+        rem_minutes: "0",
+        light_minutes: "458",
+        awake_minutes: "19",
+        efficiency_pct: "97.4",
+      };
+      const freshRow = {
+        started_at: "2026-04-25T12:00:00",
+        duration_minutes: "554",
+        deep_minutes: "87",
+        rem_minutes: "161",
+        light_minutes: "306",
+        awake_minutes: "15",
+        efficiency_pct: "97.4",
+      };
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([staleRow])
+        .mockResolvedValueOnce([{ exists: 1 }])
+        .mockResolvedValueOnce([staleRow, freshRow]);
+      const repo = new SleepRepository({ execute }, "user-1", "America/New_York");
+
+      const result = await repo.list(30, "2026-04-25");
+
+      expect(result).toHaveLength(2);
+      expect(result[1]?.started_at).toBe("2026-04-25T12:00:00");
+      expect(mockRefreshMaterializedView).toHaveBeenCalledWith({ execute }, "fitness.v_sleep", {
+        source: "server.sleep_stale_view",
+      });
+      expect(mockSentryCaptureMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Stale sleep materialized view"),
+        expect.anything(),
+      );
     });
   });
 

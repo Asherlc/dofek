@@ -1,7 +1,10 @@
+import * as Sentry from "@sentry/node";
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { sleepDedupCte } from "../lib/sql-fragments.ts";
+import { timestampWindowStart } from "../lib/date-window.ts";
+import { sleepDedupCte, sleepNightDate } from "../lib/sql-fragments.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -31,6 +34,17 @@ const sleepStageRowSchema = z.object({
 export class SleepRepository extends BaseRepository {
   /** All sleep sessions within the given day window, deduplicated per calendar date, oldest first. */
   async list(days: number, endDate: string) {
+    const rows = await this.#listRows(days, endDate);
+    const shouldRefresh = await this.#baseTableHasMissingNights(days, endDate);
+    if (!shouldRefresh) return rows;
+
+    const refreshed = await this.#tryRefreshView("base table has nights missing from v_sleep");
+    if (!refreshed) return rows;
+
+    return this.#listRows(days, endDate);
+  }
+
+  async #listRows(days: number, endDate: string) {
     return this.query(
       sleepListRowSchema,
       sql`WITH ${sleepDedupCte(this.userId, this.timezone, endDate, days)}
@@ -40,6 +54,60 @@ export class SleepRepository extends BaseRepository {
 					FROM sleep_deduped
 					ORDER BY sleep_date ASC`,
     );
+  }
+
+  async #baseTableHasMissingNights(days: number, endDate: string): Promise<boolean> {
+    const rows = await this.query(
+      z.object({ exists: z.coerce.number() }),
+      sql`WITH base_sleep AS (
+            SELECT DISTINCT ${sleepNightDate(this.timezone)} AS sleep_date
+            FROM fitness.sleep_session
+            WHERE user_id = ${this.userId}
+              AND started_at > ${timestampWindowStart(endDate, days)}
+              AND NOT (
+                CASE
+                  WHEN sleep_type IN ('nap', 'late_nap', 'rest') THEN true
+                  WHEN sleep_type IN ('sleep', 'long_sleep', 'main') THEN false
+                  WHEN sleep_type = 'not_main' THEN COALESCE(duration_minutes < 120, true)
+                  WHEN duration_minutes IS NOT NULL THEN duration_minutes < 120
+                  ELSE false
+                END
+              )
+          ),
+          view_sleep AS (
+            SELECT DISTINCT ${sleepNightDate(this.timezone)} AS sleep_date
+            FROM fitness.v_sleep
+            WHERE user_id = ${this.userId}
+              AND is_nap = false
+              AND started_at > ${timestampWindowStart(endDate, days)}
+          )
+          SELECT 1 AS exists
+          FROM base_sleep b
+          LEFT JOIN view_sleep v ON v.sleep_date = b.sleep_date
+          WHERE v.sleep_date IS NULL
+          LIMIT 1`,
+    );
+    return rows.length > 0;
+  }
+
+  async #tryRefreshView(reason: string): Promise<boolean> {
+    Sentry.captureMessage("Stale sleep materialized view detected", {
+      level: "warning",
+      tags: { userId: this.userId },
+      extra: { reason },
+    });
+
+    try {
+      await refreshMaterializedView(this.db, "fitness.v_sleep", {
+        source: "server.sleep_stale_view",
+      });
+      return true;
+    } catch (refreshError) {
+      Sentry.captureException(refreshError, {
+        tags: { userId: this.userId, context: "staleSleepRefresh" },
+      });
+      return false;
+    }
   }
 
   /** Sleep stages for a specific session. */
