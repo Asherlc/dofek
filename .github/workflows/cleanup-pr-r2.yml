@@ -1,0 +1,71 @@
+name: Cleanup PR R2 Artifacts
+
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: cleanup-pr-r2-${{ github.event.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete PR Preview Objects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check cleanup prerequisites
+        id: ready
+        env:
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping R2 cleanup for forked PR."
+            exit 0
+          fi
+
+          missing=()
+          [ -n "${R2_ENDPOINT:-}" ] || missing+=("R2_ENDPOINT")
+          [ -n "${R2_ACCESS_KEY_ID:-}" ] || missing+=("R2_ACCESS_KEY_ID")
+          [ -n "${R2_SECRET_ACCESS_KEY:-}" ] || missing+=("R2_SECRET_ACCESS_KEY")
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::PR cleanup missing required GitHub secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Delete Storybook preview objects
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          aws s3 rm "s3://dofek-storybook/pr-$PR_NUMBER/" \
+            --recursive \
+            --region auto \
+            --endpoint-url "$R2_ENDPOINT"
+
+      - name: Delete mobile preview OTA objects
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          R2_ENDPOINT: https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          aws s3 rm "s3://dofek-ota/pr-$PR_NUMBER/" \
+            --recursive \
+            --region auto \
+            --endpoint-url "$R2_ENDPOINT"

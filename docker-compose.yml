@@ -8,7 +8,7 @@
 
 services:
   db:
-    image: timescale/timescaledb:latest-pg18
+    image: timescale/timescaledb:2.26.2-pg18
     restart: unless-stopped
     environment:
       POSTGRES_DB: health

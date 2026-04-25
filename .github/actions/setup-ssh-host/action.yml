@@ -1,0 +1,37 @@
+name: Setup SSH Host
+description: Install a private key and trust a host in known_hosts
+inputs:
+  host:
+    description: SSH host to trust
+    required: true
+  private_key:
+    description: Private SSH key content
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Setup SSH key and known_hosts
+      shell: bash
+      env:
+        SSH_HOST: ${{ inputs.host }}
+        SSH_PRIVATE_KEY: ${{ inputs.private_key }}
+      run: |
+        set -euo pipefail
+
+        mkdir -p ~/.ssh
+        printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+
+        known_hosts_entry=""
+        for attempt in $(seq 1 24); do
+          known_hosts_entry="$(ssh-keyscan -T 5 -H "$SSH_HOST" 2>/dev/null || true)"
+          if [ -n "$known_hosts_entry" ]; then
+            printf '%s\n' "$known_hosts_entry" >> ~/.ssh/known_hosts
+            exit 0
+          fi
+          if [ "$attempt" -eq 24 ]; then
+            echo "::error::SSH host key for $SSH_HOST did not become available within 120s"
+            exit 1
+          fi
+          sleep 5
+        done

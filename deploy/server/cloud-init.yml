@@ -38,6 +38,7 @@ runcmd:
 
   # App directory (used for bind-mounted OTel config)
   - mkdir -p /opt/dofek
+  - mkdir -p /opt/dofek/traefik-dynamic
 
   # Restart Docker to pick up daemon.json log settings
   - systemctl restart docker

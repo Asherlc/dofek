@@ -57,4 +57,5 @@ Cross-provider reverse-engineering references:
 ## Notes
 
 - Storybook previews are active via `review-app-storybook.yml` and published to R2.
+- PR preview artifacts are deleted on close via `cleanup-pr-r2.yml`, with R2 lifecycle rules as a fallback safety net.
 - The old web preview workflow (`review-app-web.yml`) has been removed and should stay removed.

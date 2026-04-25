@@ -155,7 +155,7 @@ describe("provider-registration", () => {
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
   });
 
-  it("continues registering other providers when one fails", async () => {
+  it("fails loudly when a provider registration throws", async () => {
     mockRegisterProvider.mockImplementation((provider: { id: string }) => {
       if (provider.id === "peloton") {
         throw new Error("Peloton init failed");
@@ -163,9 +163,10 @@ describe("provider-registration", () => {
     });
 
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
-    await ensureProvidersRegistered();
+    await expect(ensureProvidersRegistered()).rejects.toThrow(
+      "Failed to register peloton provider: Peloton init failed",
+    );
 
-    // Should have attempted all registrations even though peloton failed
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
+    expect(mockRegisterProvider).toHaveBeenCalledTimes(3);
   });
 });

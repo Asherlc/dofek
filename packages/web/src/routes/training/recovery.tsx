@@ -1,4 +1,4 @@
-import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
+import { formatDateYmd } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/training/recovery")({
 
 function RecoveryTab() {
   const { days } = useTrainingDays();
-  const endDate = useMemo(() => formatDateForQuery(), []);
+  const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days });
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });

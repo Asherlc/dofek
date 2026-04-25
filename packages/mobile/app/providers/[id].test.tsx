@@ -215,7 +215,7 @@ const authorizedProvider = {
   authorized: true,
   importOnly: false,
   lastSyncedAt: "2026-03-19T12:00:00Z",
-  needsOAuth: false,
+  needsReauth: false,
 };
 
 const unauthorizedProvider = {
@@ -225,7 +225,7 @@ const unauthorizedProvider = {
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
-  needsOAuth: false,
+  needsReauth: false,
 };
 
 const importOnlyProvider = {
@@ -235,7 +235,7 @@ const importOnlyProvider = {
   authorized: true,
   importOnly: true,
   lastSyncedAt: null,
-  needsOAuth: false,
+  needsReauth: false,
 };
 
 function setupDefaultMocks() {
@@ -290,6 +290,18 @@ describe("ProviderDetailScreen", () => {
 
       expect(screen.queryByText("Sync Controls")).toBeNull();
       expect(screen.queryByText("Sync Last 7 Days")).toBeNull();
+    });
+
+    it("renders re-authorize button when provider needs reauth", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...authorizedProvider, needsReauth: true }],
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Re-authorize")).toBeTruthy();
     });
 
     it("triggers sync with sinceDays=7 when Sync Last 7 Days is clicked", async () => {
@@ -506,7 +518,7 @@ describe("ProviderDetailScreen", () => {
       authorized: true,
       importOnly: false,
       lastSyncedAt: "2026-03-19T12:00:00Z",
-      needsOAuth: false,
+      needsReauth: false,
     };
 
     beforeEach(() => {

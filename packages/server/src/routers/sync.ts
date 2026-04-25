@@ -148,8 +148,9 @@ async function doRegisterProviders() {
   for (const [name, loadProvider] of providers) {
     try {
       registerProvider(await loadProvider());
-    } catch (err) {
-      logger.warn(`[sync] Failed to register ${name} provider: ${err}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to register ${name} provider: ${message}`);
     }
   }
 }

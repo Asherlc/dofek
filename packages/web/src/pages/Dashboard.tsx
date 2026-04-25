@@ -1,4 +1,3 @@
-import { formatDateYmd as formatDateForQuery } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { type ReactNode, useMemo } from "react";
 import { z } from "zod";
@@ -14,6 +13,7 @@ import { NextWorkoutCard } from "../components/NextWorkoutCard.tsx";
 import { NutritionChart } from "../components/NutritionChart.tsx";
 import { OnboardingWelcome } from "../components/OnboardingWelcome.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
@@ -23,6 +23,7 @@ import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
 import { useScrollReveal } from "../hooks/useScrollReveal.ts";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import {
   DASHBOARD_GRID_PAIR_SECONDARIES,
@@ -159,7 +160,7 @@ export function Dashboard() {
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const days = 30;
   const onboarding = useOnboarding();
-  const endDate = useMemo(() => formatDateForQuery(), []);
+  const endDate = useTodayQueryDate();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
@@ -260,7 +261,11 @@ export function Dashboard() {
     return entries.filter((entry): entry is MetricEntry => entry !== false);
   }, [trendData, units]);
 
-  const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);
+  const metrics = dailyMetrics.error ? [] : assertRows(dailyMetrics.data, dailyMetricRowSchema);
+  const sleepRows = sleepData.error ? [] : assertRows(sleepData.data, sleepRowSchema);
+  const nutritionRows = nutritionData.error
+    ? []
+    : assertRows(nutritionData.data, nutritionDailyRowSchema);
 
   const hasSpO2 = metrics.some((d) => d.spo2_avg != null);
   const hasSkinTemp = metrics.some((d) => d.skin_temp_c != null);
@@ -289,12 +294,22 @@ export function Dashboard() {
     [metrics],
   );
 
+  const renderQueryError = (queryError: unknown, height: number) => (
+    <QueryStatePanel error={queryError} height={height} />
+  );
+  const renderChartQueryError = (queryError: unknown) => renderQueryError(queryError, 200);
+  const renderChartCard = (content: ReactNode) => <div className="card p-2 sm:p-4">{content}</div>;
+
   // Build a map of section ID -> rendered content
   const sectionContent: Record<string, { title: string; subtitle: string; content: ReactNode }> = {
     healthMonitor: {
       title: "Health Monitor",
       subtitle: healthMonitorSubtitle(),
-      content: <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />,
+      content: trends.error ? (
+        renderQueryError(trends.error, 160)
+      ) : (
+        <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
+      ),
     },
     topInsights: {
       title: "Top Insights",
@@ -304,6 +319,8 @@ export function Dashboard() {
           <div className="h-48 rounded-lg shimmer" />
           <div className="h-48 rounded-lg shimmer" />
         </div>
+      ) : insightsQuery.error ? (
+        renderQueryError(insightsQuery.error, 192)
       ) : topInsights.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {topInsights.map((insight) => (
@@ -359,68 +376,71 @@ export function Dashboard() {
     hrvRhr: {
       title: "Heart Rate Variability & Resting HR",
       subtitle: "60-day baseline band with 7-day rolling average",
-      content: (
-        <div className="card p-2 sm:p-4">
+      content: renderChartCard(
+        hrvBaseline.error ? (
+          renderChartQueryError(hrvBaseline.error)
+        ) : (
           <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
-        </div>
+        ),
       ),
     },
     spo2Temp: {
       title: spo2TempConfig.title,
       subtitle: spo2TempConfig.subtitle,
-      content:
-        hasSpO2 || hasSkinTemp ? (
-          <div className="card p-2 sm:p-4">
-            <TimeSeriesChart
-              series={[
-                ...(hasSpO2 ? [spo2Series] : []),
-                ...(hasSkinTemp
-                  ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                  : []),
-              ]}
-              height={200}
-              yAxis={spo2TempConfig.yAxis}
-              loading={dailyMetrics.isLoading}
-            />
-          </div>
-        ) : null,
+      content: dailyMetrics.error
+        ? renderChartCard(renderChartQueryError(dailyMetrics.error))
+        : hasSpO2 || hasSkinTemp
+          ? renderChartCard(
+              <TimeSeriesChart
+                series={[
+                  ...(hasSpO2 ? [spo2Series] : []),
+                  ...(hasSkinTemp
+                    ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                    : []),
+                ]}
+                height={200}
+                yAxis={spo2TempConfig.yAxis}
+                loading={dailyMetrics.isLoading}
+              />,
+            )
+          : null,
     },
     steps: {
       title: "Daily Steps",
       subtitle: "Total daily step count over time",
-      content: (
-        <div className="card p-2 sm:p-4">
+      content: renderChartCard(
+        dailyMetrics.error ? (
+          renderChartQueryError(dailyMetrics.error)
+        ) : (
           <TimeSeriesChart
             series={[stepsSeries]}
             height={200}
             yAxis={[{ name: "steps" }]}
             loading={dailyMetrics.isLoading}
           />
-        </div>
+        ),
       ),
     },
     sleep: {
       title: "Sleep",
       subtitle: `Stage breakdown (${days} days)`,
-      content: (
-        <div className="card p-2 sm:p-4">
-          <SleepChart
-            data={assertRows(sleepData.data, sleepRowSchema)}
-            loading={sleepData.isLoading}
-          />
-        </div>
+      content: renderChartCard(
+        sleepData.error ? (
+          renderChartQueryError(sleepData.error)
+        ) : (
+          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
+        ),
       ),
     },
     nutrition: {
       title: "Nutrition",
       subtitle: `Calories & macros (${days} days)`,
-      content: (
-        <div className="card p-2 sm:p-4">
-          <NutritionChart
-            data={assertRows(nutritionData.data, nutritionDailyRowSchema)}
-            loading={nutritionData.isLoading}
-          />
-        </div>
+      content: renderChartCard(
+        nutritionData.error ? (
+          renderChartQueryError(nutritionData.error)
+        ) : (
+          <NutritionChart data={nutritionRows} loading={nutritionData.isLoading} />
+        ),
       ),
     },
     bodyComp: {
@@ -433,17 +453,25 @@ export function Dashboard() {
               <h3 className="text-xs font-medium text-subtle uppercase">Weight Trend</h3>
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
             </div>
-            <SmoothedWeightChart
-              data={smoothedWeight.data ?? []}
-              loading={smoothedWeight.isLoading}
-            />
+            {smoothedWeight.error ? (
+              renderQueryError(smoothedWeight.error, 220)
+            ) : (
+              <SmoothedWeightChart
+                data={smoothedWeight.data ?? []}
+                loading={smoothedWeight.isLoading}
+              />
+            )}
           </div>
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-xs font-medium text-subtle uppercase">Recomposition</h3>
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
-            <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            {bodyRecomp.error ? (
+              renderQueryError(bodyRecomp.error, 220)
+            ) : (
+              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            )}
           </div>
         </div>
       ),
