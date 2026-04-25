@@ -1,10 +1,10 @@
 import {
+  daysBefore,
   SEED_PROVIDER_IDS,
   SEED_PROVIDER_NAMES,
-  USER_ID,
-  daysBefore,
-  timestampAt,
   type Sql,
+  timestampAt,
+  USER_ID,
 } from "./helpers.ts";
 
 export async function clearSeedData(sql: Sql): Promise<void> {
@@ -191,7 +191,15 @@ async function seedSyncLogs(sql: Sql): Promise<void> {
     ["manual_review", "cycle", "success", 6, null, 170, 1],
   ] as const;
 
-  for (const [providerId, dataType, status, recordCount, errorMessage, durationMs, daysAgo] of rows) {
+  for (const [
+    providerId,
+    dataType,
+    status,
+    recordCount,
+    errorMessage,
+    durationMs,
+    daysAgo,
+  ] of rows) {
     await sql`
       INSERT INTO fitness.sync_log (
         provider_id, user_id, data_type, status, record_count, error_message, duration_ms, synced_at

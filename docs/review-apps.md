@@ -29,8 +29,8 @@ existing explicit records and Traefik routes.
 3. Apply the Terraform workspace `dofek-review-pr-<number>`.
 4. Wait for Docker on the new Hetzner server.
 5. Export review env vars from Infisical.
-6. Start `db` and `redis`, run migrations, seed the preview DB, then start
-   `web`.
+6. Start `db` and `redis`, run migrations, seed the preview DB with the
+   deterministic reviewer dataset, then start `web`.
 7. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
 8. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
 
@@ -49,6 +49,9 @@ workspace and runs `terraform destroy`. That removes:
 
 Review apps seed the database and enable `/auth/dev-login`, so reviewers can
 use the preview without wiring provider OAuth callbacks to the PR domain.
+The seed creates the `Review User` account with connected providers, recovery,
+training, nutrition, body, labs, cycle, journal, breathwork, and provider sync
+history so the main web and mobile screens are populated immediately.
 
 Use:
 

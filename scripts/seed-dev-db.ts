@@ -1,32 +1,31 @@
 /**
- * Seed a local development database with realistic multi-provider data.
+ * Seed a local development or review-app database with deterministic reviewer data.
  *
  * Usage:
  *   DATABASE_URL="postgres://health:health@localhost:5432/health" pnpm seed
  *
  * What it creates:
- *   - 1 baseline user
- *   - 2 providers: WHOOP (priority 1) and Apple Health (priority 2)
- *   - 90 days of daily metrics (resting HR, HRV, steps, SpO2, skin temp)
- *   - 30 days of dual-provider sleep (WHOOP 480min + Apple Health 330min
- *     with <80% overlap — exercises the v_sleep dedup edge case)
- *   - 30 days of activities (cycling, running, strength)
- *   - 30 days of nutrition data
- *   - 30 days of body weight measurements
- *   - An auth session ("dev-session") for browser testing
+ *   - 1 reviewer user with an auth session ("dev-session")
+ *   - 5 connected providers with priorities and sync logs
+ *   - 180 days of recovery/daily metrics
+ *   - 90 WHOOP nights plus 30 Apple Health overlap sessions
+ *   - 120 days of deterministic activity history and strength work
+ *   - 90 days of nutrition, recent meals, and supplements
+ *   - Body composition, labs, DEXA, clinical records, and cycle data
+ *   - Journal, life event, and breathwork context for reports/correlation
  *
- * The data is designed to exercise real dashboard edge cases:
+ * The data is designed to exercise reviewer-facing product surfaces:
  *   - Multi-provider sleep dedup (overlapping but <80% threshold)
- *   - Daily metrics from a single provider
- *   - Mixed activity types for training load calculations
+ *   - Missing days, training build/deload, a bad sleep week, and sync failures
+ *   - Web and mobile dashboard, recovery, strain, nutrition, body, and provider screens
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
+import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
 import { SeedRandom, USER_ID } from "./seed/helpers.ts";
-import { seedBodyHealth } from "./seed/body-health.ts";
 import { seedNutrition } from "./seed/nutrition.ts";
 import { seedRecovery } from "./seed/recovery.ts";
 import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
@@ -39,6 +38,10 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
+
+interface CountRow {
+  count: number;
+}
 
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
@@ -121,25 +124,115 @@ async function seedData() {
 // ---------------------------------------------------------------------------
 
 async function refreshViews() {
-  await sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`;
-  await sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`;
-  await sql`REFRESH MATERIALIZED VIEW fitness.v_body_measurement`;
-  try {
-    await sql`REFRESH MATERIALIZED VIEW fitness.v_activity`;
-  } catch {
-    // v_activity may fail if activity_summary depends on it
-  }
-  try {
-    await sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`;
-  } catch {
-    // deduped_sensor depends on v_activity + metric_stream
-  }
-  try {
-    await sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`;
-  } catch {
-    // activity_summary depends on deduped_sensor
+  const viewNames = [
+    "v_sleep",
+    "v_daily_metrics",
+    "v_body_measurement",
+    "v_activity",
+    "deduped_sensor",
+    "activity_summary",
+  ];
+  for (const viewName of viewNames) {
+    await sql.unsafe(`REFRESH MATERIALIZED VIEW fitness.${viewName}`);
   }
   console.log("Views refreshed");
+}
+
+async function verifySeed() {
+  const minimums = [
+    [
+      "providers",
+      5,
+      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "daily metrics",
+      170,
+      `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "sleep sessions",
+      100,
+      `SELECT COUNT(*)::int AS count FROM fitness.sleep_session WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "activities",
+      90,
+      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "metric stream samples",
+      1_000,
+      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "nutrition days",
+      85,
+      `SELECT COUNT(*)::int AS count FROM fitness.nutrition_daily WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "food entries",
+      20,
+      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "body measurements",
+      50,
+      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "lab results",
+      8,
+      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "journal entries",
+      30,
+      `SELECT COUNT(*)::int AS count FROM fitness.journal_entry WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "breathwork sessions",
+      10,
+      `SELECT COUNT(*)::int AS count FROM fitness.breathwork_session WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "cycle periods",
+      4,
+      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "v_sleep rows",
+      90,
+      `SELECT COUNT(*)::int AS count FROM fitness.v_sleep WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "v_daily_metrics rows",
+      170,
+      `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "activity summary rows",
+      80,
+      `SELECT COUNT(*)::int AS count FROM fitness.activity_summary WHERE user_id = '${USER_ID}'`,
+    ],
+  ] as const;
+
+  console.log("\nVerification:");
+  for (const [label, minimum, query] of minimums) {
+    const count = await readCount(query);
+    if (count < minimum) {
+      throw new Error(
+        `Seed verification failed for ${label}: expected at least ${minimum}, got ${count}`,
+      );
+    }
+    console.log(`  ${label}: ${count}`);
+  }
+}
+
+async function readCount(query: string): Promise<number> {
+  const [row] = await sql.unsafe<CountRow[]>(query);
+  if (!row) throw new Error(`Count query returned no rows: ${query}`);
+  return row.count;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,21 +257,7 @@ async function main() {
 
   await seedData();
   await refreshViews();
-
-  // Verify dedup scenario
-  const [{ count: rawCount }] = await sql`SELECT count(*)::int AS count FROM fitness.sleep_session`;
-  const [{ count: viewCount }] = await sql`SELECT count(*)::int AS count FROM fitness.v_sleep`;
-  const [{ count: dupDates }] = await sql`
-		SELECT count(*)::int AS count FROM (
-			SELECT started_at::date FROM fitness.v_sleep
-			WHERE NOT is_nap GROUP BY 1 HAVING count(*) > 1
-		) x
-	`;
-
-  console.log(`\nVerification:`);
-  console.log(`  Raw sleep sessions: ${rawCount}`);
-  console.log(`  v_sleep rows: ${viewCount}`);
-  console.log(`  Dates with >1 session in v_sleep: ${dupDates} (dedup edge case)`);
+  await verifySeed();
   console.log(`\nDone. Start the server with:`);
   console.log(`  DATABASE_URL="${databaseUrl}" cd packages/server && pnpm dev`);
   console.log(`\nBrowser cookie for auth: session=dev-session`);

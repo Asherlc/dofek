@@ -1,4 +1,4 @@
-import { USER_ID, daysBefore, timestampAt, type SeedRandom, type Sql } from "./helpers.ts";
+import { daysBefore, type SeedRandom, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
 interface FoodEntryRow {
   id: string;
@@ -42,9 +42,19 @@ async function seedDailyNutrition(sql: Sql, random: SeedRandom, today: Date): Pr
 
 async function seedFoodEntries(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
   const meals = [
-    ["breakfast", "Greek yogurt bowl", "Greek yogurt, berries, oats, and walnuts", "cheese_milk_and_dairy"],
+    [
+      "breakfast",
+      "Greek yogurt bowl",
+      "Greek yogurt, berries, oats, and walnuts",
+      "cheese_milk_and_dairy",
+    ],
     ["lunch", "Chicken rice bowl", "Chicken breast, rice, black beans, salsa, and avocado", "meat"],
-    ["dinner", "Salmon plate", "Salmon, roasted potatoes, greens, and olive oil", "fish_and_seafood"],
+    [
+      "dinner",
+      "Salmon plate",
+      "Salmon, roasted potatoes, greens, and olive oil",
+      "fish_and_seafood",
+    ],
   ] as const;
 
   for (let daysAgo = 0; daysAgo < 8; daysAgo++) {

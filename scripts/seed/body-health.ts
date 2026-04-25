@@ -1,11 +1,4 @@
-import {
-  USER_ID,
-  daysBefore,
-  round,
-  timestampAt,
-  type SeedRandom,
-  type Sql,
-} from "./helpers.ts";
+import { daysBefore, round, type SeedRandom, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
 interface IdRow {
   id: string;
@@ -60,7 +53,7 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
         resting_metabolic_rate_kcal, height_inches, weight_pounds
       ) VALUES (
         'bodyspec', ${USER_ID}, ${`seed-dexa-${scanIndex + 1}`}, ${timestampAt(date, 9, 30)},
-        'Hologic Horizon Review', ${round(totalMassKg * bodyFatPct / 100, 2)},
+        'Hologic Horizon Review', ${round((totalMassKg * bodyFatPct) / 100, 2)},
         ${round(totalMassKg * 0.77, 2)}, 3.1, ${totalMassKg}, ${bodyFatPct},
         ${scanIndex === 0 ? 0.98 : 0.91}, ${scanIndex === 0 ? 0.62 : 0.48},
         ${scanIndex === 0 ? 620 : 480}, ${scanIndex === 0 ? 1.18 : 1.21},
@@ -73,7 +66,15 @@ async function seedDexaScans(sql: Sql, today: Date): Promise<void> {
 }
 
 async function seedDexaRegions(sql: Sql, scanId: string, scanIndex: number): Promise<void> {
-  const regions = ["android", "gynoid", "left_arm", "right_arm", "left_leg", "right_leg", "trunk"] as const;
+  const regions = [
+    "android",
+    "gynoid",
+    "left_arm",
+    "right_arm",
+    "left_leg",
+    "right_leg",
+    "trunk",
+  ] as const;
   for (const [index, region] of regions.entries()) {
     await sql`
       INSERT INTO fitness.dexa_scan_region (
@@ -113,7 +114,10 @@ async function seedLabs(sql: Sql, today: Date): Promise<void> {
       ["Vitamin D", panelIndex === 0 ? "31" : "44", "ng/mL", 30, 80],
     ] as const;
 
-    for (const [resultIndex, [testName, valueText, unit, referenceRangeLow, referenceRangeHigh]] of results.entries()) {
+    for (const [
+      resultIndex,
+      [testName, valueText, unit, referenceRangeLow, referenceRangeHigh],
+    ] of results.entries()) {
       await sql`
         INSERT INTO fitness.lab_result (
           provider_id, user_id, panel_id, external_id, test_name, value, value_text,

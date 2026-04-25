@@ -1,10 +1,10 @@
 import {
-  USER_ID,
   addMinutes,
   daysBefore,
-  timestampAt,
   type SeedRandom,
   type Sql,
+  timestampAt,
+  USER_ID,
 } from "./helpers.ts";
 
 export async function seedRecovery(sql: Sql, random: SeedRandom): Promise<void> {
@@ -95,7 +95,15 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
       ) RETURNING id
     `;
 
-    await seedSleepStages(sql, sessionId, startedAt, deepMinutes, remMinutes, lightMinutes, awakeMinutes);
+    await seedSleepStages(
+      sql,
+      sessionId,
+      startedAt,
+      deepMinutes,
+      remMinutes,
+      lightMinutes,
+      awakeMinutes,
+    );
 
     if (daysAgo <= 30) {
       const appleStart = addMinutes(startedAt, 90);
