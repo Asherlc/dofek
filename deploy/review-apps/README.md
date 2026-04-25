@@ -27,7 +27,7 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   - applies the PR Terraform workspace
   - writes the exact PR host route on the shared front door
   - exports review env vars from Infisical
-  - runs migrations and the seed script
+  - runs migrations and the deterministic comprehensive seed script
   - starts the review stack
 - The destroy workflow tears down the PR workspace, which removes the server and
   the front door route file, then deletes the HCP Terraform workspace itself.
@@ -35,8 +35,10 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
 ## Reviewer Login
 
 - Review apps enable `/auth/dev-login`.
-- The seed step creates the `dev-session` and demo data so reviewers can jump
-  directly into the dashboard without provider OAuth setup.
+- The seed step creates the `dev-session` and a comprehensive `Review User`
+  dataset so reviewers can inspect dashboard, recovery, training, nutrition,
+  body, provider, report, cycle, journal, and breathwork surfaces without
+  provider OAuth setup.
 
 ## Guardrails
 

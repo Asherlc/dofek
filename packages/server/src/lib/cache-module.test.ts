@@ -47,12 +47,22 @@ describe("cache module environment selection", () => {
     const module = await import("./cache.ts");
     const store = new module.RedisCacheStore();
 
+    expect(module.queryCache).toBeInstanceOf(module.RedisCacheStore);
+
     await store.set("user-1:dashboard", { ok: true }, 60_000);
     await expect(store.get("user-1:dashboard")).resolves.toEqual({ ok: true });
     await store.invalidateAll();
 
     expect(getRedisConnection).toHaveBeenCalledTimes(1);
     expect(redisConnection).toHaveBeenCalledTimes(1);
+    expect(redisConnection).toHaveBeenCalledWith(
+      { host: "redis" },
+      {
+        shared: true,
+        blocking: false,
+        skipVersionCheck: true,
+      },
+    );
     expect(client.set).toHaveBeenCalledWith(
       "query-cache:data:user-1:dashboard",
       JSON.stringify({ ok: true }),
@@ -69,5 +79,43 @@ describe("cache module environment selection", () => {
       "query-cache:keys",
       "query-cache:data:user-1:dashboard",
     );
+  });
+
+  it("skips Redis deletes when invalidateByPrefix finds no matching cache keys", async () => {
+    const client = {
+      set: vi.fn(async () => "OK" as const),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 0),
+      sadd: vi.fn(async () => 0),
+      smembers: vi.fn(async () => ["not-a-cache-key", "query-cache:data:user-2:dashboard"]),
+      srem: vi.fn(async () => 0),
+    };
+
+    const module = await import("./cache.ts");
+    const store = new module.RedisCacheStore(async () => client);
+
+    await store.invalidateByPrefix("user-1:");
+
+    expect(client.del).not.toHaveBeenCalled();
+    expect(client.srem).not.toHaveBeenCalled();
+  });
+
+  it("skips Redis deletes when invalidateAll sees an empty registry", async () => {
+    const client = {
+      set: vi.fn(async () => "OK" as const),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 0),
+      sadd: vi.fn(async () => 0),
+      smembers: vi.fn(async () => []),
+      srem: vi.fn(async () => 0),
+    };
+
+    const module = await import("./cache.ts");
+    const store = new module.RedisCacheStore(async () => client);
+
+    await store.invalidateAll();
+
+    expect(client.del).not.toHaveBeenCalled();
+    expect(client.srem).not.toHaveBeenCalled();
   });
 });

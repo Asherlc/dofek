@@ -1,6 +1,6 @@
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
-import { Resource } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
@@ -23,6 +23,22 @@ function parseHeaders(raw: string): Record<string, string> {
   return headers;
 }
 
+function sanitizeLogAttributes(
+  data?: Record<string, unknown>,
+): Record<string, string | number | boolean> | undefined {
+  if (!data) {
+    return undefined;
+  }
+
+  const attributes: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      attributes[key] = value;
+    }
+  }
+  return Object.keys(attributes).length > 0 ? attributes : undefined;
+}
+
 export function initTelemetry() {
   if (initialized) {
     return;
@@ -41,7 +57,7 @@ export function initTelemetry() {
   Sentry.captureMessage("Sentry initialized on iOS", "info");
 
   if (OTEL_ENDPOINT) {
-    const resource = new Resource({
+    const resource = resourceFromAttributes({
       [ATTR_SERVICE_NAME]: "dofek-mobile",
     });
 
@@ -50,8 +66,10 @@ export function initTelemetry() {
       headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
     });
 
-    loggerProvider = new LoggerProvider({ resource });
-    loggerProvider.addLogRecordProcessor(new BatchLogRecordProcessor(exporter));
+    loggerProvider = new LoggerProvider({
+      resource,
+      processors: [new BatchLogRecordProcessor(exporter)],
+    });
   }
 }
 
@@ -77,7 +95,7 @@ function emitLog(
       severityNumber,
       severityText,
       body: `[${category}] ${message}`,
-      attributes: data,
+      attributes: sanitizeLogAttributes(data),
     });
   }
 }

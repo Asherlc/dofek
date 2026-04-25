@@ -8,11 +8,41 @@ import {
   muscleGroupLabel,
 } from "@dofek/training/muscle-groups";
 import { StyleSheet, Text, View } from "react-native";
-import Body from "react-native-body-highlighter";
+import Body, { type Slug as BodyPartSlug } from "react-native-body-highlighter";
 import { colors } from "../theme";
+
+const BODY_PART_SLUGS: readonly BodyPartSlug[] = [
+  "abs",
+  "adductors",
+  "ankles",
+  "biceps",
+  "calves",
+  "chest",
+  "deltoids",
+  "feet",
+  "forearm",
+  "gluteal",
+  "hamstring",
+  "hands",
+  "hair",
+  "head",
+  "knees",
+  "lower-back",
+  "neck",
+  "obliques",
+  "quadriceps",
+  "tibialis",
+  "trapezius",
+  "triceps",
+  "upper-back",
+];
 
 interface MuscleGroupBodyDiagramProps {
   data: MuscleGroupInput[];
+}
+
+function isBodyPartSlug(value: string): value is BodyPartSlug {
+  return BODY_PART_SLUGS.some((slug) => slug === value);
 }
 
 export function MuscleGroupBodyDiagram({ data }: MuscleGroupBodyDiagramProps) {
@@ -20,12 +50,18 @@ export function MuscleGroupBodyDiagram({ data }: MuscleGroupBodyDiagramProps) {
   const intensities = computeIntensities(slugTotals);
 
   // Build react-native-body-highlighter data format
-  const bodyData = [...intensities.entries()]
-    .filter(([, intensity]) => intensity > 0)
-    .map(([slug, intensity]) => ({
-      slug,
-      intensity: intensityToBucket(intensity),
-    }));
+  const bodyData = [...intensities.entries()].flatMap(([slug, intensity]) => {
+    if (intensity <= 0 || !isBodyPartSlug(slug)) {
+      return [];
+    }
+
+    return [
+      {
+        slug,
+        intensity: intensityToBucket(intensity),
+      },
+    ];
+  });
 
   return (
     <View>

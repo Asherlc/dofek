@@ -109,7 +109,7 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
         description="This estimate shows your likely daily energy expenditure based on calorie intake and body-weight change."
         textStyle={styles.cardTitle}
       />
-      {data == null ? (
+      {data == null || data.estimatedTdee == null ? (
         <Text style={styles.emptyText}>Not enough data</Text>
       ) : (
         <>

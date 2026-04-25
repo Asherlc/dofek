@@ -1,29 +1,35 @@
 /**
- * Seed a local development database with realistic multi-provider data.
+ * Seed a local development or review-app database with deterministic reviewer data.
  *
  * Usage:
  *   DATABASE_URL="postgres://health:health@localhost:5432/health" pnpm seed
  *
  * What it creates:
- *   - 1 baseline user
- *   - 2 providers: WHOOP (priority 1) and Apple Health (priority 2)
- *   - 90 days of daily metrics (resting HR, HRV, steps, SpO2, skin temp)
- *   - 30 days of dual-provider sleep (WHOOP 480min + Apple Health 330min
- *     with <80% overlap — exercises the v_sleep dedup edge case)
- *   - 30 days of activities (cycling, running, strength)
- *   - 30 days of nutrition data
- *   - 30 days of body weight measurements
- *   - An auth session ("dev-session") for browser testing
+ *   - 1 reviewer user with an auth session ("dev-session")
+ *   - 5 connected providers with priorities and sync logs
+ *   - 180 days of recovery/daily metrics
+ *   - 90 WHOOP nights plus 30 Apple Health overlap sessions
+ *   - 120 days of deterministic activity history and strength work
+ *   - 90 days of nutrition, recent meals, and supplements
+ *   - Body composition, labs, DEXA, clinical records, and cycle data
+ *   - Journal, life event, and breathwork context for reports/correlation
  *
- * The data is designed to exercise real dashboard edge cases:
+ * The data is designed to exercise reviewer-facing product surfaces:
  *   - Multi-provider sleep dedup (overlapping but <80% threshold)
- *   - Daily metrics from a single provider
- *   - Mixed activity types for training load calculations
+ *   - Missing days, training build/deload, a bad sleep week, and sync failures
+ *   - Web and mobile dashboard, recovery, strain, nutrition, body, and provider screens
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
+import { seedBodyHealth } from "./seed/body-health.ts";
+import { clearSeedData, seedCore } from "./seed/core.ts";
+import { SeedRandom, USER_ID } from "./seed/helpers.ts";
+import { seedNutrition } from "./seed/nutrition.ts";
+import { seedRecovery } from "./seed/recovery.ts";
+import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
+import { seedTraining } from "./seed/training.ts";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -33,7 +39,9 @@ if (!databaseUrl) {
 
 const sql = createTaggedQueryClient(databaseUrl);
 
-const USER_ID = "00000000-0000-0000-0000-000000000001";
+interface CountRow {
+  count: number;
+}
 
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
@@ -101,223 +109,14 @@ async function applyMigrations() {
 // ---------------------------------------------------------------------------
 
 async function seedData() {
-  // Clear existing seed data (idempotent re-runs)
-  await sql`DELETE FROM fitness.metric_stream WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.sleep_session WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.activity WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.daily_metrics WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.nutrition_daily WHERE provider_id IN ('whoop', 'apple_health')`;
-  await sql`DELETE FROM fitness.body_measurement WHERE provider_id IN ('whoop', 'apple_health')`;
-
-  await sql`
-		INSERT INTO fitness.user_profile (id, name)
-		VALUES (${USER_ID}, 'Baseline User')
-		ON CONFLICT (id) DO NOTHING
-	`;
-
-  // Providers
-  await sql`
-		INSERT INTO fitness.provider (id, name, user_id) VALUES
-			('whoop', 'WHOOP', ${USER_ID}),
-			('apple_health', 'Apple Health', ${USER_ID})
-		ON CONFLICT DO NOTHING
-	`;
-  await sql`
-		INSERT INTO fitness.provider_priority (provider_id, priority, sleep_priority) VALUES
-			('whoop', 1, 1),
-			('apple_health', 2, 2)
-		ON CONFLICT (provider_id) DO UPDATE
-			SET priority = EXCLUDED.priority, sleep_priority = EXCLUDED.sleep_priority
-	`;
-
-  // Auth session for browser testing
-  await sql`
-		INSERT INTO fitness.session (id, user_id, expires_at)
-		VALUES ('dev-session', ${USER_ID}, NOW() + INTERVAL '365 days')
-		ON CONFLICT DO NOTHING
-	`;
-
-  const today = new Date();
-
-  // -----------------------------------------------------------------------
-  // Daily metrics (90 days)
-  // -----------------------------------------------------------------------
-  for (let daysAgo = 0; daysAgo <= 90; daysAgo++) {
-    const date = daysBefore(today, daysAgo);
-    await sql`
-			INSERT INTO fitness.daily_metrics (
-				date, provider_id, user_id,
-				resting_hr, hrv, spo2_avg, skin_temp_c,
-				steps, active_energy_kcal, basal_energy_kcal
-			) VALUES (
-				${date}, 'whoop', ${USER_ID},
-				${randInt(48, 58)}, ${randInt(45, 80)}, ${randFloat(95, 99, 1)}, ${randFloat(35.5, 37.0, 1)},
-				${randInt(5000, 14000)}, ${randInt(350, 700)}, 1800
-			) ON CONFLICT DO NOTHING
-		`;
-  }
-  console.log("Seeded: 91 days of daily metrics");
-
-  // -----------------------------------------------------------------------
-  // Sleep sessions: dual-provider with <80% overlap (the dedup edge case)
-  // WHOOP: 22:00 → 06:00 = 480 min
-  // Apple Health: 23:30 → 05:00 = 330 min (overlap ≈ 69%)
-  // -----------------------------------------------------------------------
-  for (let daysAgo = 1; daysAgo <= 30; daysAgo++) {
-    const nightDate = daysBefore(today, daysAgo);
-
-    // WHOOP session — vary bedtime and wake time for realistic durations
-    const wakeDate = daysBefore(today, daysAgo - 1);
-    const bedHour = randInt(21, 23);
-    const bedMin = randInt(0, 59);
-    const wakeHour = randInt(5, 7);
-    const wakeMin = randInt(0, 59);
-    const whoopStart = localTimestamp(
-      nightDate,
-      `${String(bedHour).padStart(2, "0")}:${String(bedMin).padStart(2, "0")}:00`,
-    );
-    const whoopEnd = localTimestamp(
-      wakeDate,
-      `${String(wakeHour).padStart(2, "0")}:${String(wakeMin).padStart(2, "0")}:00`,
-    );
-    // Compute duration from times (bed→midnight + midnight→wake)
-    const durationMin = (24 - bedHour) * 60 - bedMin + wakeHour * 60 + wakeMin;
-    const deepMin = randInt(50, 90);
-    const remMin = randInt(80, 120);
-    const lightMin = randInt(
-      Math.max(60, durationMin - deepMin - remMin - 50),
-      Math.max(80, durationMin - deepMin - remMin - 20),
-    );
-    const awakeMin = Math.max(10, durationMin - deepMin - remMin - lightMin);
-    await sql`
-			INSERT INTO fitness.sleep_session (
-				provider_id, user_id, external_id,
-				started_at, ended_at,
-				duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-				efficiency_pct, sleep_type
-			) VALUES (
-				'whoop', ${USER_ID}, ${`w-${daysAgo}`},
-				${whoopStart}, ${whoopEnd},
-				${durationMin}, ${deepMin}, ${remMin}, ${lightMin}, ${awakeMin},
-				${randFloat(82, 96, 1)}, 'sleep'
-			)
-		`;
-
-    // Apple Health session (shifted — doesn't overlap >80%)
-    const ahBedMin = bedMin + randInt(60, 120);
-    const ahBedHour = bedHour + Math.floor(ahBedMin / 60);
-    const ahStart = localTimestamp(
-      nightDate,
-      `${String(ahBedHour % 24).padStart(2, "0")}:${String(ahBedMin % 60).padStart(2, "0")}:00`,
-    );
-    const ahWakeHour = wakeHour - 1;
-    const ahEnd = localTimestamp(
-      wakeDate,
-      `${String(Math.max(4, ahWakeHour)).padStart(2, "0")}:${String(wakeMin).padStart(2, "0")}:00`,
-    );
-    const ahDuration = randInt(280, 380);
-    await sql`
-			INSERT INTO fitness.sleep_session (
-				provider_id, user_id, external_id,
-				started_at, ended_at,
-				duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes,
-				efficiency_pct, sleep_type
-			) VALUES (
-				'apple_health', ${USER_ID}, ${`ah-${daysAgo}`},
-				${ahStart}, ${ahEnd},
-				${ahDuration}, ${randInt(30, 60)}, ${randInt(50, 80)}, ${randInt(120, 180)}, ${randInt(20, 45)},
-				NULL, 'sleep'
-			)
-		`;
-  }
-  console.log("Seeded: 30 nights × 2 providers (60 sleep sessions)");
-
-  // -----------------------------------------------------------------------
-  // Activities (30 days — mix of cycling, running, strength)
-  // -----------------------------------------------------------------------
-  const activityTypes = ["cycling", "running", "strength_training"] as const;
-  for (let daysAgo = 1; daysAgo <= 30; daysAgo++) {
-    const date = daysBefore(today, daysAgo);
-    const activityType = activityTypes[daysAgo % activityTypes.length];
-    const durationMin = activityType === "strength_training" ? randInt(40, 70) : randInt(30, 90);
-    const startHour = randInt(6, 18);
-    const startedAt = localTimestamp(date, `${String(startHour).padStart(2, "0")}:00:00`);
-    const endedAtDate = new Date();
-    endedAtDate.setDate(endedAtDate.getDate() - daysAgo);
-    endedAtDate.setHours(startHour, durationMin, 0, 0);
-    const endedAt = localTimestamp(
-      date,
-      `${String(endedAtDate.getHours()).padStart(2, "0")}:${String(endedAtDate.getMinutes()).padStart(2, "0")}:00`,
-    );
-
-    const activityName =
-      activityType === "cycling"
-        ? "Morning Ride"
-        : activityType === "running"
-          ? "Easy Run"
-          : "Gym Session";
-    const [{ id: activityId }] = await sql<{ id: string }[]>`
-			INSERT INTO fitness.activity (
-				provider_id, user_id, external_id,
-				activity_type, started_at, ended_at, name
-			) VALUES (
-				'whoop', ${USER_ID}, ${`act-${daysAgo}`},
-				${activityType}, ${startedAt}, ${endedAt},
-				${activityName}
-			) RETURNING id
-		`;
-    // Seed metric_stream samples so activity_summary computes avg_hr / max_hr
-    const baseHr = activityType === "strength_training" ? randInt(100, 120) : randInt(130, 155);
-    const sampleCount = Math.floor(durationMin / 5); // one sample every 5 min
-    for (let sample = 0; sample < sampleCount; sample++) {
-      const sampleTime = localTimestamp(
-        date,
-        `${String(startHour + Math.floor((sample * 5) / 60)).padStart(2, "0")}:${String((sample * 5) % 60).padStart(2, "0")}:00`,
-      );
-      await sql`
-				INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar)
-				VALUES (${sampleTime}, ${USER_ID}, 'whoop', NULL, 'api', 'heart_rate', ${activityId}, ${randInt(baseHr - 15, baseHr + 25)})
-			`;
-    }
-  }
-  console.log("Seeded: 30 activities with HR samples");
-
-  // -----------------------------------------------------------------------
-  // Nutrition (30 days)
-  // -----------------------------------------------------------------------
-  for (let daysAgo = 0; daysAgo <= 30; daysAgo++) {
-    const date = daysBefore(today, daysAgo);
-    await sql`
-			INSERT INTO fitness.nutrition_daily (
-				date, provider_id, user_id,
-				calories, protein_g, carbs_g, fat_g, fiber_g
-			) VALUES (
-				${date}, 'apple_health', ${USER_ID},
-				${randInt(1800, 2800)}, ${randInt(100, 180)},
-				${randInt(150, 350)}, ${randInt(50, 100)}, ${randInt(20, 40)}
-			) ON CONFLICT DO NOTHING
-		`;
-  }
-  console.log("Seeded: 31 days of nutrition");
-
-  // -----------------------------------------------------------------------
-  // Body weight (every 3 days for 90 days)
-  // -----------------------------------------------------------------------
-  let weightKg = 82.0;
-  for (let daysAgo = 90; daysAgo >= 0; daysAgo -= 3) {
-    const date = daysBefore(today, daysAgo);
-    weightKg += randFloat(-0.3, 0.2, 1);
-    await sql`
-			INSERT INTO fitness.body_measurement (
-				provider_id, user_id, external_id,
-				recorded_at, weight_kg, body_fat_pct
-			) VALUES (
-				'apple_health', ${USER_ID}, ${`bw-${daysAgo}`},
-				${localTimestamp(date, "07:30:00")}, ${weightKg}, ${randFloat(14, 18, 1)}
-			) ON CONFLICT DO NOTHING
-		`;
-  }
-  console.log("Seeded: ~30 body weight measurements");
+  await clearSeedData(sql);
+  await seedCore(sql);
+  const random = new SeedRandom(42);
+  await seedRecovery(sql, random);
+  await seedTraining(sql, random);
+  await seedNutrition(sql, random);
+  await seedBodyHealth(sql, random);
+  await seedReviewSurfaces(sql, random);
 }
 
 // ---------------------------------------------------------------------------
@@ -325,64 +124,115 @@ async function seedData() {
 // ---------------------------------------------------------------------------
 
 async function refreshViews() {
-  await sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`;
-  await sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`;
-  await sql`REFRESH MATERIALIZED VIEW fitness.v_body_measurement`;
-  try {
-    await sql`REFRESH MATERIALIZED VIEW fitness.v_activity`;
-  } catch {
-    // v_activity may fail if activity_summary depends on it
-  }
-  try {
-    await sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`;
-  } catch {
-    // deduped_sensor depends on v_activity + metric_stream
-  }
-  try {
-    await sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`;
-  } catch {
-    // activity_summary depends on deduped_sensor
+  const viewNames = [
+    "v_sleep",
+    "v_daily_metrics",
+    "v_body_measurement",
+    "v_activity",
+    "deduped_sensor",
+    "activity_summary",
+  ];
+  for (const viewName of viewNames) {
+    await sql.unsafe(`REFRESH MATERIALIZED VIEW fitness.${viewName}`);
   }
   console.log("Views refreshed");
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+async function verifySeed() {
+  const minimums = [
+    [
+      "providers",
+      5,
+      `SELECT COUNT(*)::int AS count FROM fitness.provider WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "daily metrics",
+      170,
+      `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "sleep sessions",
+      100,
+      `SELECT COUNT(*)::int AS count FROM fitness.sleep_session WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "activities",
+      90,
+      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "metric stream samples",
+      1_000,
+      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "nutrition days",
+      85,
+      `SELECT COUNT(*)::int AS count FROM fitness.nutrition_daily WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "food entries",
+      20,
+      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "body measurements",
+      50,
+      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "lab results",
+      8,
+      `SELECT COUNT(*)::int AS count FROM fitness.lab_result WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "journal entries",
+      30,
+      `SELECT COUNT(*)::int AS count FROM fitness.journal_entry WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "breathwork sessions",
+      10,
+      `SELECT COUNT(*)::int AS count FROM fitness.breathwork_session WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "cycle periods",
+      4,
+      `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "v_sleep rows",
+      90,
+      `SELECT COUNT(*)::int AS count FROM fitness.v_sleep WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "v_daily_metrics rows",
+      170,
+      `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${USER_ID}'`,
+    ],
+    [
+      "activity summary rows",
+      80,
+      `SELECT COUNT(*)::int AS count FROM fitness.activity_summary WHERE user_id = '${USER_ID}'`,
+    ],
+  ] as const;
 
-/** Returns YYYY-MM-DD for the local calendar date N days before `from`. */
-function daysBefore(from: Date, daysAgo: number): string {
-  const date = new Date(from);
-  date.setDate(date.getDate() - daysAgo);
-  // Use local date parts (not UTC) so the date matches the user's timezone
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  console.log("\nVerification:");
+  for (const [label, minimum, query] of minimums) {
+    const count = await readCount(query);
+    if (count < minimum) {
+      throw new Error(
+        `Seed verification failed for ${label}: expected at least ${minimum}, got ${count}`,
+      );
+    }
+    console.log(`  ${label}: ${count}`);
+  }
 }
 
-/**
- * Build an ISO 8601 timestamp with the local timezone offset.
- * e.g. "2026-03-29T22:00:00-07:00" so PostgreSQL stores the correct absolute time
- * and `AT TIME ZONE 'America/Los_Angeles'` yields the intended local date.
- */
-function localTimestamp(dateStr: string, time: string): string {
-  const offsetMin = new Date().getTimezoneOffset(); // e.g. 420 for PDT (UTC-7)
-  const sign = offsetMin <= 0 ? "+" : "-";
-  const absMin = Math.abs(offsetMin);
-  const hours = String(Math.floor(absMin / 60)).padStart(2, "0");
-  const mins = String(absMin % 60).padStart(2, "0");
-  return `${dateStr}T${time}${sign}${hours}:${mins}`;
-}
-
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function randFloat(min: number, max: number, decimals: number): number {
-  const value = Math.random() * (max - min) + min;
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+async function readCount(query: string): Promise<number> {
+  const [row] = await sql.unsafe<CountRow[]>(query);
+  if (!row) throw new Error(`Count query returned no rows: ${query}`);
+  return row.count;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,21 +257,7 @@ async function main() {
 
   await seedData();
   await refreshViews();
-
-  // Verify dedup scenario
-  const [{ count: rawCount }] = await sql`SELECT count(*)::int AS count FROM fitness.sleep_session`;
-  const [{ count: viewCount }] = await sql`SELECT count(*)::int AS count FROM fitness.v_sleep`;
-  const [{ count: dupDates }] = await sql`
-		SELECT count(*)::int AS count FROM (
-			SELECT started_at::date FROM fitness.v_sleep
-			WHERE NOT is_nap GROUP BY 1 HAVING count(*) > 1
-		) x
-	`;
-
-  console.log(`\nVerification:`);
-  console.log(`  Raw sleep sessions: ${rawCount}`);
-  console.log(`  v_sleep rows: ${viewCount}`);
-  console.log(`  Dates with >1 session in v_sleep: ${dupDates} (dedup edge case)`);
+  await verifySeed();
   console.log(`\nDone. Start the server with:`);
   console.log(`  DATABASE_URL="${databaseUrl}" cd packages/server && pnpm dev`);
   console.log(`\nBrowser cookie for auth: session=dev-session`);

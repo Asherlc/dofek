@@ -185,6 +185,9 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
           workoutIndex += routeQueryConcurrency
         ) {
           const workout = workouts[workoutIndex];
+          if (!workout) {
+            continue;
+          }
           try {
             const locations = await healthKit.queryWorkoutRoutes(workout.uuid);
             if (locations.length > 0) {
