@@ -5,6 +5,7 @@ import { httpBatchLink } from "@trpc/client";
 import { type ReactNode, useMemo } from "react";
 import { View } from "react-native";
 import { trpc } from "../../lib/trpc";
+import { colors } from "../../theme";
 import TodayScreen from "./index";
 
 function localDateString(dayOffset = 0): string {
@@ -19,7 +20,6 @@ function createSeededProviders() {
   });
 
   const todayDate = localDateString();
-  const yesterdayDate = localDateString(-1);
 
   queryClient.setQueryData(
     [["recovery", "readinessScore"], { input: { days: 30, endDate: todayDate }, type: "query" }],
@@ -27,12 +27,6 @@ function createSeededProviders() {
       {
         date: todayDate,
         readinessScore: 82,
-        components: {
-          hrvScore: 86,
-          restingHrScore: 78,
-          sleepScore: 84,
-          respiratoryRateScore: 80,
-        },
       },
     ],
   );
@@ -40,17 +34,8 @@ function createSeededProviders() {
   queryClient.setQueryData(
     [["recovery", "sleepAnalytics"], { input: { days: 30 }, type: "query" }],
     {
-      nightly: [
-        {
-          date: yesterdayDate,
-          durationMinutes: 462,
-          deepPct: 18,
-          remPct: 23,
-          lightPct: 52,
-          awakePct: 7,
-        },
-      ],
-      sleepDebt: 32,
+      nightly: [],
+      sleepDebt: 0,
     },
   );
 
@@ -79,42 +64,12 @@ function createSeededProviders() {
 
   queryClient.setQueryData(
     [["training", "nextWorkout"], { input: { endDate: todayDate }, type: "query" }],
-    {
-      generatedAt: new Date().toISOString(),
-      recommendationType: "strength",
-      title: "Strength Session",
-      shortBlurb:
-        "Prioritize a full-body lift today. Keep the effort controlled and leave a little in reserve.",
-      readiness: { score: 82, level: "high" },
-      rationale: [
-        "Readiness score is 82/100 (high).",
-        "Last 7 days: 1 strength and 3 cardio sessions.",
-      ],
-      details: [
-        "Warm up 8-10 minutes, then train full-body exercises.",
-        "Use 3-4 working sets per exercise in the 6-12 rep range.",
-        "Stop 1-3 reps before failure on most sets.",
-      ],
-      strength: {
-        focusMuscles: ["glutes", "hamstrings", "upper back"],
-        split: "Full body",
-        targetSets: "10-16 hard sets total",
-        lastStrengthDaysAgo: 3,
-      },
-      cardio: null,
-    },
+    null,
   );
 
   queryClient.setQueryData(
     [["sleepNeed", "calculate"], { input: { endDate: todayDate }, type: "query" }],
-    {
-      baselineMinutes: 480,
-      strainDebtMinutes: 24,
-      accumulatedDebtMinutes: 128,
-      totalNeedMinutes: 536,
-      recentNights: [],
-      canRecommend: true,
-    },
+    null,
   );
 
   queryClient.setQueryData(
@@ -175,10 +130,13 @@ function MockProviders({ children }: { children: ReactNode }) {
 const meta = {
   title: "Pages/Home",
   component: TodayScreen,
+  parameters: {
+    layout: "fullscreen",
+  },
   decorators: [
     (Story) => (
       <MockProviders>
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <View style={{ minHeight: 1200, backgroundColor: colors.background }}>
           <Story />
         </View>
       </MockProviders>
