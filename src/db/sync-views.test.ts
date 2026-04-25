@@ -704,19 +704,15 @@ describe("syncMaterializedViews", () => {
     mockReadFileSync
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_first AS SELECT 1")
       .mockReturnValueOnce("CREATE MATERIALIZED VIEW fitness.v_second AS SELECT 2");
-    mockClientQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockRejectedValueOnce(new Error("No space left on device"))
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ populated: true }] });
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text === "CREATE MATERIALIZED VIEW fitness.v_first AS SELECT 1") {
+        return Promise.reject(new Error("No space left on device"));
+      }
+      if (text.includes("FROM pg_matviews")) {
+        return Promise.resolve({ rows: [{ populated: true }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     await expect(
       syncMaterializedViews("postgres://localhost/test", "/tmp/views"),

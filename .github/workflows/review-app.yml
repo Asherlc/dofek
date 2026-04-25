@@ -154,22 +154,59 @@ jobs:
         working-directory: deploy/review-apps
         env:
           TF_WORKSPACE: ${{ env.REVIEW_TERRAFORM_WORKSPACE }}
-          TF_VAR_front_door_host: ${{ env.FRONT_DOOR_HOST }}
           TF_VAR_front_door_ipv4: ${{ steps.front_door.outputs.ipv4 }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
           TF_VAR_pr_number: ${{ github.event.pull_request.number }}
-          TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -euo pipefail
 
           terraform init -input=false -lock-timeout=5m
           terraform apply -input=false -auto-approve -lock-timeout=5m
 
-          echo "review_host=$(terraform output -raw review_host)" >> "$GITHUB_OUTPUT"
-          echo "review_url=$(terraform output -raw review_url)" >> "$GITHUB_OUTPUT"
-          echo "review_server_ip=$(terraform output -raw review_server_ip)" >> "$GITHUB_OUTPUT"
+          {
+            echo "review_host=$(terraform output -raw review_host)"
+            echo "review_url=$(terraform output -raw review_url)"
+            echo "review_server_ip=$(terraform output -raw review_server_ip)"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Setup SSH
+      - name: Setup front door SSH
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ env.FRONT_DOOR_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Write front door review route
+        env:
+          FRONT_DOOR_HOST: ${{ env.FRONT_DOOR_HOST }}
+          REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
+          REVIEW_ROUTE_FILE: /opt/dofek/traefik-dynamic/review-app-pr-${{ github.event.pull_request.number }}.yml
+          REVIEW_SERVER_IP: ${{ steps.terraform.outputs.review_server_ip }}
+          TRAEFIK_ROUTER_NAME: review-app-pr-${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          route_config="$(mktemp)"
+          cat > "$route_config" <<EOF
+          http:
+            routers:
+              ${TRAEFIK_ROUTER_NAME}:
+                entryPoints:
+                  - websecure
+                rule: Host(\`${REVIEW_HOST}\`)
+                service: ${TRAEFIK_ROUTER_NAME}
+                tls:
+                  certResolver: le
+
+            services:
+              ${TRAEFIK_ROUTER_NAME}:
+                loadBalancer:
+                  servers:
+                    - url: http://${REVIEW_SERVER_IP}:3000
+          EOF
+          ssh "root@${FRONT_DOOR_HOST}" "mkdir -p /opt/dofek/traefik-dynamic"
+          scp "$route_config" "root@${FRONT_DOOR_HOST}:${REVIEW_ROUTE_FILE}"
+
+      - name: Setup review server SSH
         uses: ./.github/actions/setup-ssh-host
         with:
           host: ${{ steps.terraform.outputs.review_server_ip }}

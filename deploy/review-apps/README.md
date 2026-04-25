@@ -9,8 +9,8 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   `dofek-review-pr-<number>` and tagged `review-app`.
 - Review app server: one Hetzner `cax11` server per PR.
 - App stack: `web`, `db`, and `redis` via Docker Compose on the review server.
-- Routing: Terraform writes a Traefik dynamic-config file onto the shared front
-  door host so only that PR hostname is forwarded to the PR server.
+- Routing: the deploy workflow writes a Traefik dynamic-config file onto the
+  shared front door host so only that PR hostname is forwarded to the PR server.
 - DNS: the wildcard `*.dofek.asherlc.com` points at the shared front door as a
   DNS-only Cloudflare record so Traefik can serve TLS directly. Exact records
   like `portainer.dofek.asherlc.com` still take precedence.
@@ -25,6 +25,7 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
 - The deploy workflow:
   - builds `ghcr.io/asherlc/dofek:pr-<number>`
   - applies the PR Terraform workspace
+  - writes the exact PR host route on the shared front door
   - exports review env vars from Infisical
   - runs migrations and the seed script
   - starts the review stack

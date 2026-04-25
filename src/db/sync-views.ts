@@ -86,6 +86,7 @@ export async function computeViewDependencyFingerprintHash(
 ): Promise<string> {
   const { schema, relation } = parseQualifiedName(viewName);
   const result = await client.query<{ fingerprint_source: string }>(
+    // cspell:disable -- Postgres system catalog column names
     `WITH target_view AS (
       SELECT view_class.oid
       FROM pg_class AS view_class
@@ -129,6 +130,7 @@ export async function computeViewDependencyFingerprintHash(
       '[]'
     ) AS fingerprint_source
     FROM dependency_rows`,
+    // cspell:enable
     [schema, relation],
   );
   return hashViewContent(result.rows[0]?.fingerprint_source ?? "[]");
