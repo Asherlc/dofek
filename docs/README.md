@@ -49,6 +49,7 @@ Cross-provider reverse-engineering references:
 | Doc | What it is for |
 |-----|----------------|
 | [ci-debugging.md](ci-debugging.md) | Debugging GitHub Actions failures with `gh` CLI. |
+| [materialized-view-maintenance-runbook.md](materialized-view-maintenance-runbook.md) | Safe blocking materialized-view maintenance workflow, preflight, and refresh inventory. |
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |
