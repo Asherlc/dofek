@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
 import { GenericContainer } from "testcontainers";
@@ -90,34 +90,6 @@ async function setupBareDatabase(): Promise<BareDatabaseContext> {
 
     for (const statement of statements) {
       await sql.unsafe(statement);
-    }
-  }
-
-  const viewsDir = join(drizzleDir, "_views");
-  if (existsSync(viewsDir)) {
-    const viewFiles = readdirSync(viewsDir)
-      .filter((fileName) => fileName.endsWith(".sql"))
-      .sort();
-
-    const parsedViews = viewFiles.map((fileName) => {
-      const content = readFileSync(join(viewsDir, fileName), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-      return { content, viewName: match?.[1] };
-    });
-
-    for (const { viewName } of [...parsedViews].reverse()) {
-      if (!viewName) continue;
-      await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
-    }
-
-    for (const { content } of parsedViews) {
-      const statements = content
-        .split("--> statement-breakpoint")
-        .map((statement) => statement.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        await sql.unsafe(statement);
-      }
     }
   }
 

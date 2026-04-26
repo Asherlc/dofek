@@ -107,6 +107,8 @@ COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/sr
 COPY --from=source --chown=node:node /app/packages/stats/package.json ./packages/stats/
 COPY --from=source --chown=node:node /app/packages/scoring/src ./packages/scoring/src
 COPY --from=source --chown=node:node /app/packages/scoring/package.json ./packages/scoring/
+COPY --from=source --chown=node:node /app/packages/onboarding/src ./packages/onboarding/src
+COPY --from=source --chown=node:node /app/packages/onboarding/package.json ./packages/onboarding/
 COPY --from=source --chown=node:node /app/packages/auth/src ./packages/auth/src
 COPY --from=source --chown=node:node /app/packages/auth/package.json ./packages/auth/
 COPY --from=source --chown=node:node /app/packages/training/src ./packages/training/src
@@ -133,6 +135,7 @@ RUN ln -sf /app node_modules/dofek && \
     mkdir -p node_modules/@dofek && \
     ln -sf /app/packages/stats node_modules/@dofek/stats && \
     ln -sf /app/packages/scoring node_modules/@dofek/scoring && \
+    ln -sf /app/packages/onboarding node_modules/@dofek/onboarding && \
     ln -sf /app/packages/training node_modules/@dofek/training && \
     ln -sf /app/packages/auth node_modules/@dofek/auth && \
     ln -sf /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
