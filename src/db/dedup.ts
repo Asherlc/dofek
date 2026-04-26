@@ -119,7 +119,10 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
 
 async function refreshView(db: SyncDatabase, view: string): Promise<void> {
   try {
-    await refreshMaterializedView(db, view, { source: "sync.post_sync" });
+    await refreshMaterializedView(db, view, {
+      source: "sync.post_sync",
+      fallbackToBlocking: false,
+    });
   } catch (concurrentError) {
     logger.warn(
       `[mv-refresh] source=sync.post_sync view=${view} failed: ${concurrentError instanceof Error ? concurrentError.message : String(concurrentError)}`,
