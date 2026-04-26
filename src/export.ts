@@ -12,7 +12,7 @@ const countRowSchema = z.object({ count: z.string() });
 
 /** Configuration for a single table to export. */
 interface ExportTableConfig {
-  /** Filename in the ZIP (e.g., "activities.json") */
+  /** Filename in the ZIP (e.g., "activities.csv") */
   name: string;
   /** SQL query that returns all rows for the given user */
   query: (db: SyncDatabase, userId: string) => Promise<Record<string, unknown>[]>;
@@ -36,7 +36,7 @@ const BATCH_SIZE = 50_000;
 
 const EXPORT_TABLES: ExportTableConfig[] = [
   {
-    name: "user-profile.json",
+    name: "user-profile.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -45,7 +45,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "activities.json",
+    name: "activities.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -54,7 +54,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "activity-intervals.json",
+    name: "activity-intervals.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -66,7 +66,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "sleep-sessions.json",
+    name: "sleep-sessions.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -75,7 +75,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "body-measurements.json",
+    name: "body-measurements.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -84,7 +84,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "nutrition-daily.json",
+    name: "nutrition-daily.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -93,7 +93,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "food-entries.json",
+    name: "food-entries.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -102,7 +102,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "daily-metrics.json",
+    name: "daily-metrics.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -111,7 +111,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "strength-workouts.json",
+    name: "strength-workouts.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -120,7 +120,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "strength-sets.json",
+    name: "strength-sets.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -132,7 +132,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "lab-panels.json",
+    name: "lab-panels.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -141,7 +141,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "lab-results.json",
+    name: "lab-results.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -150,7 +150,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "journal-entries.json",
+    name: "journal-entries.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -159,7 +159,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "life-events.json",
+    name: "life-events.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -168,7 +168,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "health-events.json",
+    name: "health-events.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -177,7 +177,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "sport-settings.json",
+    name: "sport-settings.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
@@ -186,7 +186,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "metric-streams.json",
+    name: "metric-streams.csv",
     batched: true,
     query: (db, userId) =>
       executeWithSchema(
@@ -199,17 +199,55 @@ const EXPORT_TABLES: ExportTableConfig[] = [
 
 /**
  * Query metric_stream in batches using cursor-based (keyset) pagination and
- * return a Readable stream of JSON array content. Unlike OFFSET pagination
+ * return a Readable stream of CSV content. Unlike OFFSET pagination
  * which re-scans all preceding rows on each page, cursor pagination jumps
  * directly to the next page via the (recorded_at, provider_id, channel) tuple.
  */
-function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
+function csvHeaders(rows: Record<string, unknown>[]): string[] {
+  const headers: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        headers.push(key);
+      }
+    }
+  }
+  return headers;
+}
+
+function csvCell(value: unknown): string {
+  if (value == null) return "";
+  const serialized =
+    value instanceof Date
+      ? value.toISOString()
+      : typeof value === "object"
+        ? JSON.stringify(value)
+        : String(value);
+  if (/[",\n\r]/.test(serialized)) {
+    return `"${serialized.replaceAll('"', '""')}"`;
+  }
+  return serialized;
+}
+
+function rowsToCsv(rows: Record<string, unknown>[]): string {
+  const headers = csvHeaders(rows);
+  if (headers.length === 0) return "";
+  const lines = [
+    headers.map(csvCell).join(","),
+    ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(",")),
+  ];
+  return lines.join("\n");
+}
+
+function createBatchedCsvStream(db: SyncDatabase, userId: string): Readable {
   let cursor:
     | { recordedAt: string; providerId: string; sourceType: string; channel: string }
     | undefined;
-  let started = false;
+  let headers: string[] | undefined;
   let done = false;
-  let totalEmitted = 0;
+  let emittedRows = 0;
 
   return new Readable({
     async read() {
@@ -233,23 +271,22 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
               LIMIT ${BATCH_SIZE}`,
         );
 
-        if (!started) {
-          started = true;
+        if (!headers) {
           if (rows.length === 0) {
-            this.push("[]");
+            this.push("");
             done = true;
             this.push(null);
             return;
           }
-          this.push("[\n");
+          headers = csvHeaders(rows);
+          this.push(`${headers.map(csvCell).join(",")}\n`);
         }
 
-        for (let i = 0; i < rows.length; i++) {
-          const prefix = totalEmitted === 0 && i === 0 ? "" : ",\n";
-          this.push(prefix + JSON.stringify(rows[i]));
+        for (const row of rows) {
+          const prefix = emittedRows === 0 ? "" : "\n";
+          this.push(`${prefix}${headers.map((header) => csvCell(row[header])).join(",")}`);
+          emittedRows++;
         }
-
-        totalEmitted += rows.length;
 
         // Update cursor from last row for next page
         if (rows.length > 0) {
@@ -267,7 +304,6 @@ function createBatchedJsonStream(db: SyncDatabase, userId: string): Readable {
         }
 
         if (rows.length < BATCH_SIZE) {
-          this.push("\n]");
           done = true;
           this.push(null);
         }
@@ -316,7 +352,7 @@ export async function generateExport(
       const count = parseInt(countResult[0]?.count ?? "0", 10);
       totalRecords += count;
 
-      const stream = createBatchedJsonStream(db, userId);
+      const stream = createBatchedCsvStream(db, userId);
       archive.append(stream, { name: table.name });
       // Wait for the stream to be consumed by archiver
       await new Promise<void>((resolve, reject) => {
@@ -326,7 +362,7 @@ export async function generateExport(
     } else {
       const rows = await table.query(db, userId);
       totalRecords += rows.length;
-      archive.append(JSON.stringify(rows, null, 2), { name: table.name });
+      archive.append(rowsToCsv(rows), { name: table.name });
     }
 
     tablesProcessed++;

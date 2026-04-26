@@ -16,6 +16,26 @@ vi.mock("../export.ts", () => ({
   generateExport: (...args: unknown[]) => mockGenerateExport(...args),
 }));
 
+const mockUploadExportFileToR2 = vi.fn().mockResolvedValue({
+  objectKey: "exports/user-1/export-1/dofek-export.zip",
+  sizeBytes: 1234,
+});
+const mockCreateSignedExportDownloadUrl = vi.fn().mockResolvedValue("https://example.test/export");
+vi.mock("../export-storage.ts", () => ({
+  createSignedExportDownloadUrl: (...args: unknown[]) => mockCreateSignedExportDownloadUrl(...args),
+  uploadExportFileToR2: (...args: unknown[]) => mockUploadExportFileToR2(...args),
+}));
+
+const mockSendExportReadyEmail = vi.fn().mockResolvedValue(undefined);
+vi.mock("../export-email.ts", () => ({
+  sendExportReadyEmail: (...args: unknown[]) => mockSendExportReadyEmail(...args),
+}));
+
+const mockUnlink = vi.fn().mockResolvedValue(undefined);
+vi.mock("node:fs/promises", () => ({
+  unlink: (...args: unknown[]) => mockUnlink(...args),
+}));
+
 const { processExportJob } = await import("./process-export-job.ts");
 
 const mockDb: SyncDatabase = {
@@ -33,6 +53,7 @@ interface MockJob {
 function createMockJob(overrides: Partial<ExportJobData> = {}): MockJob {
   return {
     data: {
+      exportId: "export-1",
       userId: "user-1",
       outputPath: "/app/job-files/dofek-export-abc.zip",
       ...overrides,
@@ -45,6 +66,19 @@ describe("processExportJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGenerateExport.mockResolvedValue({ tableCount: 5, totalRecords: 100 });
+    mockUploadExportFileToR2.mockResolvedValue({
+      objectKey: "exports/user-1/export-1/dofek-export.zip",
+      sizeBytes: 1234,
+    });
+    mockCreateSignedExportDownloadUrl.mockResolvedValue("https://example.test/export");
+    mockSendExportReadyEmail.mockResolvedValue(undefined);
+    vi.mocked(mockDb.execute).mockReset();
+    vi.mocked(mockDb.execute)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { email: "user@example.com", expires_at: "2026-05-03T12:00:00.000Z" },
+      ])
+      .mockResolvedValueOnce([]);
   });
 
   it("calls generateExport with correct arguments", async () => {
@@ -57,6 +91,40 @@ describe("processExportJob", () => {
       "/app/job-files/dofek-export-abc.zip",
       expect.any(Function),
     );
+  });
+
+  it("uploads the export to R2, marks completion, and emails the user", async () => {
+    const job = createMockJob();
+    await processExportJob(job, mockDb);
+
+    expect(mockUploadExportFileToR2).toHaveBeenCalledWith("/app/job-files/dofek-export-abc.zip", {
+      exportId: "export-1",
+      userId: "user-1",
+    });
+    expect(mockCreateSignedExportDownloadUrl).toHaveBeenCalledWith(
+      "exports/user-1/export-1/dofek-export.zip",
+    );
+    expect(mockSendExportReadyEmail).toHaveBeenCalledWith({
+      downloadUrl: "https://example.test/export",
+      expiresAt: new Date("2026-05-03T12:00:00.000Z"),
+      toEmail: "user@example.com",
+    });
+    expect(mockUnlink).toHaveBeenCalledWith("/app/job-files/dofek-export-abc.zip");
+    expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails loudly when the user has no email", async () => {
+    vi.mocked(mockDb.execute).mockReset();
+    vi.mocked(mockDb.execute)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ email: null, expires_at: "2026-05-03T12:00:00.000Z" }])
+      .mockResolvedValueOnce([]);
+
+    const job = createMockJob();
+
+    await expect(processExportJob(job, mockDb)).rejects.toThrow("User email is required");
+    expect(mockGenerateExport).not.toHaveBeenCalled();
+    expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(3);
   });
 
   it("forwards progress updates to job.updateProgress", async () => {

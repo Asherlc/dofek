@@ -47,6 +47,13 @@ function setupMockDb(executeResults: Record<string, unknown>[][] = []) {
   Object.defineProperty(mockDb, "execute", { value: execute, writable: true });
 }
 
+function findArchiveEntry(name: string): unknown[] | undefined {
+  return mockArchive.append.mock.calls.find(
+    (call: unknown[]) =>
+      call[1] != null && typeof call[1] === "object" && "name" in call[1] && call[1].name === name,
+  );
+}
+
 describe("generateExport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -193,5 +200,94 @@ describe("generateExport", () => {
     expect(metadata.tables).toHaveLength(17);
     expect(metadata.totalRecords).toBe(0);
     expect(metadata.exportedAt).toBeDefined();
+  });
+
+  it("exports regular tables as CSV files with escaped cells", async () => {
+    const executeResults: Record<string, unknown>[][] = [
+      [
+        {
+          id: "user-1",
+          name: "Alice, Athlete",
+          notes: "Line 1\nLine 2",
+          quote: 'She said "go"',
+          raw: { source: "test", values: [1, 2] },
+          missing: null,
+        },
+      ],
+    ];
+    for (let tableIndex = 1; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([{ count: "0" }]);
+    executeResults.push([]);
+
+    setupMockDb(executeResults);
+    mockArchive.append.mockImplementation((content: unknown) => {
+      if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    const userProfileEntry = findArchiveEntry("user-profile.csv");
+    expect(userProfileEntry).toBeDefined();
+    expect(String(userProfileEntry?.[0])).toBe(
+      'id,name,notes,quote,raw,missing\nuser-1,"Alice, Athlete","Line 1\nLine 2","She said ""go""","{""source"":""test"",""values"":[1,2]}",',
+    );
+    expect(findArchiveEntry("user-profile.json")).toBeUndefined();
+  });
+
+  it("streams metric streams as CSV", async () => {
+    const executeResults: Record<string, unknown>[][] = [];
+    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([{ count: "2" }]);
+    executeResults.push([
+      {
+        recorded_at: new Date("2024-01-15T10:00:00.000Z"),
+        provider_id: "test-provider",
+        source_type: "api",
+        channel: "heart_rate",
+        scalar: 145,
+      },
+      {
+        recorded_at: new Date("2024-01-15T10:00:01.000Z"),
+        provider_id: "test-provider",
+        source_type: "api",
+        channel: "power",
+        scalar: 200,
+      },
+    ]);
+
+    setupMockDb(executeResults);
+    let metricStreamContent: Promise<string> | undefined;
+    mockArchive.append.mockImplementation((content: unknown, options: unknown) => {
+      if (
+        content instanceof Readable &&
+        options != null &&
+        typeof options === "object" &&
+        "name" in options &&
+        options.name === "metric-streams.csv"
+      ) {
+        const chunks: string[] = [];
+        metricStreamContent = new Promise((resolve, reject) => {
+          content.on("data", (chunk) => chunks.push(String(chunk)));
+          content.on("end", () => resolve(chunks.join("")));
+          content.on("error", reject);
+        });
+      } else if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    expect(metricStreamContent).toBeDefined();
+    if (!metricStreamContent) throw new Error("Expected metric-streams.csv stream");
+    await expect(metricStreamContent).resolves.toBe(
+      "recorded_at,provider_id,source_type,channel,scalar\n2024-01-15T10:00:00.000Z,test-provider,api,heart_rate,145\n2024-01-15T10:00:01.000Z,test-provider,api,power,200",
+    );
   });
 });

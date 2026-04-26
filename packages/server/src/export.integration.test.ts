@@ -1,21 +1,65 @@
 import type { Server } from "node:http";
-import { Worker } from "bullmq";
+import cookieParser from "cookie-parser";
 import { TEST_USER_ID } from "dofek/db/schema";
 import { processExportJob } from "dofek/jobs/process-export-job";
 import type { ExportJobData } from "dofek/jobs/queues";
-import { EXPORT_QUEUE, getRedisConnection } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
-import JSZip from "jszip";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import express from "express";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
-import { createApp } from "./index.ts";
+import { createExportRouter } from "./routes/export.ts";
 
-/** Safely read a file from a JSZip instance, failing the test if missing. */
-async function readZipFile(zip: JSZip, name: string): Promise<string> {
-  const file = zip.files[name];
-  if (!file) throw new Error(`Expected ${name} in ZIP`);
-  return file.async("string");
+const exportStorageMocks = vi.hoisted(() => ({
+  createSignedExportDownloadUrl: vi.fn(
+    async (objectKey: string) => `https://r2.example.test/${objectKey}`,
+  ),
+  uploadExportFileToR2: vi.fn(
+    async (_filePath: string, options: { exportId: string; userId: string }) => ({
+      objectKey: `exports/${options.userId}/${options.exportId}/dofek-export.zip`,
+      sizeBytes: 2048,
+    }),
+  ),
+}));
+
+const exportEmailMocks = vi.hoisted(() => ({
+  sendExportReadyEmail: vi.fn(async () => undefined),
+}));
+
+vi.mock("../../../src/export-storage.ts", () => exportStorageMocks);
+vi.mock("dofek/export-storage", () => exportStorageMocks);
+vi.mock("../../../src/export-email.ts", () => exportEmailMocks);
+
+interface ExportResponse {
+  completedAt: string | null;
+  createdAt: string;
+  errorMessage: string | null;
+  expiresAt: string;
+  filename: string;
+  id: string;
+  sizeBytes: number | null;
+  startedAt: string | null;
+  status: string;
+}
+
+interface ExportListResponse {
+  exports: ExportResponse[];
+}
+
+async function waitForCompletedExport(baseUrl: string, sessionCookie: string, exportId: string) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`${baseUrl}/api/export`, {
+      headers: { Cookie: sessionCookie },
+    });
+    const body: ExportListResponse = await response.json();
+    const dataExport = body.exports.find((exportRecord) => exportRecord.id === exportId);
+    if (dataExport?.status === "completed") {
+      return dataExport;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`Export ${exportId} did not complete`);
 }
 
 describe("Data Export", () => {
@@ -23,87 +67,51 @@ describe("Data Export", () => {
   let server: Server;
   let baseUrl: string;
   let sessionCookie: string;
-  let exportWorker: Worker<ExportJobData>;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
-    // Start an in-process BullMQ worker so export jobs are processed
-    // without needing the Docker worker container.
-    const connection = getRedisConnection();
-    exportWorker = new Worker<ExportJobData>(
-      EXPORT_QUEUE,
-      (job) => processExportJob(job, testCtx.db),
-      { connection },
+    await testCtx.db.execute(
+      sql`UPDATE fitness.user_profile SET email = 'test@example.com' WHERE id = ${TEST_USER_ID}`,
     );
 
-    // Create a provider for seeding data
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('test-provider', 'Test Provider', ${TEST_USER_ID})`,
     );
 
-    // Seed test data across all tables
-    await Promise.all([
-      // Activity
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.activity (id, provider_id, user_id, activity_type, started_at, name, raw)
-            VALUES ('11111111-1111-1111-1111-111111111111', 'test-provider', ${TEST_USER_ID}, 'cycling', '2024-01-15T10:00:00Z', 'Morning Ride', '{"source": "test"}'::jsonb)`,
-      ),
-      // Sleep
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.sleep_session (provider_id, user_id, external_id, started_at, ended_at, duration_minutes, deep_minutes)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'sleep-1', '2024-01-15T22:00:00Z', '2024-01-16T06:00:00Z', 480, 90)`,
-      ),
-      // Body measurement
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.body_measurement (provider_id, user_id, external_id, recorded_at, weight_kg)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'bm-1', '2024-01-15T08:00:00Z', 75.5)`,
-      ),
-      // Nutrition daily
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (date, provider_id, user_id, calories, protein_g)
-            VALUES ('2024-01-15', 'test-provider', ${TEST_USER_ID}, 2200, 120)`,
-      ),
-      // Daily metrics
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, resting_hr, hrv, steps)
-            VALUES ('2024-01-15', 'test-provider', ${TEST_USER_ID}, 52, 65.2, 8500)`,
-      ),
-      // Journal entry
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.journal_entry (date, provider_id, user_id, question_slug, answer_text)
-            VALUES ('2024-01-15', 'test-provider', ${TEST_USER_ID}, 'sleep_quality', 'Great')`,
-      ),
-      // Life event
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.life_events (user_id, label, started_at, category)
-            VALUES (${TEST_USER_ID}, 'Started new program', '2024-01-15', 'training')`,
-      ),
-      // Metric stream
-      testCtx.db.execute(
-        sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
-            VALUES
-              ('2024-01-15T10:00:00Z', ${TEST_USER_ID}, 'test-provider', NULL, 'api', 'heart_rate', '11111111-1111-1111-1111-111111111111', 145, NULL),
-              ('2024-01-15T10:00:00Z', ${TEST_USER_ID}, 'test-provider', NULL, 'api', 'power', '11111111-1111-1111-1111-111111111111', 200, NULL)`,
-      ),
-    ]);
-
-    // Activity interval (depends on activity existing)
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.activity_interval (activity_id, interval_index, started_at)
-          VALUES ('11111111-1111-1111-1111-111111111111', 0, '2024-01-15T10:00:00Z')`,
+      sql`INSERT INTO fitness.activity (id, provider_id, user_id, activity_type, started_at, name, raw)
+          VALUES ('11111111-1111-1111-1111-111111111111', 'test-provider', ${TEST_USER_ID}, 'cycling', '2024-01-15T10:00:00Z', 'Morning Ride', '{"source": "test"}'::jsonb)`,
     );
 
-    // Create session
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    // Start server
-    const app = createApp(testCtx.db);
+    const exportQueue = {
+      add: vi.fn(async (_name: string, data: ExportJobData) => {
+        setTimeout(() => {
+          void processExportJob(
+            {
+              data,
+              updateProgress: async () => undefined,
+            },
+            testCtx.db,
+          );
+        }, 0);
+        return { id: data.exportId };
+      }),
+    };
+
+    const app = express();
+    app.use(cookieParser());
+    app.use(
+      "/api/export",
+      createExportRouter({ db: testCtx.db, exportQueue, startExportWorker: () => undefined }),
+    );
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
-        const addr = server.address();
-        const port = typeof addr === "object" && addr ? addr.port : 0;
+        const address = server.address();
+        const port = typeof address === "object" && address ? address.port : 0;
         baseUrl = `http://localhost:${port}`;
         resolve();
       });
@@ -111,7 +119,6 @@ describe("Data Export", () => {
   }, 120_000);
 
   afterAll(async () => {
-    if (exportWorker) await exportWorker.close();
     if (server) {
       server.closeAllConnections();
       await new Promise<void>((resolve) => {
@@ -121,169 +128,93 @@ describe("Data Export", () => {
     await testCtx?.cleanup();
   });
 
-  it("triggers an export and returns a jobId", async () => {
-    const res = await fetch(`${baseUrl}/api/export`, {
+  it("queues an offline export and lists it for the authenticated user", async () => {
+    const response = await fetch(`${baseUrl}/api/export`, {
       method: "POST",
       headers: { Cookie: sessionCookie },
     });
-    expect(res.status).toBe(200);
-    const body: { status: string; jobId: string } = await res.json();
-    expect(body.status).toBe("processing");
-    expect(body.jobId).toBeTruthy();
+    expect(response.status).toBe(200);
+    const body: { status: string; exportId: string } = await response.json();
+    expect(body.status).toBe("queued");
+    expect(body.exportId).toBeTruthy();
+
+    const listResponse = await fetch(`${baseUrl}/api/export`, {
+      headers: { Cookie: sessionCookie },
+    });
+    const listBody: ExportListResponse = await listResponse.json();
+    expect(listBody.exports.some((dataExport) => dataExport.id === body.exportId)).toBe(true);
+    await waitForCompletedExport(baseUrl, sessionCookie, body.exportId);
   });
 
   it("returns 401 for unauthenticated export request", async () => {
-    const res = await fetch(`${baseUrl}/api/export`, { method: "POST" });
-    expect(res.status).toBe(401);
+    const response = await fetch(`${baseUrl}/api/export`, { method: "POST" });
+    expect(response.status).toBe(401);
   });
 
-  it("returns 404 for unknown jobId on status", async () => {
-    const res = await fetch(`${baseUrl}/api/export/status/nonexistent`, {
+  it("returns 404 for unknown export status", async () => {
+    const unknownExportId = "99999999-9999-4999-8999-999999999999";
+    const response = await fetch(`${baseUrl}/api/export/status/${unknownExportId}`, {
       headers: { Cookie: sessionCookie },
     });
-    expect(res.status).toBe(404);
+    expect(response.status).toBe(404);
   });
 
-  it("completes export and produces a valid ZIP with all data types", async () => {
-    // Trigger export
-    const triggerRes = await fetch(`${baseUrl}/api/export`, {
+  it("uploads completed exports to user-scoped R2 keys, emails the user, and redirects downloads", async () => {
+    const triggerResponse = await fetch(`${baseUrl}/api/export`, {
       method: "POST",
       headers: { Cookie: sessionCookie },
     });
-    const { jobId }: { jobId: string } = await triggerRes.json();
+    const { exportId }: { exportId: string } = await triggerResponse.json();
 
-    // Poll until done (max 30 seconds)
-    let status: { status: string; downloadUrl?: string } = { status: "processing" };
-    const deadline = Date.now() + 30_000;
-    while (status.status === "processing" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 200));
-      const statusRes = await fetch(`${baseUrl}/api/export/status/${jobId}`, {
-        headers: { Cookie: sessionCookie },
-      });
-      status = await statusRes.json();
-    }
+    const completedExport = await waitForCompletedExport(baseUrl, sessionCookie, exportId);
 
-    expect(status.status).toBe("done");
-    expect(status.downloadUrl).toBeTruthy();
-
-    // Download the ZIP
-    const downloadRes = await fetch(`${baseUrl}${status.downloadUrl}`, {
-      headers: { Cookie: sessionCookie },
+    expect(completedExport.sizeBytes).toBe(2048);
+    expect(exportStorageMocks.uploadExportFileToR2).toHaveBeenCalledWith(expect.any(String), {
+      exportId,
+      userId: TEST_USER_ID,
     });
-    expect(downloadRes.status).toBe(200);
-    expect(downloadRes.headers.get("content-type")).toContain("application/zip");
+    expect(exportEmailMocks.sendExportReadyEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ toEmail: "test@example.com" }),
+    );
 
-    // Parse the ZIP
-    const zipBuffer = await downloadRes.arrayBuffer();
-    const zip = await JSZip.loadAsync(zipBuffer);
-
-    // Verify expected files exist
-    const expectedFiles = [
-      "activities.json",
-      "activity-intervals.json",
-      "sleep-sessions.json",
-      "body-measurements.json",
-      "nutrition-daily.json",
-      "daily-metrics.json",
-      "journal-entries.json",
-      "life-events.json",
-      "metric-streams.json",
-      "export-metadata.json",
-      "user-profile.json",
-      "sport-settings.json",
-      "health-events.json",
-      "food-entries.json",
-      "lab-results.json",
-      "strength-workouts.json",
-      "strength-sets.json",
-    ];
-
-    for (const file of expectedFiles) {
-      expect(zip.files[file], `Expected ${file} in ZIP`).toBeDefined();
-    }
-
-    // Verify activities contain data
-    const activitiesJson = await readZipFile(zip, "activities.json");
-    const activities: Array<Record<string, unknown>> = JSON.parse(activitiesJson);
-    expect(activities).toHaveLength(1);
-    expect(activities[0]).toMatchObject({ name: "Morning Ride", raw: { source: "test" } });
-
-    // Verify metric streams contain data (metric_stream has per-channel rows)
-    const metricStreamsJson = await readZipFile(zip, "metric-streams.json");
-    const metricStreams: Array<Record<string, unknown>> = JSON.parse(metricStreamsJson);
-    expect(metricStreams.length).toBeGreaterThanOrEqual(1);
-    const hrRow = metricStreams.find((r) => r.channel === "heart_rate");
-    expect(hrRow).toMatchObject({ channel: "heart_rate", scalar: 145 });
-
-    // Verify metadata
-    const metadataJson = await readZipFile(zip, "export-metadata.json");
-    const metadata: {
-      exportedAt: string;
-      userId: string;
-      totalRecords: number;
-    } = JSON.parse(metadataJson);
-    expect(metadata.userId).toBe(TEST_USER_ID);
-    expect(metadata.totalRecords).toBeGreaterThan(0);
-    expect(metadata.exportedAt).toBeTruthy();
+    const downloadResponse = await fetch(`${baseUrl}/api/export/download/${exportId}`, {
+      headers: { Cookie: sessionCookie },
+      redirect: "manual",
+    });
+    expect(downloadResponse.status).toBe(302);
+    expect(downloadResponse.headers.get("location")).toBe(
+      `https://r2.example.test/exports/${TEST_USER_ID}/${exportId}/dofek-export.zip`,
+    );
   }, 60_000);
 
   it("returns 401 for unauthenticated download", async () => {
-    // Trigger an export first
-    const triggerRes = await fetch(`${baseUrl}/api/export`, {
-      method: "POST",
-      headers: { Cookie: sessionCookie },
-    });
-    const { jobId }: { jobId: string } = await triggerRes.json();
-
-    // Try to download without auth
-    const downloadRes = await fetch(`${baseUrl}/api/export/download/${jobId}`);
-    expect(downloadRes.status).toBe(401);
+    const exportId = "44444444-4444-4444-8444-444444444444";
+    const downloadResponse = await fetch(`${baseUrl}/api/export/download/${exportId}`);
+    expect(downloadResponse.status).toBe(401);
   });
 
-  it("scopes exported data to the authenticated user", async () => {
-    // Insert data for a different user
-    const otherUserId = "22222222-2222-2222-2222-222222222222";
+  it("lists exports only for the authenticated user", async () => {
+    const otherUserId = "22222222-2222-4222-8222-222222222222";
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${otherUserId}, 'Other User') ON CONFLICT (id) DO NOTHING`,
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (${otherUserId}, 'Other User', 'other@example.com')
+          ON CONFLICT (id) DO NOTHING`,
     );
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id) VALUES ('other-provider', 'Other Provider', ${otherUserId}) ON CONFLICT (id) DO NOTHING`,
-    );
-    await testCtx.db.execute(
-      sql`INSERT INTO fitness.activity (provider_id, user_id, activity_type, started_at, name)
-          VALUES ('other-provider', ${otherUserId}, 'running', '2024-01-15T10:00:00Z', 'Secret Run')`,
+      sql`INSERT INTO fitness.data_export (id, user_id, status, filename, expires_at)
+          VALUES ('33333333-3333-4333-8333-333333333333', ${otherUserId}, 'queued', 'dofek-export.zip', NOW() + INTERVAL '7 days')`,
     );
 
-    // Trigger export as fixture user
-    const triggerRes = await fetch(`${baseUrl}/api/export`, {
-      method: "POST",
+    const response = await fetch(`${baseUrl}/api/export`, {
       headers: { Cookie: sessionCookie },
     });
-    const { jobId }: { jobId: string } = await triggerRes.json();
+    const body: ExportListResponse = await response.json();
 
-    // Poll until done
-    let status: { status: string; downloadUrl?: string } = { status: "processing" };
-    const deadline = Date.now() + 30_000;
-    while (status.status === "processing" && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 200));
-      const statusRes = await fetch(`${baseUrl}/api/export/status/${jobId}`, {
-        headers: { Cookie: sessionCookie },
-      });
-      status = await statusRes.json();
-    }
-
-    expect(status.status).toBe("done");
-
-    // Download and check activities
-    const downloadRes = await fetch(`${baseUrl}${status.downloadUrl}`, {
-      headers: { Cookie: sessionCookie },
-    });
-    const zip = await JSZip.loadAsync(await downloadRes.arrayBuffer());
-    const activitiesJson = await readZipFile(zip, "activities.json");
-    const activities: Array<Record<string, unknown>> = JSON.parse(activitiesJson);
-
-    // Should only contain the fixture user's activity, not "Secret Run"
-    expect(activities.every((a) => a.user_id === TEST_USER_ID)).toBe(true);
-    expect(activities.find((a) => a.name === "Secret Run")).toBeUndefined();
-  }, 60_000);
+    expect(
+      body.exports.some((dataExport) => dataExport.id === "33333333-3333-4333-8333-333333333333"),
+    ).toBe(false);
+    expect(body.exports.every((dataExport) => dataExport.filename === "dofek-export.zip")).toBe(
+      true,
+    );
+  });
 });

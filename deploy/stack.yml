@@ -57,6 +57,7 @@ services:
       OTEL_SERVICE_NAME: dofek-web
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      EXPORT_R2_BUCKET: dofek-exports
       SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
@@ -96,6 +97,7 @@ services:
       OTEL_SERVICE_NAME: dofek-worker
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      EXPORT_R2_BUCKET: dofek-exports
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
       interval: 10s

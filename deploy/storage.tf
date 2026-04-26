@@ -22,6 +22,37 @@ resource "cloudflare_r2_bucket" "db_backups" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "exports" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-exports"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "exports_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.exports.name
+
+  rules = [{
+    id      = "expire-user-exports"
+    enabled = true
+    conditions = {
+      prefix = "exports/"
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 604800
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 604800
+        type    = "Age"
+      }
+    }
+  }]
+}
+
 resource "cloudflare_r2_bucket_lifecycle" "storybook_preview_cleanup" {
   account_id  = var.cloudflare_account_id
   bucket_name = cloudflare_r2_bucket.storybook.name
