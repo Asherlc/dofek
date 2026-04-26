@@ -96,7 +96,9 @@ export async function setupTestDatabase(): Promise<TestContext> {
     // Only views with canonical definitions in _views/ are dropped and recreated.
     const parsedViews = viewFiles.map((file) => {
       const content = readFileSync(join(viewsDir, file), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+      const match = content.match(
+        /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
+      );
       return { content, viewName: match?.[1] };
     });
 

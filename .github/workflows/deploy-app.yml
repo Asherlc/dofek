@@ -206,19 +206,21 @@ jobs:
           echo "required=${planner_required}" >> "$GITHUB_OUTPUT"
           echo "reasons=${planner_reasons}" >> "$GITHUB_OUTPUT"
 
+      - name: Fail on required materialized view maintenance
+        if: steps.view_sync_plan.outputs.required == 'true' && inputs.refresh_materialized_views != true
+        run: |
+          echo "::error::Materialized view maintenance is required but automatic view sync is disabled: ${{ steps.view_sync_plan.outputs.reasons }}"
+          exit 1
+
       - name: Trigger materialized view refresh webhook
-        if: inputs.refresh_materialized_views || steps.view_sync_plan.outputs.required == 'true'
+        if: inputs.refresh_materialized_views
         run: |
           if [ -z "${MATERIALIZED_VIEW_REFRESH_TOKEN:-}" ]; then
             echo "::error::MATERIALIZED_VIEW_REFRESH_TOKEN is required"
             exit 1
           fi
 
-          if [ "${{ inputs.refresh_materialized_views }}" = "true" ]; then
-            echo "Manual materialized view refresh requested by workflow input."
-          else
-            echo "Materialized view refresh required by planner: ${{ steps.view_sync_plan.outputs.reasons }}"
-          fi
+          echo "Manual materialized view refresh requested by workflow input."
 
           refresh_url="https://dofek.asherlc.com/api/internal/materialized-views/refresh"
           response_file="${RUNNER_TEMP}/materialized-view-refresh-response.json"

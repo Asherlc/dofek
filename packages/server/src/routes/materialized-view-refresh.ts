@@ -63,7 +63,7 @@ export function createMaterializedViewRefreshRouter(): Router {
         logger.info("[views-refresh] Started");
         const result = await syncMaterializedViews(databaseUrl);
         logger.info(
-          `[views-refresh] Done duration_ms=${Math.round(performance.now() - start)} — ${result.synced} recreated, ${result.skipped} unchanged` +
+          `[views-refresh] Done duration_ms=${Math.round(performance.now() - start)} — ${result.synced} created, ${result.skipped} unchanged` +
             (result.refreshed > 0 ? `, ${result.refreshed} refreshed` : ""),
         );
       } catch (error) {
