@@ -1,6 +1,8 @@
 # Database Schema
 
-All tables live in the `fitness` Postgres schema. The source of truth is `src/db/schema.ts` (Drizzle generates migrations from it).
+Canonical source-of-truth tables live in the `fitness` Postgres schema. The source of
+truth is `src/db/schema.ts` (Drizzle generates migrations from it). Rebuildable read
+models live outside `fitness`, currently in the `analytics` schema.
 
 ## Data Model Philosophy: Raw Data Only
 
@@ -116,6 +118,16 @@ Use Timescale continuous aggregates for straightforward time-bucket rollups wher
 | `fitness.cagg_metric_weekly` | Weekly rollup from daily metric cagg |
 | `fitness.cagg_sensor_daily` | Daily stats per (user, channel) from sensor_sample |
 | `fitness.cagg_sensor_weekly` | Weekly rollup from daily cagg |
+
+### Derived Read Models
+
+`analytics.*` contains rebuildable derived tables. These tables are not source of
+truth and may be dropped or rebuilt from `fitness.*`.
+
+| Table | Purpose |
+|-------|---------|
+| `analytics.activity_training_summary` | Per-activity training summary and histograms used by app analytics. |
+| `analytics.activity_rollup_dirty` | Work queue for activity projection refresh. |
 
 ### Other Tables
 
