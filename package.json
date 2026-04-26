@@ -177,7 +177,6 @@
     "drizzle-dbml-generator": "0.10.0",
     "drizzle-kit": "0.30.6",
     "jsdom": "29.0.0",
-    "jszip": "3.10.1",
     "knip": "5.86.0",
     "msw": "2.12.11",
     "nyc": "18.0.0",
