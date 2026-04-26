@@ -498,6 +498,9 @@ importers:
       simple-statistics:
         specifier: 7.8.9
         version: 7.8.9
+      stripe:
+        specifier: 22.1.0
+        version: 22.1.0(@types/node@22.19.15)
       whoop-whoop:
         specifier: workspace:*
         version: link:../whoop-whoop
@@ -11358,6 +11361,15 @@ packages:
 
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
+
+  stripe@22.1.0:
+    resolution: {integrity: sha512-w/xHyJGxXWnLPbNHG13sz/fae0MrFGC80Oz7YbICQymbfpqfEcsoG+6yG+9BWb81PWc4rrkeSO4wmTcmefmbLw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   strnum@2.2.3:
     resolution: {integrity: sha512-oKx6RUCuHfT3oyVjtnrmn19H1SiCqgJSg+54XqURKp5aCMbrXrhLjRN9TjuwMjiYstZ0MzDrHqkGZ5dFTKd+zg==}
@@ -25273,6 +25285,10 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
+
+  stripe@22.1.0(@types/node@22.19.15):
+    optionalDependencies:
+      '@types/node': 22.19.15
 
   strnum@2.2.3: {}
 

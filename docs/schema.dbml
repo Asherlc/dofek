@@ -490,7 +490,6 @@ table fitness.food_entry {
   barcode text
   serving_unit text
   serving_weight_grams real
-  nutrition_data_id uuid
   raw jsonb
   confirmed boolean [not null, default: true]
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -511,6 +510,54 @@ table fitness.food_entry_nutrient {
   indexes {
     (food_entry_id, nutrient_id) [pk]
     food_entry_id [name: 'food_entry_nutrient_entry_idx']
+  }
+}
+
+table fitness.food_entry_nutrition {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  food_entry_id uuid [not null, unique]
+  calories integer
+  protein_g real
+  carbs_g real
+  fat_g real
+  saturated_fat_g real
+  polyunsaturated_fat_g real
+  monounsaturated_fat_g real
+  trans_fat_g real
+  cholesterol_mg real
+  sodium_mg real
+  potassium_mg real
+  fiber_g real
+  sugar_g real
+  vitamin_a_mcg real
+  vitamin_c_mg real
+  vitamin_d_mcg real
+  vitamin_e_mg real
+  vitamin_k_mcg real
+  vitamin_b1_mg real
+  vitamin_b2_mg real
+  vitamin_b3_mg real
+  vitamin_b5_mg real
+  vitamin_b6_mg real
+  vitamin_b7_mcg real
+  vitamin_b9_mcg real
+  vitamin_b12_mcg real
+  calcium_mg real
+  iron_mg real
+  magnesium_mg real
+  zinc_mg real
+  selenium_mcg real
+  copper_mg real
+  manganese_mg real
+  chromium_mcg real
+  iodine_mcg real
+  omega3_mg real
+  omega6_mg real
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    food_entry_id [name: 'food_entry_nutrition_entry_idx']
   }
 }
 
@@ -723,52 +770,18 @@ table fitness.menstrual_period {
 table fitness.metric_stream {
   recorded_at "timestamp with time zone" [not null]
   user_id uuid [not null]
-  activity_id uuid
   provider_id text [not null]
-  heart_rate smallint
-  power smallint
-  cadence smallint
-  speed real
-  lat real
-  lng real
-  altitude real
-  temperature real
-  grade real
-  vertical_speed real
-  spo2 real
-  respiratory_rate real
-  gps_accuracy smallint
-  accumulated_power integer
-  stress smallint
-  left_right_balance real
-  vertical_oscillation real
-  stance_time real
-  stance_time_percent real
-  step_length real
-  vertical_ratio real
-  stance_time_balance real
-  ground_contact_time real
-  stride_length real
-  form_power real
-  leg_spring_stiff real
-  air_power real
-  left_torque_effectiveness real
-  right_torque_effectiveness real
-  left_pedal_smoothness real
-  right_pedal_smoothness real
-  combined_pedal_smoothness real
-  blood_glucose real
-  audio_exposure real
-  skin_temperature real
-  electrodermal_activity real
-  rr_interval_ms smallint
-  source_name text
-  raw jsonb
+  device_id text
+  source_type text [not null]
+  channel text [not null]
+  activity_id uuid
+  scalar real
+  vector real[]
 
   indexes {
+    (activity_id, channel, recorded_at) [name: 'metric_stream_activity_channel_time_idx']
+    (user_id, channel, recorded_at) [name: 'metric_stream_user_channel_time_idx']
     (provider_id, recorded_at) [name: 'metric_stream_provider_time_idx']
-    (activity_id, recorded_at) [name: 'metric_stream_activity_time_idx']
-    (user_id, provider_id) [name: 'metric_stream_user_provider_idx']
   }
 }
 
@@ -917,24 +930,6 @@ table fitness.provider {
 
   indexes {
     (user_id, name) [name: 'provider_user_name_idx', unique]
-  }
-}
-
-table fitness.sensor_sample {
-  recorded_at "timestamp with time zone" [not null]
-  user_id uuid [not null]
-  provider_id text [not null]
-  device_id text
-  source_type text [not null]
-  channel text [not null]
-  activity_id uuid
-  scalar real
-  vector real[]
-
-  indexes {
-    (activity_id, channel, recorded_at) [name: 'sensor_sample_activity_channel_time_idx']
-    (user_id, channel, recorded_at) [name: 'sensor_sample_user_channel_time_idx']
-    (provider_id, recorded_at) [name: 'sensor_sample_provider_time_idx']
   }
 }
 
@@ -1097,7 +1092,6 @@ table fitness.supplement {
   description text
   meal meal
   sort_order integer [not null, default: 0]
-  nutrition_data_id uuid
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
@@ -1115,6 +1109,54 @@ table fitness.supplement_nutrient {
   indexes {
     (supplement_id, nutrient_id) [pk]
     supplement_id [name: 'supplement_nutrient_supplement_idx']
+  }
+}
+
+table fitness.supplement_nutrition {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  supplement_id uuid [not null, unique]
+  calories integer
+  protein_g real
+  carbs_g real
+  fat_g real
+  saturated_fat_g real
+  polyunsaturated_fat_g real
+  monounsaturated_fat_g real
+  trans_fat_g real
+  cholesterol_mg real
+  sodium_mg real
+  potassium_mg real
+  fiber_g real
+  sugar_g real
+  vitamin_a_mcg real
+  vitamin_c_mg real
+  vitamin_d_mcg real
+  vitamin_e_mg real
+  vitamin_k_mcg real
+  vitamin_b1_mg real
+  vitamin_b2_mg real
+  vitamin_b3_mg real
+  vitamin_b5_mg real
+  vitamin_b6_mg real
+  vitamin_b7_mcg real
+  vitamin_b9_mcg real
+  vitamin_b12_mcg real
+  calcium_mg real
+  iron_mg real
+  magnesium_mg real
+  zinc_mg real
+  selenium_mcg real
+  copper_mg real
+  manganese_mg real
+  chromium_mcg real
+  iodine_mcg real
+  omega3_mg real
+  omega6_mg real
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    supplement_id [name: 'supplement_nutrition_supplement_idx']
   }
 }
 
@@ -1142,6 +1184,22 @@ table fitness.training_export_watermark {
   row_count bigint [not null, default: 0]
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
+}
+
+table fitness.user_billing {
+  user_id uuid [pk, not null]
+  stripe_customer_id text [unique]
+  stripe_subscription_id text [unique]
+  stripe_subscription_status text
+  stripe_current_period_end "timestamp with time zone"
+  paid_grant_reason text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    stripe_customer_id [name: 'user_billing_stripe_customer_idx']
+    stripe_subscription_id [name: 'user_billing_stripe_subscription_idx']
+  }
 }
 
 table fitness.user_profile {
@@ -1235,11 +1293,11 @@ ref food_entry_provider_id_provider_id_fk: fitness.food_entry.provider_id > fitn
 
 ref food_entry_user_id_user_profile_id_fk: fitness.food_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref food_entry_nutrition_data_id_nutrition_data_id_fk: fitness.food_entry.nutrition_data_id > fitness.nutrition_data.id [delete: no action, update: no action]
-
 ref food_entry_nutrient_food_entry_id_food_entry_id_fk: fitness.food_entry_nutrient.food_entry_id > fitness.food_entry.id [delete: cascade, update: no action]
 
 ref food_entry_nutrient_nutrient_id_nutrient_id_fk: fitness.food_entry_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
+
+ref food_entry_nutrition_food_entry_id_food_entry_id_fk: fitness.food_entry_nutrition.food_entry_id > fitness.food_entry.id [delete: cascade, update: no action]
 
 ref health_event_provider_id_provider_id_fk: fitness.health_event.provider_id > fitness.provider.id [delete: no action, update: no action]
 
@@ -1279,9 +1337,9 @@ ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_i
 
 ref metric_stream_user_id_user_profile_id_fk: fitness.metric_stream.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref metric_stream_activity_id_activity_id_fk: fitness.metric_stream.activity_id > fitness.activity.id [delete: cascade, update: no action]
-
 ref metric_stream_provider_id_provider_id_fk: fitness.metric_stream.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref metric_stream_activity_id_activity_id_fk: fitness.metric_stream.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref nutrition_daily_provider_id_provider_id_fk: fitness.nutrition_daily.provider_id > fitness.provider.id [delete: no action, update: no action]
 
@@ -1296,12 +1354,6 @@ ref orientation_sample_user_id_user_profile_id_fk: fitness.orientation_sample.us
 ref orientation_sample_provider_id_provider_id_fk: fitness.orientation_sample.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref provider_user_id_user_profile_id_fk: fitness.provider.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref sensor_sample_user_id_user_profile_id_fk: fitness.sensor_sample.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref sensor_sample_provider_id_provider_id_fk: fitness.sensor_sample.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref sensor_sample_activity_id_activity_id_fk: fitness.sensor_sample.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref session_user_id_user_profile_id_fk: fitness.session.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
@@ -1325,15 +1377,17 @@ ref strength_workout_user_id_user_profile_id_fk: fitness.strength_workout.user_i
 
 ref supplement_user_id_user_profile_id_fk: fitness.supplement.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref supplement_nutrition_data_id_nutrition_data_id_fk: fitness.supplement.nutrition_data_id > fitness.nutrition_data.id [delete: no action, update: no action]
-
 ref supplement_nutrient_supplement_id_supplement_id_fk: fitness.supplement_nutrient.supplement_id > fitness.supplement.id [delete: cascade, update: no action]
 
 ref supplement_nutrient_nutrient_id_nutrient_id_fk: fitness.supplement_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
 
+ref supplement_nutrition_supplement_id_supplement_id_fk: fitness.supplement_nutrition.supplement_id > fitness.supplement.id [delete: cascade, update: no action]
+
 ref sync_log_provider_id_provider_id_fk: fitness.sync_log.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref sync_log_user_id_user_profile_id_fk: fitness.sync_log.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref user_billing_user_id_user_profile_id_fk: fitness.user_billing.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref user_settings_user_id_user_profile_id_fk: fitness.user_settings.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

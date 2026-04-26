@@ -1325,6 +1325,30 @@ export const session = fitness.table(
 );
 
 // ============================================================
+// User billing — Stripe subscription state and internal paid grants
+// ============================================================
+
+export const userBilling = fitness.table(
+  "user_billing",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    stripeCustomerId: text("stripe_customer_id").unique(),
+    stripeSubscriptionId: text("stripe_subscription_id").unique(),
+    stripeSubscriptionStatus: text("stripe_subscription_status"),
+    stripeCurrentPeriodEnd: timestamp("stripe_current_period_end", { withTimezone: true }),
+    paidGrantReason: text("paid_grant_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("user_billing_stripe_customer_idx").on(table.stripeCustomerId),
+    index("user_billing_stripe_subscription_idx").on(table.stripeSubscriptionId),
+  ],
+);
+
+// ============================================================
 // User settings (key-value store, scoped per user)
 // ============================================================
 
