@@ -59,51 +59,28 @@ describe("refreshDedupViews", () => {
     expect(calls[6]).toContain("fitness.provider_stats");
   });
 
-  it("falls back to non-concurrent refresh when view has not been populated", async () => {
+  it("does not fall back to blocking refresh during post-sync refreshes", async () => {
     const { refreshDedupViews } = await import("./dedup.ts");
     const mockDb = createMockDb();
 
-    // First call (CONCURRENTLY) fails with "has not been populated"
-    // Second call (non-concurrent) succeeds
-    let callCount = 0;
-    mockExecute.mockImplementation(() => {
-      callCount++;
-      // Every odd call (CONCURRENTLY attempts) fails, even calls succeed
-      if (callCount % 2 === 1) {
-        return Promise.reject(new Error("has not been populated"));
-      }
-      return Promise.resolve(undefined);
-    });
+    mockExecute.mockRejectedValue(new Error("cannot refresh concurrently"));
 
-    await refreshDedupViews(mockDb);
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh 7 view(s)");
 
-    // Each view: 1 failed CONCURRENTLY + 1 fallback = 2 calls per view, 7 views = 14
-    expect(mockExecute).toHaveBeenCalledTimes(14);
+    expect(mockExecute).toHaveBeenCalledTimes(7);
+    expect(mockExecute.mock.calls.map((call) => String(call[0]))).toEqual([
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.provider_stats"),
+    ]);
   });
 
-  it("falls back when error mentions concurrently", async () => {
+  it("still self-heals missing views without issuing blocking refreshes first", async () => {
     const { refreshDedupViews } = await import("./dedup.ts");
-    const mockDb = createMockDb();
-
-    // Fail only for the first view then succeed for rest
-    let firstCall = true;
-    mockExecute.mockImplementation(() => {
-      if (firstCall) {
-        firstCall = false;
-        return Promise.reject(new Error("cannot refresh concurrently"));
-      }
-      return Promise.resolve(undefined);
-    });
-
-    await refreshDedupViews(mockDb);
-
-    // First view: 1 failed + 1 fallback = 2; remaining 6 views: 1 each = 6; total = 8
-    expect(mockExecute).toHaveBeenCalledTimes(8);
-  });
-
-  it("triggers view sync and retries when a view is missing", async () => {
-    const { refreshDedupViews } = await import("./dedup.ts");
-    const Sentry = await import("@sentry/node");
     const mockDb = createMockDb();
 
     const missingError = Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
@@ -112,7 +89,6 @@ describe("refreshDedupViews", () => {
     // First pass: v_activity fails with missing relation, rest succeed
     mockExecute
       .mockRejectedValueOnce(missingError) // v_activity CONCURRENTLY
-      .mockRejectedValueOnce(missingError) // v_activity blocking fallback
       .mockResolvedValue(undefined); // all other views + retries succeed
 
     process.env.DATABASE_URL = "postgres://test:test@localhost/test";
@@ -124,11 +100,11 @@ describe("refreshDedupViews", () => {
 
     // Should have called syncMaterializedViews
     expect(mockSyncMaterializedViews).toHaveBeenCalledWith("postgres://test:test@localhost/test");
-    // Should have reported to Sentry
-    expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(
-      expect.any(AggregateError),
-      expect.objectContaining({ tags: { context: "viewSelfHeal" } }),
-    );
+    expect(
+      mockExecute.mock.calls
+        .map((call) => String(call[0]))
+        .some((query) => query.includes("REFRESH MATERIALIZED VIEW fitness.v_activity")),
+    ).toBe(false);
   });
 
   it("throws when views are missing but DATABASE_URL is not set", async () => {
@@ -198,21 +174,21 @@ describe("refreshDedupViews", () => {
     expect(firstCall).toContain("CONCURRENTLY");
   });
 
-  it("omits CONCURRENTLY in fallback refresh", async () => {
+  it("does not issue fallback refreshes", async () => {
     const { refreshDedupViews } = await import("./dedup.ts");
     const mockDb = createMockDb();
 
-    // First call fails with "has not been populated", second succeeds
     mockExecute
       .mockRejectedValueOnce(new Error("has not been populated"))
       .mockResolvedValue(undefined);
 
-    await refreshDedupViews(mockDb);
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh 1 view(s)");
 
-    // Second call (fallback) should NOT contain CONCURRENTLY
-    const secondCall = mockExecute.mock.calls[1]?.[0];
-    expect(secondCall).not.toContain("CONCURRENTLY");
-    expect(secondCall).toContain("REFRESH MATERIALIZED VIEW");
+    const calls = mockExecute.mock.calls.map((call) => String(call[0]));
+    expect(
+      calls.some((query) => query.includes("REFRESH MATERIALIZED VIEW fitness.v_activity")),
+    ).toBe(false);
+    expect(calls[1]).toContain("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep");
   });
 });
 

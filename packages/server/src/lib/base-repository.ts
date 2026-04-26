@@ -99,6 +99,7 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
     for (const view of ACTIVITY_VIEWS) {
       await refreshMaterializedView(this.db, view, {
         source: "server.activity_view_self_heal",
+        fallbackToBlocking: false,
       });
     }
   }

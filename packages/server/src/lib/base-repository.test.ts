@@ -116,9 +116,11 @@ describe("BaseRepository", () => {
     );
     expect(refreshMaterializedView).toHaveBeenNthCalledWith(1, mockDb, "fitness.activity_summary", {
       source: "server.activity_view_self_heal",
+      fallbackToBlocking: false,
     });
     expect(refreshMaterializedView).toHaveBeenNthCalledWith(2, mockDb, "fitness.v_activity", {
       source: "server.activity_view_self_heal",
+      fallbackToBlocking: false,
     });
   });
 
