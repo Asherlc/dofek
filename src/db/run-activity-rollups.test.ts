@@ -1,3 +1,4 @@
+// cspell:ignore rollups
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockClientConnect, mockClientEnd, mockClientQuery, mockClientConstructor } = vi.hoisted(

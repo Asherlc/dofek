@@ -8,18 +8,18 @@ CREATE TABLE analytics.activity_training_summary (
   ended_at timestamptz,
   duration_minutes double precision,
   avg_hr real,
-  max_hr smallint,
-  min_hr smallint,
+  max_hr bigint,
+  min_hr bigint,
   avg_power real,
-  max_power smallint,
+  max_power bigint,
   avg_cadence real,
   avg_speed real,
   total_distance real,
   elevation_gain_m real,
   elevation_loss_m real,
-  hr_sample_count integer NOT NULL DEFAULT 0,
-  power_sample_count integer NOT NULL DEFAULT 0,
-  total_sample_count integer NOT NULL DEFAULT 0,
+  hr_sample_count bigint NOT NULL DEFAULT 0,
+  power_sample_count bigint NOT NULL DEFAULT 0,
+  total_sample_count bigint NOT NULL DEFAULT 0,
   normalized_power real,
   hr_bpm_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
   power_watt_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -283,21 +283,19 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   INSERT INTO analytics.activity_rollup_dirty (activity_id, user_id, reason, marked_at)
-  SELECT DISTINCT activity_id, user_id, 'metric_stream_changed', now()
-  FROM old_rows
-  WHERE activity_id IS NOT NULL
+  SELECT OLD.activity_id, OLD.user_id, 'metric_stream_changed', now()
+  WHERE OLD.activity_id IS NOT NULL
   ON CONFLICT (activity_id) DO UPDATE SET
     reason = EXCLUDED.reason,
     marked_at = EXCLUDED.marked_at;
 
-  RETURN NULL;
+  RETURN OLD;
 END;
 $$;
 
 CREATE TRIGGER metric_stream_activity_rollup_dirty_delete
 AFTER DELETE ON fitness.metric_stream
-REFERENCING OLD TABLE AS old_rows
-FOR EACH STATEMENT
+FOR EACH ROW
 EXECUTE FUNCTION analytics.mark_activity_rollup_dirty_from_metric_stream_delete();
 
 --> statement-breakpoint
@@ -308,24 +306,26 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   INSERT INTO analytics.activity_rollup_dirty (activity_id, user_id, reason, marked_at)
-  SELECT DISTINCT activity_id, user_id, 'metric_stream_changed', now()
-  FROM (
-    SELECT activity_id, user_id FROM old_rows WHERE activity_id IS NOT NULL
-    UNION
-    SELECT activity_id, user_id FROM new_rows WHERE activity_id IS NOT NULL
-  ) changed
+  SELECT OLD.activity_id, OLD.user_id, 'metric_stream_changed', now()
+  WHERE OLD.activity_id IS NOT NULL
   ON CONFLICT (activity_id) DO UPDATE SET
     reason = EXCLUDED.reason,
     marked_at = EXCLUDED.marked_at;
 
-  RETURN NULL;
+  INSERT INTO analytics.activity_rollup_dirty (activity_id, user_id, reason, marked_at)
+  SELECT NEW.activity_id, NEW.user_id, 'metric_stream_changed', now()
+  WHERE NEW.activity_id IS NOT NULL
+  ON CONFLICT (activity_id) DO UPDATE SET
+    reason = EXCLUDED.reason,
+    marked_at = EXCLUDED.marked_at;
+
+  RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER metric_stream_activity_rollup_dirty_update
 AFTER UPDATE ON fitness.metric_stream
-REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
-FOR EACH STATEMENT
+FOR EACH ROW
 EXECUTE FUNCTION analytics.mark_activity_rollup_dirty_from_metric_stream_update();
 
 --> statement-breakpoint

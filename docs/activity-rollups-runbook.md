@@ -68,9 +68,11 @@ The migration adds triggers that mark affected activities dirty when activity ro
 linked metric stream rows change. The trigger only queues work; the refresh happens
 when the drain command runs.
 
-The `fitness.metric_stream` triggers use statement-level transition tables on a
-Timescale hypertable. Keep production on TimescaleDB 2.18 or newer; the current
-deployment image is `timescale/timescaledb:2.26.2-pg18`.
+The `fitness.metric_stream` insert trigger uses a statement-level transition
+table on a Timescale hypertable. Delete and update use row-level triggers because
+Timescale does not support delete transition tables on hypertables. Keep
+production on TimescaleDB 2.18 or newer; the current deployment image is
+`timescale/timescaledb:2.26.2-pg18`.
 
 Use smaller batch sizes during traffic windows if database pressure is elevated.
 

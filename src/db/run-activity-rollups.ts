@@ -1,3 +1,4 @@
+// cspell:ignore rollups
 import { Client } from "pg";
 
 const drainSql =

@@ -1,3 +1,4 @@
+// cspell:ignore rollups
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "./schema.ts";
@@ -80,8 +81,8 @@ describe("analytics activity rollups", () => {
     const rows = await ctx.db.execute<{
       avg_hr: number;
       avg_power: number;
-      hr_sample_count: number;
-      power_sample_count: number;
+      hr_sample_count: string;
+      power_sample_count: string;
       hr_bpm_counts: Record<string, number>;
       power_watt_counts: Record<string, number>;
     }>(sql`
@@ -94,8 +95,8 @@ describe("analytics activity rollups", () => {
     expect(rows[0]).toMatchObject({
       avg_hr: 130,
       avg_power: 200,
-      hr_sample_count: 3,
-      power_sample_count: 3,
+      hr_sample_count: "3",
+      power_sample_count: "3",
     });
     expect(rows[0]?.hr_bpm_counts).toEqual({ "120": 1, "130": 1, "140": 1 });
     expect(rows[0]?.power_watt_counts).toEqual({ "180": 1, "200": 1, "220": 1 });
