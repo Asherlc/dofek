@@ -1,5 +1,7 @@
 # Production Incident Baseline
 
+<!-- cspell:ignore Hypertables rollups fanout -->
+
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
@@ -114,6 +116,58 @@ serving views before replacements were safely available.
   they compete for locks, IO, CPU, and memory.
 - `pg_dump`-based migration compaction needs explicit checks for Timescale
   metadata and materialized-view population state.
+
+## 2026-04-26: Review App Server Quota Blocked PR CI
+
+### Impact
+
+Multiple pull requests had otherwise green CI but failed the `Deploy Review App`
+check. The affected PRs could not reach fully green status even though app,
+test, coverage, lint, typecheck, migration lint, E2E, CodeQL, Semgrep, and
+GitGuardian checks passed.
+
+### Evidence That Mattered
+
+The failed GitHub Actions jobs reached Terraform apply, planned a new
+`hcloud_server.review`, then failed at server creation with:
+
+```text
+Error: server limit reached (resource_limit_exceeded, ...)
+  with hcloud_server.review,
+  on server.tf line 27, in resource "hcloud_server" "review":
+```
+
+The review app image build completed successfully before the deploy failure.
+That separated application build health from Hetzner account capacity.
+
+### Root Cause
+
+The Hetzner account had no remaining server quota for additional review app
+servers. Each same-repo pull request currently expects one dedicated review
+server, so several concurrent PRs can exhaust the account even when the code is
+healthy.
+
+### Fix Or Mitigation
+
+No code mitigation was applied during the CI fix. The immediate safe operations
+are to close or destroy stale review apps to release their Hetzner servers, or
+raise the account server limit. The existing destroy workflow only runs on PR
+close, so there is no manual dispatch path for freeing a review app without
+closing a PR.
+
+### Remaining Risk
+
+Review apps can continue to block otherwise healthy PRs whenever open PR count
+exceeds Hetzner server quota. Draft and docs-only PRs also consume review app
+capacity today unless they are closed or their review app is manually destroyed
+through a supported workflow.
+
+### Follow-Up Work
+
+- Add a supported manual review-app destroy workflow for a specific PR number.
+- Consider skipping dedicated review app servers for draft and docs-only PRs.
+- Add a visible quota/capacity note to PR check output when Hetzner returns
+  `resource_limit_exceeded`.
 
 ## Patterns To Watch
 
