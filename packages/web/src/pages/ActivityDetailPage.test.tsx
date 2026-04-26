@@ -88,17 +88,48 @@ const mockStreamPoints: Array<{
 const mockStrengthExercisesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
 );
-const mockPowerZonesUseQuery = vi.fn((_input?: unknown, _options?: { enabled?: boolean }) => ({
-  data: null,
+
+interface MockHrZone {
+  zone: number;
+  label: string;
+  minPct: number;
+  maxPct: number;
+  seconds: number;
+}
+
+interface MockPowerZone {
+  zone: number;
+  label: string;
+  minPct: number;
+  maxPct: number | null;
+  seconds: number;
+}
+
+interface MockPowerZonesResult {
+  ftp: number;
+  zones: MockPowerZone[];
+}
+
+const mockHrZonesUseQuery = vi.fn((): { data: MockHrZone[]; isLoading: boolean } => ({
+  data: [],
   isLoading: false,
 }));
+const mockPowerZonesUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: { enabled?: boolean },
+  ): { data: MockPowerZonesResult | null; isLoading: boolean } => ({
+    data: null,
+    isLoading: false,
+  }),
+);
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
       stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
-      hrZones: { useQuery: () => ({ data: [], isLoading: false }) },
+      hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
@@ -119,6 +150,7 @@ vi.mock("leaflet", () => ({
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
   mockStrengthExercisesUseQuery.mockClear();
+  mockHrZonesUseQuery.mockClear();
   mockPowerZonesUseQuery.mockClear();
   return render(
     <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
@@ -170,6 +202,20 @@ function getYAxisName(opt: Record<string, unknown>): string {
     return String(yAxis.name);
   }
   return "";
+}
+
+function getCategoryAxisData(opt: Record<string, unknown>): string[] {
+  const yAxis = opt.yAxis;
+  if (!yAxis || typeof yAxis !== "object") {
+    return [];
+  }
+
+  const data = Reflect.get(yAxis, "data");
+  return Array.isArray(data) ? data.map((label) => String(label)) : [];
+}
+
+function findOptionByYAxisDataLabel(label: string): Record<string, unknown> | undefined {
+  return capturedOptions.find((option) => getCategoryAxisData(option).includes(label));
 }
 
 async function importPage() {
@@ -367,6 +413,63 @@ describe("ActivityDetailPage", () => {
 
       const enabled = getQueryEnabledFlag(mockPowerZonesUseQuery.mock.calls[0]?.[1]);
       expect(enabled).toBe(true);
+
+      Object.assign(mockActivity, originalActivity);
+      mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+    });
+
+    it("labels the heart rate zone axis with zone numbers", async () => {
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [
+          { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300 },
+          { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600 },
+        ],
+        isLoading: false,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const heartRateZoneOption =
+        findOptionByYAxisDataLabel("Z1 Recovery") ?? findOptionByYAxisDataLabel("Zone 1");
+      if (!heartRateZoneOption) {
+        throw new Error("Heart rate zone chart option was not captured");
+      }
+      expect(getCategoryAxisData(heartRateZoneOption)).toEqual(["Zone 1", "Zone 2"]);
+
+      mockHrZonesUseQuery.mockReturnValue({ data: [], isLoading: false });
+    });
+
+    it("labels the power zone axis with zone numbers", async () => {
+      const originalActivity = { ...mockActivity };
+      const originalStream = [...mockStreamPoints];
+
+      Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...originalStream.map((point) => ({ ...point, power: 210 })),
+      );
+      mockPowerZonesUseQuery.mockReturnValue({
+        data: {
+          ftp: 250,
+          zones: [
+            { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300 },
+            { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600 },
+          ],
+        },
+        isLoading: false,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const powerZoneOption =
+        findOptionByYAxisDataLabel("Z1 Recovery") ?? findOptionByYAxisDataLabel("Zone 1");
+      if (!powerZoneOption) {
+        throw new Error("Power zone chart option was not captured");
+      }
+      expect(getCategoryAxisData(powerZoneOption)).toEqual(["Zone 1", "Zone 2"]);
 
       Object.assign(mockActivity, originalActivity);
       mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
