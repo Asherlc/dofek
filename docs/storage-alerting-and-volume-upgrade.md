@@ -1,5 +1,7 @@
 # Storage Alerting And Volume Upgrade Plan
 
+<!-- cspell:ignore Databasus Prechecks PGPASSWORD -->
+
 This document covers two near-term mitigations for production storage risk:
 
 1. alert before the Hetzner data volume enters a danger zone;

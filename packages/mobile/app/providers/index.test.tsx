@@ -145,6 +145,11 @@ vi.mock("../../lib/auth-context", () => ({
 }));
 
 const mockFileDelete = vi.fn();
+const mockFileBytes = vi.fn(async () =>
+  new TextEncoder().encode(
+    "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat",
+  ),
+);
 vi.mock("expo-file-system", () => ({
   File: class MockFile {
     uri: string;
@@ -158,9 +163,7 @@ vi.mock("expo-file-system", () => ({
       return "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
     }
     async bytes() {
-      return new TextEncoder().encode(
-        "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat",
-      );
+      return mockFileBytes();
     }
     delete() {
       mockFileDelete(this.uri);
@@ -640,6 +643,8 @@ describe("ProvidersScreen", () => {
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
+    mockFileDelete.mockReset();
+    mockFileBytes.mockClear();
     mockIsHealthKitAvailable.mockReset().mockReturnValue(true);
     mockGetRequestStatus.mockReset().mockResolvedValue("unnecessary");
     mockHasEverAuthorized.mockReset().mockReturnValue(true);
@@ -930,7 +935,7 @@ describe("ProvidersScreen", () => {
     expect(screen.queryByText("Sync All")).toBeNull();
   });
 
-  it("passes readBlob that uses fetch and cleans up the shared file", async () => {
+  it("passes readBlob that reads Expo file bytes and cleans up the shared file", async () => {
     mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
     mockUseLocalSearchParams.mockReturnValue({
       sharedFile: "file:///tmp/strong.csv",
@@ -947,18 +952,13 @@ describe("ProvidersScreen", () => {
     expect(callArgs).toBeDefined();
     expect(callArgs?.[1]).toHaveProperty("readBlob");
     const readBlob: (uri: string) => Promise<Blob> = callArgs[1].readBlob;
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      blob: async () =>
-        new Blob(["Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat"], {
-          type: "text/csv",
-        }),
-    } satisfies Pick<Response, "ok" | "blob">);
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     const blob = await readBlob("file:///tmp/strong.csv");
 
-    expect(fetchMock).toHaveBeenCalledWith("file:///tmp/strong.csv");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockFileBytes).toHaveBeenCalled();
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.size).toBeGreaterThan(0);
     const text = await blob.text();

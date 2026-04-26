@@ -458,4 +458,13 @@ describe("concept2OAuthConfig", () => {
     expect(config?.scopes).toContain("results:read");
     expect(config?.authorizeUrl).toContain("concept2.com");
   });
+
+  it("uses Concept2's comma-separated OAuth scope format", () => {
+    process.env.CONCEPT2_CLIENT_ID = "test-id";
+    process.env.CONCEPT2_CLIENT_SECRET = "test-secret";
+
+    const config = concept2OAuthConfig();
+
+    expect(config?.scopeSeparator).toBe(",");
+  });
 });
