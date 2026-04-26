@@ -1206,6 +1206,22 @@ table fitness.training_export_watermark {
   updated_at "timestamp with time zone" [not null, default: `now()`]
 }
 
+table fitness.user_billing {
+  user_id uuid [pk, not null]
+  stripe_customer_id text [unique]
+  stripe_subscription_id text [unique]
+  stripe_subscription_status text
+  stripe_current_period_end "timestamp with time zone"
+  paid_grant_reason text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    stripe_customer_id [name: 'user_billing_stripe_customer_idx']
+    stripe_subscription_id [name: 'user_billing_stripe_subscription_idx']
+  }
+}
+
 table fitness.user_profile {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   name text [not null]
@@ -1392,6 +1408,8 @@ ref supplement_nutrition_supplement_id_supplement_id_fk: fitness.supplement_nutr
 ref sync_log_provider_id_provider_id_fk: fitness.sync_log.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref sync_log_user_id_user_profile_id_fk: fitness.sync_log.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref user_billing_user_id_user_profile_id_fk: fitness.user_billing.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref user_settings_user_id_user_profile_id_fk: fitness.user_settings.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
