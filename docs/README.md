@@ -1,5 +1,7 @@
 # Documentation
 
+<!-- cspell:ignore dbml bugsink Bugsink rollups -->
+
 Human-facing architecture notes, provider research, and operational runbooks for Dofek.
 
 ## Start Here
@@ -49,6 +51,7 @@ Cross-provider reverse-engineering references:
 | Doc | What it is for |
 |-----|----------------|
 | [ci-debugging.md](ci-debugging.md) | Debugging GitHub Actions failures with `gh` CLI. |
+| [activity-rollups-runbook.md](activity-rollups-runbook.md) | Backfill, drain, verify, and rebuild the SQL-owned activity analytics projection. |
 | [materialized-view-maintenance-runbook.md](materialized-view-maintenance-runbook.md) | Safe blocking materialized-view maintenance workflow, preflight, and refresh inventory. |
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
