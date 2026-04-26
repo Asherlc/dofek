@@ -37,6 +37,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## End-of-Task Retrospective
 - **Always close with a short retrospective**: At the end of each task, briefly evaluate what went well, what required investigation, what would be useful context next time, and what guidelines were missing or could be refined.
+- **Update the production incident baseline**: After any production incident, deploy failure, infrastructure issue, database pressure event, CI/deploy outage, or operational debugging session, append a concise summary to `docs/production-incident-baseline.md`. Capture the date, symptoms, user impact, evidence, root cause if known, fix or mitigation, remaining risk, and follow-up work. If the issue is still unresolved, record it as unresolved rather than omitting it.
 - **Propose concrete improvements to the user**: After that retrospective, propose specific updates to `AGENTS.md`, `README.md`, or `docs/` that would have made the task faster, safer, or clearer.
 - **Suggest useful skills**: As part of the retrospective, suggest relevant skills that should be used next time for similar tasks (or new skills that should be created if a gap exists).
 - **Create a positive feedback loop**: Treat each completed task as input for improving future tasks. Surface suggested wording changes or new runbook notes to the user for approval.
