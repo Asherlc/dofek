@@ -1,4 +1,4 @@
-import { ONBOARDING_SETTINGS_KEY } from "@dofek/onboarding/onboarding";
+import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
@@ -102,8 +102,8 @@ function createSeededProviders() {
   );
 
   queryClient.setQueryData(
-    [["settings", "get"], { input: { key: ONBOARDING_SETTINGS_KEY }, type: "query" }],
-    { key: ONBOARDING_SETTINGS_KEY, value: true },
+    [["settings", "get"], { input: { key: PROVIDER_GUIDE_SETTINGS_KEY }, type: "query" }],
+    { key: PROVIDER_GUIDE_SETTINGS_KEY, value: true },
   );
 
   return { queryClient };

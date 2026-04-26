@@ -1,7 +1,7 @@
 import Foundation
 
 /// Thread-safe buffer for accumulating and draining WHOOP BLE samples.
-/// Handles both IMU (accelerometer + gyroscope) and realtime (HR + quaternion) data.
+/// Handles both IMU (accelerometer + gyroscope) and realtime (beat interval + quaternion) data.
 /// Serializes samples to bridge-compatible dictionaries for the JS layer.
 final class WhoopBleSampleBuffer {
     private var imuSamples: [WhoopImuSample] = []
@@ -184,7 +184,6 @@ final class WhoopBleSampleBuffer {
 
             return [
                 "timestamp": formatter.string(from: date),
-                "heartRate": Int(sample.heartRate),
                 "rrIntervalMs": Int(sample.rrIntervalMs),
                 "quaternionW": Double(sample.quaternionW),
                 "quaternionX": Double(sample.quaternionX),

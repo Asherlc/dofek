@@ -10,7 +10,6 @@ export interface WhoopDevice {
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
   timestamp: string; // ISO 8601
-  heartRate: number; // bpm (0-255)
   /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
   rrIntervalMs: number;
   quaternionW: number; // float32
@@ -85,10 +84,10 @@ export async function stopImuStreaming(): Promise<boolean> {
 }
 
 /**
- * Send TOGGLE_REALTIME_HR (0x03) to enable continuous 1 Hz HR streaming.
+ * Send TOGGLE_REALTIME_HR (0x03) to enable continuous 1 Hz beat-interval streaming.
  *
- * HR + quaternion data arrives in REALTIME_DATA (0x28) packets at ~1 Hz.
- * This command extends HR streaming beyond the WHOOP app's sync window.
+ * Beat-interval + quaternion data arrives in REALTIME_DATA (0x28) packets at ~1 Hz.
+ * This command extends streaming beyond the WHOOP app's sync window.
  * Best-effort — may be rejected by the strap if the bond doesn't support it.
  */
 export async function startRealtimeHr(): Promise<boolean> {
@@ -125,7 +124,7 @@ export function confirmSamplesDrain(count: number): void {
 }
 
 /**
- * Peek at buffered realtime data (HR + quaternion) WITHOUT removing.
+ * Peek at buffered realtime data (beat interval + quaternion) WITHOUT removing.
  *
  * Call `confirmRealtimeDataDrain(count)` after a successful upload.
  */
@@ -142,7 +141,7 @@ export function confirmRealtimeDataDrain(count: number): void {
 }
 
 /**
- * Retrieve and clear the internal realtime data buffer (HR + quaternion).
+ * Retrieve and clear the internal realtime data buffer (beat interval + quaternion).
  * @deprecated Use peekBufferedRealtimeData + confirmRealtimeDataDrain instead.
  */
 export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {

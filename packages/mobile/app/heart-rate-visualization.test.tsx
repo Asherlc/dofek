@@ -173,4 +173,31 @@ describe("HeartRateVisualizationScreen", () => {
 
     vi.useRealTimers();
   });
+
+  it("derives displayed heart rate from R-R intervals", async () => {
+    vi.useFakeTimers();
+    const whoopBle = await import("../modules/whoop-ble");
+    vi.spyOn(whoopBle, "getConnectionState").mockReturnValue("streaming");
+    vi.spyOn(whoopBle, "peekBufferedRealtimeData").mockResolvedValue([
+      {
+        timestamp: "2026-04-12T00:00:01Z",
+        rrIntervalMs: 833,
+        quaternionW: 0,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "",
+      },
+    ]);
+
+    const { default: HeartRateVisualizationScreen } = await import("./heart-rate-visualization");
+    await act(() => render(<HeartRateVisualizationScreen />));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+
+    expect(screen.getAllByText("72").length).toBeGreaterThan(0);
+    expect(screen.getByText("Beat interval: 833 ms")).toBeTruthy();
+
+    vi.useRealTimers();
+  });
 });

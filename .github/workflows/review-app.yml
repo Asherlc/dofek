@@ -160,7 +160,7 @@ jobs:
             "${workspace_url}" \
             > /tmp/review-workspace.json
 
-          execution_mode="$(jq -r '.data.attributes[\"execution-mode\"] // empty' /tmp/review-workspace.json)"
+          execution_mode="$(jq -r '.data.attributes["execution-mode"] // empty' /tmp/review-workspace.json)"
           if [ "$execution_mode" != "local" ]; then
             echo "::error::Terraform workspace ${REVIEW_TERRAFORM_WORKSPACE} is not configured for local execution"
             cat /tmp/review-workspace.json

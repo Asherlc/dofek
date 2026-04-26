@@ -66,8 +66,8 @@ export const Route = createRootRoute({
     const dest = LEGACY_REDIRECTS[location.pathname];
     if (dest) throw redirect({ to: dest });
   },
-  validateSearch: (search: Record<string, unknown>): { onboarding?: boolean } => ({
-    onboarding: search.onboarding === true || search.onboarding === "true" || undefined,
+  validateSearch: (search: Record<string, unknown>): { providerGuide?: boolean } => ({
+    providerGuide: search.providerGuide === true || search.providerGuide === "true" || undefined,
   }),
   component: () => (
     <AuthProvider>

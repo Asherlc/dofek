@@ -1,8 +1,9 @@
 import Foundation
 
 /// A single realtime data sample from a 0x28 REALTIME_DATA packet.
-/// Contains heart rate, orientation quaternion, and raw optical/PPG bytes
-/// from the strap's sensor fusion.
+/// Contains beat timing, orientation quaternion, and raw optical/PPG bytes
+/// from the strap's sensor fusion. Device-reported heart rate is decoded
+/// internally but not exported to JS or stored.
 struct WhoopRealtimeDataSample {
     let timestampSeconds: UInt32
     let subSeconds: UInt16

@@ -11,7 +11,7 @@ const mockUseLocation = vi.hoisted(() => vi.fn());
 const captured = vi.hoisted(() => {
   const ref: {
     component: (() => React.ReactElement) | null;
-    validateSearch: ((search: Record<string, unknown>) => { onboarding?: boolean }) | null;
+    validateSearch: ((search: Record<string, unknown>) => { providerGuide?: boolean }) | null;
   } = { component: null, validateSearch: null };
   return ref;
 });
@@ -19,7 +19,7 @@ const captured = vi.hoisted(() => {
 vi.mock("@tanstack/react-router", () => ({
   createRootRoute: (options: {
     component: () => React.ReactElement;
-    validateSearch?: (search: Record<string, unknown>) => { onboarding?: boolean };
+    validateSearch?: (search: Record<string, unknown>) => { providerGuide?: boolean };
   }) => {
     captured.component = options.component;
     captured.validateSearch = options.validateSearch ?? null;
@@ -59,23 +59,23 @@ describe("validateSearch", () => {
   }
 
   it("parses boolean true (TanStack Router default JSON parser)", () => {
-    expect(validate({ onboarding: true })).toEqual({ onboarding: true });
+    expect(validate({ providerGuide: true })).toEqual({ providerGuide: true });
   });
 
   it("parses string 'true' (plain query string fallback)", () => {
-    expect(validate({ onboarding: "true" })).toEqual({ onboarding: true });
+    expect(validate({ providerGuide: "true" })).toEqual({ providerGuide: true });
   });
 
   it("returns undefined for missing param", () => {
-    expect(validate({})).toEqual({ onboarding: undefined });
+    expect(validate({})).toEqual({ providerGuide: undefined });
   });
 
   it("returns undefined for false", () => {
-    expect(validate({ onboarding: false })).toEqual({ onboarding: undefined });
+    expect(validate({ providerGuide: false })).toEqual({ providerGuide: undefined });
   });
 
   it("returns undefined for string 'false'", () => {
-    expect(validate({ onboarding: "false" })).toEqual({ onboarding: undefined });
+    expect(validate({ providerGuide: "false" })).toEqual({ providerGuide: undefined });
   });
 });
 

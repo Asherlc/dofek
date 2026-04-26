@@ -98,7 +98,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
 
         let dict = drained[0]
         XCTAssertNotNil(dict["timestamp"] as? String)
-        XCTAssertEqual(dict["heartRate"] as? Int, 72)
+        XCTAssertNil(dict["heartRate"])
         XCTAssertEqual(dict["rrIntervalMs"] as? Int, 833)
         XCTAssertEqual(dict["quaternionW"] as? Double, 1.0)
         XCTAssertNotNil(dict["opticalRawHex"] as? String)
