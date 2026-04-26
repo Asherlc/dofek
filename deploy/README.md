@@ -139,8 +139,12 @@ CI (main) -> build dofek + dofek-ml (same tag)
 ### Materialized View Refresh Webhook
 
 Materialized view syncing is intentionally decoupled from normal deploys.
-Normal deploys do not trigger this webhook unless the post-migration planner detects one of the conditions above. Manual deploys can still force it with `refresh_materialized_views=true` after changing materialized-view definitions or when recovering from stale view state.
-Do not use it as a routine deploy gate because it can rebuild heavy views against live data.
+Normal deploys do not run materialized-view maintenance unless the
+post-migration planner detects one of the conditions above. Manual deploys can
+still force blocking maintenance with `refresh_materialized_views=true` after
+changing materialized-view definitions or when recovering from stale view state.
+Do not use it as a routine deploy gate because it can rebuild heavy views
+against live data.
 
 To explicitly require a post-migration refresh from SQL, add this marker comment to the migration file:
 
@@ -156,6 +160,12 @@ The migration runner stores that intent on `drizzle.__drizzle_migrations`, and `
 - Required env vars:
   - `MATERIALIZED_VIEW_REFRESH_TOKEN`
   - `DATABASE_URL`
+
+For planned production maintenance, prefer the blocking runbook command in
+[docs/materialized-view-maintenance-runbook.md](../docs/materialized-view-maintenance-runbook.md).
+The deploy workflow uses that blocking command for manual
+`refresh_materialized_views=true` runs instead of treating webhook acceptance as
+completion.
 
 ### Postgres Statement Diagnostics
 
