@@ -3,12 +3,13 @@
 --
 
 
--- Dumped from database version 16.11
--- Dumped by pg_dump version 16.11
+-- Dumped from database version 18.3
+-- Dumped by pg_dump version 18.3
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -32,6 +33,20 @@ COMMENT ON EXTENSION timescaledb IS 'Enables scalable inserts and complex querie
 
 
 --
+-- Name: fitness; Type: SCHEMA; Schema: -; Owner: -
+--
+
+CREATE SCHEMA fitness;
+
+
+--
+-- Name: health; Type: SCHEMA; Schema: -; Owner: -
+--
+
+CREATE SCHEMA health;
+
+
+--
 -- Name: pg_stat_statements; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -43,20 +58,6 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
 --
 
 COMMENT ON EXTENSION pg_stat_statements IS 'track planning and execution statistics of all SQL statements executed';
-
-
---
--- Name: fitness; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA fitness;
-
-
---
--- Name: health; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA IF NOT EXISTS health;
 
 
 --
@@ -288,32 +289,24 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: _compressed_hypertable_2; Type: TABLE; Schema: _timescaledb_internal; Owner: -
+-- Name: _compressed_hypertable_3; Type: TABLE; Schema: _timescaledb_internal; Owner: -
 --
 
-CREATE TABLE _timescaledb_internal._compressed_hypertable_2 (
+CREATE TABLE _timescaledb_internal._compressed_hypertable_3 (
 );
 
 
 --
--- Name: _compressed_hypertable_9; Type: TABLE; Schema: _timescaledb_internal; Owner: -
+-- Name: metric_stream; Type: TABLE; Schema: fitness; Owner: -
 --
 
-CREATE TABLE _timescaledb_internal._compressed_hypertable_9 (
-);
-
-
---
--- Name: sensor_sample; Type: TABLE; Schema: fitness; Owner: -
---
-
-CREATE TABLE fitness.sensor_sample (
-    recorded_at timestamp with time zone NOT NULL,
-    user_id uuid NOT NULL,
-    provider_id text NOT NULL,
+CREATE TABLE fitness.metric_stream (
+    recorded_at timestamp with time zone CONSTRAINT sensor_sample_recorded_at_not_null NOT NULL,
+    user_id uuid CONSTRAINT sensor_sample_user_id_not_null NOT NULL,
+    provider_id text CONSTRAINT sensor_sample_provider_id_not_null NOT NULL,
     device_id text,
-    source_type text NOT NULL,
-    channel text NOT NULL,
+    source_type text CONSTRAINT sensor_sample_source_type_not_null NOT NULL,
+    channel text CONSTRAINT sensor_sample_channel_not_null NOT NULL,
     activity_id uuid,
     scalar real,
     vector real[]
@@ -332,7 +325,7 @@ CREATE VIEW _timescaledb_internal._direct_view_10 AS
     max(scalar) AS max_value,
     min(scalar) AS min_value,
     (count(*))::integer AS sample_count
-   FROM fitness.sensor_sample
+   FROM fitness.metric_stream
   WHERE ((scalar IS NOT NULL) AND (activity_id IS NOT NULL))
   GROUP BY (public.time_bucket('1 day'::interval, recorded_at)), user_id, channel;
 
@@ -381,84 +374,6 @@ CREATE VIEW _timescaledb_internal._direct_view_11 AS
     (sum(sample_count))::integer AS sample_count
    FROM fitness.cagg_sensor_daily
   GROUP BY (public.time_bucket('7 days'::interval, bucket)), user_id, channel;
-
-
---
--- Name: metric_stream; Type: TABLE; Schema: fitness; Owner: -
---
-
-CREATE TABLE fitness.metric_stream (
-    recorded_at timestamp with time zone NOT NULL,
-    user_id uuid NOT NULL,
-    activity_id uuid,
-    provider_id text NOT NULL,
-    heart_rate smallint,
-    power smallint,
-    cadence smallint,
-    speed real,
-    altitude real,
-    temperature real,
-    respiratory_rate real,
-    spo2 real,
-    stress smallint,
-    lat real,
-    lng real,
-    grade real,
-    vertical_speed real,
-    gps_accuracy smallint,
-    vertical_oscillation real,
-    stance_time real,
-    stance_time_percent real,
-    step_length real,
-    vertical_ratio real,
-    stance_time_balance real,
-    ground_contact_time real,
-    stride_length real,
-    form_power real,
-    leg_spring_stiff real,
-    air_power real,
-    left_right_balance real,
-    left_torque_effectiveness real,
-    right_torque_effectiveness real,
-    left_pedal_smoothness real,
-    right_pedal_smoothness real,
-    combined_pedal_smoothness real,
-    accumulated_power integer,
-    blood_glucose real,
-    audio_exposure real,
-    skin_temperature real,
-    raw jsonb,
-    source_name text,
-    electrodermal_activity real,
-    rr_interval_ms smallint
-);
-
-
---
--- Name: _direct_view_3; Type: VIEW; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE VIEW _timescaledb_internal._direct_view_3 AS
- SELECT public.time_bucket('1 day'::interval, recorded_at) AS bucket,
-    user_id,
-    (avg(heart_rate))::real AS avg_hr,
-    max(heart_rate) AS max_hr,
-    min(heart_rate) AS min_hr,
-    (avg(power) FILTER (WHERE (power > 0)))::real AS avg_power,
-    max(power) FILTER (WHERE (power > 0)) AS max_power,
-    (avg(cadence) FILTER (WHERE (cadence > 0)))::real AS avg_cadence,
-    (avg(speed))::real AS avg_speed,
-    max(speed) AS max_speed,
-    max(altitude) AS max_altitude,
-    min(altitude) FILTER (WHERE (altitude IS NOT NULL)) AS min_altitude,
-    (count(*))::integer AS total_samples,
-    (count(heart_rate))::integer AS hr_samples,
-    (count(power) FILTER (WHERE (power > 0)))::integer AS power_samples,
-    (count(cadence) FILTER (WHERE (cadence > 0)))::integer AS cadence_samples,
-    (count(DISTINCT activity_id))::integer AS activity_count
-   FROM fitness.metric_stream
-  WHERE (activity_id IS NOT NULL)
-  GROUP BY (public.time_bucket('1 day'::interval, recorded_at)), user_id;
 
 
 --
@@ -589,7 +504,7 @@ CREATE VIEW _timescaledb_internal._partial_view_10 AS
     max(scalar) AS max_value,
     min(scalar) AS min_value,
     (count(*))::integer AS sample_count
-   FROM fitness.sensor_sample
+   FROM fitness.metric_stream
   WHERE ((scalar IS NOT NULL) AND (activity_id IS NOT NULL))
   GROUP BY (public.time_bucket('1 day'::interval, recorded_at)), user_id, channel;
 
@@ -608,33 +523,6 @@ CREATE VIEW _timescaledb_internal._partial_view_11 AS
     (sum(sample_count))::integer AS sample_count
    FROM fitness.cagg_sensor_daily
   GROUP BY (public.time_bucket('7 days'::interval, bucket)), user_id, channel;
-
-
---
--- Name: _partial_view_3; Type: VIEW; Schema: _timescaledb_internal; Owner: -
---
-
-CREATE VIEW _timescaledb_internal._partial_view_3 AS
- SELECT public.time_bucket('1 day'::interval, recorded_at) AS bucket,
-    user_id,
-    (avg(heart_rate))::real AS avg_hr,
-    max(heart_rate) AS max_hr,
-    min(heart_rate) AS min_hr,
-    (avg(power) FILTER (WHERE (power > 0)))::real AS avg_power,
-    max(power) FILTER (WHERE (power > 0)) AS max_power,
-    (avg(cadence) FILTER (WHERE (cadence > 0)))::real AS avg_cadence,
-    (avg(speed))::real AS avg_speed,
-    max(speed) AS max_speed,
-    max(altitude) AS max_altitude,
-    min(altitude) FILTER (WHERE (altitude IS NOT NULL)) AS min_altitude,
-    (count(*))::integer AS total_samples,
-    (count(heart_rate))::integer AS hr_samples,
-    (count(power) FILTER (WHERE (power > 0)))::integer AS power_samples,
-    (count(cadence) FILTER (WHERE (cadence > 0)))::integer AS cadence_samples,
-    (count(DISTINCT activity_id))::integer AS activity_count
-   FROM fitness.metric_stream
-  WHERE (activity_id IS NOT NULL)
-  GROUP BY (public.time_bucket('1 day'::interval, recorded_at)), user_id;
 
 
 --
@@ -681,7 +569,6 @@ CREATE TABLE fitness.activity (
     user_id uuid NOT NULL,
     perceived_exertion real,
     source_name text,
-    percent_recorded real,
     timezone text,
     strava_id text
 );
@@ -751,7 +638,6 @@ CREATE MATERIALIZED VIEW fitness.v_activity AS
             a.user_id,
             a.perceived_exertion,
             a.source_name,
-            a.percent_recorded,
             a.timezone,
             a.strava_id,
             COALESCE(dp.priority, pp.priority, 100) AS prio
@@ -871,71 +757,113 @@ CREATE MATERIALIZED VIEW fitness.v_activity AS
 
 
 --
--- Name: activity_summary; Type: MATERIALIZED VIEW; Schema: fitness; Owner: -
+-- Name: deduped_sensor; Type: MATERIALIZED VIEW; Schema: fitness; Owner: -
 --
 
-CREATE MATERIALIZED VIEW fitness.activity_summary AS
- WITH activity_members AS (
-         SELECT a_1.id AS canonical_id,
-            a_1.user_id,
-            unnest(a_1.member_activity_ids) AS member_id
-           FROM fitness.v_activity a_1
-        ), best_source AS (
+CREATE MATERIALIZED VIEW fitness.deduped_sensor AS
+ WITH canonical_activities AS (
+         SELECT a.id AS canonical_id,
+            a.user_id,
+            a.started_at,
+            a.ended_at,
+            a.member_activity_ids
+           FROM fitness.v_activity a
+        ), activity_members AS (
+         SELECT a.id AS canonical_id,
+            a.user_id,
+            unnest(a.member_activity_ids) AS member_id
+           FROM fitness.v_activity a
+        ), linked_best_source AS (
          SELECT DISTINCT ON (counts.canonical_id, counts.channel) counts.canonical_id,
             counts.channel,
             counts.provider_id
            FROM ( SELECT am.canonical_id,
-                    ss.channel,
-                    ss.provider_id,
+                    ms.channel,
+                    ms.provider_id,
                     count(*) AS sample_count
-                   FROM (fitness.sensor_sample ss
-                     JOIN activity_members am ON ((ss.activity_id = am.member_id)))
-                  WHERE (ss.activity_id IS NOT NULL)
-                  GROUP BY am.canonical_id, ss.channel, ss.provider_id) counts
+                   FROM (fitness.metric_stream ms
+                     JOIN activity_members am ON ((ms.activity_id = am.member_id)))
+                  WHERE (ms.activity_id IS NOT NULL)
+                  GROUP BY am.canonical_id, ms.channel, ms.provider_id) counts
           ORDER BY counts.canonical_id, counts.channel, counts.sample_count DESC
-        ), sensor_deduped AS (
-         SELECT am.canonical_id AS activity_id,
-            am.user_id,
-            ss.recorded_at,
-            ss.channel,
-            ss.scalar
-           FROM ((fitness.sensor_sample ss
-             JOIN activity_members am ON ((ss.activity_id = am.member_id)))
-             JOIN best_source bs ON (((am.canonical_id = bs.canonical_id) AND (ss.channel = bs.channel) AND (ss.provider_id = bs.provider_id))))
-          WHERE ((ss.activity_id IS NOT NULL) AND (ss.scalar IS NOT NULL))
-        ), legacy_fallback AS (
+        ), linked_sample_bounds AS (
+         SELECT am.canonical_id,
+            max(ms.recorded_at) AS last_linked_sample_at
+           FROM (fitness.metric_stream ms
+             JOIN activity_members am ON ((ms.activity_id = am.member_id)))
+          WHERE (ms.activity_id IS NOT NULL)
+          GROUP BY am.canonical_id
+        ), fallback_windows AS (
+         SELECT ca.canonical_id,
+            ca.user_id,
+            ca.started_at,
+            COALESCE(ca.ended_at, lsb.last_linked_sample_at) AS fallback_ended_at
+           FROM (canonical_activities ca
+             LEFT JOIN linked_sample_bounds lsb ON ((lsb.canonical_id = ca.canonical_id)))
+        ), ambient_best_source AS (
+         SELECT DISTINCT ON (counts.canonical_id, counts.channel) counts.canonical_id,
+            counts.channel,
+            counts.provider_id
+           FROM ( SELECT fw.canonical_id,
+                    ms.channel,
+                    ms.provider_id,
+                    count(*) AS sample_count
+                   FROM ((fitness.metric_stream ms
+                     JOIN fallback_windows fw ON ((fw.user_id = ms.user_id)))
+                     LEFT JOIN linked_best_source lbs ON (((lbs.canonical_id = fw.canonical_id) AND (lbs.channel = ms.channel))))
+                  WHERE ((ms.activity_id IS NULL) AND (fw.fallback_ended_at IS NOT NULL) AND (ms.recorded_at >= fw.started_at) AND (ms.recorded_at <= fw.fallback_ended_at) AND (lbs.canonical_id IS NULL))
+                  GROUP BY fw.canonical_id, ms.channel, ms.provider_id) counts
+          ORDER BY counts.canonical_id, counts.channel, counts.sample_count DESC
+        ), linked_samples AS (
          SELECT am.canonical_id AS activity_id,
             am.user_id,
             ms.recorded_at,
-            expanded.channel,
-            expanded.scalar
+            ms.channel,
+            max(ms.scalar) AS scalar
            FROM ((fitness.metric_stream ms
              JOIN activity_members am ON ((ms.activity_id = am.member_id)))
-             CROSS JOIN LATERAL ( VALUES ('heart_rate'::text,(ms.heart_rate)::real), ('power'::text,(ms.power)::real), ('speed'::text,ms.speed), ('cadence'::text,(ms.cadence)::real), ('altitude'::text,ms.altitude), ('lat'::text,ms.lat), ('lng'::text,ms.lng), ('left_right_balance'::text,ms.left_right_balance), ('left_torque_effectiveness'::text,ms.left_torque_effectiveness), ('right_torque_effectiveness'::text,ms.right_torque_effectiveness), ('left_pedal_smoothness'::text,ms.left_pedal_smoothness), ('right_pedal_smoothness'::text,ms.right_pedal_smoothness), ('stance_time'::text,ms.stance_time), ('vertical_oscillation'::text,ms.vertical_oscillation), ('ground_contact_time'::text,ms.ground_contact_time), ('stride_length'::text,ms.stride_length)) expanded(channel, scalar))
-          WHERE ((ms.activity_id IS NOT NULL) AND (expanded.scalar IS NOT NULL) AND (NOT (EXISTS ( SELECT 1
-                   FROM (fitness.sensor_sample ss
-                     JOIN activity_members am2 ON ((ss.activity_id = am2.member_id)))
-                  WHERE (am2.canonical_id = am.canonical_id)))))
-        ), deduped AS (
-         SELECT sensor_deduped.activity_id,
-            sensor_deduped.user_id,
-            sensor_deduped.recorded_at,
-            sensor_deduped.channel,
-            sensor_deduped.scalar
-           FROM sensor_deduped
-        UNION ALL
-         SELECT legacy_fallback.activity_id,
-            legacy_fallback.user_id,
-            legacy_fallback.recorded_at,
-            legacy_fallback.channel,
-            legacy_fallback.scalar
-           FROM legacy_fallback
-        ), altitude_deltas AS (
-         SELECT deduped.activity_id,
-            deduped.scalar AS altitude,
-            lag(deduped.scalar) OVER (PARTITION BY deduped.activity_id ORDER BY deduped.recorded_at) AS prev_altitude
-           FROM deduped
-          WHERE (deduped.channel = 'altitude'::text)
+             JOIN linked_best_source lbs ON (((am.canonical_id = lbs.canonical_id) AND (ms.channel = lbs.channel) AND (ms.provider_id = lbs.provider_id))))
+          WHERE ((ms.activity_id IS NOT NULL) AND (ms.scalar IS NOT NULL))
+          GROUP BY am.canonical_id, am.user_id, ms.recorded_at, ms.channel
+        ), ambient_samples AS (
+         SELECT fw.canonical_id AS activity_id,
+            fw.user_id,
+            ms.recorded_at,
+            ms.channel,
+            max(ms.scalar) AS scalar
+           FROM ((fitness.metric_stream ms
+             JOIN fallback_windows fw ON ((fw.user_id = ms.user_id)))
+             JOIN ambient_best_source abs ON (((fw.canonical_id = abs.canonical_id) AND (ms.channel = abs.channel) AND (ms.provider_id = abs.provider_id))))
+          WHERE ((ms.activity_id IS NULL) AND (fw.fallback_ended_at IS NOT NULL) AND (ms.recorded_at >= fw.started_at) AND (ms.recorded_at <= fw.fallback_ended_at) AND (ms.scalar IS NOT NULL))
+          GROUP BY fw.canonical_id, fw.user_id, ms.recorded_at, ms.channel
+        )
+ SELECT ls.activity_id,
+    ls.user_id,
+    ls.recorded_at,
+    ls.channel,
+    ls.scalar
+   FROM linked_samples ls
+UNION ALL
+ SELECT asmp.activity_id,
+    asmp.user_id,
+    asmp.recorded_at,
+    asmp.channel,
+    asmp.scalar
+   FROM ambient_samples asmp
+  WITH NO DATA;
+
+
+--
+-- Name: activity_summary; Type: MATERIALIZED VIEW; Schema: fitness; Owner: -
+--
+
+CREATE MATERIALIZED VIEW fitness.activity_summary AS
+ WITH altitude_deltas AS (
+         SELECT deduped_sensor.activity_id,
+            deduped_sensor.scalar AS altitude,
+            lag(deduped_sensor.scalar) OVER (PARTITION BY deduped_sensor.activity_id ORDER BY deduped_sensor.recorded_at) AS prev_altitude
+           FROM fitness.deduped_sensor
+          WHERE (deduped_sensor.channel = 'altitude'::text)
         ), elevation_per_activity AS (
          SELECT altitude_deltas.activity_id,
             sum(
@@ -956,8 +884,8 @@ CREATE MATERIALIZED VIEW fitness.activity_summary AS
             lat_s.recorded_at,
             lat_s.scalar AS lat,
             lng_s.scalar AS lng
-           FROM (deduped lat_s
-             JOIN deduped lng_s ON (((lat_s.activity_id = lng_s.activity_id) AND (lat_s.recorded_at = lng_s.recorded_at) AND (lng_s.channel = 'lng'::text))))
+           FROM (fitness.deduped_sensor lat_s
+             JOIN fitness.deduped_sensor lng_s ON (((lat_s.activity_id = lng_s.activity_id) AND (lat_s.recorded_at = lng_s.recorded_at) AND (lng_s.channel = 'lng'::text))))
           WHERE (lat_s.channel = 'lat'::text)
         ), gps_deltas AS (
          SELECT gps_points.activity_id,
@@ -973,34 +901,34 @@ CREATE MATERIALIZED VIEW fitness.activity_summary AS
           WHERE (gps_deltas.prev_lat IS NOT NULL)
           GROUP BY gps_deltas.activity_id
         ), channel_aggs AS (
-         SELECT deduped.activity_id,
-            deduped.user_id,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'heart_rate'::text)))::real AS avg_hr,
-            (max(deduped.scalar) FILTER (WHERE (deduped.channel = 'heart_rate'::text)))::smallint AS max_hr,
-            (min(deduped.scalar) FILTER (WHERE (deduped.channel = 'heart_rate'::text)))::smallint AS min_hr,
-            (avg(deduped.scalar) FILTER (WHERE ((deduped.channel = 'power'::text) AND (deduped.scalar > (0)::double precision))))::real AS avg_power,
-            (max(deduped.scalar) FILTER (WHERE ((deduped.channel = 'power'::text) AND (deduped.scalar > (0)::double precision))))::smallint AS max_power,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'speed'::text)))::real AS avg_speed_raw,
-            max(deduped.scalar) FILTER (WHERE (deduped.channel = 'speed'::text)) AS max_speed_raw,
-            (avg(deduped.scalar) FILTER (WHERE ((deduped.channel = 'cadence'::text) AND (deduped.scalar > (0)::double precision))))::real AS avg_cadence,
-            max(deduped.scalar) FILTER (WHERE (deduped.channel = 'altitude'::text)) AS max_altitude,
-            min(deduped.scalar) FILTER (WHERE (deduped.channel = 'altitude'::text)) AS min_altitude,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'left_right_balance'::text)))::real AS avg_left_balance,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'left_torque_effectiveness'::text)))::real AS avg_left_torque_eff,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'right_torque_effectiveness'::text)))::real AS avg_right_torque_eff,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'left_pedal_smoothness'::text)))::real AS avg_left_pedal_smooth,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'right_pedal_smoothness'::text)))::real AS avg_right_pedal_smooth,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'stance_time'::text)))::real AS avg_stance_time,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'vertical_oscillation'::text)))::real AS avg_vertical_osc,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'ground_contact_time'::text)))::real AS avg_ground_contact_time,
-            (avg(deduped.scalar) FILTER (WHERE (deduped.channel = 'stride_length'::text)))::real AS avg_stride_length,
+         SELECT deduped_sensor.activity_id,
+            deduped_sensor.user_id,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'heart_rate'::text)))::real AS avg_hr,
+            (max(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'heart_rate'::text)))::smallint AS max_hr,
+            (min(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'heart_rate'::text)))::smallint AS min_hr,
+            (avg(deduped_sensor.scalar) FILTER (WHERE ((deduped_sensor.channel = 'power'::text) AND (deduped_sensor.scalar > (0)::double precision))))::real AS avg_power,
+            (max(deduped_sensor.scalar) FILTER (WHERE ((deduped_sensor.channel = 'power'::text) AND (deduped_sensor.scalar > (0)::double precision))))::smallint AS max_power,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'speed'::text)))::real AS avg_speed_raw,
+            max(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'speed'::text)) AS max_speed_raw,
+            (avg(deduped_sensor.scalar) FILTER (WHERE ((deduped_sensor.channel = 'cadence'::text) AND (deduped_sensor.scalar > (0)::double precision))))::real AS avg_cadence,
+            max(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'altitude'::text)) AS max_altitude,
+            min(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'altitude'::text)) AS min_altitude,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'left_right_balance'::text)))::real AS avg_left_balance,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'left_torque_effectiveness'::text)))::real AS avg_left_torque_eff,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'right_torque_effectiveness'::text)))::real AS avg_right_torque_eff,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'left_pedal_smoothness'::text)))::real AS avg_left_pedal_smooth,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'right_pedal_smoothness'::text)))::real AS avg_right_pedal_smooth,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'stance_time'::text)))::real AS avg_stance_time,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'vertical_oscillation'::text)))::real AS avg_vertical_osc,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'ground_contact_time'::text)))::real AS avg_ground_contact_time,
+            (avg(deduped_sensor.scalar) FILTER (WHERE (deduped_sensor.channel = 'stride_length'::text)))::real AS avg_stride_length,
             (count(*))::integer AS sample_count,
-            (count(*) FILTER (WHERE (deduped.channel = 'heart_rate'::text)))::integer AS hr_sample_count,
-            (count(*) FILTER (WHERE ((deduped.channel = 'power'::text) AND (deduped.scalar > (0)::double precision))))::integer AS power_sample_count,
-            min(deduped.recorded_at) AS first_sample_at,
-            max(deduped.recorded_at) AS last_sample_at
-           FROM deduped
-          GROUP BY deduped.activity_id, deduped.user_id
+            (count(*) FILTER (WHERE (deduped_sensor.channel = 'heart_rate'::text)))::integer AS hr_sample_count,
+            (count(*) FILTER (WHERE ((deduped_sensor.channel = 'power'::text) AND (deduped_sensor.scalar > (0)::double precision))))::integer AS power_sample_count,
+            min(deduped_sensor.recorded_at) AS first_sample_at,
+            max(deduped_sensor.recorded_at) AS last_sample_at
+           FROM fitness.deduped_sensor
+          GROUP BY deduped_sensor.activity_id, deduped_sensor.user_id
         )
  SELECT ca.activity_id,
     ca.user_id,
@@ -1376,8 +1304,7 @@ CREATE TABLE fitness.food_entry (
     serving_unit text,
     serving_weight_grams real,
     user_id uuid NOT NULL,
-    confirmed boolean DEFAULT true NOT NULL,
-    nutrition_data_id uuid
+    confirmed boolean DEFAULT true NOT NULL
 );
 
 
@@ -1389,6 +1316,55 @@ CREATE TABLE fitness.food_entry_nutrient (
     food_entry_id uuid NOT NULL,
     nutrient_id text NOT NULL,
     amount real NOT NULL
+);
+
+
+--
+-- Name: food_entry_nutrition; Type: TABLE; Schema: fitness; Owner: -
+--
+
+CREATE TABLE fitness.food_entry_nutrition (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    food_entry_id uuid NOT NULL,
+    calories integer,
+    protein_g real,
+    carbs_g real,
+    fat_g real,
+    saturated_fat_g real,
+    polyunsaturated_fat_g real,
+    monounsaturated_fat_g real,
+    trans_fat_g real,
+    cholesterol_mg real,
+    sodium_mg real,
+    potassium_mg real,
+    fiber_g real,
+    sugar_g real,
+    vitamin_a_mcg real,
+    vitamin_c_mg real,
+    vitamin_d_mcg real,
+    vitamin_e_mg real,
+    vitamin_k_mcg real,
+    vitamin_b1_mg real,
+    vitamin_b2_mg real,
+    vitamin_b3_mg real,
+    vitamin_b5_mg real,
+    vitamin_b6_mg real,
+    vitamin_b7_mcg real,
+    vitamin_b9_mcg real,
+    vitamin_b12_mcg real,
+    calcium_mg real,
+    iron_mg real,
+    magnesium_mg real,
+    zinc_mg real,
+    selenium_mcg real,
+    copper_mg real,
+    manganese_mg real,
+    chromium_mcg real,
+    iodine_mcg real,
+    omega3_mg real,
+    omega6_mg real,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1727,6 +1703,160 @@ CREATE TABLE fitness.provider (
 
 
 --
+-- Name: sleep_session; Type: TABLE; Schema: fitness; Owner: -
+--
+
+CREATE TABLE fitness.sleep_session (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    provider_id text NOT NULL,
+    external_id text,
+    started_at timestamp with time zone NOT NULL,
+    ended_at timestamp with time zone,
+    duration_minutes integer,
+    deep_minutes integer,
+    rem_minutes integer,
+    light_minutes integer,
+    awake_minutes integer,
+    efficiency_pct real,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    user_id uuid NOT NULL,
+    source_name text,
+    sleep_type text,
+    sleep_need_baseline_minutes integer,
+    sleep_need_from_debt_minutes integer,
+    sleep_need_from_strain_minutes integer,
+    sleep_need_from_nap_minutes integer
+);
+
+
+--
+-- Name: provider_stats; Type: MATERIALIZED VIEW; Schema: fitness; Owner: -
+--
+
+CREATE MATERIALIZED VIEW fitness.provider_stats AS
+ WITH providers AS (
+         SELECT DISTINCT oauth_token.user_id,
+            oauth_token.provider_id
+           FROM fitness.oauth_token
+        UNION
+         SELECT DISTINCT activity.user_id,
+            activity.provider_id
+           FROM fitness.activity
+        UNION
+         SELECT DISTINCT daily_metrics.user_id,
+            daily_metrics.provider_id
+           FROM fitness.daily_metrics
+        UNION
+         SELECT DISTINCT sleep_session.user_id,
+            sleep_session.provider_id
+           FROM fitness.sleep_session
+        UNION
+         SELECT DISTINCT body_measurement.user_id,
+            body_measurement.provider_id
+           FROM fitness.body_measurement
+        UNION
+         SELECT DISTINCT food_entry.user_id,
+            food_entry.provider_id
+           FROM fitness.food_entry
+        UNION
+         SELECT DISTINCT health_event.user_id,
+            health_event.provider_id
+           FROM fitness.health_event
+        UNION
+         SELECT DISTINCT metric_stream.user_id,
+            metric_stream.provider_id
+           FROM fitness.metric_stream
+        UNION
+         SELECT DISTINCT nutrition_daily.user_id,
+            nutrition_daily.provider_id
+           FROM fitness.nutrition_daily
+        UNION
+         SELECT DISTINCT lab_panel.user_id,
+            lab_panel.provider_id
+           FROM fitness.lab_panel
+        UNION
+         SELECT DISTINCT lab_result.user_id,
+            lab_result.provider_id
+           FROM fitness.lab_result
+        UNION
+         SELECT DISTINCT journal_entry.user_id,
+            journal_entry.provider_id
+           FROM fitness.journal_entry
+        )
+ SELECT p.user_id,
+    p.provider_id,
+    COALESCE(a.cnt, (0)::bigint) AS activities,
+    COALESCE(dm.cnt, (0)::bigint) AS daily_metrics,
+    COALESCE(ss.cnt, (0)::bigint) AS sleep_sessions,
+    COALESCE(bm.cnt, (0)::bigint) AS body_measurements,
+    COALESCE(fe.cnt, (0)::bigint) AS food_entries,
+    COALESCE(he.cnt, (0)::bigint) AS health_events,
+    COALESCE(ms.cnt, (0)::bigint) AS metric_stream,
+    COALESCE(nd.cnt, (0)::bigint) AS nutrition_daily,
+    COALESCE(lp.cnt, (0)::bigint) AS lab_panels,
+    COALESCE(lr.cnt, (0)::bigint) AS lab_results,
+    COALESCE(je.cnt, (0)::bigint) AS journal_entries
+   FROM (((((((((((providers p
+     LEFT JOIN ( SELECT activity.user_id,
+            activity.provider_id,
+            count(*) AS cnt
+           FROM fitness.activity
+          GROUP BY activity.user_id, activity.provider_id) a ON (((a.user_id = p.user_id) AND (a.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT daily_metrics.user_id,
+            daily_metrics.provider_id,
+            count(*) AS cnt
+           FROM fitness.daily_metrics
+          GROUP BY daily_metrics.user_id, daily_metrics.provider_id) dm ON (((dm.user_id = p.user_id) AND (dm.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT sleep_session.user_id,
+            sleep_session.provider_id,
+            count(*) AS cnt
+           FROM fitness.sleep_session
+          GROUP BY sleep_session.user_id, sleep_session.provider_id) ss ON (((ss.user_id = p.user_id) AND (ss.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT body_measurement.user_id,
+            body_measurement.provider_id,
+            count(*) AS cnt
+           FROM fitness.body_measurement
+          GROUP BY body_measurement.user_id, body_measurement.provider_id) bm ON (((bm.user_id = p.user_id) AND (bm.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT food_entry.user_id,
+            food_entry.provider_id,
+            count(*) AS cnt
+           FROM fitness.food_entry
+          WHERE (food_entry.confirmed = true)
+          GROUP BY food_entry.user_id, food_entry.provider_id) fe ON (((fe.user_id = p.user_id) AND (fe.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT health_event.user_id,
+            health_event.provider_id,
+            count(*) AS cnt
+           FROM fitness.health_event
+          GROUP BY health_event.user_id, health_event.provider_id) he ON (((he.user_id = p.user_id) AND (he.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT metric_stream.user_id,
+            metric_stream.provider_id,
+            count(*) AS cnt
+           FROM fitness.metric_stream
+          GROUP BY metric_stream.user_id, metric_stream.provider_id) ms ON (((ms.user_id = p.user_id) AND (ms.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT nutrition_daily.user_id,
+            nutrition_daily.provider_id,
+            count(*) AS cnt
+           FROM fitness.nutrition_daily
+          GROUP BY nutrition_daily.user_id, nutrition_daily.provider_id) nd ON (((nd.user_id = p.user_id) AND (nd.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT lab_panel.user_id,
+            lab_panel.provider_id,
+            count(*) AS cnt
+           FROM fitness.lab_panel
+          GROUP BY lab_panel.user_id, lab_panel.provider_id) lp ON (((lp.user_id = p.user_id) AND (lp.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT lab_result.user_id,
+            lab_result.provider_id,
+            count(*) AS cnt
+           FROM fitness.lab_result
+          GROUP BY lab_result.user_id, lab_result.provider_id) lr ON (((lr.user_id = p.user_id) AND (lr.provider_id = p.provider_id))))
+     LEFT JOIN ( SELECT journal_entry.user_id,
+            journal_entry.provider_id,
+            count(*) AS cnt
+           FROM fitness.journal_entry
+          GROUP BY journal_entry.user_id, journal_entry.provider_id) je ON (((je.user_id = p.user_id) AND (je.provider_id = p.provider_id))))
+  WITH NO DATA;
+
+
+--
 -- Name: session; Type: TABLE; Schema: fitness; Owner: -
 --
 
@@ -1769,33 +1899,6 @@ CREATE TABLE fitness.slack_installation (
     raw_installation jsonb NOT NULL,
     installed_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: sleep_session; Type: TABLE; Schema: fitness; Owner: -
---
-
-CREATE TABLE fitness.sleep_session (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    provider_id text NOT NULL,
-    external_id text,
-    started_at timestamp with time zone NOT NULL,
-    ended_at timestamp with time zone,
-    duration_minutes integer,
-    deep_minutes integer,
-    rem_minutes integer,
-    light_minutes integer,
-    awake_minutes integer,
-    efficiency_pct real,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    user_id uuid NOT NULL,
-    source_name text,
-    sleep_type text,
-    sleep_need_baseline_minutes integer,
-    sleep_need_from_debt_minutes integer,
-    sleep_need_from_strain_minutes integer,
-    sleep_need_from_nap_minutes integer
 );
 
 
@@ -1895,8 +1998,7 @@ CREATE TABLE fitness.supplement (
     meal fitness.meal,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    nutrition_data_id uuid
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1908,6 +2010,55 @@ CREATE TABLE fitness.supplement_nutrient (
     supplement_id uuid NOT NULL,
     nutrient_id text NOT NULL,
     amount real NOT NULL
+);
+
+
+--
+-- Name: supplement_nutrition; Type: TABLE; Schema: fitness; Owner: -
+--
+
+CREATE TABLE fitness.supplement_nutrition (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    supplement_id uuid NOT NULL,
+    calories integer,
+    protein_g real,
+    carbs_g real,
+    fat_g real,
+    saturated_fat_g real,
+    polyunsaturated_fat_g real,
+    monounsaturated_fat_g real,
+    trans_fat_g real,
+    cholesterol_mg real,
+    sodium_mg real,
+    potassium_mg real,
+    fiber_g real,
+    sugar_g real,
+    vitamin_a_mcg real,
+    vitamin_c_mg real,
+    vitamin_d_mcg real,
+    vitamin_e_mg real,
+    vitamin_k_mcg real,
+    vitamin_b1_mg real,
+    vitamin_b2_mg real,
+    vitamin_b3_mg real,
+    vitamin_b5_mg real,
+    vitamin_b6_mg real,
+    vitamin_b7_mcg real,
+    vitamin_b9_mcg real,
+    vitamin_b12_mcg real,
+    calcium_mg real,
+    iron_mg real,
+    magnesium_mg real,
+    zinc_mg real,
+    selenium_mcg real,
+    copper_mg real,
+    manganese_mg real,
+    chromium_mcg real,
+    iodine_mcg real,
+    omega3_mg real,
+    omega6_mg real,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2253,49 +2404,49 @@ CREATE VIEW fitness.v_food_entry_with_nutrition AS
     fe.barcode,
     fe.serving_unit,
     fe.serving_weight_grams,
-    fe.nutrition_data_id,
-    nd.calories,
-    nd.protein_g,
-    nd.carbs_g,
-    nd.fat_g,
-    nd.saturated_fat_g,
-    nd.polyunsaturated_fat_g,
-    nd.monounsaturated_fat_g,
-    nd.trans_fat_g,
-    nd.cholesterol_mg,
-    nd.sodium_mg,
-    nd.potassium_mg,
-    nd.fiber_g,
-    nd.sugar_g,
-    nd.vitamin_a_mcg,
-    nd.vitamin_c_mg,
-    nd.vitamin_d_mcg,
-    nd.vitamin_e_mg,
-    nd.vitamin_k_mcg,
-    nd.vitamin_b1_mg,
-    nd.vitamin_b2_mg,
-    nd.vitamin_b3_mg,
-    nd.vitamin_b5_mg,
-    nd.vitamin_b6_mg,
-    nd.vitamin_b7_mcg,
-    nd.vitamin_b9_mcg,
-    nd.vitamin_b12_mcg,
-    nd.calcium_mg,
-    nd.iron_mg,
-    nd.magnesium_mg,
-    nd.zinc_mg,
-    nd.selenium_mcg,
-    nd.copper_mg,
-    nd.manganese_mg,
-    nd.chromium_mcg,
-    nd.iodine_mcg,
-    nd.omega3_mg,
-    nd.omega6_mg,
+    fen.id AS nutrition_data_id,
+    fen.calories,
+    fen.protein_g,
+    fen.carbs_g,
+    fen.fat_g,
+    fen.saturated_fat_g,
+    fen.polyunsaturated_fat_g,
+    fen.monounsaturated_fat_g,
+    fen.trans_fat_g,
+    fen.cholesterol_mg,
+    fen.sodium_mg,
+    fen.potassium_mg,
+    fen.fiber_g,
+    fen.sugar_g,
+    fen.vitamin_a_mcg,
+    fen.vitamin_c_mg,
+    fen.vitamin_d_mcg,
+    fen.vitamin_e_mg,
+    fen.vitamin_k_mcg,
+    fen.vitamin_b1_mg,
+    fen.vitamin_b2_mg,
+    fen.vitamin_b3_mg,
+    fen.vitamin_b5_mg,
+    fen.vitamin_b6_mg,
+    fen.vitamin_b7_mcg,
+    fen.vitamin_b9_mcg,
+    fen.vitamin_b12_mcg,
+    fen.calcium_mg,
+    fen.iron_mg,
+    fen.magnesium_mg,
+    fen.zinc_mg,
+    fen.selenium_mcg,
+    fen.copper_mg,
+    fen.manganese_mg,
+    fen.chromium_mcg,
+    fen.iodine_mcg,
+    fen.omega3_mg,
+    fen.omega6_mg,
     fe.raw,
     fe.confirmed,
     fe.created_at
    FROM (fitness.food_entry fe
-     LEFT JOIN fitness.nutrition_data nd ON ((fe.nutrition_data_id = nd.id)));
+     LEFT JOIN fitness.food_entry_nutrition fen ON ((fen.food_entry_id = fe.id)));
 
 
 --
@@ -2307,13 +2458,13 @@ CREATE MATERIALIZED VIEW fitness.v_metric_stream AS
          SELECT DISTINCT ON (counts.activity_id, counts.channel) counts.activity_id,
             counts.channel,
             counts.provider_id
-           FROM ( SELECT sensor_sample.activity_id,
-                    sensor_sample.channel,
-                    sensor_sample.provider_id,
+           FROM ( SELECT metric_stream.activity_id,
+                    metric_stream.channel,
+                    metric_stream.provider_id,
                     count(*) AS sample_count
-                   FROM fitness.sensor_sample
-                  WHERE ((sensor_sample.activity_id IS NOT NULL) AND (sensor_sample.scalar IS NOT NULL))
-                  GROUP BY sensor_sample.activity_id, sensor_sample.channel, sensor_sample.provider_id) counts
+                   FROM fitness.metric_stream
+                  WHERE ((metric_stream.activity_id IS NOT NULL) AND (metric_stream.scalar IS NOT NULL))
+                  GROUP BY metric_stream.activity_id, metric_stream.channel, metric_stream.provider_id) counts
           ORDER BY counts.activity_id, counts.channel, counts.sample_count DESC
         ), deduped AS (
          SELECT ss.recorded_at,
@@ -2323,7 +2474,7 @@ CREATE MATERIALIZED VIEW fitness.v_metric_stream AS
             ss.device_id,
             ss.channel,
             ss.scalar
-           FROM (fitness.sensor_sample ss
+           FROM (fitness.metric_stream ss
              JOIN best_source bs ON (((ss.activity_id = bs.activity_id) AND (ss.channel = bs.channel) AND (ss.provider_id = bs.provider_id))))
           WHERE ((ss.activity_id IS NOT NULL) AND (ss.scalar IS NOT NULL))
         )
@@ -2509,48 +2660,48 @@ CREATE VIEW fitness.v_supplement_with_nutrition AS
     s.description,
     s.meal,
     s.sort_order,
-    s.nutrition_data_id,
-    nd.calories,
-    nd.protein_g,
-    nd.carbs_g,
-    nd.fat_g,
-    nd.saturated_fat_g,
-    nd.polyunsaturated_fat_g,
-    nd.monounsaturated_fat_g,
-    nd.trans_fat_g,
-    nd.cholesterol_mg,
-    nd.sodium_mg,
-    nd.potassium_mg,
-    nd.fiber_g,
-    nd.sugar_g,
-    nd.vitamin_a_mcg,
-    nd.vitamin_c_mg,
-    nd.vitamin_d_mcg,
-    nd.vitamin_e_mg,
-    nd.vitamin_k_mcg,
-    nd.vitamin_b1_mg,
-    nd.vitamin_b2_mg,
-    nd.vitamin_b3_mg,
-    nd.vitamin_b5_mg,
-    nd.vitamin_b6_mg,
-    nd.vitamin_b7_mcg,
-    nd.vitamin_b9_mcg,
-    nd.vitamin_b12_mcg,
-    nd.calcium_mg,
-    nd.iron_mg,
-    nd.magnesium_mg,
-    nd.zinc_mg,
-    nd.selenium_mcg,
-    nd.copper_mg,
-    nd.manganese_mg,
-    nd.chromium_mcg,
-    nd.iodine_mcg,
-    nd.omega3_mg,
-    nd.omega6_mg,
+    sn.id AS nutrition_data_id,
+    sn.calories,
+    sn.protein_g,
+    sn.carbs_g,
+    sn.fat_g,
+    sn.saturated_fat_g,
+    sn.polyunsaturated_fat_g,
+    sn.monounsaturated_fat_g,
+    sn.trans_fat_g,
+    sn.cholesterol_mg,
+    sn.sodium_mg,
+    sn.potassium_mg,
+    sn.fiber_g,
+    sn.sugar_g,
+    sn.vitamin_a_mcg,
+    sn.vitamin_c_mg,
+    sn.vitamin_d_mcg,
+    sn.vitamin_e_mg,
+    sn.vitamin_k_mcg,
+    sn.vitamin_b1_mg,
+    sn.vitamin_b2_mg,
+    sn.vitamin_b3_mg,
+    sn.vitamin_b5_mg,
+    sn.vitamin_b6_mg,
+    sn.vitamin_b7_mcg,
+    sn.vitamin_b9_mcg,
+    sn.vitamin_b12_mcg,
+    sn.calcium_mg,
+    sn.iron_mg,
+    sn.magnesium_mg,
+    sn.zinc_mg,
+    sn.selenium_mcg,
+    sn.copper_mg,
+    sn.manganese_mg,
+    sn.chromium_mcg,
+    sn.iodine_mcg,
+    sn.omega3_mg,
+    sn.omega6_mg,
     s.created_at,
     s.updated_at
    FROM (fitness.supplement s
-     LEFT JOIN fitness.nutrition_data nd ON ((s.nutrition_data_id = nd.id)));
+     LEFT JOIN fitness.supplement_nutrition sn ON ((sn.supplement_id = s.id)));
 
 
 --
@@ -2706,6 +2857,22 @@ ALTER TABLE ONLY fitness.exercise
 
 ALTER TABLE ONLY fitness.food_entry_nutrient
     ADD CONSTRAINT food_entry_nutrient_pkey PRIMARY KEY (food_entry_id, nutrient_id);
+
+
+--
+-- Name: food_entry_nutrition food_entry_nutrition_food_entry_id_unique; Type: CONSTRAINT; Schema: fitness; Owner: -
+--
+
+ALTER TABLE ONLY fitness.food_entry_nutrition
+    ADD CONSTRAINT food_entry_nutrition_food_entry_id_unique UNIQUE (food_entry_id);
+
+
+--
+-- Name: food_entry_nutrition food_entry_nutrition_pkey; Type: CONSTRAINT; Schema: fitness; Owner: -
+--
+
+ALTER TABLE ONLY fitness.food_entry_nutrition
+    ADD CONSTRAINT food_entry_nutrition_pkey PRIMARY KEY (id);
 
 
 --
@@ -2922,6 +3089,22 @@ ALTER TABLE ONLY fitness.strength_workout
 
 ALTER TABLE ONLY fitness.supplement_nutrient
     ADD CONSTRAINT supplement_nutrient_pkey PRIMARY KEY (supplement_id, nutrient_id);
+
+
+--
+-- Name: supplement_nutrition supplement_nutrition_pkey; Type: CONSTRAINT; Schema: fitness; Owner: -
+--
+
+ALTER TABLE ONLY fitness.supplement_nutrition
+    ADD CONSTRAINT supplement_nutrition_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: supplement_nutrition supplement_nutrition_supplement_id_unique; Type: CONSTRAINT; Schema: fitness; Owner: -
+--
+
+ALTER TABLE ONLY fitness.supplement_nutrition
+    ADD CONSTRAINT supplement_nutrition_supplement_id_unique UNIQUE (supplement_id);
 
 
 --
@@ -3227,6 +3410,20 @@ CREATE INDEX daily_metrics_user_provider_idx ON fitness.daily_metrics USING btre
 
 
 --
+-- Name: deduped_sensor_activity_time_idx; Type: INDEX; Schema: fitness; Owner: -
+--
+
+CREATE INDEX deduped_sensor_activity_time_idx ON fitness.deduped_sensor USING btree (activity_id, recorded_at);
+
+
+--
+-- Name: deduped_sensor_pk; Type: INDEX; Schema: fitness; Owner: -
+--
+
+CREATE UNIQUE INDEX deduped_sensor_pk ON fitness.deduped_sensor USING btree (activity_id, channel, recorded_at);
+
+
+--
 -- Name: dexa_scan_provider_external_idx; Type: INDEX; Schema: fitness; Owner: -
 --
 
@@ -3311,10 +3508,10 @@ CREATE INDEX food_entry_nutrient_entry_idx ON fitness.food_entry_nutrient USING 
 
 
 --
--- Name: food_entry_nutrition_data_idx; Type: INDEX; Schema: fitness; Owner: -
+-- Name: food_entry_nutrition_entry_idx; Type: INDEX; Schema: fitness; Owner: -
 --
 
-CREATE INDEX food_entry_nutrition_data_idx ON fitness.food_entry USING btree (nutrition_data_id);
+CREATE INDEX food_entry_nutrition_entry_idx ON fitness.food_entry_nutrition USING btree (food_entry_id);
 
 
 --
@@ -3500,10 +3697,10 @@ CREATE UNIQUE INDEX menstrual_period_user_start_idx ON fitness.menstrual_period 
 
 
 --
--- Name: metric_stream_activity_time_idx; Type: INDEX; Schema: fitness; Owner: -
+-- Name: metric_stream_activity_channel_time_idx; Type: INDEX; Schema: fitness; Owner: -
 --
 
-CREATE INDEX metric_stream_activity_time_idx ON fitness.metric_stream USING btree (activity_id, recorded_at);
+CREATE INDEX metric_stream_activity_channel_time_idx ON fitness.metric_stream USING btree (activity_id, channel, recorded_at);
 
 
 --
@@ -3521,24 +3718,10 @@ CREATE INDEX metric_stream_recorded_at_idx ON fitness.metric_stream USING btree 
 
 
 --
--- Name: metric_stream_user_hr_time_idx; Type: INDEX; Schema: fitness; Owner: -
+-- Name: metric_stream_user_channel_time_idx; Type: INDEX; Schema: fitness; Owner: -
 --
 
-CREATE INDEX metric_stream_user_hr_time_idx ON fitness.metric_stream USING btree (user_id, recorded_at DESC) WHERE (heart_rate IS NOT NULL);
-
-
---
--- Name: metric_stream_user_provider_idx; Type: INDEX; Schema: fitness; Owner: -
---
-
-CREATE INDEX metric_stream_user_provider_idx ON fitness.metric_stream USING btree (user_id, provider_id);
-
-
---
--- Name: metric_stream_user_time_idx; Type: INDEX; Schema: fitness; Owner: -
---
-
-CREATE INDEX metric_stream_user_time_idx ON fitness.metric_stream USING btree (user_id, recorded_at DESC);
+CREATE INDEX metric_stream_user_channel_time_idx ON fitness.metric_stream USING btree (user_id, channel, recorded_at);
 
 
 --
@@ -3584,38 +3767,17 @@ CREATE UNIQUE INDEX oauth_token_user_provider_uidx ON fitness.oauth_token USING 
 
 
 --
+-- Name: provider_stats_user_provider_idx; Type: INDEX; Schema: fitness; Owner: -
+--
+
+CREATE UNIQUE INDEX provider_stats_user_provider_idx ON fitness.provider_stats USING btree (user_id, provider_id);
+
+
+--
 -- Name: provider_user_name_idx; Type: INDEX; Schema: fitness; Owner: -
 --
 
 CREATE UNIQUE INDEX provider_user_name_idx ON fitness.provider USING btree (user_id, name);
-
-
---
--- Name: sensor_sample_activity_channel_time_idx; Type: INDEX; Schema: fitness; Owner: -
---
-
-CREATE INDEX sensor_sample_activity_channel_time_idx ON fitness.sensor_sample USING btree (activity_id, channel, recorded_at);
-
-
---
--- Name: sensor_sample_provider_time_idx; Type: INDEX; Schema: fitness; Owner: -
---
-
-CREATE INDEX sensor_sample_provider_time_idx ON fitness.sensor_sample USING btree (provider_id, recorded_at);
-
-
---
--- Name: sensor_sample_recorded_at_idx; Type: INDEX; Schema: fitness; Owner: -
---
-
-CREATE INDEX sensor_sample_recorded_at_idx ON fitness.sensor_sample USING btree (recorded_at DESC);
-
-
---
--- Name: sensor_sample_user_channel_time_idx; Type: INDEX; Schema: fitness; Owner: -
---
-
-CREATE INDEX sensor_sample_user_channel_time_idx ON fitness.sensor_sample USING btree (user_id, channel, recorded_at);
 
 
 --
@@ -3724,10 +3886,10 @@ CREATE INDEX supplement_nutrient_supplement_idx ON fitness.supplement_nutrient U
 
 
 --
--- Name: supplement_nutrition_data_idx; Type: INDEX; Schema: fitness; Owner: -
+-- Name: supplement_nutrition_supplement_idx; Type: INDEX; Schema: fitness; Owner: -
 --
 
-CREATE INDEX supplement_nutrition_data_idx ON fitness.supplement USING btree (nutrition_data_id);
+CREATE INDEX supplement_nutrition_supplement_idx ON fitness.supplement_nutrition USING btree (supplement_id);
 
 
 --
@@ -4042,11 +4204,11 @@ ALTER TABLE ONLY fitness.food_entry_nutrient
 
 
 --
--- Name: food_entry food_entry_nutrition_data_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
+-- Name: food_entry_nutrition food_entry_nutrition_food_entry_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
 --
 
-ALTER TABLE ONLY fitness.food_entry
-    ADD CONSTRAINT food_entry_nutrition_data_id_fkey FOREIGN KEY (nutrition_data_id) REFERENCES fitness.nutrition_data(id);
+ALTER TABLE ONLY fitness.food_entry_nutrition
+    ADD CONSTRAINT food_entry_nutrition_food_entry_id_fkey FOREIGN KEY (food_entry_id) REFERENCES fitness.food_entry(id) ON DELETE CASCADE;
 
 
 --
@@ -4194,30 +4356,6 @@ ALTER TABLE ONLY fitness.menstrual_period
 
 
 --
--- Name: metric_stream metric_stream_activity_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
---
-
-ALTER TABLE ONLY fitness.metric_stream
-    ADD CONSTRAINT metric_stream_activity_id_fkey FOREIGN KEY (activity_id) REFERENCES fitness.activity(id) ON DELETE CASCADE;
-
-
---
--- Name: metric_stream metric_stream_provider_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
---
-
-ALTER TABLE ONLY fitness.metric_stream
-    ADD CONSTRAINT metric_stream_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES fitness.provider(id);
-
-
---
--- Name: metric_stream metric_stream_user_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
---
-
-ALTER TABLE ONLY fitness.metric_stream
-    ADD CONSTRAINT metric_stream_user_id_fkey FOREIGN KEY (user_id) REFERENCES fitness.user_profile(id);
-
-
---
 -- Name: nutrition_daily nutrition_daily_provider_id_provider_id_fk; Type: FK CONSTRAINT; Schema: fitness; Owner: -
 --
 
@@ -4258,26 +4396,26 @@ ALTER TABLE ONLY fitness.provider
 
 
 --
--- Name: sensor_sample sensor_sample_activity_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
+-- Name: metric_stream sensor_sample_activity_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
 --
 
-ALTER TABLE ONLY fitness.sensor_sample
+ALTER TABLE ONLY fitness.metric_stream
     ADD CONSTRAINT sensor_sample_activity_id_fkey FOREIGN KEY (activity_id) REFERENCES fitness.activity(id) ON DELETE CASCADE;
 
 
 --
--- Name: sensor_sample sensor_sample_provider_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
+-- Name: metric_stream sensor_sample_provider_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
 --
 
-ALTER TABLE ONLY fitness.sensor_sample
+ALTER TABLE ONLY fitness.metric_stream
     ADD CONSTRAINT sensor_sample_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES fitness.provider(id);
 
 
 --
--- Name: sensor_sample sensor_sample_user_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
+-- Name: metric_stream sensor_sample_user_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
 --
 
-ALTER TABLE ONLY fitness.sensor_sample
+ALTER TABLE ONLY fitness.metric_stream
     ADD CONSTRAINT sensor_sample_user_id_fkey FOREIGN KEY (user_id) REFERENCES fitness.user_profile(id);
 
 
@@ -4378,11 +4516,11 @@ ALTER TABLE ONLY fitness.supplement_nutrient
 
 
 --
--- Name: supplement supplement_nutrition_data_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
+-- Name: supplement_nutrition supplement_nutrition_supplement_id_fkey; Type: FK CONSTRAINT; Schema: fitness; Owner: -
 --
 
-ALTER TABLE ONLY fitness.supplement
-    ADD CONSTRAINT supplement_nutrition_data_id_fkey FOREIGN KEY (nutrition_data_id) REFERENCES fitness.nutrition_data(id);
+ALTER TABLE ONLY fitness.supplement_nutrition
+    ADD CONSTRAINT supplement_nutrition_supplement_id_fkey FOREIGN KEY (supplement_id) REFERENCES fitness.supplement(id) ON DELETE CASCADE;
 
 
 --
@@ -4428,3 +4566,49 @@ ALTER TABLE ONLY fitness.webhook_subscription
 --
 -- PostgreSQL database dump complete
 --
+
+
+--
+-- Timescale hypertable metadata is not represented as ordinary schema DDL by pg_dump.
+--
+
+SELECT public.create_hypertable(
+  'fitness.metric_stream'::regclass,
+  'recorded_at'::name,
+  if_not_exists => TRUE
+);
+
+SELECT public.set_chunk_time_interval('fitness.metric_stream', INTERVAL '1 day');
+
+ALTER TABLE fitness.metric_stream
+SET (
+  timescaledb.compress = true,
+  timescaledb.compress_segmentby = 'user_id,provider_id,channel',
+  timescaledb.compress_orderby = 'recorded_at DESC'
+);
+
+SELECT public.add_compression_policy(
+  'fitness.metric_stream',
+  compress_after => INTERVAL '7 days',
+  if_not_exists => true
+);
+
+
+--
+-- Bootstrap data preserved from compacted migration history.
+--
+
+INSERT INTO fitness.journal_question (slug, display_name, category, data_type, sort_order)
+VALUES
+  ('caffeine', 'Caffeine', 'substance', 'boolean', 1),
+  ('alcohol', 'Alcohol', 'substance', 'boolean', 2),
+  ('melatonin', 'Melatonin', 'substance', 'boolean', 3),
+  ('sleep_aid', 'Sleep Aid', 'substance', 'boolean', 4),
+  ('meditation', 'Meditation', 'activity', 'boolean', 10),
+  ('morning_stretch', 'Morning Stretch', 'activity', 'boolean', 11),
+  ('hydration', 'Hydration', 'wellness', 'numeric', 20),
+  ('sleep_quality', 'Sleep Quality', 'wellness', 'numeric', 21),
+  ('energy', 'Energy', 'wellness', 'numeric', 22),
+  ('mood', 'Mood', 'wellness', 'numeric', 23),
+  ('recovery', 'Recovery', 'wellness', 'numeric', 24)
+ON CONFLICT (slug) DO NOTHING;

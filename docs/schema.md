@@ -99,6 +99,8 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 ### Materialized Views
 
+Existing materialized views are not dropped or rebuilt automatically during deploy. A missing view can be created from the canonical SQL in `drizzle/_views`, but definition drift on an existing view requires explicit maintenance so production deploys do not trigger full-history rebuilds under traffic.
+
 | View | Purpose |
 |------|---------|
 | `fitness.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from sensor_sample with dedup |
@@ -106,8 +108,12 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 ### Continuous Aggregates
 
+Use Timescale continuous aggregates for straightforward time-bucket rollups where the query is grouped by time and stable dimensions. Keep deduplication-heavy views as materialized views unless the data model can express the logic as an incremental Timescale aggregate.
+
 | View | Purpose |
 |------|---------|
+| `fitness.cagg_metric_daily` | Daily stats per (user, metric type, source/provider) from metric_stream |
+| `fitness.cagg_metric_weekly` | Weekly rollup from daily metric cagg |
 | `fitness.cagg_sensor_daily` | Daily stats per (user, channel) from sensor_sample |
 | `fitness.cagg_sensor_weekly` | Weekly rollup from daily cagg |
 

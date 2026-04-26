@@ -251,7 +251,7 @@ describe("syncMaterializedViews", () => {
     expect(executedQueries()).not.toContain('REFRESH MATERIALIZED VIEW "fitness"."v_test"');
   });
 
-  it("recreates views whose dependency fingerprint changed even when the SQL hash matches", async () => {
+  it("requires manual maintenance when dependency fingerprint changed even when the SQL hash matches", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);
@@ -278,15 +278,17 @@ describe("syncMaterializedViews", () => {
       return Promise.resolve({ rows: [] });
     });
 
-    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+    await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
+      "Materialized view maintenance required",
+    );
 
-    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
+    expect(executedQueries()).not.toContain(viewSql);
   });
 
-  it("records dependency fingerprints after successful sync", async () => {
+  it("records dependency fingerprints when adopting an existing canonical view", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
 
@@ -297,7 +299,13 @@ describe("syncMaterializedViews", () => {
         return Promise.resolve({ rows: [] });
       }
       if (text.includes("FROM pg_matviews")) {
-        return Promise.resolve({ rows: [{ present: 1, populated: true }] });
+        if (text.includes("ispopulated")) {
+          return Promise.resolve({ rows: [{ populated: true }] });
+        }
+        return Promise.resolve({ rows: [{ present: 1 }] });
+      }
+      if (text.includes("SELECT pg_get_viewdef")) {
+        return Promise.resolve({ rows: [{ definition: "SELECT 1" }] });
       }
       if (text.includes("jsonb_build_object")) {
         return Promise.resolve({ rows: [{ fingerprint_source: "new-fingerprint" }] });
@@ -328,26 +336,33 @@ describe("syncMaterializedViews", () => {
     ).toBe(true);
   });
 
-  it("recreates views whose hash matches but were CASCADE-dropped", async () => {
+  it("creates views whose hash matches but were CASCADE-dropped", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockClientQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ populated: true }] });
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("FROM drizzle.__view_hashes") && text.includes("view_name = $1")) {
+        return Promise.resolve({ rows: [{ hash: expectedHash }] });
+      }
+      if (text.includes("jsonb_build_object")) {
+        return Promise.resolve({ rows: [{ fingerprint_source: "[]" }] });
+      }
+      if (text.includes("FROM pg_matviews")) {
+        if (text.includes("ispopulated")) {
+          return Promise.resolve({ rows: [{ populated: true }] });
+        }
+        return Promise.resolve({ rows: [] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
     expect(executedQueries()).toContain(viewSql);
@@ -356,7 +371,7 @@ describe("syncMaterializedViews", () => {
     );
   });
 
-  it("recreates views when the live definition is stale despite a matching stored hash", async () => {
+  it("requires manual maintenance when the live definition is stale despite a matching stored hash", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);
@@ -385,14 +400,15 @@ describe("syncMaterializedViews", () => {
       return Promise.resolve({ rows: [] });
     });
 
-    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+    await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
+      "Materialized view maintenance required",
+    );
 
-    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
     expect(executedQueries()).toContain("SELECT pg_get_viewdef($1::regclass, true) AS definition");
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
-    expect(executedQueries()).toContain(viewSql);
+    expect(executedQueries()).not.toContain(viewSql);
   });
 
   it("skips unchanged views when whitespace and trailing semicolons differ", async () => {
@@ -433,28 +449,37 @@ describe("syncMaterializedViews", () => {
     );
   });
 
-  it("recreates views when the live definition cannot be read", async () => {
+  it("requires manual maintenance when the live definition cannot be read", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockClientQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ hash: expectedHash }] })
-      .mockResolvedValueOnce({ rows: [{ present: 1 }] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ populated: true }] });
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("FROM drizzle.__view_hashes") && text.includes("view_name = $1")) {
+        return Promise.resolve({ rows: [{ hash: expectedHash }] });
+      }
+      if (text.includes("jsonb_build_object")) {
+        return Promise.resolve({ rows: [{ fingerprint_source: "[]" }] });
+      }
+      if (text.includes("SELECT pg_get_viewdef")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes("FROM pg_matviews")) {
+        if (text.includes("ispopulated")) {
+          return Promise.resolve({ rows: [{ populated: true }] });
+        }
+        return Promise.resolve({ rows: [{ present: 1 }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
-    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+    await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
+      "Materialized view maintenance required",
+    );
 
-    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
   });
@@ -494,31 +519,35 @@ describe("syncMaterializedViews", () => {
     expect(executedQueries()).toContain('REFRESH MATERIALIZED VIEW "fitness"."v_test"');
   });
 
-  it("recreates views whose hash has changed", async () => {
+  it("requires manual maintenance when an existing view definition changed", async () => {
     const { syncMaterializedViews } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
-    mockClientQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ hash: "old-hash-that-does-not-match" }] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ populated: true }] });
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("FROM drizzle.__view_hashes") && text.includes("view_name = $1")) {
+        return Promise.resolve({
+          rows: [{ hash: "old-hash-that-does-not-match", dependency_fingerprint_hash: null }],
+        });
+      }
+      if (text.includes("jsonb_build_object")) {
+        return Promise.resolve({ rows: [{ fingerprint_source: "[]" }] });
+      }
+      if (text.includes("FROM pg_matviews")) {
+        return Promise.resolve({ rows: [{ present: 1, populated: true }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
 
-    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+    await expect(syncMaterializedViews("postgres://localhost/test", "/tmp/views")).rejects.toThrow(
+      "Materialized view maintenance required",
+    );
 
-    expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
-    expect(executedQueries()).toContain(viewSql);
-    expect(executedQueries()).not.toContain(
-      "SELECT pg_get_viewdef($1::regclass, true) AS definition",
-    );
+    expect(executedQueries()).not.toContain(viewSql);
   });
 
   it("creates new views that have no stored hash", async () => {
@@ -539,9 +568,10 @@ describe("syncMaterializedViews", () => {
     const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(result).toEqual({ synced: 1, skipped: 0, refreshed: 0 });
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_new" CASCADE',
     );
+    expect(executedQueries()).toContain(viewSql);
   });
 
   it("processes files in sorted order", async () => {
@@ -578,7 +608,7 @@ describe("syncMaterializedViews", () => {
 
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_test" CASCADE',
     );
     expect(executedQueries()).toContain("CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1");
@@ -633,16 +663,28 @@ describe("syncMaterializedViews", () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);
-    const expectedFingerprintHash = hash("[]");
+    const expectedFingerprintHash = hash("created-fingerprint");
+    let fingerprintQueryCount = 0;
 
     mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
     mockReadFileSync.mockReturnValue(viewSql);
     mockClientQuery.mockImplementation((text: string) => {
       if (text.includes("jsonb_build_object")) {
-        return Promise.resolve({ rows: [{ fingerprint_source: "[]" }] });
+        fingerprintQueryCount++;
+        return Promise.resolve({
+          rows: [
+            {
+              fingerprint_source:
+                fingerprintQueryCount === 1 ? "missing-view-fingerprint" : "created-fingerprint",
+            },
+          ],
+        });
       }
       if (text.includes("FROM pg_matviews")) {
-        return Promise.resolve({ rows: [{ populated: true }] });
+        if (text.includes("ispopulated")) {
+          return Promise.resolve({ rows: [{ populated: true }] });
+        }
+        return Promise.resolve({ rows: [] });
       }
       return Promise.resolve({ rows: [] });
     });
@@ -720,7 +762,7 @@ describe("syncMaterializedViews", () => {
           if (text.includes("ispopulated")) {
             return relation === "v_second" ? { rows: [{ populated: true }] } : { rows: [] };
           }
-          return relation === "v_second" ? { rows: [{ present: 1 }] } : { rows: [] };
+          return { rows: [] };
         }
         return { rows: [] };
       },
@@ -735,13 +777,14 @@ describe("syncMaterializedViews", () => {
       throw error;
     }
     expect(error).toMatchObject({
-      message: "Failed to recreate 1 view(s): fitness.v_first",
+      message: "Failed to create 1 view(s): fitness.v_first",
     });
     expect(error.errors).toEqual([expect.objectContaining({ message: "No space left on device" })]);
 
-    expect(executedQueries()).toContain(
+    expect(executedQueries()).not.toContain(
       'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_second" CASCADE',
     );
+    expect(executedQueries()).toContain("CREATE MATERIALIZED VIEW fitness.v_second AS SELECT 2");
   });
 
   it("always closes the connection in finally block", async () => {
@@ -759,7 +802,7 @@ describe("syncMaterializedViews", () => {
     expect(mockClientEnd).toHaveBeenCalled();
   });
 
-  it("logs when a hash-matched view is missing and must be recreated", async () => {
+  it("logs when a hash-matched view is missing and must be created", async () => {
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
@@ -788,7 +831,7 @@ describe("syncMaterializedViews", () => {
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(warnSpy).toHaveBeenCalledWith(
-      "[views] fitness.v_test hash matches but view is missing (CASCADE-dropped?), recreating",
+      "[views] fitness.v_test hash matches but view is missing (CASCADE-dropped?), creating",
     );
     warnSpy.mockRestore();
   });

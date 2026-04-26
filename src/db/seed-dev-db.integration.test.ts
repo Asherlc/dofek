@@ -101,7 +101,9 @@ async function setupBareDatabase(): Promise<BareDatabaseContext> {
 
     const parsedViews = viewFiles.map((fileName) => {
       const content = readFileSync(join(viewsDir, fileName), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+      const match = content.match(
+        /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
+      );
       return { content, viewName: match?.[1] };
     });
 

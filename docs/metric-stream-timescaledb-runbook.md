@@ -72,15 +72,108 @@ That migration configures:
 
 ## 5) Backfill compression for old chunks
 
-Run in batches to avoid long locks:
+Do not run this while materialized-view refresh is rebuilding `deduped_sensor`,
+`activity_summary`, or `provider_stats`. Those jobs scan `metric_stream` and can
+fight chunk compression for locks.
+
+Check active work first:
 
 ```sql
-SELECT compress_chunk(c, if_not_compressed => TRUE)
-FROM show_chunks('fitness.metric_stream', older_than => INTERVAL '7 days') AS c
-LIMIT 20;
+SELECT pid, now() - query_start AS age, wait_event_type, wait_event, state, left(query, 220) AS query
+FROM pg_stat_activity
+WHERE datname = 'health'
+  AND state <> 'idle'
+  AND (
+    query ILIKE '%metric_stream%'
+    OR query ILIKE '%deduped_sensor%'
+    OR query ILIKE '%activity_summary%'
+    OR query ILIKE '%provider_stats%'
+  )
+ORDER BY query_start NULLS LAST;
 ```
 
-Repeat until complete.
+If a view refresh is already running and blocking maintenance, cancel that backend
+instead of stacking compression behind it:
+
+```sql
+SELECT pg_cancel_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'health'
+  AND pid <> pg_backend_pid()
+  AND (
+    query ILIKE '%deduped_sensor%'
+    OR query ILIKE '%activity_summary%'
+    OR query ILIKE '%provider_stats%'
+  );
+```
+
+Compress old chunks one at a time with short lock timeouts. This records chunks
+that resist compression without blocking production indefinitely:
+
+```bash
+container=$(docker ps --filter label=com.docker.swarm.service.name=dofek_db --format '{{.ID}}' | head -n 1)
+run_id=$(date -u +%Y%m%dT%H%M%SZ)
+chunk_file="/tmp/metric_stream_chunks_${run_id}.txt"
+failed_file="/tmp/metric_stream_compression_failed_${run_id}.txt"
+: > "$failed_file"
+
+docker exec -i "$container" psql -U health -d health -At -P pager=off > "$chunk_file" <<'SQL'
+SELECT format('%I.%I', chunk_schema, chunk_name)
+FROM timescaledb_information.chunks
+WHERE hypertable_schema = 'fitness'
+  AND hypertable_name = 'metric_stream'
+  AND NOT is_compressed
+  AND range_end < now() - INTERVAL '7 days'
+ORDER BY range_start NULLS LAST, chunk_schema, chunk_name;
+SQL
+
+while IFS= read -r chunk; do
+  echo "compressing $chunk"
+  if ! docker exec -i "$container" psql -v ON_ERROR_STOP=1 -U health -d health -At -P pager=off <<SQL
+SET lock_timeout = '3s';
+SET statement_timeout = '180s';
+SET maintenance_work_mem = '32MB';
+SELECT compress_chunk('$chunk'::regclass, if_not_compressed => TRUE);
+SQL
+  then
+    echo "$chunk" >> "$failed_file"
+  fi
+done < "$chunk_file"
+
+echo "failed_file=$failed_file"
+cat "$failed_file"
+```
+
+Treat `already compressed` / `already converted to columnstore` notices as
+non-blocking. They can happen when the background compression policy or a prior
+loop compressed a chunk after the chunk list was generated.
+
+Do not force-compress the active writer chunk while app services are writing.
+If a chunk holds relation locks long enough to block inserts, cancel that
+`compress_chunk` backend and record the chunk name, range, and elapsed time.
+
+Reconcile from Timescale metadata after every pass:
+
+```sql
+SELECT is_compressed, count(*) AS chunks
+FROM timescaledb_information.chunks
+WHERE hypertable_schema = 'fitness'
+  AND hypertable_name = 'metric_stream'
+GROUP BY is_compressed
+ORDER BY is_compressed;
+
+SELECT chunk_schema, chunk_name, range_start, range_end, is_compressed
+FROM timescaledb_information.chunks
+WHERE hypertable_schema = 'fitness'
+  AND hypertable_name = 'metric_stream'
+  AND NOT is_compressed
+ORDER BY range_start NULLS LAST, chunk_schema, chunk_name;
+
+SELECT pg_size_pretty(hypertable_size('fitness.metric_stream')) AS hypertable_size;
+```
+
+Record resistant chunks in `.context/metric-stream-compression-YYYY-MM-DD.md`
+with the error, elapsed time, and whether inserts were blocked.
 
 ## 6) Resume services
 

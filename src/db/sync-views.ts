@@ -68,6 +68,23 @@ function parseQualifiedName(name: string): { schema: string; relation: string } 
   };
 }
 
+async function recordMaterializedViewHash(
+  client: Pick<Client, "query">,
+  viewName: string,
+  hash: string,
+  dependencyFingerprintHash: string,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO drizzle.__view_hashes (view_name, hash, dependency_fingerprint_hash, applied_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (view_name) DO UPDATE
+     SET hash = $2,
+         dependency_fingerprint_hash = $3,
+         applied_at = NOW()`,
+    [viewName, hash, dependencyFingerprintHash],
+  );
+}
+
 export async function ensureMaterializedViewTrackingTables(
   client: Pick<Client, "query">,
 ): Promise<void> {
@@ -190,12 +207,13 @@ async function getMaterializedViewDefinition(
  * For each view file:
  * 1. Compute a SHA-256 hash of the SQL content
  * 2. Compare against the stored hash in drizzle.__view_hashes
- * 3. Only drop and recreate the view if the hash has changed
+ * 3. Create missing views, but do not drop or rebuild existing views automatically
  * 4. After processing all views, refresh any that exist but are unpopulated
  *    (can happen after a Postgres crash during recovery)
  *
- * This avoids the 2+ minute downtime caused by unconditionally
- * dropping and recreating all materialized views on every deploy.
+ * Definition drift on an existing view requires explicit maintenance. This
+ * avoids the downtime and lock pressure caused by destructive rebuilds during
+ * deploy or sync startup.
  */
 export async function syncMaterializedViews(
   databaseUrl: string,
@@ -228,6 +246,7 @@ export async function syncMaterializedViews(
     let skipped = 0;
     const allViewNames: string[] = [];
     const failedViews: Array<{ viewName: string; error: unknown }> = [];
+    const maintenanceRequiredViews: Array<{ viewName: string; reason: string }> = [];
 
     for (const file of files) {
       const content = readFileSync(join(dir, file), "utf-8");
@@ -278,47 +297,74 @@ export async function syncMaterializedViews(
             skipped++;
             continue;
           }
-          logger.warn(`[views] ${viewName} hash matches but live definition differs, recreating`);
+          logger.warn(`[views] ${viewName} hash matches but live definition differs`);
         } else {
           logger.warn(
-            `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), recreating`,
+            `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), creating`,
           );
         }
       }
       if (storedHash === hash && dependencyFingerprintChanged) {
-        logger.warn(`[views] ${viewName} dependency fingerprint changed, recreating`);
+        logger.warn(`[views] ${viewName} dependency fingerprint changed`);
       }
 
-      // View definition changed (or new) — drop and recreate
-      try {
-        const recreateStart = performance.now();
-        logger.info(`[views] ${viewName} changed, recreating`);
-        await client.query(
-          `DROP MATERIALIZED VIEW IF EXISTS ${quoteQualifiedIdentifier(viewName)} CASCADE`,
+      const existsBeforeCreate = await viewExistsInCatalog(client, viewName);
+      if (existsBeforeCreate) {
+        const canonicalDefinition = extractViewDefinitionBody(content);
+        const liveDefinition = await getMaterializedViewDefinition(client, viewName);
+
+        if (
+          !storedHash &&
+          canonicalDefinition &&
+          liveDefinition &&
+          normalizeComparableSql(canonicalDefinition) === normalizeComparableSql(liveDefinition)
+        ) {
+          await recordMaterializedViewHash(client, viewName, hash, dependencyFingerprintHash);
+          logger.info(
+            `[views] ${viewName} exists and matches canonical definition, recording hash`,
+          );
+          skipped++;
+          continue;
+        }
+
+        const reason =
+          storedHash === hash && dependencyFingerprintChanged
+            ? "dependency fingerprint changed"
+            : storedHash === hash
+              ? "live definition differs from canonical definition"
+              : "view definition changed";
+        logger.error(
+          `[views] ${viewName} ${reason}; manual materialized-view maintenance required`,
         );
+        maintenanceRequiredViews.push({ viewName, reason });
+        continue;
+      }
+
+      // View is missing or new — create it from the canonical definition without
+      // dropping any existing live object. Existing changed views require manual
+      // maintenance so deploy/runtime sync cannot remove serving views.
+      try {
+        const createStart = performance.now();
+        logger.info(`[views] ${viewName} missing, creating`);
 
         const statements = splitSqlStatements(content);
         for (const statement of statements) {
           await client.query(statement);
         }
 
-        // Record the hash and the dependency fingerprint together so the deploy
-        // planner can detect underlying table/column changes cheaply later.
-        await client.query(
-          `INSERT INTO drizzle.__view_hashes (view_name, hash, dependency_fingerprint_hash, applied_at)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (view_name) DO UPDATE
-           SET hash = $2,
-               dependency_fingerprint_hash = $3,
-               applied_at = NOW()`,
-          [viewName, hash, dependencyFingerprintHash],
+        // Record the fingerprint after the view exists so the dependency query
+        // sees the newly created catalog dependencies.
+        const createdDependencyFingerprintHash = await computeViewDependencyFingerprintHash(
+          client,
+          viewName,
         );
+        await recordMaterializedViewHash(client, viewName, hash, createdDependencyFingerprintHash);
         logger.info(
-          `[views] ${viewName} recreate finished duration_ms=${Math.round(performance.now() - recreateStart)}`,
+          `[views] ${viewName} create finished duration_ms=${Math.round(performance.now() - createStart)}`,
         );
         synced++;
       } catch (error) {
-        logger.error(`[views] Failed to recreate ${viewName}: ${error}`);
+        logger.error(`[views] Failed to create ${viewName}: ${error}`);
         failedViews.push({ viewName, error });
       }
     }
@@ -348,8 +394,15 @@ export async function syncMaterializedViews(
       const names = failedViews.map(({ viewName }) => viewName).join(", ");
       throw new AggregateError(
         failedViews.map(({ error }) => error),
-        `Failed to recreate ${failedViews.length} view(s): ${names}`,
+        `Failed to create ${failedViews.length} view(s): ${names}`,
       );
+    }
+
+    if (maintenanceRequiredViews.length > 0) {
+      const details = maintenanceRequiredViews
+        .map(({ viewName, reason }) => `${viewName} (${reason})`)
+        .join(", ");
+      throw new Error(`Materialized view maintenance required: ${details}`);
     }
 
     await client.query(`UPDATE drizzle.__drizzle_migrations
