@@ -234,6 +234,43 @@ describe("ActivityDetailScreen", () => {
     expect(enabled).toBe(true);
   });
 
+  it("labels the heart rate zone chart with zone numbers", async () => {
+    mockHrZonesQuery.mockReturnValue({
+      data: [
+        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300 },
+        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600 },
+      ],
+      isLoading: false,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Zone 1")).toBeTruthy();
+    expect(screen.getByText("Zone 2")).toBeTruthy();
+    expect(screen.queryByText("Z1 Recovery")).toBeNull();
+  });
+
+  it("labels the power zone chart with zone numbers", async () => {
+    mockPowerZonesQuery.mockReturnValue({
+      data: {
+        ftp: 250,
+        zones: [
+          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300 },
+          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600 },
+        ],
+      },
+      isLoading: false,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Zone 1")).toBeTruthy();
+    expect(screen.getByText("Zone 2")).toBeTruthy();
+    expect(screen.queryByText("Z1 Recovery")).toBeNull();
+  });
+
   it("renders without crashing for non-cycling workouts with heart rate data but no power", async () => {
     mockByIdQuery.mockReturnValue({
       data: {

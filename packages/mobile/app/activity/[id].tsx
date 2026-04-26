@@ -394,13 +394,36 @@ interface HrZone {
   seconds: number;
 }
 
-function HrZonesChart({ zones }: { zones: HrZone[] }) {
-  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
+interface PowerZone {
+  zone: number;
+  label: string;
+  minPct: number;
+  maxPct: number | null;
+  seconds: number;
+}
+
+interface ZoneDistributionDatum {
+  zone: number;
+  seconds: number;
+}
+
+function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
+  zones,
+  title,
+  description,
+  zoneColors,
+}: {
+  zones: ZoneItem[];
+  title: string;
+  description: string;
+  zoneColors: string[];
+}) {
+  const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
   if (totalSeconds === 0) return null;
 
-  const barHeight = 24;
-  const gap = 8;
-  const labelWidth = 80;
+  const barHeight = 22;
+  const gap = 6;
+  const labelWidth = 64;
   const pctWidth = 44;
   const barAreaWidth = CHART_WIDTH - labelWidth - pctWidth - 16;
   const chartTotalHeight = zones.length * (barHeight + gap) - gap;
@@ -408,24 +431,22 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
   return (
     <View style={chartStyles.container}>
       <ChartTitleWithTooltip
-        title="Heart Rate Zones"
-        description="This chart shows how much time you spent in each heart rate zone during the activity."
+        title={title}
+        description={description}
         textStyle={chartStyles.title}
       />
       <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
-        {zones.map((zone, i) => {
-          const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
+        {zones.map((zoneItem, zoneIndex) => {
+          const percentage = totalSeconds > 0 ? zoneItem.seconds / totalSeconds : 0;
           const barWidth = Math.max(percentage * barAreaWidth, 2);
-          const rowY = i * (barHeight + gap);
-          const zoneColor = HEART_RATE_ZONE_COLORS[i] ?? "#71717a";
+          const rowY = zoneIndex * (barHeight + gap);
+          const zoneColor = zoneColors[zoneIndex] ?? "#71717a";
 
           return (
-            <G key={zone.zone}>
-              {/* Zone label */}
+            <G key={zoneItem.zone}>
               <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
-                {`Z${zone.zone} ${zone.label}`}
+                {`Zone ${zoneItem.zone}`}
               </SvgText>
-              {/* Bar background */}
               <Rect
                 x={labelWidth}
                 y={rowY}
@@ -434,7 +455,6 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
                 rx={4}
                 fill={colors.surfaceSecondary}
               />
-              {/* Bar fill */}
               <Rect
                 x={labelWidth}
                 y={rowY}
@@ -443,7 +463,6 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
                 rx={4}
                 fill={zoneColor}
               />
-              {/* Percentage label */}
               <SvgText
                 x={labelWidth + barAreaWidth + 8}
                 y={rowY + barHeight / 2 + 4}
@@ -461,74 +480,25 @@ function HrZonesChart({ zones }: { zones: HrZone[] }) {
   );
 }
 
-interface PowerZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number | null;
-  seconds: number;
+export function HrZonesChart({ zones }: { zones: HrZone[] }) {
+  return (
+    <ZoneDistributionChart
+      zones={zones}
+      title="Heart Rate Zones"
+      description="This chart shows how much time you spent in each heart rate zone during the activity."
+      zoneColors={HEART_RATE_ZONE_COLORS}
+    />
+  );
 }
 
-function PowerZonesChart({ zones }: { zones: PowerZone[] }) {
-  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
-  if (totalSeconds === 0) return null;
-
-  const barHeight = 22;
-  const gap = 6;
-  const labelWidth = 100;
-  const pctWidth = 44;
-  const barAreaWidth = CHART_WIDTH - labelWidth - pctWidth - 16;
-  const chartTotalHeight = zones.length * (barHeight + gap) - gap;
-
+export function PowerZonesChart({ zones }: { zones: PowerZone[] }) {
   return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title="Power Zones"
-        description="This chart shows how much time you spent in each power zone."
-        textStyle={chartStyles.title}
-      />
-      <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
-        {zones.map((zone, i) => {
-          const percentage = totalSeconds > 0 ? zone.seconds / totalSeconds : 0;
-          const barWidth = Math.max(percentage * barAreaWidth, 2);
-          const rowY = i * (barHeight + gap);
-          const zoneColor = POWER_ZONE_COLORS[i] ?? "#71717a";
-
-          return (
-            <G key={zone.zone}>
-              <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
-                {`Z${zone.zone} ${zone.label}`}
-              </SvgText>
-              <Rect
-                x={labelWidth}
-                y={rowY}
-                width={barAreaWidth}
-                height={barHeight}
-                rx={4}
-                fill={colors.surfaceSecondary}
-              />
-              <Rect
-                x={labelWidth}
-                y={rowY}
-                width={barWidth}
-                height={barHeight}
-                rx={4}
-                fill={zoneColor}
-              />
-              <SvgText
-                x={labelWidth + barAreaWidth + 8}
-                y={rowY + barHeight / 2 + 4}
-                fill={colors.text}
-                fontSize={12}
-                fontWeight="600"
-              >
-                {`${Math.round(percentage * 100)}%`}
-              </SvgText>
-            </G>
-          );
-        })}
-      </Svg>
-    </View>
+    <ZoneDistributionChart
+      zones={zones}
+      title="Power Zones"
+      description="This chart shows how much time you spent in each power zone."
+      zoneColors={POWER_ZONE_COLORS}
+    />
   );
 }
 
