@@ -231,15 +231,12 @@ describe("createAuthRouter", () => {
 
     it("stores validated return_to when provided", async () => {
       const { app } = createTestApp();
-      const res = await request(
-        app,
-        "get",
-        "/auth/login/google?return_to=%2Fdashboard%3Fonboarding%3Dtrue",
-      );
+      const returnTo = encodeURIComponent("/dashboard?providerGuide=true");
+      const res = await request(app, "get", `/auth/login/google?return_to=${returnTo}`);
       expect(res.status).toBe(302);
       expect(setPostLoginRedirectCookie).toHaveBeenCalledWith(
         expect.anything(),
-        "/dashboard?onboarding=true",
+        "/dashboard?providerGuide=true",
       );
     });
 
@@ -458,7 +455,7 @@ describe("createAuthRouter", () => {
         state: "google:state123",
         codeVerifier: "verifier123",
       });
-      vi.mocked(getPostLoginRedirectCookie).mockReturnValue("/dashboard?onboarding=true");
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue("/dashboard?providerGuide=true");
 
       const { app } = createTestApp();
       const res = await request(
@@ -467,7 +464,7 @@ describe("createAuthRouter", () => {
         "/auth/callback/google?code=authcode&state=google:state123",
       );
       expect(res.status).toBe(302);
-      expect(res.headers.location).toBe("/dashboard?onboarding=true");
+      expect(res.headers.location).toBe("/dashboard?providerGuide=true");
     });
 
     it("invalidates linked accounts cache after successful identity linking", async () => {

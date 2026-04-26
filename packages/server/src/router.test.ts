@@ -43,6 +43,7 @@ vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
 vi.mock("./routers/nutrition-analytics.ts", () => ({ nutritionAnalyticsRouter: mockRouter }));
 vi.mock("./routers/personalization.ts", () => ({ personalizationRouter: mockRouter }));
 vi.mock("./routers/provider-detail.ts", () => ({ providerDetailRouter: mockRouter }));
+vi.mock("./routers/provider-guide.ts", () => ({ providerGuideRouter: mockRouter }));
 vi.mock("./routers/pmc.ts", () => ({ pmcRouter: mockRouter }));
 vi.mock("./routers/power.ts", () => ({ powerRouter: mockRouter }));
 vi.mock("./routers/predictions.ts", () => ({ predictionsRouter: mockRouter }));
@@ -122,6 +123,7 @@ describe("appRouter", () => {
       "lifeEvents",
       "supplements",
       "providerDetail",
+      "providerGuide",
       "sync",
       "training",
       "trends",

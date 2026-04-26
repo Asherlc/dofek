@@ -120,6 +120,19 @@ describe("Settings router", () => {
     });
   });
 
+  describe("provider guide", () => {
+    it("stores provider guide dismissal through the API", async () => {
+      const initialStatus = await query("providerGuide.status");
+      expect(initialStatus.result.data).toEqual({ dismissed: false });
+
+      const dismissResult = await mutate("providerGuide.dismiss");
+      expect(dismissResult.result.data).toEqual({ dismissed: true });
+
+      const dismissedStatus = await query("providerGuide.status");
+      expect(dismissedStatus.result.data).toEqual({ dismissed: true });
+    });
+  });
+
   describe("deleteAllUserData", () => {
     it("wipes provider and user-scoped data for the current user", async () => {
       await testCtx.db.execute(

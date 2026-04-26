@@ -5,7 +5,7 @@ import type { ConfiguredProviders } from "../lib/auth.ts";
 import { fetchConfiguredProviders } from "../lib/auth.ts";
 
 function LoginPage() {
-  const { onboarding } = useSearch({ from: "__root__" });
+  const { providerGuide } = useSearch({ from: "__root__" });
   const [providers, setProviders] = useState<ConfiguredProviders | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +25,7 @@ function LoginPage() {
         ...providers.data.map((id) => ({ id, type: "data" as const })),
       ]
     : [];
-  const returnTo = onboarding ? "/dashboard?onboarding=true" : undefined;
+  const returnTo = providerGuide ? "/dashboard?providerGuide=true" : undefined;
   const returnToQuery = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : "";
 
   return (

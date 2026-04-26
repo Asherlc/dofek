@@ -223,10 +223,10 @@ describe("Auth cookies", () => {
   describe("post-login redirect cookie", () => {
     it("sets and reads the post-login redirect cookie", () => {
       const res = mockResponse();
-      setPostLoginRedirectCookie(res, "/dashboard?onboarding=true");
+      setPostLoginRedirectCookie(res, "/dashboard?providerGuide=true");
       expect(res.cookie).toHaveBeenCalledWith(
         "auth_post_login_redirect",
-        "/dashboard?onboarding=true",
+        "/dashboard?providerGuide=true",
         {
           httpOnly: true,
           secure: false,
@@ -236,8 +236,8 @@ describe("Auth cookies", () => {
         },
       );
 
-      const req = mockRequest({ auth_post_login_redirect: "/dashboard?onboarding=true" });
-      expect(getPostLoginRedirectCookie(req)).toBe("/dashboard?onboarding=true");
+      const req = mockRequest({ auth_post_login_redirect: "/dashboard?providerGuide=true" });
+      expect(getPostLoginRedirectCookie(req)).toBe("/dashboard?providerGuide=true");
     });
 
     it("clears the cookie when return_to is missing or invalid", () => {

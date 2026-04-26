@@ -1,4 +1,4 @@
-import { ONBOARDING_CATEGORIES } from "@dofek/onboarding/onboarding";
+import { PROVIDER_GUIDE_CATEGORIES } from "@dofek/onboarding/provider-guide";
 import { Link } from "@tanstack/react-router";
 import { ProviderLogo, providerLabel } from "./ProviderLogo.tsx";
 
@@ -8,16 +8,16 @@ interface ProviderInfo {
   authorized: boolean;
 }
 
-interface OnboardingWelcomeProps {
+interface ProviderGuideProps {
   onDismiss: () => void;
   providers: ProviderInfo[];
 }
 
-export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomeProps) {
+export function ProviderGuide({ onDismiss, providers }: ProviderGuideProps) {
   const availableProviderIds = new Set(providers.map((p) => p.id));
 
   return (
-    <div className="space-y-6" data-testid="onboarding-welcome">
+    <div className="space-y-6" data-testid="provider-guide">
       {/* Welcome header */}
       <div className="card p-6 sm:p-8 text-center">
         <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">Welcome to Dofek</h1>
@@ -29,7 +29,7 @@ export function OnboardingWelcome({ onDismiss, providers }: OnboardingWelcomePro
 
       {/* Category cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {ONBOARDING_CATEGORIES.map((category) => {
+        {PROVIDER_GUIDE_CATEGORIES.map((category) => {
           // Only show providers that are actually available on this server
           const categoryProviders = category.providerIds.filter((id) =>
             availableProviderIds.has(id),

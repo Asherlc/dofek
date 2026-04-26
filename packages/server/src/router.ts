@@ -36,6 +36,7 @@ import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
 import { predictionsRouter } from "./routers/predictions.ts";
 import { providerDetailRouter } from "./routers/provider-detail.ts";
+import { providerGuideRouter } from "./routers/provider-guide.ts";
 import { recoveryRouter } from "./routers/recovery.ts";
 import { runningRouter } from "./routers/running.ts";
 import { settingsRouter } from "./routers/settings.ts";
@@ -76,6 +77,7 @@ export const appRouter = router({
   lifeEvents: lifeEventsRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
+  providerGuide: providerGuideRouter,
   sync: syncRouter,
   training: trainingRouter,
   trends: trendsRouter,

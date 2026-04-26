@@ -138,7 +138,9 @@ describe("createMaterializedViewRefreshRouter", () => {
       authorization: "Bearer refresh-secret",
     });
 
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(resolveRefresh).toBeDefined();
+    });
 
     const secondResponse = await request(app, "/api/internal/materialized-views/refresh", {
       authorization: "Bearer refresh-secret",

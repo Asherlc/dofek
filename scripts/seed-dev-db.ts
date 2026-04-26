@@ -38,6 +38,7 @@ if (!databaseUrl) {
 }
 
 const sql = createTaggedQueryClient(databaseUrl);
+const drizzleDir = resolve(import.meta.dirname, "../drizzle");
 
 interface CountRow {
   count: number;
@@ -48,17 +49,16 @@ interface CountRow {
 // ---------------------------------------------------------------------------
 
 async function applyMigrations() {
-  const drizzleDir = resolve(import.meta.dirname, "../drizzle");
   const migrationFiles = readdirSync(drizzleDir)
-    .filter((f) => f.endsWith(".sql"))
+    .filter((fileName) => fileName.endsWith(".sql"))
     .sort();
 
   let applied = 0;
-  for (const file of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, file), "utf-8");
+  for (const fileName of migrationFiles) {
+    const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
     const statements = content
       .split("--> statement-breakpoint")
-      .map((s) => s.trim())
+      .map((statement) => statement.trim())
       .filter(Boolean);
     for (const statement of statements) {
       try {
@@ -70,16 +70,17 @@ async function applyMigrations() {
     applied++;
   }
   console.log(`Migrations: ${applied} files applied`);
+}
 
-  // Recreate materialized views from canonical definitions
+async function recreateMaterializedViews() {
   const viewsDir = join(drizzleDir, "_views");
   if (existsSync(viewsDir)) {
     const viewFiles = readdirSync(viewsDir)
-      .filter((f) => f.endsWith(".sql"))
+      .filter((fileName) => fileName.endsWith(".sql"))
       .sort();
 
-    const parsed = viewFiles.map((file) => {
-      const content = readFileSync(join(viewsDir, file), "utf-8");
+    const parsed = viewFiles.map((fileName) => {
+      const content = readFileSync(join(viewsDir, fileName), "utf-8");
       const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
       return { content, viewName: match?.[1] };
     });
@@ -94,7 +95,7 @@ async function applyMigrations() {
     for (const { content } of parsed) {
       const statements = content
         .split("--> statement-breakpoint")
-        .map((s) => s.trim())
+        .map((statement) => statement.trim())
         .filter(Boolean);
       for (const statement of statements) {
         await sql.unsafe(statement);
@@ -254,6 +255,7 @@ async function main() {
   } else {
     await applyMigrations();
   }
+  await recreateMaterializedViews();
 
   await seedData();
   await refreshViews();
