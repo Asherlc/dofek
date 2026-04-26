@@ -125,6 +125,7 @@ export async function runQuietDatabasePreflight(
   }
 
   const lockWaits = await client.query(`
+    -- cspell:disable -- Postgres system catalog column names
     SELECT
       blocked.pid AS blocked_pid,
       now() - blocked.query_start AS blocked_age,
@@ -152,6 +153,7 @@ export async function runQuietDatabasePreflight(
     JOIN pg_stat_activity AS blocking
       ON blocking.pid = blocking_locks.pid
     ORDER BY blocked.query_start NULLS LAST
+    -- cspell:enable
   `);
   if (lockWaits.rows.length > 0) {
     const lockWaitState = lockWaits.rows.length === 1 ? "is" : "are";
@@ -171,7 +173,7 @@ export async function runQuietDatabasePreflight(
         active.state,
         left(active.query, 220) AS query
       FROM pg_stat_activity AS active
-      WHERE active.datname = current_database()
+      WHERE active.datname = current_database() -- cspell:disable-line -- Postgres system catalog column name
         AND active.pid <> pg_backend_pid()
         AND active.state <> 'idle'
         AND active.query_start IS NOT NULL
