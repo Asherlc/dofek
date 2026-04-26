@@ -1,5 +1,7 @@
 # Activity Rollups Runbook
 
+<!-- cspell:ignore Rollups rebuildable rollups hypertables -->
+
 `fitness.*` is the raw source of truth. `analytics.*` contains rebuildable read models
 derived from canonical data.
 
