@@ -43,7 +43,7 @@ CREATE SCHEMA fitness;
 -- Name: health; Type: SCHEMA; Schema: -; Owner: -
 --
 
-CREATE SCHEMA health;
+CREATE SCHEMA IF NOT EXISTS health;
 
 
 --
