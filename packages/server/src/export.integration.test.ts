@@ -1,5 +1,4 @@
 import type { Server } from "node:http";
-import cookieParser from "cookie-parser";
 import { TEST_USER_ID } from "dofek/db/schema";
 import { processExportJob } from "dofek/jobs/process-export-job";
 import type { ExportJobData } from "dofek/jobs/queues";
@@ -46,11 +45,15 @@ interface ExportListResponse {
   exports: ExportResponse[];
 }
 
-async function waitForCompletedExport(baseUrl: string, sessionCookie: string, exportId: string) {
+async function waitForCompletedExport(
+  baseUrl: string,
+  authorizationHeader: string,
+  exportId: string,
+) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const response = await fetch(`${baseUrl}/api/export`, {
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
     });
     const body: ExportListResponse = await response.json();
     const dataExport = body.exports.find((exportRecord) => exportRecord.id === exportId);
@@ -66,7 +69,7 @@ describe("Data Export", () => {
   let testCtx: TestContext;
   let server: Server;
   let baseUrl: string;
-  let sessionCookie: string;
+  let authorizationHeader: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -85,7 +88,7 @@ describe("Data Export", () => {
     );
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
-    sessionCookie = `session=${session.sessionId}`;
+    authorizationHeader = `Bearer ${session.sessionId}`;
 
     const exportQueue = {
       add: vi.fn(async (_name: string, data: ExportJobData) => {
@@ -103,7 +106,6 @@ describe("Data Export", () => {
     };
 
     const app = express();
-    app.use(cookieParser());
     app.use(
       "/api/export",
       createExportRouter({ db: testCtx.db, exportQueue, startExportWorker: () => undefined }),
@@ -131,7 +133,7 @@ describe("Data Export", () => {
   it("queues an offline export and lists it for the authenticated user", async () => {
     const response = await fetch(`${baseUrl}/api/export`, {
       method: "POST",
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
     });
     expect(response.status).toBe(200);
     const body: { status: string; exportId: string } = await response.json();
@@ -139,11 +141,11 @@ describe("Data Export", () => {
     expect(body.exportId).toBeTruthy();
 
     const listResponse = await fetch(`${baseUrl}/api/export`, {
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
     });
     const listBody: ExportListResponse = await listResponse.json();
     expect(listBody.exports.some((dataExport) => dataExport.id === body.exportId)).toBe(true);
-    await waitForCompletedExport(baseUrl, sessionCookie, body.exportId);
+    await waitForCompletedExport(baseUrl, authorizationHeader, body.exportId);
   });
 
   it("returns 401 for unauthenticated export request", async () => {
@@ -154,7 +156,7 @@ describe("Data Export", () => {
   it("returns 404 for unknown export status", async () => {
     const unknownExportId = "99999999-9999-4999-8999-999999999999";
     const response = await fetch(`${baseUrl}/api/export/status/${unknownExportId}`, {
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
     });
     expect(response.status).toBe(404);
   });
@@ -162,11 +164,11 @@ describe("Data Export", () => {
   it("uploads completed exports to user-scoped R2 keys, emails the user, and redirects downloads", async () => {
     const triggerResponse = await fetch(`${baseUrl}/api/export`, {
       method: "POST",
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
     });
     const { exportId }: { exportId: string } = await triggerResponse.json();
 
-    const completedExport = await waitForCompletedExport(baseUrl, sessionCookie, exportId);
+    const completedExport = await waitForCompletedExport(baseUrl, authorizationHeader, exportId);
 
     expect(completedExport.sizeBytes).toBe(2048);
     expect(exportStorageMocks.uploadExportFileToR2).toHaveBeenCalledWith(expect.any(String), {
@@ -178,7 +180,7 @@ describe("Data Export", () => {
     );
 
     const downloadResponse = await fetch(`${baseUrl}/api/export/download/${exportId}`, {
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
       redirect: "manual",
     });
     expect(downloadResponse.status).toBe(302);
@@ -202,11 +204,12 @@ describe("Data Export", () => {
     );
     await testCtx.db.execute(
       sql`INSERT INTO fitness.data_export (id, user_id, status, filename, expires_at)
-          VALUES ('33333333-3333-4333-8333-333333333333', ${otherUserId}, 'queued', 'dofek-export.zip', NOW() + INTERVAL '7 days')`,
+          VALUES ('33333333-3333-4333-8333-333333333333', ${otherUserId}, 'queued', 'dofek-export.zip', NOW() + INTERVAL '7 days')
+          ON CONFLICT (id) DO NOTHING`,
     );
 
     const response = await fetch(`${baseUrl}/api/export`, {
-      headers: { Cookie: sessionCookie },
+      headers: { Authorization: authorizationHeader },
     });
     const body: ExportListResponse = await response.json();
 
