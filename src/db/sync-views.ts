@@ -327,6 +327,15 @@ export async function syncMaterializedViews(
           continue;
         }
 
+        if (!storedHash && !(await isViewPopulated(client, viewName))) {
+          await recordMaterializedViewHash(client, viewName, hash, dependencyFingerprintHash);
+          logger.info(
+            `[views] ${viewName} exists but is unpopulated, recording hash before refresh`,
+          );
+          skipped++;
+          continue;
+        }
+
         const reason =
           storedHash === hash && dependencyFingerprintChanged
             ? "dependency fingerprint changed"

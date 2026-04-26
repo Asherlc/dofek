@@ -206,10 +206,11 @@ jobs:
           echo "required=${planner_required}" >> "$GITHUB_OUTPUT"
           echo "reasons=${planner_reasons}" >> "$GITHUB_OUTPUT"
 
-      - name: Report manual materialized view maintenance requirement
+      - name: Fail on required materialized view maintenance
         if: steps.view_sync_plan.outputs.required == 'true' && inputs.refresh_materialized_views != true
         run: |
-          echo "::warning::Materialized view maintenance is required but automatic view sync is disabled: ${{ steps.view_sync_plan.outputs.reasons }}"
+          echo "::error::Materialized view maintenance is required but automatic view sync is disabled: ${{ steps.view_sync_plan.outputs.reasons }}"
+          exit 1
 
       - name: Trigger materialized view refresh webhook
         if: inputs.refresh_materialized_views

@@ -321,6 +321,48 @@ describe("syncMaterializedViews", () => {
     expect(insertCall?.[1]).toEqual(["fitness.v_test", hash(viewSql), hash("new-fingerprint")]);
   });
 
+  it("adopts and refreshes existing untracked unpopulated views", async () => {
+    const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
+    const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT * FROM fitness.source_table";
+
+    mockReaddirSync.mockReturnValue(["01_v_test.sql"]);
+    mockReadFileSync.mockReturnValue(viewSql);
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("FROM drizzle.__view_hashes") && text.includes("view_name = $1")) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (text.includes("FROM pg_matviews")) {
+        if (text.includes("ispopulated")) {
+          return Promise.resolve({ rows: [{ populated: false }] });
+        }
+        return Promise.resolve({ rows: [{ present: 1 }] });
+      }
+      if (text.includes("SELECT pg_get_viewdef")) {
+        return Promise.resolve({
+          rows: [{ definition: "SELECT source_table.id FROM fitness.source_table" }],
+        });
+      }
+      if (text.includes("jsonb_build_object")) {
+        return Promise.resolve({ rows: [{ fingerprint_source: "baseline-fingerprint" }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+
+    expect(result).toEqual({ synced: 0, skipped: 1, refreshed: 1 });
+    const insertCall = mockClientQuery.mock.calls.find(([text]) =>
+      String(text).includes("INSERT INTO drizzle.__view_hashes"),
+    );
+    expect(insertCall?.[1]).toEqual([
+      "fitness.v_test",
+      hash(viewSql),
+      hash("baseline-fingerprint"),
+    ]);
+    expect(executedQueries()).toContain('REFRESH MATERIALIZED VIEW "fitness"."v_test"');
+    expect(executedQueries()).not.toContain(viewSql);
+  });
+
   it("acknowledges refresh-required migrations after successful sync", async () => {
     const { syncMaterializedViews } = await import("./sync-views.ts");
 
