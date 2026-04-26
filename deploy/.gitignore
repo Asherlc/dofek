@@ -5,6 +5,5 @@ terraform.tfvars
 tfplan*
 *.tfplan
 .terraform/
-.terraform.lock.hcl
 .env
 secrets.env
