@@ -47,11 +47,8 @@ async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
     const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
     throw error;
   }
-  const response = await fetch(file.uri);
-  if (!response.ok) {
-    throw new Error(`Failed to read shared file (${response.status})`);
-  }
-  const blob = await response.blob();
+  const bytes = await file.bytes();
+  const blob = new Blob([bytes], file.type ? { type: file.type } : undefined);
   // Clean up the Inbox copy now that the data is in memory
   file.delete();
   return blob;

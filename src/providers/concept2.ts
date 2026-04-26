@@ -156,6 +156,7 @@ export function concept2OAuthConfig(host?: string): OAuthConfig | null {
     tokenUrl: `${CONCEPT2_API_BASE}/oauth/access_token`,
     redirectUri: getOAuthRedirectUri(host),
     scopes: ["user:read", "results:read"],
+    scopeSeparator: ",",
   };
 }
 

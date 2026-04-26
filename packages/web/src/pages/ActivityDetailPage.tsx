@@ -730,51 +730,71 @@ function ElevationChart({
   return <DofekChart option={option} height={200} onEvents={chartEvents} />;
 }
 
-export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
-  if (loading) return <ChartLoadingSkeleton height={200} />;
+interface ZoneDistributionDatum {
+  zone: number;
+  label: string;
+  seconds: number;
+}
 
-  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
+function formatZoneChartTime(secondsValue: number) {
+  const minutes = Math.floor(secondsValue / 60);
+  const seconds = secondsValue % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
+  zones,
+  loading,
+  height,
+  emptyMessage,
+  zoneColors,
+  tooltipDetails,
+}: {
+  zones: ZoneItem[];
+  loading: boolean;
+  height: number;
+  emptyMessage: string;
+  zoneColors: string[];
+  tooltipDetails: (zone: ZoneItem) => string;
+}) {
+  if (loading) return <ChartLoadingSkeleton height={height} />;
+
+  const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
   if (totalSeconds === 0) {
     return (
-      <div className="flex items-center justify-center h-[200px]">
-        <span className="text-dim text-sm">No heart rate zone data</span>
+      <div className="flex items-center justify-center" style={{ height }}>
+        <span className="text-dim text-sm">{emptyMessage}</span>
       </div>
     );
   }
 
-  const formatTime = (secs: number) => {
-    const minutes = Math.floor(secs / 60);
-    const seconds = secs % 60;
-    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-  };
-
   const option = {
-    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 100 }),
+    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 70 }),
     tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
-      formatter: (params: Array<{ name: string; value: number; dataIndex: number }>) => {
+      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
         const firstParam = params[0];
         if (!firstParam) return "";
-        const zone = zones[firstParam.dataIndex];
-        if (!zone) return "";
+        const zoneItem = zones[firstParam.dataIndex];
+        if (!zoneItem) return "";
         const percentage =
-          totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";
-        return `<b>${zone.label}</b> (${zone.minPct}–${zone.maxPct}% HRR)<br/>
-          ${formatTime(zone.seconds)} (${percentage}%)`;
+          totalSeconds > 0 ? formatNumber((zoneItem.seconds / totalSeconds) * 100) : "0";
+        return `<b>${zoneItem.label}</b> (${tooltipDetails(zoneItem)})<br/>
+          ${formatZoneChartTime(zoneItem.seconds)} (${percentage}%)`;
       },
     }),
     xAxis: dofekAxis.value({
-      axisLabel: { formatter: (v: number) => formatTime(v) },
+      axisLabel: { formatter: (value: number) => formatZoneChartTime(value) },
     }),
     yAxis: dofekAxis.category({
-      data: zones.map((z) => `Z${z.zone} ${z.label}`),
+      data: zones.map((zoneItem) => `Zone ${zoneItem.zone}`),
     }),
     series: [
       {
         type: "bar",
-        data: zones.map((z, i) => ({
-          value: z.seconds,
-          itemStyle: { color: HEART_RATE_ZONE_COLORS[i] ?? chartThemeColors.axisLabel },
+        data: zones.map((zoneItem, zoneIndex) => ({
+          value: zoneItem.seconds,
+          itemStyle: { color: zoneColors[zoneIndex] ?? chartThemeColors.axisLabel },
         })),
         barWidth: "60%",
         label: {
@@ -782,9 +802,9 @@ export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; load
           position: "right",
           color: chartThemeColors.axisLabel,
           fontSize: 11,
-          formatter: (p: { value: number }) => {
+          formatter: (params: { value: number }) => {
             const percentage =
-              totalSeconds > 0 ? formatNumber((p.value / totalSeconds) * 100, 0) : "0";
+              totalSeconds > 0 ? formatNumber((params.value / totalSeconds) * 100, 0) : "0";
             return `${percentage}%`;
           },
         },
@@ -792,7 +812,20 @@ export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; load
     ],
   };
 
-  return <DofekChart option={option} height={200} />;
+  return <DofekChart option={option} height={height} />;
+}
+
+export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
+  return (
+    <ZoneDistributionChart
+      zones={zones}
+      loading={loading}
+      height={200}
+      emptyMessage="No heart rate zone data"
+      zoneColors={HEART_RATE_ZONE_COLORS}
+      tooltipDetails={(zoneItem) => `${zoneItem.minPct}–${zoneItem.maxPct}% HRR`}
+    />
+  );
 }
 
 export function PowerZonesChart({
@@ -804,23 +837,6 @@ export function PowerZonesChart({
   ftp: number;
   loading: boolean;
 }) {
-  if (loading) return <ChartLoadingSkeleton height={240} />;
-
-  const totalSeconds = zones.reduce((sum, z) => sum + z.seconds, 0);
-  if (totalSeconds === 0) {
-    return (
-      <div className="flex items-center justify-center h-[240px]">
-        <span className="text-dim text-sm">No power zone data</span>
-      </div>
-    );
-  }
-
-  const formatTime = (secs: number) => {
-    const minutes = Math.floor(secs / 60);
-    const seconds = secs % 60;
-    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-  };
-
   const formatRange = (zone: ActivityPowerZone) => {
     const minWatts = Math.round((zone.minPct / 100) * ftp);
     const maxWatts = zone.maxPct != null ? Math.round((zone.maxPct / 100) * ftp) : null;
@@ -830,51 +846,16 @@ export function PowerZonesChart({
     return `${pctLabel} (${wattLabel})`;
   };
 
-  const option = {
-    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 120 }),
-    tooltip: dofekTooltip({
-      axisPointer: { type: "shadow" },
-      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
-        const firstParam = params[0];
-        if (!firstParam) return "";
-        const zone = zones[firstParam.dataIndex];
-        if (!zone) return "";
-        const percentage =
-          totalSeconds > 0 ? formatNumber((zone.seconds / totalSeconds) * 100) : "0";
-        return `<b>${zone.label}</b> (${formatRange(zone)})<br/>
-          ${formatTime(zone.seconds)} (${percentage}%)`;
-      },
-    }),
-    xAxis: dofekAxis.value({
-      axisLabel: { formatter: (v: number) => formatTime(v) },
-    }),
-    yAxis: dofekAxis.category({
-      data: zones.map((z) => `Z${z.zone} ${z.label}`),
-    }),
-    series: [
-      {
-        type: "bar",
-        data: zones.map((z, i) => ({
-          value: z.seconds,
-          itemStyle: { color: POWER_ZONE_COLORS[i] ?? chartThemeColors.axisLabel },
-        })),
-        barWidth: "60%",
-        label: {
-          show: true,
-          position: "right",
-          color: chartThemeColors.axisLabel,
-          fontSize: 11,
-          formatter: (p: { value: number }) => {
-            const percentage =
-              totalSeconds > 0 ? formatNumber((p.value / totalSeconds) * 100, 0) : "0";
-            return `${percentage}%`;
-          },
-        },
-      },
-    ],
-  };
-
-  return <DofekChart option={option} height={240} />;
+  return (
+    <ZoneDistributionChart
+      zones={zones}
+      loading={loading}
+      height={240}
+      emptyMessage="No power zone data"
+      zoneColors={POWER_ZONE_COLORS}
+      tooltipDetails={formatRange}
+    />
+  );
 }
 
 function WorkoutMuscleMap({ exercises }: { exercises: StrengthExerciseDetail[] }) {

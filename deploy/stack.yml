@@ -92,12 +92,15 @@ services:
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     environment:
       NODE_ENV: production
+      JOB_FILES_DIR: /app/job-files
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-worker
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
       EXPORT_R2_BUCKET: dofek-exports
+    volumes:
+      - job_files:/app/job-files
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
       interval: 10s
