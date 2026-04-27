@@ -15,5 +15,5 @@ export function selectDailyHeartRateVariability(
     sum += sample.value;
   }
 
-  return Math.round(sum / samples.length);
+  return sum / samples.length;
 }
