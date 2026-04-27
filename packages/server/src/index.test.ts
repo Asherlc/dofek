@@ -50,6 +50,13 @@ vi.mock("./auth/cookies.ts", () => ({
 vi.mock("./auth/session.ts", () => ({
   validateSession: vi.fn(),
 }));
+vi.mock("./billing/access-window-repository.ts", () => ({
+  getAccessWindowForUser: vi.fn(async () => ({
+    kind: "full",
+    paid: true,
+    reason: "paid_grant",
+  })),
+}));
 vi.mock("./lib/metrics.ts", () => ({
   httpRequestDuration: { observe: vi.fn() },
   registry: { contentType: "text/plain", metrics: vi.fn(() => Promise.resolve("")) },
@@ -110,6 +117,7 @@ import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
+import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { createApp, main, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
@@ -523,6 +531,35 @@ describe("createApp HTTP routes", () => {
       expect(context.userId).toBe("user-99");
     });
 
+    it("resolves access window from billing state when a session is present", async () => {
+      const accessWindow = {
+        kind: "limited" as const,
+        paid: false as const,
+        reason: "free_signup_week" as const,
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      };
+      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-123");
+      vi.mocked(validateSession).mockResolvedValue({
+        userId: "user-99",
+        expiresAt: new Date("2027-01-01"),
+      });
+      vi.mocked(getAccessWindowForUser).mockResolvedValueOnce(accessWindow);
+
+      const fakeDb = createDatabaseFromEnv();
+      createApp(fakeDb);
+      const [middlewareOptions] = vi.mocked(createExpressMiddleware).mock.calls.at(-1) ?? [];
+      if (!middlewareOptions) throw new Error("Expected createExpressMiddleware to be called");
+
+      const context = await middlewareOptions.createContext({
+        req: { headers: {} },
+        res: {},
+      });
+
+      expect(getAccessWindowForUser).toHaveBeenCalledWith(fakeDb, "user-99");
+      expect(context.accessWindow).toEqual(accessWindow);
+    });
+
     it("sets userId to null when no session cookie", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
 
@@ -535,6 +572,8 @@ describe("createApp HTTP routes", () => {
       });
 
       expect(context.userId).toBeNull();
+      expect(context.accessWindow).toBeUndefined();
+      expect(getAccessWindowForUser).not.toHaveBeenCalled();
     });
 
     it("logs and reports internal server errors to Sentry via onError", () => {
