@@ -22,7 +22,9 @@ function getSignupWeekLabel(startDate: string, endDateExclusive: string): string
   const endInclusive = new Date(endExclusive);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
 
-  const safeStart = Number.isNaN(start.getTime()) ? startDate : freeAccessWindowFormatter.format(start);
+  const safeStart = Number.isNaN(start.getTime())
+    ? startDate
+    : freeAccessWindowFormatter.format(start);
   const safeEnd = Number.isNaN(endInclusive.getTime())
     ? endDateExclusive
     : freeAccessWindowFormatter.format(endInclusive);
@@ -56,10 +58,7 @@ export function SettingsPage() {
 
   return (
     <PageLayout>
-      <PageSection
-        title="Billing"
-        subtitle="Manage subscription and access window"
-      >
+      <PageSection title="Billing" subtitle="Manage subscription and access window">
         {billingStatus.isLoading ? (
           <p className="text-sm text-subtle">Loading subscription status...</p>
         ) : billingStatus.error ? (
@@ -97,7 +96,9 @@ export function SettingsPage() {
                   disabled={checkoutSessionMutation.isPending}
                   className="px-3 py-2 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 transition-colors cursor-pointer"
                 >
-                  {checkoutSessionMutation.isPending ? "Opening checkout..." : "Subscribe to Full Access"}
+                  {checkoutSessionMutation.isPending
+                    ? "Opening checkout..."
+                    : "Subscribe to Full Access"}
                 </button>
               )}
               {billingStatus.data.canManageBilling && (
