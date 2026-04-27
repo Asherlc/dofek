@@ -184,13 +184,28 @@ function hasBlobTextReader(blob: Blob): boolean {
   return typeof Reflect.get(blob, "text") === "function";
 }
 
-async function readBlobText(blob: Blob): Promise<string> {
-  if (hasBlobTextReader(blob)) {
-    return blob.text();
+async function readBlobText(blob: Blob, fileUri: string, fetchImpl: typeof fetch): Promise<string> {
+  try {
+    if (hasBlobTextReader(blob)) {
+      return await blob.text();
+    }
+  } catch {
+    // Ignore error and fall through
   }
 
-  const arrayBuffer = await blob.arrayBuffer();
-  return new TextDecoder().decode(arrayBuffer);
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    return new TextDecoder().decode(arrayBuffer);
+  } catch {
+    // Ignore error and fall through
+  }
+
+  // Fallback to fetching the file URI directly
+  const response = await fetchImpl(fileUri);
+  if (!response.ok) {
+    throw new Error(`Failed to read shared file via fetch fallback (${response.status})`);
+  }
+  return response.text();
 }
 
 async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob> {
@@ -375,7 +390,9 @@ export async function importSharedFile(
     const mimeType = blob.type || null;
 
     const csvHeaderLine =
-      fileExtension === ".csv" ? getCsvHeaderLine(await readBlobText(blob)) : "";
+      fileExtension === ".csv"
+        ? getCsvHeaderLine(await readBlobText(blob, args.fileUri, fetchImpl))
+        : "";
 
     const providerId = inferImportProviderFromFile({
       fileName,
