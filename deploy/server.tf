@@ -48,6 +48,23 @@ resource "hcloud_server" "dofek" {
   }
 }
 
+resource "hcloud_server" "dofek_staging" {
+  name         = "dofek-staging"
+  image        = "ubuntu-24.04"
+  server_type  = "cax11"
+  location     = "nbg1"
+  ssh_keys     = [hcloud_ssh_key.default.id]
+  firewall_ids = [hcloud_firewall.dofek.id]
+
+  user_data = templatefile("${path.module}/server/cloud-init.yml", {
+    otel_collector_content = file("${path.module}/otel-collector-config.yaml")
+  })
+
+  lifecycle {
+    ignore_changes = [ssh_keys, user_data, image]
+  }
+}
+
 resource "terraform_data" "app_directories_sync" {
   triggers_replace = [
     "app-directories-v1",
@@ -67,12 +84,41 @@ resource "terraform_data" "app_directories_sync" {
   }
 }
 
+resource "terraform_data" "staging_app_directories_sync" {
+  triggers_replace = [
+    "app-directories-v1",
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek_staging.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /opt/dofek /opt/dofek/traefik-dynamic",
+    ]
+  }
+}
+
 resource "hcloud_volume" "dofek_data" {
   count = var.data_volume_size_gb > 0 ? 1 : 0
 
   name      = var.data_volume_name
   size      = var.data_volume_size_gb
   server_id = hcloud_server.dofek.id
+  format    = "ext4"
+  automount = true
+}
+
+resource "hcloud_volume" "dofek_staging_data" {
+  count = var.staging_data_volume_size_gb > 0 ? 1 : 0
+
+  name      = var.staging_data_volume_name
+  size      = var.staging_data_volume_size_gb
+  server_id = hcloud_server.dofek_staging.id
   format    = "ext4"
   automount = true
 }
@@ -105,6 +151,32 @@ resource "terraform_data" "data_volume_mount_alias" {
   }
 }
 
+resource "terraform_data" "staging_data_volume_mount_alias" {
+  count = var.staging_data_volume_size_gb > 0 ? 1 : 0
+
+  triggers_replace = [
+    "volume-mount-alias-v1",
+    hcloud_volume.dofek_staging_data[0].id,
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek_staging.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "set -eu",
+      "target=/mnt/HC_Volume_${hcloud_volume.dofek_staging_data[0].id}",
+      "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
+      "ln -sfn \"$target\" /mnt/dofek-data",
+      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/databasus",
+    ]
+  }
+}
+
 # Sync otel-collector config to the server (bind-mounted into the collector
 # service by stack.yml). Re-runs whenever the config changes.
 resource "terraform_data" "otel_config_sync" {
@@ -128,6 +200,30 @@ resource "terraform_data" "otel_config_sync" {
   provisioner "remote-exec" {
     inline = [
       "docker service ls --format '{{.Name}}' | grep -qx dofek_collector && docker service update --force dofek_collector || true",
+    ]
+  }
+}
+
+resource "terraform_data" "staging_otel_config_sync" {
+  triggers_replace = [
+    filesha256("${path.module}/otel-collector-config.yaml"),
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek_staging.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/otel-collector-config.yaml"
+    destination = "/opt/dofek/otel-collector-config.yaml"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "docker service ls --format '{{.Name}}' | grep -qx dofek-staging_collector && docker service update --force dofek-staging_collector || true",
     ]
   }
 }

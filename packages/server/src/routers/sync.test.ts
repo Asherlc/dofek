@@ -31,6 +31,7 @@ vi.mock("../trpc.ts", async () => {
     .create();
   return {
     router: trpc.router,
+    publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
@@ -168,6 +169,49 @@ describe("syncRouter", () => {
       await first;
       expect(mockRegisterProvider).toHaveBeenCalled();
       expect(mockRegisterProvider.mock.calls.length).toBeGreaterThanOrEqual(12);
+    });
+  });
+
+  describe("usableProviders", () => {
+    it("returns only configured providers with a connection or import flow", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "broken",
+          name: "Broken",
+          validate: () => "Missing credentials",
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "no-flow",
+          name: "No Flow",
+          validate: () => null,
+        },
+        {
+          id: "strong-csv",
+          name: "Strong CSV",
+          validate: () => null,
+          importOnly: true,
+        },
+      ]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: null,
+        timezone: "UTC",
+      });
+
+      const result = await caller.usableProviders();
+      expect(result.map((provider: { id: string }) => provider.id)).toEqual([
+        "apple_health",
+        "strava",
+        "strong-csv",
+      ]);
     });
   });
 

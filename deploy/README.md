@@ -6,7 +6,7 @@ Infrastructure-as-code and deployment configuration for Dofek.
 
 Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (HCloud) with **Cloudflare** for DNS, R2 storage, and CDN.
 
-- **Compute**: Hetzner Cloud `cax11` ARM64 server running Ubuntu 24.04. The server runs `dockerd` initialized as a single-node swarm manager; it has no deploy scripts or secrets on disk.
+- **Compute**: Hetzner Cloud `cax11` ARM64 servers running Ubuntu 24.04. Production uses `dofek`; staging uses `dofek-staging`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
@@ -24,7 +24,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
   - **Sentry**: Receives application logs/errors.
   - **Netdata**: Real-time server health and performance monitoring.
-- **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary `.env.prod` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
+- **Secrets**: Managed via **Infisical**. CI logs in with OIDC machine identity, renders `.github/templates/infisical-dotenv.tmpl` via `infisical export --template`, and writes a temporary environment-specific `.env.<env>` file on the runner for `docker stack deploy`. The server never stores secrets on disk.
 
 ## Implementation Details
 
@@ -59,6 +59,16 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 ## Deployment
 
 Deployments are push-based from CI, using a remote Docker context over SSH. CI never runs shell scripts on the server — it only calls the Docker API.
+
+### Staging
+
+Staging is a production-shaped replica on its own Hetzner server, block storage volume, Docker stack, DNS records, and Infisical environment.
+
+- App: `https://staging.dofek.asherlc.com`
+- Stack: `dofek-staging`
+- Infisical environment: `staging`
+
+The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-staging.yml`. Use the **Deploy Staging** workflow with a `sha-<commit>` image tag to validate full deploy and migration behavior before promoting the same image to production. See [docs/staging.md](../docs/staging.md).
 
 ### SSH Access (Debugging Only)
 
@@ -102,27 +112,27 @@ CI (main) -> build dofek + dofek-ml (same tag)
          -> deploy-terraform (shared prerequisite)
          -> deploy-app
               -> fetch env via Infisical Secrets Action
-              -> bootstrap stack if dofek_db is missing
+              -> bootstrap stack if <stack>_db is missing
               -> wait for postgres writable
-              -> migrate (one-shot container on dofek_default)
+              -> migrate (one-shot container on <stack>_default)
               -> docker stack deploy dofek
 ```
 
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
 3. **Deploy App** (`deploy-app.yml`):
-   1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.prod` from `.github/templates/infisical-dotenv.tmpl`.
+   1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
       The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
       - Must include `CREDENTIAL_ENCRYPTION_KEY_BASE64` (base64-encoded 32-byte key).
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
-   5. Bootstrap step for clean-slate hosts: if `docker service inspect dofek_db` fails, run
-      `docker stack deploy -c deploy/stack.yml --with-registry-auth dofek` first so the swarm DB service and overlay network exist.
+   5. Bootstrap step for clean-slate hosts: if `docker service inspect <stack>_db` fails, run
+      `docker stack deploy -c deploy/stack.yml --with-registry-auth <stack>` first so the swarm DB service and overlay network exist.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    7. Run **schema migrations only** as a one-shot container attached to the swarm overlay network:
-      `docker run --rm --network dofek_default --env-file .env.prod ghcr.io/…:<tag> migrate`.
+      `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
    8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
    9. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
       - a canonical `drizzle/_views/*.sql` hash changed
@@ -239,11 +249,11 @@ Missing keys fail the workflow immediately with an explicit key name.
 
 ### Deployment Runbook: Cold-Start and DB Availability
 
-If a deploy is running against a fresh host (or after removing previous non-swarm containers), `dofek_db` and `dofek_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
+If a deploy is running against a fresh host (or after removing previous non-swarm containers), `<stack>_db` and `<stack>_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
 
 The deploy workflow handles this with a bootstrap gate:
-- If `dofek_db` exists, continue normally.
-- If `dofek_db` is missing, run a non-prune stack deploy first to create the swarm services/network.
+- If `<stack>_db` exists, continue normally.
+- If `<stack>_db` is missing, run a non-prune stack deploy first to create the swarm services/network.
 - After bootstrap, run DB readiness and migrations, then run the normal prune deploy.
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.

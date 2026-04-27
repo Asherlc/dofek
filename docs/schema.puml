@@ -175,6 +175,21 @@ entity "daily_metrics" {
   created_at : timestamp
 }
 
+entity "data_export" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  status : text
+  object_key : text
+  filename : text
+  size_bytes : bigint
+  created_at : timestamp
+  started_at : timestamp
+  completed_at : timestamp
+  expires_at : timestamp
+  error_message : text
+}
+
 entity "dexa_scan" {
   * id : uuid <<PK>>
   --
@@ -899,6 +914,7 @@ daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
+user_profile ||--o{ data_export
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
 dexa_scan ||--o{ dexa_scan_region

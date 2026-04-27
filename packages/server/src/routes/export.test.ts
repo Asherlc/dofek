@@ -13,58 +13,56 @@ vi.mock("../lib/start-worker.ts", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn() },
 }));
 
-const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, unlink: (...args: [string]) => mockUnlink(...args) };
-});
+const mockCreateSignedExportDownloadUrl = vi.fn();
 
-vi.mock("dofek/db", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({})),
-}));
-
-// Mock BullMQ queue
-const mockJob = {
-  id: "42",
-  data: { userId: "user-1", outputPath: "/tmp/dofek-export-42.zip" },
-  progress: { percentage: 0, message: "Starting export..." },
-  getState: vi.fn().mockResolvedValue("active"),
-  remove: vi.fn().mockResolvedValue(undefined),
-  failedReason: "",
-};
-
-const mockQueue = {
-  add: vi.fn().mockResolvedValue(mockJob),
-  getJob: vi.fn().mockResolvedValue(mockJob),
-};
-
-import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import cookieParser from "cookie-parser";
-import { createDatabaseFromEnv } from "dofek/db";
 import express from "express";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
-import { logger } from "../logger.ts";
 import { createExportRouter } from "./export.ts";
 
+const createdExportId = "11111111-1111-1111-1111-111111111111";
+const otherExportId = "22222222-2222-2222-2222-222222222222";
+const exportUserId = "33333333-3333-3333-3333-333333333333";
+const otherUserId = "44444444-4444-4444-4444-444444444444";
+
+type MockDatabase = Parameters<typeof createExportRouter>[0]["db"];
+type MockQueue = NonNullable<Parameters<typeof createExportRouter>[0]["exportQueue"]>;
+
+const mockDatabase: MockDatabase = {
+  execute: vi.fn(),
+};
+
+const mockQueue = {
+  add: vi.fn().mockResolvedValue({ id: "job-42" }),
+} satisfies MockQueue;
+
+function mockExecute() {
+  return vi.mocked(mockDatabase.execute);
+}
+
 function createTestApp() {
-  const fakeDb = createDatabaseFromEnv();
   const app = express();
   app.use(cookieParser());
-  app.use("/api/export", createExportRouter({ db: fakeDb, exportQueue: mockQueue }));
-  return { app };
+  app.use(
+    "/api/export",
+    createExportRouter({
+      createSignedDownloadUrl: mockCreateSignedExportDownloadUrl,
+      db: mockDatabase,
+      exportQueue: mockQueue,
+    }),
+  );
+  return app;
 }
 
 function getPort(server: ReturnType<express.Express["listen"]>): number {
-  const addr = server.address();
-  if (addr !== null && typeof addr === "object") {
-    return (addr satisfies AddressInfo).port;
+  const address = server.address();
+  if (address !== null && typeof address === "object") {
+    return (address satisfies AddressInfo).port;
   }
   throw new Error("Server address is not an object");
 }
@@ -73,239 +71,270 @@ async function request(
   app: express.Express,
   method: "get" | "post",
   path: string,
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve) => {
+): Promise<{ headers: Headers; status: number; text: string }> {
+  return new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
-      fetch(`http://localhost:${port}${path}`, { method: method.toUpperCase() })
-        .then(async (res) => {
-          resolve({ status: res.status, body: await res.text() });
+      fetch(`http://localhost:${port}${path}`, { method: method.toUpperCase(), redirect: "manual" })
+        .then(async (response) => {
+          resolve({
+            headers: response.headers,
+            status: response.status,
+            text: await response.text(),
+          });
           server.close();
         })
-        .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error" });
+        .catch((error: unknown) => {
           server.close();
+          reject(error);
         });
     });
   });
 }
 
+function parseJson(text: string): unknown {
+  return JSON.parse(text);
+}
+
+function authenticate(userId = exportUserId) {
+  vi.mocked(getSessionIdFromRequest).mockReturnValue("session-1");
+  vi.mocked(validateSession).mockResolvedValue({ userId });
+}
+
 describe("createExportRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockJob.data = { userId: "user-1", outputPath: "/tmp/dofek-export-42.zip" };
-    mockJob.progress = { percentage: 0, message: "Starting export..." };
-    mockJob.getState.mockResolvedValue("active");
-    mockQueue.add.mockResolvedValue(mockJob);
-    mockQueue.getJob.mockResolvedValue(mockJob);
+    vi.useRealTimers();
+    mockExecute().mockReset();
+    vi.mocked(mockQueue.add).mockResolvedValue({ id: "job-42" });
+    mockCreateSignedExportDownloadUrl.mockResolvedValue(
+      "https://r2.example.test/signed-export.zip",
+    );
   });
 
   describe("POST /api/export", () => {
     it("returns 401 when not authenticated", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      const { app } = createTestApp();
-      const res = await request(app, "post", "/api/export");
-      expect(res.status).toBe(401);
+      const response = await request(createTestApp(), "post", "/api/export");
+      expect(response.status).toBe(401);
     });
 
-    it("returns 401 when session expired", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue(null);
-      const { app } = createTestApp();
-      const res = await request(app, "post", "/api/export");
-      expect(res.status).toBe(401);
-    });
+    it("creates a queued export record and enqueues the export job", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([{ id: createdExportId }]);
 
-    it("enqueues a BullMQ job and returns jobId", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      const { app } = createTestApp();
+      const response = await request(createTestApp(), "post", "/api/export");
 
-      const res = await request(app, "post", "/api/export");
-      expect(res.status).toBe(200);
-      const data = JSON.parse(res.body);
-      expect(data.status).toBe("processing");
-      expect(data.jobId).toBe("42");
-      expect(mockQueue.add).toHaveBeenCalledWith(
+      expect(response.status).toBe(200);
+      expect(parseJson(response.text)).toEqual({ status: "queued", exportId: createdExportId });
+      expect(mockExecute()).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(mockQueue.add)).toHaveBeenCalledWith(
         "export",
         expect.objectContaining({
-          userId: "user-1",
-          outputPath: expect.stringContaining("dofek-export-"),
+          exportId: createdExportId,
+          userId: exportUserId,
+          outputPath: expect.stringMatching(/dofek-export-\d+-[a-z0-9]{4}\.zip$/),
         }),
       );
     });
-  });
 
-  describe("GET /api/export/status/:jobId", () => {
-    it("returns 401 when not authenticated", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/status/42");
-      expect(res.status).toBe(401);
-    });
+    it("returns 500 when the export row cannot be created", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([]);
 
-    it("returns 404 for unknown job", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockQueue.getJob.mockResolvedValue(null);
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/status/unknown");
-      expect(res.status).toBe(404);
-    });
+      const response = await request(createTestApp(), "post", "/api/export");
 
-    it("returns 403 when job belongs to another user", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-2");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
-      mockJob.data = { userId: "user-1", outputPath: "/tmp/test.zip" };
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/status/42");
-      expect(res.status).toBe(403);
-    });
-
-    it("returns processing status with progress", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.progress = { percentage: 50, message: "Exporting activities.json..." };
-      mockJob.getState.mockResolvedValue("active");
-      const { app } = createTestApp();
-
-      const res = await request(app, "get", "/api/export/status/42");
-      expect(res.status).toBe(200);
-      const data = JSON.parse(res.body);
-      expect(data.status).toBe("processing");
-      expect(data.progress).toBe(50);
-      expect(data.message).toBe("Exporting activities.json...");
-    });
-
-    it("returns done status with download URL when completed", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.progress = { percentage: 100, message: "Export complete" };
-      mockJob.getState.mockResolvedValue("completed");
-      const { app } = createTestApp();
-
-      const res = await request(app, "get", "/api/export/status/42");
-      expect(res.status).toBe(200);
-      const data = JSON.parse(res.body);
-      expect(data.status).toBe("done");
-      expect(data.downloadUrl).toBe("/api/export/download/42");
-    });
-
-    it("returns error status when job failed", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.getState.mockResolvedValue("failed");
-      mockJob.failedReason = "DB connection lost";
-      const { app } = createTestApp();
-
-      const res = await request(app, "get", "/api/export/status/42");
-      expect(res.status).toBe(200);
-      const data = JSON.parse(res.body);
-      expect(data.status).toBe("error");
-      expect(data.message).toBe("DB connection lost");
-
-      mockJob.failedReason = "";
+      expect(response.status).toBe(500);
+      expect(parseJson(response.text)).toEqual({ error: "Failed to create export" });
+      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
     });
   });
 
-  describe("GET /api/export/download/:jobId", () => {
-    it("returns 401 when not authenticated", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(401);
-    });
+  describe("GET /api/export", () => {
+    it("returns only authenticated user's active and unexpired completed exports", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          id: createdExportId,
+          status: "processing",
+          filename: "dofek-export.zip",
+          size_bytes: null,
+          created_at: "2026-04-26T12:00:00.000Z",
+          started_at: "2026-04-26T12:01:00.000Z",
+          completed_at: null,
+          expires_at: "2026-05-03T12:00:00.000Z",
+          error_message: null,
+        },
+        {
+          id: otherExportId,
+          status: "completed",
+          filename: "dofek-export.zip",
+          size_bytes: "1234",
+          created_at: "2026-04-25T12:00:00.000Z",
+          started_at: "2026-04-25T12:01:00.000Z",
+          completed_at: "2026-04-25T12:02:00.000Z",
+          expires_at: "2026-05-02T12:00:00.000Z",
+          error_message: null,
+        },
+      ]);
 
-    it("returns 401 when session expired", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue(null);
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(401);
-    });
+      const response = await request(createTestApp(), "get", "/api/export");
 
-    it("returns 404 for unknown job", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockQueue.getJob.mockResolvedValue(null);
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/unknown");
-      expect(res.status).toBe(404);
-    });
-
-    it("returns 403 when job belongs to another user", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-2");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-2" });
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(403);
-    });
-
-    it("returns 400 when export is not done yet", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.getState.mockResolvedValue("active");
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(400);
-      expect(JSON.parse(res.body).error).toBe("Export not ready");
-    });
-
-    it("returns 404 when export file is missing", async () => {
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.getState.mockResolvedValue("completed");
-      mockJob.data = { userId: "user-1", outputPath: "/tmp/nonexistent.zip" };
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(404);
-      expect(JSON.parse(res.body).error).toBe("Export file not found");
-    });
-
-    it("warns when unlink fails after download", async () => {
-      const tempFile = join(tmpdir(), `dofek-export-test-${Date.now()}.zip`);
-      writeFileSync(tempFile, "fake-zip-data");
-
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.getState.mockResolvedValue("completed");
-      mockJob.data = { userId: "user-1", outputPath: tempFile };
-      mockUnlink.mockRejectedValueOnce(new Error("EPERM"));
-
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(200);
-
-      // Wait for the download callback's async cleanup to settle
-      await vi.waitFor(() => {
-        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-          "Failed to clean up export file %s: %s",
-          tempFile,
-          expect.any(Error),
-        );
+      expect(response.status).toBe(200);
+      expect(parseJson(response.text)).toEqual({
+        exports: [
+          {
+            id: createdExportId,
+            status: "processing",
+            filename: "dofek-export.zip",
+            sizeBytes: null,
+            createdAt: "2026-04-26T12:00:00.000Z",
+            startedAt: "2026-04-26T12:01:00.000Z",
+            completedAt: null,
+            expiresAt: "2026-05-03T12:00:00.000Z",
+            errorMessage: null,
+          },
+          {
+            id: otherExportId,
+            status: "completed",
+            filename: "dofek-export.zip",
+            sizeBytes: 1234,
+            createdAt: "2026-04-25T12:00:00.000Z",
+            startedAt: "2026-04-25T12:01:00.000Z",
+            completedAt: "2026-04-25T12:02:00.000Z",
+            expiresAt: "2026-05-02T12:00:00.000Z",
+            errorMessage: null,
+          },
+        ],
       });
     });
+  });
 
-    it("warns when job.remove fails after download", async () => {
-      const tempFile = join(tmpdir(), `dofek-export-test-${Date.now()}.zip`);
-      writeFileSync(tempFile, "fake-zip-data");
+  describe("GET /api/export/download/:exportId", () => {
+    it("returns 403 when the export belongs to another user", async () => {
+      authenticate(otherUserId);
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "completed",
+          object_key: "exports/user/export/dofek-export.zip",
+          expires_at: "2999-05-03T12:00:00.000Z",
+        },
+      ]);
 
-      vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
-      vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
-      mockJob.getState.mockResolvedValue("completed");
-      mockJob.data = { userId: "user-1", outputPath: tempFile };
-      mockJob.remove.mockRejectedValueOnce(new Error("Redis down"));
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
 
-      const { app } = createTestApp();
-      const res = await request(app, "get", "/api/export/download/42");
-      expect(res.status).toBe(200);
+      expect(response.status).toBe(403);
+      expect(parseJson(response.text)).toEqual({ error: "Forbidden" });
+    });
 
-      await vi.waitFor(() => {
-        expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-          "Failed to remove export job: %s",
-          expect.any(Error),
-        );
-      });
+    it("returns 404 when the export does not exist", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(404);
+      expect(parseJson(response.text)).toEqual({ error: "Unknown job" });
+    });
+
+    it("returns 400 when the export has expired", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-03T12:00:00.000Z"));
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "completed",
+          object_key: "exports/user/export/dofek-export.zip",
+          expires_at: "2026-05-03T12:00:00.000Z",
+        },
+      ]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(400);
+      expect(parseJson(response.text)).toEqual({ error: "Export has expired" });
+      expect(mockCreateSignedExportDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when the export is not completed", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "processing",
+          object_key: null,
+          expires_at: "2026-05-03T12:00:00.000Z",
+        },
+      ]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(400);
+      expect(parseJson(response.text)).toEqual({ error: "Export is not ready yet" });
+    });
+
+    it("returns 404 when a completed export has no stored object key", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "completed",
+          object_key: null,
+          expires_at: "2999-05-03T12:00:00.000Z",
+        },
+      ]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(404);
+      expect(parseJson(response.text)).toEqual({ error: "Export file not found" });
+      expect(mockCreateSignedExportDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it("redirects a completed owned export to a signed R2 URL", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "completed",
+          object_key: "exports/user-1/export-1/dofek-export.zip",
+          expires_at: "2999-05-03T12:00:00.000Z",
+        },
+      ]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe("https://r2.example.test/signed-export.zip");
+      expect(mockCreateSignedExportDownloadUrl).toHaveBeenCalledWith(
+        "exports/user-1/export-1/dofek-export.zip",
+      );
     });
   });
 });

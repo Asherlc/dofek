@@ -2,7 +2,7 @@ import { File as ExpoFile, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as Updates from "expo-updates";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -35,14 +35,25 @@ const UNIT_OPTIONS: { value: UnitSystem; label: string; description: string }[] 
 
 type ExportState = "idle" | "processing" | "done" | "error";
 
-const ExportTriggerSchema = z.object({ jobId: z.string() });
-
-const ExportStatusSchema = z.object({
-  status: z.string(),
-  progress: z.number().optional(),
-  message: z.string().optional(),
-  downloadUrl: z.string().optional(),
+const ExportTriggerSchema = z.object({
+  exportId: z.string(),
+  status: z.literal("queued"),
 });
+
+const DataExportSchema = z.object({
+  completedAt: z.string().nullable(),
+  createdAt: z.string(),
+  errorMessage: z.string().nullable(),
+  expiresAt: z.string(),
+  filename: z.string(),
+  id: z.string(),
+  sizeBytes: z.number().nullable(),
+  startedAt: z.string().nullable(),
+  status: z.enum(["queued", "processing", "completed", "failed"]),
+});
+
+const ExportListSchema = z.object({ exports: z.array(DataExportSchema) });
+type DataExport = z.infer<typeof DataExportSchema>;
 
 function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
@@ -72,6 +83,21 @@ function formatDateRangeForSignupWeek(
   return `${startValue} to ${endValue}`;
 }
 
+function formatExportSize(sizeBytes: number | null): string {
+  if (sizeBytes == null) return "Size pending";
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatExportDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
@@ -84,8 +110,10 @@ export default function SettingsScreen() {
 
   // ── Data Export ──
   const [exportState, setExportState] = useState<ExportState>("idle");
-  const [exportProgress, setExportProgress] = useState(0);
   const [exportMessage, setExportMessage] = useState("");
+  const [dataExports, setDataExports] = useState<DataExport[]>([]);
+  const [exportsLoading, setExportsLoading] = useState(true);
+  const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
 
   // ── Unit System ──
   const unitSetting = trpc.settings.get.useQuery({ key: "unitSystem" });
@@ -149,9 +177,31 @@ export default function SettingsScreen() {
     ]);
   }
 
+  const loadExports = useCallback(async () => {
+    try {
+      const response = await fetch(`${auth.serverUrl}/api/export`, {
+        headers: { Authorization: `Bearer ${auth.sessionToken}` },
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load exports");
+      }
+      const parsed = ExportListSchema.parse(await response.json());
+      setDataExports(parsed.exports);
+      setExportMessage("");
+    } catch (error: unknown) {
+      captureException(error, { context: "data-export-list" });
+      setExportMessage(error instanceof Error ? error.message : "Failed to load exports");
+    } finally {
+      setExportsLoading(false);
+    }
+  }, [auth.serverUrl, auth.sessionToken]);
+
+  useEffect(() => {
+    loadExports();
+  }, [loadExports]);
+
   async function handleExport() {
     setExportState("processing");
-    setExportProgress(0);
     setExportMessage("Starting export...");
 
     try {
@@ -166,68 +216,43 @@ export default function SettingsScreen() {
         return;
       }
 
-      const triggerData = ExportTriggerSchema.parse(await triggerRes.json());
-      const { jobId } = triggerData;
-
-      // Poll for status
-      const deadline = Date.now() + 10 * 60 * 1000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 1000));
-
-        const statusRes = await fetch(`${auth.serverUrl}/api/export/status/${jobId}`, {
-          headers: { Authorization: `Bearer ${auth.sessionToken}` },
-        });
-
-        if (!statusRes.ok) {
-          setExportState("error");
-          setExportMessage("Failed to check export status");
-          return;
-        }
-
-        const status = ExportStatusSchema.parse(await statusRes.json());
-        setExportProgress(status.progress ?? 0);
-        setExportMessage(status.message ?? "");
-
-        if (status.status === "done" && status.downloadUrl) {
-          setExportMessage("Downloading...");
-          const downloadUrl = status.downloadUrl.startsWith("http")
-            ? status.downloadUrl
-            : `${auth.serverUrl}${status.downloadUrl}`;
-          const downloadRes = await fetch(downloadUrl, {
-            headers: { Authorization: `Bearer ${auth.sessionToken}` },
-          });
-          if (!downloadRes.ok) {
-            setExportState("error");
-            setExportMessage("Failed to download export");
-            return;
-          }
-          const blob = await downloadRes.blob();
-          const file = new ExpoFile(Paths.cache, "health-export.zip");
-          const arrayBuffer = await blob.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          file.write(bytes);
-          setExportState("done");
-          setExportMessage("Export complete");
-          await Sharing.shareAsync(file.uri, {
-            mimeType: "application/zip",
-            dialogTitle: "Save Health Data Export",
-          });
-          return;
-        }
-
-        if (status.status === "error") {
-          setExportState("error");
-          setExportMessage(status.message ?? "Export failed");
-          return;
-        }
-      }
-
-      setExportState("error");
-      setExportMessage("Export timed out");
+      ExportTriggerSchema.parse(await triggerRes.json());
+      setExportState("done");
+      await loadExports();
     } catch (error: unknown) {
       captureException(error, { context: "data-export" });
       setExportState("error");
       setExportMessage("Network error during export");
+    }
+  }
+
+  async function handleDownloadExport(dataExport: DataExport) {
+    setDownloadingExportId(dataExport.id);
+    setExportMessage("Downloading...");
+    try {
+      const downloadRes = await fetch(`${auth.serverUrl}/api/export/download/${dataExport.id}`, {
+        headers: { Authorization: `Bearer ${auth.sessionToken}` },
+      });
+      if (!downloadRes.ok) {
+        throw new Error("Failed to download export");
+      }
+      const blob = await downloadRes.blob();
+      const file = new ExpoFile(Paths.cache, "health-export.zip");
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      file.write(bytes);
+      setExportState("done");
+      setExportMessage("Export ready");
+      await Sharing.shareAsync(file.uri, {
+        mimeType: "application/zip",
+        dialogTitle: "Save Health Data Export",
+      });
+    } catch (error: unknown) {
+      captureException(error, { context: "data-export-download" });
+      setExportState("error");
+      setExportMessage(error instanceof Error ? error.message : "Failed to download export");
+    } finally {
+      setDownloadingExportId(null);
     }
   }
 
@@ -247,6 +272,11 @@ export default function SettingsScreen() {
   }
 
   const { refreshing, onRefresh } = useRefresh();
+  const activeExports = dataExports.filter(
+    (dataExport) => dataExport.status === "queued" || dataExport.status === "processing",
+  );
+  const completedExports = dataExports.filter((dataExport) => dataExport.status === "completed");
+  const hasActiveExport = activeExports.length > 0;
 
   return (
     <ScrollView
@@ -489,32 +519,67 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Data Export</Text>
         <Text style={styles.sectionDescription}>
-          Download all your health data as a ZIP file containing JSON files
+          Create a ZIP file containing CSV files for your health data
         </Text>
         <View style={styles.card}>
-          {exportState === "processing" && (
-            <View style={styles.exportProgressContainer}>
-              <View style={styles.exportProgressTrack}>
-                <View style={[styles.exportProgressFill, { width: `${exportProgress}%` }]} />
-              </View>
-              <Text style={styles.exportMessageText}>{exportMessage}</Text>
+          {hasActiveExport && (
+            <View style={styles.exportStatusContainer}>
+              <Text style={styles.exportStatusTitle}>Export in progress</Text>
+              <Text style={styles.exportMessageText}>We'll email you when it finishes.</Text>
             </View>
           )}
-          {exportState === "done" && <Text style={styles.exportDoneText}>Export complete</Text>}
+          {exportState === "done" && !hasActiveExport && (
+            <Text style={styles.exportDoneText}>{exportMessage}</Text>
+          )}
           {exportState === "error" && <Text style={styles.exportErrorText}>{exportMessage}</Text>}
           <TouchableOpacity
             style={[
               styles.exportButton,
-              exportState === "processing" && styles.exportButtonDisabled,
+              (exportState === "processing" || hasActiveExport) && styles.exportButtonDisabled,
             ]}
             onPress={handleExport}
             activeOpacity={0.7}
-            disabled={exportState === "processing"}
+            disabled={exportState === "processing" || hasActiveExport}
           >
             <Text style={styles.exportButtonText}>
-              {exportState === "processing" ? "Exporting..." : "Download My Data"}
+              {exportState === "processing"
+                ? "Starting..."
+                : hasActiveExport
+                  ? "Export Running"
+                  : "Start Export"}
             </Text>
           </TouchableOpacity>
+          <View style={styles.exportListContainer}>
+            <Text style={styles.exportListTitle}>Available exports</Text>
+            {exportsLoading ? (
+              <Text style={styles.exportMessageText}>Loading exports...</Text>
+            ) : completedExports.length === 0 ? (
+              <Text style={styles.exportMessageText}>No exports available.</Text>
+            ) : (
+              completedExports.map((dataExport) => (
+                <View key={dataExport.id} style={styles.exportListRow}>
+                  <View style={styles.exportListInfo}>
+                    <Text style={styles.exportFilename}>{dataExport.filename}</Text>
+                    <Text style={styles.exportMessageText}>
+                      {formatExportSize(dataExport.sizeBytes)} - Expires{" "}
+                      {formatExportDate(dataExport.expiresAt)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleDownloadExport(dataExport)}
+                    activeOpacity={0.7}
+                    disabled={downloadingExportId === dataExport.id}
+                  >
+                    <Text style={styles.exportDownloadText}>
+                      {downloadingExportId === dataExport.id
+                        ? "Downloading..."
+                        : `Download ${dataExport.filename}`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </View>
         </View>
       </View>
 
@@ -824,20 +889,17 @@ const styles = StyleSheet.create({
   },
 
   // ── Data Export ──
-  exportProgressContainer: {
-    gap: 4,
-    marginBottom: 12,
-  },
-  exportProgressTrack: {
-    height: 4,
-    borderRadius: 2,
+  exportStatusContainer: {
     backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
+    borderRadius: 10,
+    gap: 2,
+    marginBottom: 12,
+    padding: 12,
   },
-  exportProgressFill: {
-    height: "100%",
-    borderRadius: 2,
-    backgroundColor: colors.accent,
+  exportStatusTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
   },
   exportMessageText: {
     fontSize: 12,
@@ -866,6 +928,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.text,
+  },
+  exportListContainer: {
+    gap: 10,
+    marginTop: 16,
+  },
+  exportListTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  exportListRow: {
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingTop: 10,
+  },
+  exportListInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  exportFilename: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  exportDownloadText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.blue,
   },
 
   // ── Developer Tools ──

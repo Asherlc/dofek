@@ -1,11 +1,45 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hypertables rollups fanout -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
+
+## 2026-04-26: Review App Server Quota Exhausted
+
+### Impact
+
+PR review-app deployment failed before the app could be provisioned. Application
+test, build, lint, typecheck, and security checks were not affected.
+
+### What Happened
+
+The `Deploy Review App` workflow reached the Terraform apply step for PR 1036
+and failed while creating the temporary server `dofek-pr-1036`.
+
+### Evidence That Mattered
+
+- Failing step: `Apply review app infrastructure`
+- First fatal line:
+  `Error: server limit reached (resource_limit_exceeded, 47100d408ee44ebf63c5f721a811d92a)`
+- Terraform resource: `hcloud_server.review` in `server.tf` line 27
+
+### Root Cause
+
+The Hetzner project/account had reached its server quota, so Terraform could not
+create another temporary review-app server.
+
+### Fix or Mitigation
+
+No code mitigation was applied. The direct fix is to free unused review-app
+servers or raise the Hetzner server quota, then let the existing workflow create
+the server normally.
+
+### Remaining Risk
+
+Review apps will keep failing for new PRs until server capacity is available.
 
 ## 2026-04-25: Materialized View Refresh Saturated Production
 
@@ -126,6 +160,10 @@ check. The affected PRs could not reach fully green status even though app,
 test, coverage, lint, typecheck, migration lint, E2E, CodeQL, Semgrep, and
 GitGuardian checks passed.
 
+PRs that add permanent infrastructure, such as a staging server, can also reduce
+available Hetzner capacity enough that draft review apps fail before the PR is
+ready for review.
+
 ### Evidence That Mattered
 
 The failed GitHub Actions jobs reached Terraform apply, planned a new
@@ -149,25 +187,61 @@ healthy.
 
 ### Fix Or Mitigation
 
-No code mitigation was applied during the CI fix. The immediate safe operations
-are to close or destroy stale review apps to release their Hetzner servers, or
-raise the account server limit. The existing destroy workflow only runs on PR
-close, so there is no manual dispatch path for freeing a review app without
-closing a PR.
+Draft PRs now skip review app image builds and deploys. Marking a PR ready for
+review triggers the review app workflow. If ready-for-review PRs hit the quota,
+the immediate safe operations are still to close or destroy stale review apps to
+release their Hetzner servers, or raise the account server limit.
 
 ### Remaining Risk
 
-Review apps can continue to block otherwise healthy PRs whenever open PR count
-exceeds Hetzner server quota. Draft and docs-only PRs also consume review app
-capacity today unless they are closed or their review app is manually destroyed
-through a supported workflow.
+Review apps can continue to block otherwise healthy ready-for-review PRs
+whenever open PR count exceeds Hetzner server quota. Docs-only PRs still consume
+review app capacity after they are marked ready unless they are closed or their
+review app is manually destroyed through a supported workflow.
 
 ### Follow-Up Work
 
 - Add a supported manual review-app destroy workflow for a specific PR number.
-- Consider skipping dedicated review app servers for draft and docs-only PRs.
+- Consider skipping dedicated review app servers for docs-only PRs.
 - Add a visible quota/capacity note to PR check output when Hetzner returns
   `resource_limit_exceeded`.
+
+## 2026-04-26: Terraform Provider Download Failed PR CI
+
+### Impact
+
+The aggregate `Test / Lint & Static Analysis` PR check failed because the
+`Test / Terraform Validate` subcheck could not initialize Terraform providers.
+The application code checks were not the failing path.
+
+### Evidence That Mattered
+
+The failing job stopped during `terraform init -backend=false` while installing
+the pinned Cloudflare provider:
+
+```text
+Error while installing cloudflare/cloudflare v5.19.0: could not query provider registry
+failed to retrieve authentication checksums ... 502 Bad Gateway returned from github.com
+```
+
+### Root Cause
+
+Terraform validation downloaded provider metadata and plugin checksums from the
+registry path on every uncached run. A transient upstream GitHub/registry 502 was
+therefore enough to fail PR CI before validation could run.
+
+### Fix Or Mitigation
+
+Terraform provider plugin caching was added to both validate and deploy
+workflows, keyed by `deploy/.terraform.lock.hcl`. This keeps provider binaries
+available across runs while preserving the lockfile as the source of truth for
+provider versions and checksums.
+
+### Remaining Risk
+
+The first run after a lockfile change still depends on the upstream provider
+registry. If provider download availability remains a recurring failure mode,
+consider mirroring providers or prewarming the cache through a scheduled job.
 
 ## Patterns To Watch
 

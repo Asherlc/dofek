@@ -74,11 +74,17 @@ runs:
           exit 1
         fi
 
+        render_template="$INFISICAL_TEMPLATE_PATH"
+        if grep -Fq "__INFISICAL_ENV__" "$INFISICAL_TEMPLATE_PATH"; then
+          render_template="$RUNNER_TEMP/infisical-dotenv-${INFISICAL_ENV}.tmpl"
+          sed "s/__INFISICAL_ENV__/${INFISICAL_ENV}/g" "$INFISICAL_TEMPLATE_PATH" > "$render_template"
+        fi
+
         mkdir -p "$(dirname "$INFISICAL_OUTPUT_PATH")"
         infisical export \
           --token="$infisical_access_token" \
           --env="$INFISICAL_ENV" \
-          --template="$INFISICAL_TEMPLATE_PATH" \
+          --template="$render_template" \
           --silent > "$INFISICAL_OUTPUT_PATH"
 
         echo "output_path=$INFISICAL_OUTPUT_PATH" >> "$GITHUB_OUTPUT"

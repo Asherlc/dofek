@@ -231,15 +231,15 @@ describe("SettingsScreen billing", () => {
 });
 
 describe("SettingsScreen export UI rendering", () => {
-  it("renders the Download My Data button", async () => {
+  it("renders the Start Export button", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Download My Data")).toBeTruthy();
+    expect(screen.getByText("Start Export")).toBeTruthy();
   });
 
-  it("shows Exporting... and disables the button while processing", async () => {
+  it("shows Starting... and disables the button while processing", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation(() => new Promise(() => {})),
@@ -249,11 +249,11 @@ describe("SettingsScreen export UI rendering", () => {
 
     render(<SettingsScreen />);
 
-    const button = screen.getByText("Download My Data");
+    const button = screen.getByText("Start Export");
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(screen.getByText("Exporting...")).toBeTruthy();
+      expect(screen.getByText("Starting...")).toBeTruthy();
     });
 
     vi.unstubAllGlobals();
@@ -284,7 +284,117 @@ describe("SettingsScreen export flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("completes a successful export: triggers, polls until done, downloads, writes file, and shares", async () => {
+  it("shows active exports and tells the user to expect email", async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url === "https://test.example.com/api/export") {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              exports: [
+                {
+                  id: "export-123",
+                  status: "processing",
+                  filename: "dofek-export.zip",
+                  sizeBytes: null,
+                  createdAt: "2026-04-26T12:00:00.000Z",
+                  startedAt: "2026-04-26T12:01:00.000Z",
+                  completedAt: null,
+                  expiresAt: "2026-05-03T12:00:00.000Z",
+                  errorMessage: null,
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Export in progress")).toBeTruthy();
+    });
+    expect(screen.getByText("We'll email you when it finishes.")).toBeTruthy();
+  });
+
+  it("queues an export and refreshes the export list", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ exports: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ status: "queued", exportId: "export-456" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            exports: [
+              {
+                id: "export-456",
+                status: "queued",
+                filename: "dofek-export.zip",
+                sizeBytes: null,
+                createdAt: "2026-04-26T12:00:00.000Z",
+                startedAt: null,
+                completedAt: null,
+                expiresAt: "2026-05-03T12:00:00.000Z",
+                errorMessage: null,
+              },
+            ],
+          }),
+      });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("No exports available.");
+    fireEvent.click(screen.getByText("Start Export"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Export in progress")).toBeTruthy();
+    });
+  });
+
+  it("shows an error state when the trigger request fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ exports: [] }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          json: () => Promise.resolve({}),
+        }),
+    );
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    await screen.findByText("No exports available.");
+    fireEvent.click(screen.getByText("Start Export"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to start export")).toBeTruthy();
+    });
+  });
+
+  it("downloads a completed export from the available export list", async () => {
     const { shareAsync } = await import("expo-sharing");
     const { File: ExpoFile } = await import("expo-file-system");
 
@@ -292,22 +402,25 @@ describe("SettingsScreen export flow", () => {
       if (url === "https://test.example.com/api/export") {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ jobId: "job-123" }),
-        });
-      }
-      if (url === "https://test.example.com/api/export/status/job-123") {
-        return Promise.resolve({
-          ok: true,
           json: () =>
             Promise.resolve({
-              status: "done",
-              progress: 100,
-              message: "Ready",
-              downloadUrl: "/api/export/download/job-123",
+              exports: [
+                {
+                  id: "export-789",
+                  status: "completed",
+                  filename: "dofek-export.zip",
+                  sizeBytes: 1024,
+                  createdAt: "2026-04-25T12:00:00.000Z",
+                  startedAt: "2026-04-25T12:01:00.000Z",
+                  completedAt: "2026-04-25T12:02:00.000Z",
+                  expiresAt: "2026-05-02T12:02:00.000Z",
+                  errorMessage: null,
+                },
+              ],
             }),
         });
       }
-      if (url === "https://test.example.com/api/export/download/job-123") {
+      if (url === "https://test.example.com/api/export/download/export-789") {
         const fakeBytes = new Uint8Array([1, 2, 3]);
         const blob = new Blob([fakeBytes], { type: "application/zip" });
         return Promise.resolve({
@@ -319,16 +432,13 @@ describe("SettingsScreen export flow", () => {
     });
 
     vi.stubGlobal("fetch", mockFetch);
-    vi.useFakeTimers();
 
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
-    fireEvent.click(screen.getByText("Download My Data"));
-
-    await vi.advanceTimersByTimeAsync(2000);
-    vi.useRealTimers();
+    await screen.findByText("Available exports");
+    fireEvent.click(screen.getByText("Download dofek-export.zip"));
 
     await waitFor(() => {
       expect(ExpoFile).toHaveBeenCalled();
@@ -337,68 +447,6 @@ describe("SettingsScreen export flow", () => {
         "file:///tmp/cache/health-export.zip",
         expect.objectContaining({ mimeType: "application/zip" }),
       );
-    });
-  });
-
-  it("shows an error state when the trigger request fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        json: () => Promise.resolve({}),
-      }),
-    );
-
-    const { default: SettingsScreen } = await import("./settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByText("Download My Data"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Failed to start export")).toBeTruthy();
-    });
-  });
-
-  it("shows an error state when the download request fails", async () => {
-    const mockFetch = vi.fn().mockImplementation((url: string) => {
-      if (url === "https://test.example.com/api/export") {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ jobId: "job-456" }),
-        });
-      }
-      if (url === "https://test.example.com/api/export/status/job-456") {
-        return Promise.resolve({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              status: "done",
-              progress: 100,
-              downloadUrl: "/api/export/download/job-456",
-            }),
-        });
-      }
-      if (url === "https://test.example.com/api/export/download/job-456") {
-        return Promise.resolve({ ok: false });
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
-    });
-
-    vi.stubGlobal("fetch", mockFetch);
-    vi.useFakeTimers();
-
-    const { default: SettingsScreen } = await import("./settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByText("Download My Data"));
-
-    await vi.advanceTimersByTimeAsync(2000);
-    vi.useRealTimers();
-
-    await waitFor(() => {
-      expect(screen.getByText("Failed to download export")).toBeTruthy();
     });
   });
 });

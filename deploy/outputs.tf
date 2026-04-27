@@ -6,6 +6,14 @@ output "server_ipv6" {
   value = hcloud_server.dofek.ipv6_address
 }
 
+output "staging_server_ip" {
+  value = hcloud_server.dofek_staging.ipv4_address
+}
+
+output "staging_server_ipv6" {
+  value = hcloud_server.dofek_staging.ipv6_address
+}
+
 output "dofek_fit_nameservers" {
   description = "Set these as custom nameservers on Namecheap for dofek.fit"
   value       = cloudflare_zone.dofek_fit.name_servers

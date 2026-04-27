@@ -8,6 +8,8 @@ interface ProviderInfo {
   id: string;
   name: string;
   authorized: boolean;
+  importOnly?: boolean;
+  authType?: string;
 }
 
 interface ProviderGuideProps {

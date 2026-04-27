@@ -11,20 +11,38 @@ import type { ComponentType } from "react";
 import { ProviderGuide } from "./ProviderGuide";
 
 const providerCatalog = [
-  { id: "strava", name: "Strava", authorized: false },
-  { id: "garmin", name: "Garmin", authorized: false },
-  { id: "wahoo", name: "Wahoo", authorized: false },
-  { id: "polar", name: "Polar", authorized: false },
-  { id: "fitbit", name: "Fitbit", authorized: false },
-  { id: "zwift", name: "Zwift", authorized: false },
-  { id: "peloton", name: "Peloton", authorized: false },
-  { id: "oura", name: "Oura", authorized: false },
-  { id: "whoop", name: "WHOOP", authorized: false },
-  { id: "eight-sleep", name: "Eight Sleep", authorized: false },
-  { id: "cronometer-csv", name: "Cronometer", authorized: false },
-  { id: "fatsecret", name: "FatSecret", authorized: false },
-  { id: "withings", name: "Withings", authorized: false },
-  { id: "ultrahuman", name: "Ultrahuman", authorized: false },
+  { id: "strava", name: "Strava", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "garmin", name: "Garmin", authorized: false, importOnly: false, authType: "custom:garmin" },
+  { id: "wahoo", name: "Wahoo", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "polar", name: "Polar", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "fitbit", name: "Fitbit", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "zwift", name: "Zwift", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "peloton", name: "Peloton", authorized: false, importOnly: false, authType: "credential" },
+  { id: "oura", name: "Oura", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "whoop", name: "WHOOP", authorized: false, importOnly: false, authType: "custom:whoop" },
+  {
+    id: "eight-sleep",
+    name: "Eight Sleep",
+    authorized: false,
+    importOnly: false,
+    authType: "credential",
+  },
+  {
+    id: "cronometer-csv",
+    name: "Cronometer",
+    authorized: false,
+    importOnly: true,
+    authType: "file-import",
+  },
+  { id: "fatsecret", name: "FatSecret", authorized: false, importOnly: false, authType: "oauth" },
+  { id: "withings", name: "Withings", authorized: false, importOnly: false, authType: "oauth" },
+  {
+    id: "ultrahuman",
+    name: "Ultrahuman",
+    authorized: false,
+    importOnly: false,
+    authType: "credential",
+  },
 ];
 
 function withRouter(Story: ComponentType) {
@@ -76,6 +94,21 @@ export const LimitedProviders: Story = {
     providers: providerCatalog.filter((provider) =>
       ["strava", "garmin", "oura", "whoop", "withings"].includes(provider.id),
     ),
+  },
+};
+
+export const UsableProvidersOnly: Story = {
+  args: {
+    providers: [
+      { id: "strava", name: "Strava", authorized: false, importOnly: false, authType: "oauth" },
+      {
+        id: "cronometer-csv",
+        name: "Cronometer",
+        authorized: false,
+        importOnly: true,
+        authType: "file-import",
+      },
+    ],
   },
 };
 

@@ -17,9 +17,20 @@ describe("queues", () => {
 
   describe("constants", () => {
     it("exports correct queue names", async () => {
-      const { SYNC_QUEUE, IMPORT_QUEUE } = await import("./queues.ts");
+      const {
+        EXPORT_QUEUE,
+        IMPORT_QUEUE,
+        POST_SYNC_QUEUE,
+        SCHEDULED_SYNC_QUEUE,
+        SYNC_QUEUE,
+        TRAINING_EXPORT_QUEUE,
+      } = await import("./queues.ts");
       expect(SYNC_QUEUE).toBe("sync");
       expect(IMPORT_QUEUE).toBe("import");
+      expect(EXPORT_QUEUE).toBe("export");
+      expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
+      expect(POST_SYNC_QUEUE).toBe("post-sync");
+      expect(TRAINING_EXPORT_QUEUE).toBe("training-export");
     });
   });
 
@@ -157,6 +168,66 @@ describe("queues", () => {
     });
   });
 
+  describe("getProviderSyncQueue", () => {
+    it("reuses a cached queue for the same provider", async () => {
+      const { getProviderSyncQueue } = await import("./queues.ts");
+
+      const firstQueue = getProviderSyncQueue("strava");
+      const secondQueue = getProviderSyncQueue("strava");
+
+      expect(firstQueue).toBe(secondQueue);
+      expect(MockQueue).toHaveBeenCalledTimes(1);
+      expect(MockQueue).toHaveBeenCalledWith("sync-strava", {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+
+    it("creates separate cached queues for different providers", async () => {
+      const { getProviderSyncQueue } = await import("./queues.ts");
+
+      getProviderSyncQueue("garmin");
+      getProviderSyncQueue("wahoo");
+
+      expect(MockQueue).toHaveBeenCalledWith("sync-garmin", expect.any(Object));
+      expect(MockQueue).toHaveBeenCalledWith("sync-wahoo", expect.any(Object));
+    });
+  });
+
+  describe("createExportQueue", () => {
+    it("creates a Queue with the export queue name", async () => {
+      const { createExportQueue, EXPORT_QUEUE } = await import("./queues.ts");
+
+      createExportQueue({ host: "test", port: 1111 });
+
+      expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
+        connection: { host: "test", port: 1111 },
+      });
+    });
+
+    it("uses default redis connection when none provided", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { createExportQueue, EXPORT_QUEUE } = await import("./queues.ts");
+
+      createExportQueue();
+
+      expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
+  describe("createScheduledSyncQueue", () => {
+    it("creates a Queue with the scheduled sync queue name", async () => {
+      const { createScheduledSyncQueue, SCHEDULED_SYNC_QUEUE } = await import("./queues.ts");
+
+      createScheduledSyncQueue({ host: "test", port: 2222 });
+
+      expect(MockQueue).toHaveBeenCalledWith(SCHEDULED_SYNC_QUEUE, {
+        connection: { host: "test", port: 2222 },
+      });
+    });
+  });
+
   describe("createPostSyncQueue", () => {
     it("creates a Queue with the post-sync queue name", async () => {
       const { createPostSyncQueue, POST_SYNC_QUEUE } = await import("./queues.ts");
@@ -165,6 +236,20 @@ describe("queues", () => {
 
       expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
         connection: { host: "test", port: 9999 },
+      });
+    });
+  });
+
+  describe("getPostSyncQueue", () => {
+    it("reuses the cached post-sync queue", async () => {
+      const { getPostSyncQueue, POST_SYNC_QUEUE } = await import("./queues.ts");
+
+      const firstQueue = getPostSyncQueue();
+      const secondQueue = getPostSyncQueue();
+
+      expect(firstQueue).toBe(secondQueue);
+      expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
     });
   });
@@ -216,6 +301,18 @@ describe("queues", () => {
           removeOnComplete: true,
         },
       );
+    });
+  });
+
+  describe("createTrainingExportQueue", () => {
+    it("creates a Queue with the training export queue name", async () => {
+      const { createTrainingExportQueue, TRAINING_EXPORT_QUEUE } = await import("./queues.ts");
+
+      createTrainingExportQueue({ host: "test", port: 3333 });
+
+      expect(MockQueue).toHaveBeenCalledWith(TRAINING_EXPORT_QUEUE, {
+        connection: { host: "test", port: 3333 },
+      });
     });
   });
 });

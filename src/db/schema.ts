@@ -1349,6 +1349,34 @@ export const userBilling = fitness.table(
 );
 
 // ============================================================
+// Data exports — offline user exports stored in R2
+// ============================================================
+
+export const dataExport = fitness.table(
+  "data_export",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    objectKey: text("object_key"),
+    filename: text("filename").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    errorMessage: text("error_message"),
+  },
+  (table) => [
+    index("data_export_user_created_idx").on(table.userId, table.createdAt),
+    index("data_export_user_status_idx").on(table.userId, table.status),
+    index("data_export_expires_idx").on(table.expiresAt),
+  ],
+);
+
+// ============================================================
 // User settings (key-value store, scoped per user)
 // ============================================================
 

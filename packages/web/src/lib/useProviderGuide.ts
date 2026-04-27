@@ -9,7 +9,12 @@ export function useProviderGuide() {
   const dismissMutation = trpc.providerGuide.dismiss.useMutation();
   const trpcUtils = trpc.useUtils();
 
-  const connectedCount = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly).length;
+  const connectedCount = (providers.data ?? []).filter(
+    (provider) => provider.authorized && !provider.importOnly,
+  ).length;
+  const guideProviders = (providers.data ?? []).filter(
+    (provider) => provider.importOnly || provider.authType !== "none",
+  );
   const dismissed = status.data?.dismissed === true;
   const isLoading = providers.isLoading || status.isLoading;
 
@@ -28,6 +33,6 @@ export function useProviderGuide() {
     showProviderGuide,
     dismiss,
     isLoading,
-    providers: providers.data ?? [],
+    providers: guideProviders,
   };
 }

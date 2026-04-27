@@ -55,6 +55,7 @@ Cross-provider reverse-engineering references:
 | [activity-rollups-runbook.md](activity-rollups-runbook.md) | Backfill, drain, verify, and rebuild the SQL-owned activity analytics projection. |
 | [materialized-view-maintenance-runbook.md](materialized-view-maintenance-runbook.md) | Safe blocking materialized-view maintenance workflow, preflight, and refresh inventory. |
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
+| [staging.md](staging.md) | Production-shaped staging environment and deploy workflow. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and zero-downtime Hetzner volume expansion plan. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |

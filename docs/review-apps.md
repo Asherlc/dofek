@@ -21,7 +21,8 @@ existing explicit records and Traefik routes.
 
 ### Open, Reopen, Synchronize
 
-`.github/workflows/review-app.yml` does the following for same-repo PRs:
+For same-repo PRs that are ready for review, `.github/workflows/review-app.yml`
+does the following:
 
 1. Build `ghcr.io/asherlc/dofek:pr-<number>`.
 2. Create the tagged HCP Terraform workspace `dofek-review-pr-<number>` if it
@@ -63,6 +64,9 @@ Use:
 
 - Review apps are skipped for fork PRs because package push and deploy secrets
   are not safe to expose to untrusted code.
+- Review apps are skipped for draft PRs to avoid consuming scarce Hetzner server
+  quota before human review is requested. Marking a draft PR ready for review
+  starts the workflow.
 - Review app port `3000` only accepts traffic from the shared front door IP.
 - The shared front door must already have the wildcard DNS record and Traefik
   file provider enabled. Those changes live in the main `deploy/` Terraform and

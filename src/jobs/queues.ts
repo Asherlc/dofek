@@ -20,6 +20,7 @@ export interface ImportJobData {
 }
 
 export interface ExportJobData {
+  exportId: string;
   userId: string;
   /** Full path to the output ZIP file in the shared job-files directory */
   outputPath: string;

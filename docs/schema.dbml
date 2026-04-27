@@ -392,6 +392,26 @@ table fitness.daily_metrics {
   }
 }
 
+table fitness.data_export {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  status text [not null]
+  object_key text
+  filename text [not null]
+  size_bytes bigint
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  started_at "timestamp with time zone"
+  completed_at "timestamp with time zone"
+  expires_at "timestamp with time zone" [not null]
+  error_message text
+
+  indexes {
+    (user_id, created_at) [name: 'data_export_user_created_idx']
+    (user_id, status) [name: 'data_export_user_status_idx']
+    expires_at [name: 'data_export_expires_idx']
+  }
+}
+
 table fitness.dexa_scan {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -1278,6 +1298,8 @@ ref daily_metric_value_metric_type_id_daily_metric_type_id_fk: fitness.daily_met
 ref daily_metrics_provider_id_provider_id_fk: fitness.daily_metrics.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref daily_metrics_user_id_user_profile_id_fk: fitness.daily_metrics.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref data_export_user_id_user_profile_id_fk: fitness.data_export.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref dexa_scan_provider_id_provider_id_fk: fitness.dexa_scan.provider_id > fitness.provider.id [delete: no action, update: no action]
 
