@@ -33,6 +33,8 @@ jobs:
   terraform:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
     outputs:
       server_host: ${{ steps.tf_outputs.outputs.server_host }}
       staging_server_host: ${{ steps.tf_outputs.outputs.staging_server_host }}
@@ -43,6 +45,11 @@ jobs:
       - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
+          restore-keys: terraform-provider-v1-${{ runner.os }}-
       - name: Terraform Apply
         working-directory: deploy
         env:
@@ -57,6 +64,7 @@ jobs:
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
           # is benign in CI and avoids spurious "workspace already locked" failures.
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
           terraform init -lock-timeout=5m
           terraform apply -auto-approve -lock-timeout=5m
 
