@@ -4,7 +4,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -195,6 +200,26 @@ describe("nutritionAnalyticsRouter", () => {
       expect(result[0]?.proteinPerKg).toBeNull();
     });
   });
+
+  describe("access window gating", () => {
+    it("caloricBalance passes accessWindow to repository (limited window returns empty)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      const result = await caller.caloricBalance({ days: 30 });
+      expect(result).toEqual([]);
+    });
+  });
 });
 
 describe("pmcRouter", () => {
@@ -269,6 +294,27 @@ describe("pmcRouter", () => {
 
       expect(result.model.ftp).not.toBeNull();
       expect(result.data.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("access window gating", () => {
+    it("chart passes accessWindow to repository (limited window returns empty)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      const result = await caller.chart({ days: 180 });
+      expect(result.data).toEqual([]);
+      expect(result.model.type).toBe("generic");
     });
   });
 });

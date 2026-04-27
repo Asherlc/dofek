@@ -1,5 +1,5 @@
+import { RedisCacheStore } from "dofek/lib/cache";
 import { beforeEach, describe, expect, it } from "vitest";
-import { RedisCacheStore } from "./cache.ts";
 
 function createFakeRedisClient() {
   const values = new Map<string, string>();

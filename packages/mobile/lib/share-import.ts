@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { captureException } from "./telemetry";
 
 const importProviderIds = ["apple-health", "strong-csv", "cronometer-csv"] as const;
 
@@ -184,13 +185,34 @@ function hasBlobTextReader(blob: Blob): boolean {
   return typeof Reflect.get(blob, "text") === "function";
 }
 
-async function readBlobText(blob: Blob): Promise<string> {
-  if (hasBlobTextReader(blob)) {
-    return blob.text();
+async function readBlobText(blob: Blob, fileUri: string, fetchImpl: typeof fetch): Promise<string> {
+  try {
+    if (hasBlobTextReader(blob)) {
+      return await blob.text();
+    }
+  } catch (error) {
+    captureException(error, {
+      source: "share-import-readblobtext-text",
+      fileUri,
+    });
   }
 
-  const arrayBuffer = await blob.arrayBuffer();
-  return new TextDecoder().decode(arrayBuffer);
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    return new TextDecoder().decode(arrayBuffer);
+  } catch (error) {
+    captureException(error, {
+      source: "share-import-readblobtext-arraybuffer",
+      fileUri,
+    });
+  }
+
+  // Fallback to fetching the file URI directly
+  const response = await fetchImpl(fileUri);
+  if (!response.ok) {
+    throw new Error(`Failed to read shared file via fetch fallback (${response.status})`);
+  }
+  return response.text();
 }
 
 async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob> {
@@ -202,7 +224,14 @@ async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob>
 }
 
 async function parseUploadResponse(response: Response): Promise<{ jobId: string }> {
-  const json: unknown = await response.json().catch(() => ({}));
+  const json: unknown = await response.json().catch((error: unknown) => {
+    captureException(error, {
+      source: "share-import-upload-response-json-parse",
+      url: response.url,
+      status: response.status,
+    });
+    return {};
+  });
   const parsed = uploadResponseSchema.safeParse(json);
   if (!response.ok) {
     throw new Error(parseErrorMessage(json, `Upload failed (HTTP ${response.status})`));
@@ -309,7 +338,14 @@ async function pollImportStatus(
         Authorization: `Bearer ${sessionToken}`,
       },
     });
-    const json: unknown = await response.json().catch(() => ({}));
+    const json: unknown = await response.json().catch((error: unknown) => {
+      captureException(error, {
+        source: "share-import-status-response-json-parse",
+        url: response.url,
+        status: response.status,
+      });
+      return {};
+    });
     if (!response.ok) {
       throw new Error(parseErrorMessage(json, `Status check failed (HTTP ${response.status})`));
     }
@@ -375,7 +411,9 @@ export async function importSharedFile(
     const mimeType = blob.type || null;
 
     const csvHeaderLine =
-      fileExtension === ".csv" ? getCsvHeaderLine(await readBlobText(blob)) : "";
+      fileExtension === ".csv"
+        ? getCsvHeaderLine(await readBlobText(blob, args.fileUri, fetchImpl))
+        : "";
 
     const providerId = inferImportProviderFromFile({
       fileName,
@@ -429,6 +467,11 @@ export async function importSharedFile(
 
     return { providerId, jobId };
   } catch (error: unknown) {
+    captureException(error, {
+      source: "share-import-import-shared-file",
+      fileUri: args.fileUri,
+      serverUrl: args.serverUrl,
+    });
     const message = error instanceof Error ? error.message : "Import failed";
     args.onProgress?.({
       status: "error",

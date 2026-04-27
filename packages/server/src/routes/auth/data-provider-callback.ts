@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { revokeToken } from "dofek/auth/oauth";
+import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { MissingEmailForSignupError, resolveOrCreateUser } from "../../auth/account-linking.ts";
 import {
@@ -8,7 +9,6 @@ import {
   setSessionCookie,
 } from "../../auth/cookies.ts";
 import { createSession, validateSession } from "../../auth/session.ts";
-import { queryCache } from "../../lib/cache.ts";
 import { logger } from "../../logger.ts";
 import {
   completeSignupHtml,

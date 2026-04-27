@@ -11,6 +11,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitlement.ts";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -66,6 +67,7 @@ export const stressRouter = router({
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
                 AND date > ${dateWindowStart(input.endDate, queryDays)}
+                ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
               ORDER BY date ASC
             ),
             sleep_eff AS (
@@ -79,6 +81,7 @@ export const stressRouter = router({
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
                   AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
+                  ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
               ) sleep_sub
               ORDER BY local_date, duration_minutes DESC NULLS LAST
             )

@@ -25,7 +25,7 @@ export const efficiencyRouter = router({
   aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
-      const repo = new EfficiencyRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new EfficiencyRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getAerobicEfficiency(input.days);
     }),
 
@@ -37,7 +37,7 @@ export const efficiencyRouter = router({
   aerobicDecoupling: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
-      const repo = new EfficiencyRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new EfficiencyRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getAerobicDecoupling(input.days);
     }),
 
@@ -55,7 +55,7 @@ export const efficiencyRouter = router({
   polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
-      const repo = new EfficiencyRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new EfficiencyRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getPolarizationTrend(input.days);
     }),
 });

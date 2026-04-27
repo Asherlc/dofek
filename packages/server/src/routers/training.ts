@@ -48,21 +48,21 @@ export const trainingRouter = router({
   weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getWeeklyVolume(input.days);
     }),
 
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getHrZones(input.days);
     }),
 
   activityStats: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getActivityStats(input.days);
     }),
 
@@ -72,7 +72,7 @@ export const trainingRouter = router({
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const weights = getEffectiveParams(storedParams).readinessWeights;
 
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const data = await repo.getNextWorkoutData(input.endDate);
 
       return repo.getRecommendation(data, input.endDate, weights);

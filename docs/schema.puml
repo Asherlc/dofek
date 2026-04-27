@@ -849,6 +849,18 @@ entity "training_export_watermark" {
   updated_at : timestamp
 }
 
+entity "user_billing" {
+  * user_id : uuid <<PK>>
+  --
+  stripe_customer_id : text
+  stripe_subscription_id : text
+  stripe_subscription_status : text
+  stripe_current_period_end : timestamp
+  paid_grant_reason : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "user_profile" {
   * id : uuid <<PK>>
   --
@@ -957,6 +969,7 @@ nutrient ||--o{ supplement_nutrient
 supplement ||--o{ supplement_nutrition
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
+user_profile ||--o{ user_billing
 user_profile ||--o{ user_settings
 provider ||--o{ webhook_subscription
 

@@ -57,7 +57,7 @@ vi.mock("dofek/db/tokens", () => ({
   saveTokens: vi.fn(),
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn() },
 }));
 
@@ -388,7 +388,7 @@ describe("whoopAuthRouter", () => {
   describe("saveTokens", () => {
     it("saves tokens to database with the session userId", async () => {
       const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-      const { queryCache } = await import("../lib/cache.ts");
+      const { queryCache } = await import("dofek/lib/cache");
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",

@@ -187,11 +187,30 @@ jobs:
           TF_VAR_pr_number: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-
           terraform init -input=false -lock-timeout=5m
-          terraform apply -input=false -auto-approve -lock-timeout=5m
+          apply_output="$(mktemp)"
+          set +e
+          terraform apply -input=false -auto-approve -lock-timeout=5m 2>&1 | tee "$apply_output"
+          apply_code=$?
+          set -e
+          if [ "$apply_code" -ne 0 ]; then
+            if grep -q "server limit reached" "$apply_output"; then
+              echo "review_app_skipped=true" >> "$GITHUB_OUTPUT"
+              echo "review_host=unavailable" >> "$GITHUB_OUTPUT"
+              echo "review_url=unavailable" >> "$GITHUB_OUTPUT"
+              echo "review_server_ip=unavailable" >> "$GITHUB_OUTPUT"
+              echo "::warning::Review app skipped due Hetzner server limit reached for PR #${{ github.event.pull_request.number }}."
+              rm -f "$apply_output"
+              exit 0
+            fi
 
+            cat "$apply_output"
+            rm -f "$apply_output"
+            exit "$apply_code"
+          fi
+          rm -f "$apply_output"
           {
+            echo "review_app_skipped=false"
             echo "review_host=$(terraform output -raw review_host)"
             echo "review_url=$(terraform output -raw review_url)"
             echo "review_server_ip=$(terraform output -raw review_server_ip)"
@@ -199,11 +218,13 @@ jobs:
 
       - name: Setup front door SSH
         uses: ./.github/actions/setup-ssh-host
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         with:
           host: ${{ env.FRONT_DOOR_HOST }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Write front door review route
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         env:
           FRONT_DOOR_HOST: ${{ env.FRONT_DOOR_HOST }}
           REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
@@ -236,17 +257,20 @@ jobs:
 
       - name: Setup review server SSH
         uses: ./.github/actions/setup-ssh-host
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         with:
           host: ${{ steps.terraform.outputs.review_server_ip }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Export Infisical review env file via OIDC
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         uses: ./.github/actions/export-infisical-dotenv
         with:
           template: .github/templates/infisical-dotenv.tmpl
           output_path: ${{ github.workspace }}/.env.review
 
       - name: Append review app overrides
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         env:
           REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
         run: |
@@ -261,6 +285,7 @@ jobs:
           } >> "${{ github.workspace }}/.env.review"
 
       - name: Login to GHCR
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -268,6 +293,7 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Wait for review server bootstrap
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         env:
           REVIEW_SERVER_IP: ${{ steps.terraform.outputs.review_server_ip }}
         run: |
@@ -280,6 +306,7 @@ jobs:
           fi
 
       - name: Deploy review stack
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         env:
           COMPOSE_PROJECT_NAME: dofek-review-pr-${{ github.event.pull_request.number }}
           DOCKER_HOST: ssh://root@${{ steps.terraform.outputs.review_server_ip }}
@@ -307,6 +334,7 @@ jobs:
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d web
 
       - name: Wait for public review app healthcheck
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         env:
           FRONT_DOOR_IPV4: ${{ steps.front_door.outputs.ipv4 }}
           REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
@@ -329,6 +357,7 @@ jobs:
 
       - name: Comment review app URL on PR
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
+        if: steps.terraform.outputs.review_app_skipped != 'true'
         with:
           header: review-app
           message: |
@@ -338,3 +367,13 @@ jobs:
             - [Jump into seeded dashboard](${{ steps.terraform.outputs.review_url }}/auth/dev-login)
 
             This environment runs on a dedicated Hetzner server for PR #${{ github.event.pull_request.number }} and updates on each push.
+
+      - name: Comment review app skip reason
+        if: steps.terraform.outputs.review_app_skipped == 'true'
+        uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
+        with:
+          header: review-app
+          message: |
+            Review app deployment was skipped for PR #${{ github.event.pull_request.number }}.
+
+            Hetzner returned a server quota error while trying to provision a new review server. Infra capacity needs to be increased or old review app resources cleaned up.

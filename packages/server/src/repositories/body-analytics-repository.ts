@@ -220,6 +220,8 @@ export class BodyAnalyticsRepository extends BaseRepository {
       sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days)}
           SELECT date, weight_kg
           FROM weight_deduped
+          WHERE 1=1
+          ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date ASC`,
     );
 
@@ -242,6 +244,8 @@ export class BodyAnalyticsRepository extends BaseRepository {
       sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days, sql`AND body_fat_pct IS NOT NULL`)}
           SELECT date, weight_kg, body_fat_pct
           FROM weight_deduped
+          WHERE 1=1
+          ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date ASC`,
     );
 
@@ -285,6 +289,8 @@ export class BodyAnalyticsRepository extends BaseRepository {
       sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days)}
           SELECT date, weight_kg
           FROM weight_deduped
+          WHERE 1=1
+          ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date ASC`,
     );
 

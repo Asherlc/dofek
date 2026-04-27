@@ -131,6 +131,14 @@ export async function setupTestDatabase(): Promise<TestContext> {
     [schema.TEST_USER_ID],
   );
 
+  // Seed billing record with existing_account grant so tests get full access.
+  await migrationClient.query(
+    `INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+     VALUES ($1, 'existing_account')
+     ON CONFLICT (user_id) DO NOTHING`,
+    [schema.TEST_USER_ID],
+  );
+
   await migrationClient.end();
 
   const db = createDatabase(connectionString);

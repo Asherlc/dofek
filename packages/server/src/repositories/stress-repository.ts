@@ -112,6 +112,7 @@ export class StressRepository extends BaseRepository {
           FROM vitals_baseline m
           LEFT JOIN sleep_deduped sd ON sd.sleep_date = m.date
           WHERE m.date > ${dateWindowStart(endDate, days)}
+            ${this.dateAccessPredicate(sql`m.date`)}
           ORDER BY m.date ASC`,
     );
 

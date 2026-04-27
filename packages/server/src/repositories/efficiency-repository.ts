@@ -122,6 +122,7 @@ export class EfficiencyRepository extends BaseRepository {
             AND hr.scalar >= rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[0]}::numeric
             AND hr.scalar <  rhr.resting_hr + (up.max_hr - rhr.resting_hr) * ${ZONE_BOUNDARIES_HRR[1]}::numeric
             AND pwr.scalar > 0
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
           GROUP BY a.id, a.started_at, a.activity_type, a.name, up.max_hr
           HAVING COUNT(*) >= 300
           ORDER BY a.started_at`,
@@ -287,6 +288,7 @@ export class EfficiencyRepository extends BaseRepository {
               AND pwr.channel = 'power'
               AND pwr.scalar > 0
               AND hr.scalar > 0
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
           ),
           half_ratios AS (
             SELECT
@@ -353,6 +355,7 @@ export class EfficiencyRepository extends BaseRepository {
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
           GROUP BY up.max_hr, 2
           ORDER BY week`,
     );

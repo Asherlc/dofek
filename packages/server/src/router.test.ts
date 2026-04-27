@@ -16,6 +16,7 @@ vi.mock("./routers/activity-recording.ts", () => ({ activityRecordingRouter: moc
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
 vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
+vi.mock("./routers/billing.ts", () => ({ billingRouter: mockRouter }));
 vi.mock("./routers/breathwork.ts", () => ({ breathworkRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
@@ -110,6 +111,7 @@ describe("appRouter", () => {
       "anomalyDetection",
       "auth",
       "behaviorImpact",
+      "billing",
       "breathwork",
       "sleep",
       "sleepNeed",

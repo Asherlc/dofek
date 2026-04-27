@@ -370,6 +370,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             WHERE fe.user_id = ${this.userId}
               AND fe.confirmed = true
               AND fe.date > CURRENT_DATE - ${days}::int
+              ${this.dateAccessPredicate(sql`fe.date`)}
             GROUP BY fe.date
           )
           SELECT ${sql.raw(columnAverages)}
@@ -404,6 +405,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             FROM fitness.nutrition_daily
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
+              ${this.dateAccessPredicate(sql`date`)}
             GROUP BY date
           ),
           expenditure AS (
@@ -414,6 +416,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
+              ${this.dateAccessPredicate(sql`date`)}
           ),
           combined AS (
             SELECT
@@ -464,6 +467,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             FROM fitness.nutrition_daily
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${days}::int
+              ${this.dateAccessPredicate(sql`date`)}
             GROUP BY date
           ),
           ${bodyWeightDedupCte(this.userId, this.timezone, "now", days)}
@@ -506,6 +510,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             WHERE nd.user_id = ${this.userId}
               AND nd.date > CURRENT_DATE - ${days}::int
               AND nd.calories > 0
+              ${this.dateAccessPredicate(sql`nd.date`)}
           ),
           latest_weight AS (
             SELECT weight_kg

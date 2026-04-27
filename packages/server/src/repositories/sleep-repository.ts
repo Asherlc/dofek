@@ -38,6 +38,8 @@ export class SleepRepository extends BaseRepository {
 						to_char(sleep_date, 'YYYY-MM-DD"T"12:00:00') AS started_at,
 						duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, efficiency_pct
 					FROM sleep_deduped
+					WHERE 1=1
+					${this.dateAccessPredicate(sql`sleep_date`)}
 					ORDER BY sleep_date ASC`,
     );
   }

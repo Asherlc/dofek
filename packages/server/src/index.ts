@@ -23,6 +23,7 @@ import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
+import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
@@ -31,6 +32,7 @@ import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-refresh.ts";
+import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -53,6 +55,12 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 export function createApp(db: import("dofek/db").Database): express.Express {
   initSentry();
   const app = express();
+
+  // ── Health check (before ALL middleware and other routes) ──
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   setupRoutes(app, db);
   // Sentry error handler must be after all routes
   app.use(sentryErrorHandler());
@@ -60,11 +68,6 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
-  // ── Health check (before all middleware — no logging, no auth) ──
-  app.get("/healthz", (_req, res) => {
-    res.json({ status: "ok" });
-  });
-
   // ── Compression + Cookies ──
   // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
   // which is required for tRPC's httpBatchStreamLink to deliver results incrementally.
@@ -142,6 +145,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // ── Route modules ──
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
+  app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/internal", createMaterializedViewRefreshRouter());
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
@@ -176,7 +180,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
-        return { db, userId: session?.userId ?? null, timezone, appVersion, assetsVersion };
+        const accessWindow = session ? await getAccessWindowForUser(db, session.userId) : undefined;
+        return {
+          db,
+          userId: session?.userId ?? null,
+          timezone,
+          appVersion,
+          assetsVersion,
+          accessWindow,
+        };
       },
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);

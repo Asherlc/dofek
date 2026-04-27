@@ -1,5 +1,5 @@
+import { queryCache } from "dofek/lib/cache";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { queryCache } from "./cache.ts";
 
 describe("MemoryCacheStore — extended tests", () => {
   beforeEach(async () => {

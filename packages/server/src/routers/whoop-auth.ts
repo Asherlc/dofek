@@ -1,9 +1,9 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { ensureProvider, saveTokens } from "dofek/db/tokens";
+import { queryCache } from "dofek/lib/cache";
 import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
 import {
   DEFAULT_CHALLENGE_TTL_MS,
   getWhoopVerificationChallengeStore,
