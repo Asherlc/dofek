@@ -100,6 +100,18 @@ function createSeededProviders() {
     connected: false,
     channelName: null,
   });
+  queryClient.setQueryData([["billing", "status"], { type: "query" }], {
+    hasFullAccess: false,
+    access: {
+      kind: "limited",
+      paid: false,
+      reason: "free_signup_week",
+      startDate: "2026-04-03",
+      endDateExclusive: "2026-04-10",
+    },
+    stripeSubscriptionStatus: null,
+    canManageBilling: false,
+  });
 
   return { queryClient };
 }
