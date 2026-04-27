@@ -10,7 +10,7 @@ vi.mock("dofek/sync-metrics", () => ({
   healthKitPushTotal: { add: vi.fn() },
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
     get: vi.fn().mockResolvedValue(undefined),

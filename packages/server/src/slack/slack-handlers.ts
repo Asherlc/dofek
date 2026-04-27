@@ -1,6 +1,6 @@
 import type { App as AppType, SayFn } from "@slack/bolt";
+import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
-import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { createSlackDedupeStore, type SlackDedupeStore } from "./dedupe-store.ts";
 import {
