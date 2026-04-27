@@ -219,7 +219,6 @@ jobs:
       - name: Setup front door SSH
         if: steps.terraform.outputs.review_app_skipped != 'true'
         uses: ./.github/actions/setup-ssh-host
-        if: steps.terraform.outputs.review_app_skipped != 'true'
         with:
           host: ${{ env.FRONT_DOOR_HOST }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -259,7 +258,6 @@ jobs:
       - name: Setup review server SSH
         if: steps.terraform.outputs.review_app_skipped != 'true'
         uses: ./.github/actions/setup-ssh-host
-        if: steps.terraform.outputs.review_app_skipped != 'true'
         with:
           host: ${{ steps.terraform.outputs.review_server_ip }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -360,7 +358,6 @@ jobs:
       - name: Comment review app URL on PR
         if: steps.terraform.outputs.review_app_skipped != 'true'
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
-        if: steps.terraform.outputs.review_app_skipped != 'true'
         with:
           header: review-app
           message: |

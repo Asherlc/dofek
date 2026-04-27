@@ -14,6 +14,7 @@ import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 import {
   computeComponentScores,
   computeReadinessScore,
+  getNextWorkoutRecommendation,
   type NextWorkoutRecommendation,
 } from "./training.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
@@ -311,7 +312,11 @@ export const mobileDashboardRouter = router({
       // 5. Next Workout
       const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz);
       const workoutData = await trainingRepo.getNextWorkoutData(endDate);
-      const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
+      const nextWorkout = getNextWorkoutRecommendation({
+        endDate,
+        data: workoutData,
+        readinessWeights: weights,
+      });
 
       // 6. Anomalies
       const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz);

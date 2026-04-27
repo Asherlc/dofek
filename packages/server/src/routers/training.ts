@@ -4,6 +4,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
+import type { NextWorkoutData } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 type RecommendationType = "rest" | "strength" | "cardio";
@@ -70,186 +71,204 @@ export const trainingRouter = router({
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }) => {
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
-      const weights = getEffectiveParams(storedParams).readinessWeights;
+      const readinessWeights = getEffectiveParams(storedParams).readinessWeights;
 
       const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const data = await repo.getNextWorkoutData(input.endDate);
 
-      const { latestMetric } = data;
-
-      const scores = computeComponentScores(latestMetric, data.latestSleepEfficiency);
-      const readinessScore = computeReadinessScore(scores, weights, latestMetric != null);
-      const readinessLevel = getReadinessLevel(readinessScore);
-
-      const todayDate = input.endDate;
-      const lastStrengthDaysAgo = daysAgoFromDate(data.balance.last_strength_date, todayDate);
-      const lastEnduranceDaysAgo = daysAgoFromDate(data.balance.last_endurance_date, todayDate);
-
-      const orderedFocusMuscles = computeFocusMuscles(data.muscleFreshness, todayDate);
-
-      const { totalZoneSamples, highIntensityPct, lowIntensityPct, moderateIntensityPct } =
-        computeZonePercentages(data.zoneTotals);
-      const daysSinceLastHiit = daysAgoFromDate(data.hiitLoad.last_hiit_date, todayDate);
-
-      const consecutiveTrainingDays = computeTrainingStreak(data.trainingDates);
-      const strengthSessions7d = data.balance.strength_7d;
-      const enduranceSessions7d = data.balance.endurance_7d;
-
-      const rationale: string[] = [];
-      if (readinessScore != null) {
-        rationale.push(`Readiness score is ${readinessScore}/100 (${readinessLevel}).`);
-      } else {
-        rationale.push("Readiness score unavailable; using workload and recency only.");
-      }
-      rationale.push(
-        `Last 7 days: ${strengthSessions7d} strength and ${enduranceSessions7d} cardio sessions.`,
-      );
-
-      if (consecutiveTrainingDays >= 6) {
-        rationale.push(`Training streak is ${consecutiveTrainingDays} consecutive days.`);
-      }
-      if (data.hiitLoad.hiit_count_7d > 0) {
-        rationale.push(`Hard cardio sessions in last 7 days: ${data.hiitLoad.hiit_count_7d}.`);
-      }
-
-      const limitedReadiness =
-        readinessScore != null && readinessScore < READINESS_LIMITED_THRESHOLD;
-      const preferRest = shouldPreferRest(readinessLevel, consecutiveTrainingDays, data.acwr);
-      const strengthUnderTarget = strengthSessions7d < 2;
-      const cardioUnderTarget = enduranceSessions7d < 3;
-      const strengthReady =
-        orderedFocusMuscles.length > 0 || lastStrengthDaysAgo == null || lastStrengthDaysAgo >= 2;
-
-      if (preferRest) {
-        return {
-          generatedAt: new Date().toISOString(),
-          recommendationType: "rest",
-          title: "Recovery Day",
-          shortBlurb:
-            "Take a lighter day: 20-40 min easy Z1 movement plus mobility. Resume harder work tomorrow if readiness rebounds.",
-          readiness: { score: readinessScore, level: readinessLevel },
-          rationale,
-          details: [
-            "Keep intensity low (easy walk, spin, or light swim).",
-            "Add 10-15 minutes of mobility and soft tissue work.",
-            "Prioritize sleep tonight to support adaptation.",
-          ],
-          strength: null,
-          cardio: {
-            focus: "recovery",
-            durationMinutes: 30,
-            targetZones: ["Z1"],
-            structure: "20-40 min easy movement, conversational effort only.",
-            lastEnduranceDaysAgo,
-          },
-        } satisfies NextWorkoutRecommendation;
-      }
-
-      if (limitedReadiness) {
-        rationale.push("Readiness is below high-performance threshold; keep intensity low today.");
-        return {
-          generatedAt: new Date().toISOString(),
-          recommendationType: "cardio",
-          title: "Easy Aerobic Session",
-          shortBlurb: "Keep today easy: 30-45 min in Z1-Z2 to support recovery and aerobic base.",
-          readiness: { score: readinessScore, level: readinessLevel },
-          rationale,
-          details: [
-            "Keep effort conversational and avoid hard surges.",
-            "Stay in Z1-Z2 for 30-45 minutes.",
-            "Treat this as recovery-supportive training, not a hard session.",
-          ],
-          strength: null,
-          cardio: {
-            focus: "z2",
-            durationMinutes: 40,
-            targetZones: ["Z1", "Z2"],
-            structure: "30-45 min steady easy aerobic work.",
-            lastEnduranceDaysAgo,
-          },
-        } satisfies NextWorkoutRecommendation;
-      }
-
-      const shouldDoStrength = shouldDoStrengthToday({
-        strengthReady,
-        strengthUnderTarget,
-        cardioUnderTarget,
-        lastStrengthDaysAgo,
-        lastEnduranceDaysAgo,
+      return getNextWorkoutRecommendation({
+        endDate: input.endDate,
+        data,
+        readinessWeights,
       });
-
-      if (shouldDoStrength) {
-        const split = pickStrengthSplit(orderedFocusMuscles);
-        rationale.push(
-          orderedFocusMuscles.length > 0
-            ? `Most recovered muscle groups: ${orderedFocusMuscles.join(", ")}.`
-            : "No muscle-group freshness data; using balanced full-body guidance.",
-        );
-
-        return {
-          generatedAt: new Date().toISOString(),
-          recommendationType: "strength",
-          title: "Strength Session",
-          shortBlurb: `Prioritize ${split.toLowerCase()} today. Aim for 45-70 min with controlled effort and good technique.`,
-          readiness: { score: readinessScore, level: readinessLevel },
-          rationale,
-          details: [
-            `Warm up 8-10 min, then train ${split.toLowerCase()} exercises.`,
-            "Use 3-4 working sets per exercise in the 6-12 rep range.",
-            "Stop 1-3 reps before failure on most sets to manage fatigue.",
-          ],
-          strength: {
-            focusMuscles: orderedFocusMuscles,
-            split,
-            targetSets: "10-16 hard sets total",
-            lastStrengthDaysAgo,
-          },
-          cardio: null,
-        } satisfies NextWorkoutRecommendation;
-      }
-
-      const cardioFocus = pickCardioFocus({
-        readinessLevel,
-        readinessScore,
-        highIntensityPct,
-        lowIntensityPct,
-        moderateIntensityPct,
-        totalZoneSamples,
-        hiitCount7d: data.hiitLoad.hiit_count_7d,
-        daysSinceLastHiit,
-      });
-      const cardioPrescription = cardioPlan(cardioFocus);
-      rationale.push(
-        totalZoneSamples > 0
-          ? `Recent intensity split: ${Math.round(lowIntensityPct * 100)}% low, ${Math.round(moderateIntensityPct * 100)}% moderate, ${Math.round(highIntensityPct * 100)}% high.`
-          : "No recent HR zone data; defaulting to conservative cardio guidance.",
-      );
-      if (data.hiitLoad.hiit_count_7d >= MAX_HIIT_PER_WEEK) {
-        rationale.push(`HIIT cap reached (${MAX_HIIT_PER_WEEK}/week), so today stays aerobic.`);
-      }
-      if (daysSinceLastHiit != null && daysSinceLastHiit < HIIT_SPACING_DAYS) {
-        rationale.push("Less than 48 hours since the last hard cardio session.");
-      }
-
-      return {
-        generatedAt: new Date().toISOString(),
-        recommendationType: "cardio",
-        title: cardioPrescription.title,
-        shortBlurb: cardioPrescription.shortBlurb,
-        readiness: { score: readinessScore, level: readinessLevel },
-        rationale,
-        details: cardioPrescription.details,
-        strength: null,
-        cardio: {
-          focus: cardioFocus,
-          durationMinutes: cardioPrescription.durationMinutes,
-          targetZones: cardioPrescription.targetZones,
-          structure: cardioPrescription.structure,
-          lastEnduranceDaysAgo,
-        },
-      } satisfies NextWorkoutRecommendation;
     }),
 });
+
+export function getNextWorkoutRecommendation({
+  endDate,
+  data,
+  readinessWeights,
+}: {
+  endDate: string;
+  data: NextWorkoutData;
+  readinessWeights: {
+    hrv: number;
+    restingHr: number;
+    sleep: number;
+    respiratoryRate: number;
+  };
+}): NextWorkoutRecommendation {
+  const { latestMetric } = data;
+
+  const scores = computeComponentScores(latestMetric, data.latestSleepEfficiency);
+  const readinessScore = computeReadinessScore(scores, readinessWeights, latestMetric != null);
+  const readinessLevel = getReadinessLevel(readinessScore);
+
+  const todayDate = endDate;
+  const lastStrengthDaysAgo = daysAgoFromDate(data.balance.last_strength_date, todayDate);
+  const lastEnduranceDaysAgo = daysAgoFromDate(data.balance.last_endurance_date, todayDate);
+
+  const orderedFocusMuscles = computeFocusMuscles(data.muscleFreshness, todayDate);
+
+  const { totalZoneSamples, highIntensityPct, lowIntensityPct, moderateIntensityPct } =
+    computeZonePercentages(data.zoneTotals);
+  const daysSinceLastHiit = daysAgoFromDate(data.hiitLoad.last_hiit_date, todayDate);
+
+  const consecutiveTrainingDays = computeTrainingStreak(data.trainingDates);
+  const strengthSessions7d = data.balance.strength_7d;
+  const enduranceSessions7d = data.balance.endurance_7d;
+
+  const rationale: string[] = [];
+  if (readinessScore != null) {
+    rationale.push(`Readiness score is ${readinessScore}/100 (${readinessLevel}).`);
+  } else {
+    rationale.push("Readiness score unavailable; using workload and recency only.");
+  }
+  rationale.push(`Last 7 days: ${strengthSessions7d} strength and ${enduranceSessions7d} cardio sessions.`);
+
+  if (consecutiveTrainingDays >= 6) {
+    rationale.push(`Training streak is ${consecutiveTrainingDays} consecutive days.`);
+  }
+  if (data.hiitLoad.hiit_count_7d > 0) {
+    rationale.push(`Hard cardio sessions in last 7 days: ${data.hiitLoad.hiit_count_7d}.`);
+  }
+
+  const limitedReadiness = readinessScore != null && readinessScore < READINESS_LIMITED_THRESHOLD;
+  const preferRest = shouldPreferRest(readinessLevel, consecutiveTrainingDays, data.acwr);
+  const strengthUnderTarget = strengthSessions7d < 2;
+  const cardioUnderTarget = enduranceSessions7d < 3;
+  const strengthReady =
+    orderedFocusMuscles.length > 0 || lastStrengthDaysAgo == null || lastStrengthDaysAgo >= 2;
+
+  if (preferRest) {
+    return {
+      generatedAt: new Date().toISOString(),
+      recommendationType: "rest",
+      title: "Recovery Day",
+      shortBlurb:
+        "Take a lighter day: 20-40 min easy Z1 movement plus mobility. Resume harder work tomorrow if readiness rebounds.",
+      readiness: { score: readinessScore, level: readinessLevel },
+      rationale,
+      details: [
+        "Keep intensity low (easy walk, spin, or light swim).",
+        "Add 10-15 minutes of mobility and soft tissue work.",
+        "Prioritize sleep tonight to support adaptation.",
+      ],
+      strength: null,
+      cardio: {
+        focus: "recovery",
+        durationMinutes: 30,
+        targetZones: ["Z1"],
+        structure: "20-40 min easy movement, conversational effort only.",
+        lastEnduranceDaysAgo,
+      },
+    } satisfies NextWorkoutRecommendation;
+  }
+
+  if (limitedReadiness) {
+    rationale.push("Readiness is below high-performance threshold; keep intensity low today.");
+    return {
+      generatedAt: new Date().toISOString(),
+      recommendationType: "cardio",
+      title: "Easy Aerobic Session",
+      shortBlurb: "Keep today easy: 30-45 min in Z1-Z2 to support recovery and aerobic base.",
+      readiness: { score: readinessScore, level: readinessLevel },
+      rationale,
+      details: [
+        "Keep effort conversational and avoid hard surges.",
+        "Stay in Z1-Z2 for 30-45 minutes.",
+        "Treat this as recovery-supportive training, not a hard session.",
+      ],
+      strength: null,
+      cardio: {
+        focus: "z2",
+        durationMinutes: 40,
+        targetZones: ["Z1", "Z2"],
+        structure: "30-45 min steady easy aerobic work.",
+        lastEnduranceDaysAgo,
+      },
+    } satisfies NextWorkoutRecommendation;
+  }
+
+  const shouldDoStrength = shouldDoStrengthToday({
+    strengthReady,
+    strengthUnderTarget,
+    cardioUnderTarget,
+    lastStrengthDaysAgo,
+    lastEnduranceDaysAgo,
+  });
+
+  if (shouldDoStrength) {
+    const split = pickStrengthSplit(orderedFocusMuscles);
+    rationale.push(
+      orderedFocusMuscles.length > 0
+        ? `Most recovered muscle groups: ${orderedFocusMuscles.join(", ")}.`
+        : "No muscle-group freshness data; using balanced full-body guidance.",
+    );
+
+    return {
+      generatedAt: new Date().toISOString(),
+      recommendationType: "strength",
+      title: "Strength Session",
+      shortBlurb: `Prioritize ${split.toLowerCase()} today. Aim for 45-70 min with controlled effort and good technique.`,
+      readiness: { score: readinessScore, level: readinessLevel },
+      rationale,
+      details: [
+        `Warm up 8-10 min, then train ${split.toLowerCase()} exercises.`,
+        "Use 3-4 working sets per exercise in the 6-12 rep range.",
+        "Stop 1-3 reps before failure on most sets to manage fatigue.",
+      ],
+      strength: {
+        focusMuscles: orderedFocusMuscles,
+        split,
+        targetSets: "10-16 hard sets total",
+        lastStrengthDaysAgo,
+      },
+      cardio: null,
+    } satisfies NextWorkoutRecommendation;
+  }
+
+  const cardioFocus = pickCardioFocus({
+    readinessLevel,
+    readinessScore,
+    highIntensityPct,
+    lowIntensityPct,
+    moderateIntensityPct,
+    totalZoneSamples,
+    hiitCount7d: data.hiitLoad.hiit_count_7d,
+    daysSinceLastHiit,
+  });
+  const cardioPrescription = cardioPlan(cardioFocus);
+  rationale.push(
+    totalZoneSamples > 0
+      ? `Recent intensity split: ${Math.round(lowIntensityPct * 100)}% low, ${Math.round(moderateIntensityPct * 100)}% moderate, ${Math.round(highIntensityPct * 100)}% high.`
+      : "No recent HR zone data; defaulting to conservative cardio guidance.",
+  );
+  if (data.hiitLoad.hiit_count_7d >= MAX_HIIT_PER_WEEK) {
+    rationale.push(`HIIT cap reached (${MAX_HIIT_PER_WEEK}/week), so today stays aerobic.`);
+  }
+  if (daysSinceLastHiit != null && daysSinceLastHiit < HIIT_SPACING_DAYS) {
+    rationale.push("Less than 48 hours since the last hard cardio session.");
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    recommendationType: "cardio",
+    title: cardioPrescription.title,
+    shortBlurb: cardioPrescription.shortBlurb,
+    readiness: { score: readinessScore, level: readinessLevel },
+    rationale,
+    details: cardioPrescription.details,
+    strength: null,
+    cardio: {
+      focus: cardioFocus,
+      durationMinutes: cardioPrescription.durationMinutes,
+      targetZones: cardioPrescription.targetZones,
+      structure: cardioPrescription.structure,
+      lastEnduranceDaysAgo,
+    },
+  } satisfies NextWorkoutRecommendation;
+}
 
 // Exported for unit testing — these are pure helpers with no side effects.
 
