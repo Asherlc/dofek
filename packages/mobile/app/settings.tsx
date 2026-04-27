@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -48,6 +49,29 @@ function formatLocalizedDateTime(date: Date | null | undefined): string {
   return date.toLocaleString();
 }
 
+const freeAccessWindowFormatter = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+function formatDateRangeForSignupWeek(
+  startDate: string,
+  endDateExclusive: string,
+): string {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const endExclusive = new Date(`${endDateExclusive}T00:00:00.000Z`);
+  const endInclusive = new Date(endExclusive);
+  endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+
+  const startValue = Number.isNaN(start.getTime()) ? startDate : freeAccessWindowFormatter.format(start);
+  const endValue = Number.isNaN(endInclusive.getTime())
+    ? endDateExclusive
+    : freeAccessWindowFormatter.format(endInclusive);
+
+  return `${startValue} to ${endValue}`;
+}
+
 export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
@@ -72,6 +96,17 @@ export default function SettingsScreen() {
       Alert.alert("Data Deleted", "All synced and manually-entered data has been deleted.");
     },
     onError: (error) => Alert.alert("Error", error.message),
+  });
+  const billingStatus = trpc.billing.status.useQuery();
+  const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
+    onSuccess: ({ url }) => {
+      void Linking.openURL(url);
+    },
+  });
+  const portalSessionMutation = trpc.billing.createPortalSession.useMutation({
+    onSuccess: ({ url }) => {
+      void Linking.openURL(url);
+    },
   });
 
   const currentUnitSystem: UnitSystem =
@@ -287,6 +322,77 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      {/* ── Billing ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Billing</Text>
+        <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
+        <View style={styles.card}>
+          {billingStatus.isLoading ? (
+            <ActivityIndicator color={colors.accent} size="small" />
+          ) : billingStatus.error ? (
+            <Text style={styles.billingErrorText}>{billingStatus.error.message}</Text>
+          ) : billingStatus.data ? (
+            <>
+              <Text style={styles.billingStatusText}>
+                {billingStatus.data.access.kind === "limited"
+                  ? `Access limited to signup week (${formatDateRangeForSignupWeek(
+                      billingStatus.data.access.startDate,
+                      billingStatus.data.access.endDateExclusive,
+                    )}).`
+                  : "Full access is enabled for this account."}
+              </Text>
+              {billingStatus.data.access.kind === "full" &&
+              billingStatus.data.access.reason === "paid_grant" ? (
+                <Text style={styles.billingDetailText}>Existing account access is already granted.</Text>
+              ) : null}
+              {billingStatus.data.access.kind === "full" &&
+              billingStatus.data.access.reason === "stripe_subscription" &&
+              billingStatus.data.stripeSubscriptionStatus ? (
+                <Text style={styles.billingDetailText}>
+                  Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
+                </Text>
+              ) : null}
+              {checkoutSessionMutation.error ? (
+                <Text style={styles.billingErrorText}>{checkoutSessionMutation.error.message}</Text>
+              ) : null}
+              {portalSessionMutation.error ? (
+                <Text style={styles.billingErrorText}>{portalSessionMutation.error.message}</Text>
+              ) : null}
+              <View style={styles.billingActionRow}>
+                {!billingStatus.data.hasFullAccess && (
+                  <TouchableOpacity
+                    style={[styles.billingPrimaryButton, checkoutSessionMutation.isPending && styles.buttonDisabled]}
+                    onPress={() => checkoutSessionMutation.mutate()}
+                    activeOpacity={0.7}
+                    disabled={checkoutSessionMutation.isPending}
+                  >
+                    <Text style={styles.billingButtonText}>
+                      {checkoutSessionMutation.isPending
+                        ? "Opening checkout..."
+                        : "Upgrade to Full Access"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {billingStatus.data.canManageBilling && (
+                  <TouchableOpacity
+                    style={[styles.billingSecondaryButton, portalSessionMutation.isPending && styles.buttonDisabled]}
+                    onPress={() => portalSessionMutation.mutate()}
+                    activeOpacity={0.7}
+                    disabled={portalSessionMutation.isPending}
+                  >
+                    <Text style={styles.billingButtonText}>
+                      {portalSessionMutation.isPending
+                        ? "Opening billing portal..."
+                        : "Manage Billing"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
+          ) : null}
         </View>
       </View>
 
@@ -543,6 +649,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textTertiary,
     marginBottom: 10,
+  },
+
+  // ── Billing ──
+  billingStatusText: {
+    color: colors.text,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  billingDetailText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  billingErrorText: {
+    color: colors.danger,
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  billingActionRow: {
+    flexDirection: "column",
+    gap: 10,
+  },
+  billingPrimaryButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  billingSecondaryButton: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  billingButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 
   // ── Card ──

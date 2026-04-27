@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFileWrite = vi.fn();
 vi.mock("expo-file-system", () => ({
@@ -39,6 +39,25 @@ vi.mock("../components/ProviderLogo", () => ({
 }));
 
 const mockRouterPush = vi.fn();
+const mockCheckoutSession = vi.fn();
+const mockPortalSession = vi.fn();
+const defaultBillingStatus = {
+  hasFullAccess: false,
+  access: {
+    kind: "limited",
+    paid: false,
+    reason: "free_signup_week",
+    startDate: "2026-04-01",
+    endDateExclusive: "2026-04-08",
+  } as const,
+  stripeSubscriptionStatus: null,
+  canManageBilling: false,
+};
+let mockBillingStatus = {
+  ...defaultBillingStatus,
+  access: { ...defaultBillingStatus.access },
+};
+
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
@@ -87,6 +106,24 @@ vi.mock("../lib/trpc", () => ({
           isPending: false,
         }),
       },
+      set: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
+    billing: {
+      status: { useQuery: () => ({ data: mockBillingStatus, isLoading: false }) },
+      createCheckoutSession: {
+        useMutation: () => ({
+          mutate: mockCheckoutSession,
+          isPending: false,
+        }),
+      },
+      createPortalSession: {
+        useMutation: () => ({
+          mutate: mockPortalSession,
+          isPending: false,
+        }),
+      },
     },
     settings: {
       get: {
@@ -109,6 +146,14 @@ vi.mock("../lib/trpc", () => ({
     },
   },
 }));
+
+beforeEach(() => {
+  mockBillingStatus = {
+    ...defaultBillingStatus,
+    access: { ...defaultBillingStatus.access },
+  };
+  vi.clearAllMocks();
+});
 
 describe("SettingsScreen data sources", () => {
   it("renders Data Sources section with connected count", async () => {
@@ -138,6 +183,50 @@ describe("SettingsScreen data sources", () => {
     fireEvent.click(screen.getByText("2 connected"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
+  });
+});
+
+describe("SettingsScreen billing", () => {
+  it("renders signup-week limited access notice", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Billing")).toBeTruthy();
+    expect(screen.getByText(/Access limited to your signup week/)).toBeTruthy();
+    expect(screen.getByText("Upgrade to Full Access")).toBeTruthy();
+  });
+
+  it("starts checkout when the upgrade button is pressed", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    fireEvent.click(screen.getByText("Upgrade to Full Access"));
+
+    expect(mockCheckoutSession).toHaveBeenCalled();
+  });
+
+  it("shows manage billing when billing is managed by Stripe", async () => {
+    mockBillingStatus = {
+      hasFullAccess: true,
+      access: {
+        kind: "full",
+        paid: true,
+        reason: "stripe_subscription",
+      },
+      stripeSubscriptionStatus: "active",
+      canManageBilling: true,
+    };
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Manage Billing")).toBeTruthy();
+    fireEvent.click(screen.getByText("Manage Billing"));
+
+    expect(mockPortalSession).toHaveBeenCalled();
   });
 });
 
