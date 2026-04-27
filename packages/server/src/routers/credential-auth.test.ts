@@ -27,7 +27,7 @@ vi.mock("../routers/sync.ts", () => ({
   ensureProvidersRegistered: mockEnsureProvidersRegistered,
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: mockInvalidateByPrefix },
 }));
 

@@ -70,7 +70,8 @@
     "./personalization/params": "./src/personalization/params.ts",
     "./personalization/storage": "./src/personalization/storage.ts",
     "./personalization/refit": "./src/personalization/refit.ts",
-    "./sync-metrics": "./src/sync-metrics.ts"
+    "./sync-metrics": "./src/sync-metrics.ts",
+    "./lib/cache": "./src/lib/cache.ts"
   },
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",

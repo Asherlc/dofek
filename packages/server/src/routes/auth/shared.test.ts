@@ -24,7 +24,7 @@ vi.mock("../../lib/identity-flow-store.ts", () => ({
   getIdentityFlowStore: vi.fn(() => mockIdentityFlowStore),
 }));
 
-vi.mock("../../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn() },
 }));
 

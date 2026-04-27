@@ -18,7 +18,7 @@ vi.mock("dofek/db/tokens", () => ({
   saveTokens: mockSaveTokens,
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: mockInvalidateByPrefix },
 }));
 

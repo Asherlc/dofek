@@ -1,3 +1,4 @@
+import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -5,7 +6,6 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { queryCache } from "../lib/cache.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 /**

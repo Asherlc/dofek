@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import type { TokenSet } from "dofek/auth/oauth";
+import { queryCache } from "dofek/lib/cache";
 import { escapeAttribute, escapeText } from "entities";
 import rateLimit from "express-rate-limit";
 import type { IdentityProviderName } from "../../auth/providers.ts";
-import { queryCache } from "../../lib/cache.ts";
 import {
   getIdentityFlowStore,
   type IdentityFlowEntry,

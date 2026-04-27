@@ -29,11 +29,11 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
 }));
 
-import { queryCache } from "../lib/cache.ts";
+import { queryCache } from "dofek/lib/cache";
 import { authRouter } from "./auth.ts";
 
 const createCaller = createTestCallerFactory(authRouter);

@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
+import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
 import { AuthRepository } from "../repositories/auth-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
