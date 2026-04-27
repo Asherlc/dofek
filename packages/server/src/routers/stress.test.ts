@@ -4,7 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -390,5 +395,26 @@ describe("Router transformation logic", () => {
     const caller = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("worsening");
+  });
+});
+
+describe("stressRouter access window gating", () => {
+  it("scores passes accessWindow to query (limited window returns empty)", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      },
+    });
+    const result = await caller.scores({ days: 30, endDate: "2026-04-20" });
+    expect(result.daily).toEqual([]);
+    expect(result.latestScore).toBeNull();
   });
 });
