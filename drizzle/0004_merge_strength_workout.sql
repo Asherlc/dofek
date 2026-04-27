@@ -64,5 +64,5 @@ DROP TABLE fitness.strength_workout;
 --> statement-breakpoint
 
 -- Update the activity_id index.
-DROP INDEX CONCURRENTLY IF EXISTS fitness.strength_set_workout_idx;
+-- The index on workout_id is dropped automatically when dropping the column below.
 CREATE INDEX strength_set_activity_idx ON fitness.strength_set (activity_id);
