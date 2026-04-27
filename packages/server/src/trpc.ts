@@ -1,8 +1,8 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
-import type { AccessWindow } from "./billing/entitlement.ts";
 import { queryCache } from "dofek/lib/cache";
+import type { AccessWindow } from "./billing/entitlement.ts";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
