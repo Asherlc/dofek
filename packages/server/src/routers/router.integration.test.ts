@@ -1083,7 +1083,10 @@ describe("Router coverage", () => {
 
     it("byId returns activity detail with summary data", async () => {
       // First get an activity id from list
-      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const list = await query<{ items: { id: string }[] }>("activity.list", {
+        days: 90,
+        activityTypes: ["cycling"],
+      });
       expect(list.items.length).toBeGreaterThan(0);
       const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
@@ -1117,7 +1120,10 @@ describe("Router coverage", () => {
     });
 
     it("stream returns downsampled metric data for an activity", async () => {
-      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const list = await query<{ items: { id: string }[] }>("activity.list", {
+        days: 90,
+        activityTypes: ["cycling"],
+      });
       const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
 
