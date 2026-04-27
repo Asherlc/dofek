@@ -2,7 +2,22 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import { TrainingRepository } from "../repositories/training-repository.ts";
+import {
+  cardioPlan,
+  computeComponentScores,
+  computeFocusMuscles,
+  computeReadinessScore,
+  computeTrainingStreak,
+  computeZonePercentages,
+  daysAgoFromDate,
+  getReadinessLevel,
+  normalizeMuscleName,
+  pickCardioFocus,
+  pickStrengthSplit,
+  shouldDoStrengthToday,
+  shouldPreferRest,
+  TrainingRepository,
+} from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export {
@@ -19,8 +34,7 @@ export {
   pickStrengthSplit,
   shouldDoStrengthToday,
   shouldPreferRest,
-} from "../repositories/training-repository.ts";
-export type { NextWorkoutRecommendation } from "../repositories/training-repository.ts";
+};
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
