@@ -367,7 +367,7 @@ export default function SettingsScreen() {
             <>
               <Text style={styles.billingStatusText}>
                 {billingStatus.data.access.kind === "limited"
-                  ? `Access limited to signup week (${formatDateRangeForSignupWeek(
+                  ? `Access limited to your signup week (${formatDateRangeForSignupWeek(
                       billingStatus.data.access.startDate,
                       billingStatus.data.access.endDateExclusive,
                     )}).`

@@ -3,6 +3,7 @@ import { activityRecordingRouter } from "./routers/activity-recording.ts";
 import { adminRouter } from "./routers/admin.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
+import { billingRouter } from "./routers/billing.ts";
 import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
 import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
@@ -65,6 +66,7 @@ export const appRouter = router({
   breathwork: breathworkRouter,
   personalization: personalizationRouter,
   auth: authRouter,
+  billing: billingRouter,
   sleep: sleepRouter,
   sleepNeed: sleepNeedRouter,
   dailyMetrics: dailyMetricsRouter,
