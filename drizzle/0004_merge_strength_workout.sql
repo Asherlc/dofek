@@ -45,12 +45,14 @@ DELETE FROM fitness.strength_set WHERE activity_id IS NULL;
 --> statement-breakpoint
 
 -- Enforce NOT NULL and add foreign key to strength_set.activity_id.
-ALTER TABLE fitness.strength_set ALTER COLUMN activity_id SET NOT NULL;
+ALTER TABLE fitness.strength_set
+ADD CONSTRAINT strength_set_activity_id_not_null_chk CHECK (activity_id IS NOT NULL) NOT VALID;
 ALTER TABLE fitness.strength_set ADD CONSTRAINT strength_set_activity_id_activity_id_fk FOREIGN KEY (activity_id) REFERENCES fitness.activity(id) ON DELETE CASCADE NOT VALID;
 
 --> statement-breakpoint
 
 -- Validate the foreign key in a separate transaction to avoid long-held locks.
+ALTER TABLE fitness.strength_set VALIDATE CONSTRAINT strength_set_activity_id_not_null_chk;
 ALTER TABLE fitness.strength_set VALIDATE CONSTRAINT strength_set_activity_id_activity_id_fk;
 
 --> statement-breakpoint
