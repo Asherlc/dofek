@@ -1,4 +1,4 @@
-CREATE TABLE fitness.user_billing (
+CREATE TABLE IF NOT EXISTS fitness.user_billing (
   user_id uuid PRIMARY KEY REFERENCES fitness.user_profile(id) ON DELETE CASCADE,
   stripe_customer_id text UNIQUE,
   stripe_subscription_id text UNIQUE,
