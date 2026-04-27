@@ -88,8 +88,6 @@ export const mobileDashboardRouter = router({
         rhr_sd_30d: z.coerce.number().nullable(),
         rr_mean_30d: z.coerce.number().nullable(),
         rr_sd_30d: z.coerce.number().nullable(),
-        daily_load: z.coerce.number().nullable(),
-        strain: z.coerce.number().nullable(),
       });
 
       const metricsRows = await executeWithSchema(
@@ -102,8 +100,6 @@ export const mobileDashboardRouter = router({
               hrv,
               resting_hr,
               respiratory_rate_avg AS respiratory_rate,
-              daily_load,
-              strain,
               AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
               STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
               AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
@@ -133,8 +129,7 @@ export const mobileDashboardRouter = router({
           SELECT
             m.date::text,
             m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
-            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d,
-            m.daily_load, m.strain
+            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d
           FROM metrics_with_baselines m
           LEFT JOIN sleep_eff s ON s.date = m.date::text
           ORDER BY m.date DESC
