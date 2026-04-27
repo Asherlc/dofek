@@ -440,16 +440,7 @@ export class TrainingRepository extends BaseRepository {
           WHERE user_id = ${this.userId}
             AND started_at > ${timestampWindowStart(endDate, 14)}
             ${this.timestampAccessPredicate(sql`started_at`)}
-          UNION
-          SELECT DISTINCT (started_at AT TIME ZONE ${this.timezone})::date AS training_date
-          FROM fitness.strength_workout
-          WHERE user_id = ${this.userId}
-            AND started_at > ${timestampWindowStart(endDate, 14)}
-            ${this.timestampAccessPredicate(sql`started_at`)}
-        )
-        SELECT training_date::text
-        FROM combined
-        ORDER BY training_date DESC`,
+          ORDER BY training_date DESC`,
     );
   }
 }

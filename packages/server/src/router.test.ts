@@ -153,6 +153,7 @@ describe("appRouter", () => {
       "stress",
       "healthspan",
       "menstrualCycle",
+      "mobileDashboard",
       "monthlyReport",
       "weeklyReport",
       "sportSettings",
