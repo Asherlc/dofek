@@ -3,6 +3,7 @@ import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "./base-repository.ts";
 
 vi.mock("@sentry/node", () => ({
@@ -33,6 +34,14 @@ class TestRepository extends BaseRepository {
     return this.queryWithViewRefresh(queryFn, days, label, baseCountSql);
   }
 
+  datePredicate(columnSql = sql`recorded_date`) {
+    return this.dateAccessPredicate(columnSql);
+  }
+
+  timestampPredicate(columnSql = sql`started_at`) {
+    return this.timestampAccessPredicate(columnSql);
+  }
+
   // Expose protected fields for assertions
   get exposedDb() {
     return this.db;
@@ -42,6 +51,10 @@ class TestRepository extends BaseRepository {
   }
   get exposedTimezone() {
     return this.timezone;
+  }
+
+  get exposedAccessWindow() {
+    return this.accessWindow;
   }
 }
 
@@ -62,6 +75,52 @@ describe("BaseRepository", () => {
   it("defaults timezone to UTC when omitted", () => {
     const repo = new TestRepository(mockDb, "user-1");
     expect(repo.exposedTimezone).toBe("UTC");
+  });
+
+  it("defaults to full access when omitted", () => {
+    const repo = new TestRepository(mockDb, "user-1");
+    expect(repo.exposedAccessWindow).toEqual({
+      kind: "full",
+      paid: true,
+      reason: "paid_grant",
+    });
+  });
+
+  it("returns an empty date predicate for full access", () => {
+    const accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
+    const repo = new TestRepository(mockDb, "user-1", "UTC", accessWindow);
+
+    expect(repo.datePredicate().queryChunks).toEqual([]);
+  });
+
+  it("returns a bounded date predicate for limited access", () => {
+    const accessWindow: AccessWindow = {
+      kind: "limited",
+      paid: false,
+      reason: "free_signup_week",
+      startDate: "2026-04-10",
+      endDateExclusive: "2026-04-17",
+    };
+    const repo = new TestRepository(mockDb, "user-1", "UTC", accessWindow);
+
+    const predicate = repo.datePredicate();
+    expect(predicate.queryChunks).toContain("2026-04-10");
+    expect(predicate.queryChunks).toContain("2026-04-17");
+  });
+
+  it("returns a bounded timestamp predicate for limited access", () => {
+    const accessWindow: AccessWindow = {
+      kind: "limited",
+      paid: false,
+      reason: "free_signup_week",
+      startDate: "2026-04-10",
+      endDateExclusive: "2026-04-17",
+    };
+    const repo = new TestRepository(mockDb, "user-1", "UTC", accessWindow);
+
+    const predicate = repo.timestampPredicate();
+    expect(predicate.queryChunks).toContain("2026-04-10");
+    expect(predicate.queryChunks).toContain("2026-04-17");
   });
 
   it("query() delegates to executeWithSchema and parses rows", async () => {
