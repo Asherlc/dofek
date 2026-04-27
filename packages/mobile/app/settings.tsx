@@ -81,16 +81,15 @@ const freeAccessWindowFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
 });
 
-function formatDateRangeForSignupWeek(
-  startDate: string,
-  endDateExclusive: string,
-): string {
+function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const endExclusive = new Date(`${endDateExclusive}T00:00:00.000Z`);
   const endInclusive = new Date(endExclusive);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
 
-  const startValue = Number.isNaN(start.getTime()) ? startDate : freeAccessWindowFormatter.format(start);
+  const startValue = Number.isNaN(start.getTime())
+    ? startDate
+    : freeAccessWindowFormatter.format(start);
   const endValue = Number.isNaN(endInclusive.getTime())
     ? endDateExclusive
     : freeAccessWindowFormatter.format(endInclusive);
@@ -376,7 +375,9 @@ export default function SettingsScreen() {
               </Text>
               {billingStatus.data.access.kind === "full" &&
               billingStatus.data.access.reason === "paid_grant" ? (
-                <Text style={styles.billingDetailText}>Existing account access is already granted.</Text>
+                <Text style={styles.billingDetailText}>
+                  Existing account access is already granted.
+                </Text>
               ) : null}
               {billingStatus.data.access.kind === "full" &&
               billingStatus.data.access.reason === "stripe_subscription" &&
@@ -394,7 +395,10 @@ export default function SettingsScreen() {
               <View style={styles.billingActionRow}>
                 {!billingStatus.data.hasFullAccess && (
                   <TouchableOpacity
-                    style={[styles.billingPrimaryButton, checkoutSessionMutation.isPending && styles.buttonDisabled]}
+                    style={[
+                      styles.billingPrimaryButton,
+                      checkoutSessionMutation.isPending && styles.buttonDisabled,
+                    ]}
                     onPress={() => checkoutSessionMutation.mutate()}
                     activeOpacity={0.7}
                     disabled={checkoutSessionMutation.isPending}
@@ -408,7 +412,10 @@ export default function SettingsScreen() {
                 )}
                 {billingStatus.data.canManageBilling && (
                   <TouchableOpacity
-                    style={[styles.billingSecondaryButton, portalSessionMutation.isPending && styles.buttonDisabled]}
+                    style={[
+                      styles.billingSecondaryButton,
+                      portalSessionMutation.isPending && styles.buttonDisabled,
+                    ]}
                     onPress={() => portalSessionMutation.mutate()}
                     activeOpacity={0.7}
                     disabled={portalSessionMutation.isPending}
