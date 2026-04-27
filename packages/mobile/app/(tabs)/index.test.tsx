@@ -4,79 +4,44 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
-let mockReadinessLoading = false;
-let mockWorkloadLoading = false;
-let mockSleepLoading = false;
-let mockSleepData: unknown;
-let mockReadinessError: Error | null = null;
-let mockWorkloadError: Error | null = null;
-let mockSleepNeedError: Error | null = null;
+let mockDashboardLoading = false;
+let mockDashboardData: unknown;
+let mockDashboardError: Error | null = null;
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
 
-function q(getData: () => unknown = () => undefined, getError: () => Error | null = () => null) {
-  return {
-    useQuery: () => ({
-      data: getError() ? undefined : getData(),
-      isLoading: false,
-      error: getError(),
-    }),
-  };
-}
-
-function loadableQuery(
-  getData: () => unknown,
-  getLoading: () => boolean,
-  getError: () => Error | null = () => null,
-) {
-  return {
-    useQuery: () => ({
-      data: getLoading() || getError() ? undefined : getData(),
-      isLoading: getLoading(),
-      error: getError(),
-    }),
-  };
-}
-
 vi.mock("../../lib/trpc", () => ({
   trpc: {
-    recovery: {
-      readinessScore: loadableQuery(
-        () => [],
-        () => mockReadinessLoading,
-        () => mockReadinessError,
-      ),
-      sleepAnalytics: loadableQuery(
-        () => mockSleepData,
-        () => mockSleepLoading,
-      ),
-      workloadRatio: loadableQuery(
-        () => [],
-        () => mockWorkloadLoading,
-        () => mockWorkloadError,
-      ),
+    mobileDashboard: {
+      dashboard: {
+        useQuery: () => ({
+          data: mockDashboardError ? undefined : mockDashboardData,
+          isLoading: mockDashboardLoading,
+          isError: !!mockDashboardError,
+          error: mockDashboardError,
+        }),
+      },
     },
-    dailyMetrics: {
-      trends: { useQuery: () => ({ data: undefined, isLoading: false }) },
-    },
-    training: { nextWorkout: q() },
-    sleepNeed: {
-      calculate: q(
-        () => undefined,
-        () => mockSleepNeedError,
-      ),
-    },
-    anomalyDetection: { check: q() },
     sync: {
       triggerSync: {
-        useMutation: () => ({ mutate: vi.fn() }),
+        useMutation: () => ({
+          mutate: vi.fn(),
+          mutateAsync: vi.fn(() => Promise.resolve({ jobId: "test-job" })),
+        }),
       },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
     },
+    training: {
+      nextWorkout: { useQuery: () => ({ data: undefined, isLoading: false }) },
+    },
     useUtils: () => ({ invalidate: vi.fn() }),
   },
+}));
+
+vi.mock("../../lib/useAutoSync", () => ({
+  useAutoSync: vi.fn(),
 }));
 
 vi.mock("../../lib/useProviderGuide", () => ({
@@ -122,13 +87,45 @@ vi.mock("../../theme", () => ({
 
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
-    mockReadinessLoading = false;
-    mockWorkloadLoading = false;
-    mockSleepLoading = false;
-    mockSleepData = undefined;
-    mockReadinessError = null;
-    mockWorkloadError = null;
-    mockSleepNeedError = null;
+    mockDashboardLoading = false;
+    mockDashboardData = {
+      readiness: {
+        score: 85,
+        date: "2026-03-21",
+        components: { hrvScore: 80, restingHrScore: 90, sleepScore: 85, respiratoryRateScore: 80 },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
+      },
+      sleep: {
+        lastNight: {
+          date: "2026-03-20",
+          durationMinutes: 480,
+          deepPct: 20,
+          remPct: 20,
+          lightPct: 50,
+          awakePct: 10,
+        },
+        sleepDebt: 0,
+      },
+      strain: {
+        dailyStrain: 12,
+        acuteLoad: 300,
+        chronicLoad: 250,
+        workloadRatio: 1.2,
+        date: "2026-03-21",
+      },
+      nextWorkout: null,
+      sleepNeed: {
+        baselineMinutes: 480,
+        strainDebtMinutes: 20,
+        accumulatedDebtMinutes: 10,
+        totalNeedMinutes: 510,
+        recentNights: [],
+        canRecommend: true,
+      },
+      anomalies: { anomalies: [], checkedMetrics: [] },
+      latestDate: "2026-03-21",
+    };
+    mockDashboardError = null;
     mockRouterPush.mockClear();
   });
 
@@ -137,63 +134,44 @@ describe("TodayScreen independent loading states", () => {
   });
 
   it("shows skeleton placeholder for recovery ring while readiness is loading", async () => {
-    mockReadinessLoading = true;
+    mockDashboardLoading = true;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    // Recovery ring should show skeleton circle loading placeholder
+    // In the consolidated query, everything loads together
     expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
-    // Strain section should still render (not loading)
-    expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
-    mockWorkloadLoading = true;
+    mockDashboardLoading = true;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    // Strain gauge should show skeleton circle loading placeholder
     expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
-    // Recovery section should still render (not loading)
-    expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
   });
 
   it("hides sleep summary section while sleep analytics is loading", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-21T10:00:00"));
-    mockSleepLoading = true;
+    mockDashboardLoading = true;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    // Sleep summary card ("Last Night") should not render while loading
     expect(screen.queryByText("LAST NIGHT")).toBeNull();
-    // Recovery and Strain should still render (not loading)
-    expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows last night summary when sleep data has yesterday's date", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-21T10:00:00"));
 
-    mockSleepData = {
-      nightly: [
-        {
-          date: "2026-03-20",
-          durationMinutes: 480,
-          sleepMinutes: 450,
-          deepPct: 20,
-          remPct: 25,
-          lightPct: 45,
-          awakePct: 10,
-          efficiency: 90,
-          rollingAvgDuration: 440,
-        },
-      ],
-      sleepDebt: -30,
+    mockDashboardData.sleep.lastNight = {
+      date: "2026-03-20",
+      durationMinutes: 480,
+      deepPct: 20,
+      remPct: 25,
+      lightPct: 45,
+      awakePct: 10,
     };
 
     const { default: TodayScreen } = await import("./index");
@@ -206,10 +184,8 @@ describe("TodayScreen independent loading states", () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    // All section titles should render
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
-    // No skeleton loading placeholders
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
   });
 
@@ -226,22 +202,21 @@ describe("TodayScreen independent loading states", () => {
   });
 
   it("shows a recovery error panel when the readiness query fails", async () => {
-    mockReadinessError = new Error("Readiness failed");
+    mockDashboardError = new Error("Dashboard failed");
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    expect(screen.getByText("Readiness failed")).toBeTruthy();
-    expect(screen.queryByText("No data yet")).toBeNull();
+    expect(screen.getByText("Dashboard failed")).toBeTruthy();
   });
 
   it("shows a sleep coach error card when the sleep-need query fails", async () => {
-    mockSleepNeedError = new Error("Sleep coach failed");
+    // In consolidated approach, they share the same error state
+    mockDashboardError = new Error("Dashboard failed");
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
-    expect(screen.getByText("SLEEP COACH")).toBeTruthy();
-    expect(screen.getByText("Sleep coach failed")).toBeTruthy();
+    expect(screen.getByText("Dashboard failed")).toBeTruthy();
   });
 });
