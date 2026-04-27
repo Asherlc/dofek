@@ -1,3 +1,5 @@
+import { type SQL, sql } from "drizzle-orm";
+
 const ACCESS_GRANTING_STRIPE_STATUSES = new Set(["active", "trialing"]);
 
 export type AccessWindow =
@@ -18,6 +20,27 @@ export interface ResolveAccessWindowInput {
 
 function toDateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+/**
+ * Returns a SQL predicate fragment that restricts a date column to the
+ * billing access window. Returns an empty fragment for full-access or absent windows.
+ * Intended for use in routers that build SQL inline rather than via BaseRepository.
+ */
+export function dateAccessPredicate(window: AccessWindow | undefined, column: SQL): SQL {
+  if (!window || window.kind === "full") return sql``;
+  return sql`AND ${column} >= ${window.startDate}::date
+             AND ${column} < ${window.endDateExclusive}::date`;
+}
+
+/**
+ * Returns a SQL predicate fragment that restricts a timestamp column to the
+ * billing access window. Returns an empty fragment for full-access or absent windows.
+ */
+export function timestampAccessPredicate(window: AccessWindow | undefined, column: SQL): SQL {
+  if (!window || window.kind === "full") return sql``;
+  return sql`AND ${column} >= ${window.startDate}::date
+             AND ${column} < ${window.endDateExclusive}::date`;
 }
 
 export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWindow {
