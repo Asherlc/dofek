@@ -1,10 +1,10 @@
+import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { queryCache } from "../lib/cache.ts";
 
 /**
  * Integration tests for mobile-dashboard router.
@@ -102,9 +102,30 @@ describe("mobile-dashboard router integration", () => {
   it("returns dashboard data with readiness, sleep, strain, and other fields", async () => {
     const today = new Date().toISOString().slice(0, 10);
     const result = await query<{
-      readiness: { score: number; date: string; components: Record<string, number>; weights: Record<string, number> } | null;
-      sleep: { lastNight: { date: string; durationMinutes: number; deepPct: number; remPct: number; lightPct: number; awakePct: number } | null; sleepDebt: number } | null;
-      strain: { dailyStrain: number; acuteLoad: number; chronicLoad: number; workloadRatio: number | null; date: string | null } | null;
+      readiness: {
+        score: number;
+        date: string;
+        components: Record<string, number>;
+        weights: Record<string, number>;
+      } | null;
+      sleep: {
+        lastNight: {
+          date: string;
+          durationMinutes: number;
+          deepPct: number;
+          remPct: number;
+          lightPct: number;
+          awakePct: number;
+        } | null;
+        sleepDebt: number;
+      } | null;
+      strain: {
+        dailyStrain: number;
+        acuteLoad: number;
+        chronicLoad: number;
+        workloadRatio: number | null;
+        date: string | null;
+      } | null;
       nextWorkout: { type: string; reason: string } | null;
       sleepNeed: { score: number; label: string } | null;
       anomalies: { needsAttention: boolean } | null;

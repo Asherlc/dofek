@@ -29,6 +29,7 @@ import { intervalsRouter } from "./routers/intervals.ts";
 import { journalRouter } from "./routers/journal.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
+import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
@@ -77,6 +78,7 @@ export const appRouter = router({
   insights: insightsRouter,
   journal: journalRouter,
   lifeEvents: lifeEventsRouter,
+  mobileDashboard: mobileDashboardRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
   providerGuide: providerGuideRouter,

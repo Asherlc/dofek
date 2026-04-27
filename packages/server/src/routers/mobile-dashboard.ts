@@ -9,14 +9,13 @@ import {
   type AnomalyCheckResult,
   AnomalyDetectionRepository,
 } from "../repositories/anomaly-detection-repository.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 import {
   computeComponentScores,
   computeReadinessScore,
   type NextWorkoutRecommendation,
-  TrainingRepository,
-} from "../repositories/training-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
+} from "./training.ts";
 
 /** Simple date comparison for server-side logic (where @dofek/format is not available). */
 export function isRecent(dateStr: string, anchorDateStr: string): boolean {
