@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { exercise, exerciseAlias, strengthSet, strengthWorkout } from "../db/schema.ts";
+import { activity, exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
@@ -111,14 +111,12 @@ function parseCsvLine(line: string): string[] {
 
 export function parseOptionalFloat(value: string): number | null {
   const trimmed = value.trim();
-  if (trimmed === "") return null;
   const num = Number.parseFloat(trimmed);
   return Number.isNaN(num) ? null : num;
 }
 
 export function parseOptionalInt(value: string): number | null {
   const trimmed = value.trim();
-  if (trimmed === "") return null;
   const num = Number.parseInt(trimmed, 10);
   return Number.isNaN(num) ? null : num;
 }
@@ -371,34 +369,36 @@ export async function importStrongCsv(
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
 
-      // Upsert workout
-      const [row] = await db
-        .insert(strengthWorkout)
+      // Upsert activity (so it shows up in the main list)
+      const [activityRow] = await db
+        .insert(activity)
         .values({
           providerId: STRONG_PROVIDER_ID,
           userId,
           externalId,
+          activityType: "strength",
           startedAt,
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
         })
         .onConflictDoUpdate({
-          target: [strengthWorkout.userId, strengthWorkout.providerId, strengthWorkout.externalId],
+          target: [activity.userId, activity.providerId, activity.externalId],
           set: {
+            activityType: "strength",
             startedAt,
             endedAt,
             name: group.workoutName,
             notes: group.workoutNotes,
           },
         })
-        .returning({ id: strengthWorkout.id });
+        .returning({ id: activity.id });
 
-      const workoutId = row?.id;
-      if (!workoutId) continue;
+      const activityId = activityRow?.id;
+      if (!activityId) continue;
 
       // Delete old sets, re-insert
-      await db.delete(strengthSet).where(eq(strengthSet.workoutId, workoutId));
+      await db.delete(strengthSet).where(eq(strengthSet.activityId, activityId));
 
       // Track exercise index per exercise name within this workout
       const exerciseIndexMap = new Map<string, number>();
@@ -462,7 +462,7 @@ export async function importStrongCsv(
         const distanceMeters = csvRow.distance !== null ? csvRow.distance * 1000 : null;
 
         setRows.push({
-          workoutId,
+          activityId,
           exerciseId,
           exerciseIndex,
           setIndex: csvRow.setOrder - 1, // Strong is 1-indexed

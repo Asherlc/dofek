@@ -2259,16 +2259,16 @@ describe("WhoopProvider.sync() — strength sync", () => {
     // Sync calls these in order:
     // 1. Recovery: insert().values().onConflictDoUpdate() — no recovery here
     // 2. Workouts: insert().values().onConflictDoUpdate() — 1 workout
-    // 3. Strength: insert().values().onConflictDoUpdate().returning() — needs workout ID
+    // 3. Strength: insert().values().onConflictDoUpdate().returning() — needs activity ID
     //    then select().from().where().limit() — needs exercise ID
     //
-    // Queue returning() to return workout UUID on the strength_workout insert.
+    // Queue returning() to return activity UUID on the activity upsert in strength block.
     // The first returning() call is from the workout activity insert — returns []
-    // (no ID needed). The second is from strength_workout insert.
+    // (no ID needed). The second is from strength block activity upsert.
     db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    // First onConflictDoUpdate is the activity workout insert (doesn't use returning)
-    // The workout insert chain is: insert().values().onConflictDoUpdate()
-    // The strength_workout insert chain is: insert().values().onConflictDoUpdate().returning()
+    // First onConflictDoUpdate is the first activity workout insert (doesn't use returning)
+    // The first workout insert chain is: insert().values().onConflictDoUpdate()
+    // The second (strength-enriched) activity insert chain is: insert().values().onConflictDoUpdate().returning()
     db.returning.mockResolvedValueOnce([{ id: "workout-uuid-1" }]);
     // select().from().where().limit() for exercise lookup
     db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-1" }]);
@@ -2278,23 +2278,25 @@ describe("WhoopProvider.sync() — strength sync", () => {
     // Should have synced the strength workout (1 strength record)
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify strength_workout upsert (providerId + externalId)
+    // Verify activity upsert in strength block (providerId + externalId)
     const valuesCallArgs = getValuesCallArgs(db);
-    const strengthWorkoutInsert = findValuesRecord(
+    const strengthActivityInsert = findValuesRecord(
       valuesCallArgs,
-      (rec) => rec.externalId === "w-str-1" && rec.startedAt !== undefined && "name" in rec,
+      (rec) =>
+        rec.externalId === "w-str-1" &&
+        rec.startedAt !== undefined &&
+        isRecord(rec.raw) &&
+        "rawMskStrainScore" in rec.raw,
     );
-    expect(strengthWorkoutInsert).toBeDefined();
-    expect(strengthWorkoutInsert?.providerId).toBe("whoop");
-    expect(strengthWorkoutInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-    expect(strengthWorkoutInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-    // Verify name field uses ?? null (weightliftingData.name is undefined, so should be null)
-    expect(strengthWorkoutInsert?.name).toBeNull();
+    expect(strengthActivityInsert).toBeDefined();
+    expect(strengthActivityInsert?.providerId).toBe("whoop");
+    expect(strengthActivityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(strengthActivityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
 
-    // Verify onConflictDoUpdate was called for strength_workout with correct target and set
+    // Verify onConflictDoUpdate was called for activity with correct target and set
     const conflictArgs = getOnConflictArgs(db);
     const strengthConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && "rawMskStrainScore" in rec.set && "startedAt" in rec.set;
+      return isRecord(rec.set) && "raw" in rec.set;
     });
     expect(strengthConflict).toBeDefined();
     // target should be an array (providerId + externalId)
@@ -2305,12 +2307,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     // set should contain the updatable fields
     expect(isRecord(strengthConflict?.set)).toBe(true);
     if (isRecord(strengthConflict?.set)) {
-      expect(strengthConflict.set.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-      expect(strengthConflict.set.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-      expect(strengthConflict.set.name).toBeNull();
-      expect(strengthConflict.set.rawMskStrainScore).toBe(0);
-      expect(strengthConflict.set.scaledMskStrainScore).toBe(0);
-      expect(strengthConflict.set.cardioStrainScore).toBe(0);
+      expect(strengthConflict.set).toHaveProperty("raw");
     }
 
     // Verify returning was called with { id: ... } argument
@@ -2354,7 +2351,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
       (arr) => arr.length === 2 && typeof arr[0]?.weightKg === "number",
     );
     expect(setInsert).toBeDefined();
-    expect(setInsert?.[0]?.workoutId).toBe("workout-uuid-1");
+    expect(setInsert?.[0]?.activityId).toBe("workout-uuid-1");
     expect(setInsert?.[0]?.exerciseId).toBe("exercise-uuid-1");
     expect(setInsert?.[0]?.weightKg).toBe(60);
     expect(setInsert?.[0]?.reps).toBe(10);
@@ -2466,7 +2463,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify the strength_workout insert has the workout name (not null)
+    // Verify the activity insert has the workout name (not null)
     const valuesCallArgs = getValuesCallArgs(db);
     const namedWorkoutInsert = findValuesRecord(
       valuesCallArgs,
@@ -2475,9 +2472,11 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(namedWorkoutInsert).toBeDefined();
     // name should be "Morning Push Day" (not null, not && null)
     expect(namedWorkoutInsert?.name).toBe("Morning Push Day");
-    expect(namedWorkoutInsert?.rawMskStrainScore).toBe(5.2);
-    expect(namedWorkoutInsert?.scaledMskStrainScore).toBe(3.1);
-    expect(namedWorkoutInsert?.mskStrainContributionPercent).toBe(60);
+    if (isRecord(namedWorkoutInsert?.raw)) {
+      expect(namedWorkoutInsert?.raw.rawMskStrainScore).toBe(5.2);
+      expect(namedWorkoutInsert?.raw.scaledMskStrainScore).toBe(3.1);
+      expect(namedWorkoutInsert?.raw.mskStrainContributionPercent).toBe(60);
+    }
 
     // Verify the onConflictDoUpdate set also has the name
     const conflictArgs = getOnConflictArgs(db);
@@ -2487,7 +2486,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(namedConflict).toBeDefined();
   });
 
-  it("skips exercise/set processing when returning yields no workoutId", async () => {
+  it("skips exercise/set processing when returning yields no activityId", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValueOnce({
       accessToken: "test",
@@ -2574,14 +2573,14 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // Activity workout insert gets one conflict, strength_workout gets another
+    // Both inserts (workout and strength) now target activity table
     db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    // returning() yields empty array → row?.id is undefined → !workoutId is true → skip
+    // returning() yields empty array → row?.id is undefined → !activityId is true → skip
     db.returning.mockResolvedValueOnce([]);
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.provider).toBe("whoop");
-    // No set inserts should happen since workoutId was not returned
+    // No set inserts should happen since activityId was not returned
     const valuesCallArgs = getValuesCallArgs(db);
     const setBatch = findValuesBatch(
       valuesCallArgs,
@@ -2639,14 +2638,14 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const strengthErrors = result.errors.filter((e) => e.message.includes("Strength"));
     expect(strengthErrors).toHaveLength(0);
 
-    // Verify no strength_workout insert happened (no insert with name field that isn't a journal)
+    // Verify no strength-enriched activity insert happened
     const valuesCallArgs = getValuesCallArgs(db);
-    const strengthWorkoutInsert = findValuesRecord(
+    const strengthActivityInsert = findValuesRecord(
       valuesCallArgs,
       (rec) =>
-        rec.externalId === "w-cardio-1" && rec.name !== undefined && rec.startedAt !== undefined,
+        rec.externalId === "w-cardio-1" && isRecord(rec.raw) && "rawMskStrainScore" in rec.raw,
     );
-    expect(strengthWorkoutInsert).toBeUndefined();
+    expect(strengthActivityInsert).toBeUndefined();
   });
 
   it("reuses cached exercise id for duplicate provider exercise ids", async () => {

@@ -726,7 +726,7 @@ entity "sport_settings" {
 entity "strength_set" {
   * id : uuid <<PK>>
   --
-  workout_id : uuid <<FK>>
+  activity_id : uuid <<FK>>
   exercise_id : uuid <<FK>>
   exercise_index : integer
   set_index : integer
@@ -739,24 +739,6 @@ entity "strength_set" {
   strap_location_laterality : text
   rpe : real
   notes : text
-  created_at : timestamp
-}
-
-entity "strength_workout" {
-  * id : uuid <<PK>>
-  --
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  started_at : timestamp
-  ended_at : timestamp
-  name : text
-  notes : text
-  raw_msk_strain_score : real
-  scaled_msk_strain_score : real
-  cardio_strain_score : real
-  cardio_strain_contribution_percent : real
-  msk_strain_contribution_percent : real
   created_at : timestamp
 }
 
@@ -959,10 +941,8 @@ provider ||--o{ sleep_session
 user_profile ||--o{ sleep_session
 sleep_session ||--o{ sleep_stage
 user_profile ||--o{ sport_settings
-strength_workout ||--o{ strength_set
+activity ||--o{ strength_set
 exercise ||--o{ strength_set
-provider ||--o{ strength_workout
-user_profile ||--o{ strength_workout
 user_profile ||--o{ supplement
 supplement ||--o{ supplement_nutrient
 nutrient ||--o{ supplement_nutrient

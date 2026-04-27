@@ -151,7 +151,6 @@ export const adminRouter = router({
         UNION ALL SELECT 'food_entry', COUNT(*)::text FROM fitness.food_entry
         UNION ALL SELECT 'daily_metrics', COUNT(*)::text FROM fitness.daily_metrics
         UNION ALL SELECT 'body_measurement', COUNT(*)::text FROM fitness.body_measurement
-        UNION ALL SELECT 'strength_workout', COUNT(*)::text FROM fitness.strength_workout
         UNION ALL SELECT 'sync_log', COUNT(*)::text FROM fitness.sync_log
         UNION ALL SELECT 'session', COUNT(*)::text FROM fitness.session
         UNION ALL SELECT 'auth_account', COUNT(*)::text FROM fitness.auth_account

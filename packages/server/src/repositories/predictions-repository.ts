@@ -298,17 +298,18 @@ export class PredictionsRepository {
       this.#db,
       strengthVolumeRowSchema,
       sql`SELECT
-            w.id AS workout_id, w.started_at,
+            a.id AS workout_id, a.started_at,
             SUM(s.weight_kg * s.reps) FILTER (WHERE s.set_type = 'working') AS total_volume,
             COUNT(*) FILTER (WHERE s.set_type = 'working') AS working_set_count,
             MAX(s.weight_kg) FILTER (WHERE s.set_type = 'working') AS max_weight,
             AVG(s.rpe) FILTER (WHERE s.set_type = 'working') AS avg_rpe
-          FROM fitness.strength_workout w
-          JOIN fitness.strength_set s ON s.workout_id = w.id
-          WHERE w.user_id = ${this.#userId}
-            AND w.started_at > CURRENT_DATE - ${days}::int
-          GROUP BY w.id, w.started_at
-          ORDER BY w.started_at ASC`,
+          FROM fitness.activity a
+          JOIN fitness.strength_set s ON s.activity_id = a.id
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type = 'strength'
+            AND a.started_at > CURRENT_DATE - ${days}::int
+          GROUP BY a.id, a.started_at
+          ORDER BY a.started_at ASC`,
     );
 
     const strengthWorkouts: StrengthWorkoutRow[] = workoutRows

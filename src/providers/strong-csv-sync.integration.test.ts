@@ -1,12 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  exercise,
-  exerciseAlias,
-  strengthSet,
-  strengthWorkout,
-  TEST_USER_ID,
-} from "../db/schema.ts";
+import { activity, exercise, exerciseAlias, strengthSet, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { importStrongCsv, STRONG_PROVIDER_ID } from "./strong-csv.ts";
 
@@ -58,14 +52,14 @@ describe("importStrongCsv() (integration)", () => {
     expect(result.recordsSynced).toBe(1); // 1 workout
     expect(result.errors).toHaveLength(0);
 
-    // Verify strength_workout
-    const workouts = await ctx.db
+    // Verify activity
+    const activities = await ctx.db
       .select()
-      .from(strengthWorkout)
-      .where(eq(strengthWorkout.providerId, STRONG_PROVIDER_ID));
+      .from(activity)
+      .where(eq(activity.providerId, STRONG_PROVIDER_ID));
 
-    expect(workouts.length).toBeGreaterThanOrEqual(1);
-    const workout = workouts.find((w) => w.name === "Push Day");
+    expect(activities.length).toBeGreaterThanOrEqual(1);
+    const workout = activities.find((w) => w.name === "Push Day");
     if (!workout) throw new Error("expected Push Day workout");
     // Strong CSV dates are parsed as local time (no timezone info in CSV)
     expect(workout.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
@@ -75,7 +69,7 @@ describe("importStrongCsv() (integration)", () => {
     const sets = await ctx.db
       .select()
       .from(strengthSet)
-      .where(eq(strengthSet.workoutId, workout.id));
+      .where(eq(strengthSet.activityId, workout.id));
 
     expect(sets).toHaveLength(5); // 3 bench + 2 OHP
 
@@ -105,13 +99,13 @@ describe("importStrongCsv() (integration)", () => {
     expect(result.recordsSynced).toBe(2); // 2 workouts
     expect(result.errors).toHaveLength(0);
 
-    const workouts = await ctx.db
+    const activities = await ctx.db
       .select()
-      .from(strengthWorkout)
-      .where(eq(strengthWorkout.providerId, STRONG_PROVIDER_ID));
+      .from(activity)
+      .where(eq(activity.providerId, STRONG_PROVIDER_ID));
 
-    const pushDay = workouts.find((w) => w.name === "Push Day");
-    const pullDay = workouts.find((w) => w.name === "Pull Day");
+    const pushDay = activities.find((w) => w.name === "Push Day");
+    const pullDay = activities.find((w) => w.name === "Pull Day");
     expect(pushDay).toBeDefined();
     expect(pullDay).toBeDefined();
   });
@@ -122,19 +116,16 @@ describe("importStrongCsv() (integration)", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const workouts = await ctx.db
-      .select()
-      .from(strengthWorkout)
-      .where(eq(strengthWorkout.name, "Leg Day"));
+    const activities = await ctx.db.select().from(activity).where(eq(activity.name, "Leg Day"));
 
-    expect(workouts).toHaveLength(1);
-    const workout = workouts[0];
+    expect(activities).toHaveLength(1);
+    const workout = activities[0];
     if (!workout) throw new Error("expected Leg Day workout");
 
     const sets = await ctx.db
       .select()
       .from(strengthSet)
-      .where(eq(strengthSet.workoutId, workout.id));
+      .where(eq(strengthSet.activityId, workout.id));
 
     expect(sets).toHaveLength(1);
     // 225 lbs * 0.453592 = ~102.058 kg
@@ -145,12 +136,9 @@ describe("importStrongCsv() (integration)", () => {
     await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
     await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
 
-    const workouts = await ctx.db
-      .select()
-      .from(strengthWorkout)
-      .where(eq(strengthWorkout.name, "Push Day"));
+    const activities = await ctx.db.select().from(activity).where(eq(activity.name, "Push Day"));
 
-    expect(workouts).toHaveLength(1);
+    expect(activities).toHaveLength(1);
   });
 
   it("stores workout and set notes", async () => {
@@ -158,18 +146,15 @@ describe("importStrongCsv() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
 
-    const workouts = await ctx.db
-      .select()
-      .from(strengthWorkout)
-      .where(eq(strengthWorkout.name, "Full Body"));
+    const activities = await ctx.db.select().from(activity).where(eq(activity.name, "Full Body"));
 
-    expect(workouts).toHaveLength(1);
-    expect(workouts[0]?.notes).toBe("Great session");
+    expect(activities).toHaveLength(1);
+    expect(activities[0]?.notes).toBe("Great session");
 
     const sets = await ctx.db
       .select()
       .from(strengthSet)
-      .where(eq(strengthSet.workoutId, workouts[0]?.id ?? ""));
+      .where(eq(strengthSet.activityId, activities[0]?.id ?? ""));
 
     expect(sets).toHaveLength(1);
     expect(sets[0]?.notes).toBe("Felt strong");
@@ -199,18 +184,29 @@ describe("importStrongCsv() (integration)", () => {
     const result = await importStrongCsv(ctx.db, LBS_CSV, TEST_USER_ID, "lbs");
     expect(result.recordsSynced).toBe(1);
 
-    const workouts = await ctx.db
-      .select()
-      .from(strengthWorkout)
-      .where(eq(strengthWorkout.name, "Leg Day"));
+    const activities = await ctx.db.select().from(activity).where(eq(activity.name, "Leg Day"));
 
-    expect(workouts).toHaveLength(1);
+    expect(activities).toHaveLength(1);
     // Duration is 0:45:00 = 2700 seconds
-    const workout = workouts[0];
+    const workout = activities[0];
     if (!workout) throw new Error("expected workout");
     if (workout.endedAt && workout.startedAt) {
       const durationMs = workout.endedAt.getTime() - workout.startedAt.getTime();
       expect(durationMs).toBe(2700 * 1000);
     }
+  });
+
+  it("inserts a record into the activity table for each workout", async () => {
+    await importStrongCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID, "kg");
+
+    const activities = await ctx.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.providerId, STRONG_PROVIDER_ID), eq(activity.name, "Push Day")));
+
+    expect(activities).toHaveLength(1);
+    expect(activities[0]?.activityType).toBe("strength");
+    expect(activities[0]?.name).toBe("Push Day");
+    expect(activities[0]?.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
   });
 });
