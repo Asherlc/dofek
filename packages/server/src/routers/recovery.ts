@@ -479,7 +479,7 @@ export const recoveryRouter = router({
               ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
             SELECT
-              m.date,
+              COALESCE(m.date, s.date) AS date,
               m.hrv,
               m.resting_hr,
               m.respiratory_rate,
@@ -491,8 +491,8 @@ export const recoveryRouter = router({
               m.rr_sd_30d,
               s.efficiency_pct
             FROM metrics_with_baselines m
-            LEFT JOIN sleep_eff s ON s.date = m.date
-            ORDER BY m.date ASC`,
+            FULL JOIN sleep_eff s ON s.date = m.date
+            ORDER BY date ASC`,
       );
       const cutoffDate = new Date(input.endDate);
       cutoffDate.setDate(cutoffDate.getDate() - input.days);

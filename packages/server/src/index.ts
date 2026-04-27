@@ -54,6 +54,12 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 export function createApp(db: import("dofek/db").Database): express.Express {
   initSentry();
   const app = express();
+
+  // ── Health check (before ALL middleware and other routes) ──
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
   setupRoutes(app, db);
   // Sentry error handler must be after all routes
   app.use(sentryErrorHandler());
@@ -61,11 +67,6 @@ export function createApp(db: import("dofek/db").Database): express.Express {
 }
 
 function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
-  // ── Health check (before all middleware — no logging, no auth) ──
-  app.get("/healthz", (_req, res) => {
-    res.json({ status: "ok" });
-  });
-
   // ── Compression + Cookies ──
   // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
   // which is required for tRPC's httpBatchStreamLink to deliver results incrementally.

@@ -75,7 +75,7 @@ vi.mock("../lib/start-worker.ts", () => ({
   startWorker: vi.fn(),
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
     get: vi.fn().mockResolvedValue(undefined),

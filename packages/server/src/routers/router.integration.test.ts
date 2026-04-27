@@ -1,10 +1,10 @@
+import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { queryCache } from "../lib/cache.ts";
 
 /**
  * Integration tests for router coverage gaps:
@@ -1139,8 +1139,12 @@ describe("Router coverage", () => {
     });
 
     it("hrZones returns 5-zone distribution for an activity", async () => {
-      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
-      const activityId = list.items[0]?.id;
+      const list = await query<{ items: { id: string; avg_hr: number | null }[] }>(
+        "activity.list",
+        { days: 90 },
+      );
+      const activityWithHr = list.items.find((item) => item.avg_hr != null);
+      const activityId = activityWithHr?.id;
       expect(activityId).toBeTruthy();
 
       const result = await query<

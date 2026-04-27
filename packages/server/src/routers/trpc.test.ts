@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 
 // Mock external dependencies before importing
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     get: vi.fn().mockResolvedValue(undefined),
     set: vi.fn().mockResolvedValue(undefined),
@@ -18,7 +18,7 @@ vi.mock("../lib/metrics.ts", () => ({
   trpcProcedureDuration: { observe: vi.fn() },
 }));
 
-import { queryCache } from "../lib/cache.ts";
+import { queryCache } from "dofek/lib/cache";
 import { cacheHitsTotal, cacheMissesTotal } from "../lib/metrics.ts";
 import {
   adminProcedure,

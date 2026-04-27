@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { queryCache } from "dofek/lib/cache";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { resolveOrCreateUser } from "../../auth/account-linking.ts";
@@ -13,7 +14,6 @@ import {
 } from "../../auth/cookies.ts";
 import { getIdentityProvider } from "../../auth/providers.ts";
 import { createSession } from "../../auth/session.ts";
-import { queryCache } from "../../lib/cache.ts";
 import { logger } from "../../logger.ts";
 import {
   getDb,

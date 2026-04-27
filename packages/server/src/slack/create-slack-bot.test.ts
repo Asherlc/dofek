@@ -54,7 +54,7 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
   refineNutritionItems: vi.fn(),
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },

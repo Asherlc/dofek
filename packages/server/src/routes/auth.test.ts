@@ -51,7 +51,7 @@ vi.mock("../auth/account-linking.ts", () => ({
   resolveOrCreateUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn(() => Promise.resolve()) },
 }));
 
@@ -111,6 +111,7 @@ import cookieParser from "cookie-parser";
 import { revokeToken } from "dofek/auth/oauth";
 import { createDatabaseFromEnv } from "dofek/db";
 import { loadTokens } from "dofek/db/tokens";
+import { queryCache } from "dofek/lib/cache";
 import { getAllProviders } from "dofek/providers/registry";
 import { isWebhookProvider, type SyncProvider } from "dofek/providers/types";
 import express from "express";
@@ -133,7 +134,6 @@ import {
   validateNativeAppleCallback,
 } from "../auth/providers.ts";
 import { createSession, deleteSession, validateSession } from "../auth/session.ts";
-import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { createAuthRouter } from "./auth/index.ts";
 import { registerWebhookForProvider } from "./webhooks.ts";

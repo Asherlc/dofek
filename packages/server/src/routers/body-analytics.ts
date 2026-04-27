@@ -1,5 +1,5 @@
+import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
