@@ -1,5 +1,6 @@
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
+import { trpc } from "../lib/trpc.ts";
 
 /* ── Provider logos for the integration grid ── */
 const FEATURED_PROVIDERS = [
@@ -32,11 +33,13 @@ const FEATURED_PROVIDERS = [
   { id: "wger", label: "wger", ext: "png" },
 ] as const;
 
+type FeaturedProvider = (typeof FEATURED_PROVIDERS)[number];
+
 /* ── Feature data ── */
 const FEATURES = [
   {
     title: "Unified Dashboard",
-    subtitle: "Every metric, every device, one screen",
+    subtitle: "Key metrics from your devices, one screen",
     description:
       "See resting heart rate from your WHOOP next to sleep data from Oura, training load from Garmin, and nutrition from FatSecret. No more switching between five apps to understand how you feel.",
     icon: DashboardIcon,
@@ -75,10 +78,10 @@ const FEATURES = [
     color: statusColors.danger,
   },
   {
-    title: "AI-Powered Insights",
+    title: "Data-Driven Insights",
     subtitle: "Discover patterns you'd never find manually",
     description:
-      "Automatic correlation discovery across all your health data. Anomaly detection that flags unusual readings. ML-powered predictions for recovery and performance. Your personal health researcher, running 24/7.",
+      "Automatic correlation discovery across your health data, anomaly detection that flags unusual readings, and predictive models for recovery, performance, and body trends.",
     icon: InsightsIcon,
     color: "#0284c7",
   },
@@ -86,24 +89,95 @@ const FEATURES = [
 
 /* ── Stats ── */
 const STATS = [
-  { value: "30+", label: "Data providers" },
-  { value: "7", label: "Reverse-engineered APIs" },
-  { value: "100%", label: "Open source" },
+  { value: "3", label: "File import formats" },
+  { value: "Hosted", label: "Managed app" },
   { value: "0", label: "Data sold to third parties" },
 ];
+
+const INSIGHT_EXAMPLES = [
+  {
+    title: "Late meals correlate with lower sleep consistency",
+    detail: "Dinner after 9pm lines up with shorter deep sleep on 5 of the last 7 nights.",
+  },
+  {
+    title: "Training load is rising faster than recovery",
+    detail: "Workload climbed 24% this week while resting heart rate stayed elevated.",
+  },
+  {
+    title: "Resting heart rate has been elevated for 4 days",
+    detail: "Dofek flags the trend before it disappears inside one device's daily score.",
+  },
+] as const;
+
+const WEEK_ONE_STEPS = [
+  {
+    day: "Day 1",
+    title: "Connect the sources you actually use",
+    detail:
+      "Start with sleep, training, nutrition, or imports. Dofek only shows providers this server can use.",
+  },
+  {
+    day: "Day 2",
+    title: "See your baseline in one dashboard",
+    detail: "Resting heart rate, sleep, training, body, and nutrition trends land in one place.",
+  },
+  {
+    day: "Day 7",
+    title: "Get your first cross-provider signals",
+    detail:
+      "Correlations and anomaly checks start turning scattered logs into useful next actions.",
+  },
+] as const;
+
+const TRUST_POINTS = [
+  "Export your health data whenever you want",
+  "Delete your account and stored data without a support ticket",
+  "No health data sold to third parties",
+  "Hosted and maintained by Dofek, without server chores for you",
+] as const;
+
+const PRICING_FEATURES = [
+  "All configured integrations on this server",
+  "Unified web dashboard and mobile app",
+  "Cross-provider insights, anomaly checks, and trend models",
+  "Data export and account deletion controls",
+] as const;
+
+export interface LandingPageProvider {
+  id: string;
+  name: string;
+  authType: string;
+  importOnly: boolean;
+}
 
 /* ── Component ── */
 
 export function LandingPage() {
+  const usableProviders = trpc.sync.usableProviders.useQuery();
+
+  return <LandingPageView usableProviders={usableProviders.data ?? []} />;
+}
+
+export function LandingPageView({ usableProviders }: { usableProviders: LandingPageProvider[] }) {
+  const usableProviderIds = new Set(usableProviders.map((provider) => provider.id));
+  const featuredProviders = FEATURED_PROVIDERS.filter((provider) =>
+    usableProviderIds.has(provider.id),
+  ).map((provider) => ({
+    ...provider,
+    usableProvider: usableProviders.find((usableProvider) => usableProvider.id === provider.id),
+  }));
+
   return (
     <div className="min-h-screen bg-page text-foreground">
       <LandingNav />
       <HeroSection />
-      <ProviderGrid />
-      <StatsBar />
+      <ProviderGrid providers={featuredProviders} />
+      <StatsBar usableProviderCount={usableProviders.length} />
       <FeaturesSection />
-      <ComparisonSection />
-      <PrivacySection />
+      <BeforeAfterSection />
+      <WeekOneSection />
+      <TrustSection />
+      <PricingSection />
       <FinalCta />
       <Footer />
     </div>
@@ -128,16 +202,22 @@ function LandingNav() {
             Features
           </a>
           <a
+            href="#demo"
+            className="hidden sm:inline text-sm text-muted hover:text-foreground transition-colors"
+          >
+            Demo
+          </a>
+          <a
             href="#integrations"
             className="hidden sm:inline text-sm text-muted hover:text-foreground transition-colors"
           >
             Integrations
           </a>
           <a
-            href="#privacy"
+            href="#pricing"
             className="hidden sm:inline text-sm text-muted hover:text-foreground transition-colors"
           >
-            Privacy
+            Pricing
           </a>
           <Link
             to="/login"
@@ -156,29 +236,24 @@ function LandingNav() {
 function HeroSection() {
   return (
     <section className="relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-        <div className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full bg-accent/5 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full bg-accent-secondary/5 blur-3xl" />
-      </div>
-
       <div className="relative mx-auto max-w-6xl px-4 sm:px-6 pt-16 sm:pt-24 pb-16">
         <div className="text-center max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-xs font-medium mb-6">
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-            Open source health data platform
+            Hosted health data platform
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6">
-            All your health data.{" "}
+            Your health apps don't talk to each other.{" "}
             <span className="bg-gradient-to-r from-accent to-accent-secondary bg-clip-text text-transparent">
-              One clear picture.
+              Dofek does.
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-muted max-w-2xl mx-auto mb-8 leading-relaxed">
-            Dofek connects to 30+ health and fitness platforms, pulling every metric into a single
-            dashboard with AI-powered insights. No more app-switching. No more scattered data.
+            WHOOP, Garmin, Oura, Apple Health, Strava, and nutrition apps all see a different slice.
+            Dofek pulls key signals into one hosted dashboard so patterns finally have enough
+            context to be useful.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -189,19 +264,16 @@ function HeroSection() {
               Get started
             </Link>
             <a
-              href="https://github.com/Asherlc/dofek"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#demo"
               className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-surface-solid border border-border-strong text-foreground font-semibold text-base hover:bg-surface-hover transition-all press flex items-center justify-center gap-2"
             >
-              <GitHubIcon />
-              View on GitHub
+              View demo
             </a>
           </div>
         </div>
 
         {/* Dashboard mockup */}
-        <div className="mt-16 relative">
+        <div id="demo" className="mt-16 relative scroll-mt-24">
           <div className="absolute inset-0 bg-gradient-to-t from-page via-transparent to-transparent z-10 pointer-events-none" />
           <DashboardMockup />
         </div>
@@ -249,6 +321,23 @@ function DashboardMockup() {
                 {metric.value}
                 <span className="text-xs font-normal text-muted ml-0.5">{metric.unit}</span>
               </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {INSIGHT_EXAMPLES.map((insight) => (
+            <div
+              key={insight.title}
+              className="rounded-lg border border-border bg-surface-solid p-4"
+            >
+              <div className="text-[10px] uppercase tracking-wider text-accent font-semibold mb-2">
+                Signal found
+              </div>
+              <div className="text-sm font-semibold text-foreground leading-snug">
+                {insight.title}
+              </div>
+              <div className="text-xs text-muted mt-2 leading-relaxed">{insight.detail}</div>
             </div>
           ))}
         </div>
@@ -389,7 +478,20 @@ function MockChart({
 
 /* ── Provider Grid ── */
 
-function ProviderGrid() {
+function getProviderAuthLabel(provider: LandingPageProvider | undefined): string {
+  if (!provider) return "Configured";
+  if (provider.importOnly || provider.authType === "file-import") return "File import";
+  if (provider.authType === "credential") return "Credential sync";
+  if (provider.authType.startsWith("custom:")) return "Guided auth";
+  if (provider.authType === "oauth" || provider.authType === "oauth1") return "OAuth";
+  return "Configured";
+}
+
+function ProviderGrid({
+  providers,
+}: {
+  providers: (FeaturedProvider & { usableProvider?: LandingPageProvider })[];
+}) {
   return (
     <section id="integrations" className="py-16 sm:py-24 border-t border-border">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -397,32 +499,37 @@ function ProviderGrid() {
           <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
             Integrations
           </h2>
-          <p className="text-2xl sm:text-3xl font-bold">Connects to everything you already use</p>
+          <p className="text-2xl sm:text-3xl font-bold">Connects to the tools you already use</p>
           <p className="text-muted mt-3 max-w-xl mx-auto">
-            30+ providers including 7 reverse-engineered APIs for platforms that don't offer
-            developer access. If a device tracks health data, Dofek probably supports it.
+            Configured integrations include OAuth providers, credential-based imports, and file
+            uploads for platforms without a direct API connection.
           </p>
         </div>
 
-        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-9 gap-4 sm:gap-6">
-          {FEATURED_PROVIDERS.map(({ id, label, ext }) => (
-            <div
-              key={id}
-              className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-surface-hover transition-colors group"
-            >
-              <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-white shadow-sm border border-border group-hover:shadow-md transition-shadow">
-                <img
-                  src={`/logos/${id}.${ext}`}
-                  alt={label}
-                  className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
-                />
+        {providers.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {providers.map(({ id, label, ext, usableProvider }) => (
+              <div
+                key={id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-surface-solid p-3"
+              >
+                <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-white shadow-sm border border-border">
+                  <img src={`/logos/${id}.${ext}`} alt={label} className="w-7 h-7 object-contain" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-foreground truncate">{label}</div>
+                  <div className="text-[11px] text-accent mt-0.5">
+                    {getProviderAuthLabel(usableProvider)}
+                  </div>
+                </div>
               </div>
-              <span className="text-[10px] sm:text-xs text-muted text-center leading-tight">
-                {label}
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-surface-solid p-6 text-center text-sm text-muted">
+            No integrations are currently configured on this server.
+          </div>
+        )}
 
         <p className="text-center text-xs text-dim mt-8">
           Plus file imports for Apple Health XML, Strong CSV, and Cronometer CSV
@@ -434,11 +541,13 @@ function ProviderGrid() {
 
 /* ── Stats Bar ── */
 
-function StatsBar() {
+function StatsBar({ usableProviderCount }: { usableProviderCount: number }) {
+  const stats = [{ value: String(usableProviderCount), label: "Usable integrations" }, ...STATS];
+
   return (
     <section className="py-12 bg-accent/5 border-y border-border">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 grid grid-cols-2 sm:grid-cols-4 gap-8">
-        {STATS.map(({ value, label }) => (
+        {stats.map(({ value, label }) => (
           <div key={label} className="text-center">
             <div className="text-3xl sm:text-4xl font-extrabold text-accent">{value}</div>
             <div className="text-sm text-muted mt-1">{label}</div>
@@ -488,9 +597,9 @@ function FeaturesSection() {
   );
 }
 
-/* ── Comparison Section ── */
+/* ── Before/After Section ── */
 
-function ComparisonSection() {
+function BeforeAfterSection() {
   return (
     <section className="py-16 sm:py-24 bg-accent/5 border-y border-border">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
@@ -502,13 +611,22 @@ function ComparisonSection() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {/* Without Dofek */}
-          <div className="card p-6 border-red-200/50 bg-red-50/30">
+          <div className="rounded-lg border border-red-200/50 bg-red-50/30 p-6">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center text-red-500 text-sm">
                 &times;
               </div>
-              <h3 className="font-semibold text-red-900/80">Without Dofek</h3>
+              <h3 className="font-semibold text-red-900/80">Before Dofek</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {["WHOOP", "Garmin", "Oura", "FatSecret", "Strava", "Apple Health"].map((app) => (
+                <div
+                  key={app}
+                  className="rounded-md border border-red-200/60 bg-white/60 p-2 text-xs text-red-900/70"
+                >
+                  {app}
+                </div>
+              ))}
             </div>
             <ul className="space-y-3 text-sm text-red-900/60">
               {[
@@ -527,21 +645,33 @@ function ComparisonSection() {
             </ul>
           </div>
 
-          {/* With Dofek */}
-          <div className="card p-6 border-accent/30 bg-accent/5">
+          <div className="rounded-lg border border-accent/30 bg-accent/5 p-6">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center text-accent text-sm font-bold">
                 &#10003;
               </div>
-              <h3 className="font-semibold text-foreground">With Dofek</h3>
+              <h3 className="font-semibold text-foreground">After Dofek</h3>
+            </div>
+            <div className="mb-5 rounded-lg border border-accent/20 bg-page p-4">
+              <div className="h-2 rounded bg-accent/20 mb-3" />
+              <div className="grid grid-cols-3 gap-2">
+                {["Sleep", "Training", "Nutrition"].map((signal) => (
+                  <div
+                    key={signal}
+                    className="rounded bg-accent/10 px-2 py-3 text-center text-xs text-accent"
+                  >
+                    {signal}
+                  </div>
+                ))}
+              </div>
             </div>
             <ul className="space-y-3 text-sm text-muted">
               {[
-                "One dashboard with every metric from every device",
+                "One dashboard for key metrics from connected devices",
                 "Automatic cross-device correlation and insights",
-                "AI-powered anomaly detection and predictions",
-                "Self-hosted: your data stays on your server",
-                "Free and open source, forever",
+                "Anomaly detection and predictive trend models",
+                "Managed hosting with no server maintenance",
+                "One subscription for a unified health dashboard",
                 "Switch devices anytime, your data history is preserved",
               ].map((item) => (
                 <li key={item} className="flex gap-2">
@@ -557,44 +687,106 @@ function ComparisonSection() {
   );
 }
 
-/* ── Privacy Section ── */
+/* ── Week One Section ── */
 
-function PrivacySection() {
+function WeekOneSection() {
   return (
-    <section id="privacy" className="py-16 sm:py-24">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-6">
-          <ShieldIcon />
+    <section className="py-16 sm:py-24">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6">
+        <div className="text-center mb-12">
+          <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
+            First week
+          </h2>
+          <p className="text-2xl sm:text-3xl font-bold">What you get in week one</p>
         </div>
-        <h2 className="text-2xl sm:text-3xl font-bold mb-4">Your data. Your server. Period.</h2>
-        <p className="text-muted max-w-2xl mx-auto text-lg leading-relaxed mb-8">
-          Dofek is fully self-hosted. Your health data never touches a third-party cloud. Deploy on
-          your own server with Docker, encrypted secrets, and full control. No accounts, no
-          subscriptions, no data harvesting.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
-          {[
-            {
-              title: "Self-hosted",
-              description:
-                "Deploy on your own Hetzner, DigitalOcean, or home server with a single Terraform command",
-            },
-            {
-              title: "Encrypted secrets",
-              description:
-                "All API credentials are managed via Infisical. No plaintext secrets in the repo, ever",
-            },
-            {
-              title: "Open source",
-              description:
-                "Every line of code is on GitHub. Audit it, fork it, contribute to it. MIT licensed",
-            },
-          ].map(({ title, description }) => (
-            <div key={title} className="card p-5 text-left">
-              <h3 className="font-semibold text-sm mb-2">{title}</h3>
-              <p className="text-xs text-muted leading-relaxed">{description}</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {WEEK_ONE_STEPS.map((step) => (
+            <div key={step.day} className="rounded-lg border border-border bg-surface-solid p-5">
+              <div className="text-xs font-semibold text-accent uppercase tracking-wider">
+                {step.day}
+              </div>
+              <h3 className="text-base font-semibold mt-3">{step.title}</h3>
+              <p className="text-sm text-muted mt-2 leading-relaxed">{step.detail}</p>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Trust Section ── */
+
+function TrustSection() {
+  return (
+    <section id="trust" className="py-16 sm:py-24 bg-accent/5 border-y border-border">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-10 items-start">
+          <div>
+            <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
+              Trust
+            </h2>
+            <p className="text-2xl sm:text-3xl font-bold">Hosted without the creepy parts</p>
+            <p className="text-muted mt-4 leading-relaxed">
+              Dofek is hosted and maintained for you, but the product is still built around health
+              data portability and plain-language controls.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {TRUST_POINTS.map((point) => (
+              <div
+                key={point}
+                className="rounded-lg border border-border bg-page p-4 text-sm text-muted"
+              >
+                <span className="text-accent font-semibold mr-2">&#10003;</span>
+                {point}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Pricing Section ── */
+
+function PricingSection() {
+  return (
+    <section id="pricing" className="py-16 sm:py-24">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6">
+        <div className="text-center mb-10">
+          <h2 className="text-sm font-semibold text-accent uppercase tracking-wider mb-3">
+            Pricing
+          </h2>
+          <p className="text-2xl sm:text-3xl font-bold">Simple hosted plan</p>
+          <p className="text-muted mt-3">
+            One subscription for the dashboard, sync workers, hosting, and ongoing maintenance.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-accent/30 bg-accent/5 p-6 sm:p-8">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-xl font-semibold">Dofek Hosted</h3>
+              <p className="text-sm text-muted mt-1">
+                For people who want the insight, not a server project.
+              </p>
+            </div>
+            <div className="text-left sm:text-right">
+              <div className="text-3xl font-extrabold text-accent">One plan</div>
+              <div className="text-sm text-muted">All included integrations</div>
+            </div>
+          </div>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {PRICING_FEATURES.map((feature) => (
+              <li key={feature} className="text-sm text-muted">
+                <span className="text-accent font-semibold mr-2">&#10003;</span>
+                {feature}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
@@ -619,13 +811,10 @@ function FinalCta() {
             Get started
           </Link>
           <a
-            href="https://github.com/Asherlc/dofek"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="#demo"
             className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-surface-solid border border-border-strong text-foreground font-semibold text-base hover:bg-surface-hover transition-all press flex items-center justify-center gap-2"
           >
-            <GitHubIcon />
-            Star on GitHub
+            View demo
           </a>
         </div>
       </div>
@@ -641,7 +830,7 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <img src="/icon.svg" alt="" width={20} height={20} className="rounded" />
-          <span className="text-sm text-muted">Dofek &mdash; Open source health data platform</span>
+          <span className="text-sm text-muted">Dofek &mdash; Hosted health data platform</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-dim">
           <a
@@ -651,6 +840,9 @@ function Footer() {
             className="hover:text-foreground transition-colors"
           >
             GitHub
+          </a>
+          <a href="#pricing" className="hover:text-foreground transition-colors">
+            Pricing
           </a>
           <Link to="/privacy" className="hover:text-foreground transition-colors">
             Privacy
@@ -665,14 +857,6 @@ function Footer() {
 }
 
 /* ── Icons ── */
-
-function GitHubIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-    </svg>
-  );
-}
 
 function DashboardIcon({ color }: { color: string }) {
   return (
@@ -787,25 +971,6 @@ function InsightsIcon({ color }: { color: string }) {
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="16" x2="12" y2="12" />
       <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#2d7a56"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-      <polyline points="9 12 11 14 15 10" />
     </svg>
   );
 }
