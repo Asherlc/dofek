@@ -1,7 +1,11 @@
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { getStripeBillingConfig } from "../billing/config.ts";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
+import { createStripeClient } from "../billing/stripe-client.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { BillingRepository } from "../repositories/billing-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const billingStatusRowSchema = z.object({
@@ -45,5 +49,72 @@ export const billingRouter = router({
       stripeSubscriptionStatus: row.stripe_subscription_status,
       canManageBilling: row.stripe_customer_id !== null,
     };
+  }),
+
+  createCheckoutSession: protectedProcedure.mutation(async ({ ctx }) => {
+    const config = getStripeBillingConfig();
+    const stripe = createStripeClient();
+    const billingRepository = new BillingRepository(ctx.db);
+    const profile = await billingRepository.findCustomerProfileByUserId(ctx.userId);
+    if (!profile) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Authenticated user profile not found",
+      });
+    }
+
+    let stripeCustomerId = profile.stripe_customer_id;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: profile.email ?? undefined,
+        name: profile.name,
+        metadata: { userId: ctx.userId },
+      });
+      stripeCustomerId = customer.id;
+      await billingRepository.upsertStripeCustomerId(ctx.userId, stripeCustomerId);
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      mode: "subscription",
+      line_items: [{ price: config.priceId, quantity: 1 }],
+      success_url: `${config.appBaseUrl}/settings?billing=success`,
+      cancel_url: `${config.appBaseUrl}/settings?billing=cancel`,
+      client_reference_id: ctx.userId,
+    });
+    if (!session.url) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Stripe Checkout did not return a session URL",
+      });
+    }
+
+    return { url: session.url };
+  }),
+
+  createPortalSession: protectedProcedure.mutation(async ({ ctx }) => {
+    const config = getStripeBillingConfig();
+    const stripe = createStripeClient();
+    const billingRepository = new BillingRepository(ctx.db);
+    const profile = await billingRepository.findCustomerProfileByUserId(ctx.userId);
+    if (!profile) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Authenticated user profile not found",
+      });
+    }
+    if (!profile.stripe_customer_id) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Stripe customer not found. Subscribe before managing billing.",
+      });
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: profile.stripe_customer_id,
+      return_url: `${config.appBaseUrl}/settings`,
+    });
+
+    return { url: session.url };
   }),
 });
