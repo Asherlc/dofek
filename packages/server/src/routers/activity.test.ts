@@ -12,7 +12,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -443,6 +448,63 @@ describe("activityRouter", () => {
       });
       expect(result).toEqual({ success: true });
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("access window gating", () => {
+    it("list passes accessWindow to repository (limited window returns empty)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      const result = await caller.list({ days: 30 });
+      expect(result).toEqual({ items: [], totalCount: 0 });
+    });
+
+    it("byId returns NOT_FOUND when activity is outside limited access window", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      await expect(caller.byId({ id: "00000000-0000-0000-0000-000000000001" })).rejects.toThrow(
+        TRPCError,
+      );
+    });
+
+    it("stream returns empty when activity is outside limited access window", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      const result = await caller.stream({ id: "00000000-0000-0000-0000-000000000001" });
+      expect(result).toEqual([]);
     });
   });
 
