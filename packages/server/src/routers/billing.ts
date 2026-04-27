@@ -1,102 +1,120 @@
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { getStripeBillingConfig } from "../billing/config.ts";
+import { resolveAccessWindow } from "../billing/entitlement.ts";
+import { createStripeClient } from "../billing/stripe-client.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { BillingRepository } from "../repositories/billing-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
-const BILLING_SIGNUP_DAYS = 7;
-const FREE_SIGNUP_GRANT_REASON = "free_signup_week";
-
-const userCreatedAtRowSchema = z.object({ createdAt: timestampStringSchema });
-const statusAccessRowSchema = z.object({
-  kind: z.enum(["limited", "full"]),
-  paid: z.boolean(),
-  reason: z.enum(["free_signup_week", "paid_grant", "stripe_subscription"]),
-  startDate: z.string(),
-  endDateExclusive: z.string(),
+const billingStatusRowSchema = z.object({
+  id: z.string(),
+  created_at: timestampStringSchema,
+  paid_grant_reason: z.string().nullable(),
+  stripe_subscription_status: z.string().nullable(),
+  stripe_customer_id: z.string().nullable(),
 });
-const statusResponseSchema = z.object({
-  hasFullAccess: z.boolean(),
-  access: statusAccessRowSchema,
-  stripeSubscriptionStatus: z.string().nullable(),
-  canManageBilling: z.boolean(),
-});
-
-function getDateOnly(date: Date): string {
-  return date.toISOString().split("T")[0] ?? "";
-}
-
-function getSignupWeekEndExclusive(createdAt: string, days: number): string {
-  const start = new Date(`${createdAt}T00:00:00.000Z`);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + days);
-  return getDateOnly(end);
-}
 
 export const billingRouter = router({
   status: protectedProcedure.query(async ({ ctx }) => {
     const rows = await executeWithSchema(
       ctx.db,
-      userCreatedAtRowSchema,
-      sql`SELECT created_at::text AS "createdAt" FROM fitness.user_profile WHERE id = ${ctx.userId}`,
+      billingStatusRowSchema,
+      sql`SELECT
+            profile.id,
+            profile.created_at::text AS created_at,
+            billing.paid_grant_reason,
+            billing.stripe_subscription_status,
+            billing.stripe_customer_id
+          FROM fitness.user_profile profile
+          LEFT JOIN fitness.user_billing billing ON billing.user_id = profile.id
+          WHERE profile.id = ${ctx.userId}
+          LIMIT 1`,
     );
-    const createdAtRow = rows[0];
-
-    if (!createdAtRow) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Unable to load account creation date for subscription status",
-      });
+    const row = rows[0];
+    if (!row) {
+      throw new Error(`Authenticated user ${ctx.userId} does not exist`);
     }
 
-    const startDate = getDateOnly(new Date(createdAtRow.createdAt));
-    const endDateExclusive = getSignupWeekEndExclusive(startDate, BILLING_SIGNUP_DAYS);
-    const nowDate = new Date();
-    const now = getDateOnly(nowDate);
-    const hasFullAccess = now >= endDateExclusive;
-
-    const status = statusResponseSchema.parse({
-      hasFullAccess,
-      access: hasFullAccess
-        ? {
-            kind: "full",
-            paid: false,
-            reason: "free_signup_week" as const,
-            startDate,
-            endDateExclusive,
-          }
-        : {
-            kind: "limited",
-            paid: false,
-            reason: FREE_SIGNUP_GRANT_REASON,
-            startDate,
-            endDateExclusive,
-          },
-      stripeSubscriptionStatus: null,
-      canManageBilling: false,
+    const access = resolveAccessWindow({
+      userCreatedAt: row.created_at,
+      paidGrantReason: row.paid_grant_reason,
+      stripeSubscriptionStatus: row.stripe_subscription_status,
     });
-    return status;
+
+    return {
+      hasFullAccess: access.kind === "full",
+      access,
+      stripeSubscriptionStatus: row.stripe_subscription_status,
+      canManageBilling: row.stripe_customer_id !== null,
+    };
   }),
 
-  createCheckoutSession: protectedProcedure.mutation(async () => {
-    const checkoutUrl = process.env.STRIPE_CHECKOUT_URL;
-    if (!checkoutUrl) {
+  createCheckoutSession: protectedProcedure.mutation(async ({ ctx }) => {
+    const config = getStripeBillingConfig();
+    const stripe = createStripeClient();
+    const billingRepository = new BillingRepository(ctx.db);
+    const profile = await billingRepository.findCustomerProfileByUserId(ctx.userId);
+    if (!profile) {
       throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "STRIPE_CHECKOUT_URL is not configured",
+        code: "NOT_FOUND",
+        message: "Authenticated user profile not found",
       });
     }
-    return { url: checkoutUrl };
+
+    let stripeCustomerId = profile.stripe_customer_id;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: profile.email ?? undefined,
+        name: profile.name,
+        metadata: { userId: ctx.userId },
+      });
+      stripeCustomerId = customer.id;
+      await billingRepository.upsertStripeCustomerId(ctx.userId, stripeCustomerId);
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      mode: "subscription",
+      line_items: [{ price: config.priceId, quantity: 1 }],
+      success_url: `${config.appBaseUrl}/settings?billing=success`,
+      cancel_url: `${config.appBaseUrl}/settings?billing=cancel`,
+      client_reference_id: ctx.userId,
+    });
+    if (!session.url) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Stripe Checkout did not return a session URL",
+      });
+    }
+
+    return { url: session.url };
   }),
 
-  createPortalSession: protectedProcedure.mutation(async () => {
-    const portalUrl = process.env.STRIPE_PORTAL_URL;
-    if (!portalUrl) {
+  createPortalSession: protectedProcedure.mutation(async ({ ctx }) => {
+    const config = getStripeBillingConfig();
+    const stripe = createStripeClient();
+    const billingRepository = new BillingRepository(ctx.db);
+    const profile = await billingRepository.findCustomerProfileByUserId(ctx.userId);
+    if (!profile) {
       throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "STRIPE_PORTAL_URL is not configured",
+        code: "NOT_FOUND",
+        message: "Authenticated user profile not found",
       });
     }
-    return { url: portalUrl };
+    if (!profile.stripe_customer_id) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Stripe customer not found. Subscribe before managing billing.",
+      });
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: profile.stripe_customer_id,
+      return_url: `${config.appBaseUrl}/settings`,
+    });
+
+    return { url: session.url };
   }),
 });
