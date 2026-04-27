@@ -1146,9 +1146,13 @@ describe("Router coverage", () => {
     });
 
     it("hrZones returns 5-zone distribution for an activity", async () => {
-      const list = await query<{ items: { id: string }[] }>("activity.list", { days: 90 });
+      const list = await query<{ items: { id: string }[] }>("activity.list", {
+        days: 90,
+        activityTypes: ["cycling", "running"],
+      });
       const activityId = list.items[0]?.id;
       expect(activityId).toBeTruthy();
+      expect(list.items.length).toBeGreaterThan(0);
 
       const result = await query<
         {
