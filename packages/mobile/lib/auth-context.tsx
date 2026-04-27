@@ -58,8 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Token expired — clear it
           await clearSessionToken();
         }
-      } catch {
-        // Ignore errors during restore
+      } catch (error: unknown) {
+        captureException(error, { source: "auth-state-restore" });
       } finally {
         setIsLoading(false);
       }

@@ -747,7 +747,7 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ walkingSteadiness: 0.95 });
   });
 
-  it("uses walking HR average as fallback for restingHr", async () => {
+  it("does not use walking HR average as fallback for restingHr", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -758,10 +758,11 @@ describe("upsertDailyMetricsBatch", () => {
     ];
 
     await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ restingHr: 105 });
+    // Should NOT have restingHr
+    expect(capture.values[0]?.[0]?.restingHr).toBeUndefined();
   });
 
-  it("does not override restingHr with walking HR average", async () => {
+  it("does not use walking HR average to set restingHr", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -1552,8 +1553,8 @@ describe("upsertDailyMetricsBatch — per-source rows", () => {
   });
 });
 
-describe("upsertDailyMetricsBatch — HRV first-reading-wins", () => {
-  it("uses the first HRV reading of the day, ignoring later Breathe session values", async () => {
+describe("upsertDailyMetricsBatch — HRV averaging", () => {
+  it("averages all HRV readings for the day", async () => {
     const { db, capture } = createMockDb();
 
     const records = [
@@ -1571,7 +1572,7 @@ describe("upsertDailyMetricsBatch — HRV first-reading-wins", () => {
       }),
       makeRecord({
         type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-        value: 120, // Breathe session (inflated, should be ignored)
+        value: 120, // Breathe session (inflated)
         startDate: new Date("2024-06-01T22:00:00Z"),
         endDate: new Date("2024-06-01T22:00:05Z"),
       }),
@@ -1582,8 +1583,8 @@ describe("upsertDailyMetricsBatch — HRV first-reading-wins", () => {
     expect(capture.values).toHaveLength(1);
 
     const row = capture.values[0]?.[0];
-    // Should use the first reading (45ms), not average (71.7) or last (120)
-    expect(row?.hrv).toBe(45);
+    // 45 + 50 + 120 = 215, average = 71.666...
+    expect(row?.hrv).toBeCloseTo(71.66666666666667);
   });
 });
 

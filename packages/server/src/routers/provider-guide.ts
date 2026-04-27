@@ -1,5 +1,5 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
-import { queryCache } from "../lib/cache.ts";
+import { queryCache } from "dofek/lib/cache";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 

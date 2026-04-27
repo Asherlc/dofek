@@ -4,18 +4,18 @@ Logic for analyzing and selecting Heart Rate Variability (HRV) metrics.
 
 ## Overview
 
-Heart Rate Variability data, particularly from Apple Health, can be noisy. This package provides logic to extract the most representative HRV value for a given day (the "overnight baseline").
+Heart Rate Variability data, particularly from Apple Health, can be noisy. This package provides logic to extract a representative daily HRV value for Apple Health.
 
 ## Selection Strategy
 
-- **Earliest Sample Wins**: To avoid "inflated" HRV readings from daytime breathing or mindfulness sessions (which can be 2x higher than resting levels), this package prioritizes the earliest recorded sample of the day.
-- **Overnight Focus**: The earliest reading typically occurs during sleep or immediately upon waking, reflecting the true autonomic status.
-- **Apple Watch Specifics**: Apple Watch records SDNN during both sleep and Breathe/Mindfulness sessions. By picking the earliest chronological sample, we filter out the maximal parasympathetic tone induced by deliberate slow breathing.
+- **Averaging Strategy**: Apple Health HRV can include multiple samples in a day, including elevated values from Breathe or mindfulness sessions. This package averages all samples for the day to produce a more stable baseline.
+- **Representative Baseline**: Averaging helps avoid overfitting to a single noisy sample and better reflects trend over the day.
+- **Apple Watch Specifics**: Apple Watch records SDNN during both sleep and Breathe/Mindfulness sessions. Using the average includes all captured readings for that day.
 
 ## Key Functions
 
-- `selectDailyHeartRateVariability(samples)`: Given an array of HRV samples for a day (containing `value` and `startDate`), returns the value of the earliest sample.
+- `selectDailyHeartRateVariability(samples)`: Given an array of HRV samples for a day (containing `value` and `startDate`), returns the arithmetic mean of all sample values.
 
 ## Implementation Details
 
-The implementation uses `Date.parse()` or `.getTime()` to compare `startDate` values and find the minimum (earliest) timestamp. It handles both `Date` objects and ISO 8601 string dates.
+The implementation validates `startDate` values as `Date` objects or ISO 8601 strings, but the current averaging logic intentionally ignores ordering and uses only sample values.

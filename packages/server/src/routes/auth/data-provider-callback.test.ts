@@ -20,7 +20,7 @@ vi.mock("@sentry/node", () => ({
 
 vi.mock("../../logger.ts", () => ({ logger: mockLogger }));
 
-vi.mock("../../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn() },
 }));
 

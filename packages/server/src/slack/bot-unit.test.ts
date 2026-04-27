@@ -43,14 +43,14 @@ vi.mock("../lib/ai-nutrition.ts", () => ({
   refineNutritionItems: vi.fn(),
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
+import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
-import { queryCache } from "../lib/cache.ts";
 import { createSlackBot } from "./bot.ts";
 import { FoodEntryRepository, slackTimestampToDateString } from "./food-entry-repository.ts";
 

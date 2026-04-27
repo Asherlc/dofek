@@ -416,7 +416,7 @@ export async function upsertDailyMetricsBatch(
           row.walkingSteadiness = value;
           break;
         case "HKQuantityTypeIdentifierWalkingHeartRateAverage":
-          row.restingHr = row.restingHr ?? Math.round(value);
+          // Do nothing - walking average is not resting HR
           break;
         case "HKQuantityTypeIdentifierPushCount":
           row.pushCount = Math.round(value);

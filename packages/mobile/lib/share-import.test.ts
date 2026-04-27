@@ -194,4 +194,62 @@ describe("importSharedFile", () => {
       ),
     ).rejects.toThrow("Unsupported shared file type");
   });
+
+  it("falls back to fetch when blob.text and blob.arrayBuffer throw errors", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const fileBody = "Date,Workout Name,Duration,Exercise Name\n2026-03-10,Leg Day,00:45:00,Squat";
+
+    const customReadBlob = vi.fn().mockImplementation(async () => {
+      const blob = new Blob([fileBody], { type: "text/csv" });
+      Object.defineProperty(blob, "text", {
+        value: () => {
+          throw new Error("creating blobs from arraybuffer or arraybufferview are not supported");
+        },
+      });
+      Object.defineProperty(blob, "arrayBuffer", {
+        value: () => {
+          throw new Error("creating blobs from arraybuffer or arraybufferview are not supported");
+        },
+      });
+      return blob;
+    });
+
+    // The fetchImpl needs to handle both the initial file read AND the upload/status polls
+    fetchImpl
+      // 1. Initial file read fallback
+      .mockResolvedValueOnce(new Response(fileBody, { status: 200 }))
+      // 2. Upload request
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "processing", jobId: "job-fallback" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      // 3. Status poll
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "done", progress: 100 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+    const result = await importSharedFile(
+      {
+        fileUri: "file:///tmp/fallback.csv",
+        serverUrl: "https://example.com",
+        sessionToken: "session-token",
+      },
+      {
+        fetchImpl,
+        readBlob: customReadBlob,
+        sleep: async () => {},
+      },
+    );
+
+    expect(result.providerId).toBe<ImportProviderId>("strong-csv");
+    expect(result.jobId).toBe("job-fallback");
+    // fetchImpl called 3 times: fallback read, upload, poll
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "file:///tmp/fallback.csv");
+  });
 });
