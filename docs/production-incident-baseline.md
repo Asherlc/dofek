@@ -1,11 +1,45 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hypertables rollups fanout -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
+
+## 2026-04-26: Review App Server Quota Exhausted
+
+### Impact
+
+PR review-app deployment failed before the app could be provisioned. Application
+test, build, lint, typecheck, and security checks were not affected.
+
+### What Happened
+
+The `Deploy Review App` workflow reached the Terraform apply step for PR 1036
+and failed while creating the temporary server `dofek-pr-1036`.
+
+### Evidence That Mattered
+
+- Failing step: `Apply review app infrastructure`
+- First fatal line:
+  `Error: server limit reached (resource_limit_exceeded, 47100d408ee44ebf63c5f721a811d92a)`
+- Terraform resource: `hcloud_server.review` in `server.tf` line 27
+
+### Root Cause
+
+The Hetzner project/account had reached its server quota, so Terraform could not
+create another temporary review-app server.
+
+### Fix or Mitigation
+
+No code mitigation was applied. The direct fix is to free unused review-app
+servers or raise the Hetzner server quota, then let the existing workflow create
+the server normally.
+
+### Remaining Risk
+
+Review apps will keep failing for new PRs until server capacity is available.
 
 ## 2026-04-25: Materialized View Refresh Saturated Production
 

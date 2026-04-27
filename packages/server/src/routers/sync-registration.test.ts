@@ -26,6 +26,7 @@ vi.mock("../trpc.ts", async () => {
     .create();
   return {
     router: trpc.router,
+    publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
     cachedProtectedQuery: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },

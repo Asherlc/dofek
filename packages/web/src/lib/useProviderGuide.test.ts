@@ -92,6 +92,21 @@ describe("useProviderGuide", () => {
     expect(result.showProviderGuide).toBe(true);
   });
 
+  it("only returns providers with a connection or import flow for the guide", () => {
+    mockProviders.data = [
+      { id: "strava", authorized: false, importOnly: false, authType: "oauth" },
+      { id: "broken", authorized: false, importOnly: false, authType: "none" },
+      { id: "cronometer-csv", authorized: false, importOnly: true, authType: "file-import" },
+    ];
+    mockProviders.isLoading = false;
+    mockProviderGuideStatus.data = { dismissed: false };
+    mockProviderGuideStatus.isLoading = false;
+    mockSearchParams = { providerGuide: false };
+
+    const result = useProviderGuide();
+    expect(result.providers.map((provider) => provider.id)).toEqual(["strava", "cronometer-csv"]);
+  });
+
   it("hides provider guide when dismissed", () => {
     mockProviders.data = [];
     mockProviders.isLoading = false;

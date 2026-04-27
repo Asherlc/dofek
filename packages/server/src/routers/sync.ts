@@ -15,7 +15,13 @@ import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import {
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  publicProcedure,
+  router,
+} from "../trpc.ts";
 
 const AUTH_ERROR_PATTERNS = [
   /\bauthorization failed\b/i,
@@ -26,6 +32,20 @@ const AUTH_ERROR_PATTERNS = [
   /\btoken expired\b/i,
   /\bsession expired\b/i,
   /\bauthentication failed\b/i,
+] as const;
+
+const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
+  whoop: "custom:whoop",
+  garmin: "custom:garmin",
+};
+
+const UPLOAD_IMPORT_PROVIDERS = [
+  {
+    id: "apple_health",
+    name: "Apple Health",
+    authType: "file-import",
+    importOnly: true,
+  },
 ] as const;
 
 /**
@@ -171,6 +191,26 @@ export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | 
 }
 
 export const syncRouter = router({
+  /** Public list of configured providers that have a user-facing connection or import flow. */
+  usableProviders: publicProcedure.query(async () => {
+    await ensureProvidersRegistered();
+
+    const registeredProviders = getAllProviders()
+      .filter((provider) => provider.validate() === null)
+      .map((provider) => {
+        const model = new ProviderModel(provider, new Set(), undefined, CUSTOM_AUTH_PROVIDERS);
+        return {
+          id: model.id,
+          name: model.name,
+          authType: model.authType,
+          importOnly: model.importOnly,
+        };
+      })
+      .filter((provider) => provider.importOnly || provider.authType !== "none");
+
+    return [...UPLOAD_IMPORT_PROVIDERS, ...registeredProviders];
+  }),
+
   /** List all providers and whether they're enabled (have valid config) */
   providers: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     await ensureProvidersRegistered();
@@ -193,12 +233,6 @@ export const syncRouter = router({
     return all
       .filter((p) => p.validate() === null)
       .map((p) => {
-        // Providers with their own custom tRPC auth routers (MFA, special clients)
-        const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
-          whoop: "custom:whoop",
-          garmin: "custom:garmin",
-        };
-
         const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
         return {
           id: model.id,
