@@ -41,6 +41,7 @@
     "healthz",
     "biomejs",
     "vitest",
+    "stripe",
     "stryker",
     "codecov",
     "wahoo",
