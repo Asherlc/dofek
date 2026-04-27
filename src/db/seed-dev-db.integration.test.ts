@@ -236,12 +236,13 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     strengthWorkouts: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.strength_workout WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${userId}' AND activity_type = 'strength'`,
     ),
     strengthSets: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.strength_set strength_set JOIN fitness.strength_workout workout ON workout.id = strength_set.workout_id WHERE workout.user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.strength_set strength_set JOIN fitness.activity activity ON activity.id = strength_set.activity_id WHERE activity.user_id = '${userId}'`,
     ),
+
     nutritionDaily: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.nutrition_daily WHERE user_id = '${userId}'`,

@@ -262,14 +262,15 @@ export class StrengthRepository {
       this.#db,
       volumeRowSchema,
       sql`SELECT
-            date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
             COUNT(ss.id)::int AS set_count,
-            COUNT(DISTINCT sw.id)::int AS workout_count
-          FROM fitness.strength_workout sw
-          JOIN fitness.strength_set ss ON ss.workout_id = sw.id
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            COUNT(DISTINCT a.id)::int AS workout_count
+          FROM fitness.activity a
+          JOIN fitness.strength_set ss ON ss.activity_id = a.id
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type = 'strength'
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
           GROUP BY 1
           ORDER BY week`,
     );
@@ -293,19 +294,20 @@ export class StrengthRepository {
       sql`WITH best_per_workout AS (
             SELECT
               e.name AS exercise_name,
-              (sw.started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
+              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS workout_date,
               ss.weight_kg * (1 + ss.reps / 30.0) AS e1rm,
               ss.weight_kg AS actual_weight,
               ss.reps AS actual_reps,
               ROW_NUMBER() OVER (
-                PARTITION BY e.id, sw.id
+                PARTITION BY e.id, a.id
                 ORDER BY ss.weight_kg * (1 + ss.reps / 30.0) DESC
               ) AS rn
             FROM fitness.strength_set ss
-            JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+            JOIN fitness.activity a ON a.id = ss.activity_id
             JOIN fitness.exercise e ON e.id = ss.exercise_id
-            WHERE sw.user_id = ${this.#userId}
-              AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            WHERE a.user_id = ${this.#userId}
+              AND a.activity_type = 'strength'
+              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ss.set_type = 'working'
               AND ss.weight_kg > 0
               AND ss.reps BETWEEN 1 AND 12
@@ -353,14 +355,15 @@ export class StrengthRepository {
       muscleGroupRowSchema,
       sql`SELECT
             mg AS muscle_group,
-            date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COUNT(ss.id)::int AS sets
           FROM fitness.strength_set ss
-          JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+          JOIN fitness.activity a ON a.id = ss.activity_id
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type = 'strength'
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND e.muscle_groups IS NOT NULL
           GROUP BY mg, 2
           ORDER BY mg, week`,
@@ -385,13 +388,14 @@ export class StrengthRepository {
       overloadRowSchema,
       sql`SELECT
             e.name AS exercise_name,
-            date_trunc('week', (sw.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
+            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
             COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS weekly_volume
           FROM fitness.strength_set ss
-          JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+          JOIN fitness.activity a ON a.id = ss.activity_id
           JOIN fitness.exercise e ON e.id = ss.exercise_id
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type = 'strength'
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ss.weight_kg > 0
           GROUP BY e.name, 2
           ORDER BY e.name, week`,
@@ -428,14 +432,7 @@ export class StrengthRepository {
             ss.rpe,
             ss.notes
           FROM fitness.v_activity a
-          CROSS JOIN LATERAL jsonb_array_elements(
-            COALESCE(a.source_external_ids, '[]'::jsonb)
-          ) AS src
-          JOIN fitness.strength_workout sw
-            ON sw.provider_id = src->>'providerId'
-            AND sw.external_id = src->>'externalId'
-            AND sw.user_id = a.user_id
-          JOIN fitness.strength_set ss ON ss.workout_id = sw.id
+          JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.id = ${activityId}
             AND a.user_id = ${this.#userId}
@@ -494,19 +491,20 @@ export class StrengthRepository {
       this.#db,
       summaryRowSchema,
       sql`SELECT
-            (sw.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
-            sw.name,
+            (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
+            a.name,
             COUNT(DISTINCT ss.exercise_id)::int AS exercise_count,
             COUNT(ss.id)::int AS total_sets,
             COALESCE(SUM(ss.weight_kg * ss.reps), 0)::real AS total_volume_kg,
-            ROUND(EXTRACT(EPOCH FROM (sw.ended_at - sw.started_at)) / 60)::int AS duration_minutes
-          FROM fitness.strength_workout sw
-          LEFT JOIN fitness.strength_set ss ON ss.workout_id = sw.id
-          WHERE sw.user_id = ${this.#userId}
-            AND sw.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND sw.ended_at IS NOT NULL
-          GROUP BY sw.id, sw.started_at, sw.ended_at, sw.name
-          ORDER BY sw.started_at DESC`,
+            ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::int AS duration_minutes
+          FROM fitness.activity a
+          LEFT JOIN fitness.strength_set ss ON ss.activity_id = a.id
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type = 'strength'
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            AND a.ended_at IS NOT NULL
+          GROUP BY a.id, a.started_at, a.ended_at, a.name
+          ORDER BY a.started_at DESC`,
     );
 
     return rows.map(

@@ -597,9 +597,9 @@ describe("Router transformation logic", () => {
       const workoutDate = new Date();
       workoutDate.setDate(workoutDate.getDate() - 3);
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.strength_workout
-            (provider_id, user_id, external_id, started_at, name)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout')
+        sql`INSERT INTO fitness.activity
+            (provider_id, user_id, external_id, started_at, name, activity_type)
+            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout', 'strength')
             ON CONFLICT DO NOTHING`,
       );
 

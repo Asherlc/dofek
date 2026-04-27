@@ -8,7 +8,7 @@ import {
   USER_ID,
 } from "./helpers.ts";
 
-type ActivityType = "cycling" | "running" | "hiking" | "walking" | "strength_training";
+type ActivityType = "cycling" | "running" | "hiking" | "walking" | "strength";
 
 interface ActivityRow {
   id: string;
@@ -30,7 +30,7 @@ export async function seedTraining(sql: Sql, random: SeedRandom): Promise<void> 
     const durationMinutes = getDurationMinutes(activityType, daysAgo);
     const startedAt = timestampAt(date, 6 + (daysAgo % 12), daysAgo % 4 === 0 ? 30 : 0);
     const endedAt = addMinutes(startedAt, durationMinutes);
-    const providerId = activityType === "strength_training" ? "whoop" : "strava";
+    const providerId = activityType === "strength" ? "whoop" : "strava";
     const [{ id: activityId }] = await sql<ActivityRow[]>`
       INSERT INTO fitness.activity (
         provider_id, user_id, external_id, activity_type, started_at, ended_at,
@@ -58,8 +58,8 @@ export async function seedTraining(sql: Sql, random: SeedRandom): Promise<void> 
       await seedIntervals(sql, activityId, startedAt);
     }
 
-    if (activityType === "strength_training") {
-      await seedStrengthWorkout(sql, exerciseIds, startedAt, endedAt, daysAgo);
+    if (activityType === "strength") {
+      await seedStrengthSets(sql, exerciseIds, activityId, daysAgo);
     }
   }
 
@@ -94,7 +94,7 @@ async function seedExercises(sql: Sql): Promise<string[]> {
 }
 
 function getActivityType(daysAgo: number): ActivityType {
-  if (daysAgo % 8 === 0) return "strength_training";
+  if (daysAgo % 8 === 0) return "strength";
   if (daysAgo % 6 === 0) return "hiking";
   if (daysAgo % 4 === 0) return "running";
   if (daysAgo % 5 === 0) return "walking";
@@ -102,7 +102,7 @@ function getActivityType(daysAgo: number): ActivityType {
 }
 
 function getDurationMinutes(activityType: ActivityType, daysAgo: number): number {
-  if (activityType === "strength_training") return 55 + (daysAgo % 12);
+  if (activityType === "strength") return 55 + (daysAgo % 12);
   if (activityType === "walking") return 35 + (daysAgo % 20);
   if (activityType === "running") return 42 + (daysAgo % 24);
   if (activityType === "hiking") return 95 + (daysAgo % 45);
@@ -125,20 +125,20 @@ function readableActivityType(activityType: ActivityType): string {
       return "Hill Hike";
     case "walking":
       return "Recovery Walk";
-    case "strength_training":
+    case "strength":
       return "Strength Session";
   }
 }
 
 function activityNotes(activityType: ActivityType, daysAgo: number): string {
-  if (daysAgo % 10 === 0 && activityType !== "strength_training") return "Structured intervals";
+  if (daysAgo % 10 === 0 && activityType !== "strength") return "Structured intervals";
   if (daysAgo >= 16 && daysAgo <= 22) return "Reduced training load";
   return "Review seed workout";
 }
 
 function perceivedExertion(activityType: ActivityType, daysAgo: number): number {
-  if (daysAgo % 10 === 0 && activityType !== "strength_training") return 8;
-  if (activityType === "strength_training") return 7;
+  if (daysAgo % 10 === 0 && activityType !== "strength") return 8;
+  if (activityType === "strength") return 7;
   if (activityType === "walking") return 3;
   return 5 + (daysAgo % 3);
 }
@@ -153,8 +153,7 @@ async function seedActivityStreams(
   daysAgo: number,
 ): Promise<void> {
   const sampleCount = Math.max(8, Math.floor(durationMinutes / 5));
-  const baseHeartRate =
-    activityType === "strength_training" ? 112 : activityType === "walking" ? 98 : 138;
+  const baseHeartRate = activityType === "strength" ? 112 : activityType === "walking" ? 98 : 138;
 
   for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
     const recordedAt = addMinutes(startedAt, sampleIndex * 5);
@@ -313,33 +312,20 @@ async function seedIntervals(sql: Sql, activityId: string, startedAt: string): P
   }
 }
 
-async function seedStrengthWorkout(
+async function seedStrengthSets(
   sql: Sql,
   exerciseIds: string[],
-  startedAt: string,
-  endedAt: string,
+  activityId: string,
   daysAgo: number,
 ): Promise<void> {
-  const [{ id: workoutId }] = await sql<ActivityRow[]>`
-    INSERT INTO fitness.strength_workout (
-      provider_id, user_id, external_id, started_at, ended_at, name, notes,
-      raw_msk_strain_score, scaled_msk_strain_score, cardio_strain_score,
-      cardio_strain_contribution_percent, msk_strain_contribution_percent
-    ) VALUES (
-      'whoop', ${USER_ID}, ${`seed-strength-${daysAgo}`}, ${startedAt}, ${endedAt},
-      'Strength Session', 'Review seed strength workout',
-      ${12 + (daysAgo % 8)}, ${8 + (daysAgo % 5)}, ${4 + (daysAgo % 4)}, 35, 65
-    ) RETURNING id
-  `;
-
   for (const [exerciseIndex, exerciseId] of exerciseIds.entries()) {
     const setCount = exerciseIndex < 2 ? 4 : 3;
     for (let setIndex = 1; setIndex <= setCount; setIndex++) {
       await sql`
         INSERT INTO fitness.strength_set (
-          workout_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, rpe
+          activity_id, exercise_id, exercise_index, set_index, set_type, weight_kg, reps, rpe
         ) VALUES (
-          ${workoutId}, ${exerciseId}, ${exerciseIndex + 1}, ${setIndex},
+          ${activityId}, ${exerciseId}, ${exerciseIndex + 1}, ${setIndex},
           ${setIndex === 1 ? "warmup" : "working"},
           ${45 + exerciseIndex * 12 + setIndex * 4 + (daysAgo % 5)},
           ${setIndex === 1 ? 8 : 5 + (exerciseIndex % 4)},

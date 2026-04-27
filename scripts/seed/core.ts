@@ -15,8 +15,8 @@ export async function clearSeedData(sql: Sql): Promise<void> {
     SELECT id FROM fitness.activity WHERE user_id = ${USER_ID}
   )`;
   await sql`DELETE FROM fitness.metric_stream WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.strength_set WHERE workout_id IN (
-    SELECT id FROM fitness.strength_workout WHERE user_id = ${USER_ID}
+  await sql`DELETE FROM fitness.strength_set WHERE activity_id IN (
+    SELECT id FROM fitness.activity WHERE user_id = ${USER_ID}
   )`;
   await sql`DELETE FROM fitness.exercise_alias WHERE provider_id IN ('whoop', 'apple_health', 'strava', 'bodyspec', 'manual_review')`;
   await sql`DELETE FROM fitness.food_entry_nutrition WHERE food_entry_id IN (
@@ -59,7 +59,6 @@ export async function clearSeedData(sql: Sql): Promise<void> {
   await sql`DELETE FROM fitness.daily_metrics WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.sleep_session WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.activity WHERE user_id = ${USER_ID}`;
-  await sql`DELETE FROM fitness.strength_workout WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.sport_settings WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.user_settings WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.sync_log WHERE user_id = ${USER_ID}`;

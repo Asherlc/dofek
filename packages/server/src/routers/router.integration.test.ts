@@ -156,14 +156,15 @@ describe("Router coverage", () => {
       for (let dayIdx = 0; dayIdx < 2; dayIdx++) {
         const daysAgo = weekIdx * 7 + dayIdx * 3 + 1;
         const workoutResult = await testCtx.db.execute<{ id: string }>(
-          sql`INSERT INTO fitness.strength_workout (
-                provider_id, user_id, external_id, started_at, ended_at, name
+          sql`INSERT INTO fitness.activity (
+                provider_id, user_id, external_id, started_at, ended_at, name, activity_type
               ) VALUES (
                 'test_provider', ${TEST_USER_ID},
                 ${`sw-cov-${weekIdx}-${dayIdx}`},
                 NOW() - ${daysAgo}::int * INTERVAL '1 day',
                 NOW() - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '1 hour',
-                'Full Body Workout'
+                'Full Body Workout',
+                'strength'
               ) ON CONFLICT DO NOTHING
               RETURNING id`,
         );
@@ -181,7 +182,7 @@ describe("Router coverage", () => {
             const reps = 8 - Math.floor(weekIdx / 2); // reps decrease as weight goes up
             await testCtx.db.execute(
               sql`INSERT INTO fitness.strength_set (
-                    workout_id, exercise_id, exercise_index, set_index,
+                    activity_id, exercise_id, exercise_index, set_index,
                     set_type, weight_kg, reps
                   ) VALUES (
                     ${workoutId}::uuid, ${ex.id}::uuid, ${exerciseIndex}, ${setIdx},

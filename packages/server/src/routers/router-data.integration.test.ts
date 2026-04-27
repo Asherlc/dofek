@@ -221,11 +221,11 @@ describe("Router data coverage", () => {
 
     for (let i = 0; i < 8; i++) {
       const workoutResult = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.strength_workout (
-              provider_id, user_id, external_id, started_at, name
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, external_id, started_at, name, activity_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID}, ${`sw-${i}`},
-              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session'
+              NOW() - ${i * 4}::int * INTERVAL '1 day', 'Strength Session', 'strength'
             ) ON CONFLICT DO NOTHING RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
@@ -234,7 +234,7 @@ describe("Router data coverage", () => {
         for (let s = 0; s < 3; s++) {
           await testCtx.db.execute(
             sql`INSERT INTO fitness.strength_set (
-                  workout_id, exercise_id, exercise_index, set_index, set_type,
+                  activity_id, exercise_id, exercise_index, set_index, set_type,
                   weight_kg, reps, rpe
                 ) VALUES (
                   ${workoutId}, '00000000-0000-0000-0000-000000000099',
