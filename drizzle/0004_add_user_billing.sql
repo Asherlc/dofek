@@ -1,4 +1,4 @@
-CREATE TABLE fitness.user_billing (
+CREATE TABLE IF NOT EXISTS fitness.user_billing (
   user_id uuid PRIMARY KEY REFERENCES fitness.user_profile(id) ON DELETE CASCADE,
   stripe_customer_id text UNIQUE,
   stripe_subscription_id text UNIQUE,
@@ -9,8 +9,8 @@ CREATE TABLE fitness.user_billing (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX user_billing_stripe_customer_idx ON fitness.user_billing(stripe_customer_id);
-CREATE INDEX user_billing_stripe_subscription_idx ON fitness.user_billing(stripe_subscription_id);
+CREATE INDEX IF NOT EXISTS user_billing_stripe_customer_idx ON fitness.user_billing(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS user_billing_stripe_subscription_idx ON fitness.user_billing(stripe_subscription_id);
 
 INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
 SELECT id, 'existing_account'
