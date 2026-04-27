@@ -190,15 +190,21 @@ async function readBlobText(blob: Blob, fileUri: string, fetchImpl: typeof fetch
     if (hasBlobTextReader(blob)) {
       return await blob.text();
     }
-  } catch {
-    // Ignore error and fall through
+  } catch (error) {
+    captureException(error, {
+      source: "share-import-readblobtext-text",
+      fileUri,
+    });
   }
 
   try {
     const arrayBuffer = await blob.arrayBuffer();
     return new TextDecoder().decode(arrayBuffer);
-  } catch {
-    // Ignore error and fall through
+  } catch (error) {
+    captureException(error, {
+      source: "share-import-readblobtext-arraybuffer",
+      fileUri,
+    });
   }
 
   // Fallback to fetching the file URI directly
