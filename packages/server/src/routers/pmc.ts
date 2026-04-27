@@ -16,7 +16,7 @@ export const pmcRouter = router({
   chart: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
-      const repo = new PmcRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new PmcRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getChart(input.days);
     }),
 });
