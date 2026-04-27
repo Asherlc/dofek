@@ -23,6 +23,7 @@ import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
+import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
@@ -178,7 +179,15 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
         const appVersion = getSingleHeaderValue(req.headers["x-app-version"]);
         const assetsVersion = getSingleHeaderValue(req.headers["x-assets-version"]);
-        return { db, userId: session?.userId ?? null, timezone, appVersion, assetsVersion };
+        const accessWindow = session ? await getAccessWindowForUser(db, session.userId) : undefined;
+        return {
+          db,
+          userId: session?.userId ?? null,
+          timezone,
+          appVersion,
+          assetsVersion,
+          accessWindow,
+        };
       },
       onError: ({ path, error }) => {
         logger.error(`[trpc] ${path}: ${error.message}`);
