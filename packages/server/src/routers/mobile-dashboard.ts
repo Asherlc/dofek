@@ -2,8 +2,9 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { StrainScore } from "@dofek/scoring/scoring";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { acwrCte, sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   type AnomalyCheckResult,
@@ -87,8 +88,6 @@ export const mobileDashboardRouter = router({
         rhr_sd_30d: z.coerce.number().nullable(),
         rr_mean_30d: z.coerce.number().nullable(),
         rr_sd_30d: z.coerce.number().nullable(),
-        daily_load: z.coerce.number().nullable(),
-        strain: z.coerce.number().nullable(),
       });
 
       const metricsRows = await executeWithSchema(
@@ -132,8 +131,7 @@ export const mobileDashboardRouter = router({
           SELECT
             m.date::text,
             m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
-            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d,
-            m.daily_load, m.strain
+            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d
           FROM metrics_with_baselines m
           LEFT JOIN sleep_eff s ON s.date = m.date::text
           ORDER BY m.date DESC
@@ -292,13 +290,38 @@ export const mobileDashboardRouter = router({
       };
 
       // 4. Strain (Acute/Chronic)
-      const acuteLoad = metricsRows
-        .slice(0, 7)
-        .reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
-      const chronicLoad =
-        metricsRows.slice(0, 28).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0) / 4;
-      const dailyStrain =
-        metricsRows[0] && isRecent(metricsRows[0].date, endDate) ? (metricsRows[0].strain ?? 0) : 0;
+      const strainRows = await executeWithSchema(
+        ctx.db,
+        z.object({
+          date: dateStringSchema,
+          daily_load: z.coerce.number(),
+          acute_load: z.coerce.number(),
+          chronic_load: z.coerce.number(),
+        }),
+        sql`
+          WITH ${acwrCte(ctx.userId, tz, endDate, 28)}
+          SELECT
+            date::text AS date,
+            daily_load,
+            acute_load,
+            chronic_load_avg * 7 AS chronic_load
+          FROM acwr_with_windows
+          WHERE date > ${endDate}::date - 28
+          ORDER BY date DESC
+        `,
+      );
+
+      const latestStrainRow = strainRows[0] ?? null;
+      const isLatestStrainRecent = latestStrainRow != null && isRecent(latestStrainRow.date, endDate);
+      const latestStrainDailyLoad = isLatestStrainRecent
+        ? Math.round(Number(latestStrainRow.daily_load) * 10) / 10
+        : 0;
+
+      const acuteLoad = latestStrainRow ? Number(latestStrainRow.acute_load) : 0;
+      const chronicLoad = latestStrainRow ? Number(latestStrainRow.chronic_load) : 0;
+      const dailyStrain = isLatestStrainRecent
+        ? StrainScore.fromRawLoad(latestStrainDailyLoad).value
+        : 0;
       const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
 
       const strainResult: MobileDashboardResult["strain"] = {
