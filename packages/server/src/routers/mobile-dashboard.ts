@@ -100,8 +100,6 @@ export const mobileDashboardRouter = router({
               hrv,
               resting_hr,
               respiratory_rate_avg AS respiratory_rate,
-              daily_load,
-              strain,
               AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
               STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
               AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
