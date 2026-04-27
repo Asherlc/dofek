@@ -386,6 +386,7 @@ export class RecoveryRepository extends BaseRepository {
             COUNT(*) OVER (ORDER BY sleep_date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS window_count
           FROM sleep_deduped
           WHERE sleep_date > CURRENT_DATE - ${days}::int
+            ${this.dateAccessPredicate(sql`sleep_date`)}
           ORDER BY sleep_date ASC`,
     );
 
@@ -417,6 +418,7 @@ export class RecoveryRepository extends BaseRepository {
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
               AND hrv IS NOT NULL
+              ${this.dateAccessPredicate(sql`date`)}
             ORDER BY date ASC
           )
           SELECT
@@ -463,6 +465,7 @@ export class RecoveryRepository extends BaseRepository {
             END AS workload_ratio
           FROM acwr_with_windows
           WHERE date > ${dateWindowStart(endDate, days)}
+            ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date ASC`,
     );
 
@@ -499,6 +502,7 @@ export class RecoveryRepository extends BaseRepository {
               CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct,
               efficiency_pct
             FROM sleep_deduped
+            WHERE 1=1 ${this.dateAccessPredicate(sql`sleep_date`)}
           )
           SELECT
             date::text AS date,
@@ -561,6 +565,7 @@ export class RecoveryRepository extends BaseRepository {
               WHERE user_id = ${this.userId}
                 AND is_nap = false
                 AND started_at > ${timestampWindowStart(endDate, queryDays)}
+                ${this.timestampAccessPredicate(sql`started_at`)}
             ) sleep_sub
             ORDER BY local_date, duration_minutes DESC NULLS LAST
           )
@@ -578,6 +583,7 @@ export class RecoveryRepository extends BaseRepository {
             s.efficiency_pct
           FROM vitals_baseline m
           LEFT JOIN sleep_eff s ON s.date = m.date::text
+          WHERE 1=1 ${this.dateAccessPredicate(sql`m.date`)}
           ORDER BY m.date ASC`,
     );
 
@@ -660,6 +666,7 @@ export class RecoveryRepository extends BaseRepository {
           AND asum.started_at::date >= ${dateWindowStart(endDate, days)}
           AND asum.ended_at IS NOT NULL
           AND asum.avg_hr IS NOT NULL
+          ${this.timestampAccessPredicate(sql`asum.started_at`)}
         GROUP BY asum.started_at::date
         ORDER BY date ASC
       `,
