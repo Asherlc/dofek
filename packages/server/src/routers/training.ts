@@ -3,8 +3,8 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import { TrainingRepository } from "../repositories/training-repository.ts";
 import type { NextWorkoutData } from "../repositories/training-repository.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 type RecommendationType = "rest" | "strength" | "cardio";
@@ -124,7 +124,9 @@ export function getNextWorkoutRecommendation({
   } else {
     rationale.push("Readiness score unavailable; using workload and recency only.");
   }
-  rationale.push(`Last 7 days: ${strengthSessions7d} strength and ${enduranceSessions7d} cardio sessions.`);
+  rationale.push(
+    `Last 7 days: ${strengthSessions7d} strength and ${enduranceSessions7d} cardio sessions.`,
+  );
 
   if (consecutiveTrainingDays >= 6) {
     rationale.push(`Training streak is ${consecutiveTrainingDays} consecutive days.`);
