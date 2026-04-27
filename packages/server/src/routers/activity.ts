@@ -118,7 +118,7 @@ export const activityRouter = router({
       if (!isCyclingActivity(activity.activity_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
 
-      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone);
       const { currentEftp } = await powerRepo.getEftpTrend(90);
       if (currentEftp == null) return null;
 
