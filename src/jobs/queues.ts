@@ -62,7 +62,7 @@ export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
 export const TRAINING_EXPORT_QUEUE = "training-export";
-export const POST_SYNC_DEBOUNCE_MS = 60_000;
+export const POST_SYNC_DEBOUNCE_MS = 10_000;
 
 const GLOBAL_POST_SYNC_JOB_NAME = "global-maintenance";
 const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";

@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
+import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import type { PostSyncJobData } from "./queues.ts";
 
@@ -60,6 +61,15 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
   } catch (err) {
     logger.error(`[post-sync] Failed to refit parameters: ${err}`);
     Sentry.captureException(err, { tags: { postSyncStep: "refitParams" } });
+  }
+
+  // Invalidate user-specific cache after all views are refreshed and params refitted.
+  // This ensures the dashboard sees fresh data from the newly refreshed materialized views.
+  try {
+    await queryCache.invalidateByPrefix(`${job.data.userId}:`);
+    logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);
+  } catch (err) {
+    logger.error(`[post-sync] Failed to invalidate cache for user ${job.data.userId}: ${err}`);
   }
 
   logger.info(`[post-sync] Post-sync refit complete for user ${job.data.userId}`);

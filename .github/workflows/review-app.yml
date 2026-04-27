@@ -187,7 +187,6 @@ jobs:
           TF_VAR_pr_number: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-
           terraform init -input=false -lock-timeout=5m
           apply_output="$(mktemp)"
           set +e

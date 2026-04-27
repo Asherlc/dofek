@@ -27,7 +27,7 @@ vi.mock("../repositories/settings-repository.ts", () => ({
   })),
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
   },

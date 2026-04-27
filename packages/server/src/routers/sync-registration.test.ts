@@ -33,7 +33,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: vi.fn(),
     get: vi.fn(),

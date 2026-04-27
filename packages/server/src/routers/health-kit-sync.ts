@@ -1,8 +1,8 @@
 import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
+import { queryCache } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import {

@@ -351,3 +351,53 @@ Prioritized next work:
 - [schema.md](schema.md): materialized-view and continuous-aggregate modeling
   rules.
 - [ci-debugging.md](ci-debugging.md): CI/deploy log inspection patterns.
+
+## 2026-04-27: CI failures from missing `fitness.user_billing`
+
+### Impact
+
+PR checks for `stripe-subscriptions-access-gating` (PR #1045) failed even after
+code changes were applied to related code paths, preventing merge despite green
+security and app/build checks. The failing checks were:
+
+- `Test / Integration Tests`
+- `Test / Mutation Testing`
+- `Test / Stryker`
+- `Test / Unit & Integration Tests`
+- `Test / Test Gate`
+- `CI Gate`
+- `Deploy Review App`
+
+### Evidence That Mattered
+
+The first fatal line in both integration and mutation logs was:
+
+```text
+relation "fitness.user_billing" does not exist
+```
+
+This was observed in run `25003346764` and in database logs for the test
+container during table bootstrap/migration setup.
+
+### Root Cause
+
+The `stripe-subscriptions-access-gating` branch did not include the migration that
+creates `fitness.user_billing`, while later queries in the branch (and derived
+jobs) expected that table to exist.
+
+### Fix or Mitigation
+
+A new migration was added in this branch as
+`drizzle/0004_add_user_billing.sql`:
+
+- Create `fitness.user_billing` with the expected columns and indexes.
+- Backfill existing users as `existing_account`.
+
+The CI run for PR `1049` (head `f190a7e6`) then passed all gates after this
+change.
+
+### Remaining Risk
+
+The failing access-gating branch (`stripe-subscriptions-access-gating`) remains
+red until it includes the same migration and corresponding test path. This is a
+schema drift risk if downstream branches diverge from the core migration lineage.

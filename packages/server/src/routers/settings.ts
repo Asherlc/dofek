@@ -1,5 +1,5 @@
+import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
