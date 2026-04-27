@@ -1,0 +1,36 @@
+<h2>Stripe Subscription Gate</h2>
+<p class="subtitle">Server-owned entitlement, Stripe-owned billing, unrestricted ingestion.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Proposed Data Flow</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:stretch">
+      <div class="placeholder" style="min-height:130px">
+        <div class="label">Clients</div>
+        <h3>Web + iOS</h3>
+        <p>Ask server for data, checkout URL, portal URL, and subscription status.</p>
+      </div>
+      <div class="placeholder" style="min-height:130px">
+        <div class="label">Server</div>
+        <h3>Billing + Gate</h3>
+        <p>Stores entitlement state and clamps every read query for unpaid users.</p>
+      </div>
+      <div class="placeholder" style="min-height:130px">
+        <div class="label">Stripe</div>
+        <h3>Checkout + Portal</h3>
+        <p>Collects payment, manages cancellation, sends subscription webhooks.</p>
+      </div>
+    </div>
+    <div style="margin:22px 0;height:2px;background:#d7dde8"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="placeholder">
+        <div class="label">Paid users</div>
+        <p>Full data access when Stripe subscription is active, trialing, or an internal paid grant exists.</p>
+      </div>
+      <div class="placeholder">
+        <div class="label">Unpaid users</div>
+        <p>Only reads data dated from signup day through signup day + 6. Sync/import still stores all raw history.</p>
+      </div>
+    </div>
+  </div>
+</div>
