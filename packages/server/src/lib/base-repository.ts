@@ -4,6 +4,7 @@ import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { ACTIVITY_VIEWS } from "dofek/db/materialized-views";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { timestampWindowStart } from "./date-window.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
@@ -28,11 +29,18 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
   protected readonly db: TDb;
   protected readonly userId: string;
   protected readonly timezone: string;
+  protected readonly accessWindow: AccessWindow;
 
-  constructor(db: TDb, userId: string, timezone = "UTC") {
+  constructor(
+    db: TDb,
+    userId: string,
+    timezone = "UTC",
+    accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" },
+  ) {
     this.db = db;
     this.userId = userId;
     this.timezone = timezone;
+    this.accessWindow = accessWindow;
   }
 
   /** Execute a raw SQL query and parse each row with a Zod schema. */
@@ -41,6 +49,18 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
     sqlQuery: SQL,
   ): Promise<z.infer<TSchema>[]> {
     return executeWithSchema(this.db, schema, sqlQuery);
+  }
+
+  protected dateAccessPredicate(column: SQL): SQL {
+    if (this.accessWindow.kind === "full") return sql``;
+    return sql`AND ${column} >= ${this.accessWindow.startDate}::date
+               AND ${column} < ${this.accessWindow.endDateExclusive}::date`;
+  }
+
+  protected timestampAccessPredicate(column: SQL): SQL {
+    if (this.accessWindow.kind === "full") return sql``;
+    return sql`AND ${column} >= ${this.accessWindow.startDate}::date
+               AND ${column} < ${this.accessWindow.endDateExclusive}::date`;
   }
 
   /**

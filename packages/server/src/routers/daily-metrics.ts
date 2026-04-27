@@ -8,26 +8,26 @@ export const dailyMetricsRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
-      const repo = new DailyMetricsRepository(ctx.db, ctx.userId);
+      const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.list(input.days, input.endDate);
     }),
 
   latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const repo = new DailyMetricsRepository(ctx.db, ctx.userId);
+    const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
     return repo.getLatest();
   }),
 
   hrvBaseline: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
-      const repo = new DailyMetricsRepository(ctx.db, ctx.userId);
+      const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getHrvBaseline(input.days, input.endDate);
     }),
 
   trends: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
-      const repo = new DailyMetricsRepository(ctx.db, ctx.userId);
+      const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getTrends(input.days, input.endDate);
     }),
 });

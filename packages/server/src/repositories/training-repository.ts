@@ -150,6 +150,7 @@ export class TrainingRepository extends BaseRepository {
               WHERE user_id = ${this.userId}
                 AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
                 AND ended_at IS NOT NULL
+                ${this.timestampAccessPredicate(sql`started_at`)}
               GROUP BY 1, activity_type
               ORDER BY week`,
         ),
@@ -186,6 +187,7 @@ export class TrainingRepository extends BaseRepository {
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
             AND ds.scalar IS NOT NULL
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
           GROUP BY up.max_hr, 2
           ORDER BY week`,
     );
@@ -219,6 +221,7 @@ export class TrainingRepository extends BaseRepository {
               LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
               WHERE a.user_id = ${this.userId}
                 AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+                ${this.timestampAccessPredicate(sql`a.started_at`)}
               ORDER BY a.started_at DESC`,
         ),
       days,
@@ -349,6 +352,7 @@ export class TrainingRepository extends BaseRepository {
           FROM fitness.v_activity
           WHERE user_id = ${this.userId}
             AND ${enduranceTypeFilter("v_activity")}
+            ${this.timestampAccessPredicate(sql`started_at`)}
         )
         SELECT
           s.strength_7d,
@@ -384,7 +388,8 @@ export class TrainingRepository extends BaseRepository {
           AND a.started_at > ${timestampWindowStart(endDate, 14)}
           AND ${enduranceTypeFilter("a")}
           AND up.max_hr IS NOT NULL
-          AND ds.scalar IS NOT NULL`,
+          AND ds.scalar IS NOT NULL
+          ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
   }
 
@@ -405,6 +410,7 @@ export class TrainingRepository extends BaseRepository {
             AND ${enduranceTypeFilter("a")}
             AND up.max_hr IS NOT NULL
             AND ds.scalar IS NOT NULL
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
           GROUP BY a.id, 2
         )
         SELECT
@@ -433,7 +439,17 @@ export class TrainingRepository extends BaseRepository {
           FROM fitness.v_activity
           WHERE user_id = ${this.userId}
             AND started_at > ${timestampWindowStart(endDate, 14)}
-          ORDER BY training_date DESC`,
+            ${this.timestampAccessPredicate(sql`started_at`)}
+          UNION
+          SELECT DISTINCT (started_at AT TIME ZONE ${this.timezone})::date AS training_date
+          FROM fitness.strength_workout
+          WHERE user_id = ${this.userId}
+            AND started_at > ${timestampWindowStart(endDate, 14)}
+            ${this.timestampAccessPredicate(sql`started_at`)}
+        )
+        SELECT training_date::text
+        FROM combined
+        ORDER BY training_date DESC`,
     );
   }
 }
