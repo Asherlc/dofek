@@ -208,7 +208,7 @@ function csvHeaders(rows: Record<string, unknown>[]): string[] {
   return headers;
 }
 
-function csvCell(value: unknown): string {
+export function csvCell(value: unknown): string {
   if (value == null) return "";
   const serialized =
     value instanceof Date
@@ -222,7 +222,7 @@ function csvCell(value: unknown): string {
   return serialized;
 }
 
-function rowsToCsv(rows: Record<string, unknown>[]): string {
+export function rowsToCsv(rows: Record<string, unknown>[]): string {
   const headers = csvHeaders(rows);
   if (headers.length === 0) return "";
   const lines = [
