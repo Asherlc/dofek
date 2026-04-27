@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
+import type { AccessWindow } from "./billing/entitlement.ts";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
@@ -21,12 +22,17 @@ export interface Context {
   appVersion?: string;
   /** Client asset/update identifier, if provided (e.g. Expo updateId). */
   assetsVersion?: string;
+  /** Billing-derived read access window for authenticated users. */
+  accessWindow?: AccessWindow;
 }
 
 /** Context after auth middleware — userId is guaranteed non-null. */
 export interface AuthenticatedContext extends Context {
   userId: string;
+  accessWindow: AccessWindow;
 }
+
+const fullAccessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
 
 const trpc = initTRPC.context<Context>().create();
 
@@ -36,7 +42,11 @@ const isAuthenticated = trpc.middleware(({ ctx, next }) => {
   if (!ctx.userId) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
   }
-  const authenticatedCtx: AuthenticatedContext = { ...ctx, userId: ctx.userId };
+  const authenticatedCtx: AuthenticatedContext = {
+    ...ctx,
+    userId: ctx.userId,
+    accessWindow: ctx.accessWindow ?? fullAccessWindow,
+  };
   return next({ ctx: authenticatedCtx });
 });
 
@@ -53,7 +63,11 @@ const isAdminUser = trpc.middleware(async ({ ctx, next }) => {
   if (!admin) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
   }
-  const authenticatedCtx: AuthenticatedContext = { ...ctx, userId: ctx.userId };
+  const authenticatedCtx: AuthenticatedContext = {
+    ...ctx,
+    userId: ctx.userId,
+    accessWindow: ctx.accessWindow ?? fullAccessWindow,
+  };
   return next({ ctx: authenticatedCtx });
 });
 

@@ -84,7 +84,8 @@ export class PmcRepository extends BaseRepository {
               WHERE up.id = ${this.userId}
                 AND asum.started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
                 AND asum.ended_at IS NOT NULL
-                AND asum.hr_sample_count > 0`,
+                AND asum.hr_sample_count > 0
+                ${this.timestampAccessPredicate(sql`asum.started_at`)}`,
         ),
       queryDays,
       "pmcChart",

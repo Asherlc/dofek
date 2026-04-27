@@ -3,7 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone?: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -2515,5 +2522,24 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.date).toBe(dateStr);
+  });
+});
+
+describe("recoveryRouter access window gating", () => {
+  it("sleepConsistency passes accessWindow to query (limited window returns empty)", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      },
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result).toEqual([]);
   });
 });
