@@ -111,14 +111,12 @@ function parseCsvLine(line: string): string[] {
 
 export function parseOptionalFloat(value: string): number | null {
   const trimmed = value.trim();
-  if (trimmed === "") return null;
   const num = Number.parseFloat(trimmed);
   return Number.isNaN(num) ? null : num;
 }
 
 export function parseOptionalInt(value: string): number | null {
   const trimmed = value.trim();
-  if (trimmed === "") return null;
   const num = Number.parseInt(trimmed, 10);
   return Number.isNaN(num) ? null : num;
 }
