@@ -3,10 +3,10 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import type { NextWorkoutRecommendation } from "../repositories/training-repository.ts";
-import type { SleepNeedResult } from "./sleep-need.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import type { NextWorkoutRecommendation } from "../repositories/training-repository.ts";
+import type { SleepNeedResult } from "./sleep-need.ts";
 
 /**
  * Integration tests for mobile-dashboard router.

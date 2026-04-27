@@ -1,8 +1,8 @@
+import { StrainScore } from "@dofek/scoring/scoring";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { StrainScore } from "@dofek/scoring/scoring";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { acwrCte, sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -312,7 +312,8 @@ export const mobileDashboardRouter = router({
       );
 
       const latestStrainRow = strainRows[0] ?? null;
-      const isLatestStrainRecent = latestStrainRow != null && isRecent(latestStrainRow.date, endDate);
+      const isLatestStrainRecent =
+        latestStrainRow != null && isRecent(latestStrainRow.date, endDate);
       const latestStrainDailyLoad = isLatestStrainRecent
         ? Math.round(Number(latestStrainRow.daily_load) * 10) / 10
         : 0;
