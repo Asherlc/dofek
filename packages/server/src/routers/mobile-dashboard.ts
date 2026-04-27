@@ -19,7 +19,7 @@ import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 
 /** Simple date comparison for server-side logic (where @dofek/format is not available). */
-function isRecent(dateStr: string, anchorDateStr: string): boolean {
+export function isRecent(dateStr: string, anchorDateStr: string): boolean {
   const date = new Date(`${dateStr}T12:00:00Z`);
   const anchor = new Date(`${anchorDateStr}T12:00:00Z`);
   const diffDays = Math.round((anchor.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
