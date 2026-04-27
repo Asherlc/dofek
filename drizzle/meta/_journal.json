@@ -20,6 +20,13 @@
       "idx": 2,
       "version": "7",
       "when": 1775582000000,
+      "tag": "0002_add_user_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775582000000,
       "tag": "0002_drop_user_id_defaults",
       "breakpoints": true
     }
