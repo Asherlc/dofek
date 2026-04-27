@@ -74,7 +74,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-      start_period: 15s
+      start_period: 60s
     labels:
       - traefik.enable=true
       - traefik.http.routers.web.rule=Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)
