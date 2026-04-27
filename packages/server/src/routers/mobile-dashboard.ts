@@ -98,7 +98,7 @@ export const mobileDashboardRouter = router({
         sql`
           WITH metrics_with_baselines AS (
             SELECT
-              date,
+              date AS metric_date,
               hrv,
               resting_hr,
               respiratory_rate_avg AS respiratory_rate,
@@ -115,7 +115,7 @@ export const mobileDashboardRouter = router({
           ),
           daily_loads AS (
             SELECT
-              (ended_at AT TIME ZONE ${tz})::date AS date,
+              (ended_at AT TIME ZONE ${tz})::date AS metric_date,
               COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0), 0)
                 AS daily_load
             FROM fitness.activity_summary
@@ -124,11 +124,11 @@ export const mobileDashboardRouter = router({
               AND avg_hr IS NOT NULL
               AND (ended_at AT TIME ZONE ${tz})::date > ${endDate}::date - 60
               AND (ended_at AT TIME ZONE ${tz})::date <= ${endDate}
-            GROUP BY date
+            GROUP BY metric_date
           ),
           sleep_eff AS (
             SELECT DISTINCT ON (local_date)
-              local_date::text AS date,
+              local_date::text AS sleep_date,
               efficiency_pct
             FROM (
               SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date AS local_date,
@@ -142,14 +142,14 @@ export const mobileDashboardRouter = router({
             ORDER BY local_date, duration_minutes DESC NULLS LAST
           )
           SELECT
-            m.date::text,
+            m.metric_date::text AS date,
             m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
             m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d,
             COALESCE(dl.daily_load, 0) AS daily_load
           FROM metrics_with_baselines m
-          LEFT JOIN sleep_eff s ON s.date = m.date::text
-          LEFT JOIN daily_loads dl ON dl.date = m.date
-          ORDER BY m.date DESC
+          LEFT JOIN sleep_eff s ON s.sleep_date = m.metric_date::text
+          LEFT JOIN daily_loads dl ON dl.metric_date = m.metric_date
+          ORDER BY m.metric_date DESC
         `,
       );
 
@@ -240,7 +240,7 @@ export const mobileDashboardRouter = router({
              ORDER BY sleep_date, duration_minutes DESC NULLS LAST
           ),
           daily_hrv AS (
-            SELECT date, hrv
+            SELECT date AS metric_date, hrv
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
           ),
@@ -255,7 +255,7 @@ export const mobileDashboardRouter = router({
             h.hrv,
             yl.load as yesterday_load
           FROM sleep_nights s
-          LEFT JOIN daily_hrv h ON h.date = s.sleep_date + 1
+          LEFT JOIN daily_hrv h ON h.metric_date = s.sleep_date + 1
           CROSS JOIN yesterday_load yl
         `,
       );
