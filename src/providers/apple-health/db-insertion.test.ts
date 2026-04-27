@@ -747,7 +747,7 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ walkingSteadiness: 0.95 });
   });
 
-  it("uses walking HR average as fallback for restingHr", async () => {
+  it("does not use walking HR average as fallback for restingHr", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -758,10 +758,11 @@ describe("upsertDailyMetricsBatch", () => {
     ];
 
     await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ restingHr: 105 });
+    // Should NOT have restingHr
+    expect(capture.values[0]?.[0]?.restingHr).toBeUndefined();
   });
 
-  it("does not override restingHr with walking HR average", async () => {
+  it("does not use walking HR average to set restingHr", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
