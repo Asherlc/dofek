@@ -1,3 +1,4 @@
+import { StrainScore } from "@dofek/scoring/scoring";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -88,6 +89,7 @@ export const mobileDashboardRouter = router({
         rhr_sd_30d: z.coerce.number().nullable(),
         rr_mean_30d: z.coerce.number().nullable(),
         rr_sd_30d: z.coerce.number().nullable(),
+        daily_load: z.coerce.number(),
       });
 
       const metricsRows = await executeWithSchema(
@@ -111,6 +113,19 @@ export const mobileDashboardRouter = router({
               AND date > ${endDate}::date - 60
               AND date <= ${endDate}
           ),
+          daily_loads AS (
+            SELECT
+              (ended_at AT TIME ZONE ${tz})::date AS date,
+              COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0), 0)
+                AS daily_load
+            FROM fitness.activity_summary
+            WHERE user_id = ${ctx.userId}
+              AND ended_at IS NOT NULL
+              AND avg_hr IS NOT NULL
+              AND (ended_at AT TIME ZONE ${tz})::date > ${endDate}::date - 60
+              AND (ended_at AT TIME ZONE ${tz})::date <= ${endDate}
+            GROUP BY date
+          ),
           sleep_eff AS (
             SELECT DISTINCT ON (local_date)
               local_date::text AS date,
@@ -129,9 +144,11 @@ export const mobileDashboardRouter = router({
           SELECT
             m.date::text,
             m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
-            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d
+            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d,
+            COALESCE(dl.daily_load, 0) AS daily_load
           FROM metrics_with_baselines m
           LEFT JOIN sleep_eff s ON s.date = m.date::text
+          LEFT JOIN daily_loads dl ON dl.date = m.date
           ORDER BY m.date DESC
         `,
       );
@@ -181,14 +198,24 @@ export const mobileDashboardRouter = router({
           awake_pct: z.coerce.number(),
         }),
         sql`
-          SELECT DISTINCT ON (date)
-            ${sleepNightDate(tz)} AS date,
+          WITH sleep_rows AS (
+            SELECT
+              ${sleepNightDate(tz)} AS sleep_date,
+              duration_minutes,
+              deep_pct,
+              rem_pct,
+              light_pct,
+              awake_pct
+            FROM fitness.v_sleep
+            WHERE user_id = ${ctx.userId}
+              AND is_nap = false
+              AND started_at > ${endDate}::date - 14
+          )
+          SELECT DISTINCT ON (sleep_date)
+            sleep_date::text AS date,
             duration_minutes, deep_pct, rem_pct, light_pct, awake_pct
-          FROM fitness.v_sleep
-          WHERE user_id = ${ctx.userId}
-            AND is_nap = false
-            AND started_at > ${endDate}::date - 14
-          ORDER BY date DESC, duration_minutes DESC NULLS LAST
+          FROM sleep_rows
+          ORDER BY sleep_date DESC, duration_minutes DESC NULLS LAST
         `,
       );
 
@@ -205,12 +232,12 @@ export const mobileDashboardRouter = router({
         }),
         sql`
           WITH sleep_nights AS (
-             SELECT DISTINCT ON (date)
-               ${sleepNightDate(tz)} AS date,
+             SELECT DISTINCT ON (sleep_date)
+               ${sleepNightDate(tz)} AS sleep_date,
                duration_minutes
              FROM fitness.v_sleep
              WHERE user_id = ${ctx.userId} AND is_nap = false AND started_at > ${timestampWindowStart(endDate, 90)}
-             ORDER BY date, duration_minutes DESC NULLS LAST
+             ORDER BY sleep_date, duration_minutes DESC NULLS LAST
           ),
           daily_hrv AS (
             SELECT date, hrv
@@ -218,13 +245,17 @@ export const mobileDashboardRouter = router({
             WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
           ),
           yesterday_load AS (
-             SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0) AS load
-             FROM fitness.activity_summary
-             WHERE user_id = ${ctx.userId} AND (started_at AT TIME ZONE ${tz})::date = ${endDate}::date - 1
+            SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0) AS load
+            FROM fitness.activity_summary
+            WHERE user_id = ${ctx.userId} AND (started_at AT TIME ZONE ${tz})::date = ${endDate}::date - 1
           )
-          SELECT s.date::text, s.duration_minutes, h.hrv, yl.load as yesterday_load
+          SELECT
+            s.sleep_date::text AS date,
+            s.duration_minutes,
+            h.hrv,
+            yl.load as yesterday_load
           FROM sleep_nights s
-          LEFT JOIN daily_hrv h ON h.date = s.date + 1
+          LEFT JOIN daily_hrv h ON h.date = s.sleep_date + 1
           CROSS JOIN yesterday_load yl
         `,
       );
@@ -287,13 +318,16 @@ export const mobileDashboardRouter = router({
       };
 
       // 4. Strain (Acute/Chronic)
-      const acuteLoad = metricsRows
-        .slice(0, 7)
-        .reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
+      const acuteLoad = metricsRows.slice(0, 7).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
       const chronicLoad =
         metricsRows.slice(0, 28).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0) / 4;
-      const dailyStrain =
-        metricsRows[0] && isRecent(metricsRows[0].date, endDate) ? (metricsRows[0].strain ?? 0) : 0;
+      const isLatestStrainRecent = metricsRows[0] != null && isRecent(metricsRows[0].date, endDate);
+      const latestStrainDailyLoad = isLatestStrainRecent
+        ? Math.round(Number(metricsRows[0]?.daily_load ?? 0) * 10) / 10
+        : 0;
+      const dailyStrain = isLatestStrainRecent
+        ? StrainScore.fromRawLoad(latestStrainDailyLoad).value
+        : 0;
       const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
 
       const strainResult: MobileDashboardResult["strain"] = {
