@@ -191,11 +191,11 @@ jobs:
           terraform init -input=false -lock-timeout=5m
           apply_output="$(mktemp)"
           set +e
-          terraform apply -input=false -auto-approve -lock-timeout=5m 2>&1 | tee "$apply_output"
+          terraform apply -no-color -input=false -auto-approve -lock-timeout=5m 2>&1 | tee "$apply_output"
           apply_code=$?
           set -e
           if [ "$apply_code" -ne 0 ]; then
-            if grep -q "server limit reached" "$apply_output"; then
+            if grep -qE "server limit reached|resource_limit_exceeded" "$apply_output"; then
               echo "review_app_skipped=true" >> "$GITHUB_OUTPUT"
               echo "review_host=unavailable" >> "$GITHUB_OUTPUT"
               echo "review_url=unavailable" >> "$GITHUB_OUTPUT"
