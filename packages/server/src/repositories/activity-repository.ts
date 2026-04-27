@@ -176,6 +176,7 @@ export class ActivityRepository extends BaseRepository {
           WHERE a.user_id = ${this.userId}
             AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
             ${typeFilter}
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
           ORDER BY a.started_at DESC
           LIMIT ${input.limit} OFFSET ${input.offset}`,
     );
@@ -210,7 +211,8 @@ export class ActivityRepository extends BaseRepository {
           FROM fitness.v_activity a
           LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
           WHERE a.id = ${activityId}
-            AND a.user_id = ${this.userId}`,
+            AND a.user_id = ${this.userId}
+            ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
     return rows[0] ?? null;
   }
@@ -233,6 +235,11 @@ export class ActivityRepository extends BaseRepository {
             WHERE ds.activity_id = ${activityId}
               AND ds.user_id = ${this.userId}
               AND ds.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+              AND EXISTS (
+                SELECT 1 FROM fitness.v_activity a
+                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+                ${this.timestampAccessPredicate(sql`a.started_at`)}
+              )
             GROUP BY ds.recorded_at
           ),
           numbered AS (
@@ -272,6 +279,11 @@ export class ActivityRepository extends BaseRepository {
             WHERE ds.activity_id = ${activityId}
               AND ds.user_id = ${this.userId}
               AND ds.channel = 'heart_rate'
+              AND EXISTS (
+                SELECT 1 FROM fitness.v_activity a
+                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+                ${this.timestampAccessPredicate(sql`a.started_at`)}
+              )
           )
           SELECT
             z.zone,
@@ -310,6 +322,11 @@ export class ActivityRepository extends BaseRepository {
             WHERE ds.activity_id = ${activityId}
               AND ds.user_id = ${this.userId}
               AND ds.channel = 'power'
+              AND EXISTS (
+                SELECT 1 FROM fitness.v_activity a
+                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
+                ${this.timestampAccessPredicate(sql`a.started_at`)}
+              )
           )
           SELECT
             z.zone,

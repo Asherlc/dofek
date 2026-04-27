@@ -53,7 +53,7 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
         return await repo.list(input);
       } catch (error) {
@@ -71,7 +71,7 @@ export const activityRouter = router({
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const row = await repo.findById(input.id);
 
       if (!row) {
@@ -90,7 +90,7 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const points = await repo.getStream(input.id, input.maxPoints);
       return points.map((point) => point.toDetail());
     }),
@@ -98,14 +98,19 @@ export const activityRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.getHrZones(input.id);
     }),
 
   powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
-      const activityRepo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const activityRepo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
       const activity = await activityRepo.findById(input.id);
       if (!activity) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -113,7 +118,7 @@ export const activityRouter = router({
       if (!isCyclingActivity(activity.activity_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
 
-      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone);
+      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const { currentEftp } = await powerRepo.getEftpTrend(90);
       if (currentEftp == null) return null;
 
@@ -124,6 +129,16 @@ export const activityRouter = router({
   strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<StrengthExerciseDetail[]> => {
+      const activityRepo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      );
+      const activity = await activityRepo.findById(input.id);
+      if (!activity) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      }
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const exercises = await repo.getExercisesForActivity(input.id);
       return exercises.map((exercise) => exercise.toDetail());
@@ -132,7 +147,7 @@ export const activityRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       await repo.delete(input.id);
       return { success: true };
     }),
