@@ -13,7 +13,6 @@ Staging is a production-shaped deployment used to test full deploy, migration, a
   - `https://staging-pgadmin.dofek.asherlc.com`
 - Docker stack: `dofek-staging`
 - Infisical environment: `staging`
-- Stripe environment: sandbox
 
 Terraform provisions a separate Hetzner server and block storage volume for staging. The staging stack uses the same `deploy/stack.yml` as production with environment-specific host rules and public URLs passed by `.github/workflows/deploy-staging.yml`.
 
