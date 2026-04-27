@@ -48,7 +48,7 @@ describe("LandingPage", () => {
     expect(screen.queryByText(/free and open source/i)).toBeNull();
   });
 
-  it("does not make overbroad integration or availability claims", () => {
+  it("does not make broad integration or availability claims", () => {
     render(<LandingPage />);
 
     expect(screen.queryAllByText(/30\+/i)).toHaveLength(0);
