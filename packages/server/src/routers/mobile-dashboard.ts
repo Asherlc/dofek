@@ -318,7 +318,9 @@ export const mobileDashboardRouter = router({
       };
 
       // 4. Strain (Acute/Chronic)
-      const acuteLoad = metricsRows.slice(0, 7).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
+      const acuteLoad = metricsRows
+        .slice(0, 7)
+        .reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
       const chronicLoad =
         metricsRows.slice(0, 28).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0) / 4;
       const isLatestStrainRecent = metricsRows[0] != null && isRecent(metricsRows[0].date, endDate);
