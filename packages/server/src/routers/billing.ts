@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
@@ -23,7 +23,7 @@ const statusResponseSchema = z.object({
 });
 
 function getDateOnly(date: Date): string {
-  return date.toISOString().split("T")[0];
+  return date.toISOString().split("T")[0] ?? "";
 }
 
 function getSignupWeekEndExclusive(createdAt: string, days: number): string {
