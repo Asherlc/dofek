@@ -1,6 +1,6 @@
 # Staging Environment
 
-Staging is a production-shaped deployment used to test full deploy, migration, Stripe sandbox, webhook, and checkout flows without writing test state into the production database.
+Staging is a production-shaped deployment used to test full deploy, migration, and runtime behavior without writing test state into the production database.
 
 ## Shape
 
@@ -31,6 +31,6 @@ The workflow:
 
 ## Secrets
 
-The `staging` Infisical environment must contain the same required runtime keys as `prod`, but with staging-safe values. Stripe keys and webhook secrets must come from Stripe sandbox, not live mode.
+The `staging` Infisical environment must contain the same required runtime keys as `prod`, but with staging-safe values.
 
-Do not point staging at the production database, production Stripe live keys, or production webhook endpoint.
+Do not point staging at the production database or any production webhook endpoint.

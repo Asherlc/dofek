@@ -67,9 +67,8 @@ Staging is a production-shaped replica on its own Hetzner server, block storage 
 - App: `https://staging.dofek.asherlc.com`
 - Stack: `dofek-staging`
 - Infisical environment: `staging`
-- Stripe mode: sandbox
 
-The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-staging.yml`. Use the **Deploy Staging** workflow with a `sha-<commit>` image tag to validate full deploy, migration, checkout, and webhook behavior before promoting the same image to production. See [docs/staging.md](../docs/staging.md).
+The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-staging.yml`. Use the **Deploy Staging** workflow with a `sha-<commit>` image tag to validate full deploy and migration behavior before promoting the same image to production. See [docs/staging.md](../docs/staging.md).
 
 ### SSH Access (Debugging Only)
 
