@@ -32,6 +32,7 @@ import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-refresh.ts";
+import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -144,6 +145,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
 
   // ── Route modules ──
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
+  app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/internal", createMaterializedViewRefreshRouter());
   app.use("/api/upload", createUploadRouter({ importQueue, db }));

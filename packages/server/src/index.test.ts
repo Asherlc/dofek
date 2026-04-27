@@ -88,6 +88,12 @@ vi.mock("./routes/materialized-view-refresh.ts", () => ({
     return Router();
   }),
 }));
+vi.mock("./routes/stripe-webhook.ts", () => ({
+  createStripeWebhookRouter: vi.fn(() => {
+    const { Router } = require("express");
+    return Router();
+  }),
+}));
 vi.mock("./routes/upload.ts", () => ({
   createUploadRouter: vi.fn(() => {
     const { Router } = require("express");
@@ -124,6 +130,7 @@ import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-refresh.ts";
+import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
@@ -682,6 +689,14 @@ describe("createApp HTTP routes", () => {
         expect.objectContaining({
           db: expect.anything(),
           syncQueue: expect.anything(),
+        }),
+      );
+    });
+
+    it("passes db to createStripeWebhookRouter", () => {
+      expect(vi.mocked(createStripeWebhookRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          db: expect.anything(),
         }),
       );
     });
