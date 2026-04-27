@@ -6,11 +6,11 @@ import {
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
+import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders, registerProvider } from "dofek/providers/registry";
 import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
-import { queryCache } from "../lib/cache.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";

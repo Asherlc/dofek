@@ -13,7 +13,7 @@ describe("cache module environment selection", () => {
   it("uses NullCacheStore when query cache is disabled", async () => {
     process.env = { ...originalEnv, DISABLE_QUERY_CACHE: "true", NODE_ENV: "production" };
 
-    const module = await import("./cache.ts");
+    const module = await import("dofek/lib/cache");
 
     expect(module.queryCache).toBeInstanceOf(module.NullCacheStore);
   });
@@ -21,7 +21,7 @@ describe("cache module environment selection", () => {
   it("uses MemoryCacheStore in test env", async () => {
     process.env = { ...originalEnv, NODE_ENV: "test" };
 
-    const module = await import("./cache.ts");
+    const module = await import("dofek/lib/cache");
 
     expect(module.queryCache).toBeInstanceOf(module.MemoryCacheStore);
   });
@@ -44,7 +44,7 @@ describe("cache module environment selection", () => {
     vi.doMock("dofek/jobs/queues", () => ({ getRedisConnection }));
     process.env = { ...originalEnv, NODE_ENV: "production" };
 
-    const module = await import("./cache.ts");
+    const module = await import("dofek/lib/cache");
     const store = new module.RedisCacheStore();
 
     expect(module.queryCache).toBeInstanceOf(module.RedisCacheStore);
@@ -91,7 +91,7 @@ describe("cache module environment selection", () => {
       srem: vi.fn(async () => 0),
     };
 
-    const module = await import("./cache.ts");
+    const module = await import("dofek/lib/cache");
     const store = new module.RedisCacheStore(async () => client);
 
     await store.invalidateByPrefix("user-1:");
@@ -110,7 +110,7 @@ describe("cache module environment selection", () => {
       srem: vi.fn(async () => 0),
     };
 
-    const module = await import("./cache.ts");
+    const module = await import("dofek/lib/cache");
     const store = new module.RedisCacheStore(async () => client);
 
     await store.invalidateAll();

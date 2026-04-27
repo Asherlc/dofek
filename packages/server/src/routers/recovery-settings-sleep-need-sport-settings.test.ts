@@ -14,7 +14,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   },
@@ -34,7 +34,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { queryCache } from "../lib/cache.ts";
+import { queryCache } from "dofek/lib/cache";
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";

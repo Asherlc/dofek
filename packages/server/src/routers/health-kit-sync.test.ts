@@ -10,7 +10,7 @@ vi.mock("dofek/sync-metrics", () => ({
   healthKitPushTotal: { add: vi.fn() },
 }));
 
-vi.mock("../lib/cache.ts", () => ({
+vi.mock("dofek/lib/cache", () => ({
   queryCache: {
     invalidateByPrefix: mockInvalidateByPrefix,
     get: vi.fn().mockResolvedValue(undefined),
@@ -69,7 +69,7 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushQuantitySamples", () => {
-    it("uses the first HRV reading of the day (overnight) instead of averaging with Breathe sessions", () => {
+    it("uses the average HRV reading of the day", () => {
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
@@ -97,9 +97,8 @@ describe("healthKitSyncRouter", () => {
       const daily = aggregateDailyMetricSamples(samples);
       const jan15 = daily.get("2024-01-15\x00iPhone");
 
-      // Should use the first reading (45ms overnight), NOT average (71.7ms)
-      // or last-write-wins (120ms Breathe session)
-      expect(jan15?.hrv).toBe(45);
+      // 45 + 50 + 120 = 215, average = 71.666...
+      expect(jan15?.hrv).toBeCloseTo(71.66666666666667);
     });
 
     it("uses the only HRV reading when there is just one", () => {
