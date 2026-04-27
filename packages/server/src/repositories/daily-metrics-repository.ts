@@ -121,6 +121,7 @@ export class DailyMetricsRepository extends BaseRepository {
             WHERE user_id = ${this.userId}
               AND date > ${dateWindowStart(endDate, days)}
               AND date <= ${dateWindowEnd(endDate)}
+              ${this.dateAccessPredicate(sql`date`)}
             ORDER BY date ASC`,
       );
 
