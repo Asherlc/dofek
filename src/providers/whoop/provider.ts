@@ -628,6 +628,8 @@ export class WhoopProvider implements SyncProvider {
                   target: [activity.userId, activity.providerId, activity.externalId],
                   set: {
                     name: weightliftingData.name ?? null,
+                    startedAt,
+                    endedAt,
                     raw: sql`COALESCE(fitness.activity.raw, '{}'::jsonb) || ${JSON.stringify({
                       rawMskStrainScore: parsed.rawMskStrainScore,
                       scaledMskStrainScore: parsed.scaledMskStrainScore,

@@ -16,6 +16,7 @@ import {
   computeReadinessScore,
   type NextWorkoutRecommendation,
 } from "./training.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
 
 /** Simple date comparison for server-side logic (where @dofek/format is not available). */
 export function isRecent(dateStr: string, anchorDateStr: string): boolean {
@@ -148,7 +149,6 @@ export const mobileDashboardRouter = router({
       if (latestMetric && isRecent(latestMetric.date, endDate)) {
         const scores = computeComponentScores(
           {
-            date: latestMetric.date,
             hrv: latestMetric.hrv,
             resting_hr: latestMetric.resting_hr,
             respiratory_rate: latestMetric.respiratory_rate,

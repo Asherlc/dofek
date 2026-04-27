@@ -269,7 +269,7 @@ export class StrengthRepository {
           FROM fitness.activity a
           JOIN fitness.strength_set ss ON ss.activity_id = a.id
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type = 'strength'
+            AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
           GROUP BY 1
           ORDER BY week`,
@@ -305,11 +305,11 @@ export class StrengthRepository {
             FROM fitness.strength_set ss
             JOIN fitness.activity a ON a.id = ss.activity_id
             JOIN fitness.exercise e ON e.id = ss.exercise_id
-            WHERE a.user_id = ${this.#userId}
-              AND a.activity_type = 'strength'
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ss.set_type = 'working'
-              AND ss.weight_kg > 0
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type IN ('strength', 'strength_training')
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            AND ss.set_type = 'working'
+            AND ss.weight_kg > 0
               AND ss.reps BETWEEN 1 AND 12
           ),
           qualified_exercises AS (
@@ -362,7 +362,7 @@ export class StrengthRepository {
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type = 'strength'
+            AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND e.muscle_groups IS NOT NULL
           GROUP BY mg, 2
@@ -394,7 +394,7 @@ export class StrengthRepository {
           JOIN fitness.activity a ON a.id = ss.activity_id
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type = 'strength'
+            AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ss.weight_kg > 0
           GROUP BY e.name, 2
@@ -500,7 +500,7 @@ export class StrengthRepository {
           FROM fitness.activity a
           LEFT JOIN fitness.strength_set ss ON ss.activity_id = a.id
           WHERE a.user_id = ${this.#userId}
-            AND a.activity_type = 'strength'
+            AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND a.ended_at IS NOT NULL
           GROUP BY a.id, a.started_at, a.ended_at, a.name
