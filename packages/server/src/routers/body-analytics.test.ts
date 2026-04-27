@@ -8,7 +8,12 @@ vi.mock("dofek/lib/cache", () => ({
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -200,6 +205,26 @@ describe("bodyAnalyticsRouter", () => {
       const result = await caller.setGoalWeight({ weightKg: null });
 
       expect(result.goalWeightKg).toBeNull();
+    });
+  });
+
+  describe("access window gating", () => {
+    it("smoothedWeight passes accessWindow to repository (limited window returns empty)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      const result = await caller.smoothedWeight({ days: 90, endDate: "2026-04-26" });
+      expect(result).toEqual([]);
     });
   });
 });

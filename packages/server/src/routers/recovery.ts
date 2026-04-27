@@ -11,6 +11,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitlement.ts";
 import {
   dateWindowEnd,
   dateWindowStart,
@@ -120,6 +121,7 @@ export const recoveryRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
+                ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
             ),
             nightly AS (
               SELECT DISTINCT ON (date) date, bedtime_hour, waketime_hour
@@ -185,6 +187,7 @@ export const recoveryRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND date > CURRENT_DATE - ${queryDays}::int
                 AND hrv IS NOT NULL
+                ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
               ORDER BY date ASC
             )
             SELECT
@@ -251,6 +254,7 @@ export const recoveryRouter = router({
                 AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, queryDays)}
                 AND asum.ended_at IS NOT NULL
                 AND asum.avg_hr IS NOT NULL
+                ${timestampAccessPredicate(ctx.accessWindow, sql`asum.started_at`)}
             ),
             activity_load AS (
               SELECT date, SUM(load) AS daily_load
@@ -356,6 +360,7 @@ export const recoveryRouter = router({
               WHERE user_id = ${ctx.userId}
                 AND is_nap = false
                 AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
+                ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
             ),
             nightly AS (
               SELECT DISTINCT ON (date)
@@ -456,6 +461,7 @@ export const recoveryRouter = router({
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
                 AND date > ${dateWindowStart(input.endDate, queryDays)}
+                ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
             ),
             sleep_eff AS (
               SELECT DISTINCT ON (local_date)
@@ -468,6 +474,7 @@ export const recoveryRouter = router({
                 WHERE user_id = ${ctx.userId}
                   AND is_nap = false
                   AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
+                  ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
               ) sleep_sub
               ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
@@ -606,6 +613,7 @@ export const recoveryRouter = router({
             AND asum.started_at::date >= ${dateWindowStart(input.endDate, input.days)}
             AND asum.ended_at IS NOT NULL
             AND asum.avg_hr IS NOT NULL
+            ${timestampAccessPredicate(ctx.accessWindow, sql`asum.started_at`)}
           GROUP BY asum.started_at::date
           ORDER BY date ASC
         `,

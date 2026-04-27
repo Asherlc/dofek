@@ -5,7 +5,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -350,6 +355,26 @@ describe("efficiencyRouter", () => {
       const f3 = 600 / total;
       const expected = Math.round(Math.log10((f1 / (f2 * f3)) * 100) * 1000) / 1000;
       expect(result.weeks[0]?.polarizationIndex).toBe(expected);
+    });
+  });
+
+  describe("access window gating", () => {
+    it("aerobicEfficiency passes accessWindow to repository (limited window returns empty)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-04-10",
+          endDateExclusive: "2026-04-17",
+        },
+      });
+      const result = await caller.aerobicEfficiency({ days: 180 });
+      expect(result.activities).toEqual([]);
     });
   });
 });
