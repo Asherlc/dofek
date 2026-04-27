@@ -58,6 +58,7 @@ services:
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      EXPORT_R2_BUCKET: dofek-exports
       SLACK_MODE: http
     volumes:
       - job_files:/app/job-files
@@ -99,6 +100,7 @@ services:
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      EXPORT_R2_BUCKET: dofek-exports
     volumes:
       - job_files:/app/job-files
     healthcheck:

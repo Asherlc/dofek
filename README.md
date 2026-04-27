@@ -473,6 +473,22 @@ infisical secrets get KEY --env=prod
 infisical secrets delete KEY --env=prod --type shared
 ```
 
+### Data export storage and email
+
+User-triggered data exports run in the background, write CSV ZIP files to the private
+`dofek-exports` R2 bucket under `exports/<user-id>/<export-id>/`, and email the user a
+signed download link. R2 lifecycle policy deletes export objects after 7 days.
+
+Required production config:
+
+- `R2_ENDPOINT`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `EXPORT_R2_BUCKET` (set in `deploy/stack.yml` as `dofek-exports`)
+- `BREVO_SMTP_USER`
+- `BREVO_SMTP_KEY`
+- `EXPORT_EMAIL_FROM`
+
 ### Credential encryption at rest (provider credentials)
 
 Provider credentials stored in the database are encrypted in the application layer before insert/update using the AWS Encryption SDK with a raw AES keyring.

@@ -175,6 +175,21 @@ entity "daily_metrics" {
   created_at : timestamp
 }
 
+entity "data_export" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  status : text
+  object_key : text
+  filename : text
+  size_bytes : bigint
+  created_at : timestamp
+  started_at : timestamp
+  completed_at : timestamp
+  expires_at : timestamp
+  error_message : text
+}
+
 entity "dexa_scan" {
   * id : uuid <<PK>>
   --
@@ -259,7 +274,6 @@ entity "food_entry" {
   barcode : text
   serving_unit : text
   serving_weight_grams : real
-  nutrition_data_id : uuid <<FK>>
   raw : jsonb
   confirmed : boolean
   created_at : timestamp
@@ -269,6 +283,51 @@ entity "food_entry_nutrient" {
   food_entry_id : uuid <<FK>>
   nutrient_id : text <<FK>>
   amount : real
+}
+
+entity "food_entry_nutrition" {
+  * id : uuid <<PK>>
+  --
+  food_entry_id : uuid <<FK>>
+  calories : integer
+  protein_g : real
+  carbs_g : real
+  fat_g : real
+  saturated_fat_g : real
+  polyunsaturated_fat_g : real
+  monounsaturated_fat_g : real
+  trans_fat_g : real
+  cholesterol_mg : real
+  sodium_mg : real
+  potassium_mg : real
+  fiber_g : real
+  sugar_g : real
+  vitamin_a_mcg : real
+  vitamin_c_mg : real
+  vitamin_d_mcg : real
+  vitamin_e_mg : real
+  vitamin_k_mcg : real
+  vitamin_b1_mg : real
+  vitamin_b2_mg : real
+  vitamin_b3_mg : real
+  vitamin_b5_mg : real
+  vitamin_b6_mg : real
+  vitamin_b7_mcg : real
+  vitamin_b9_mcg : real
+  vitamin_b12_mcg : real
+  calcium_mg : real
+  iron_mg : real
+  magnesium_mg : real
+  zinc_mg : real
+  selenium_mcg : real
+  copper_mg : real
+  manganese_mg : real
+  chromium_mcg : real
+  iodine_mcg : real
+  omega3_mg : real
+  omega6_mg : real
+  created_at : timestamp
+  updated_at : timestamp
 }
 
 entity "health_event" {
@@ -438,47 +497,13 @@ entity "menstrual_period" {
 entity "metric_stream" {
   recorded_at : timestamp
   user_id : uuid <<FK>>
-  activity_id : uuid <<FK>>
   provider_id : text <<FK>>
-  heart_rate : smallint
-  power : smallint
-  cadence : smallint
-  speed : real
-  lat : real
-  lng : real
-  altitude : real
-  temperature : real
-  grade : real
-  vertical_speed : real
-  spo2 : real
-  respiratory_rate : real
-  gps_accuracy : smallint
-  accumulated_power : integer
-  stress : smallint
-  left_right_balance : real
-  vertical_oscillation : real
-  stance_time : real
-  stance_time_percent : real
-  step_length : real
-  vertical_ratio : real
-  stance_time_balance : real
-  ground_contact_time : real
-  stride_length : real
-  form_power : real
-  leg_spring_stiff : real
-  air_power : real
-  left_torque_effectiveness : real
-  right_torque_effectiveness : real
-  left_pedal_smoothness : real
-  right_pedal_smoothness : real
-  combined_pedal_smoothness : real
-  blood_glucose : real
-  audio_exposure : real
-  skin_temperature : real
-  electrodermal_activity : real
-  rr_interval_ms : smallint
-  source_name : text
-  raw : jsonb
+  device_id : text
+  source_type : text
+  channel : text
+  activity_id : uuid <<FK>>
+  scalar : real
+  vector : real[]
 }
 
 entity "nutrient" {
@@ -611,18 +636,6 @@ entity "provider" {
   api_base_url : text
   user_id : uuid <<FK>>
   created_at : timestamp
-}
-
-entity "sensor_sample" {
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  device_id : text
-  source_type : text
-  channel : text
-  activity_id : uuid <<FK>>
-  scalar : real
-  vector : real[]
 }
 
 entity "session" {
@@ -758,7 +771,6 @@ entity "supplement" {
   description : text
   meal : meal
   sort_order : integer
-  nutrition_data_id : uuid <<FK>>
   created_at : timestamp
   updated_at : timestamp
 }
@@ -767,6 +779,51 @@ entity "supplement_nutrient" {
   supplement_id : uuid <<FK>>
   nutrient_id : text <<FK>>
   amount : real
+}
+
+entity "supplement_nutrition" {
+  * id : uuid <<PK>>
+  --
+  supplement_id : uuid <<FK>>
+  calories : integer
+  protein_g : real
+  carbs_g : real
+  fat_g : real
+  saturated_fat_g : real
+  polyunsaturated_fat_g : real
+  monounsaturated_fat_g : real
+  trans_fat_g : real
+  cholesterol_mg : real
+  sodium_mg : real
+  potassium_mg : real
+  fiber_g : real
+  sugar_g : real
+  vitamin_a_mcg : real
+  vitamin_c_mg : real
+  vitamin_d_mcg : real
+  vitamin_e_mg : real
+  vitamin_k_mcg : real
+  vitamin_b1_mg : real
+  vitamin_b2_mg : real
+  vitamin_b3_mg : real
+  vitamin_b5_mg : real
+  vitamin_b6_mg : real
+  vitamin_b7_mcg : real
+  vitamin_b9_mcg : real
+  vitamin_b12_mcg : real
+  calcium_mg : real
+  iron_mg : real
+  magnesium_mg : real
+  zinc_mg : real
+  selenium_mcg : real
+  copper_mg : real
+  manganese_mg : real
+  chromium_mcg : real
+  iodine_mcg : real
+  omega3_mg : real
+  omega6_mg : real
+  created_at : timestamp
+  updated_at : timestamp
 }
 
 entity "sync_log" {
@@ -845,6 +902,7 @@ daily_metrics ||--o{ daily_metric_value
 daily_metric_type ||--o{ daily_metric_value
 provider ||--o{ daily_metrics
 user_profile ||--o{ daily_metrics
+user_profile ||--o{ data_export
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
 dexa_scan ||--o{ dexa_scan_region
@@ -852,9 +910,9 @@ exercise ||--o{ exercise_alias
 provider ||--o{ exercise_alias
 provider ||--o{ food_entry
 user_profile ||--o{ food_entry
-nutrition_data ||--o{ food_entry
 food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
+food_entry ||--o{ food_entry_nutrition
 provider ||--o{ health_event
 user_profile ||--o{ health_event
 user_profile ||--o{ inertial_measurement_unit_sample
@@ -874,8 +932,8 @@ provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 user_profile ||--o{ menstrual_period
 user_profile ||--o{ metric_stream
-activity ||--o{ metric_stream
 provider ||--o{ metric_stream
+activity ||--o{ metric_stream
 provider ||--o{ nutrition_daily
 user_profile ||--o{ nutrition_daily
 user_profile ||--o{ oauth_token
@@ -883,9 +941,6 @@ provider ||--o{ oauth_token
 user_profile ||--o{ orientation_sample
 provider ||--o{ orientation_sample
 user_profile ||--o{ provider
-user_profile ||--o{ sensor_sample
-provider ||--o{ sensor_sample
-activity ||--o{ sensor_sample
 user_profile ||--o{ session
 user_profile ||--o{ shared_report
 provider ||--o{ sleep_session
@@ -897,9 +952,9 @@ exercise ||--o{ strength_set
 provider ||--o{ strength_workout
 user_profile ||--o{ strength_workout
 user_profile ||--o{ supplement
-nutrition_data ||--o{ supplement
 supplement ||--o{ supplement_nutrient
 nutrient ||--o{ supplement_nutrient
+supplement ||--o{ supplement_nutrition
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 user_profile ||--o{ user_settings
