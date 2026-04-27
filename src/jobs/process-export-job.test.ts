@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ExportJobData } from "./queues.ts";
 
+const mockLoggerError = vi.fn();
+const mockLoggerWarn = vi.fn();
 vi.mock("../logger.ts", () => ({
   logger: {
     info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
+    error: (...args: unknown[]) => mockLoggerError(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
     debug: vi.fn(),
   },
 }));
@@ -72,6 +74,7 @@ describe("processExportJob", () => {
     });
     mockCreateSignedExportDownloadUrl.mockResolvedValue("https://example.test/export");
     mockSendExportReadyEmail.mockResolvedValue(undefined);
+    mockUnlink.mockResolvedValue(undefined);
     vi.mocked(mockDb.execute).mockReset();
     vi.mocked(mockDb.execute)
       .mockResolvedValueOnce([])
@@ -161,6 +164,48 @@ describe("processExportJob", () => {
     await expect(processExportJob(job, mockDb)).rejects.toThrow("DB connection failed");
   });
 
+  it("stores stringified non-Error failure messages", async () => {
+    mockGenerateExport.mockRejectedValue("plain failure");
+
+    const job = createMockJob();
+    await expect(processExportJob(job, mockDb)).rejects.toBe("plain failure");
+
+    expect(vi.mocked(mockDb.execute).mock.calls[2]?.[0]).toBeDefined();
+  });
+
+  it("logs when marking a failed export also fails", async () => {
+    mockGenerateExport.mockRejectedValue(new Error("export failed"));
+    vi.mocked(mockDb.execute).mockReset();
+    vi.mocked(mockDb.execute)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { email: "user@example.com", expires_at: "2026-05-03T12:00:00.000Z" },
+      ])
+      .mockRejectedValueOnce(new Error("status update failed"));
+
+    const job = createMockJob();
+    await expect(processExportJob(job, mockDb)).rejects.toThrow("export failed");
+
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "Failed to mark export %s as failed: %s",
+      "export-1",
+      expect.any(Error),
+    );
+  });
+
+  it("logs and completes when deleting the local export file fails", async () => {
+    mockUnlink.mockRejectedValue(new Error("permission denied"));
+
+    const job = createMockJob();
+    await processExportJob(job, mockDb);
+
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "Failed to delete local export file %s: %s",
+      "/app/job-files/dofek-export-abc.zip",
+      expect.any(Error),
+    );
+  });
+
   it("does not swallow updateProgress failures", async () => {
     mockGenerateExport.mockImplementation(
       async (
@@ -180,5 +225,9 @@ describe("processExportJob", () => {
 
     await processExportJob(job, mockDb);
     expect(mockGenerateExport).toHaveBeenCalled();
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      "Failed to update export progress: %s",
+      expect.any(Error),
+    );
   });
 });

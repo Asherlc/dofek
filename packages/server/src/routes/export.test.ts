@@ -104,6 +104,7 @@ function authenticate(userId = exportUserId) {
 describe("createExportRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     mockExecute().mockReset();
     vi.mocked(mockQueue.add).mockResolvedValue({ id: "job-42" });
     mockCreateSignedExportDownloadUrl.mockResolvedValue(
@@ -132,9 +133,20 @@ describe("createExportRouter", () => {
         expect.objectContaining({
           exportId: createdExportId,
           userId: exportUserId,
-          outputPath: expect.stringContaining("dofek-export-"),
+          outputPath: expect.stringMatching(/dofek-export-\d+-[a-z0-9]{4}\.zip$/),
         }),
       );
+    });
+
+    it("returns 500 when the export row cannot be created", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([]);
+
+      const response = await request(createTestApp(), "post", "/api/export");
+
+      expect(response.status).toBe(500);
+      expect(parseJson(response.text)).toEqual({ error: "Failed to create export" });
+      expect(vi.mocked(mockQueue.add)).not.toHaveBeenCalled();
     });
   });
 
@@ -217,6 +229,45 @@ describe("createExportRouter", () => {
       );
 
       expect(response.status).toBe(403);
+      expect(parseJson(response.text)).toEqual({ error: "Forbidden" });
+    });
+
+    it("returns 404 when the export does not exist", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(404);
+      expect(parseJson(response.text)).toEqual({ error: "Unknown job" });
+    });
+
+    it("returns 400 when the export has expired", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-03T12:00:00.000Z"));
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "completed",
+          object_key: "exports/user/export/dofek-export.zip",
+          expires_at: "2026-05-03T12:00:00.000Z",
+        },
+      ]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(400);
+      expect(parseJson(response.text)).toEqual({ error: "Export has expired" });
+      expect(mockCreateSignedExportDownloadUrl).not.toHaveBeenCalled();
     });
 
     it("returns 400 when the export is not completed", async () => {
@@ -238,6 +289,28 @@ describe("createExportRouter", () => {
 
       expect(response.status).toBe(400);
       expect(parseJson(response.text)).toEqual({ error: "Export is not ready yet" });
+    });
+
+    it("returns 404 when a completed export has no stored object key", async () => {
+      authenticate();
+      mockExecute().mockResolvedValueOnce([
+        {
+          user_id: exportUserId,
+          status: "completed",
+          object_key: null,
+          expires_at: "2999-05-03T12:00:00.000Z",
+        },
+      ]);
+
+      const response = await request(
+        createTestApp(),
+        "get",
+        `/api/export/download/${createdExportId}`,
+      );
+
+      expect(response.status).toBe(404);
+      expect(parseJson(response.text)).toEqual({ error: "Export file not found" });
+      expect(mockCreateSignedExportDownloadUrl).not.toHaveBeenCalled();
     });
 
     it("redirects a completed owned export to a signed R2 URL", async () => {

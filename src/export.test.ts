@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import archiver from "archiver";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock archiver
@@ -163,6 +164,8 @@ describe("generateExport", () => {
     // First progress should be 0%
     expect(progress[0]?.percentage).toBe(0);
     expect(progress[0]?.message).toContain("Exporting");
+    expect(progress[1]?.percentage).toBe(6);
+    expect(progress[8]?.percentage).toBe(47);
     // Last progress should be 100%
     expect(progress[17]?.percentage).toBe(100);
   });
@@ -198,8 +201,52 @@ describe("generateExport", () => {
     const metadata = JSON.parse(String(metadataCall?.[0]));
     expect(metadata.userId).toBe("user-1");
     expect(metadata.tables).toHaveLength(17);
+    expect(metadata.tables[0]).toBe("user-profile.csv");
+    expect(metadata.tables).toContain("metric-streams.csv");
     expect(metadata.totalRecords).toBe(0);
     expect(metadata.exportedAt).toBeDefined();
+  });
+
+  it("creates a compressed ZIP archive", async () => {
+    const executeResults: Record<string, unknown>[][] = [];
+    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([{ count: "0" }]);
+    executeResults.push([]);
+
+    setupMockDb(executeResults);
+    mockArchive.append.mockImplementation((content: unknown) => {
+      if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    expect(archiver).toHaveBeenCalledWith("zip", { zlib: { level: 6 } });
+  });
+
+  it("writes empty CSV files for empty regular tables", async () => {
+    const executeResults: Record<string, unknown>[][] = [];
+    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([{ count: "0" }]);
+    executeResults.push([]);
+
+    setupMockDb(executeResults);
+    mockArchive.append.mockImplementation((content: unknown) => {
+      if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    const userProfileEntry = findArchiveEntry("user-profile.csv");
+    expect(userProfileEntry).toBeDefined();
+    expect(userProfileEntry?.[0]).toBe("");
   });
 
   it("exports regular tables as CSV files with escaped cells", async () => {
@@ -289,5 +336,59 @@ describe("generateExport", () => {
     await expect(metricStreamContent).resolves.toBe(
       "recorded_at,provider_id,source_type,channel,scalar\n2024-01-15T10:00:00.000Z,test-provider,api,heart_rate,145\n2024-01-15T10:00:01.000Z,test-provider,api,power,200",
     );
+  });
+
+  it("streams metric streams across multiple cursor batches", async () => {
+    const executeResults: Record<string, unknown>[][] = [];
+    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([{ count: "50001" }]);
+    executeResults.push(
+      Array.from({ length: 50_000 }, (_, index) => ({
+        recorded_at: new Date(1_704_108_000_000 + index * 1000),
+        provider_id: "test-provider",
+        source_type: "api",
+        channel: "heart_rate",
+        scalar: index,
+      })),
+    );
+    executeResults.push([
+      {
+        recorded_at: new Date("2024-01-02T00:00:00.000Z"),
+        provider_id: "test-provider",
+        source_type: "api",
+        channel: "heart_rate",
+        scalar: 50_000,
+      },
+    ]);
+
+    setupMockDb(executeResults);
+    let metricStreamContent = "";
+    mockArchive.append.mockImplementation((content: unknown, options: unknown) => {
+      if (
+        content instanceof Readable &&
+        options != null &&
+        typeof options === "object" &&
+        "name" in options &&
+        options.name === "metric-streams.csv"
+      ) {
+        content.on("data", (chunk) => {
+          metricStreamContent += String(chunk);
+        });
+      } else if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    expect(result.totalRecords).toBe(50_001);
+    expect(
+      metricStreamContent.startsWith("recorded_at,provider_id,source_type,channel,scalar\n"),
+    ).toBe(true);
+    expect(metricStreamContent).toContain(",0\n");
+    expect(metricStreamContent.endsWith(",50000")).toBe(true);
+    expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(19);
   });
 });

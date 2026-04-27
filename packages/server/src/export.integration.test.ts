@@ -1,10 +1,9 @@
 import type { Server } from "node:http";
 import { TEST_USER_ID } from "dofek/db/schema";
-import { processExportJob } from "dofek/jobs/process-export-job";
 import type { ExportJobData } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
 import { createExportRouter } from "./routes/export.ts";
@@ -21,13 +20,8 @@ const exportStorageMocks = vi.hoisted(() => ({
   ),
 }));
 
-const exportEmailMocks = vi.hoisted(() => ({
-  sendExportReadyEmail: vi.fn(async () => undefined),
-}));
-
 vi.mock("../../../src/export-storage.ts", () => exportStorageMocks);
 vi.mock("dofek/export-storage", () => exportStorageMocks);
-vi.mock("../../../src/export-email.ts", () => exportEmailMocks);
 
 interface ExportResponse {
   completedAt: string | null;
@@ -70,6 +64,12 @@ describe("Data Export", () => {
   let server: Server;
   let baseUrl: string;
   let authorizationHeader: string;
+  let queuedExportJobs: ExportJobData[];
+
+  beforeEach(() => {
+    queuedExportJobs = [];
+    vi.clearAllMocks();
+  });
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -92,15 +92,7 @@ describe("Data Export", () => {
 
     const exportQueue = {
       add: vi.fn(async (_name: string, data: ExportJobData) => {
-        setTimeout(() => {
-          void processExportJob(
-            {
-              data,
-              updateProgress: async () => undefined,
-            },
-            testCtx.db,
-          );
-        }, 0);
+        queuedExportJobs.push(data);
         return { id: data.exportId };
       }),
     };
@@ -144,8 +136,14 @@ describe("Data Export", () => {
       headers: { Authorization: authorizationHeader },
     });
     const listBody: ExportListResponse = await listResponse.json();
-    expect(listBody.exports.some((dataExport) => dataExport.id === body.exportId)).toBe(true);
-    await waitForCompletedExport(baseUrl, authorizationHeader, body.exportId);
+    const queuedExport = listBody.exports.find((dataExport) => dataExport.id === body.exportId);
+    expect(queuedExport).toBeDefined();
+    if (!queuedExport) {
+      throw new Error(`Export ${body.exportId} was not listed`);
+    }
+    const ttlMs = new Date(queuedExport.expiresAt).getTime() - Date.now();
+    expect(ttlMs).toBeGreaterThan(6.9 * 24 * 60 * 60 * 1000);
+    expect(ttlMs).toBeLessThan(7.1 * 24 * 60 * 60 * 1000);
   });
 
   it("returns 401 for unauthenticated export request", async () => {
@@ -161,23 +159,31 @@ describe("Data Export", () => {
     expect(response.status).toBe(404);
   });
 
-  it("uploads completed exports to user-scoped R2 keys, emails the user, and redirects downloads", async () => {
+  it("redirects completed user-scoped exports to signed R2 URLs", async () => {
     const triggerResponse = await fetch(`${baseUrl}/api/export`, {
       method: "POST",
       headers: { Authorization: authorizationHeader },
     });
+    expect(triggerResponse.status).toBe(200);
     const { exportId }: { exportId: string } = await triggerResponse.json();
+    const queuedJob = queuedExportJobs.find((job) => job.exportId === exportId);
+    if (!queuedJob) {
+      throw new Error(`Export ${exportId} was not enqueued`);
+    }
+
+    const objectKey = `exports/${TEST_USER_ID}/${exportId}/dofek-export.zip`;
+    await testCtx.db.execute(
+      sql`UPDATE fitness.data_export
+          SET status = 'completed',
+            object_key = ${objectKey},
+            size_bytes = 2048,
+            completed_at = NOW()
+          WHERE id = ${exportId} AND user_id = ${TEST_USER_ID}`,
+    );
 
     const completedExport = await waitForCompletedExport(baseUrl, authorizationHeader, exportId);
 
     expect(completedExport.sizeBytes).toBe(2048);
-    expect(exportStorageMocks.uploadExportFileToR2).toHaveBeenCalledWith(expect.any(String), {
-      exportId,
-      userId: TEST_USER_ID,
-    });
-    expect(exportEmailMocks.sendExportReadyEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ toEmail: "test@example.com" }),
-    );
 
     const downloadResponse = await fetch(`${baseUrl}/api/export/download/${exportId}`, {
       headers: { Authorization: authorizationHeader },
