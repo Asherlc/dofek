@@ -70,6 +70,13 @@ The server needs Stripe configuration and should fail fast when a billing path i
 
 New environment variables must be added to Infisical for the relevant environments before deployment.
 
+Stripe live and sandbox state should stay in separate deployments rather than being toggled inside production:
+
+- production uses the `prod` Infisical environment, the production database, and Stripe live keys;
+- staging uses the `staging` Infisical environment, the staging database, and Stripe sandbox keys.
+
+This avoids storing sandbox customers, subscriptions, or webhook events in the production database.
+
 ## API
 
 Add a billing router:
@@ -141,7 +148,8 @@ Integration tests that touch database behavior must run with Docker dependencies
 5. Implement billing APIs and webhook handling.
 6. Apply server-side read gating endpoint by endpoint with tests.
 7. Add web and mobile Settings UI.
-8. Validate with local tests and, if feasible, Stripe CLI webhook forwarding for checkout and webhook behavior.
+8. Validate locally with mocked tests.
+9. Validate the full checkout and webhook flow in staging with Stripe sandbox before promoting the same image to production.
 
 ## References
 

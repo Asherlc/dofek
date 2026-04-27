@@ -15,6 +15,56 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
+      infisical_environment:
+        description: "Infisical environment to export for the stack"
+        required: false
+        type: string
+        default: prod
+      stack_name:
+        description: "Docker stack name"
+        required: false
+        type: string
+        default: dofek
+      public_url:
+        description: "Public app URL"
+        required: false
+        type: string
+        default: https://dofek.asherlc.com
+      web_host_rule:
+        description: "Traefik Host() rule for the app router"
+        required: false
+        type: string
+        default: ""
+      ota_base_url:
+        description: "Public OTA base URL"
+        required: false
+        type: string
+        default: https://ota.dofek.asherlc.com
+      ota_host_rule:
+        description: "Traefik Host() rule for OTA"
+        required: false
+        type: string
+        default: ""
+      portainer_host_rule:
+        description: "Traefik Host() rule for Portainer"
+        required: false
+        type: string
+        default: ""
+      netdata_host_rule:
+        description: "Traefik Host() rule for Netdata"
+        required: false
+        type: string
+        default: ""
+      databasus_host_rule:
+        description: "Traefik Host() rule for Databasus"
+        required: false
+        type: string
+        default: ""
+      pgadmin_host_rule:
+        description: "Traefik Host() rule for pgAdmin"
+        required: false
+        type: string
+        default: ""
       dispatching_run_id:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
@@ -35,6 +85,16 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
+      infisical_environment:
+        description: "Infisical environment to export for the stack"
+        required: false
+        default: prod
+        type: string
+      stack_name:
+        description: "Docker stack name"
+        required: false
+        default: dofek
+        type: string
       refresh_materialized_views:
         description: "Trigger the materialized-view refresh webhook after stack deploy"
         required: false
@@ -42,7 +102,7 @@ on:
         type: boolean
 
 concurrency:
-  group: deploy-app
+  group: deploy-app-${{ inputs.stack_name || 'dofek' }}
   cancel-in-progress: false
 
 jobs:
@@ -57,6 +117,8 @@ jobs:
     env:
       DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
+      DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
+      STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -84,12 +146,50 @@ jobs:
       - name: Export Infisical deploy secrets file via OIDC
         uses: ./.github/actions/export-infisical-dotenv
         with:
+          env: ${{ inputs.infisical_environment || 'prod' }}
           template: .github/templates/infisical-dotenv.tmpl
-          output_path: ${{ github.workspace }}/.env.prod
+          output_path: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
 
       - name: Export deploy env for stack interpolation
+        env:
+          INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+          PUBLIC_URL_INPUT: ${{ inputs.public_url || 'https://dofek.asherlc.com' }}
+          WEB_HOST_RULE_INPUT: ${{ inputs.web_host_rule }}
+          OTA_BASE_URL_INPUT: ${{ inputs.ota_base_url || 'https://ota.dofek.asherlc.com' }}
+          OTA_HOST_RULE_INPUT: ${{ inputs.ota_host_rule }}
+          PORTAINER_HOST_RULE_INPUT: ${{ inputs.portainer_host_rule }}
+          NETDATA_HOST_RULE_INPUT: ${{ inputs.netdata_host_rule }}
+          DATABASUS_HOST_RULE_INPUT: ${{ inputs.databasus_host_rule }}
+          PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
         run: |
-          cat "${{ github.workspace }}/.env.prod" >> "$GITHUB_ENV"
+          cat "$INFISICAL_ENV_FILE_PATH" >> "$GITHUB_ENV"
+          {
+            echo "INFISICAL_ENV_FILE=$INFISICAL_ENV_FILE_PATH"
+            echo "DEPLOY_ENVIRONMENT=$DEPLOY_ENVIRONMENT"
+            echo "STACK_NAME=$STACK_NAME"
+            echo "PUBLIC_URL=$PUBLIC_URL_INPUT"
+            echo "OTA_BASE_URL=$OTA_BASE_URL_INPUT"
+          } >> "$GITHUB_ENV"
+
+          write_multiline_env() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              return 0
+            fi
+            {
+              echo "${name}<<EOF"
+              echo "$value"
+              echo "EOF"
+            } >> "$GITHUB_ENV"
+          }
+
+          write_multiline_env WEB_HOST_RULE "$WEB_HOST_RULE_INPUT"
+          write_multiline_env OTA_HOST_RULE "$OTA_HOST_RULE_INPUT"
+          write_multiline_env PORTAINER_HOST_RULE "$PORTAINER_HOST_RULE_INPUT"
+          write_multiline_env NETDATA_HOST_RULE "$NETDATA_HOST_RULE_INPUT"
+          write_multiline_env DATABASUS_HOST_RULE "$DATABASUS_HOST_RULE_INPUT"
+          write_multiline_env PGADMIN_HOST_RULE "$PGADMIN_HOST_RULE_INPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -110,27 +210,24 @@ jobs:
       - name: Bootstrap stack (if DB service is missing)
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          if docker service inspect dofek_db >/dev/null 2>&1 && \
-            docker service ps dofek_db --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
+          if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
+            docker service ps "${STACK_NAME}_db" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
             echo "Swarm DB service exists with a running task; skipping bootstrap deploy."
           else
             echo "Swarm DB service is missing or not running; running bootstrap stack deploy."
-            docker stack deploy -c deploy/stack.yml --with-registry-auth dofek
+            docker stack deploy -c deploy/stack.yml --with-registry-auth "$STACK_NAME"
           fi
 
       - name: Wait for Postgres writable
-        env:
-          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           for attempt in $(seq 1 36); do
-            recovery_output=$(timeout 15s docker run --rm --network dofek_default \
+            recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
               --env-file "$INFISICAL_ENV_FILE" \
               postgres:18-alpine sh -euc \
-              'PGPASSWORD="$POSTGRES_PASSWORD" \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
               psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
-              --command "SELECT CASE WHEN pg_is_in_recovery() THEN '\''recovery'\'' ELSE '\''writable'\'' END;"' 2>&1 || true)
+              --command \"SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;\"" 2>&1 || true)
             recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
             if [ "$recovery_state" = "writable" ]; then
               echo "Postgres is writable."
@@ -147,16 +244,15 @@ jobs:
       - name: Run migrations
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           migration_output_file="$RUNNER_TEMP/migrate.log"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
-            if timeout 90s docker run --rm --network dofek_default \
+            if timeout 90s docker run --rm --network "${STACK_NAME}_default" \
               --env-file "$INFISICAL_ENV_FILE" \
               --entrypoint sh \
               "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-              -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh migrate' >"$migration_output_file" 2>&1; then
+              -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; exec ./entrypoint.sh migrate" >"$migration_output_file" 2>&1; then
               echo "Migration attempt ${attempt}/12 succeeded."
               break
             fi
@@ -175,22 +271,20 @@ jobs:
       - name: Deploy stack
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
-          docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek
+          docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false "$STACK_NAME"
 
       - name: Plan materialized view sync
         id: view_sync_plan
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           planner_output_file="$RUNNER_TEMP/view-sync-plan.log"
-          timeout 90s docker run --rm --network dofek_default \
+          timeout 90s docker run --rm --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts' >"$planner_output_file"
+            -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts" >"$planner_output_file"
 
           echo "Materialized view sync planner output:"
           cat "$planner_output_file"
@@ -216,15 +310,14 @@ jobs:
         if: inputs.refresh_materialized_views
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
         run: |
           echo "Manual materialized view refresh requested by workflow input."
 
-          timeout 50m docker run --rm --network dofek_default \
+          timeout 50m docker run --rm --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts sync'
+            -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts sync"
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

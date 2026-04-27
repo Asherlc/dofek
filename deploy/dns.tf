@@ -131,3 +131,57 @@ resource "cloudflare_dns_record" "pgadmin_dofek_asherlc" {
   proxied = false
   ttl     = 1
 }
+
+resource "cloudflare_dns_record" "staging_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = true
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "staging_ota_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging-ota.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = false
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "staging_portainer_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging-portainer.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = false
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "staging_netdata_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging-netdata.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = false
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "staging_databasus_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging-databasus.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = false
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "staging_pgadmin_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging-pgadmin.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = false
+  ttl     = 1
+}

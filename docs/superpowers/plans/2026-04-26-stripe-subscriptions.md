@@ -28,7 +28,7 @@
 - Modify `packages/web/src/pages/SettingsPage.tsx`: add billing section.
 - Create `packages/web/src/components/BillingPanel.tsx` and `packages/web/src/components/BillingPanel.test.tsx`.
 - Modify `packages/mobile/app/settings.tsx` and `packages/mobile/app/settings.test.tsx`: add billing section and actions.
-- Update docs after implementation: `README.md`, `packages/server/README.md`, and Infisical/Stripe setup notes in `docs/README.md` or a dedicated `docs/stripe-billing.md`.
+- Update docs after implementation: `README.md`, `packages/server/README.md`, `docs/staging.md`, and Infisical/Stripe setup notes in `docs/README.md` or a dedicated `docs/stripe-billing.md`.
 
 ## Task 1: Stripe Dependency And Billing Schema
 
@@ -1538,6 +1538,8 @@ Required server environment variables:
 - `STRIPE_PRICE_ID`
 - `APP_BASE_URL`
 
+Production uses Stripe live values from the `prod` Infisical environment. Staging uses Stripe sandbox values from the `staging` Infisical environment and `https://staging.dofek.asherlc.com` as the app base URL.
+
 Webhook endpoint:
 
 - `POST /api/webhooks/stripe`
@@ -1565,6 +1567,10 @@ infisical secrets get STRIPE_SECRET_KEY --env=prod
 infisical secrets get STRIPE_WEBHOOK_SECRET --env=prod
 infisical secrets get STRIPE_PRICE_ID --env=prod
 infisical secrets get APP_BASE_URL --env=prod
+infisical secrets get STRIPE_SECRET_KEY --env=staging
+infisical secrets get STRIPE_WEBHOOK_SECRET --env=staging
+infisical secrets get STRIPE_PRICE_ID --env=staging
+infisical secrets get APP_BASE_URL --env=staging
 ```
 
 Expected: each command returns a configured value.

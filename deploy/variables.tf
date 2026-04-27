@@ -32,6 +32,18 @@ variable "data_volume_name" {
   default     = "dofek-data"
 }
 
+variable "staging_data_volume_size_gb" {
+  description = "Hetzner block storage size in GB for staging persistent data (set 0 to disable)"
+  type        = number
+  default     = 100
+}
+
+variable "staging_data_volume_name" {
+  description = "Hetzner block storage volume name for staging"
+  type        = string
+  default     = "dofek-staging-data"
+}
+
 variable "cloudflare_api_token" {
   description = "Cloudflare API token with Zone:Edit, DNS:Edit, and Workers R2 Storage:Edit permissions"
   type        = string
