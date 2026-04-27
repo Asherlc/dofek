@@ -13,14 +13,14 @@
       "idx": 1,
       "version": "7",
       "when": 1773118577701,
-      "tag": "0001_activity_rollups",
+      "tag": "0001_seed_journal_questions",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1777247520000,
-      "tag": "0002_add_user_billing",
+      "when": 1775582000000,
+      "tag": "0002_drop_user_id_defaults",
       "breakpoints": true
     }
   ]
