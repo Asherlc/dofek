@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 
 /**
  * Integration tests for mobile-dashboard router.
