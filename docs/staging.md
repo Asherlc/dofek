@@ -18,7 +18,7 @@ Terraform provisions a separate Hetzner server and block storage volume for stag
 
 ## Deploy
 
-Staging deploys automatically after successful main CI through **Deploy Web**, using the same `sha-<commit>` image tag as production. You can also run **Deploy Web** manually with `environment=staging` and choose an image tag.
+Staging deploys automatically after successful main CI through **Deploy Web**, using the same `sha-<commit>` image tag as production. You can also run **Deploy Web** manually; `environment=both` is the default, and `environment=staging` deploys only staging.
 
 The workflow:
 

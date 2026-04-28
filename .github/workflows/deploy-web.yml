@@ -10,9 +10,10 @@ on:
       environment:
         description: "Environment to deploy"
         required: true
-        default: staging
+        default: both
         type: choice
         options:
+          - both
           - staging
           - production
       image_tag:
@@ -39,7 +40,7 @@ concurrency:
 jobs:
   production:
     name: Deploy Web Production
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && inputs.environment == 'production'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && (inputs.environment == 'production' || inputs.environment == 'both')
     permissions:
       contents: read
       actions: read
@@ -57,7 +58,7 @@ jobs:
 
   staging:
     name: Deploy Web Staging
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && inputs.environment == 'staging'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && (inputs.environment == 'staging' || inputs.environment == 'both')
     permissions:
       contents: read
       actions: read

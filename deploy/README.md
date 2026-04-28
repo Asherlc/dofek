@@ -68,7 +68,7 @@ Staging is a production-shaped replica on its own Hetzner server, block storage 
 - Stack: `dofek-staging`
 - Infisical environment: `staging`
 
-The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-web.yml`. **Deploy Web** runs both staging and production automatically after successful main CI, using the same `sha-<commit>` image tag so staging stays in sync. Manual runs choose one environment with the `environment` input. See [docs/staging.md](../docs/staging.md).
+The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-web.yml`. **Deploy Web** runs both staging and production automatically after successful main CI, using the same `sha-<commit>` image tag so staging stays in sync. Manual runs default to `environment=both`, with `staging` and `production` available for single-environment deploys. See [docs/staging.md](../docs/staging.md).
 
 ### SSH Access (Debugging Only)
 
