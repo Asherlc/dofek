@@ -25,8 +25,8 @@ const subscribedUserDetail: AdminUserDetail = {
   },
   billing: {
     user_id: "00000000-0000-0000-0000-000000000101",
-    stripe_customer_id: "cus_NffrFeUfNV2Hib",
-    stripe_subscription_id: "sub_1P1xY2DofekExample",
+    stripe_customer_id: "cus_customer_example",
+    stripe_subscription_id: "sub_subscription_example",
     stripe_subscription_status: "active",
     stripe_current_period_end: "2026-05-15T17:20:00.000Z",
     paid_grant_reason: null,
@@ -39,8 +39,8 @@ const subscribedUserDetail: AdminUserDetail = {
     reason: "stripe_subscription",
   },
   stripeLinks: {
-    customer: "https://dashboard.stripe.com/customers/cus_NffrFeUfNV2Hib",
-    subscription: "https://dashboard.stripe.com/subscriptions/sub_1P1xY2DofekExample",
+    customer: "https://dashboard.stripe.com/customers/cus_customer_example",
+    subscription: "https://dashboard.stripe.com/subscriptions/sub_subscription_example",
   },
   accounts: [
     {
@@ -67,12 +67,12 @@ const subscribedUserDetail: AdminUserDetail = {
   ],
   sessions: [
     {
-      id: "session_01HZX9ZV5AY2XKM4NQ0THZK2K7",
+      id: "session_example_recent",
       created_at: "2026-04-27T15:30:00.000Z",
       expires_at: "2026-05-27T15:30:00.000Z",
     },
     {
-      id: "session_01HZX9ZV5AY2XKM4NQ0THZK2K8",
+      id: "session_example_previous",
       created_at: "2026-04-12T11:05:00.000Z",
       expires_at: "2026-05-12T11:05:00.000Z",
     },
