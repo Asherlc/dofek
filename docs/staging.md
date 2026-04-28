@@ -14,11 +14,11 @@ Staging is a production-shaped deployment used to test full deploy, migration, a
 - Docker stack: `dofek-staging`
 - Infisical environment: `staging`
 
-Terraform provisions a separate Hetzner server and block storage volume for staging. The staging stack uses the same `deploy/stack.yml` as production with environment-specific host rules and public URLs passed by `.github/workflows/deploy-staging.yml`.
+Terraform provisions a separate Hetzner server and block storage volume for staging. The staging stack uses the same `deploy/stack.yml` as production with environment-specific host rules and public URLs passed by `.github/workflows/deploy-web-staging.yml`.
 
 ## Deploy
 
-Run **Deploy Staging** from GitHub Actions and choose an image tag, usually `sha-<commit>`.
+Staging deploys automatically after successful main CI through **Deploy Web Staging**, using the same `sha-<commit>` image tag as production. You can also run **Deploy Web Staging** manually from GitHub Actions and choose an image tag.
 
 The workflow:
 

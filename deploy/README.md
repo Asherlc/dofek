@@ -68,7 +68,7 @@ Staging is a production-shaped replica on its own Hetzner server, block storage 
 - Stack: `dofek-staging`
 - Infisical environment: `staging`
 
-The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-staging.yml`. Use the **Deploy Staging** workflow with a `sha-<commit>` image tag to validate full deploy and migration behavior before promoting the same image to production. See [docs/staging.md](../docs/staging.md).
+The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-web-staging.yml`. **Deploy Web Staging** runs automatically after successful main CI, using the same `sha-<commit>` image tag as production so staging stays in sync. See [docs/staging.md](../docs/staging.md).
 
 ### SSH Access (Debugging Only)
 
@@ -108,9 +108,9 @@ If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you ar
 
 ```text
 CI (main) -> build dofek + dofek-ml (same tag)
-         -> deploy-web check (both tags must exist)
+         -> deploy-web-production and deploy-web-staging check (both tags must exist)
          -> deploy-terraform (shared prerequisite)
-         -> deploy-app
+         -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
               -> bootstrap stack if <stack>_db is missing
               -> wait for postgres writable
@@ -120,7 +120,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
 
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
 2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
-3. **Deploy App** (`deploy-app.yml`):
+3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
       The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
       - Must include `CREDENTIAL_ENCRYPTION_KEY_BASE64` (base64-encoded 32-byte key).
@@ -211,8 +211,8 @@ ssh dofek-server 'docker logs $(docker ps --format "{{.Names}}" | grep -E "dofek
 
 ### Collector Config Changes
 
-`otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-app`.
-`deploy-app` updates swarm services, but collector reads the bind-mounted host file at `/opt/dofek/otel-collector-config.yaml`.
+`otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-web-stack`.
+`deploy-web-stack` updates swarm services, but collector reads the bind-mounted host file at `/opt/dofek/otel-collector-config.yaml`.
 
 ### Mobile CI Secrets (Infisical OIDC)
 

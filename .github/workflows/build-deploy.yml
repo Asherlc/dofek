@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Target: web = deploy infra + app, app = deploy app only"
+        description: "Target: web = deploy infra + web stack, web-stack = deploy web stack only"
         type: choice
         required: true
         options:
           - web
-          - app
+          - web-stack
 
 jobs:
   deploy:

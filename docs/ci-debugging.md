@@ -61,7 +61,7 @@ gh run view <RUN_ID> --json jobs -q '.jobs[] | select(.conclusion == "failure") 
 
 ## Deploy Rollout Healthcheck Failures
 
-If `Deploy App` fails during rollout with healthcheck output like `wget: can't connect to remote host: Connection refused`, verify whether the new container is still running startup work instead of listening yet.
+If `Deploy Web Stack` fails during rollout with healthcheck output like `wget: can't connect to remote host: Connection refused`, verify whether the new container is still running startup work instead of listening yet.
 
 ### How to diagnose quickly
 
@@ -80,7 +80,7 @@ gh run view <RUN_ID> --job <JOB_ID> --log
 
 ## Deploy Migration Failures (`database system is in recovery mode`)
 
-If `Deploy App` fails with `[migrate] PostgresError: the database system is in recovery mode`, the migration started before Postgres finished startup/recovery.
+If `Deploy Web Stack` fails with `[migrate] PostgresError: the database system is in recovery mode`, the migration started before Postgres finished startup/recovery.
 
 ### Correct fix pattern
 

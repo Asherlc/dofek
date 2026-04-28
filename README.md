@@ -530,7 +530,7 @@ Repository boundary rule:
 
 ### Adding a new env var
 
-- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`, then redeploy (`gh workflow run deploy-web.yml -f image_tag=latest`).
+- **Is it a secret?** (API key, token, password, private key, client secret) → Add to Infisical: `infisical secrets set --env=prod KEY=value`, then redeploy (`gh workflow run deploy-web-production.yml -f image_tag=latest`).
 - **Is it non-secret config?** (client ID, redirect URI, endpoint, DSN) → Add to the committed `.env` at the repo root.
 
 For production deploy-time secret injection, the required Infisical `prod` keys, GitHub Actions secrets, the production machine identity setup, and the 1Password deploy items, see [`deploy/README.md`](deploy/README.md#production-secrets).

@@ -1,0 +1,58 @@
+name: Deploy Web Staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
+        required: false
+        default: "latest"
+        type: string
+      refresh_materialized_views:
+        description: "Trigger materialized-view refresh after stack deploy"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+  id-token: write
+
+concurrency:
+  group: deploy-web-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Web Staging
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/deploy-web-environment.yml
+    with:
+      environment_name: staging
+      server_host_source: staging
+      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
+      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+      infisical_environment: staging
+      stack_name: dofek-staging
+      public_url: https://staging.dofek.asherlc.com
+      web_host_rule: 'Host(`staging.dofek.asherlc.com`)'
+      ota_base_url: https://staging-ota.dofek.asherlc.com
+      ota_host_rule: 'Host(`staging-ota.dofek.asherlc.com`)'
+      portainer_host_rule: 'Host(`staging-portainer.dofek.asherlc.com`)'
+      netdata_host_rule: 'Host(`staging-netdata.dofek.asherlc.com`)'
+      databasus_host_rule: 'Host(`staging-databasus.dofek.asherlc.com`)'
+      pgadmin_host_rule: 'Host(`staging-pgadmin.dofek.asherlc.com`)'
+      refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
+    secrets: inherit
