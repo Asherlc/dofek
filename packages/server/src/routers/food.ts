@@ -137,6 +137,19 @@ export const foodRouter = router({
       return results.map((result) => result.toDetail());
     }),
 
+  /** Direct Dofek food entries that mobile can write back to Apple Health. */
+  healthKitWriteBackEntries: protectedProcedure
+    .input(
+      z.object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+      return repo.healthKitWriteBackEntries(input.startDate, input.endDate);
+    }),
+
   /** Create a new food entry */
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);

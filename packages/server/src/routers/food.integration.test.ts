@@ -150,6 +150,76 @@ describe("Food router", () => {
     });
   });
 
+  describe("healthKitWriteBackEntries query", () => {
+    it("returns only confirmed Dofek-owned food entries for Apple Health write-back", async () => {
+      const uniqueSuffix = crypto.randomUUID();
+      const direct = await mutate("food.create", {
+        date: "2025-03-10",
+        meal: "lunch",
+        foodName: "Direct Dofek Meal",
+        calories: 610,
+        proteinG: 42,
+        carbsG: 58,
+        fatG: 18,
+      });
+
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.provider (id, name, user_id)
+        VALUES ('cronometer', 'Cronometer', ${TEST_USER_ID})
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await testCtx.db.execute(sql`
+        WITH synced_entry AS (
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, external_id, date, meal, food_name, confirmed
+          )
+          VALUES (
+            ${TEST_USER_ID}, 'cronometer', ${`cron-${uniqueSuffix}`}, '2025-03-10'::date,
+            'lunch', 'Synced Cronometer Meal', true
+          )
+          RETURNING id
+        )
+        INSERT INTO fitness.food_entry_nutrition (
+          food_entry_id, calories, protein_g, carbs_g, fat_g
+        )
+        SELECT id, 700, 50, 60, 20 FROM synced_entry
+      `);
+      await testCtx.db.execute(sql`
+        WITH unconfirmed_entry AS (
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, external_id, date, meal, food_name, confirmed
+          )
+          VALUES (
+            ${TEST_USER_ID}, 'dofek', ${`draft-${uniqueSuffix}`}, '2025-03-10'::date,
+            'snack', 'Unconfirmed Dofek Meal', false
+          )
+          RETURNING id
+        )
+        INSERT INTO fitness.food_entry_nutrition (
+          food_entry_id, calories, protein_g, carbs_g, fat_g
+        )
+        SELECT id, 100, 5, 10, 2 FROM unconfirmed_entry
+      `);
+
+      const result = await query("food.healthKitWriteBackEntries", {
+        startDate: "2025-03-10",
+        endDate: "2025-03-10",
+      });
+
+      expect(result.result.data).toEqual([
+        {
+          id: direct.result.data.id,
+          date: "2025-03-10",
+          food_name: "Direct Dofek Meal",
+          calories: 610,
+          protein_g: 42,
+          carbs_g: 58,
+          fat_g: 18,
+        },
+      ]);
+    });
+  });
+
   describe("update mutation", () => {
     let entryId: string;
 

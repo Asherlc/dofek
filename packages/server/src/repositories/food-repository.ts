@@ -72,6 +72,16 @@ const foodSearchRowSchema = z.object({
   number_of_units: z.coerce.number().nullable(),
 });
 
+const healthKitWriteBackFoodEntryRowSchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  food_name: z.string(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+});
+
 const idRowSchema = z.object({ id: z.string() });
 
 // ---------------------------------------------------------------------------
@@ -81,6 +91,7 @@ const idRowSchema = z.object({ id: z.string() });
 export type FoodEntryRow = z.infer<typeof foodEntryRowSchema>;
 export type DailyTotalsRow = z.infer<typeof dailyTotalsRowSchema>;
 export type FoodSearchRow = z.infer<typeof foodSearchRowSchema>;
+export type HealthKitWriteBackFoodEntryRow = z.infer<typeof healthKitWriteBackFoodEntryRowSchema>;
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -330,6 +341,25 @@ export class FoodRepository {
           LIMIT ${limit}`,
     );
     return rows.map((row) => new FoodSearchResult(row));
+  }
+
+  /** Direct Dofek food entries that mobile can write back to Apple Health. */
+  async healthKitWriteBackEntries(
+    startDate: string,
+    endDate: string,
+  ): Promise<HealthKitWriteBackFoodEntryRow[]> {
+    return executeWithSchema(
+      this.#db,
+      healthKitWriteBackFoodEntryRowSchema,
+      sql`SELECT id, date, food_name, calories, protein_g, carbs_g, fat_g
+          FROM fitness.v_food_entry_with_nutrition
+          WHERE user_id = ${this.#userId}
+            AND provider_id = ${DOFEK_PROVIDER_ID}
+            AND confirmed = true
+            AND date >= ${startDate}::date
+            AND date <= ${endDate}::date
+          ORDER BY date ASC, food_name ASC, id ASC`,
+    );
   }
 
   /** Ensure the 'dofek' provider row exists (for self-created entries). */
