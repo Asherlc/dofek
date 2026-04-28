@@ -9,6 +9,7 @@ vi.mock("./materialized-view-maintenance.ts", () => ({
       viewName: "fitness.v_daily_metrics",
     },
   ],
+  rebuildMaterializedViewForMaintenance: vi.fn(),
   refreshMaterializedViewForMaintenance: vi.fn(),
   runQuietDatabasePreflight: vi.fn(),
 }));
@@ -39,6 +40,7 @@ vi.mock("pg", async (importOriginal) => {
 });
 
 import {
+  rebuildMaterializedViewForMaintenance,
   refreshMaterializedViewForMaintenance,
   runQuietDatabasePreflight,
 } from "./materialized-view-maintenance.ts";
@@ -47,6 +49,7 @@ import { syncMaterializedViews } from "./sync-views.ts";
 
 const mockRunQuietDatabasePreflight = vi.mocked(runQuietDatabasePreflight);
 const mockRefreshMaterializedViewForMaintenance = vi.mocked(refreshMaterializedViewForMaintenance);
+const mockRebuildMaterializedViewForMaintenance = vi.mocked(rebuildMaterializedViewForMaintenance);
 const mockSyncMaterializedViews = vi.mocked(syncMaterializedViews);
 
 describe("run-materialized-view-maintenance main()", () => {
@@ -59,6 +62,7 @@ describe("run-materialized-view-maintenance main()", () => {
     process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
     mockRunQuietDatabasePreflight.mockReset();
     mockRefreshMaterializedViewForMaintenance.mockReset();
+    mockRebuildMaterializedViewForMaintenance.mockReset();
     mockSyncMaterializedViews.mockReset();
     mockClientConnect.mockClear();
     mockClientEnd.mockClear();
@@ -141,5 +145,27 @@ describe("run-materialized-view-maintenance main()", () => {
       "postgres://test:test@localhost:5432/test",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith("synced=0 skipped=6 refreshed=1\n");
+  });
+
+  it("runs a blocking materialized view rebuild command", async () => {
+    process.argv.push("rebuild", "fitness.v_daily_metrics");
+    mockRebuildMaterializedViewForMaintenance.mockResolvedValue({
+      durationMs: 35,
+      finishedAt: new Date("2026-04-26T12:01:00.000Z"),
+      mode: "rebuild",
+      startedAt: new Date("2026-04-26T12:00:00.000Z"),
+      viewName: "fitness.v_daily_metrics",
+      warnings: [],
+    });
+
+    await main();
+
+    expect(mockRebuildMaterializedViewForMaintenance).toHaveBeenCalledWith(
+      expect.objectContaining({ connect: expect.any(Function) }),
+      "fitness.v_daily_metrics",
+    );
+    expect(stdoutWriteSpy).toHaveBeenCalledWith(
+      "rebuilt=fitness.v_daily_metrics mode=rebuild duration_ms=35\n",
+    );
   });
 });

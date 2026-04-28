@@ -7,6 +7,10 @@ import { logger } from "../logger.ts";
 /** Postgres advisory lock key — serializes concurrent view sync runs across containers */
 export const VIEW_SYNC_LOCK_KEY = 728370292;
 
+export interface QueryTextClient {
+  query(text: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }>;
+}
+
 /**
  * Extract the view name from a CREATE MATERIALIZED VIEW statement.
  * Handles both "CREATE MATERIALIZED VIEW" and "CREATE MATERIALIZED VIEW IF NOT EXISTS".
@@ -30,7 +34,7 @@ export function hashViewContent(sqlContent: string): string {
   return createHash("sha256").update(normalized).digest("hex");
 }
 
-function splitSqlStatements(sqlContent: string): string[] {
+export function splitSqlStatements(sqlContent: string): string[] {
   return sqlContent
     .split("--> statement-breakpoint")
     .map((statement) => statement.trim())
@@ -68,8 +72,8 @@ function parseQualifiedName(name: string): { schema: string; relation: string } 
   };
 }
 
-async function recordMaterializedViewHash(
-  client: Pick<Client, "query">,
+export async function recordMaterializedViewHash(
+  client: QueryTextClient,
   viewName: string,
   hash: string,
   dependencyFingerprintHash: string,
@@ -85,9 +89,7 @@ async function recordMaterializedViewHash(
   );
 }
 
-export async function ensureMaterializedViewTrackingTables(
-  client: Pick<Client, "query">,
-): Promise<void> {
+export async function ensureMaterializedViewTrackingTables(client: QueryTextClient): Promise<void> {
   await client.query(`CREATE TABLE IF NOT EXISTS drizzle.__view_hashes (
     view_name TEXT PRIMARY KEY,
     hash TEXT NOT NULL,
@@ -98,12 +100,12 @@ export async function ensureMaterializedViewTrackingTables(
 }
 
 export async function computeViewDependencyFingerprintHash(
-  client: Pick<Client, "query">,
+  client: QueryTextClient,
   viewName: string,
 ): Promise<string> {
   const { schema, relation } = parseQualifiedName(viewName);
   // cspell:disable -- Postgres system catalog column names
-  const result = await client.query<{ fingerprint_source: string }>(
+  const result = await client.query(
     `WITH target_view AS (
       SELECT view_class.oid
       FROM pg_class AS view_class
@@ -150,7 +152,8 @@ export async function computeViewDependencyFingerprintHash(
     [schema, relation],
   );
   // cspell:enable
-  return hashViewContent(result.rows[0]?.fingerprint_source ?? "[]");
+  const fingerprintSource = result.rows[0]?.fingerprint_source;
+  return hashViewContent(typeof fingerprintSource === "string" ? fingerprintSource : "[]");
 }
 
 /**
@@ -159,7 +162,7 @@ export async function computeViewDependencyFingerprintHash(
  * This catches views that were CASCADE-dropped when a dependency was recreated.
  */
 export async function viewExistsInCatalog(
-  client: Pick<Client, "query">,
+  client: QueryTextClient,
   viewName: string,
 ): Promise<boolean> {
   const { schema, relation } = parseQualifiedName(viewName);
@@ -175,12 +178,9 @@ export async function viewExistsInCatalog(
  * A view created with WITH NO DATA, or one whose population was interrupted
  * by a crash, will report a false populated flag in pg_matviews.
  */
-export async function isViewPopulated(
-  client: Pick<Client, "query">,
-  viewName: string,
-): Promise<boolean> {
+export async function isViewPopulated(client: QueryTextClient, viewName: string): Promise<boolean> {
   const { schema, relation } = parseQualifiedName(viewName);
-  const result = await client.query<{ populated: boolean }>(
+  const result = await client.query(
     // cspell:disable-next-line -- Postgres system catalog column name
     "SELECT ispopulated AS populated FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
     [schema, relation],
@@ -190,13 +190,12 @@ export async function isViewPopulated(
 }
 
 async function getMaterializedViewDefinition(
-  client: Pick<Client, "query">,
+  client: QueryTextClient,
   viewName: string,
 ): Promise<string | null> {
-  const result = await client.query<{ definition: string }>(
-    "SELECT pg_get_viewdef($1::regclass, true) AS definition",
-    [viewName],
-  );
+  const result = await client.query("SELECT pg_get_viewdef($1::regclass, true) AS definition", [
+    viewName,
+  ]);
   const definition = result.rows[0]?.definition;
   return typeof definition === "string" ? definition : null;
 }

@@ -1,6 +1,7 @@
 import { Client } from "pg";
 import {
   MATERIALIZED_VIEW_REFRESH_INVENTORY,
+  rebuildMaterializedViewForMaintenance,
   refreshMaterializedViewForMaintenance,
   runQuietDatabasePreflight,
 } from "./materialized-view-maintenance.ts";
@@ -14,6 +15,7 @@ function usage(): string {
     "  inventory             Print materialized views that qualify for concurrent refresh",
     "  preflight             Check whether the database is quiet enough for maintenance",
     "  refresh <view-name>   Run a monitored concurrent refresh and wait for completion",
+    "  rebuild <view-name>   Drop and recreate one canonical materialized view",
     "  sync                  Run materialized-view sync and wait for completion",
   ].join("\n");
 }
@@ -78,6 +80,22 @@ export async function main(): Promise<void> {
       }
       process.stdout.write(
         `refreshed=${result.viewName} mode=${result.mode} duration_ms=${result.durationMs}\n`,
+      );
+      return;
+    }
+
+    if (command === "rebuild") {
+      const viewName = process.argv[3];
+      if (!viewName) {
+        throw new Error("rebuild requires a view name");
+      }
+      process.stdout.write(`rebuilding=${viewName}\n`);
+      const result = await rebuildMaterializedViewForMaintenance(client, viewName);
+      for (const warning of result.warnings) {
+        process.stdout.write(`warning=${warning}\n`);
+      }
+      process.stdout.write(
+        `rebuilt=${result.viewName} mode=${result.mode} duration_ms=${result.durationMs}\n`,
       );
       return;
     }
