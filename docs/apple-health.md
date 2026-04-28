@@ -106,6 +106,8 @@ The iOS app writes direct Dofek food entries back to Apple Health as dietary ene
 
 Mobile stores a local fingerprint ledger for each written food entry. If a direct Dofek entry changes, the app deletes prior Dofek-written HealthKit samples by their HealthKit sync identifiers before writing the replacement samples.
 
+Apple Health nutrition imports store each dietary sample as an unnamed `fitness.food_entry` with source/timestamp metadata plus one `fitness.food_entry_nutrient` row. Daily nutrition totals are read from `fitness.v_nutrition_daily`, which derives totals from those nutrient rows.
+
 ## Workout Source Attribution
 
 Apple Health workouts can preserve the upstream app name inside the workout JSON (`raw.sourceName`) even when the canonical `source_name` column is null. In production this is how workouts imported through Apple Health can still identify apps like Strong or WHOOP on the activity detail page.

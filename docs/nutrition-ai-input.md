@@ -35,6 +35,8 @@ User enters meal text (web/iOS)
 ## Data model behavior
 
 - Entries are saved as standard `fitness.food_entry` + `fitness.food_entry_nutrient` rows via existing food create flow.
+- Detailed micronutrients, caffeine, hydration, and macronutrients are all stored as nutrient rows, not wide columns.
+- Daily nutrition totals are derived through `fitness.v_nutrition_daily`; the AI parser does not write separate daily nutrient rows.
 - No AI-specific columns are added to nutrition tables.
 - Parsed items participate in existing nutrition totals/analytics automatically.
 
