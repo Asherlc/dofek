@@ -96,7 +96,7 @@ const foodEntryRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   user_name: z.string().nullable(),
-  food_name: z.string(),
+  food_name: z.string().nullable(),
   calories: z.coerce.number().nullable(),
   protein_g: z.coerce.number().nullable(),
   meal: z.string().nullable(),

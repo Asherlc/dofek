@@ -198,13 +198,20 @@ describe("Router coverage", () => {
     // ── Nutrition data for predictions ──
     for (let i = 0; i < 30; i++) {
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (
-              user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              2200, 120, 250, 80
-            ) ON CONFLICT DO NOTHING`,
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+              ) RETURNING id
+            )
+            INSERT INTO fitness.food_entry_nutrition (
+              food_entry_id, calories, protein_g, carbs_g, fat_g
+            )
+            SELECT id, 2200, 120, 250, 80
+            FROM new_entry`,
       );
     }
 

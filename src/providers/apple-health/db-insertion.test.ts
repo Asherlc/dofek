@@ -844,8 +844,16 @@ describe("upsertDailyMetricsBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertNutritionBatch", () => {
+  function createNutritionMockDb(): ReturnType<typeof createMockDb> {
+    return createMockDb([{ id: "food-entry-1" }]);
+  }
+
+  function capturedNutritionRows(capture: MockInsertCapture): Record<string, unknown>[] {
+    return capture.values.filter((_, index) => index % 2 === 1).flat();
+  }
+
   it("uses the source calendar day for nutrition instead of UTC-shifted date", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const parsedRecord = parseRecord({
       type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
       value: "500",
@@ -861,11 +869,50 @@ describe("upsertNutritionBatch", () => {
 
     await upsertNutritionBatch(db, "apple_health", [parsedRecord]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01", calories: 500 });
+    expect(capture.values[0]?.[0]).toMatchObject({
+      date: "2024-03-01",
+      foodName: null,
+      sourceName: "Apple Watch",
+    });
+    expect(capture.values[1]?.[0]).toMatchObject({ calories: 500 });
   });
 
-  it("aggregates calories by day", async () => {
-    const { db, capture } = createMockDb();
+  it("stores Apple Health nutrition as unnamed food entry nutrition rows", async () => {
+    const { db, capture } = createNutritionMockDb();
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierDietaryProtein",
+        value: 45.5,
+        unit: "g",
+        sourceName: "Cronometer",
+        startDate: new Date("2024-03-01T20:00:00Z"),
+        endDate: new Date("2024-03-01T20:00:10Z"),
+      }),
+    ];
+
+    const count = await upsertNutritionBatch(db, "apple_health", records);
+
+    expect(count).toBe(1);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      providerId: "apple_health",
+      externalId:
+        "ah:nutrition:HKQuantityTypeIdentifierDietaryProtein:Cronometer:2024-03-01T20:00:00.000Z:2024-03-01T20:00:10.000Z",
+      date: "2024-03-01",
+      foodName: null,
+      sourceName: "Cronometer",
+      loggedAt: records[0]?.creationDate,
+      startedAt: records[0]?.startDate,
+      endedAt: records[0]?.endDate,
+      confirmed: true,
+    });
+    expect(capture.values[1]?.[0]).toMatchObject({
+      foodEntryId: "food-entry-1",
+      proteinG: 45.5,
+    });
+  });
+
+  it("stores calorie samples separately for derived daily aggregation", async () => {
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
@@ -880,12 +927,17 @@ describe("upsertNutritionBatch", () => {
     ];
 
     const count = await upsertNutritionBatch(db, "p1", records);
-    expect(count).toBe(1);
-    expect(capture.values[0]?.[0]).toMatchObject({ calories: 1450, date: "2024-03-01" });
+    expect(count).toBe(2);
+    expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01" });
+    expect(capture.values[2]?.[0]).toMatchObject({ date: "2024-03-01" });
+    expect(capturedNutritionRows(capture)).toEqual([
+      expect.objectContaining({ calories: 650 }),
+      expect.objectContaining({ calories: 800 }),
+    ]);
   });
 
   it("maps protein", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryProtein",
@@ -895,11 +947,11 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ proteinG: 45.5 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ proteinG: 45.5 });
   });
 
   it("maps carbs", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryCarbohydrates",
@@ -909,11 +961,11 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ carbsG: 200 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ carbsG: 200 });
   });
 
   it("maps fat", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryFatTotal",
@@ -923,11 +975,11 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ fatG: 70 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ fatG: 70 });
   });
 
   it("maps fiber", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryFiber",
@@ -937,11 +989,11 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ fiberG: 25 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ fiberG: 25 });
   });
 
   it("maps water and rounds", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryWater",
@@ -951,7 +1003,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ waterMl: 2501 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ waterMl: 2501 });
   });
 
   it("skips non-nutrition record types", async () => {
@@ -963,51 +1015,51 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary sodium", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySodium", value: 1500 })];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ sodiumMg: 1500 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ sodiumMg: 1500 });
   });
 
   it("maps dietary sugar", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySugar", value: 30 })];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ sugarG: 30 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ sugarG: 30 });
   });
 
   it("maps dietary cholesterol", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryCholesterol", value: 200 }),
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ cholesterolMg: 200 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ cholesterolMg: 200 });
   });
 
   it("maps dietary saturated fat", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryFatSaturated", value: 15 }),
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ saturatedFatG: 15 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ saturatedFatG: 15 });
   });
 
   it("maps dietary potassium", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietaryPotassium", value: 3500 })];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ potassiumMg: 3500 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ potassiumMg: 3500 });
   });
 
   it("maps dietary vitamins and minerals", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminA", value: 900 }),
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminC", value: 90 }),
@@ -1019,15 +1071,15 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({
-      vitaminAMcg: 900,
-      vitaminCMg: 90,
-      vitaminDMcg: 20,
-      calciumMg: 1000,
-      ironMg: 18,
-      magnesiumMg: 400,
-      zincMg: 11,
-    });
+    expect(capturedNutritionRows(capture)).toEqual([
+      expect.objectContaining({ vitaminAMcg: 900 }),
+      expect.objectContaining({ vitaminCMg: 90 }),
+      expect.objectContaining({ vitaminDMcg: 20 }),
+      expect.objectContaining({ calciumMg: 1000 }),
+      expect.objectContaining({ ironMg: 18 }),
+      expect.objectContaining({ magnesiumMg: 400 }),
+      expect.objectContaining({ zincMg: 11 }),
+    ]);
   });
 });
 
@@ -1589,8 +1641,8 @@ describe("upsertDailyMetricsBatch — HRV averaging", () => {
 });
 
 describe("upsertNutritionBatch — deduplication", () => {
-  it("aggregates nutrition records for the same date into one row", async () => {
-    const { db, capture } = createMockDb();
+  it("keeps separate nutrition samples for derived daily aggregation", async () => {
+    const { db, capture } = createMockDb([{ id: "food-entry-1" }]);
 
     const records = [
       makeRecord({
@@ -1610,10 +1662,10 @@ describe("upsertNutritionBatch — deduplication", () => {
     ];
 
     const count = await upsertNutritionBatch(db, "apple_health", records);
-    // Both records are on the same day → aggregated into 1 row
-    expect(count).toBe(1);
-    expect(capture.values).toHaveLength(1);
+    expect(count).toBe(2);
+    expect(capture.values).toHaveLength(4);
     expect(capture.values[0]).toHaveLength(1);
+    expect(capture.values[2]).toHaveLength(1);
   });
 });
 

@@ -50,21 +50,28 @@ describe("Nutrition analytics data coverage", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Insert 50 days of nutrition_daily (needed for adaptiveTdee + macroRatios + caloricBalance) ──
+    // ── Insert 50 days of unnamed food-entry nutrition (needed for adaptiveTdee + macroRatios + caloricBalance) ──
     for (let i = 49; i >= 0; i--) {
       // Vary calories slightly so TDEE estimation has something to work with
       const calories = 2200 + Math.round(Math.sin(i * 0.5) * 200);
-      const proteinG = 120 + Math.round(Math.cos(i * 0.3) * 20);
+      const proteinG = 88 + Math.round(Math.cos(i * 0.3) * 5);
       const carbsG = 250 + Math.round(Math.sin(i * 0.4) * 30);
       const fatG = 80 + Math.round(Math.cos(i * 0.2) * 10);
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (
-              user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              ${calories}, ${proteinG}, ${carbsG}, ${fatG}
-            ) ON CONFLICT DO NOTHING`,
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+              ) RETURNING id
+            )
+            INSERT INTO fitness.food_entry_nutrition (
+              food_entry_id, calories, protein_g, carbs_g, fat_g
+            )
+            SELECT id, ${calories}, ${proteinG}, ${carbsG}, ${fatG}
+            FROM new_entry`,
       );
     }
 
@@ -366,7 +373,7 @@ describe("Nutrition analytics data coverage", () => {
 
       for (const row of rowsWithProteinPerKg) {
         if (row.proteinPerKg != null) {
-          // With ~120g protein and ~80kg body weight, expect ~1.5 g/kg
+          // With daily nutrition plus itemized food rows, expect a plausible g/kg range.
           expect(row.proteinPerKg).toBeGreaterThan(1.0);
           expect(row.proteinPerKg).toBeLessThan(2.5);
         }
@@ -487,7 +494,7 @@ describe("Nutrition analytics data coverage", () => {
         days: 45,
       });
 
-      // With 50 days of both nutrition_daily and daily_metrics data
+      // With 50 days of both derived daily nutrition and daily_metrics data
       expect(result.length).toBeGreaterThan(0);
 
       for (const row of result) {

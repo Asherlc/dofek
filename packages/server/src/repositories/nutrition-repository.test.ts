@@ -93,4 +93,15 @@ describe("NutritionRepository", () => {
     await repo.getDailyNutrition("2024-01-01");
     expect(execute).toHaveBeenCalledTimes(1);
   });
+
+  it("derives daily totals from food entry nutrition", async () => {
+    const { repo, execute } = makeRepository([]);
+    await repo.getDailyNutrition("2024-01-01");
+
+    const query = execute.mock.calls[0]?.[0];
+    const chunks = JSON.stringify(query?.queryChunks);
+    expect(chunks).toContain("fitness.food_entry");
+    expect(chunks).toContain("fitness.food_entry_nutrition");
+    expect(chunks).not.toContain("fitness.nutrition_daily");
+  });
 });

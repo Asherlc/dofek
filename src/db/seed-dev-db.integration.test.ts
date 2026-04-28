@@ -245,7 +245,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
 
     nutritionDaily: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.nutrition_daily WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.v_nutrition_daily WHERE user_id = '${userId}'`,
     ),
     foodEntries: await readCount(
       sql,

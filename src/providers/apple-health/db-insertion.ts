@@ -10,9 +10,10 @@ import {
   activity,
   bodyMeasurement,
   dailyMetrics,
+  foodEntry,
+  foodEntryNutrition,
   healthEvent,
   labResult,
-  nutritionDaily,
   sleepSession,
   sleepStage,
 } from "../../db/schema.ts";
@@ -120,7 +121,7 @@ const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierDistanceWheelchair",
 ]);
 
-// Nutrition records -> nutritionDaily (aggregate by day)
+// Nutrition records -> foodEntry + foodEntryNutrition rows.
 export const NUTRITION_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierDietaryEnergyConsumed: "calories",
   HKQuantityTypeIdentifierDietaryProtein: "proteinG",
@@ -548,124 +549,150 @@ export async function upsertNutritionBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  // Aggregate nutrition by date
-  const byDate = new Map<string, Map<string, number>>();
+  let count = 0;
   for (const r of records) {
     const field = NUTRITION_TYPES[r.type];
     if (!field) continue;
     const dateKey = r.startDateCalendarDay ?? dateToString(r.startDate);
-    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey) ?? new Map();
-    day.set(field, (day.get(field) ?? 0) + r.value);
-  }
-
-  const rows: { row: typeof nutritionDaily.$inferInsert }[] = [];
-  for (const [dateKey, nutrients] of byDate) {
-    const row: typeof nutritionDaily.$inferInsert = {
-      date: dateKey,
-      providerId,
+    const externalId = [
+      "ah",
+      "nutrition",
+      r.type,
+      r.sourceName ?? "unknown-source",
+      r.startDate.toISOString(),
+      r.endDate.toISOString(),
+    ].join(":");
+    const raw = {
+      type: r.type,
+      unit: r.unit,
+      value: r.value,
+      sourceName: r.sourceName,
+      startDate: r.startDate.toISOString(),
+      endDate: r.endDate.toISOString(),
+      creationDate: r.creationDate?.toISOString(),
     };
+    const foodRows = await db
+      .insert(foodEntry)
+      .values([
+        {
+          providerId,
+          externalId,
+          date: dateKey,
+          foodName: null,
+          sourceName: r.sourceName,
+          loggedAt: r.creationDate ?? r.startDate,
+          startedAt: r.startDate,
+          endedAt: r.endDate,
+          raw,
+          confirmed: true,
+        },
+      ])
+      .onConflictDoUpdate({
+        target: [foodEntry.userId, foodEntry.providerId, foodEntry.externalId],
+        set: {
+          date: dateKey,
+          foodName: null,
+          sourceName: r.sourceName,
+          loggedAt: r.creationDate ?? r.startDate,
+          startedAt: r.startDate,
+          endedAt: r.endDate,
+          raw,
+          confirmed: true,
+        },
+      })
+      .returning({ id: foodEntry.id });
+    const foodEntryId = foodRows[0]?.id;
+    if (!foodEntryId) continue;
 
-    for (const [field, value] of nutrients) {
-      switch (field) {
-        case "calories":
-          row.calories = Math.round(value);
-          break;
-        case "waterMl":
-          row.waterMl = Math.round(value);
-          break;
-        case "proteinG":
-          row.proteinG = value;
-          break;
-        case "carbsG":
-          row.carbsG = value;
-          break;
-        case "fatG":
-          row.fatG = value;
-          break;
-        case "fiberG":
-          row.fiberG = value;
-          break;
-        case "sodiumMg":
-          row.sodiumMg = value;
-          break;
-        case "sugarG":
-          row.sugarG = value;
-          break;
-        case "cholesterolMg":
-          row.cholesterolMg = value;
-          break;
-        case "saturatedFatG":
-          row.saturatedFatG = value;
-          break;
-        case "potassiumMg":
-          row.potassiumMg = value;
-          break;
-        case "vitaminAMcg":
-          row.vitaminAMcg = value;
-          break;
-        case "vitaminCMg":
-          row.vitaminCMg = value;
-          break;
-        case "vitaminDMcg":
-          row.vitaminDMcg = value;
-          break;
-        case "calciumMg":
-          row.calciumMg = value;
-          break;
-        case "ironMg":
-          row.ironMg = value;
-          break;
-        case "magnesiumMg":
-          row.magnesiumMg = value;
-          break;
-        case "zincMg":
-          row.zincMg = value;
-          break;
-      }
+    const row: typeof foodEntryNutrition.$inferInsert = {
+      foodEntryId,
+    };
+    switch (field) {
+      case "calories":
+        row.calories = Math.round(r.value);
+        break;
+      case "waterMl":
+        row.waterMl = Math.round(r.value);
+        break;
+      case "proteinG":
+        row.proteinG = r.value;
+        break;
+      case "carbsG":
+        row.carbsG = r.value;
+        break;
+      case "fatG":
+        row.fatG = r.value;
+        break;
+      case "fiberG":
+        row.fiberG = r.value;
+        break;
+      case "sodiumMg":
+        row.sodiumMg = r.value;
+        break;
+      case "sugarG":
+        row.sugarG = r.value;
+        break;
+      case "cholesterolMg":
+        row.cholesterolMg = r.value;
+        break;
+      case "saturatedFatG":
+        row.saturatedFatG = r.value;
+        break;
+      case "potassiumMg":
+        row.potassiumMg = r.value;
+        break;
+      case "vitaminAMcg":
+        row.vitaminAMcg = r.value;
+        break;
+      case "vitaminCMg":
+        row.vitaminCMg = r.value;
+        break;
+      case "vitaminDMcg":
+        row.vitaminDMcg = r.value;
+        break;
+      case "calciumMg":
+        row.calciumMg = r.value;
+        break;
+      case "ironMg":
+        row.ironMg = r.value;
+        break;
+      case "magnesiumMg":
+        row.magnesiumMg = r.value;
+        break;
+      case "zincMg":
+        row.zincMg = r.value;
+        break;
     }
-    rows.push({ row });
-  }
 
-  // Multi-row upsert with COALESCE to preserve existing non-null values
-  const insertRows = rows.map(({ row }) => row);
-  for (let i = 0; i < insertRows.length; i += 500) {
-    const batch = insertRows.slice(i, i + 500);
-    await insertWithDuplicateDiag(
-      "nutrition_daily",
-      (row) => `${row.date}:${row.providerId}`,
-      batch,
-      (b) =>
-        db
-          .insert(nutritionDaily)
-          .values(b)
-          .onConflictDoUpdate({
-            target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
-            set: {
-              // Nutrition is always additive (import.ts clears before import)
-              calories: sql`coalesce(${nutritionDaily.calories}, 0) + coalesce(excluded.calories, 0)`,
-              proteinG: sql`coalesce(${nutritionDaily.proteinG}, 0) + coalesce(excluded.protein_g, 0)`,
-              carbsG: sql`coalesce(${nutritionDaily.carbsG}, 0) + coalesce(excluded.carbs_g, 0)`,
-              fatG: sql`coalesce(${nutritionDaily.fatG}, 0) + coalesce(excluded.fat_g, 0)`,
-              fiberG: sql`coalesce(${nutritionDaily.fiberG}, 0) + coalesce(excluded.fiber_g, 0)`,
-              waterMl: sql`coalesce(${nutritionDaily.waterMl}, 0) + coalesce(excluded.water_ml, 0)`,
-              sodiumMg: sql`coalesce(${nutritionDaily.sodiumMg}, 0) + coalesce(excluded.sodium_mg, 0)`,
-              sugarG: sql`coalesce(${nutritionDaily.sugarG}, 0) + coalesce(excluded.sugar_g, 0)`,
-              cholesterolMg: sql`coalesce(${nutritionDaily.cholesterolMg}, 0) + coalesce(excluded.cholesterol_mg, 0)`,
-              saturatedFatG: sql`coalesce(${nutritionDaily.saturatedFatG}, 0) + coalesce(excluded.saturated_fat_g, 0)`,
-              potassiumMg: sql`coalesce(${nutritionDaily.potassiumMg}, 0) + coalesce(excluded.potassium_mg, 0)`,
-              vitaminAMcg: sql`coalesce(${nutritionDaily.vitaminAMcg}, 0) + coalesce(excluded.vitamin_a_mcg, 0)`,
-              vitaminCMg: sql`coalesce(${nutritionDaily.vitaminCMg}, 0) + coalesce(excluded.vitamin_c_mg, 0)`,
-              vitaminDMcg: sql`coalesce(${nutritionDaily.vitaminDMcg}, 0) + coalesce(excluded.vitamin_d_mcg, 0)`,
-              calciumMg: sql`coalesce(${nutritionDaily.calciumMg}, 0) + coalesce(excluded.calcium_mg, 0)`,
-              ironMg: sql`coalesce(${nutritionDaily.ironMg}, 0) + coalesce(excluded.iron_mg, 0)`,
-              magnesiumMg: sql`coalesce(${nutritionDaily.magnesiumMg}, 0) + coalesce(excluded.magnesium_mg, 0)`,
-              zincMg: sql`coalesce(${nutritionDaily.zincMg}, 0) + coalesce(excluded.zinc_mg, 0)`,
-            },
-          }),
-    );
+    await db
+      .insert(foodEntryNutrition)
+      .values([row])
+      .onConflictDoUpdate({
+        target: foodEntryNutrition.foodEntryId,
+        set: {
+          calories: sql`excluded.calories`,
+          proteinG: sql`excluded.protein_g`,
+          carbsG: sql`excluded.carbs_g`,
+          fatG: sql`excluded.fat_g`,
+          fiberG: sql`excluded.fiber_g`,
+          waterMl: sql`excluded.water_ml`,
+          sodiumMg: sql`excluded.sodium_mg`,
+          sugarG: sql`excluded.sugar_g`,
+          cholesterolMg: sql`excluded.cholesterol_mg`,
+          saturatedFatG: sql`excluded.saturated_fat_g`,
+          potassiumMg: sql`excluded.potassium_mg`,
+          vitaminAMcg: sql`excluded.vitamin_a_mcg`,
+          vitaminCMg: sql`excluded.vitamin_c_mg`,
+          vitaminDMcg: sql`excluded.vitamin_d_mcg`,
+          calciumMg: sql`excluded.calcium_mg`,
+          ironMg: sql`excluded.iron_mg`,
+          magnesiumMg: sql`excluded.magnesium_mg`,
+          zincMg: sql`excluded.zinc_mg`,
+        },
+      });
+    count++;
   }
-  return insertRows.length;
+  return count;
 }
 
 export async function upsertHealthEventBatch(

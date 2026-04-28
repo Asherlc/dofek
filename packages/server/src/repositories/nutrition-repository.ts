@@ -91,10 +91,24 @@ export class NutritionRepository {
     const rows = await executeWithSchema(
       this.#db,
       nutritionDailyDbSchema,
-      sql`SELECT * FROM fitness.nutrition_daily
-          WHERE user_id = ${this.#userId}
-            AND date > ${startDate}::date
-          ORDER BY date ASC`,
+      sql`SELECT
+            fe.date,
+            fe.provider_id,
+            fe.user_id,
+            SUM(fen.calories)::integer AS calories,
+            SUM(fen.protein_g) AS protein_g,
+            SUM(fen.carbs_g) AS carbs_g,
+            SUM(fen.fat_g) AS fat_g,
+            SUM(fen.fiber_g) AS fiber_g,
+            SUM(fen.water_ml)::integer AS water_ml,
+            MIN(fe.created_at)::text AS created_at
+          FROM fitness.food_entry fe
+          JOIN fitness.food_entry_nutrition fen ON fen.food_entry_id = fe.id
+          WHERE fe.user_id = ${this.#userId}
+            AND fe.confirmed = true
+            AND fe.date > ${startDate}::date
+          GROUP BY fe.date, fe.provider_id, fe.user_id
+          ORDER BY fe.date ASC`,
     );
 
     return rows.map(

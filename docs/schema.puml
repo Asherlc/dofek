@@ -271,6 +271,9 @@ entity "food_entry" {
   provider_serving_id : text
   number_of_units : real
   logged_at : timestamp
+  source_name : text
+  started_at : timestamp
+  ended_at : timestamp
   barcode : text
   serving_unit : text
   serving_weight_grams : real
@@ -326,6 +329,7 @@ entity "food_entry_nutrition" {
   iodine_mcg : real
   omega3_mg : real
   omega6_mg : real
+  water_ml : integer
   created_at : timestamp
   updated_at : timestamp
 }
