@@ -881,17 +881,24 @@ Error: Materialized view maintenance required: fitness.v_activity (live definiti
 The branch verification exercised the target-refresh cancellation path and
 rebuild path, including the later split into separate workflow steps, but
 production still reported live-definition drift for every canonical
-materialized view during the existing post-rebuild sync step.
+materialized view during the existing post-rebuild sync step. Follow-up
+investigation found that `syncMaterializedViews()` treated PostgreSQL's
+`pg_get_viewdef()` output as a second source of truth even when the stored
+canonical SQL hash and dependency fingerprint matched. That deparsed definition
+comparison produced false drift for tracked, hash-clean production views.
 
 ### Fix or Mitigation
 
-No code mitigation was applied in this verification step. The rebuild behavior
-under test completed quickly from the branch image, and the remaining failure is
-the broader live-definition drift detected by normal materialized-view sync.
+`syncMaterializedViews()` now treats the stored canonical SQL hash plus
+dependency fingerprint as authoritative for already-tracked views. It still
+requires manual maintenance when the stored hash changes, when the dependency
+fingerprint changes, or when a tracked view is missing and must be recreated.
+Live definition comparison remains limited to adopting untracked existing
+views.
 
 ### Remaining Risk
 
-The manual action can still fail after a successful target rebuild when other
-canonical materialized views require explicit maintenance. Operators should not
-interpret a successful target rebuild as proof that the full materialized-view
-planner is clean.
+The manual action can still fail after a successful target rebuild when a stored
+canonical hash or dependency fingerprint genuinely changes. Operators should not
+interpret a successful target rebuild as proof that no other view needs explicit
+maintenance; the final planner verification remains the source of truth.
