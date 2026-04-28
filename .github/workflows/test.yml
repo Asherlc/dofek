@@ -82,12 +82,28 @@ jobs:
             *.cache-from=type=gha,scope=e2e
             *.cache-to=type=gha,mode=max,scope=e2e
       - name: Scan server image (Grype)
-        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e # v6
-        with:
-          image: e2e-server:latest
-          fail-build: true
-          severity-cutoff: critical
-          only-fixed: true
+        env:
+          GRYPE_IMAGE: anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
+        run: |
+          for attempt in $(seq 1 5); do
+            if docker pull "$GRYPE_IMAGE"; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::Failed to pull $GRYPE_IMAGE after 5 attempts"
+              exit 1
+            fi
+            echo "Grype image pull failed; retrying in 5s..."
+            sleep 5
+          done
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$GRYPE_IMAGE" \
+            e2e-server:latest \
+            --only-fixed \
+            --fail-on critical \
+            -o table
 
   security-gate:
     name: Security & Dependencies

@@ -609,3 +609,45 @@ The values already printed in the unsafe deploy logs should still be rotated;
 log deletion reduces exposure but does not prove the values were never read.
 Future deploys should fail before stack mutation if a required host bind path is
 missing.
+
+## 2026-04-28: Image Vulnerability Scan Grype installer failure
+
+### Impact
+
+PR #1059 failed the `Test / Image Vulnerability Scan` CI job before the image
+vulnerability scan could run. The server image build completed, but the security
+gate was blocked by scanner installation.
+
+### Evidence That Mattered
+
+The failing step was `Scan server image (Grype)`. The first fatal log lines were:
+
+```text
+[error] received HTTP status=502 for url='https://github.com/anchore/grype/releases/download/v0.97.1/grype_0.97.1_linux_amd64.tar.gz'
+[error] hash_sha256_verify checksum for '/tmp/tmp.eLZxdHctKO/grype_0.97.1_linux_amd64.tar.gz' did not verify
+```
+
+The log then showed `gzip: stdin: not in gzip format`, `tar: Error is not
+recoverable`, and `Error installing grype`, proving the job failed while
+installing the scanner, not because Grype found a critical vulnerability.
+
+### Root Cause
+
+The workflow used `anchore/scan-action`, whose pinned action version installs
+its default Grype binary (`v0.97.1`) from a GitHub release asset on each fresh
+runner. GitHub returned a 502 body for the tarball URL, so the installer
+downloaded non-tarball content and failed checksum verification before scanning
+the Docker image.
+
+### Fix or Mitigation
+
+The image scan now runs Grype through the official `anchore/grype:v0.111.1`
+container image pinned by manifest digest. CI pulls that scanner image with a
+bounded retry, then runs the same policy against `e2e-server:latest`:
+`--only-fixed --fail-on critical`.
+
+### Remaining Risk
+
+The scanner still needs registry and vulnerability database access at runtime.
+The removed failure mode was the un-cached GitHub release tarball installer in
+the action step.
