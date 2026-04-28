@@ -1,3 +1,4 @@
+import { ZONE_BOUNDARIES_FTP } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
@@ -98,17 +99,23 @@ export async function fetchHealthspanRawData(
                 * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
               ELSE 0 END
             ), 0) AS aerobic_minutes,
-            COALESCE(SUM(
+            COALESCE(SUM(GREATEST(
               CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
-                   AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
-              THEN
-                cnt.hi_count::real / asum.hr_sample_count::real
-                * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-              ELSE 0 END
-            ), 0) AS high_intensity_minutes
+                    AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
+                THEN
+                  cnt.hr_hi_count::real / asum.hr_sample_count::real
+                  * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                ELSE 0 END,
+              CASE WHEN up3.ftp IS NOT NULL
+                    AND asum.power_sample_count > 0 AND asum.ended_at IS NOT NULL
+                THEN
+                  cnt.power_hi_count::real / asum.power_sample_count::real
+                  * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
+                ELSE 0 END
+            )), 0) AS high_intensity_minutes
           FROM fitness.activity_summary asum
           JOIN fitness.user_profile up3 ON up3.id = asum.user_id
-          JOIN LATERAL (
+          LEFT JOIN LATERAL (
             SELECT dm2.resting_hr
             FROM fitness.v_daily_metrics dm2
             WHERE dm2.user_id = asum.user_id
@@ -118,16 +125,26 @@ export async function fetchHealthspanRawData(
           ) rhr2 ON true
           JOIN LATERAL (
             SELECT
-              COUNT(*) FILTER (WHERE ms2.scalar < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS aerobic_count,
-              COUNT(*) FILTER (WHERE ms2.scalar >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8) AS hi_count
+              COUNT(*) FILTER (
+                WHERE ms2.channel = 'heart_rate'
+                  AND ms2.scalar < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8
+              ) AS aerobic_count,
+              COUNT(*) FILTER (
+                WHERE ms2.channel = 'heart_rate'
+                  AND ms2.scalar >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8
+              ) AS hr_hi_count,
+              COUNT(*) FILTER (
+                WHERE ms2.channel = 'power'
+                  AND ms2.scalar >= up3.ftp * ${ZONE_BOUNDARIES_FTP[2]}::numeric
+              ) AS power_hi_count
             FROM fitness.metric_stream ms2
             WHERE ms2.activity_id = asum.activity_id
-              AND ms2.channel = 'heart_rate'
+              AND ms2.channel IN ('heart_rate', 'power')
           ) cnt ON true
           WHERE asum.user_id = ${ctx.userId}
             AND asum.started_at > ${timestampWindowStart(endDate, totalDays)}
-            AND asum.hr_sample_count > 0
-            AND up3.max_hr IS NOT NULL
+            AND (asum.hr_sample_count > 0 OR asum.power_sample_count > 0)
+            AND (up3.max_hr IS NOT NULL OR up3.ftp IS NOT NULL)
         ),
         strength_freq AS (
           SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
