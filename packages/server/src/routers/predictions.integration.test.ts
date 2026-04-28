@@ -127,13 +127,14 @@ describe("Predictions router (integration)", () => {
       if (i % 3 !== 0) continue;
 
       const workoutResult = await testCtx.db.execute<{ id: string }>(
-        sql`INSERT INTO fitness.strength_workout (
-              provider_id, user_id, started_at, ended_at, name
+        sql`INSERT INTO fitness.activity (
+              provider_id, user_id, started_at, ended_at, name, activity_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${i}::int * INTERVAL '1 day' + INTERVAL '45 minutes',
-              'Upper Body'
+              'Upper Body',
+              'strength'
             ) RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
@@ -143,7 +144,7 @@ describe("Predictions router (integration)", () => {
         for (let setIdx = 0; setIdx < 3; setIdx++) {
           await testCtx.db.execute(
             sql`INSERT INTO fitness.strength_set (
-                  workout_id, exercise_id, exercise_index, set_index,
+                  activity_id, exercise_id, exercise_index, set_index,
                   set_type, weight_kg, reps
                 ) VALUES (
                   ${workoutId}, ${exerciseId}, 0, ${setIdx},

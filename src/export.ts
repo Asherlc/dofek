@@ -111,24 +111,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "strength-workouts.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.strength_workout WHERE user_id = ${userId} ORDER BY started_at`,
-      ),
-  },
-  {
     name: "strength-sets.csv",
     query: (db, userId) =>
       executeWithSchema(
         db,
         exportRowSchema,
         sql`SELECT ss.* FROM fitness.strength_set ss
-            JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
-            WHERE sw.user_id = ${userId}
-            ORDER BY sw.started_at, ss.exercise_index, ss.set_index`,
+            JOIN fitness.activity a ON a.id = ss.activity_id
+            WHERE a.user_id = ${userId}
+            ORDER BY a.started_at, ss.exercise_index, ss.set_index`,
       ),
   },
   {
@@ -217,7 +208,7 @@ function csvHeaders(rows: Record<string, unknown>[]): string[] {
   return headers;
 }
 
-function csvCell(value: unknown): string {
+export function csvCell(value: unknown): string {
   if (value == null) return "";
   const serialized =
     value instanceof Date
@@ -231,7 +222,7 @@ function csvCell(value: unknown): string {
   return serialized;
 }
 
-function rowsToCsv(rows: Record<string, unknown>[]): string {
+export function rowsToCsv(rows: Record<string, unknown>[]): string {
   const headers = csvHeaders(rows);
   if (headers.length === 0) return "";
   const lines = [

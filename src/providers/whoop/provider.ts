@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
@@ -18,7 +18,6 @@ import {
   sleepSession,
   sleepStage,
   strengthSet,
-  strengthWorkout,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
@@ -607,31 +606,17 @@ export class WhoopProvider implements SyncProvider {
               if (!workoutDuring) continue; // skip if no time range available
               const { start: startedAt, end: endedAt } = parseDuringRange(workoutDuring);
 
-              // Upsert strength_workout
-              const [row] = await db
-                .insert(strengthWorkout)
+              // Update activity with specialized strength metrics
+              const [activityRow] = await db
+                .insert(activity)
                 .values({
                   providerId: this.id,
                   externalId: activityId,
+                  activityType: "strength",
                   startedAt,
                   endedAt,
                   name: weightliftingData.name ?? null,
-                  rawMskStrainScore: parsed.rawMskStrainScore,
-                  scaledMskStrainScore: parsed.scaledMskStrainScore,
-                  cardioStrainScore: parsed.cardioStrainScore,
-                  cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
-                  mskStrainContributionPercent: parsed.mskStrainContributionPercent,
-                })
-                .onConflictDoUpdate({
-                  target: [
-                    strengthWorkout.userId,
-                    strengthWorkout.providerId,
-                    strengthWorkout.externalId,
-                  ],
-                  set: {
-                    startedAt,
-                    endedAt,
-                    name: weightliftingData.name ?? null,
+                  raw: {
                     rawMskStrainScore: parsed.rawMskStrainScore,
                     scaledMskStrainScore: parsed.scaledMskStrainScore,
                     cardioStrainScore: parsed.cardioStrainScore,
@@ -639,13 +624,28 @@ export class WhoopProvider implements SyncProvider {
                     mskStrainContributionPercent: parsed.mskStrainContributionPercent,
                   },
                 })
-                .returning({ id: strengthWorkout.id });
+                .onConflictDoUpdate({
+                  target: [activity.userId, activity.providerId, activity.externalId],
+                  set: {
+                    name: weightliftingData.name ?? null,
+                    startedAt,
+                    endedAt,
+                    raw: sql`COALESCE(fitness.activity.raw, '{}'::jsonb) || ${JSON.stringify({
+                      rawMskStrainScore: parsed.rawMskStrainScore,
+                      scaledMskStrainScore: parsed.scaledMskStrainScore,
+                      cardioStrainScore: parsed.cardioStrainScore,
+                      cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
+                      mskStrainContributionPercent: parsed.mskStrainContributionPercent,
+                    })}::jsonb`,
+                  },
+                })
+                .returning({ id: activity.id });
 
-              const workoutId = row?.id;
-              if (!workoutId) continue;
+              const dbActivityId = activityRow?.id;
+              if (!dbActivityId) continue;
 
-              // Delete old sets, re-insert (same pattern as Strong CSV)
-              await db.delete(strengthSet).where(eq(strengthSet.workoutId, workoutId));
+              // Delete old sets, re-insert
+              await db.delete(strengthSet).where(eq(strengthSet.activityId, dbActivityId));
 
               const setRows: (typeof strengthSet.$inferInsert)[] = [];
 
@@ -702,7 +702,7 @@ export class WhoopProvider implements SyncProvider {
 
                 for (const set of ex.sets) {
                   setRows.push({
-                    workoutId,
+                    activityId: dbActivityId,
                     exerciseId,
                     exerciseIndex: ex.exerciseIndex,
                     setIndex: set.setIndex,

@@ -29,6 +29,27 @@
       "when": 1775582000000,
       "tag": "0002_drop_user_id_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775582000001,
+      "tag": "0004_merge_strength_workout",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775582000002,
+      "tag": "0003_data_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775582000003,
+      "tag": "0004_add_user_billing",
+      "breakpoints": true
     }
   ]
 }

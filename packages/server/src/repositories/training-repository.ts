@@ -322,12 +322,13 @@ export class TrainingRepository extends BaseRepository {
       muscleFreshnessSchema,
       sql`SELECT
           mg AS muscle_group,
-          MAX((sw.started_at AT TIME ZONE ${this.timezone})::date)::text AS last_trained_date
+          MAX((a.started_at AT TIME ZONE ${this.timezone})::date)::text AS last_trained_date
         FROM fitness.strength_set ss
-        JOIN fitness.strength_workout sw ON sw.id = ss.workout_id
+        JOIN fitness.activity a ON a.id = ss.activity_id
         JOIN fitness.exercise e ON e.id = ss.exercise_id
         CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
-        WHERE sw.user_id = ${this.userId}
+        WHERE a.user_id = ${this.userId}
+          AND a.activity_type = 'strength'
           AND e.muscle_groups IS NOT NULL
         GROUP BY mg`,
     );
@@ -340,8 +341,9 @@ export class TrainingRepository extends BaseRepository {
           SELECT
             COUNT(*) FILTER (WHERE started_at > ${timestampWindowStart(endDate, 7)})::int AS strength_7d,
             MAX((started_at AT TIME ZONE ${this.timezone})::date)::text AS last_strength_date
-          FROM fitness.strength_workout
+          FROM fitness.activity
           WHERE user_id = ${this.userId}
+            AND activity_type = 'strength'
         ),
         endurance_data AS (
           SELECT
@@ -433,22 +435,12 @@ export class TrainingRepository extends BaseRepository {
   async #fetchTrainingDays(endDate: string): Promise<z.infer<typeof trainingDaySchema>[]> {
     return this.query(
       trainingDaySchema,
-      sql`WITH combined AS (
-          SELECT DISTINCT (started_at AT TIME ZONE ${this.timezone})::date AS training_date
+      sql`SELECT DISTINCT (started_at AT TIME ZONE ${this.timezone})::date::text AS training_date
           FROM fitness.v_activity
           WHERE user_id = ${this.userId}
             AND started_at > ${timestampWindowStart(endDate, 14)}
             ${this.timestampAccessPredicate(sql`started_at`)}
-          UNION
-          SELECT DISTINCT (started_at AT TIME ZONE ${this.timezone})::date AS training_date
-          FROM fitness.strength_workout
-          WHERE user_id = ${this.userId}
-            AND started_at > ${timestampWindowStart(endDate, 14)}
-            ${this.timestampAccessPredicate(sql`started_at`)}
-        )
-        SELECT training_date::text
-        FROM combined
-        ORDER BY training_date DESC`,
+          ORDER BY training_date DESC`,
     );
   }
 

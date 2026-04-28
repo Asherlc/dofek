@@ -131,8 +131,9 @@ export async function fetchHealthspanRawData(
         ),
         strength_freq AS (
           SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
-          FROM fitness.strength_workout
+          FROM fitness.activity
           WHERE user_id = ${ctx.userId}
+            AND activity_type = 'strength'
             AND started_at > ${timestampWindowStart(endDate, totalDays)}
         ),
         body_latest AS (

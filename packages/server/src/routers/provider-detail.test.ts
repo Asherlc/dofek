@@ -193,13 +193,13 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 15 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(15);
+    it("contains 14 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(14);
     });
 
     it("includes all required child tables", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.strength_workout");
+      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sleep_session");
@@ -245,7 +245,7 @@ describe("providerDetailRouter", () => {
                     recordCount: 5,
                     errorMessage: null,
                     durationMs: 1200,
-                    syncedAt: "2024-01-15T10:00:00Z",
+                    syncedAt: "2024-01-14T10:00:00Z",
                   },
                 ]),
               }),
@@ -281,7 +281,7 @@ describe("providerDetailRouter", () => {
                     recordCount: 0,
                     errorMessage: "OAuth token expired: secret-refresh-token",
                     durationMs: 500,
-                    syncedAt: "2024-01-15T10:00:00Z",
+                    syncedAt: "2024-01-14T10:00:00Z",
                   },
                 ]),
               }),
@@ -315,7 +315,7 @@ describe("providerDetailRouter", () => {
                     recordCount: 5,
                     errorMessage: null,
                     durationMs: 1200,
-                    syncedAt: "2024-01-15T10:00:00Z",
+                    syncedAt: "2024-01-14T10:00:00Z",
                   },
                 ]),
               }),
@@ -370,7 +370,7 @@ describe("providerDetailRouter", () => {
               id: "act-1",
               name: "Morning Run",
               activity_type: "running",
-              started_at: "2024-01-15T08:00:00Z",
+              started_at: "2024-01-14T08:00:00Z",
             },
           ]),
         },
@@ -476,8 +476,8 @@ describe("providerDetailRouter", () => {
               provider_id: "strava",
               name: "Morning Run",
               activity_type: "running",
-              started_at: "2024-01-15T08:00:00Z",
-              raw: { distance: 5000, elapsed_time: 1500 },
+              started_at: "2024-01-14T08:00:00Z",
+              raw: { distance: 5000, elapsed_time: 1400 },
             },
           ]),
         },
@@ -492,7 +492,7 @@ describe("providerDetailRouter", () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result?.raw).toEqual({ distance: 5000, elapsed_time: 1500 });
+      expect(result?.raw).toEqual({ distance: 5000, elapsed_time: 1400 });
     });
 
     it("returns null for non-existent record", async () => {

@@ -1061,7 +1061,7 @@ table fitness.sport_settings {
 
 table fitness.strength_set {
   id uuid [pk, not null, default: `gen_random_uuid()`]
-  workout_id uuid [not null]
+  activity_id uuid [not null]
   exercise_id uuid [not null]
   exercise_index integer [not null]
   set_index integer [not null]
@@ -1077,28 +1077,7 @@ table fitness.strength_set {
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    workout_id [name: 'strength_set_workout_idx']
-  }
-}
-
-table fitness.strength_workout {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  provider_id text [not null]
-  user_id uuid [not null]
-  external_id text
-  started_at "timestamp with time zone" [not null]
-  ended_at "timestamp with time zone"
-  name text
-  notes text
-  raw_msk_strain_score real
-  scaled_msk_strain_score real
-  cardio_strain_score real
-  cardio_strain_contribution_percent real
-  msk_strain_contribution_percent real
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, provider_id, external_id) [name: 'strength_workout_provider_external_idx', unique]
+    activity_id [name: 'strength_set_activity_idx']
   }
 }
 
@@ -1389,13 +1368,9 @@ ref sleep_stage_session_id_sleep_session_id_fk: fitness.sleep_stage.session_id >
 
 ref sport_settings_user_id_user_profile_id_fk: fitness.sport_settings.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref strength_set_workout_id_strength_workout_id_fk: fitness.strength_set.workout_id > fitness.strength_workout.id [delete: cascade, update: no action]
+ref strength_set_activity_id_activity_id_fk: fitness.strength_set.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref strength_set_exercise_id_exercise_id_fk: fitness.strength_set.exercise_id > fitness.exercise.id [delete: no action, update: no action]
-
-ref strength_workout_provider_id_provider_id_fk: fitness.strength_workout.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref strength_workout_user_id_user_profile_id_fk: fitness.strength_workout.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref supplement_user_id_user_profile_id_fk: fitness.supplement.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

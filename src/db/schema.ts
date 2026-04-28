@@ -431,45 +431,13 @@ export const bodyMeasurementValue = fitness.table(
 // Strength training
 // ============================================================
 
-export const strengthWorkout = fitness.table(
-  "strength_workout",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    externalId: text("external_id"),
-    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
-    endedAt: timestamp("ended_at", { withTimezone: true }),
-    name: text("name"),
-    notes: text("notes"),
-    rawMskStrainScore: real("raw_msk_strain_score"),
-    scaledMskStrainScore: real("scaled_msk_strain_score"),
-    cardioStrainScore: real("cardio_strain_score"),
-    cardioStrainContributionPercent: real("cardio_strain_contribution_percent"),
-    mskStrainContributionPercent: real("msk_strain_contribution_percent"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("strength_workout_provider_external_idx").on(
-      table.userId,
-      table.providerId,
-      table.externalId,
-    ),
-  ],
-);
-
 export const strengthSet = fitness.table(
   "strength_set",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    workoutId: uuid("workout_id")
+    activityId: uuid("activity_id")
       .notNull()
-      .references(() => strengthWorkout.id, { onDelete: "cascade" }),
+      .references(() => activity.id, { onDelete: "cascade" }),
     exerciseId: uuid("exercise_id")
       .notNull()
       .references(() => exercise.id),
@@ -486,7 +454,7 @@ export const strengthSet = fitness.table(
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("strength_set_workout_idx").on(table.workoutId)],
+  (table) => [index("strength_set_activity_idx").on(table.activityId)],
 );
 
 // ============================================================
