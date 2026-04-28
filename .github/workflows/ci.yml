@@ -60,8 +60,7 @@ jobs:
           {
             echo "## Triggered Deploys"
             echo ""
-            echo "- [Deploy Web Production](${REPO_URL}/actions/workflows/deploy-web-production.yml)"
-            echo "- [Deploy Web Staging](${REPO_URL}/actions/workflows/deploy-web-staging.yml)"
+            echo "- [Deploy Web](${REPO_URL}/actions/workflows/deploy-web.yml)"
             echo "- [Deploy iOS](${REPO_URL}/actions/workflows/deploy-ios.yml)"
             echo "- [Deploy OTA](${REPO_URL}/actions/workflows/deploy-ota.yml)"
           } >> "$GITHUB_STEP_SUMMARY"

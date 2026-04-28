@@ -68,7 +68,7 @@ Staging is a production-shaped replica on its own Hetzner server, block storage 
 - Stack: `dofek-staging`
 - Infisical environment: `staging`
 
-The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-web-staging.yml`. **Deploy Web Staging** runs automatically after successful main CI, using the same `sha-<commit>` image tag as production so staging stays in sync. See [docs/staging.md](../docs/staging.md).
+The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-web.yml`. **Deploy Web** runs both staging and production automatically after successful main CI, using the same `sha-<commit>` image tag so staging stays in sync. Manual runs choose one environment with the `environment` input. See [docs/staging.md](../docs/staging.md).
 
 ### SSH Access (Debugging Only)
 
@@ -108,7 +108,7 @@ If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you ar
 
 ```text
 CI (main) -> build dofek + dofek-ml (same tag)
-         -> deploy-web-production and deploy-web-staging check (both tags must exist)
+         -> deploy-web production and staging checks (both tags must exist)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
