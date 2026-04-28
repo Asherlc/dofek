@@ -413,7 +413,7 @@ describe("syncMaterializedViews", () => {
     );
   });
 
-  it("skips tracked hash-matched views without comparing deparsed live definitions", async () => {
+  it("skips tracked hash-matched views without comparing PostgreSQL-rendered live definitions", async () => {
     const { syncMaterializedViews, hashViewContent: hash } = await import("./sync-views.ts");
     const viewSql = "CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1";
     const expectedHash = hash(viewSql);

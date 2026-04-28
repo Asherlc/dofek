@@ -884,8 +884,9 @@ production still reported live-definition drift for every canonical
 materialized view during the existing post-rebuild sync step. Follow-up
 investigation found that `syncMaterializedViews()` treated PostgreSQL's
 `pg_get_viewdef()` output as a second source of truth even when the stored
-canonical SQL hash and dependency fingerprint matched. That deparsed definition
-comparison produced false drift for tracked, hash-clean production views.
+canonical SQL hash and dependency fingerprint matched. That PostgreSQL-rendered
+definition comparison produced false drift for tracked, hash-clean production
+views.
 
 ### Fix or Mitigation
 
