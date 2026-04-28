@@ -92,26 +92,34 @@ export const mobileDashboardRouter = router({
         daily_load: z.coerce.number(),
       });
 
-      const metricsRows = await executeWithSchema(
+        const metricsRows = await executeWithSchema(
         ctx.db,
         readinessSchema,
         sql`
-          WITH metrics_with_baselines AS (
+          WITH metrics_base AS (
             SELECT
               dm.date AS metric_date,
               hrv,
               resting_hr,
               respiratory_rate_avg AS respiratory_rate,
-              AVG(hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
-              STDDEV_POP(hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
-              AVG(resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
-              STDDEV_POP(resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
-              AVG(respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
-              STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
             FROM fitness.v_daily_metrics dm
             WHERE dm.user_id = ${ctx.userId}
               AND dm.date > ${endDate}::date - 60
               AND dm.date <= ${endDate}
+          ),
+          metrics_with_baselines AS (
+            SELECT
+              metric_date,
+              hrv,
+              resting_hr,
+              respiratory_rate,
+              AVG(hrv) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
+              STDDEV_POP(hrv) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
+              AVG(resting_hr) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
+              STDDEV_POP(resting_hr) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
+              AVG(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
+              STDDEV_POP(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
+            FROM metrics_base
           ),
           daily_loads AS (
             SELECT
