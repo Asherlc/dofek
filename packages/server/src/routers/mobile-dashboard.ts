@@ -100,7 +100,7 @@ export const mobileDashboardRouter = router({
               dm.date AS metric_date,
               hrv,
               resting_hr,
-              respiratory_rate_avg AS respiratory_rate,
+              respiratory_rate_avg AS respiratory_rate
             FROM fitness.v_daily_metrics dm
             WHERE dm.user_id = ${ctx.userId}
               AND dm.date > ${endDate}::date - 60
