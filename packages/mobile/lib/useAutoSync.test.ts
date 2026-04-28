@@ -40,6 +40,8 @@ vi.mock("../modules/health-kit", () => ({
   queryWorkouts: vi.fn(),
   querySleepSamples: vi.fn(),
   queryWorkoutRoutes: vi.fn(),
+  writeDietarySamples: vi.fn(),
+  deleteDietarySamples: vi.fn(),
 }));
 
 const mockCaptureException = vi.fn();
@@ -57,6 +59,12 @@ const mockSyncHealthKitToServer = vi.fn();
 
 vi.mock("./health-kit-sync", () => ({
   syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKitToServer(...args),
+}));
+
+const mockSyncDofekFoodToHealthKit = vi.fn();
+
+vi.mock("./health-kit-food-writeback", () => ({
+  syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
 }));
 
 const { useAutoSync, isDataStale } = await import("./useAutoSync");
@@ -101,6 +109,7 @@ describe("useAutoSync", () => {
     mockMutateAsync.mockResolvedValue({ jobId: "test-job" });
     mockSyncStatusFetch.mockResolvedValue({ status: "done" });
     mockIsAvailable.mockReturnValue(false);
+    mockSyncDofekFoodToHealthKit.mockResolvedValue({ written: 0, skipped: 0, errors: [] });
   });
 
   afterEach(() => {
@@ -222,6 +231,18 @@ describe("useAutoSync", () => {
         expect.objectContaining({ syncRangeDays: 1 }),
       );
       expect(mockInvalidate).toHaveBeenCalled();
+    });
+
+    it("writes direct Dofek food entries back to HealthKit after HealthKit sync", async () => {
+      renderHook(() => useAutoSync("2026-03-21"));
+      await act(() => vi.runAllTimersAsync());
+
+      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startDate: "2026-03-21",
+          endDate: "2026-03-22",
+        }),
+      );
     });
 
     it("skips HealthKit sync when never authorized", async () => {

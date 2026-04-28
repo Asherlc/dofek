@@ -126,3 +126,10 @@ let writeTypes: Set<HKSampleType> = {
     }
     return types
 }()
+
+func dietaryWriteQuantityType(for typeIdentifier: String) -> HKQuantityType? {
+    guard let quantityType = HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: typeIdentifier)) else {
+        return nil
+    }
+    return writeTypes.contains(quantityType) ? quantityType : nil
+}

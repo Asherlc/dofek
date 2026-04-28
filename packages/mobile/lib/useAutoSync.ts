@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  deleteDietarySamples,
   hasEverAuthorized,
   isAvailable,
   queryDailyStatistics,
@@ -7,7 +8,9 @@ import {
   querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
+  writeDietarySamples,
 } from "../modules/health-kit";
+import { syncDofekFoodToHealthKit } from "./health-kit-food-writeback";
 import { syncHealthKitToServer } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 import { trpc } from "./trpc";
@@ -17,6 +20,10 @@ export function isDataStale(latestDate: string | null | undefined): boolean {
   if (!latestDate) return false; // No data at all — nothing to refresh
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
   return latestDate < today;
+}
+
+function todayYmd(): string {
+  return new Date().toLocaleDateString("en-CA");
 }
 
 /**
@@ -38,6 +45,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
     if (!isDataStale(latestDate)) return;
     if (activeSyncs.isLoading) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return;
+    if (!latestDate) return;
 
     triggered.current = true;
 
@@ -75,7 +83,16 @@ export function useAutoSync(latestDate: string | null | undefined) {
         },
         syncRangeDays: 1,
       })
-        .then((result) => {
+        .then(async (result) => {
+          await syncDofekFoodToHealthKit({
+            trpcClient: trpcUtils.client,
+            healthKit: {
+              writeDietarySamples,
+              deleteDietarySamples,
+            },
+            startDate: latestDate,
+            endDate: todayYmd(),
+          });
           logger.info(
             "auto-sync",
             `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
