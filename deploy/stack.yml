@@ -200,7 +200,7 @@ services:
   redis:
     image: redis:7-alpine
     volumes:
-      - redis_data:/data
+      - /mnt/dofek-data/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -265,7 +265,7 @@ services:
   docuum:
     image: stephanmisc/docuum:0.27.0
     init: true
-    command: ["--threshold", "10 GB"]
+    command: ["--threshold", "0 GB"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - docuum_data:/root
@@ -302,7 +302,6 @@ services:
 volumes:
   letsencrypt:
   pgadmin_data:
-  redis_data:
   job_files:
   portainer_data:
   docuum_data:

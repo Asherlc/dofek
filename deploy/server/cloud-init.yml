@@ -52,3 +52,7 @@ runcmd:
         docker swarm leave --force
       fi
       docker swarm init
+
+  # Configure kernel memory for Redis to prevent BGSAVE persistence failures
+  - sysctl -w vm.overcommit_memory=1
+  - sh -c 'echo "vm.overcommit_memory=1" > /etc/sysctl.d/99-redis.conf'

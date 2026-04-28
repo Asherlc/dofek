@@ -10,15 +10,14 @@ import {
   type AnomalyCheckResult,
   AnomalyDetectionRepository,
 } from "../repositories/anomaly-detection-repository.ts";
-import { TrainingRepository } from "../repositories/training-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 import {
   computeComponentScores,
   computeReadinessScore,
-  getNextWorkoutRecommendation,
   type NextWorkoutRecommendation,
-} from "./training.ts";
+  TrainingRepository,
+} from "../repositories/training-repository.ts";
+import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 
 /** Simple date comparison for server-side logic (where @dofek/format is not available). */
 export function isRecent(dateStr: string, anchorDateStr: string): boolean {
@@ -170,6 +169,7 @@ export const mobileDashboardRouter = router({
       if (latestMetric && isRecent(latestMetric.date, endDate)) {
         const scores = computeComponentScores(
           {
+            date: latestMetric.date,
             hrv: latestMetric.hrv,
             resting_hr: latestMetric.resting_hr,
             respiratory_rate: latestMetric.respiratory_rate,
@@ -351,11 +351,7 @@ export const mobileDashboardRouter = router({
       // 5. Next Workout
       const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz);
       const workoutData = await trainingRepo.getNextWorkoutData(endDate);
-      const nextWorkout = getNextWorkoutRecommendation({
-        endDate,
-        data: workoutData,
-        readinessWeights: weights,
-      });
+      const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
 
       // 6. Anomalies
       const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz);
