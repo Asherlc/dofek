@@ -3,99 +3,195 @@ name: Materialized View Maintenance
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: "Docker image tag to run maintenance from"
-        required: false
-        default: "latest"
-        type: string
-      view_name:
-        description: "Canonical materialized view to rebuild"
-        required: false
-        default: "fitness.provider_stats"
+      environment:
+        description: "Environment to maintain"
+        required: true
+        default: "production"
         type: choice
         options:
-          - "fitness.provider_stats"
-          - "fitness.activity_summary"
-          - "fitness.deduped_sensor"
-          - "fitness.v_daily_metrics"
-          - "fitness.v_activity"
-          - "fitness.v_sleep"
-          - "fitness.v_body_measurement"
-      server_host:
-        description: "Docker SSH host (defaults to SERVER_HOST secret)"
-        required: false
-        type: string
-      infisical_environment:
-        description: "Infisical environment to export"
-        required: false
-        default: prod
-        type: string
-      stack_name:
-        description: "Docker stack name"
-        required: false
-        default: dofek
+          - "production"
+          - "staging"
+      view_names:
+        description: "Materialized view(s) to rebuild: one name, comma/newline-separated names, or all"
+        required: true
+        default: "fitness.provider_stats"
         type: string
 
 permissions:
   contents: read
-  packages: read
   id-token: write
 
 concurrency:
-  group: materialized-view-maintenance-${{ inputs.stack_name || 'dofek' }}
+  group: materialized-view-maintenance-${{ inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
   rebuild:
-    name: Rebuild Materialized View
+    name: Rebuild Materialized View (${{ inputs.environment || 'production' }})
     runs-on: ubuntu-latest
     env:
-      DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
-      DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
-      INFISICAL_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
-      STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
-      VIEW_NAME: ${{ inputs.view_name || 'fitness.provider_stats' }}
-      IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+      # staging.dofek.asherlc.com is Cloudflare-proxied for HTTPS. The
+      # staging-portainer host is a non-proxied DNS record on the same server and
+      # is used here only as the SSH tunnel endpoint.
+      SERVER_HOST: ${{ inputs.environment == 'staging' && 'staging-portainer.dofek.asherlc.com' || secrets.SERVER_HOST }}
+      INFISICAL_ENVIRONMENT: ${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
+      VIEW_NAMES: ${{ inputs.view_names || 'fitness.provider_stats' }}
+      POSTGRES_TUNNEL_PORT: "15432"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: ./.github/actions/setup-node-pnpm
 
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host
         with:
-          host: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          host: ${{ inputs.environment == 'staging' && 'staging-portainer.dofek.asherlc.com' || secrets.SERVER_HOST }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Export Infisical deploy secrets file via OIDC
         uses: ./.github/actions/export-infisical-dotenv
         with:
-          env: ${{ inputs.infisical_environment || 'prod' }}
+          env: ${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
           template: .github/templates/infisical-dotenv.tmpl
-          output_path: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+          output_path: ${{ github.workspace }}/.env.${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
 
       - name: Export dotenv path
         run: echo "INFISICAL_ENV_FILE=${GITHUB_WORKSPACE}/.env.${INFISICAL_ENVIRONMENT}" >> "$GITHUB_ENV"
 
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Pull maintenance images
+      - name: Resolve target materialized views
         run: |
-          docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-          docker pull "postgres:18-alpine"
+          inventory_file="$RUNNER_TEMP/materialized-view-inventory.txt"
+          pnpm tsx src/db/run-materialized-view-maintenance.ts inventory | cut -f1 > "$inventory_file"
+
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+
+          const githubEnvPath = process.env.GITHUB_ENV;
+          const inventoryPath = process.env.INVENTORY_FILE;
+          const requestedViewNames = process.env.VIEW_NAMES || "fitness.provider_stats";
+          if (!githubEnvPath) {
+            console.error("::error::GITHUB_ENV is required");
+            process.exit(1);
+          }
+          if (!inventoryPath) {
+            console.error("::error::INVENTORY_FILE is required");
+            process.exit(1);
+          }
+
+          const canonicalViewNames = readFileSync(inventoryPath, "utf8")
+            .split(/\r?\n/)
+            .map((viewName) => viewName.trim())
+            .filter(Boolean);
+          const requestedTokens = requestedViewNames
+            .split(/[\s,]+/)
+            .map((viewName) => viewName.trim())
+            .filter(Boolean);
+          const selectedViewNames =
+            requestedTokens.length === 1 && requestedTokens[0]?.toLowerCase() === "all"
+              ? canonicalViewNames
+              : canonicalViewNames.filter((viewName) => requestedTokens.includes(viewName));
+          const invalidViewNames = requestedTokens.filter(
+            (viewName) =>
+              viewName.toLowerCase() !== "all" && !canonicalViewNames.includes(viewName),
+          );
+
+          if (requestedTokens.length === 0) {
+            console.error("::error::At least one materialized view name is required");
+            process.exit(1);
+          }
+          if (invalidViewNames.length > 0) {
+            console.error(`::error::Unknown materialized view(s): ${invalidViewNames.join(", ")}`);
+            console.error(`Allowed values: ${canonicalViewNames.join(", ")}, all`);
+            process.exit(1);
+          }
+          if (selectedViewNames.length === 0) {
+            console.error("::error::No materialized views selected");
+            process.exit(1);
+          }
+
+          process.stdout.write(`target_views=${selectedViewNames.join(",")}\n`);
+          appendFileSync(githubEnvPath, `TARGET_VIEWS<<TARGET_VIEWS_EOF\n`);
+          appendFileSync(githubEnvPath, `${selectedViewNames.join("\n")}\n`);
+          appendFileSync(githubEnvPath, `TARGET_VIEWS_EOF\n`);
+          NODE
+        env:
+          INVENTORY_FILE: ${{ runner.temp }}/materialized-view-inventory.txt
+
+      - name: Build tunneled database URL
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+
+          const dotenvPath = process.env.INFISICAL_ENV_FILE;
+          const githubEnvPath = process.env.GITHUB_ENV;
+          const tunnelPort = process.env.POSTGRES_TUNNEL_PORT;
+          if (!dotenvPath) {
+            console.error("::error::INFISICAL_ENV_FILE is required");
+            process.exit(1);
+          }
+          if (!githubEnvPath) {
+            console.error("::error::GITHUB_ENV is required");
+            process.exit(1);
+          }
+          if (!tunnelPort) {
+            console.error("::error::POSTGRES_TUNNEL_PORT is required");
+            process.exit(1);
+          }
+
+          const secrets = new Map();
+          for (const line of readFileSync(dotenvPath, "utf8").split(/\r?\n/)) {
+            if (!line || line.startsWith("#")) {
+              continue;
+            }
+            const separatorIndex = line.indexOf("=");
+            if (separatorIndex <= 0) {
+              continue;
+            }
+            secrets.set(line.slice(0, separatorIndex), line.slice(separatorIndex + 1));
+          }
+
+          const postgresPassword = secrets.get("POSTGRES_PASSWORD");
+          if (!postgresPassword) {
+            console.error("::error::POSTGRES_PASSWORD is required in Infisical export");
+            process.exit(1);
+          }
+
+          console.log(`::add-mask::${postgresPassword}`);
+          const encodedPassword = encodeURIComponent(postgresPassword);
+          console.log(`::add-mask::${encodedPassword}`);
+          appendFileSync(
+            githubEnvPath,
+            `DATABASE_URL=postgres://health:${encodedPassword}@127.0.0.1:${tunnelPort}/health\n`,
+          );
+          NODE
+
+      - name: Open Postgres SSH tunnel
+        run: |
+          ssh -fN \
+            -L "127.0.0.1:${POSTGRES_TUNNEL_PORT}:127.0.0.1:5432" \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            "root@${SERVER_HOST}"
 
       - name: Wait for Postgres writable
         run: |
           for attempt in $(seq 1 36); do
-            recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --env-file "$INFISICAL_ENV_FILE" \
-              postgres:18-alpine sh -euc \
-              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
-              psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
-              --command \"SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;\"" 2>&1 || true)
+            recovery_output=$(timeout 15s node --experimental-transform-types --input-type=module <<'NODE' 2>&1 || true
+          import { Client } from "pg";
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          try {
+            const result = await client.query(
+              "SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END AS state",
+            );
+            process.stdout.write(`${result.rows[0]?.state ?? "unknown"}\n`);
+          } finally {
+            await client.end();
+          }
+          NODE
+            )
             recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
             if [ "$recovery_state" = "writable" ]; then
               echo "Postgres is writable."
@@ -110,38 +206,96 @@ jobs:
           done
 
       - name: Plan materialized view sync before rebuild
-        run: |
-          timeout 90s docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts'
+        run: timeout 90s pnpm tsx src/db/run-view-sync-planner.ts
 
-      - name: Rebuild materialized view
+      - name: Cancel target refreshes
         run: |
-          timeout 50m docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
-            --env VIEW_NAME="$VIEW_NAME" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts rebuild "$VIEW_NAME"'
+          while IFS= read -r target_view; do
+            if [ -z "$target_view" ]; then
+              continue
+            fi
+            timeout 2m pnpm tsx src/db/run-materialized-view-maintenance.ts cancel-refreshes "$target_view"
+          done <<< "$TARGET_VIEWS"
+
+      - name: Rebuild materialized views
+        run: |
+          set -o pipefail
+          rebuild_output_file="$RUNNER_TEMP/materialized-view-rebuild.log"
+          while IFS= read -r target_view; do
+            if [ -z "$target_view" ]; then
+              continue
+            fi
+            timeout 50m pnpm tsx src/db/run-materialized-view-maintenance.ts rebuild "$target_view" | tee -a "$rebuild_output_file"
+          done <<< "$TARGET_VIEWS"
+          echo "REBUILD_OUTPUT_FILE=${rebuild_output_file}" >> "$GITHUB_ENV"
+
+      - name: Verify target rebuilds completed
+        run: |
+          while IFS= read -r target_view; do
+            if [ -z "$target_view" ]; then
+              continue
+            fi
+            escaped_target_view="${target_view//./\\.}"
+            if ! grep -Eq "^rebuilt=${escaped_target_view} mode=rebuild duration_ms=[0-9]+$" "$REBUILD_OUTPUT_FILE"; then
+              echo "::error::Rebuild output did not confirm ${target_view} completed"
+              exit 1
+            fi
+          done <<< "$TARGET_VIEWS"
 
       - name: Run post-rebuild materialized view sync
+        run: timeout 50m pnpm tsx src/db/run-materialized-view-maintenance.ts sync
+
+      - name: Verify target materialized views are populated
         run: |
-          timeout 50m docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts sync'
+          timeout 90s node --experimental-transform-types --input-type=module <<'NODE'
+          import { Client } from "pg";
+
+          const targetViews = (process.env.TARGET_VIEWS || "")
+            .split(/\r?\n/)
+            .map((viewName) => viewName.trim())
+            .filter(Boolean);
+          if (targetViews.length === 0) {
+            console.error("::error::TARGET_VIEWS is required");
+            process.exit(1);
+          }
+
+          const client = new Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          try {
+            for (const viewName of targetViews) {
+              const [schemaName, materializedViewName] = viewName.split(".");
+              if (!schemaName || !materializedViewName) {
+                console.error(`::error::TARGET_VIEWS must be schema-qualified: ${viewName}`);
+                process.exit(1);
+              }
+              const result = await client.query(
+                `
+                  SELECT ispopulated
+                  FROM pg_matviews
+                  WHERE schemaname = $1
+                    AND matviewname = $2
+                `,
+                [schemaName, materializedViewName],
+              );
+              if (result.rows.length !== 1) {
+                console.error(`::error::Materialized view not found after rebuild: ${viewName}`);
+                process.exit(1);
+              }
+              if (result.rows[0]?.ispopulated !== true) {
+                console.error(`::error::Materialized view is not populated after rebuild: ${viewName}`);
+                process.exit(1);
+              }
+              process.stdout.write(`populated=${viewName}\n`);
+            }
+          } finally {
+            await client.end();
+          }
+          NODE
 
       - name: Verify materialized view planner is clean
         run: |
           planner_output_file="$RUNNER_TEMP/view-sync-plan-after-maintenance.log"
-          timeout 90s docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts' >"$planner_output_file"
+          timeout 90s pnpm tsx src/db/run-view-sync-planner.ts >"$planner_output_file"
 
           cat "$planner_output_file"
           planner_required="$(sed -n 's/^required=//p' "$planner_output_file" | tail -n 1)"

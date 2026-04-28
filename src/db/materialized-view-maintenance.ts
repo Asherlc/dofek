@@ -57,6 +57,11 @@ export interface MaterializedViewMaintenanceRebuildResult {
   warnings: string[];
 }
 
+export interface MaterializedViewMaintenanceCancellationResult {
+  viewName: string;
+  warnings: string[];
+}
+
 export const MATERIALIZED_VIEW_REFRESH_INVENTORY: MaterializedViewRefreshInventoryItem[] = [
   {
     viewName: "fitness.v_activity",
@@ -138,6 +143,68 @@ function booleanField(row: unknown, fieldName: string): boolean | undefined {
   }
   const value = row[fieldName];
   return typeof value === "boolean" ? value : undefined;
+}
+
+async function cancelInProgressRefreshesForView(
+  client: MaterializedViewMaintenanceClient,
+  viewName: string,
+): Promise<string[]> {
+  const quotedViewName = quoteQualifiedIdentifier(viewName);
+  const result = await client.query(
+    `
+      SELECT
+        active.pid AS refresh_query_pid,
+        pg_cancel_backend(active.pid) AS canceled
+      FROM pg_stat_activity AS active
+      WHERE active.datname = current_database() -- cspell:disable-line -- Postgres system catalog column name
+        AND active.pid <> pg_backend_pid()
+        AND active.state <> 'idle'
+        AND active.query ILIKE '%REFRESH MATERIALIZED VIEW%'
+        AND (
+          active.query ILIKE '%' || $1 || '%'
+          OR active.query ILIKE '%' || $2 || '%'
+        )
+      ORDER BY active.query_start NULLS LAST
+    `,
+    [viewName, quotedViewName],
+  );
+
+  if (result.rows.length === 0) {
+    return [];
+  }
+
+  const failedCancellationCount = result.rows.filter(
+    (row) => booleanField(row, "canceled") !== true,
+  ).length;
+  if (failedCancellationCount > 0) {
+    throw new Error(
+      `failed to cancel ${formatCount(
+        failedCancellationCount,
+        "in-progress refresh",
+        "in-progress refreshes",
+      )} for ${viewName}`,
+    );
+  }
+
+  return [
+    `canceled ${formatCount(
+      result.rows.length,
+      "in-progress refresh",
+      "in-progress refreshes",
+    )} for ${viewName}`,
+  ];
+}
+
+export async function cancelInProgressMaterializedViewRefreshesForMaintenance(
+  client: MaterializedViewMaintenanceClient,
+  viewName: string,
+): Promise<MaterializedViewMaintenanceCancellationResult> {
+  if (!findInventoryItem(viewName)) {
+    throw new Error(`${viewName} is not in the canonical materialized view inventory`);
+  }
+
+  const warnings = await cancelInProgressRefreshesForView(client, viewName);
+  return { viewName, warnings };
 }
 
 export async function runQuietDatabasePreflight(

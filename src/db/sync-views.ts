@@ -285,18 +285,9 @@ export async function syncMaterializedViews(
         // when a dependency was recreated.
         const exists = await viewExistsInCatalog(client, viewName);
         if (exists) {
-          const canonicalDefinition = extractViewDefinitionBody(content);
-          const liveDefinition = await getMaterializedViewDefinition(client, viewName);
-          if (
-            canonicalDefinition &&
-            liveDefinition &&
-            normalizeComparableSql(canonicalDefinition) === normalizeComparableSql(liveDefinition)
-          ) {
-            logger.info(`[views] ${viewName} unchanged, skipping`);
-            skipped++;
-            continue;
-          }
-          logger.warn(`[views] ${viewName} hash matches but live definition differs`);
+          logger.info(`[views] ${viewName} unchanged, skipping`);
+          skipped++;
+          continue;
         } else {
           logger.warn(
             `[views] ${viewName} hash matches but view is missing (CASCADE-dropped?), creating`,

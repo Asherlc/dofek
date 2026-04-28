@@ -9,6 +9,7 @@ vi.mock("./materialized-view-maintenance.ts", () => ({
       viewName: "fitness.v_daily_metrics",
     },
   ],
+  cancelInProgressMaterializedViewRefreshesForMaintenance: vi.fn(),
   rebuildMaterializedViewForMaintenance: vi.fn(),
   refreshMaterializedViewForMaintenance: vi.fn(),
   runQuietDatabasePreflight: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("pg", async (importOriginal) => {
 });
 
 import {
+  cancelInProgressMaterializedViewRefreshesForMaintenance,
   rebuildMaterializedViewForMaintenance,
   refreshMaterializedViewForMaintenance,
   runQuietDatabasePreflight,
@@ -50,6 +52,9 @@ import { syncMaterializedViews } from "./sync-views.ts";
 const mockRunQuietDatabasePreflight = vi.mocked(runQuietDatabasePreflight);
 const mockRefreshMaterializedViewForMaintenance = vi.mocked(refreshMaterializedViewForMaintenance);
 const mockRebuildMaterializedViewForMaintenance = vi.mocked(rebuildMaterializedViewForMaintenance);
+const mockCancelInProgressMaterializedViewRefreshesForMaintenance = vi.mocked(
+  cancelInProgressMaterializedViewRefreshesForMaintenance,
+);
 const mockSyncMaterializedViews = vi.mocked(syncMaterializedViews);
 
 describe("run-materialized-view-maintenance main()", () => {
@@ -63,6 +68,7 @@ describe("run-materialized-view-maintenance main()", () => {
     mockRunQuietDatabasePreflight.mockReset();
     mockRefreshMaterializedViewForMaintenance.mockReset();
     mockRebuildMaterializedViewForMaintenance.mockReset();
+    mockCancelInProgressMaterializedViewRefreshesForMaintenance.mockReset();
     mockSyncMaterializedViews.mockReset();
     mockClientConnect.mockClear();
     mockClientEnd.mockClear();
@@ -106,6 +112,9 @@ describe("run-materialized-view-maintenance main()", () => {
         expect.stringContaining("Usage: pnpm tsx src/db/run-materialized-view-maintenance.ts"),
       );
       expect(stdoutWriteSpy).toHaveBeenCalledWith(expect.stringContaining("rebuild <view-name>"));
+      expect(stdoutWriteSpy).toHaveBeenCalledWith(
+        expect.stringContaining("cancel-refreshes <view-name>"),
+      );
     }
   });
 
@@ -194,6 +203,15 @@ describe("run-materialized-view-maintenance main()", () => {
     expect(mockClientEnd).toHaveBeenCalledOnce();
   });
 
+  it("requires a view name for cancel-refreshes", async () => {
+    process.argv.push("cancel-refreshes");
+
+    await expect(main()).rejects.toThrow("cancel-refreshes requires a view name");
+
+    expect(mockCancelInProgressMaterializedViewRefreshesForMaintenance).not.toHaveBeenCalled();
+    expect(mockClientEnd).toHaveBeenCalledOnce();
+  });
+
   it("runs blocking materialized view sync after preflight", async () => {
     process.argv.push("sync");
     mockRunQuietDatabasePreflight.mockResolvedValue({
@@ -257,6 +275,25 @@ describe("run-materialized-view-maintenance main()", () => {
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
       "rebuilt=fitness.v_daily_metrics mode=rebuild duration_ms=35\n",
     );
+  });
+
+  it("runs a target refresh cancellation command", async () => {
+    process.argv.push("cancel-refreshes", "fitness.v_daily_metrics");
+    mockCancelInProgressMaterializedViewRefreshesForMaintenance.mockResolvedValue({
+      viewName: "fitness.v_daily_metrics",
+      warnings: ["canceled 1 in-progress refresh for fitness.v_daily_metrics"],
+    });
+
+    await main();
+
+    expect(mockCancelInProgressMaterializedViewRefreshesForMaintenance).toHaveBeenCalledWith(
+      expect.objectContaining({ connect: expect.any(Function) }),
+      "fitness.v_daily_metrics",
+    );
+    expect(stdoutWriteSpy).toHaveBeenCalledWith(
+      "warning=canceled 1 in-progress refresh for fitness.v_daily_metrics\n",
+    );
+    expect(stdoutWriteSpy).toHaveBeenCalledWith("canceled_refreshes=fitness.v_daily_metrics\n");
   });
 
   it("throws usage for unknown commands", async () => {
