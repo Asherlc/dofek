@@ -140,6 +140,56 @@ function booleanField(row: unknown, fieldName: string): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+async function cancelInProgressRefreshesForView(
+  client: MaterializedViewMaintenanceClient,
+  viewName: string,
+): Promise<string[]> {
+  const quotedViewName = quoteQualifiedIdentifier(viewName);
+  const result = await client.query(
+    `
+      SELECT
+        active.pid AS refresh_query_pid,
+        pg_cancel_backend(active.pid) AS canceled
+      FROM pg_stat_activity AS active
+      WHERE active.datname = current_database() -- cspell:disable-line -- Postgres system catalog column name
+        AND active.pid <> pg_backend_pid()
+        AND active.state <> 'idle'
+        AND active.query ILIKE '%REFRESH MATERIALIZED VIEW%'
+        AND (
+          active.query ILIKE '%' || $1 || '%'
+          OR active.query ILIKE '%' || $2 || '%'
+        )
+      ORDER BY active.query_start NULLS LAST
+    `,
+    [viewName, quotedViewName],
+  );
+
+  if (result.rows.length === 0) {
+    return [];
+  }
+
+  const failedCancellationCount = result.rows.filter(
+    (row) => booleanField(row, "canceled") !== true,
+  ).length;
+  if (failedCancellationCount > 0) {
+    throw new Error(
+      `failed to cancel ${formatCount(
+        failedCancellationCount,
+        "in-progress refresh",
+        "in-progress refreshes",
+      )} for ${viewName}`,
+    );
+  }
+
+  return [
+    `canceled ${formatCount(
+      result.rows.length,
+      "in-progress refresh",
+      "in-progress refreshes",
+    )} for ${viewName}`,
+  ];
+}
+
 export async function runQuietDatabasePreflight(
   client: MaterializedViewMaintenanceClient,
   options: QuietDatabasePreflightOptions = {},
@@ -305,6 +355,7 @@ export async function rebuildMaterializedViewForMaintenance(
     await client.query("SET lock_timeout = '5s'");
     await client.query("SET statement_timeout = '45min'");
 
+    const cancellationWarnings = await cancelInProgressRefreshesForView(client, viewName);
     const preflight = await runQuietDatabasePreflight(client);
     if (!preflight.ok) {
       throw new Error(`quiet database preflight failed: ${preflight.failures.join("; ")}`);
@@ -334,7 +385,7 @@ export async function rebuildMaterializedViewForMaintenance(
       mode: "rebuild",
       startedAt,
       viewName,
-      warnings: preflight.warnings,
+      warnings: [...cancellationWarnings, ...preflight.warnings],
     };
   } finally {
     await client.query("SELECT pg_advisory_unlock($1)", [VIEW_SYNC_LOCK_KEY]);

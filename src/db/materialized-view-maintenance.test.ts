@@ -205,4 +205,51 @@ describe("rebuildMaterializedViewForMaintenance", () => {
       rmSync(viewsDir, { recursive: true, force: true });
     }
   });
+
+  it("cancels in-progress refreshes for the target view before rebuilding", async () => {
+    const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
+    writeFileSync(
+      join(viewsDir, "01_provider_stats.sql"),
+      [
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+        "--> statement-breakpoint",
+        "CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx",
+        "ON fitness.provider_stats (user_id, provider_id)",
+      ].join("\n"),
+    );
+    const client = createClient(
+      new Map([
+        ["pg_try_advisory_lock", [{ locked: true }]],
+        ["refresh_query_pid", [{ canceled: true, refresh_query_pid: 42 }]],
+        ["pg_is_in_recovery", [{ in_recovery: false }]],
+        ["fingerprint_source", [{ fingerprint_source: "provider_stats:provider_id:text" }]],
+      ]),
+    );
+
+    try {
+      const result = await rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", {
+        viewsDir,
+      });
+
+      const queries = executedQueries(client);
+      const cancelQueryIndex = queries.findIndex((query) => query.includes("pg_cancel_backend"));
+      const preflightQueryIndex = queries.findIndex((query) => query.includes("pg_is_in_recovery"));
+      const dropQueryIndex = queries.findIndex((query) =>
+        query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
+      );
+      expect(cancelQueryIndex).toBeGreaterThan(-1);
+      expect(preflightQueryIndex).toBeGreaterThan(cancelQueryIndex);
+      expect(dropQueryIndex).toBeGreaterThan(preflightQueryIndex);
+      expect(client.query).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
+        "fitness.provider_stats",
+        '"fitness"."provider_stats"',
+      ]);
+      expect(result.warnings).toContain(
+        "canceled 1 in-progress refresh for fitness.provider_stats",
+      );
+    } finally {
+      rmSync(viewsDir, { recursive: true, force: true });
+    }
+  });
 });

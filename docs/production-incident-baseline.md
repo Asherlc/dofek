@@ -788,3 +788,49 @@ canonical view, runs normal blocking sync, and verifies the planner reports
 Rebuilding a materialized view is still heavy database maintenance. Operators
 should run it during a planned maintenance window and stop if preflight reports
 recovery mode, active lock waits, or other full-history maintenance.
+
+## 2026-04-28: Manual materialized-view maintenance blocked by post-sync refresh
+
+### Impact
+
+A manually requested deploy with `refresh_materialized_views=true` failed after
+the swarm rollout completed. The app stayed up, but the required blocking
+materialized-view maintenance did not run.
+
+### Evidence That Mattered
+
+The failing step was `Run blocking materialized view maintenance`, and the first
+fatal line was:
+
+```text
+Error: quiet database preflight failed: 1 lock wait is active
+```
+
+Production Postgres activity at the same time showed two active statements for
+the same view:
+
+```text
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+One session was actively refreshing and the other was waiting on a relation
+lock.
+
+### Root Cause
+
+Worker post-sync maintenance was already refreshing materialized views while the
+manual maintenance action started. The manual maintenance preflight correctly
+refused to begin while an overlapping refresh was waiting on a lock.
+
+### Fix or Mitigation
+
+The manual rebuild command now cancels in-progress `REFRESH MATERIALIZED VIEW`
+statements for the selected view before running the quiet database preflight and
+destructive rebuild.
+
+### Remaining Risk
+
+The maintenance command only cancels refreshes for the target view. Other active
+database work can still make the quiet preflight fail, which is intentional for
+planned maintenance.
