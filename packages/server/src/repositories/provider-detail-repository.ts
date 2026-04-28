@@ -49,7 +49,7 @@ export function tableInfo(dataType: DataType): {
         idColumn: "recorded_at",
       };
     case "nutritionDaily":
-      return { table: "fitness.nutrition_daily", orderColumn: "date", idColumn: "date" };
+      return { table: "fitness.v_nutrition_daily", orderColumn: "date", idColumn: "date" };
     case "labPanels":
       return { table: "fitness.lab_panel", orderColumn: "recorded_at", idColumn: "id" };
     case "labResults":

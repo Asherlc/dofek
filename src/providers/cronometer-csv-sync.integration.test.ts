@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { nutrientRowSchema } from "../db/nutrient-columns.ts";
-import { foodEntry, nutritionDaily, TEST_USER_ID } from "../db/schema.ts";
+import { foodEntry, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { CRONOMETER_PROVIDER_ID, importCronometerCsv } from "./cronometer-csv.ts";
 
@@ -47,12 +47,30 @@ const viewRowSchema = z
   })
   .merge(nutrientRowSchema);
 
+const dailyNutritionRowSchema = z.object({
+  date: z.string(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+});
+
 /** Query the view for a specific food by name */
 async function queryFoodFromView(db: TestContext["db"], foodName: string) {
   const rows = await db.execute<z.infer<typeof viewRowSchema>>(
     sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE food_name = ${foodName} LIMIT 1`,
   );
   return rows[0] ?? null;
+}
+
+async function queryDailyNutritionFromView(db: TestContext["db"]) {
+  return db.execute<z.infer<typeof dailyNutritionRowSchema>>(
+    sql`
+      SELECT date, calories, protein_g, carbs_g, fat_g
+      FROM fitness.v_nutrition_daily
+      WHERE provider_id = ${CRONOMETER_PROVIDER_ID}
+    `,
+  );
 }
 
 // ============================================================
@@ -105,46 +123,40 @@ describe("importCronometerCsv() (integration)", () => {
     expect(chicken.protein_g).toBeCloseTo(53);
   });
 
-  it("aggregates daily nutrition totals into nutrition_daily", async () => {
+  it("derives daily nutrition totals from food entries", async () => {
     const result = await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
 
     expect(result.errors).toHaveLength(0);
 
-    const dailyRows = await ctx.db
-      .select()
-      .from(nutritionDaily)
-      .where(eq(nutritionDaily.providerId, CRONOMETER_PROVIDER_ID));
+    const dailyRows = await queryDailyNutritionFromView(ctx.db);
 
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
-    if (!march1) throw new Error("expected nutrition_daily for 2026-03-01");
+    if (!march1) throw new Error("expected daily nutrition for 2026-03-01");
 
     // 150 + 105 + 280 = 535 calories
     expect(march1.calories).toBe(535);
     // 5 + 1.3 + 53 = 59.3 protein
-    expect(march1.proteinG).toBeCloseTo(59.3);
+    expect(march1.protein_g).toBeCloseTo(59.3);
     // 27 + 27 + 0 = 54 carbs
-    expect(march1.carbsG).toBeCloseTo(54);
+    expect(march1.carbs_g).toBeCloseTo(54);
     // 3 + 0.4 + 6 = 9.4 fat
-    expect(march1.fatG).toBeCloseTo(9.4);
+    expect(march1.fat_g).toBeCloseTo(9.4);
   });
 
-  it("creates separate nutrition_daily rows for different days", async () => {
+  it("derives separate daily nutrition rows for different days", async () => {
     const result = await importCronometerCsv(ctx.db, MULTI_DAY_CSV, TEST_USER_ID);
 
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
 
-    const dailyRows = await ctx.db
-      .select()
-      .from(nutritionDaily)
-      .where(eq(nutritionDaily.providerId, CRONOMETER_PROVIDER_ID));
+    const dailyRows = await queryDailyNutritionFromView(ctx.db);
 
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
     const march2 = dailyRows.find((r) => r.date === "2026-03-02");
     expect(march1).toBeDefined();
     expect(march2).toBeDefined();
     expect(march2?.calories).toBe(290);
-    expect(march2?.proteinG).toBeCloseTo(29);
+    expect(march2?.protein_g).toBeCloseTo(29);
   });
 
   it("maps snack meal type correctly", async () => {

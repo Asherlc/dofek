@@ -21,7 +21,7 @@ WITH providers AS (
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.metric_stream
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.nutrition_daily
+  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_daily
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.lab_panel
   UNION
@@ -82,7 +82,7 @@ LEFT JOIN (
 ) ms ON ms.user_id = p.user_id AND ms.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.nutrition_daily
+  FROM fitness.v_nutrition_daily
   GROUP BY user_id, provider_id
 ) nd ON nd.user_id = p.user_id AND nd.provider_id = p.provider_id
 LEFT JOIN (

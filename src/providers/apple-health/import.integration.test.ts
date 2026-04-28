@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
@@ -15,6 +16,8 @@ import { extractExportXml, importAppleHealthFile, importClinicalRecords } from "
 import { AppleHealthProvider } from "./provider.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
+
+const APPLE_HEALTH_PROVIDER_ID = "apple_health";
 
 // ============================================================
 // streamHealthExport — tests with minimal XML files
@@ -810,14 +813,24 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(watchRow?.activeEnergyKcal).toBeCloseTo(523.4);
   });
 
-  it("creates nutrition_daily rows with aggregated nutrition", async () => {
-    const rows = await ctx.db.select().from(schema.nutritionDaily);
+  it("derives daily nutrition from food entry nutrition rows", async () => {
+    const rows = await ctx.db.execute<{
+      date: string;
+      calories: number | null;
+      protein_g: number | null;
+    }>(
+      sql`
+        SELECT date, calories, protein_g
+        FROM fitness.v_nutrition_daily
+        WHERE provider_id = ${APPLE_HEALTH_PROVIDER_ID}
+      `,
+    );
     expect(rows.length).toBeGreaterThanOrEqual(1);
     // Nutrition rows should use the source calendar day from Apple Health.
     const day = rows.find((r) => r.date === "2024-03-01");
     expect(day).toBeDefined();
     expect(day?.calories).toBe(650);
-    expect(day?.proteinG).toBeCloseTo(45.5);
+    expect(day?.protein_g).toBeCloseTo(45.5);
   });
 
   it("creates a sleep_session from inBed + stage records", async () => {

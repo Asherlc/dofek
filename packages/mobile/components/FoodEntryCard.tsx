@@ -3,7 +3,7 @@ import { colors } from "../theme";
 
 export interface FoodEntry {
   id: string;
-  food_name: string;
+  food_name: string | null;
   food_description: string | null;
   meal: string;
   calories: number | null;
@@ -19,8 +19,10 @@ interface FoodEntryCardProps {
 }
 
 export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps) {
+  const displayName = entry.food_name ?? "Unnamed nutrition entry";
+
   function handleLongPress() {
-    Alert.alert("Delete Entry", `Remove "${entry.food_name}"?`, [
+    Alert.alert("Delete Entry", `Remove "${displayName}"?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => onDelete(entry.id) },
     ]);
@@ -33,7 +35,7 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
       onLongPress={handleLongPress}
     >
       <View style={styles.leftSection}>
-        <Text style={styles.name}>{entry.food_name}</Text>
+        <Text style={styles.name}>{displayName}</Text>
         {entry.food_description ? (
           <Text style={styles.description}>{entry.food_description}</Text>
         ) : null}

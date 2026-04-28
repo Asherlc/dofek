@@ -2,7 +2,7 @@ import type { Database } from "dofek/db";
 import { NUTRIENT_COLUMN_MAP, NUTRIENT_SQL_COLUMNS } from "dofek/db/nutrient-columns";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -26,6 +26,15 @@ const fieldColumnMap: Record<string, string> = {
 
 import { nutrientRowSchema } from "dofek/db/nutrient-columns";
 
+const nullableStringSchema = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? null);
+
+const nullableTimestampStringSchema = timestampStringSchema
+  .nullish()
+  .transform((value) => value ?? null);
+
 export const foodEntryRowSchema = z
   .object({
     id: z.string(),
@@ -34,13 +43,16 @@ export const foodEntryRowSchema = z
     external_id: z.string().nullable(),
     date: z.string(),
     meal: z.string().nullable(),
-    food_name: z.string(),
+    food_name: z.string().nullable(),
     food_description: z.string().nullable(),
     category: z.string().nullable(),
     provider_food_id: z.string().nullable(),
     provider_serving_id: z.string().nullable(),
     number_of_units: z.coerce.number().nullable(),
-    logged_at: z.string().nullable(),
+    logged_at: timestampStringSchema.nullable(),
+    source_name: nullableStringSchema,
+    started_at: nullableTimestampStringSchema,
+    ended_at: nullableTimestampStringSchema,
     barcode: z.string().nullable(),
     serving_unit: z.string().nullable(),
     serving_weight_grams: z.coerce.number().nullable(),
@@ -106,7 +118,7 @@ export class FoodEntry {
     return this.#row.meal;
   }
 
-  get foodName(): string {
+  get foodName(): string | null {
     return this.#row.food_name;
   }
 
@@ -325,6 +337,7 @@ export class FoodRepository {
           LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
           WHERE fe.user_id = ${this.#userId}
             AND fe.confirmed = true
+            AND fe.food_name IS NOT NULL
             AND fe.food_name ILIKE ${searchPattern}
           ORDER BY fe.food_name ASC
           LIMIT ${limit}`,

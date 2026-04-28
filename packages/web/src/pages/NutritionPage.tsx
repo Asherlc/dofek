@@ -27,8 +27,8 @@ const MEAL_LABELS: Record<MealType, string> = {
 
 export const foodEntrySchema = z.object({
   id: z.string(),
-  food_name: z.string(),
-  meal: z.string(),
+  food_name: z.string().nullable(),
+  meal: z.string().nullable(),
   calories: z.number().nullable(),
   protein_g: z.number().nullable(),
   carbs_g: z.number().nullable(),
@@ -446,7 +446,7 @@ export function NutritionPage() {
                             {mealEntries.map((entry) => (
                               <FoodEntryRow
                                 key={entry.id}
-                                foodName={entry.food_name}
+                                foodName={entry.food_name ?? "Unnamed nutrition entry"}
                                 servingDescription={entry.food_description}
                                 calories={entry.calories ?? 0}
                                 onDelete={() => handleDeleteFood(entry.id)}

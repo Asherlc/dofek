@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { NUTRIENT_FIELDS } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrition, nutritionDaily } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrition } from "../db/schema.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -271,12 +271,6 @@ export async function importCronometerCsv(
 
   const entries = parseCronometerCsv(csvText);
 
-  // Track daily aggregates for nutritionDaily
-  const dailyAggregates = new Map<
-    string,
-    { calories: number; proteinG: number; carbsG: number; fatG: number; fiberG: number }
-  >();
-
   for (const entry of entries) {
     try {
       // Generate deterministic external ID from date + meal + foodName + amount
@@ -383,58 +377,9 @@ export async function importCronometerCsv(
       }
 
       recordsSynced++;
-
-      // Accumulate daily totals
-      const dayKey = entry.date;
-      const dayTotals = dailyAggregates.get(dayKey) ?? {
-        calories: 0,
-        proteinG: 0,
-        carbsG: 0,
-        fatG: 0,
-        fiberG: 0,
-      };
-      dayTotals.calories += entry.calories ?? 0;
-      dayTotals.proteinG += entry.proteinG ?? 0;
-      dayTotals.carbsG += entry.carbsG ?? 0;
-      dayTotals.fatG += entry.fatG ?? 0;
-      dayTotals.fiberG += entry.fiberG ?? 0;
-      dailyAggregates.set(dayKey, dayTotals);
     } catch (err) {
       errors.push({
         message: `Failed to import "${entry.foodName}" on ${entry.date}: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-    }
-  }
-
-  // Upsert daily nutrition aggregates
-  for (const [dateStr, totals] of dailyAggregates) {
-    try {
-      await db
-        .insert(nutritionDaily)
-        .values({
-          date: dateStr,
-          providerId: CRONOMETER_PROVIDER_ID,
-          userId: effectiveUserId,
-          calories: Math.round(totals.calories),
-          proteinG: totals.proteinG,
-          carbsG: totals.carbsG,
-          fatG: totals.fatG,
-          fiberG: totals.fiberG,
-        })
-        .onConflictDoUpdate({
-          target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
-          set: {
-            calories: Math.round(totals.calories),
-            proteinG: totals.proteinG,
-            carbsG: totals.carbsG,
-            fatG: totals.fatG,
-            fiberG: totals.fiberG,
-          },
-        });
-    } catch (err) {
-      errors.push({
-        message: `Failed to upsert daily nutrition for ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

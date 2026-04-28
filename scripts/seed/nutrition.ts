@@ -21,21 +21,57 @@ async function seedDailyNutrition(sql: Sql, random: SeedRandom, today: Date): Pr
     const date = daysBefore(today, daysAgo);
     const trainingDay = daysAgo % 7 !== 0;
     const calories = trainingDay ? random.int(2_250, 2_850) : random.int(1_950, 2_350);
+    const [{ id: foodEntryId }] = await sql<FoodEntryRow[]>`
+      INSERT INTO fitness.food_entry (
+        provider_id, user_id, external_id, date, food_name, source_name, logged_at, confirmed
+      ) VALUES (
+        'apple_health', ${USER_ID}, ${`seed-daily-nutrition-${daysAgo}`}, ${date},
+        NULL, 'Seed daily total', ${timestampAt(date, 12, 0)}, true
+      )
+      ON CONFLICT (user_id, provider_id, external_id) DO UPDATE
+        SET date = EXCLUDED.date,
+            food_name = EXCLUDED.food_name,
+            source_name = EXCLUDED.source_name,
+            logged_at = EXCLUDED.logged_at,
+            confirmed = EXCLUDED.confirmed
+      RETURNING id
+    `;
+
     await sql`
-      INSERT INTO fitness.nutrition_daily (
-        date, provider_id, user_id, calories, protein_g, carbs_g, fat_g,
+      INSERT INTO fitness.food_entry_nutrition (
+        food_entry_id, calories, protein_g, carbs_g, fat_g,
         saturated_fat_g, cholesterol_mg, sodium_mg, potassium_mg, fiber_g,
         sugar_g, vitamin_c_mg, vitamin_d_mcg, calcium_mg, iron_mg,
         magnesium_mg, zinc_mg, omega3_mg, water_ml
       ) VALUES (
-        ${date}, 'apple_health', ${USER_ID}, ${calories}, ${random.int(135, 185)},
+        ${foodEntryId}, ${calories}, ${random.int(135, 185)},
         ${trainingDay ? random.int(250, 380) : random.int(160, 260)}, ${random.int(62, 98)},
         ${random.int(16, 28)}, ${random.int(120, 260)}, ${random.int(1_800, 3_100)},
         ${random.int(2_800, 4_500)}, ${random.int(24, 46)}, ${random.int(35, 85)},
         ${random.int(60, 150)}, ${random.int(12, 42)}, ${random.int(720, 1_250)},
         ${random.float(9, 18, 1)}, ${random.int(280, 520)}, ${random.float(9, 17, 1)},
         ${random.int(850, 1_800)}, ${random.int(2_200, 3_800)}
-      ) ON CONFLICT DO NOTHING
+      )
+      ON CONFLICT (food_entry_id) DO UPDATE
+        SET calories = EXCLUDED.calories,
+            protein_g = EXCLUDED.protein_g,
+            carbs_g = EXCLUDED.carbs_g,
+            fat_g = EXCLUDED.fat_g,
+            saturated_fat_g = EXCLUDED.saturated_fat_g,
+            cholesterol_mg = EXCLUDED.cholesterol_mg,
+            sodium_mg = EXCLUDED.sodium_mg,
+            potassium_mg = EXCLUDED.potassium_mg,
+            fiber_g = EXCLUDED.fiber_g,
+            sugar_g = EXCLUDED.sugar_g,
+            vitamin_c_mg = EXCLUDED.vitamin_c_mg,
+            vitamin_d_mcg = EXCLUDED.vitamin_d_mcg,
+            calcium_mg = EXCLUDED.calcium_mg,
+            iron_mg = EXCLUDED.iron_mg,
+            magnesium_mg = EXCLUDED.magnesium_mg,
+            zinc_mg = EXCLUDED.zinc_mg,
+            omega3_mg = EXCLUDED.omega3_mg,
+            water_ml = EXCLUDED.water_ml,
+            updated_at = NOW()
     `;
   }
 }

@@ -9,12 +9,12 @@ import {
   allergyIntolerance,
   condition,
   dailyMetrics,
+  foodEntry,
   healthEvent,
   labPanel,
   labResult,
   medication,
   metricStream,
-  nutritionDaily,
 } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
@@ -160,12 +160,12 @@ export async function runImport(
         ),
       );
     await db
-      .delete(nutritionDaily)
+      .delete(foodEntry)
       .where(
         and(
-          eq(nutritionDaily.userId, scopedUserId),
-          eq(nutritionDaily.providerId, providerId),
-          gte(nutritionDaily.date, sinceDate),
+          eq(foodEntry.userId, scopedUserId),
+          eq(foodEntry.providerId, providerId),
+          gte(foodEntry.date, sinceDate),
         ),
       );
 

@@ -500,13 +500,16 @@ table fitness.food_entry {
   external_id text
   date date [not null]
   meal meal
-  food_name text [not null]
+  food_name text
   food_description text
   category food_category
   provider_food_id text
   provider_serving_id text
   number_of_units real
   logged_at "timestamp with time zone"
+  source_name text
+  started_at "timestamp with time zone"
+  ended_at "timestamp with time zone"
   barcode text
   serving_unit text
   serving_weight_grams real
@@ -573,6 +576,7 @@ table fitness.food_entry_nutrition {
   iodine_mcg real
   omega3_mg real
   omega6_mg real
+  water_ml integer
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
 

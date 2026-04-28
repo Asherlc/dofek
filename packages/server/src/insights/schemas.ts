@@ -31,7 +31,7 @@ export const activityRowSchema = z.object({
   activity_type: z.string(),
 });
 
-/** Zod schema for rows from fitness.nutrition_daily used by insights/correlation queries. */
+/** Zod schema for rows from fitness.v_nutrition_daily used by insights/correlation queries. */
 export const nutritionRowSchema = z.object({
   date: dateStringSchema,
   calories: z.number().nullable(),

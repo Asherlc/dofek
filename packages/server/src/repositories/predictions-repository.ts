@@ -371,7 +371,7 @@ export class PredictionsRepository {
       this.#db,
       nutritionRowSchema,
       sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
-          FROM fitness.nutrition_daily
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
             AND date > CURRENT_DATE - ${days}::int
           ORDER BY date ASC`,

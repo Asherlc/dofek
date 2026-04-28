@@ -137,24 +137,25 @@ truth and may be dropped or rebuilt from `fitness.*`.
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |
-| `fitness.nutrition_daily` | Daily macros — calories, protein, carbs, fat, fiber, water (see [why this isn't a view](#nutrition_daily-vs-food_entry)) |
-| `fitness.food_entry` | Individual food items with full macro/micronutrient data |
+| `fitness.food_entry` | Food items and unnamed nutrition samples from providers |
+| `fitness.food_entry_nutrition` | Macro/micronutrient values for each food entry |
+| `fitness.v_nutrition_daily` | Daily macro totals derived from food-entry nutrition rows |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
 | `fitness.life_events` | Life event markers (travel, illness, etc.) |
 
-### nutrition_daily vs food_entry
+### Daily Nutrition vs Food Entries
 
-`nutrition_daily` is a table, not a materialized view over `food_entry`, because some providers only give numeric quantity samples without food-level detail.
+`fitness.food_entry` plus `fitness.food_entry_nutrition` is the source of truth for nutrition. Providers that have itemized foods store named food entries. Providers that only have nutrient samples store unnamed food entries with timestamps/source metadata and a nutrition row.
 
-**Apple Health** provides individual `HKQuantityType` samples (e.g., "120 calories at 12:30pm", "30g protein at 1:00pm") but these are just numbers with timestamps — no food name, meal type, serving size, or any food identification. They can't populate `food_entry` rows. The sync code (`src/providers/apple-health/db-insertion.ts`) aggregates these samples into daily totals for `nutrition_daily`.
+**Apple Health** provides individual `HKQuantityType` samples (e.g., "120 calories at 12:30pm", "30g protein at 1:00pm") with source/timestamp metadata but no food name, meal type, serving size, or food identifier. These become unnamed `food_entry` rows with one associated `food_entry_nutrition` row.
 
-**Cronometer CSV** writes to both tables: individual foods go into `food_entry`, and daily totals go into `nutrition_daily`. The daily totals are technically redundant (derivable by summing `food_entry` rows), but keeping them avoids cross-provider query complexity since Apple Health only has `nutrition_daily`.
+**Cronometer CSV** writes itemized foods into `food_entry` and `food_entry_nutrition`. Daily totals are derived from those rows instead of inserted separately.
 
-**FatSecret** only writes `food_entry` rows (no `nutrition_daily`).
+**FatSecret** writes itemized food entries through the same normalized path.
 
-Routers that need daily macro totals query `nutrition_daily` directly. Routers that need micronutrient detail (e.g., vitamin adequacy) query `food_entry` instead, since `nutrition_daily` only stores macros + water.
+Routers that need daily macro totals query `fitness.v_nutrition_daily`. Routers that need entry-level or micronutrient detail query `food_entry` / `food_entry_nutrition` directly.
 
 ## Deduplication
 
