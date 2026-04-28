@@ -133,11 +133,19 @@ CI (main) -> build dofek + dofek-ml (same tag)
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    7. Run **schema migrations only** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
-   8. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
-   9. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
+   8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
+   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
+      The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
+   10. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
       - a canonical `drizzle/_views/*.sql` hash changed
       - a stored dependency fingerprint for a materialized view changed
       - an applied migration was marked with `-- requires_materialized_view_refresh` and has not yet been acknowledged by a successful sync
+
+When adding a new host bind mount under `/mnt/dofek-data`, update both
+`deploy/stack.yml` and the Terraform provisioner that creates the directory. If
+the directory is added to an existing `terraform_data` provisioner, bump that
+resource's `triggers_replace` value so Terraform actually reruns the remote
+`mkdir -p` command on existing servers.
 
 ### Rollback Boundary
 

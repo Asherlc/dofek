@@ -599,3 +599,102 @@ The failed job log also appeared to print Infisical-exported environment values
 in plain text. Those credentials should be treated as exposed until the relevant
 secrets are rotated and the deploy workflow masks or avoids logging exported
 secrets.
+
+## 2026-04-28: Redis bind-mount deploy rollback gap and secret log exposure
+
+### Impact
+
+The `Deploy Web` workflow run `25067751341` stalled in `Deploy stack` and was
+cancelled after the stack rollout could not converge. Production Redis stayed at
+`0/1`, web tasks crash-looped because Redis DNS was unavailable, and the job log
+exposed Infisical-exported environment values during later step cleanup output.
+
+### Evidence That Mattered
+
+The first fatal Swarm task error was:
+
+```text
+invalid mount config for type "bind": bind source path does not exist: /mnt/dofek-data/redis
+```
+
+`dofek_web` reported `rollback_completed`, but `dofek_redis` reported
+`update paused due to failure or early termination of task ...` and retained the
+new bind mount spec. Terraform in the same run printed `No changes` and
+`Resources: 0 added, 0 changed, 0 destroyed`, proving the updated directory
+creation command did not execute on the existing server.
+
+### Root Cause
+
+Commit `04756404` moved Redis persistence from a Docker named volume to
+`/mnt/dofek-data/redis`, but the existing
+`terraform_data.data_volume_mount_alias` trigger was not changed, so Terraform
+did not rerun the remote provisioner that creates that directory. The Redis
+service also lacked `deploy.update_config.failure_action: rollback`, so Swarm
+paused the failed Redis update instead of reverting it. Separately, the deploy
+workflow appended the entire Infisical dotenv file to `GITHUB_ENV`, causing
+GitHub Actions to print Infisical-only secrets in later step environment blocks.
+
+### Fix or Mitigation
+
+- Bumped the production and staging Terraform mount-alias triggers so directory
+  creation and legacy Redis volume copy run on existing servers.
+- Added a pre-deploy host bind-mount path validation step before any
+  `docker stack deploy`.
+- Added Redis `failure_action: rollback` so a failed Redis service update reverts
+  instead of pausing on the broken spec.
+- Stopped appending the Infisical dotenv file to `GITHUB_ENV`; stack deploy now
+  runs through a temporary Node helper that injects the dotenv values only into
+  the child `docker stack deploy` process.
+- Added masking for every rendered Infisical dotenv value immediately after
+  export.
+- Deleted GitHub Actions logs for the unsafe runs `25067751341` and
+  `25069173318` after capturing the incident evidence.
+
+### Remaining Risk
+
+The values already printed in the unsafe deploy logs should still be rotated;
+log deletion reduces exposure but does not prove the values were never read.
+Future deploys should fail before stack mutation if a required host bind path is
+missing.
+
+## 2026-04-28: Image Vulnerability Scan Grype installer failure
+
+### Impact
+
+PR #1059 failed the `Test / Image Vulnerability Scan` CI job before the image
+vulnerability scan could run. The server image build completed, but the security
+gate was blocked by scanner installation.
+
+### Evidence That Mattered
+
+The failing step was `Scan server image (Grype)`. The first fatal log lines were:
+
+```text
+[error] received HTTP status=502 for url='https://github.com/anchore/grype/releases/download/v0.97.1/grype_0.97.1_linux_amd64.tar.gz'
+[error] hash_sha256_verify checksum for '/tmp/tmp.eLZxdHctKO/grype_0.97.1_linux_amd64.tar.gz' did not verify
+```
+
+The log then showed `gzip: stdin: not in gzip format`, `tar: Error is not
+recoverable`, and `Error installing grype`, proving the job failed while
+installing the scanner, not because Grype found a critical vulnerability.
+
+### Root Cause
+
+The workflow used `anchore/scan-action`, whose pinned action version installs
+its default Grype binary (`v0.97.1`) from a GitHub release asset on each fresh
+runner. GitHub returned a 502 body for the tarball URL, so the installer
+downloaded non-tarball content and failed checksum verification before scanning
+the Docker image.
+
+### Fix or Mitigation
+
+The image scan now runs Grype through the official `anchore/grype:v0.111.1`
+container image pinned by manifest digest. CI pulls that scanner image with a
+bounded retry, then runs the same policy against `e2e-server:latest`:
+`--only-fixed --fail-on critical`.
+
+### Remaining Risk
+
+The scanner still needs registry and vulnerability database access at runtime.
+The removed failure mode was the un-cached GitHub release tarball installer in
+the action step.
