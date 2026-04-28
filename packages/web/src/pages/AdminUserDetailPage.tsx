@@ -102,9 +102,7 @@ function AdminUserDetailContent() {
   if (detailQuery.error) {
     return (
       <PageLayout title="Admin User">
-        <div className="card p-4 text-center text-red-400 text-xs">
-          {detailQuery.error.message}
-        </div>
+        <div className="card p-4 text-center text-red-400 text-xs">{detailQuery.error.message}</div>
       </PageLayout>
     );
   }

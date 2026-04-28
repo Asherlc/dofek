@@ -112,7 +112,7 @@ vi.mock("@tanstack/react-router", () => ({
       </a>
     );
   },
-  useParams: (...args: unknown[]) => mockUseParams(...args),
+  useParams: () => mockUseParams(),
 }));
 
 vi.mock("../lib/auth-context.tsx", () => ({
