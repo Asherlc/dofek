@@ -261,15 +261,19 @@ describe("Router data coverage", () => {
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_c_mg, calcium_mg, iron_mg
-              )
-              SELECT id,
-                350, 12, 55, 8, 6,
-                15, 200, 4
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 350),
+                ('protein', 12),
+                ('carbohydrate', 55),
+                ('fat', 8),
+                ('fiber', 6),
+                ('vitamin_c', 15),
+                ('calcium', 200),
+                ('iron', 4)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -284,12 +288,15 @@ describe("Router data coverage", () => {
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g
-              )
-              SELECT id, 500, 35, 20, 25
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 500),
+                ('protein', 35),
+                ('carbohydrate', 20),
+                ('fat', 25)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -307,11 +314,16 @@ describe("Router data coverage", () => {
                 ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
               ) RETURNING id
             )
-            INSERT INTO fitness.food_entry_nutrition (
-              food_entry_id, calories, protein_g, carbs_g, fat_g
-            )
-            SELECT id, 2200, 120, 250, 80
-            FROM new_entry`,
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
+            FROM new_entry
+            CROSS JOIN (VALUES
+              ('calories', 2200::real),
+              ('protein', 120::real),
+              ('carbohydrate', 250::real),
+              ('fat', 80::real)
+            ) AS nutrient_values(nutrient_id, amount)
+            ON CONFLICT DO NOTHING`,
       );
     }
 
@@ -753,8 +765,8 @@ describe("Router data coverage", () => {
 
     it("save stores supplements and list retrieves them", async () => {
       const supplements = [
-        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel" },
-        { name: "Magnesium Glycinate", amount: 400, unit: "mg" },
+        { name: "Vitamin D3", amount: 5000, unit: "IU", form: "softgel", vitaminDMcg: 125 },
+        { name: "Magnesium Glycinate", amount: 400, unit: "mg", magnesiumMg: 400 },
       ];
       const saveResult = await mutate<{ success: boolean; count: number }>("supplements.save", {
         supplements,
@@ -772,7 +784,7 @@ describe("Router data coverage", () => {
 
       const nutritionRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.supplement_nutrition sn
+            FROM fitness.supplement_nutrient sn
             JOIN fitness.supplement s ON s.id = sn.supplement_id
             WHERE s.user_id = ${TEST_USER_ID}`,
       );

@@ -102,6 +102,19 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
+    name: "food-entry-nutrients.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT fen.*
+            FROM fitness.food_entry_nutrient fen
+            JOIN fitness.food_entry fe ON fe.id = fen.food_entry_id
+            WHERE fe.user_id = ${userId}
+            ORDER BY fe.date, fen.nutrient_id`,
+      ),
+  },
+  {
     name: "daily-metrics.csv",
     query: (db, userId) =>
       executeWithSchema(

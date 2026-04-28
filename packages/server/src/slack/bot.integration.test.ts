@@ -46,8 +46,8 @@ describe("Slack food entry confirmed flag", () => {
               'lunch', ${foodName}, ${confirmed}
             ) RETURNING id
           ), new_nutrition AS (
-            INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
-            SELECT id, 500 FROM new_entry
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, 'calories', 500 FROM new_entry
           )
           SELECT id FROM new_entry`,
     );
@@ -76,11 +76,12 @@ describe("Slack food entry confirmed flag", () => {
       await insertEntry(true, "Confirmed 500cal");
 
       const rows = await testCtx.db.execute<{ total: string }>(
-        sql`SELECT SUM(nd.calories)::text as total
+        sql`SELECT SUM(nd.amount)::text as total
             FROM fitness.food_entry fe
-            JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
+            JOIN fitness.food_entry_nutrient nd ON nd.food_entry_id = fe.id
             WHERE fe.user_id = ${TEST_USER_ID}
-              AND fe.confirmed = true`,
+              AND fe.confirmed = true
+              AND nd.nutrient_id = 'calories'`,
       );
 
       expect(Number(rows[0]?.total)).toBe(500);
@@ -252,8 +253,8 @@ describe("Slack food entry confirmed flag", () => {
                 'dinner', 'Web UI Entry'
               ) RETURNING id, confirmed
             ), new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
-              SELECT id, 400 FROM new_entry
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, 'calories', 400 FROM new_entry
             )
             SELECT id, confirmed FROM new_entry`,
       );

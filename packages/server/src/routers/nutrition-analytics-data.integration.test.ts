@@ -67,11 +67,16 @@ describe("Nutrition analytics data coverage", () => {
                 ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
               ) RETURNING id
             )
-            INSERT INTO fitness.food_entry_nutrition (
-              food_entry_id, calories, protein_g, carbs_g, fat_g
-            )
-            SELECT id, ${calories}, ${proteinG}, ${carbsG}, ${fatG}
-            FROM new_entry`,
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
+            FROM new_entry
+            CROSS JOIN (VALUES
+              ('calories', ${calories}::real),
+              ('protein', ${proteinG}::real),
+              ('carbohydrate', ${carbsG}::real),
+              ('fat', ${fatG}::real)
+            ) AS nutrient_values(nutrient_id, amount)
+            ON CONFLICT DO NOTHING`,
       );
     }
 
@@ -119,17 +124,25 @@ describe("Nutrition analytics data coverage", () => {
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              )
-              SELECT id,
-                350, 12, 55, 8, 8,
-                450, 45, 5, 350,
-                6, 100, 4, 800, 400
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 350),
+                ('protein', 12),
+                ('carbohydrate', 55),
+                ('fat', 8),
+                ('fiber', 8),
+                ('vitamin_a', 450),
+                ('vitamin_c', 45),
+                ('vitamin_d', 5),
+                ('calcium', 350),
+                ('iron', 6),
+                ('magnesium', 100),
+                ('zinc', 4),
+                ('potassium', 800),
+                ('sodium', 400)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -146,17 +159,25 @@ describe("Nutrition analytics data coverage", () => {
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              )
-              SELECT id,
-                550, 40, 30, 22, 6,
-                300, 30, 3, 250,
-                3, 80, 5, 600, 800
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 550),
+                ('protein', 40),
+                ('carbohydrate', 30),
+                ('fat', 22),
+                ('fiber', 6),
+                ('vitamin_a', 300),
+                ('vitamin_c', 30),
+                ('vitamin_d', 3),
+                ('calcium', 250),
+                ('iron', 3),
+                ('magnesium', 80),
+                ('zinc', 5),
+                ('potassium', 600),
+                ('sodium', 800)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -173,17 +194,25 @@ describe("Nutrition analytics data coverage", () => {
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_a_mcg, vitamin_c_mg, vitamin_d_mcg, calcium_mg,
-                iron_mg, magnesium_mg, zinc_mg, potassium_mg, sodium_mg
-              )
-              SELECT id,
-                600, 45, 35, 28, 7,
-                200, 25, 8, 300,
-                2, 120, 3, 900, 600
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 600),
+                ('protein', 45),
+                ('carbohydrate', 35),
+                ('fat', 28),
+                ('fiber', 7),
+                ('vitamin_a', 200),
+                ('vitamin_c', 25),
+                ('vitamin_d', 8),
+                ('calcium', 300),
+                ('iron', 2),
+                ('magnesium', 120),
+                ('zinc', 3),
+                ('potassium', 900),
+                ('sodium', 600)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );
@@ -198,18 +227,20 @@ describe("Nutrition analytics data coverage", () => {
                   ${TEST_USER_ID}, 'dofek',
                   CURRENT_DATE - ${i}::int,
                   'snack', 'Unconfirmed Snack', false
-                ) RETURNING id
-              ),
-              new_nutrition AS (
-                INSERT INTO fitness.food_entry_nutrition (
-                  food_entry_id,
-                  calories, protein_g, carbs_g, fat_g,
-                  vitamin_c_mg, calcium_mg
-                )
-                SELECT id,
-                  200, 10, 25, 8,
-                  999, 999
+              ) RETURNING id
+            ),
+            new_nutrition AS (
+                INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+                SELECT id, nutrient_id, amount
                 FROM new_entry
+                CROSS JOIN (VALUES
+                  ('calories', 200),
+                  ('protein', 10),
+                  ('carbohydrate', 25),
+                  ('fat', 8),
+                  ('vitamin_c', 999),
+                  ('calcium', 999)
+                ) AS nutrient_values(nutrient_id, amount)
               )
               SELECT 1`,
         );

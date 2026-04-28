@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { NUTRIENT_FIELDS } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrition } from "../db/schema.ts";
+import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -318,6 +318,7 @@ export async function importCronometerCsv(
         iodineMcg: entry.iodineMcg,
         omega3Mg: entry.omega3Mg,
         omega6Mg: entry.omega6Mg,
+        caffeineMg: entry.caffeineMg,
       };
 
       // Check if food_entry already exists so nutrients can be updated in-place.
@@ -330,21 +331,19 @@ export async function importCronometerCsv(
 
       if (existingEntry.length > 0 && existingEntry[0]?.foodEntryId) {
         const foodEntryId = existingEntry[0].foodEntryId;
-        const nutritionRecord: Record<string, unknown> = nutritionValues;
-        const setClauses = NUTRIENT_FIELDS.map((f) => {
-          const value = nutritionRecord[f.key];
-          return sql`${sql.identifier(f.column)} = ${value ?? null}`;
-        });
-        await db.execute(
-          sql`INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories)
-              VALUES (${foodEntryId}, NULL)
-              ON CONFLICT (food_entry_id) DO NOTHING`,
-        );
-        await db.execute(
-          sql`UPDATE fitness.food_entry_nutrition
-              SET ${sql.join(setClauses, sql`, `)}
-              WHERE food_entry_id = ${foodEntryId}`,
-        );
+        await db
+          .delete(foodEntryNutrient)
+          .where(sql`${foodEntryNutrient.foodEntryId} = ${foodEntryId}`);
+        const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutritionValues);
+        if (nutrientEntries.length > 0) {
+          await db.insert(foodEntryNutrient).values(
+            nutrientEntries.map((nutrientEntry) => ({
+              foodEntryId,
+              nutrientId: nutrientEntry.nutrientId,
+              amount: nutrientEntry.amount,
+            })),
+          );
+        }
         // Update food_entry metadata
         await db.execute(
           sql`UPDATE fitness.food_entry
@@ -369,10 +368,16 @@ export async function importCronometerCsv(
           .onConflictDoNothing()
           .returning({ id: foodEntry.id });
         if (foodEntryRow?.id) {
-          await db.insert(foodEntryNutrition).values({
-            foodEntryId: foodEntryRow.id,
-            ...nutritionValues,
-          });
+          const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutritionValues);
+          if (nutrientEntries.length > 0) {
+            await db.insert(foodEntryNutrient).values(
+              nutrientEntries.map((nutrientEntry) => ({
+                foodEntryId: foodEntryRow.id,
+                nutrientId: nutrientEntry.nutrientId,
+                amount: nutrientEntry.amount,
+              })),
+            );
+          }
         }
       }
 

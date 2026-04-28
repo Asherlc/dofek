@@ -179,10 +179,15 @@ describe("Food router", () => {
           )
           RETURNING id
         )
-        INSERT INTO fitness.food_entry_nutrition (
-          food_entry_id, calories, protein_g, carbs_g, fat_g
-        )
-        SELECT id, 700, 50, 60, 20 FROM synced_entry
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT id, nutrient_id, amount
+        FROM synced_entry
+        CROSS JOIN (VALUES
+          ('calories', 700::real),
+          ('protein', 50::real),
+          ('carbohydrate', 60::real),
+          ('fat', 20::real)
+        ) AS nutrient_values(nutrient_id, amount)
       `);
       await testCtx.db.execute(sql`
         WITH unconfirmed_entry AS (
@@ -195,10 +200,15 @@ describe("Food router", () => {
           )
           RETURNING id
         )
-        INSERT INTO fitness.food_entry_nutrition (
-          food_entry_id, calories, protein_g, carbs_g, fat_g
-        )
-        SELECT id, 100, 5, 10, 2 FROM unconfirmed_entry
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT id, nutrient_id, amount
+        FROM unconfirmed_entry
+        CROSS JOIN (VALUES
+          ('calories', 100::real),
+          ('protein', 5::real),
+          ('carbohydrate', 10::real),
+          ('fat', 2::real)
+        ) AS nutrient_values(nutrient_id, amount)
       `);
 
       const result = await query("food.healthKitWriteBackEntries", {
@@ -300,7 +310,7 @@ describe("Food router", () => {
       expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
     });
 
-    it("cascades delete to food_entry_nutrition row", async () => {
+    it("cascades delete to food_entry_nutrient rows", async () => {
       const created = await mutate("food.create", {
         date: "2025-02-04",
         meal: "lunch",
@@ -312,17 +322,17 @@ describe("Food router", () => {
 
       const beforeRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.food_entry_nutrition
+            FROM fitness.food_entry_nutrient
             WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
-      expect(beforeRows[0]?.count).toBe("1");
+      expect(beforeRows[0]?.count).toBe("2");
 
       const deleted = await mutate("food.delete", { id: cascadeEntryId });
       expect(deleted.result.data.success).toBe(true);
 
       const afterRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.food_entry_nutrition
+            FROM fitness.food_entry_nutrient
             WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
       expect(afterRows[0]?.count).toBe("0");

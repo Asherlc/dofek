@@ -6,12 +6,13 @@ import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
 } from "../../db/metric-stream-writer.ts";
+import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import {
   activity,
   bodyMeasurement,
   dailyMetrics,
   foodEntry,
-  foodEntryNutrition,
+  foodEntryNutrient,
   healthEvent,
   labResult,
   sleepSession,
@@ -121,7 +122,7 @@ const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierDistanceWheelchair",
 ]);
 
-// Nutrition records -> foodEntry + foodEntryNutrition rows.
+// Nutrition records -> foodEntry + foodEntryNutrient rows.
 export const NUTRITION_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierDietaryEnergyConsumed: "calories",
   HKQuantityTypeIdentifierDietaryProtein: "proteinG",
@@ -604,90 +605,22 @@ export async function upsertNutritionBatch(
     const foodEntryId = foodRows[0]?.id;
     if (!foodEntryId) continue;
 
-    const row: typeof foodEntryNutrition.$inferInsert = {
-      foodEntryId,
-    };
-    switch (field) {
-      case "calories":
-        row.calories = Math.round(r.value);
-        break;
-      case "waterMl":
-        row.waterMl = Math.round(r.value);
-        break;
-      case "proteinG":
-        row.proteinG = r.value;
-        break;
-      case "carbsG":
-        row.carbsG = r.value;
-        break;
-      case "fatG":
-        row.fatG = r.value;
-        break;
-      case "fiberG":
-        row.fiberG = r.value;
-        break;
-      case "sodiumMg":
-        row.sodiumMg = r.value;
-        break;
-      case "sugarG":
-        row.sugarG = r.value;
-        break;
-      case "cholesterolMg":
-        row.cholesterolMg = r.value;
-        break;
-      case "saturatedFatG":
-        row.saturatedFatG = r.value;
-        break;
-      case "potassiumMg":
-        row.potassiumMg = r.value;
-        break;
-      case "vitaminAMcg":
-        row.vitaminAMcg = r.value;
-        break;
-      case "vitaminCMg":
-        row.vitaminCMg = r.value;
-        break;
-      case "vitaminDMcg":
-        row.vitaminDMcg = r.value;
-        break;
-      case "calciumMg":
-        row.calciumMg = r.value;
-        break;
-      case "ironMg":
-        row.ironMg = r.value;
-        break;
-      case "magnesiumMg":
-        row.magnesiumMg = r.value;
-        break;
-      case "zincMg":
-        row.zincMg = r.value;
-        break;
-    }
+    const nutrientId = NUTRIENT_ID_MAP[field];
+    if (!nutrientId) continue;
 
     await db
-      .insert(foodEntryNutrition)
-      .values([row])
+      .insert(foodEntryNutrient)
+      .values([
+        {
+          foodEntryId,
+          nutrientId,
+          amount: field === "calories" || field === "waterMl" ? Math.round(r.value) : r.value,
+        },
+      ])
       .onConflictDoUpdate({
-        target: foodEntryNutrition.foodEntryId,
+        target: [foodEntryNutrient.foodEntryId, foodEntryNutrient.nutrientId],
         set: {
-          calories: sql`excluded.calories`,
-          proteinG: sql`excluded.protein_g`,
-          carbsG: sql`excluded.carbs_g`,
-          fatG: sql`excluded.fat_g`,
-          fiberG: sql`excluded.fiber_g`,
-          waterMl: sql`excluded.water_ml`,
-          sodiumMg: sql`excluded.sodium_mg`,
-          sugarG: sql`excluded.sugar_g`,
-          cholesterolMg: sql`excluded.cholesterol_mg`,
-          saturatedFatG: sql`excluded.saturated_fat_g`,
-          potassiumMg: sql`excluded.potassium_mg`,
-          vitaminAMcg: sql`excluded.vitamin_a_mcg`,
-          vitaminCMg: sql`excluded.vitamin_c_mg`,
-          vitaminDMcg: sql`excluded.vitamin_d_mcg`,
-          calciumMg: sql`excluded.calcium_mg`,
-          ironMg: sql`excluded.iron_mg`,
-          magnesiumMg: sql`excluded.magnesium_mg`,
-          zincMg: sql`excluded.zinc_mg`,
+          amount: sql`excluded.amount`,
         },
       });
     count++;

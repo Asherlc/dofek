@@ -14,7 +14,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { buildNutrientColumns } from "./nutrient-columns.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
@@ -778,17 +777,6 @@ export const sleepStage = fitness.table(
 );
 
 // ============================================================
-// Nutrition data — shared nutrient values for food entries and supplements
-// ============================================================
-
-export const nutritionData = fitness.table("nutrition_data", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  ...buildNutrientColumns(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-// ============================================================
 // Supplements — per-user supplement stack definitions
 // ============================================================
 
@@ -879,7 +867,6 @@ export const nutritionDaily = fitness.table(
       .notNull()
       .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
-    ...buildNutrientColumns(),
     waterMl: integer("water_ml"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -931,37 +918,6 @@ export const foodEntry = fitness.table(
     index("food_entry_date_meal_idx").on(table.date, table.meal),
     index("food_entry_user_provider_idx").on(table.userId, table.providerId),
   ],
-);
-
-export const foodEntryNutrition = fitness.table(
-  "food_entry_nutrition",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    foodEntryId: uuid("food_entry_id")
-      .notNull()
-      .unique()
-      .references(() => foodEntry.id, { onDelete: "cascade" }),
-    ...buildNutrientColumns(),
-    waterMl: integer("water_ml"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [index("food_entry_nutrition_entry_idx").on(table.foodEntryId)],
-);
-
-export const supplementNutrition = fitness.table(
-  "supplement_nutrition",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    supplementId: uuid("supplement_id")
-      .notNull()
-      .unique()
-      .references(() => supplement.id, { onDelete: "cascade" }),
-    ...buildNutrientColumns(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [index("supplement_nutrition_supplement_idx").on(table.supplementId)],
 );
 
 // ============================================================

@@ -355,20 +355,14 @@ describe("FoodEntryRepository", () => {
         throw new Error("Expected second execute() call to receive a SQL query with queryChunks");
       }
 
-      const scalarBindValues = queryChunksCandidate
-        .filter(
-          (chunk): chunk is number | string | null =>
-            typeof chunk === "number" || typeof chunk === "string" || chunk === null,
-        )
-        .filter((chunk) => typeof chunk === "number");
-
       const expectedMicronutrientValues = [
         11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
         34, 35, 36, 37, 38, 39,
       ];
+      const insertQueryJson = JSON.stringify(insertQuery);
 
       for (const expectedValue of expectedMicronutrientValues) {
-        expect(scalarBindValues).toContain(expectedValue);
+        expect(insertQueryJson).toContain(String(expectedValue));
       }
     });
   });

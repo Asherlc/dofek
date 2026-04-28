@@ -68,6 +68,15 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
   return { db, capture };
 }
 
+function findCapturedNutrient(
+  capture: MockInsertCapture,
+  nutrientId: string,
+): Record<string, unknown> | undefined {
+  return capture.values
+    .flat()
+    .find((row) => row.nutrientId === nutrientId || row.nutrient_id === nutrientId);
+}
+
 function makeRecord(overrides: Partial<HealthRecord> & { type: string }): HealthRecord {
   return {
     sourceName: "Apple Watch",
@@ -874,7 +883,7 @@ describe("upsertNutritionBatch", () => {
       foodName: null,
       sourceName: "Apple Watch",
     });
-    expect(capture.values[1]?.[0]).toMatchObject({ calories: 500 });
+    expect(capture.values[1]?.[0]).toMatchObject({ nutrientId: "calories", amount: 500 });
   });
 
   it("stores Apple Health nutrition as unnamed food entry nutrition rows", async () => {
@@ -907,7 +916,8 @@ describe("upsertNutritionBatch", () => {
     });
     expect(capture.values[1]?.[0]).toMatchObject({
       foodEntryId: "food-entry-1",
-      proteinG: 45.5,
+      nutrientId: "protein",
+      amount: 45.5,
     });
   });
 
@@ -931,8 +941,8 @@ describe("upsertNutritionBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01" });
     expect(capture.values[2]?.[0]).toMatchObject({ date: "2024-03-01" });
     expect(capturedNutritionRows(capture)).toEqual([
-      expect.objectContaining({ calories: 650 }),
-      expect.objectContaining({ calories: 800 }),
+      expect.objectContaining({ nutrientId: "calories", amount: 650 }),
+      expect.objectContaining({ nutrientId: "calories", amount: 800 }),
     ]);
   });
 
@@ -947,7 +957,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ proteinG: 45.5 });
+    expect(findCapturedNutrient(capture, "protein")?.amount).toBe(45.5);
   });
 
   it("maps carbs", async () => {
@@ -961,7 +971,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ carbsG: 200 });
+    expect(findCapturedNutrient(capture, "carbohydrate")?.amount).toBe(200);
   });
 
   it("maps fat", async () => {
@@ -975,7 +985,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ fatG: 70 });
+    expect(findCapturedNutrient(capture, "fat")?.amount).toBe(70);
   });
 
   it("maps fiber", async () => {
@@ -989,7 +999,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ fiberG: 25 });
+    expect(findCapturedNutrient(capture, "fiber")?.amount).toBe(25);
   });
 
   it("maps water and rounds", async () => {
@@ -1003,7 +1013,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ waterMl: 2501 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ nutrientId: "water", amount: 2501 });
   });
 
   it("skips non-nutrition record types", async () => {
@@ -1019,7 +1029,7 @@ describe("upsertNutritionBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySodium", value: 1500 })];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ sodiumMg: 1500 });
+    expect(findCapturedNutrient(capture, "sodium")?.amount).toBe(1500);
   });
 
   it("maps dietary sugar", async () => {
@@ -1027,7 +1037,7 @@ describe("upsertNutritionBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySugar", value: 30 })];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ sugarG: 30 });
+    expect(findCapturedNutrient(capture, "sugar")?.amount).toBe(30);
   });
 
   it("maps dietary cholesterol", async () => {
@@ -1037,7 +1047,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ cholesterolMg: 200 });
+    expect(findCapturedNutrient(capture, "cholesterol")?.amount).toBe(200);
   });
 
   it("maps dietary saturated fat", async () => {
@@ -1047,7 +1057,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ saturatedFatG: 15 });
+    expect(findCapturedNutrient(capture, "saturated_fat")?.amount).toBe(15);
   });
 
   it("maps dietary potassium", async () => {
@@ -1055,7 +1065,7 @@ describe("upsertNutritionBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietaryPotassium", value: 3500 })];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)[0]).toMatchObject({ potassiumMg: 3500 });
+    expect(findCapturedNutrient(capture, "potassium")?.amount).toBe(3500);
   });
 
   it("maps dietary vitamins and minerals", async () => {
@@ -1071,15 +1081,13 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capturedNutritionRows(capture)).toEqual([
-      expect.objectContaining({ vitaminAMcg: 900 }),
-      expect.objectContaining({ vitaminCMg: 90 }),
-      expect.objectContaining({ vitaminDMcg: 20 }),
-      expect.objectContaining({ calciumMg: 1000 }),
-      expect.objectContaining({ ironMg: 18 }),
-      expect.objectContaining({ magnesiumMg: 400 }),
-      expect.objectContaining({ zincMg: 11 }),
-    ]);
+    expect(findCapturedNutrient(capture, "vitamin_a")?.amount).toBe(900);
+    expect(findCapturedNutrient(capture, "vitamin_c")?.amount).toBe(90);
+    expect(findCapturedNutrient(capture, "vitamin_d")?.amount).toBe(20);
+    expect(findCapturedNutrient(capture, "calcium")?.amount).toBe(1000);
+    expect(findCapturedNutrient(capture, "iron")?.amount).toBe(18);
+    expect(findCapturedNutrient(capture, "magnesium")?.amount).toBe(400);
+    expect(findCapturedNutrient(capture, "zinc")?.amount).toBe(11);
   });
 });
 

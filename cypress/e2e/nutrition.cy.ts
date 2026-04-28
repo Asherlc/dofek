@@ -37,10 +37,10 @@ describe("Nutrition page", () => {
           VALUES ('${TEST_USER_ID}', 'dofek', '${today}', 'Mystery food', 'dinner')
           RETURNING id
         )
-        INSERT INTO fitness.food_entry_nutrition (food_entry_id, calories, protein_g)
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
         VALUES
-          ((SELECT id FROM fe1), 350, 40),
-          ((SELECT id FROM fe2), NULL, NULL)
+          ((SELECT id FROM fe1), 'calories', 350),
+          ((SELECT id FROM fe1), 'protein', 40)
       `,
     });
 

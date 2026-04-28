@@ -292,6 +292,10 @@ Supplements are fundamentally **nutrition data**, not a separate concept. The `a
 
 See `src/providers/auto-supplements.ts` for the provider implementation.
 
+## Nutrition Storage
+
+Food and supplement nutrients use one canonical storage model: `fitness.food_entry` / `fitness.food_entry_nutrient` for foods and `fitness.supplement_nutrient` for supplement definitions. Daily nutrition totals come from `fitness.v_nutrition_daily`, which is derived from food-entry nutrient rows. Do not add wide nutrient tables or per-nutrient columns for new nutrients; add the nutrient to `fitness.nutrient` and write amounts as rows.
+
 ## Life Events
 
 Life events are arbitrary time markers (point-in-time, bounded date range, or ongoing) that let you annotate your health timeline and compare metrics before/during/after. Examples: starting a diet, an injury, a training change. The web dashboard provides a UI to create events and view before/after analysis across heart rate, HRV, sleep, body composition, and activity metrics.

@@ -21,12 +21,14 @@ function createMockDb(overrides: {
   execute?: ReturnType<typeof vi.fn>;
   select?: ReturnType<typeof vi.fn>;
   insert?: ReturnType<typeof vi.fn>;
+  delete?: ReturnType<typeof vi.fn>;
 }): SyncDatabase {
+  const deleteWhere = vi.fn().mockResolvedValue(undefined);
   return {
     execute: overrides.execute ?? vi.fn(),
     select: overrides.select ?? vi.fn(),
     insert: overrides.insert ?? vi.fn(),
-    delete: vi.fn(),
+    delete: overrides.delete ?? vi.fn().mockReturnValue({ where: deleteWhere }),
   };
 }
 
@@ -274,7 +276,8 @@ describe("Auto-Supplements Provider", () => {
       const where = vi.fn().mockResolvedValue([{ foodEntryId: "fe-existing" }]);
       const from = vi.fn().mockReturnValue({ where });
       const select = vi.fn().mockReturnValue({ from });
-      const insert = vi.fn();
+      const nutrientValues = vi.fn().mockResolvedValue(undefined);
+      const insert = vi.fn().mockReturnValue({ values: nutrientValues });
 
       const db = createMockDb({ execute, select, insert });
 
@@ -283,8 +286,8 @@ describe("Auto-Supplements Provider", () => {
 
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
-      expect(insert).not.toHaveBeenCalled();
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(insert).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("inserts food and nutrition rows when no existing food entry is found", async () => {
@@ -297,6 +300,7 @@ describe("Auto-Supplements Provider", () => {
           user_id: TEST_USER_ID,
           userId: TEST_USER_ID,
           nutrition_data_id: null,
+          calories: 0,
         }),
       ]);
 

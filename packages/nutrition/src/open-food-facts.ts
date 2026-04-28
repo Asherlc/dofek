@@ -185,6 +185,7 @@ export class OpenFoodFactsClient {
     // Build micronutrients map from the canonical catalog
     const nutrients: Record<string, number> = {};
     for (const definition of NUTRIENTS) {
+      if (definition.category === "macro") continue;
       if (definition.openFoodFactsKey === null) continue;
       const value = this.#getNutrimentWithConversion(
         nutriments,

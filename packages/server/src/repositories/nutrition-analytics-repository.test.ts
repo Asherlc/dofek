@@ -316,14 +316,15 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("returns MicronutrientAdequacy instances for tracked nutrients", async () => {
-      const row: Record<string, unknown> = {};
-      // Simulate DB row with one tracked nutrient (vitamin_c_mg)
-      row.avg_vitamin_c_mg = 72;
-      row.days_vitamin_c_mg = 25;
-      // All others are null/0
-      row.avg_vitamin_a_mcg = null;
-      row.days_vitamin_a_mcg = 0;
-      const { repo } = makeRepository([row]);
+      const { repo } = makeRepository([
+        {
+          nutrient: "Vitamin C",
+          unit: "mg",
+          rda: 90,
+          avg_intake: 72,
+          days_tracked: 25,
+        },
+      ]);
       const result = await repo.getMicronutrientAdequacy(30);
       // Should filter out nutrients with 0 days tracked
       const vitaminC = result.find((model) => model.nutrient === "Vitamin C");

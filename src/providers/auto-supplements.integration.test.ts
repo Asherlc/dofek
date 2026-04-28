@@ -1,9 +1,10 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
 import {
   foodEntry,
   supplement,
-  supplementNutrition,
+  supplementNutrient,
   TEST_USER_ID,
   userProfile,
 } from "../db/schema.ts";
@@ -34,10 +35,16 @@ async function insertSupplementWithNutrition(
     .returning({ id: supplement.id });
 
   if (supplementRow?.id) {
-    await db.insert(supplementNutrition).values({
-      supplementId: supplementRow.id,
-      ...nutrients,
-    });
+    const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
+    if (nutrientEntries.length > 0) {
+      await db.insert(supplementNutrient).values(
+        nutrientEntries.map((nutrientEntry) => ({
+          supplementId: supplementRow.id,
+          nutrientId: nutrientEntry.nutrientId,
+          amount: nutrientEntry.amount,
+        })),
+      );
+    }
   }
 }
 

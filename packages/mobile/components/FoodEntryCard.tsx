@@ -5,7 +5,7 @@ export interface FoodEntry {
   id: string;
   food_name: string | null;
   food_description: string | null;
-  meal: string;
+  meal: string | null;
   calories: number | null;
   protein_g: number | null;
   carbs_g: number | null;

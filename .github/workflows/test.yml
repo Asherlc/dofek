@@ -528,7 +528,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db migrate server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db redis migrate server
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:

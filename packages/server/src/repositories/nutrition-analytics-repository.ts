@@ -5,41 +5,6 @@ import { bodyWeightDedupCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
-// RDA Reference Data
-// ---------------------------------------------------------------------------
-
-interface RecommendedDailyAllowance {
-  nutrient: string;
-  column: string;
-  rda: number;
-  unit: string;
-}
-
-const RECOMMENDED_DAILY_ALLOWANCES: RecommendedDailyAllowance[] = [
-  { nutrient: "Vitamin A", column: "vitamin_a_mcg", rda: 900, unit: "mcg" },
-  { nutrient: "Vitamin C", column: "vitamin_c_mg", rda: 90, unit: "mg" },
-  { nutrient: "Vitamin D", column: "vitamin_d_mcg", rda: 15, unit: "mcg" },
-  { nutrient: "Vitamin E", column: "vitamin_e_mg", rda: 15, unit: "mg" },
-  { nutrient: "Vitamin K", column: "vitamin_k_mcg", rda: 120, unit: "mcg" },
-  { nutrient: "Thiamin (B1)", column: "vitamin_b1_mg", rda: 1.2, unit: "mg" },
-  { nutrient: "Riboflavin (B2)", column: "vitamin_b2_mg", rda: 1.3, unit: "mg" },
-  { nutrient: "Niacin (B3)", column: "vitamin_b3_mg", rda: 16, unit: "mg" },
-  { nutrient: "Pantothenic Acid (B5)", column: "vitamin_b5_mg", rda: 5, unit: "mg" },
-  { nutrient: "Vitamin B6", column: "vitamin_b6_mg", rda: 1.3, unit: "mg" },
-  { nutrient: "Biotin (B7)", column: "vitamin_b7_mcg", rda: 30, unit: "mcg" },
-  { nutrient: "Folate (B9)", column: "vitamin_b9_mcg", rda: 400, unit: "mcg" },
-  { nutrient: "Vitamin B12", column: "vitamin_b12_mcg", rda: 2.4, unit: "mcg" },
-  { nutrient: "Calcium", column: "calcium_mg", rda: 1000, unit: "mg" },
-  { nutrient: "Iron", column: "iron_mg", rda: 8, unit: "mg" },
-  { nutrient: "Magnesium", column: "magnesium_mg", rda: 420, unit: "mg" },
-  { nutrient: "Zinc", column: "zinc_mg", rda: 11, unit: "mg" },
-  { nutrient: "Selenium", column: "selenium_mcg", rda: 55, unit: "mcg" },
-  { nutrient: "Potassium", column: "potassium_mg", rda: 3400, unit: "mg" },
-  { nutrient: "Sodium", column: "sodium_mg", rda: 2300, unit: "mg" },
-  { nutrient: "Fiber", column: "fiber_g", rda: 38, unit: "g" },
-];
-
-// ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
 
@@ -341,57 +306,56 @@ export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): Adaptive
 export class NutritionAnalyticsRepository extends BaseRepository {
   /** Micronutrient adequacy: average daily intake as % of RDA. */
   async getMicronutrientAdequacy(days: number): Promise<MicronutrientAdequacy[]> {
-    const VALID_COLUMNS = new Set(RECOMMENDED_DAILY_ALLOWANCES.map((rda) => rda.column));
-    for (const rda of RECOMMENDED_DAILY_ALLOWANCES) {
-      if (!VALID_COLUMNS.has(rda.column) || !/^[a-z0-9_]+$/.test(rda.column)) {
-        throw new Error(`Invalid column name in RDA config: ${rda.column}`);
-      }
-    }
-
-    const columnAverages = RECOMMENDED_DAILY_ALLOWANCES.map(
-      (rda) =>
-        `AVG(daily_${rda.column}) AS avg_${rda.column},
-         COUNT(daily_${rda.column}) AS days_${rda.column}`,
-    ).join(",\n");
-
-    const dailyAggregates = RECOMMENDED_DAILY_ALLOWANCES.map(
-      (rda) => `SUM(nd.${rda.column}) AS daily_${rda.column}`,
-    ).join(",\n");
-
     const rows = await executeWithSchema(
       this.db,
-      z.record(z.string(), z.coerce.number().nullable()),
+      z.object({
+        nutrient: z.string(),
+        unit: z.string(),
+        rda: z.coerce.number(),
+        avg_intake: z.coerce.number(),
+        days_tracked: z.coerce.number(),
+      }),
       sql`WITH daily_totals AS (
             SELECT
               fe.date,
-              ${sql.raw(dailyAggregates)}
+              n.id,
+              n.display_name,
+              n.unit,
+              n.rda,
+              SUM(fen.amount) AS daily_amount
             FROM fitness.food_entry fe
-            JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
+            JOIN fitness.food_entry_nutrient fen ON fen.food_entry_id = fe.id
+            JOIN fitness.nutrient n ON n.id = fen.nutrient_id
             WHERE fe.user_id = ${this.userId}
               AND fe.confirmed = true
               AND fe.date > CURRENT_DATE - ${days}::int
+              AND n.rda IS NOT NULL
               ${this.dateAccessPredicate(sql`fe.date`)}
-            GROUP BY fe.date
+            GROUP BY fe.date, n.id, n.display_name, n.unit, n.rda
           )
-          SELECT ${sql.raw(columnAverages)}
-          FROM daily_totals`,
+          SELECT
+            display_name AS nutrient,
+            unit,
+            rda,
+            AVG(daily_amount) AS avg_intake,
+            COUNT(daily_amount) AS days_tracked
+          FROM daily_totals
+          GROUP BY id, display_name, unit, rda
+          ORDER BY display_name`,
     );
 
-    const row = rows[0];
-    if (!row) return [];
-
-    return RECOMMENDED_DAILY_ALLOWANCES.map((rda) => {
-      const avgIntake = Number(row[`avg_${rda.column}`] ?? 0);
-      const daysTracked = Number(row[`days_${rda.column}`] ?? 0);
+    return rows.map((row) => {
+      const avgIntake = Number(row.avg_intake);
+      const daysTracked = Number(row.days_tracked);
       return new MicronutrientAdequacy({
-        nutrient: rda.nutrient,
-        unit: rda.unit,
-        rda: rda.rda,
+        nutrient: row.nutrient,
+        unit: row.unit,
+        rda: row.rda,
         avgIntake: Math.round(avgIntake * 10) / 10,
-        percentRda: rda.rda > 0 ? Math.round((avgIntake / rda.rda) * 1000) / 10 : 0,
+        percentRda: row.rda > 0 ? Math.round((avgIntake / row.rda) * 1000) / 10 : 0,
         daysTracked,
       });
-    }).filter((model) => model.daysTracked > 0);
+    });
   }
 
   /** Caloric balance: daily calories in vs estimated expenditure. */

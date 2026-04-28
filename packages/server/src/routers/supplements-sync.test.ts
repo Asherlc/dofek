@@ -1,4 +1,4 @@
-import { NUTRIENT_COLUMN_MAP, NUTRIENT_KEYS } from "dofek/db/nutrient-columns";
+import { NUTRIENT_COLUMN_MAP, NUTRIENT_ID_MAP, NUTRIENT_KEYS } from "dofek/db/nutrient-columns";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -21,7 +21,7 @@ vi.mock("dofek/db/schema", () => ({
     sortOrder: "sort_order",
     id: "id",
   },
-  supplementNutrition: {
+  supplementNutrient: {
     supplementId: "supplement_id",
   },
 }));
@@ -335,8 +335,10 @@ describe("supplementsRouter", () => {
       });
 
       const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
-      expect(insertedValues.vitaminDMcg).toBe(125);
-      expect(insertedValues.calories).toBe(0);
+      expect(insertedValues).toEqual([
+        { supplementId: "supp-new-uuid", nutrientId: "calories", amount: 0 },
+        { supplementId: "supp-new-uuid", nutrientId: "vitamin_d", amount: 125 },
+      ]);
     });
 
     it("passes all truthy nutrient values through without coercing to null", async () => {
@@ -387,10 +389,15 @@ describe("supplementsRouter", () => {
       await caller.save({ supplements: [allNutrients] });
 
       const insertedValues = mocks.mockInsertValues.mock.calls[1]?.[0];
+      expect(Array.isArray(insertedValues)).toBe(true);
       // Verify every truthy nutrient value is passed through (not coerced to null)
       for (const [key, value] of Object.entries(allNutrients)) {
         if (key === "name") continue;
-        expect(insertedValues[key], `nutrient ${key} should be ${value}`).toBe(value);
+        const nutrientId = NUTRIENT_ID_MAP[key];
+        const nutrientRow = insertedValues.find(
+          (row: Record<string, unknown>) => row.nutrientId === nutrientId,
+        );
+        expect(nutrientRow?.amount, `nutrient ${key} should be ${value}`).toBe(value);
       }
     });
 
