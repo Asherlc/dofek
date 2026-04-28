@@ -944,3 +944,8 @@ Infisical environment plus SSH tunnel target internally.
 The target populated check proves the rebuilt view exists and is usable, but it
 does not prove query-level correctness for the view contents. The final planner
 check still verifies that no canonical materialized-view maintenance remains.
+Staging dispatch is wired through the same workflow field, but a branch
+verification run found the staging Infisical environment currently exports no
+`POSTGRES_PASSWORD` and the staging host has no running `dofek-staging` services.
+Staging maintenance will fail loudly until the staging stack and secrets are
+provisioned.
