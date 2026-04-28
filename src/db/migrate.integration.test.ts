@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -79,5 +79,18 @@ describe("runMigrations", () => {
     );
     expect(result.rows.length).toBe(2);
     await client.end();
+  });
+
+  it("applies pending billing migration when billing indexes already exist", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-billing-"));
+    const billingMigration = readFileSync(
+      join(import.meta.dirname, "../../drizzle/0002_add_user_billing.sql"),
+      "utf-8",
+    );
+    writeFileSync(join(tmpDir, "0002_add_user_billing.sql"), billingMigration);
+
+    const count = await runMigrations(ctx.connectionString, tmpDir);
+
+    expect(count).toBe(1);
   });
 });
