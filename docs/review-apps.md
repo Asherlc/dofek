@@ -74,7 +74,7 @@ Use:
 
 ## Troubleshooting
 
-### Hetzner `server limit reached`
+### Hetzner Capacity Failures
 
 If `Deploy Review App` fails while applying Terraform, first inspect the failed
 job log:
@@ -83,25 +83,38 @@ job log:
 gh run view <RUN_ID> --job <JOB_ID> --log-failed
 ```
 
-The quota failure looks like this:
+Account quota exhaustion looks like this:
 
 ```text
 Error: server limit reached (resource_limit_exceeded, ...)
   with hcloud_server.review,
-  on server.tf line 47, in resource "hcloud_server" "review":
+  on server.tf line 27, in resource "hcloud_server" "review":
 ```
 
-This means the review app image built successfully, but Hetzner refused to
-create another review server because the account server quota is exhausted. It
-is not a code failure in the PR.
+Placement capacity failure looks like this:
+
+```text
+Error: error during placement (resource_unavailable, ...)
+  with hcloud_server.review,
+  on server.tf line 27, in resource "hcloud_server" "review":
+```
+
+In both cases, the review app image built successfully, but Hetzner refused to
+create the temporary review server. `resource_limit_exceeded` means the account
+server quota is exhausted. `resource_unavailable` means Hetzner could not place
+the configured review-app server type in the configured location at that time,
+even if the account still has free server quota. These are not code failures in
+the PR.
 
 To resolve it:
 
 1. Close or destroy stale review apps for old PRs so their Hetzner servers are
    removed.
-2. If there are no stale review apps, raise the Hetzner server limit for the
-   account.
-3. Re-run the failed `Deploy Review App` job after capacity is available.
+2. For quota errors, raise the Hetzner server limit for the account if there are
+   no stale review apps.
+3. For placement errors, choose an available review-app location/server type or
+   wait for Hetzner capacity to return.
+4. Re-run the failed `Deploy Review App` job after capacity is available.
 
 Do not change Terraform timeouts, add retries, or rerun repeatedly until the
 capacity issue is fixed. The first fatal log line above is the root cause.

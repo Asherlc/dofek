@@ -199,7 +199,18 @@ jobs:
               echo "review_host=unavailable" >> "$GITHUB_OUTPUT"
               echo "review_url=unavailable" >> "$GITHUB_OUTPUT"
               echo "review_server_ip=unavailable" >> "$GITHUB_OUTPUT"
+              echo "review_app_skip_reason=Hetzner returned a server quota error while trying to provision a new review server. Infra capacity needs to be increased or old review app resources cleaned up." >> "$GITHUB_OUTPUT"
               echo "::warning::Review app skipped due Hetzner server limit reached for PR #${{ github.event.pull_request.number }}."
+              rm -f "$apply_output"
+              exit 0
+            fi
+            if grep -qE "error during placement|resource_unavailable" "$apply_output"; then
+              echo "review_app_skipped=true" >> "$GITHUB_OUTPUT"
+              echo "review_host=unavailable" >> "$GITHUB_OUTPUT"
+              echo "review_url=unavailable" >> "$GITHUB_OUTPUT"
+              echo "review_server_ip=unavailable" >> "$GITHUB_OUTPUT"
+              echo "review_app_skip_reason=Hetzner could not allocate the configured review app server type in the configured location. This is provider capacity/placement availability, not a code failure in this PR." >> "$GITHUB_OUTPUT"
+              echo "::warning::Review app skipped because Hetzner could not allocate the configured review app server for PR #${{ github.event.pull_request.number }}."
               rm -f "$apply_output"
               exit 0
             fi
@@ -376,4 +387,4 @@ jobs:
           message: |
             Review app deployment was skipped for PR #${{ github.event.pull_request.number }}.
 
-            Hetzner returned a server quota error while trying to provision a new review server. Infra capacity needs to be increased or old review app resources cleaned up.
+            ${{ steps.terraform.outputs.review_app_skip_reason }}
