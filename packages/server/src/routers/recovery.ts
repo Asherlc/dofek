@@ -294,11 +294,12 @@ export const recoveryRouter = router({
 
       const timeSeries = rows.map((row) => {
         const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
+        const acuteLoad = Math.round(Number(row.acute_load) * 10) / 10;
         return {
           date: row.date,
           dailyLoad,
-          strain: StrainScore.fromRawLoad(dailyLoad).value,
-          acuteLoad: Math.round(Number(row.acute_load) * 10) / 10,
+          strain: StrainScore.fromAcuteLoad(acuteLoad).value,
+          acuteLoad,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
             row.workload_ratio != null ? Math.round(Number(row.workload_ratio) * 100) / 100 : null,
@@ -668,21 +669,18 @@ export const recoveryRouter = router({
       const today = input.endDate;
       const acuteWindow = 7;
       const chronicWindow = 28;
-      let acuteLoad = 0;
+      let acuteLoadTotal = 0;
       let chronicLoad = 0;
-      let currentStrain = 0;
 
       for (const row of loads) {
         const daysAgo = Math.floor(
           (new Date(today).getTime() - new Date(row.date).getTime()) / 86400000,
         );
-        if (daysAgo < acuteWindow) acuteLoad += row.daily_load;
+        if (daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
         if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
-        if (row.date === today) {
-          currentStrain = StrainScore.fromRawLoad(row.daily_load).value;
-        }
       }
-      acuteLoad /= acuteWindow;
+      const currentStrain = StrainScore.fromAcuteLoad(acuteLoadTotal).value;
+      const acuteLoad = acuteLoadTotal / acuteWindow;
       chronicLoad /= chronicWindow;
 
       const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
