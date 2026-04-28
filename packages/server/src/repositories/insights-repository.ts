@@ -54,7 +54,7 @@ export class InsightsRepository {
         this.#db,
         nutritionRowSchema,
         sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
-            FROM fitness.nutrition_daily
+            FROM fitness.v_nutrition_daily_with_nutrients
             WHERE user_id = ${this.#userId}
               AND date > ${dateWindowStart(endDate, days)}
             ORDER BY date ASC`,

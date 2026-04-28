@@ -22,7 +22,7 @@ This directory contains the Slack bot runtime for logging food entries into Dofe
 1. User sends a message.
 2. `handleParsedMessage()` resolves the app user via Slack profile email + `auth_account` mapping.
 3. AI parser returns one or more items.
-4. `saveUnconfirmed()` inserts `nutrition_data` + `food_entry` (`confirmed = false`) and returns entry IDs.
+4. `saveUnconfirmed()` inserts `food_entry` + `food_entry_nutrient` rows (`confirmed = false`) and returns entry IDs.
 5. Bot posts/updates a confirmation block where `confirm_food.value` is comma-separated entry IDs.
 6. On `confirm_food`, bot updates matching entries to `confirmed = true`, loads saved summary, updates Slack message, and invalidates cache.
 

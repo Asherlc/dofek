@@ -89,7 +89,16 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.nutrition_daily WHERE user_id = ${userId} ORDER BY date`,
+        sql`SELECT * FROM fitness.v_nutrition_daily_with_nutrients WHERE user_id = ${userId} ORDER BY date`,
+      ),
+  },
+  {
+    name: "nutrition-daily-nutrients.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.nutrition_daily_nutrient WHERE user_id = ${userId} ORDER BY date, nutrient_id`,
       ),
   },
   {
@@ -99,6 +108,19 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         db,
         exportRowSchema,
         sql`SELECT * FROM fitness.food_entry WHERE user_id = ${userId} ORDER BY date`,
+      ),
+  },
+  {
+    name: "food-entry-nutrients.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT fen.*
+            FROM fitness.food_entry_nutrient fen
+            JOIN fitness.food_entry fe ON fe.id = fen.food_entry_id
+            WHERE fe.user_id = ${userId}
+            ORDER BY fe.date, fen.nutrient_id`,
       ),
   },
   {

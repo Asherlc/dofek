@@ -198,13 +198,23 @@ describe("Router coverage", () => {
     // ── Nutrition data for predictions ──
     for (let i = 0; i < 30; i++) {
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.nutrition_daily (
-              user_id, provider_id, date, calories, protein_g, carbs_g, fat_g
-            ) VALUES (
-              ${TEST_USER_ID}, 'dofek',
-              CURRENT_DATE - ${i}::int,
-              2200, 120, 250, 80
-            ) ON CONFLICT DO NOTHING`,
+        sql`WITH daily AS (
+              INSERT INTO fitness.nutrition_daily (user_id, provider_id, date)
+              VALUES (${TEST_USER_ID}, 'dofek', CURRENT_DATE - ${i}::int)
+              ON CONFLICT (user_id, date, provider_id) DO UPDATE
+              SET water_ml = fitness.nutrition_daily.water_ml
+              RETURNING user_id, provider_id, date
+            )
+            INSERT INTO fitness.nutrition_daily_nutrient (user_id, provider_id, date, nutrient_id, amount)
+            SELECT user_id, provider_id, date, nutrient_id, amount
+            FROM daily
+            CROSS JOIN (VALUES
+              ('calories', 2200::real),
+              ('protein', 120::real),
+              ('carbohydrate', 250::real),
+              ('fat', 80::real)
+            ) AS nutrient_values(nutrient_id, amount)
+            ON CONFLICT DO NOTHING`,
       );
     }
 
@@ -231,15 +241,19 @@ describe("Router coverage", () => {
               ) RETURNING id
             ),
             new_nutrition AS (
-              INSERT INTO fitness.food_entry_nutrition (
-                food_entry_id,
-                calories, protein_g, carbs_g, fat_g, fiber_g,
-                vitamin_c_mg, calcium_mg, iron_mg
-              )
-              SELECT id,
-                350, 12, 55, 8, 6,
-                15, 200, 4
+              INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+              SELECT id, nutrient_id, amount
               FROM new_entry
+              CROSS JOIN (VALUES
+                ('calories', 350),
+                ('protein', 12),
+                ('carbohydrate', 55),
+                ('fat', 8),
+                ('fiber', 6),
+                ('vitamin_c', 15),
+                ('calcium', 200),
+                ('iron', 4)
+              ) AS nutrient_values(nutrient_id, amount)
             )
             SELECT 1`,
       );

@@ -3,7 +3,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { foodEntry, foodEntryNutrition } from "../db/schema.ts";
+import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -669,8 +670,7 @@ export class FatSecretProvider implements SyncProvider {
               .onConflictDoNothing()
               .returning({ id: foodEntry.id });
             if (foodEntryRow?.id) {
-              await db.insert(foodEntryNutrition).values({
-                foodEntryId: foodEntryRow.id,
+              const nutrientEntries = nutrientAmountEntriesFromLegacyFields({
                 calories: e.calories,
                 proteinG: e.proteinG,
                 carbsG: e.carbsG,
@@ -688,6 +688,15 @@ export class FatSecretProvider implements SyncProvider {
                 calciumMg: e.calciumMg,
                 ironMg: e.ironMg,
               });
+              if (nutrientEntries.length > 0) {
+                await db.insert(foodEntryNutrient).values(
+                  nutrientEntries.map((nutrientEntry) => ({
+                    foodEntryId: foodEntryRow.id,
+                    nutrientId: nutrientEntry.nutrientId,
+                    amount: nutrientEntry.amount,
+                  })),
+                );
+              }
             }
           }
           recordsSynced += entries.length;

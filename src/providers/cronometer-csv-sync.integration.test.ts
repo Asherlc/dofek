@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { nutrientRowSchema } from "../db/nutrient-columns.ts";
-import { foodEntry, nutritionDaily, TEST_USER_ID } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrient, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { CRONOMETER_PROVIDER_ID, importCronometerCsv } from "./cronometer-csv.ts";
 
@@ -25,7 +25,7 @@ const CSV_HEADER =
   "Day,Meal,Food Name,Amount,Unit,Category,Energy (kcal),Protein (g),Carbs (g),Fat (g),Fiber (g),Saturated (g),Polyunsaturated (g),Monounsaturated (g),Trans-Fats (g),Cholesterol (mg),Sodium (mg),Potassium (mg),Sugar (g),Vitamin A (mcg),Vitamin C (mg),Vitamin D (mcg),Vitamin E (mg),Vitamin K (mcg),Thiamin (mg),Riboflavin (mg),Niacin (mg),Pantothenic Acid (mg),Vitamin B6 (mg),Biotin (mcg),Folate (mcg),Vitamin B12 (mcg),Calcium (mg),Iron (mg),Magnesium (mg),Zinc (mg),Selenium (mcg),Copper (mg),Manganese (mg),Chromium (mcg),Iodine (mcg),Omega-3 (g),Omega-6 (g),Water (g),Caffeine (mg),Alcohol (g)";
 
 const SIMPLE_CSV = `${CSV_HEADER}
-2026-03-01,Breakfast,Oatmeal,1,cup,Cereals,150,5,27,3,4,0.5,1,0.8,0,0,2,130,1,0,0,0,0.2,1.5,0.1,0.1,0.7,0.3,0.1,3,15,0.2,100,1.5,40,1.2,8,0.1,0.8,0,0,0.01,0.5,200,0,0
+2026-03-01,Breakfast,Oatmeal,1,cup,Cereals,150,5,27,3,4,0.5,1,0.8,0,0,2,130,1,0,0,0,0.2,1.5,0.1,0.1,0.7,0.3,0.1,3,15,0.2,100,1.5,40,1.2,8,0.1,0.8,0,0,0.01,0.5,200,95,0
 2026-03-01,Breakfast,Banana,1,medium,Fruits,105,1.3,27,0.4,3.1,0.1,0.1,0,0,0,1,422,14,3,8.7,0,0.1,0.5,0,0,0.4,0.3,0.4,5,20,0.6,6,0.3,32,0.2,1,0.1,0.3,0,0,0.03,0.05,88,0,0
 2026-03-01,Lunch,Chicken Breast,6,oz,Poultry,280,53,0,6,0,1.7,1.3,2.1,0,130,120,450,0,3,0,0.3,0.4,0,0.1,0.2,12.4,0.9,0.8,2,6,0.3,22,1.2,42,1.5,38,0.1,0,0,0,0,0.1,0,0`;
 
@@ -110,10 +110,18 @@ describe("importCronometerCsv() (integration)", () => {
 
     expect(result.errors).toHaveLength(0);
 
-    const dailyRows = await ctx.db
-      .select()
-      .from(nutritionDaily)
-      .where(eq(nutritionDaily.providerId, CRONOMETER_PROVIDER_ID));
+    const dailyRows = await ctx.db.execute<{
+      date: string;
+      provider_id: string;
+      calories: number | null;
+      protein_g: number | null;
+      carbs_g: number | null;
+      fat_g: number | null;
+    }>(
+      sql`SELECT date, provider_id, calories, protein_g, carbs_g, fat_g
+          FROM fitness.v_nutrition_daily_with_nutrients
+          WHERE provider_id = ${CRONOMETER_PROVIDER_ID}`,
+    );
 
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
     if (!march1) throw new Error("expected nutrition_daily for 2026-03-01");
@@ -121,11 +129,11 @@ describe("importCronometerCsv() (integration)", () => {
     // 150 + 105 + 280 = 535 calories
     expect(march1.calories).toBe(535);
     // 5 + 1.3 + 53 = 59.3 protein
-    expect(march1.proteinG).toBeCloseTo(59.3);
+    expect(march1.protein_g).toBeCloseTo(59.3);
     // 27 + 27 + 0 = 54 carbs
-    expect(march1.carbsG).toBeCloseTo(54);
+    expect(march1.carbs_g).toBeCloseTo(54);
     // 3 + 0.4 + 6 = 9.4 fat
-    expect(march1.fatG).toBeCloseTo(9.4);
+    expect(march1.fat_g).toBeCloseTo(9.4);
   });
 
   it("creates separate nutrition_daily rows for different days", async () => {
@@ -134,17 +142,23 @@ describe("importCronometerCsv() (integration)", () => {
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
 
-    const dailyRows = await ctx.db
-      .select()
-      .from(nutritionDaily)
-      .where(eq(nutritionDaily.providerId, CRONOMETER_PROVIDER_ID));
+    const dailyRows = await ctx.db.execute<{
+      date: string;
+      provider_id: string;
+      calories: number | null;
+      protein_g: number | null;
+    }>(
+      sql`SELECT date, provider_id, calories, protein_g
+          FROM fitness.v_nutrition_daily_with_nutrients
+          WHERE provider_id = ${CRONOMETER_PROVIDER_ID}`,
+    );
 
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
     const march2 = dailyRows.find((r) => r.date === "2026-03-02");
     expect(march1).toBeDefined();
     expect(march2).toBeDefined();
     expect(march2?.calories).toBe(290);
-    expect(march2?.proteinG).toBeCloseTo(29);
+    expect(march2?.protein_g).toBeCloseTo(29);
   });
 
   it("maps snack meal type correctly", async () => {
@@ -176,6 +190,25 @@ describe("importCronometerCsv() (integration)", () => {
     expect(banana.vitamin_c_mg).toBeCloseTo(8.7);
     expect(banana.potassium_mg).toBeCloseTo(422);
     expect(banana.magnesium_mg).toBeCloseTo(32);
+  });
+
+  it("stores caffeine in row-based food entry nutrients", async () => {
+    await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
+
+    const oatmealRows = await ctx.db
+      .select()
+      .from(foodEntry)
+      .where(eq(foodEntry.foodName, "Oatmeal"));
+    const oatmeal = oatmealRows[0];
+    if (!oatmeal) throw new Error("expected Oatmeal entry");
+
+    const rows = await ctx.db
+      .select()
+      .from(foodEntryNutrient)
+      .where(eq(foodEntryNutrient.foodEntryId, oatmeal.id));
+    const caffeine = rows.find((row) => row.nutrientId === "caffeine");
+
+    expect(caffeine?.amount).toBeCloseTo(95);
   });
 
   it("converts omega fatty acids from grams to milligrams", async () => {

@@ -33,11 +33,13 @@ describe("NUTRIENTS catalog", () => {
 
   it("every nutrient has a valid category", () => {
     const validCategories: NutrientCategory[] = [
+      "macro",
       "fat_breakdown",
       "other_macro",
       "vitamin",
       "mineral",
       "fatty_acid",
+      "stimulant",
     ];
     for (const nutrient of NUTRIENTS) {
       expect(validCategories).toContain(nutrient.category);
@@ -60,6 +62,15 @@ describe("NUTRIENTS catalog", () => {
     expect(vitaminIds).toContain("vitamin_c");
     expect(vitaminIds).toContain("vitamin_d");
     expect(vitaminIds).toContain("vitamin_b12");
+  });
+
+  it("includes macros and caffeine in the canonical catalog", () => {
+    expect(getNutrientById("calories")?.legacyFieldName).toBe("calories");
+    expect(getNutrientById("protein")?.legacyFieldName).toBe("proteinG");
+    expect(getNutrientById("carbohydrate")?.legacyFieldName).toBe("carbsG");
+    expect(getNutrientById("fat")?.legacyFieldName).toBe("fatG");
+    expect(getNutrientById("fiber")?.legacyFieldName).toBe("fiberG");
+    expect(getNutrientById("caffeine")?.legacyFieldName).toBe("caffeineMg");
   });
 
   it("includes all expected minerals", () => {
@@ -133,14 +144,20 @@ describe("getNutrientsByCategory", () => {
 describe("legacyFieldsToNutrients", () => {
   it("converts legacy camelCase fields to nutrient id map", () => {
     const result = legacyFieldsToNutrients({
+      calories: 250,
+      proteinG: 12,
       vitaminAMcg: 150,
       calciumMg: 200,
       omega3Mg: 2500,
+      caffeineMg: 95,
     });
     expect(result).toEqual({
+      calories: 250,
+      protein: 12,
       vitamin_a: 150,
       calcium: 200,
       omega_3: 2500,
+      caffeine: 95,
     });
   });
 
@@ -157,8 +174,6 @@ describe("legacyFieldsToNutrients", () => {
   it("ignores non-nutrient fields", () => {
     const result = legacyFieldsToNutrients({
       foodName: "Test",
-      calories: 200,
-      proteinG: 10,
       vitaminCMg: 60,
     });
     expect(result).toEqual({ vitamin_c: 60 });

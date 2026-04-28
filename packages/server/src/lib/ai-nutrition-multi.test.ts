@@ -57,6 +57,7 @@ const coke: NutritionItemWithMeal = {
   saturatedFatG: 0,
   sugarG: 39,
   sodiumMg: 45,
+  caffeineMg: 34,
   meal: "lunch",
 };
 
@@ -102,6 +103,18 @@ describe("analyzeNutritionItems", () => {
     expect(mockGenerateText).toHaveBeenCalledOnce();
     const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
     expect(callArgs?.system).toContain("Monday, 7:30 AM");
+  });
+
+  it("asks AI providers for detailed micronutrients including caffeine", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+
+    mockGenerateText.mockResolvedValueOnce(mockResult({ items: [coke] }));
+
+    await analyzeNutritionItems("coffee with milk and sugar");
+
+    const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
+    expect(callArgs?.system).toContain("detailed micronutrients");
+    expect(callArgs?.system).toContain("caffeine");
   });
 
   it("does not include time context when localTime is omitted", async () => {

@@ -1,5 +1,5 @@
 import type { Database } from "dofek/db";
-import { NUTRIENT_SQL_COLUMNS } from "dofek/db/nutrient-columns";
+import { nutrientAmountEntriesFromLegacyFields } from "dofek/db/nutrient-columns";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
@@ -297,6 +297,11 @@ export class FoodEntryRepository {
     const confirmedEntryIds: string[] = [];
     for (const pendingEntry of pendingEntries) {
       const item = pendingEntry.item;
+      const nutrientEntries = nutrientAmountEntriesFromLegacyFields(item);
+      const nutrientValuesClauses = nutrientEntries.map(
+        (nutrientEntry) =>
+          sql`(${pendingEntry.id}::uuid, ${nutrientEntry.nutrientId}::text, ${nutrientEntry.amount}::real)`,
+      );
       const rows = await executeWithSchema(
         this.#db,
         z.object({ id: z.string() }),
@@ -311,30 +316,8 @@ export class FoodEntryRepository {
             ) RETURNING id
           ),
           new_nutrition AS (
-            INSERT INTO fitness.food_entry_nutrition (
-              food_entry_id, ${sql.raw(NUTRIENT_SQL_COLUMNS)}
-            )
-            SELECT id, ${item.calories}, ${item.proteinG},
-                   ${item.carbsG}, ${item.fatG},
-                   ${item.saturatedFatG}, ${item.polyunsaturatedFatG ?? null},
-                   ${item.monounsaturatedFatG ?? null}, ${item.transFatG ?? null},
-                   ${item.cholesterolMg ?? null}, ${item.sodiumMg},
-                   ${item.potassiumMg ?? null}, ${item.fiberG}, ${item.sugarG},
-                   ${item.vitaminAMcg ?? null}, ${item.vitaminCMg ?? null},
-                   ${item.vitaminDMcg ?? null}, ${item.vitaminEMg ?? null},
-                   ${item.vitaminKMcg ?? null},
-                   ${item.vitaminB1Mg ?? null}, ${item.vitaminB2Mg ?? null},
-                   ${item.vitaminB3Mg ?? null}, ${item.vitaminB5Mg ?? null},
-                   ${item.vitaminB6Mg ?? null},
-                   ${item.vitaminB7Mcg ?? null}, ${item.vitaminB9Mcg ?? null},
-                   ${item.vitaminB12Mcg ?? null},
-                   ${item.calciumMg ?? null}, ${item.ironMg ?? null},
-                   ${item.magnesiumMg ?? null}, ${item.zincMg ?? null},
-                   ${item.seleniumMcg ?? null},
-                   ${item.copperMg ?? null}, ${item.manganeseMg ?? null},
-                   ${item.chromiumMcg ?? null}, ${item.iodineMcg ?? null},
-                   ${item.omega3Mg ?? null}, ${item.omega6Mg ?? null}
-            FROM new_entry
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            VALUES ${sql.join(nutrientValuesClauses, sql`, `)}
           )
           SELECT id FROM new_entry`,
       );
@@ -369,10 +352,9 @@ export class FoodEntryRepository {
     return executeWithSchema(
       this.#db,
       z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
-      sql`SELECT fe.food_name, nd.calories
-          FROM fitness.food_entry fe
-          LEFT JOIN fitness.food_entry_nutrition nd ON nd.food_entry_id = fe.id
-          WHERE fe.id IN (${sqlIdList(entryIds)})`,
+      sql`SELECT food_name, calories
+          FROM fitness.v_food_entry_with_nutrition
+          WHERE id IN (${sqlIdList(entryIds)})`,
     );
   }
 

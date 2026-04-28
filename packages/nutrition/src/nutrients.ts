@@ -3,17 +3,18 @@
  * metadata. Consolidates definitions previously scattered across ~6 files
  * (RDA tables, display labels, OFF key mappings, field→column maps).
  *
- * Macros (calories, protein, carbs, fat, fiber) are NOT included here — they
- * stay as dedicated columns on food_entry because they're queried on nearly
- * every endpoint.
+ * Nutrients are stored as row-based amounts in the database. Legacy field names
+ * exist only at API/provider boundaries.
  */
 
 export type NutrientCategory =
+  | "macro"
   | "fat_breakdown"
   | "other_macro"
   | "vitamin"
   | "mineral"
-  | "fatty_acid";
+  | "fatty_acid"
+  | "stimulant";
 
 export interface NutrientDefinition {
   /** Stable identifier, used as DB primary key. e.g. 'vitamin_a', 'calcium' */
@@ -37,6 +38,71 @@ export interface NutrientDefinition {
   /** Legacy snake_case DB column name. e.g. 'vitamin_a_mcg' */
   readonly legacyColumnName: string;
 }
+
+// ── Macros ─────────────────────────────────────────────────────────────────
+
+const MACROS: NutrientDefinition[] = [
+  {
+    id: "calories",
+    displayName: "Calories",
+    unit: "kcal",
+    category: "macro",
+    rda: null,
+    sortOrder: 1,
+    openFoodFactsKey: "energy-kcal",
+    conversionFactor: 1,
+    legacyFieldName: "calories",
+    legacyColumnName: "calories",
+  },
+  {
+    id: "protein",
+    displayName: "Protein",
+    unit: "g",
+    category: "macro",
+    rda: null,
+    sortOrder: 2,
+    openFoodFactsKey: "proteins",
+    conversionFactor: 1,
+    legacyFieldName: "proteinG",
+    legacyColumnName: "protein_g",
+  },
+  {
+    id: "carbohydrate",
+    displayName: "Carbohydrates",
+    unit: "g",
+    category: "macro",
+    rda: null,
+    sortOrder: 3,
+    openFoodFactsKey: "carbohydrates",
+    conversionFactor: 1,
+    legacyFieldName: "carbsG",
+    legacyColumnName: "carbs_g",
+  },
+  {
+    id: "fat",
+    displayName: "Fat",
+    unit: "g",
+    category: "macro",
+    rda: null,
+    sortOrder: 4,
+    openFoodFactsKey: "fat",
+    conversionFactor: 1,
+    legacyFieldName: "fatG",
+    legacyColumnName: "fat_g",
+  },
+  {
+    id: "fiber",
+    displayName: "Fiber",
+    unit: "g",
+    category: "macro",
+    rda: 38,
+    sortOrder: 5,
+    openFoodFactsKey: "fiber",
+    conversionFactor: 1,
+    legacyFieldName: "fiberG",
+    legacyColumnName: "fiber_g",
+  },
+];
 
 // ── Fat breakdown ───────────────────────────────────────────────────────────
 
@@ -507,15 +573,34 @@ const FATTY_ACIDS: NutrientDefinition[] = [
   },
 ];
 
+// ── Stimulants ─────────────────────────────────────────────────────────────
+
+const STIMULANTS: NutrientDefinition[] = [
+  {
+    id: "caffeine",
+    displayName: "Caffeine",
+    unit: "mg",
+    category: "stimulant",
+    rda: null,
+    sortOrder: 600,
+    openFoodFactsKey: "caffeine",
+    conversionFactor: 1,
+    legacyFieldName: "caffeineMg",
+    legacyColumnName: "caffeine_mg",
+  },
+];
+
 // ── Exported catalog ────────────────────────────────────────────────────────
 
 /** Complete catalog of all tracked micronutrients, sorted by category then sortOrder. */
 export const NUTRIENTS: readonly NutrientDefinition[] = [
+  ...MACROS,
   ...FAT_BREAKDOWN,
   ...OTHER_MACROS,
   ...VITAMINS,
   ...MINERALS,
   ...FATTY_ACIDS,
+  ...STIMULANTS,
 ] as const;
 
 // ── Lookup indexes (built once at import time) ──────────────────────────────

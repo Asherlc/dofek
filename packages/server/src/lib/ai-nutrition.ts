@@ -73,6 +73,8 @@ export const aiNutritionSchema = z.object({
   // Fatty acids
   omega3Mg: z.number().nonnegative().optional().describe("Omega-3 fatty acids in milligrams"),
   omega6Mg: z.number().nonnegative().optional().describe("Omega-6 fatty acids in milligrams"),
+  // Stimulants
+  caffeineMg: z.number().nonnegative().optional().describe("Caffeine in milligrams"),
 });
 
 export type AiNutritionResult = z.infer<typeof aiNutritionSchema>;
@@ -99,7 +101,7 @@ Guidelines:
 - For mixed dishes, estimate the combined nutritional content as a single entry.
 - Be conservative with calorie estimates — it's better to slightly overestimate than underestimate.
 - Use your knowledge of USDA food composition data and common nutrition databases.
-- Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
+- Estimate detailed micronutrients (vitamins, minerals, omega fatty acids, and caffeine) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
 const MULTI_ITEM_SYSTEM_PROMPT = `You are a nutrition estimation expert. Given a natural language description of what someone ate, break it into individual food items and estimate the nutritional content of each — including both macronutrients and micronutrients.
 
@@ -114,7 +116,7 @@ Guidelines:
 - Round calories to the nearest integer and macros to one decimal place.
 - Be conservative with calorie estimates — slightly overestimate rather than underestimate.
 - Use your knowledge of USDA food composition data.
-- Estimate all micronutrients (vitamins, minerals, omega fatty acids) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
+- Estimate detailed micronutrients (vitamins, minerals, omega fatty acids, and caffeine) you are confident about. Omit any you are unsure of rather than guessing wildly.`;
 
 export interface AnalyzeResult {
   nutrition: AiNutritionResult;

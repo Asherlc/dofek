@@ -15,6 +15,7 @@ import {
   medication,
   metricStream,
   nutritionDaily,
+  nutritionDailyNutrient,
 } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
@@ -157,6 +158,15 @@ export async function runImport(
           eq(dailyMetrics.userId, scopedUserId),
           eq(dailyMetrics.providerId, providerId),
           gte(dailyMetrics.date, sinceDate),
+        ),
+      );
+    await db
+      .delete(nutritionDailyNutrient)
+      .where(
+        and(
+          eq(nutritionDailyNutrient.userId, scopedUserId),
+          eq(nutritionDailyNutrient.providerId, providerId),
+          gte(nutritionDailyNutrient.date, sinceDate),
         ),
       );
     await db

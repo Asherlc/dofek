@@ -92,12 +92,11 @@ describe("nutritionAnalyticsRouter", () => {
     it("computes adequacy percentages", async () => {
       const rows = [
         {
-          avg_vitamin_c_mg: 60,
-          days_vitamin_c_mg: 10,
-          avg_iron_mg: 12,
-          days_iron_mg: 10,
-          avg_fiber_g: 25,
-          days_fiber_g: 10,
+          nutrient: "Vitamin C",
+          unit: "mg",
+          rda: 90,
+          avg_intake: 60,
+          days_tracked: 10,
         },
       ];
       const caller = makeCaller(rows);

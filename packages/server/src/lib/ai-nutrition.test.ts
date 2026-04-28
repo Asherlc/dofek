@@ -41,6 +41,7 @@ const sampleResult: AiNutritionResult = {
   saturatedFatG: 1.5,
   sugarG: 12.3,
   sodiumMg: 320,
+  caffeineMg: 0,
 };
 
 function mockSuccessResponse() {
@@ -77,6 +78,17 @@ describe("analyzeNutrition", () => {
         prompt: "a big plate of roasted vegetables",
       }),
     );
+  });
+
+  it("asks AI providers for detailed micronutrients including caffeine", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    mockGenerateText.mockResolvedValueOnce(mockSuccessResponse());
+
+    await analyzeNutrition("a large cold brew");
+
+    const callArgs: { system?: string } | undefined = mockGenerateText.mock.calls[0]?.[0];
+    expect(callArgs?.system).toContain("detailed micronutrients");
+    expect(callArgs?.system).toContain("caffeine");
   });
 
   it("cascades to next provider on rate limit error", async () => {
@@ -161,6 +173,11 @@ describe("analyzeNutrition", () => {
 describe("aiNutritionSchema", () => {
   it("validates a correct nutrition result", () => {
     const result = aiNutritionSchema.safeParse(sampleResult);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts caffeine in milligrams", () => {
+    const result = aiNutritionSchema.safeParse({ ...sampleResult, caffeineMg: 95 });
     expect(result.success).toBe(true);
   });
 

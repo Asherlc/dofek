@@ -230,7 +230,7 @@ describe("Food router", () => {
       expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
     });
 
-    it("cascades delete to food_entry_nutrition row", async () => {
+    it("cascades delete to food_entry_nutrient rows", async () => {
       const created = await mutate("food.create", {
         date: "2025-02-04",
         meal: "lunch",
@@ -242,17 +242,17 @@ describe("Food router", () => {
 
       const beforeRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.food_entry_nutrition
+            FROM fitness.food_entry_nutrient
             WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
-      expect(beforeRows[0]?.count).toBe("1");
+      expect(beforeRows[0]?.count).toBe("2");
 
       const deleted = await mutate("food.delete", { id: cascadeEntryId });
       expect(deleted.result.data.success).toBe(true);
 
       const afterRows = await testCtx.db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::text AS count
-            FROM fitness.food_entry_nutrition
+            FROM fitness.food_entry_nutrient
             WHERE food_entry_id = ${cascadeEntryId}::uuid`,
       );
       expect(afterRows[0]?.count).toBe("0");

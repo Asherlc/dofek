@@ -1,4 +1,3 @@
-import { integer, real } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 // ============================================================
@@ -27,7 +26,8 @@ export interface NutrientFieldDefinition {
     | "other_macro"
     | "vitamin"
     | "mineral"
-    | "fatty_acid";
+    | "fatty_acid"
+    | "stimulant";
 }
 
 export const NUTRIENT_FIELDS: readonly NutrientFieldDefinition[] = [
@@ -326,6 +326,14 @@ export const NUTRIENT_FIELDS: readonly NutrientFieldDefinition[] = [
     unit: "mg",
     category: "fatty_acid",
   },
+  {
+    key: "caffeineMg",
+    column: "caffeine_mg",
+    columnType: "real",
+    label: "Caffeine",
+    unit: "mg",
+    category: "stimulant",
+  },
 ] as const;
 
 /** camelCase nutrient keys (e.g., 'calories', 'proteinG', 'vitaminAMcg') */
@@ -341,61 +349,52 @@ export const NUTRIENT_KEY_MAP: Record<string, string> = Object.fromEntries(
   NUTRIENT_FIELDS.map((f) => [f.column, f.key]),
 );
 
-// ============================================================
-// Drizzle column builders
-// ============================================================
+/** Map of legacy camelCase key → canonical fitness.nutrient.id */
+export const NUTRIENT_ID_MAP: Record<string, string> = {
+  calories: "calories",
+  proteinG: "protein",
+  carbsG: "carbohydrate",
+  fatG: "fat",
+  saturatedFatG: "saturated_fat",
+  polyunsaturatedFatG: "polyunsaturated_fat",
+  monounsaturatedFatG: "monounsaturated_fat",
+  transFatG: "trans_fat",
+  cholesterolMg: "cholesterol",
+  sodiumMg: "sodium",
+  potassiumMg: "potassium",
+  fiberG: "fiber",
+  sugarG: "sugar",
+  vitaminAMcg: "vitamin_a",
+  vitaminCMg: "vitamin_c",
+  vitaminDMcg: "vitamin_d",
+  vitaminEMg: "vitamin_e",
+  vitaminKMcg: "vitamin_k",
+  vitaminB1Mg: "vitamin_b1",
+  vitaminB2Mg: "vitamin_b2",
+  vitaminB3Mg: "vitamin_b3",
+  vitaminB5Mg: "vitamin_b5",
+  vitaminB6Mg: "vitamin_b6",
+  vitaminB7Mcg: "vitamin_b7",
+  vitaminB9Mcg: "vitamin_b9",
+  vitaminB12Mcg: "vitamin_b12",
+  calciumMg: "calcium",
+  ironMg: "iron",
+  magnesiumMg: "magnesium",
+  zincMg: "zinc",
+  seleniumMcg: "selenium",
+  copperMg: "copper",
+  manganeseMg: "manganese",
+  chromiumMcg: "chromium",
+  iodineMcg: "iodine",
+  omega3Mg: "omega_3",
+  omega6Mg: "omega_6",
+  caffeineMg: "caffeine",
+};
 
-/**
- * Drizzle column definitions for all 39 nutrient fields.
- * Spread into a `pgSchema.table()` definition.
- */
-export function buildNutrientColumns() {
-  return {
-    // Macronutrients
-    calories: integer("calories"),
-    proteinG: real("protein_g"),
-    carbsG: real("carbs_g"),
-    fatG: real("fat_g"),
-    // Fat breakdown
-    saturatedFatG: real("saturated_fat_g"),
-    polyunsaturatedFatG: real("polyunsaturated_fat_g"),
-    monounsaturatedFatG: real("monounsaturated_fat_g"),
-    transFatG: real("trans_fat_g"),
-    // Other macros
-    cholesterolMg: real("cholesterol_mg"),
-    sodiumMg: real("sodium_mg"),
-    potassiumMg: real("potassium_mg"),
-    fiberG: real("fiber_g"),
-    sugarG: real("sugar_g"),
-    // Vitamins
-    vitaminAMcg: real("vitamin_a_mcg"),
-    vitaminCMg: real("vitamin_c_mg"),
-    vitaminDMcg: real("vitamin_d_mcg"),
-    vitaminEMg: real("vitamin_e_mg"),
-    vitaminKMcg: real("vitamin_k_mcg"),
-    vitaminB1Mg: real("vitamin_b1_mg"),
-    vitaminB2Mg: real("vitamin_b2_mg"),
-    vitaminB3Mg: real("vitamin_b3_mg"),
-    vitaminB5Mg: real("vitamin_b5_mg"),
-    vitaminB6Mg: real("vitamin_b6_mg"),
-    vitaminB7Mcg: real("vitamin_b7_mcg"),
-    vitaminB9Mcg: real("vitamin_b9_mcg"),
-    vitaminB12Mcg: real("vitamin_b12_mcg"),
-    // Minerals
-    calciumMg: real("calcium_mg"),
-    ironMg: real("iron_mg"),
-    magnesiumMg: real("magnesium_mg"),
-    zincMg: real("zinc_mg"),
-    seleniumMcg: real("selenium_mcg"),
-    copperMg: real("copper_mg"),
-    manganeseMg: real("manganese_mg"),
-    chromiumMcg: real("chromium_mcg"),
-    iodineMcg: real("iodine_mcg"),
-    // Fatty acids
-    omega3Mg: real("omega3_mg"),
-    omega6Mg: real("omega6_mg"),
-  };
-}
+/** Map of canonical fitness.nutrient.id → legacy camelCase key */
+export const NUTRIENT_FIELD_BY_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(NUTRIENT_ID_MAP).map(([key, nutrientId]) => [nutrientId, key]),
+);
 
 // ============================================================
 // Zod schemas
@@ -440,47 +439,54 @@ export const nutrientFieldsSchema = z.object({
   iodineMcg: z.number().nonnegative().nullish(),
   omega3Mg: z.number().nonnegative().nullish(),
   omega6Mg: z.number().nonnegative().nullish(),
+  caffeineMg: z.number().nonnegative().nullish(),
 });
+
+const nullableNumberFromRow = z.preprocess(
+  (value) => (value === undefined ? null : value),
+  z.coerce.number().nullable(),
+);
 
 /** Zod schema for nutrient fields in snake_case (DB row parsing). All fields nullable with coerce. */
 export const nutrientRowSchema = z.object({
-  calories: z.coerce.number().nullable(),
-  protein_g: z.coerce.number().nullable(),
-  carbs_g: z.coerce.number().nullable(),
-  fat_g: z.coerce.number().nullable(),
-  saturated_fat_g: z.coerce.number().nullable(),
-  polyunsaturated_fat_g: z.coerce.number().nullable(),
-  monounsaturated_fat_g: z.coerce.number().nullable(),
-  trans_fat_g: z.coerce.number().nullable(),
-  cholesterol_mg: z.coerce.number().nullable(),
-  sodium_mg: z.coerce.number().nullable(),
-  potassium_mg: z.coerce.number().nullable(),
-  fiber_g: z.coerce.number().nullable(),
-  sugar_g: z.coerce.number().nullable(),
-  vitamin_a_mcg: z.coerce.number().nullable(),
-  vitamin_c_mg: z.coerce.number().nullable(),
-  vitamin_d_mcg: z.coerce.number().nullable(),
-  vitamin_e_mg: z.coerce.number().nullable(),
-  vitamin_k_mcg: z.coerce.number().nullable(),
-  vitamin_b1_mg: z.coerce.number().nullable(),
-  vitamin_b2_mg: z.coerce.number().nullable(),
-  vitamin_b3_mg: z.coerce.number().nullable(),
-  vitamin_b5_mg: z.coerce.number().nullable(),
-  vitamin_b6_mg: z.coerce.number().nullable(),
-  vitamin_b7_mcg: z.coerce.number().nullable(),
-  vitamin_b9_mcg: z.coerce.number().nullable(),
-  vitamin_b12_mcg: z.coerce.number().nullable(),
-  calcium_mg: z.coerce.number().nullable(),
-  iron_mg: z.coerce.number().nullable(),
-  magnesium_mg: z.coerce.number().nullable(),
-  zinc_mg: z.coerce.number().nullable(),
-  selenium_mcg: z.coerce.number().nullable(),
-  copper_mg: z.coerce.number().nullable(),
-  manganese_mg: z.coerce.number().nullable(),
-  chromium_mcg: z.coerce.number().nullable(),
-  iodine_mcg: z.coerce.number().nullable(),
-  omega3_mg: z.coerce.number().nullable(),
-  omega6_mg: z.coerce.number().nullable(),
+  calories: nullableNumberFromRow,
+  protein_g: nullableNumberFromRow,
+  carbs_g: nullableNumberFromRow,
+  fat_g: nullableNumberFromRow,
+  saturated_fat_g: nullableNumberFromRow,
+  polyunsaturated_fat_g: nullableNumberFromRow,
+  monounsaturated_fat_g: nullableNumberFromRow,
+  trans_fat_g: nullableNumberFromRow,
+  cholesterol_mg: nullableNumberFromRow,
+  sodium_mg: nullableNumberFromRow,
+  potassium_mg: nullableNumberFromRow,
+  fiber_g: nullableNumberFromRow,
+  sugar_g: nullableNumberFromRow,
+  vitamin_a_mcg: nullableNumberFromRow,
+  vitamin_c_mg: nullableNumberFromRow,
+  vitamin_d_mcg: nullableNumberFromRow,
+  vitamin_e_mg: nullableNumberFromRow,
+  vitamin_k_mcg: nullableNumberFromRow,
+  vitamin_b1_mg: nullableNumberFromRow,
+  vitamin_b2_mg: nullableNumberFromRow,
+  vitamin_b3_mg: nullableNumberFromRow,
+  vitamin_b5_mg: nullableNumberFromRow,
+  vitamin_b6_mg: nullableNumberFromRow,
+  vitamin_b7_mcg: nullableNumberFromRow,
+  vitamin_b9_mcg: nullableNumberFromRow,
+  vitamin_b12_mcg: nullableNumberFromRow,
+  calcium_mg: nullableNumberFromRow,
+  iron_mg: nullableNumberFromRow,
+  magnesium_mg: nullableNumberFromRow,
+  zinc_mg: nullableNumberFromRow,
+  selenium_mcg: nullableNumberFromRow,
+  copper_mg: nullableNumberFromRow,
+  manganese_mg: nullableNumberFromRow,
+  chromium_mcg: nullableNumberFromRow,
+  iodine_mcg: nullableNumberFromRow,
+  omega3_mg: nullableNumberFromRow,
+  omega6_mg: nullableNumberFromRow,
+  caffeine_mg: nullableNumberFromRow,
 });
 
 /** Type for nutrient values in camelCase */
@@ -499,6 +505,44 @@ export function extractNutrientValues(
     result[field.key] = typeof value === "number" ? value : null;
   }
   return result;
+}
+
+export interface NutrientAmountEntry {
+  readonly nutrientId: string;
+  readonly amount: number;
+}
+
+export interface NullableNutrientAmountEntry {
+  readonly nutrientId: string;
+  readonly amount: number | null;
+}
+
+/** Convert legacy camelCase nutrient fields to canonical nutrient amount rows. */
+export function nutrientAmountEntriesFromLegacyFields(
+  source: Record<string, unknown>,
+): NutrientAmountEntry[] {
+  const entries: NutrientAmountEntry[] = [];
+  for (const [legacyFieldName, nutrientId] of Object.entries(NUTRIENT_ID_MAP)) {
+    const value = source[legacyFieldName];
+    if (typeof value === "number") {
+      entries.push({ nutrientId, amount: value });
+    }
+  }
+  return entries;
+}
+
+/** Convert legacy camelCase nutrient updates to canonical rows, preserving null deletes. */
+export function nullableNutrientAmountEntriesFromLegacyFields(
+  source: Record<string, unknown>,
+): NullableNutrientAmountEntry[] {
+  const entries: NullableNutrientAmountEntry[] = [];
+  for (const [legacyFieldName, nutrientId] of Object.entries(NUTRIENT_ID_MAP)) {
+    const value = source[legacyFieldName];
+    if (typeof value === "number" || value === null) {
+      entries.push({ nutrientId, amount: value });
+    }
+  }
+  return entries;
 }
 
 /**
@@ -528,6 +572,3 @@ export function nutrientColumnsToValues(
   }
   return result;
 }
-
-/** SQL column names for all nutrient fields, comma-separated (for raw SQL SELECT/INSERT) */
-export const NUTRIENT_SQL_COLUMNS = NUTRIENT_FIELDS.map((f) => f.column).join(", ");

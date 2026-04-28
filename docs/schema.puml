@@ -285,51 +285,6 @@ entity "food_entry_nutrient" {
   amount : real
 }
 
-entity "food_entry_nutrition" {
-  * id : uuid <<PK>>
-  --
-  food_entry_id : uuid <<FK>>
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
-  created_at : timestamp
-  updated_at : timestamp
-}
-
 entity "health_event" {
   * id : uuid <<PK>>
   --
@@ -522,89 +477,16 @@ entity "nutrition_daily" {
   date : date
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
   water_ml : integer
   created_at : timestamp
 }
 
-entity "nutrition_data" {
-  * id : uuid <<PK>>
-  --
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
-  created_at : timestamp
-  updated_at : timestamp
+entity "nutrition_daily_nutrient" {
+  user_id : uuid <<FK>>
+  date : date
+  provider_id : text <<FK>>
+  nutrient_id : text <<FK>>
+  amount : real
 }
 
 entity "oauth_token" {
@@ -763,51 +645,6 @@ entity "supplement_nutrient" {
   amount : real
 }
 
-entity "supplement_nutrition" {
-  * id : uuid <<PK>>
-  --
-  supplement_id : uuid <<FK>>
-  calories : integer
-  protein_g : real
-  carbs_g : real
-  fat_g : real
-  saturated_fat_g : real
-  polyunsaturated_fat_g : real
-  monounsaturated_fat_g : real
-  trans_fat_g : real
-  cholesterol_mg : real
-  sodium_mg : real
-  potassium_mg : real
-  fiber_g : real
-  sugar_g : real
-  vitamin_a_mcg : real
-  vitamin_c_mg : real
-  vitamin_d_mcg : real
-  vitamin_e_mg : real
-  vitamin_k_mcg : real
-  vitamin_b1_mg : real
-  vitamin_b2_mg : real
-  vitamin_b3_mg : real
-  vitamin_b5_mg : real
-  vitamin_b6_mg : real
-  vitamin_b7_mcg : real
-  vitamin_b9_mcg : real
-  vitamin_b12_mcg : real
-  calcium_mg : real
-  iron_mg : real
-  magnesium_mg : real
-  zinc_mg : real
-  selenium_mcg : real
-  copper_mg : real
-  manganese_mg : real
-  chromium_mcg : real
-  iodine_mcg : real
-  omega3_mg : real
-  omega6_mg : real
-  created_at : timestamp
-  updated_at : timestamp
-}
-
 entity "sync_log" {
   * id : uuid <<PK>>
   --
@@ -906,7 +743,6 @@ provider ||--o{ food_entry
 user_profile ||--o{ food_entry
 food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
-food_entry ||--o{ food_entry_nutrition
 provider ||--o{ health_event
 user_profile ||--o{ health_event
 user_profile ||--o{ inertial_measurement_unit_sample
@@ -930,6 +766,9 @@ provider ||--o{ metric_stream
 activity ||--o{ metric_stream
 provider ||--o{ nutrition_daily
 user_profile ||--o{ nutrition_daily
+user_profile ||--o{ nutrition_daily_nutrient
+provider ||--o{ nutrition_daily_nutrient
+nutrient ||--o{ nutrition_daily_nutrient
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
 user_profile ||--o{ orientation_sample
@@ -946,7 +785,6 @@ exercise ||--o{ strength_set
 user_profile ||--o{ supplement
 supplement ||--o{ supplement_nutrient
 nutrient ||--o{ supplement_nutrient
-supplement ||--o{ supplement_nutrition
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 user_profile ||--o{ user_billing
