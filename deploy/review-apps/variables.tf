@@ -26,7 +26,7 @@ variable "server_type" {
 }
 
 variable "location" {
-  description = "Hetzner location for review apps"
+  description = "Hetzner location for review apps. Leave null to let Hetzner place ephemeral review servers where capacity is available."
   type        = string
-  default     = "nbg1"
+  default     = null
 }
