@@ -1,3 +1,5 @@
+-- Food names are intentionally nullable for provider nutrition samples that have no food label.
+-- squawk-ignore ban-drop-not-null
 ALTER TABLE fitness.food_entry ALTER COLUMN food_name DROP NOT NULL;
 --> statement-breakpoint
 ALTER TABLE fitness.food_entry ADD COLUMN IF NOT EXISTS source_name text;
@@ -6,6 +8,8 @@ ALTER TABLE fitness.food_entry ADD COLUMN IF NOT EXISTS started_at timestamp wit
 --> statement-breakpoint
 ALTER TABLE fitness.food_entry ADD COLUMN IF NOT EXISTS ended_at timestamp with time zone;
 --> statement-breakpoint
+-- Water is app-facing milliliters stored as a number; integer range is sufficient for one entry.
+-- squawk-ignore prefer-bigint-over-int
 ALTER TABLE fitness.food_entry_nutrition ADD COLUMN IF NOT EXISTS water_ml integer;
 --> statement-breakpoint
 WITH migrated_entries AS (
