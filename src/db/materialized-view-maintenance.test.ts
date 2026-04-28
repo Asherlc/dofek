@@ -8,6 +8,7 @@ import {
   refreshMaterializedViewForMaintenance,
   runQuietDatabasePreflight,
 } from "./materialized-view-maintenance.ts";
+import { VIEW_SYNC_LOCK_KEY } from "./sync-views.ts";
 
 function createClient(rowsByQuery: Map<string, Array<Record<string, unknown>>> = new Map()) {
   return {
@@ -140,14 +141,41 @@ describe("refreshMaterializedViewForMaintenance", () => {
         ["pg_is_in_recovery", [{ in_recovery: false }]],
       ]),
     );
+    const nowSpy = vi.spyOn(performance, "now").mockReturnValueOnce(100).mockReturnValueOnce(125);
 
-    await refreshMaterializedViewForMaintenance(client, "fitness.v_daily_metrics");
+    try {
+      const result = await refreshMaterializedViewForMaintenance(client, "fitness.v_daily_metrics");
 
-    expect(executedQueries(client)).toContain("SELECT pg_try_advisory_lock($1) AS locked");
-    expect(executedQueries(client)).toContain(
-      'REFRESH MATERIALIZED VIEW CONCURRENTLY "fitness"."v_daily_metrics"',
-    );
-    expect(executedQueries(client)).toContain("SELECT pg_advisory_unlock($1)");
+      expect(result).toMatchObject({
+        durationMs: 25,
+        mode: "concurrent",
+        viewName: "fitness.v_daily_metrics",
+        warnings: [],
+      });
+      expect(result.startedAt).toBeInstanceOf(Date);
+      expect(result.finishedAt).toBeInstanceOf(Date);
+      expect(client.query).toHaveBeenCalledWith("SELECT pg_try_advisory_lock($1) AS locked", [
+        VIEW_SYNC_LOCK_KEY,
+      ]);
+      expect(executedQueries(client)).toContain(
+        'REFRESH MATERIALIZED VIEW CONCURRENTLY "fitness"."v_daily_metrics"',
+      );
+      expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
+        VIEW_SYNC_LOCK_KEY,
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("fails before preflight when the maintenance lock is already held", async () => {
+    const client = createClient(new Map([["pg_try_advisory_lock", [{ locked: false }]]]));
+
+    await expect(
+      refreshMaterializedViewForMaintenance(client, "fitness.v_daily_metrics"),
+    ).rejects.toThrow("materialized view maintenance lock is already held");
+
+    expect(executedQueries(client)).toEqual(["SELECT pg_try_advisory_lock($1) AS locked"]);
   });
 });
 
@@ -179,15 +207,24 @@ describe("rebuildMaterializedViewForMaintenance", () => {
         ["fingerprint_source", [{ fingerprint_source: "provider_stats:provider_id:text" }]],
       ]),
     );
+    const nowSpy = vi.spyOn(performance, "now").mockReturnValueOnce(200).mockReturnValueOnce(260);
 
     try {
       const result = await rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", {
         viewsDir,
       });
 
-      expect(result.viewName).toBe("fitness.provider_stats");
-      expect(result.mode).toBe("rebuild");
-      expect(executedQueries(client)).toContain("SELECT pg_try_advisory_lock($1) AS locked");
+      expect(result).toMatchObject({
+        durationMs: 60,
+        mode: "rebuild",
+        viewName: "fitness.provider_stats",
+        warnings: [],
+      });
+      expect(result.startedAt).toBeInstanceOf(Date);
+      expect(result.finishedAt).toBeInstanceOf(Date);
+      expect(client.query).toHaveBeenCalledWith("SELECT pg_try_advisory_lock($1) AS locked", [
+        VIEW_SYNC_LOCK_KEY,
+      ]);
       expect(executedQueries(client)).toContain(
         'DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE',
       );
@@ -200,8 +237,11 @@ describe("rebuildMaterializedViewForMaintenance", () => {
       expect(executedQueries(client).some((query) => query.includes("drizzle.__view_hashes"))).toBe(
         true,
       );
-      expect(executedQueries(client)).toContain("SELECT pg_advisory_unlock($1)");
+      expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
+        VIEW_SYNC_LOCK_KEY,
+      ]);
     } finally {
+      nowSpy.mockRestore();
       rmSync(viewsDir, { recursive: true, force: true });
     }
   });
@@ -248,6 +288,98 @@ describe("rebuildMaterializedViewForMaintenance", () => {
       expect(result.warnings).toContain(
         "canceled 1 in-progress refresh for fitness.provider_stats",
       );
+    } finally {
+      rmSync(viewsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails before preflight when a target refresh cannot be canceled", async () => {
+    const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
+    writeFileSync(
+      join(viewsDir, "01_provider_stats.sql"),
+      [
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+      ].join("\n"),
+    );
+    const client = createClient(
+      new Map([
+        ["pg_try_advisory_lock", [{ locked: true }]],
+        ["refresh_query_pid", [{ canceled: false, refresh_query_pid: 42 }]],
+      ]),
+    );
+
+    try {
+      await expect(
+        rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", { viewsDir }),
+      ).rejects.toThrow("failed to cancel 1 in-progress refresh for fitness.provider_stats");
+
+      const queries = executedQueries(client);
+      expect(queries.some((query) => query.includes("pg_is_in_recovery"))).toBe(false);
+      expect(
+        queries.some((query) =>
+          query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
+        ),
+      ).toBe(false);
+      expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
+        VIEW_SYNC_LOCK_KEY,
+      ]);
+    } finally {
+      rmSync(viewsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails before preflight when the rebuild lock is already held", async () => {
+    const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
+    writeFileSync(
+      join(viewsDir, "01_provider_stats.sql"),
+      [
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+      ].join("\n"),
+    );
+    const client = createClient(new Map([["pg_try_advisory_lock", [{ locked: false }]]]));
+
+    try {
+      await expect(
+        rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", { viewsDir }),
+      ).rejects.toThrow("materialized view maintenance lock is already held");
+
+      expect(executedQueries(client)).toEqual(["SELECT pg_try_advisory_lock($1) AS locked"]);
+    } finally {
+      rmSync(viewsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails before dropping the view when quiet database preflight fails", async () => {
+    const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
+    writeFileSync(
+      join(viewsDir, "01_provider_stats.sql"),
+      [
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+      ].join("\n"),
+    );
+    const client = createClient(
+      new Map([
+        ["pg_try_advisory_lock", [{ locked: true }]],
+        ["pg_is_in_recovery", [{ in_recovery: true }]],
+      ]),
+    );
+
+    try {
+      await expect(
+        rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", { viewsDir }),
+      ).rejects.toThrow("quiet database preflight failed: database is in recovery");
+
+      expect(
+        executedQueries(client).some((query) =>
+          query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
+        ),
+      ).toBe(false);
+      expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
+        VIEW_SYNC_LOCK_KEY,
+      ]);
     } finally {
       rmSync(viewsDir, { recursive: true, force: true });
     }
