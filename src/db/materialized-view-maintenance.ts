@@ -57,6 +57,11 @@ export interface MaterializedViewMaintenanceRebuildResult {
   warnings: string[];
 }
 
+export interface MaterializedViewMaintenanceCancellationResult {
+  viewName: string;
+  warnings: string[];
+}
+
 export const MATERIALIZED_VIEW_REFRESH_INVENTORY: MaterializedViewRefreshInventoryItem[] = [
   {
     viewName: "fitness.v_activity",
@@ -188,6 +193,18 @@ async function cancelInProgressRefreshesForView(
       "in-progress refreshes",
     )} for ${viewName}`,
   ];
+}
+
+export async function cancelInProgressMaterializedViewRefreshesForMaintenance(
+  client: MaterializedViewMaintenanceClient,
+  viewName: string,
+): Promise<MaterializedViewMaintenanceCancellationResult> {
+  if (!findInventoryItem(viewName)) {
+    throw new Error(`${viewName} is not in the canonical materialized view inventory`);
+  }
+
+  const warnings = await cancelInProgressRefreshesForView(client, viewName);
+  return { viewName, warnings };
 }
 
 export async function runQuietDatabasePreflight(
@@ -355,7 +372,6 @@ export async function rebuildMaterializedViewForMaintenance(
     await client.query("SET lock_timeout = '5s'");
     await client.query("SET statement_timeout = '45min'");
 
-    const cancellationWarnings = await cancelInProgressRefreshesForView(client, viewName);
     const preflight = await runQuietDatabasePreflight(client);
     if (!preflight.ok) {
       throw new Error(`quiet database preflight failed: ${preflight.failures.join("; ")}`);
@@ -385,7 +401,7 @@ export async function rebuildMaterializedViewForMaintenance(
       mode: "rebuild",
       startedAt,
       viewName,
-      warnings: [...cancellationWarnings, ...preflight.warnings],
+      warnings: preflight.warnings,
     };
   } finally {
     await client.query("SELECT pg_advisory_unlock($1)", [VIEW_SYNC_LOCK_KEY]);

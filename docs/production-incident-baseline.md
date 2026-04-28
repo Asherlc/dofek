@@ -825,15 +825,15 @@ refused to begin while an overlapping refresh was waiting on a lock.
 
 ### Fix or Mitigation
 
-The manual rebuild command now cancels in-progress `REFRESH MATERIALIZED VIEW`
-statements for the selected view before running the quiet database preflight and
-destructive rebuild.
+The manual maintenance workflow now cancels in-progress
+`REFRESH MATERIALIZED VIEW` statements for the selected view before running the
+quiet database preflight and destructive rebuild.
 
 ### Remaining Risk
 
-The maintenance command only cancels refreshes for the target view. Other active
-database work can still make the quiet preflight fail, which is intentional for
-planned maintenance.
+The maintenance workflow only cancels refreshes for the target view. Other
+active database work can still make the quiet preflight fail, which is
+intentional for planned maintenance.
 
 ## 2026-04-28: Branch verification rebuild failed in post-rebuild sync
 
@@ -869,7 +869,7 @@ Error: Materialized view maintenance required: fitness.v_activity (live definiti
 
 ### Root Cause
 
-The branch verification exercised the new target-refresh cancellation and
+The branch verification exercised the new target-refresh cancellation step and
 rebuild path, but production still reported live-definition drift for every
 canonical materialized view during the existing post-rebuild sync step.
 

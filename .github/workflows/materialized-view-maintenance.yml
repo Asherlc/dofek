@@ -117,7 +117,16 @@ jobs:
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts'
 
-      - name: Cancel target refreshes and rebuild materialized view
+      - name: Cancel target refreshes
+        run: |
+          timeout 2m docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$INFISICAL_ENV_FILE" \
+            --env VIEW_NAME="$VIEW_NAME" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts cancel-refreshes "$VIEW_NAME"'
+
+      - name: Rebuild materialized view
         run: |
           timeout 50m docker run --rm --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \

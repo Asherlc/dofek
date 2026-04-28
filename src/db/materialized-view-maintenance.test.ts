@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  cancelInProgressMaterializedViewRefreshesForMaintenance,
   MATERIALIZED_VIEW_REFRESH_INVENTORY,
   rebuildMaterializedViewForMaintenance,
   refreshMaterializedViewForMaintenance,
@@ -246,7 +247,7 @@ describe("rebuildMaterializedViewForMaintenance", () => {
     }
   });
 
-  it("cancels in-progress refreshes for the target view before rebuilding", async () => {
+  it("does not cancel target refreshes inside the rebuild command", async () => {
     const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
     writeFileSync(
       join(viewsDir, "01_provider_stats.sql"),
@@ -273,57 +274,13 @@ describe("rebuildMaterializedViewForMaintenance", () => {
       });
 
       const queries = executedQueries(client);
-      const cancelQueryIndex = queries.findIndex((query) => query.includes("pg_cancel_backend"));
       const preflightQueryIndex = queries.findIndex((query) => query.includes("pg_is_in_recovery"));
       const dropQueryIndex = queries.findIndex((query) =>
         query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
       );
-      expect(cancelQueryIndex).toBeGreaterThan(-1);
-      expect(preflightQueryIndex).toBeGreaterThan(cancelQueryIndex);
       expect(dropQueryIndex).toBeGreaterThan(preflightQueryIndex);
-      expect(client.query).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
-        "fitness.provider_stats",
-        '"fitness"."provider_stats"',
-      ]);
-      expect(result.warnings).toContain(
-        "canceled 1 in-progress refresh for fitness.provider_stats",
-      );
-    } finally {
-      rmSync(viewsDir, { recursive: true, force: true });
-    }
-  });
-
-  it("fails before preflight when a target refresh cannot be canceled", async () => {
-    const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
-    writeFileSync(
-      join(viewsDir, "01_provider_stats.sql"),
-      [
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
-        "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
-      ].join("\n"),
-    );
-    const client = createClient(
-      new Map([
-        ["pg_try_advisory_lock", [{ locked: true }]],
-        ["refresh_query_pid", [{ canceled: false, refresh_query_pid: 42 }]],
-      ]),
-    );
-
-    try {
-      await expect(
-        rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", { viewsDir }),
-      ).rejects.toThrow("failed to cancel 1 in-progress refresh for fitness.provider_stats");
-
-      const queries = executedQueries(client);
-      expect(queries.some((query) => query.includes("pg_is_in_recovery"))).toBe(false);
-      expect(
-        queries.some((query) =>
-          query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
-        ),
-      ).toBe(false);
-      expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
-        VIEW_SYNC_LOCK_KEY,
-      ]);
+      expect(queries.some((query) => query.includes("pg_cancel_backend"))).toBe(false);
+      expect(result.warnings).toEqual([]);
     } finally {
       rmSync(viewsDir, { recursive: true, force: true });
     }
@@ -383,5 +340,45 @@ describe("rebuildMaterializedViewForMaintenance", () => {
     } finally {
       rmSync(viewsDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("cancelInProgressMaterializedViewRefreshesForMaintenance", () => {
+  it("refuses views outside the canonical inventory", async () => {
+    const client = createClient();
+
+    await expect(
+      cancelInProgressMaterializedViewRefreshesForMaintenance(client, "fitness.unknown_view"),
+    ).rejects.toThrow("not in the canonical materialized view inventory");
+  });
+
+  it("cancels in-progress refreshes for the target view", async () => {
+    const client = createClient(
+      new Map([["refresh_query_pid", [{ canceled: true, refresh_query_pid: 42 }]]]),
+    );
+
+    const result = await cancelInProgressMaterializedViewRefreshesForMaintenance(
+      client,
+      "fitness.provider_stats",
+    );
+
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
+      "fitness.provider_stats",
+      '"fitness"."provider_stats"',
+    ]);
+    expect(result).toEqual({
+      viewName: "fitness.provider_stats",
+      warnings: ["canceled 1 in-progress refresh for fitness.provider_stats"],
+    });
+  });
+
+  it("fails when a target refresh cannot be canceled", async () => {
+    const client = createClient(
+      new Map([["refresh_query_pid", [{ canceled: false, refresh_query_pid: 42 }]]]),
+    );
+
+    await expect(
+      cancelInProgressMaterializedViewRefreshesForMaintenance(client, "fitness.provider_stats"),
+    ).rejects.toThrow("failed to cancel 1 in-progress refresh for fitness.provider_stats");
   });
 });

@@ -30,6 +30,7 @@ Commands:
 pnpm tsx src/db/run-materialized-view-maintenance.ts inventory
 pnpm tsx src/db/run-materialized-view-maintenance.ts preflight
 pnpm tsx src/db/run-materialized-view-maintenance.ts refresh fitness.v_daily_metrics
+pnpm tsx src/db/run-materialized-view-maintenance.ts cancel-refreshes fitness.provider_stats
 pnpm tsx src/db/run-materialized-view-maintenance.ts rebuild fitness.provider_stats
 pnpm tsx src/db/run-materialized-view-maintenance.ts sync
 ```
@@ -41,6 +42,9 @@ sets a statement timeout, and prints the final duration.
 `sync` runs the quiet-DB preflight and then runs `syncMaterializedViews()` as a
 blocking command. This is the path used by manual deploys when
 `refresh_materialized_views=true`.
+
+`cancel-refreshes <view>` cancels active `REFRESH MATERIALIZED VIEW` statements
+for the selected canonical view.
 
 `rebuild <view>` is the explicit maintenance-window path for an existing
 canonical materialized view whose definition changed. It holds the same advisory
@@ -58,9 +62,10 @@ The workflow:
 
 1. checks that Postgres is writable;
 2. prints the current materialized-view sync plan;
-3. rebuilds the selected canonical materialized view;
-4. runs the normal blocking materialized-view sync; and
-5. fails if the planner still reports `required=true`.
+3. cancels active refreshes for the selected canonical materialized view;
+4. rebuilds the selected canonical materialized view;
+5. runs the normal blocking materialized-view sync; and
+6. fails if the planner still reports `required=true`.
 
 ## Production One-Shot Command
 
@@ -74,9 +79,9 @@ timeout 50m docker run --rm --network dofek_default \
   -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts preflight'
 ```
 
-Replace `preflight` with `inventory`, `sync`, `refresh <view-name>`, or
-`rebuild <view-name>` as needed. Use the exact image tag being deployed or
-investigated.
+Replace `preflight` with `inventory`, `sync`, `refresh <view-name>`,
+`cancel-refreshes <view-name>`, or `rebuild <view-name>` as needed. Use the
+exact image tag being deployed or investigated.
 
 ## Quiet Database Preflight
 
