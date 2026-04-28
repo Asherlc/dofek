@@ -8,7 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
-import { type AdminUserDetail, AdminUserDetailView } from "./AdminUserDetailPage.tsx";
+import { type AdminUserDetail, AdminUserDetailContent } from "./AdminUserDetailPage.tsx";
 
 const subscribedUserDetail: AdminUserDetail = {
   profile: {
@@ -171,7 +171,7 @@ function withAdminRoute(Story: ComponentType) {
 
 const meta = {
   title: "Pages/AdminUserDetailPage",
-  component: AdminUserDetailView,
+  component: AdminUserDetailContent,
   tags: ["autodocs"],
   decorators: [withAdminRoute],
   parameters: {
@@ -185,7 +185,7 @@ const meta = {
     onTogglePaidGrant: () => {},
     onToggleProviderGuideDismissed: () => {},
   },
-} satisfies Meta<typeof AdminUserDetailView>;
+} satisfies Meta<typeof AdminUserDetailContent>;
 
 export default meta;
 

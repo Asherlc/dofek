@@ -115,7 +115,7 @@ export interface AdminUserDetail {
   }[];
 }
 
-export interface AdminUserDetailViewProps {
+export interface AdminUserDetailContentProps {
   detail: AdminUserDetail | null | undefined;
   errorMessage?: string;
   isAdminViewer: boolean;
@@ -131,13 +131,13 @@ export interface AdminUserDetailViewProps {
 export function AdminUserDetailPage() {
   const { user } = useAuth();
   if (!user?.isAdmin) {
-    return <AdminUserDetailView detail={undefined} isAdminViewer={false} isLoading={false} />;
+    return <AdminUserDetailContent detail={undefined} isAdminViewer={false} isLoading={false} />;
   }
 
-  return <AdminUserDetailContent />;
+  return <AdminUserDetailLoader />;
 }
 
-function AdminUserDetailContent() {
+function AdminUserDetailLoader() {
   const { userId } = useParams({ from: "/admin/users/$userId" });
   const trpcUtils = trpc.useUtils();
   const detailQuery = trpc.admin.userDetail.useQuery({ userId });
@@ -155,7 +155,7 @@ function AdminUserDetailContent() {
   });
 
   return (
-    <AdminUserDetailView
+    <AdminUserDetailContent
       detail={detailQuery.data}
       errorMessage={detailQuery.error?.message}
       isAdminViewer={true}
@@ -190,7 +190,7 @@ function AdminUserDetailContent() {
   );
 }
 
-export function AdminUserDetailView({
+export function AdminUserDetailContent({
   detail,
   errorMessage,
   isAdminViewer,
@@ -201,7 +201,7 @@ export function AdminUserDetailView({
   setAdminPending = false,
   setPaidGrantPending = false,
   setProviderGuideDismissedPending = false,
-}: AdminUserDetailViewProps) {
+}: AdminUserDetailContentProps) {
   if (!isAdminViewer) {
     return (
       <PageLayout title="Admin User">
