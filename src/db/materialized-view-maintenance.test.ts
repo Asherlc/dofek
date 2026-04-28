@@ -1,13 +1,17 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   MATERIALIZED_VIEW_REFRESH_INVENTORY,
+  rebuildMaterializedViewForMaintenance,
   refreshMaterializedViewForMaintenance,
   runQuietDatabasePreflight,
 } from "./materialized-view-maintenance.ts";
 
-function createClient(rowsByQuery: Map<string, unknown[]> = new Map()) {
+function createClient(rowsByQuery: Map<string, Array<Record<string, unknown>>> = new Map()) {
   return {
-    query: vi.fn((text: string) => {
+    query: vi.fn((text: string, _params?: unknown[]) => {
       for (const [needle, rows] of rowsByQuery.entries()) {
         if (text.includes(needle)) {
           return Promise.resolve({ rows });
@@ -144,5 +148,61 @@ describe("refreshMaterializedViewForMaintenance", () => {
       'REFRESH MATERIALIZED VIEW CONCURRENTLY "fitness"."v_daily_metrics"',
     );
     expect(executedQueries(client)).toContain("SELECT pg_advisory_unlock($1)");
+  });
+});
+
+describe("rebuildMaterializedViewForMaintenance", () => {
+  it("refuses views outside the canonical inventory", async () => {
+    const client = createClient();
+
+    await expect(
+      rebuildMaterializedViewForMaintenance(client, "fitness.unknown_view"),
+    ).rejects.toThrow("not in the canonical materialized view inventory");
+  });
+
+  it("drops and recreates a canonical materialized view under the maintenance lock", async () => {
+    const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
+    writeFileSync(
+      join(viewsDir, "01_provider_stats.sql"),
+      [
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+        "--> statement-breakpoint",
+        "CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx",
+        "ON fitness.provider_stats (user_id, provider_id)",
+      ].join("\n"),
+    );
+    const client = createClient(
+      new Map([
+        ["pg_try_advisory_lock", [{ locked: true }]],
+        ["pg_is_in_recovery", [{ in_recovery: false }]],
+        ["fingerprint_source", [{ fingerprint_source: "provider_stats:provider_id:text" }]],
+      ]),
+    );
+
+    try {
+      const result = await rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", {
+        viewsDir,
+      });
+
+      expect(result.viewName).toBe("fitness.provider_stats");
+      expect(result.mode).toBe("rebuild");
+      expect(executedQueries(client)).toContain("SELECT pg_try_advisory_lock($1) AS locked");
+      expect(executedQueries(client)).toContain(
+        'DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE',
+      );
+      expect(executedQueries(client)).toContain(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS\nSELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+      );
+      expect(executedQueries(client)).toContain(
+        "CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx\nON fitness.provider_stats (user_id, provider_id)",
+      );
+      expect(executedQueries(client).some((query) => query.includes("drizzle.__view_hashes"))).toBe(
+        true,
+      );
+      expect(executedQueries(client)).toContain("SELECT pg_advisory_unlock($1)");
+    } finally {
+      rmSync(viewsDir, { recursive: true, force: true });
+    }
   });
 });

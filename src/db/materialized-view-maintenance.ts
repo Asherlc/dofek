@@ -1,5 +1,16 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { escapeIdentifier } from "pg";
-import { VIEW_SYNC_LOCK_KEY } from "./sync-views.ts";
+import {
+  computeViewDependencyFingerprintHash,
+  ensureMaterializedViewTrackingTables,
+  extractViewName,
+  hashViewContent,
+  type QueryTextClient,
+  recordMaterializedViewHash,
+  splitSqlStatements,
+  VIEW_SYNC_LOCK_KEY,
+} from "./sync-views.ts";
 
 export type MaterializedViewRefreshRisk = "low" | "medium" | "high";
 
@@ -10,13 +21,7 @@ export interface MaterializedViewRefreshInventoryItem {
   notes: string;
 }
 
-export interface QueryResult {
-  rows: unknown[];
-}
-
-export interface MaterializedViewMaintenanceClient {
-  query(text: string, params?: unknown[]): Promise<QueryResult>;
-}
+export type MaterializedViewMaintenanceClient = QueryTextClient;
 
 export interface QuietDatabasePreflightResult {
   ok: boolean;
@@ -33,6 +38,19 @@ export interface QuietDatabasePreflightOptions {
 export interface MaterializedViewMaintenanceRefreshResult {
   viewName: string;
   mode: "concurrent";
+  startedAt: Date;
+  finishedAt: Date;
+  durationMs: number;
+  warnings: string[];
+}
+
+export interface MaterializedViewMaintenanceRebuildOptions {
+  viewsDir?: string;
+}
+
+export interface MaterializedViewMaintenanceRebuildResult {
+  viewName: string;
+  mode: "rebuild";
   startedAt: Date;
   finishedAt: Date;
   durationMs: number;
@@ -97,6 +115,17 @@ function quoteQualifiedIdentifier(name: string): string {
 
 function findInventoryItem(viewName: string): MaterializedViewRefreshInventoryItem | undefined {
   return MATERIALIZED_VIEW_REFRESH_INVENTORY.find((item) => item.viewName === viewName);
+}
+
+function readCanonicalViewSql(viewName: string, viewsDir?: string): string {
+  const canonicalViewsDir = viewsDir ?? resolve(import.meta.dirname, "../../drizzle/_views");
+  for (const fileName of readdirSync(canonicalViewsDir).filter((file) => file.endsWith(".sql"))) {
+    const sqlContent = readFileSync(join(canonicalViewsDir, fileName), "utf-8");
+    if (extractViewName(sqlContent) === viewName) {
+      return sqlContent;
+    }
+  }
+  throw new Error(`${viewName} does not have a canonical materialized view definition`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -245,6 +274,64 @@ export async function refreshMaterializedViewForMaintenance(
       durationMs: Math.round(performance.now() - startedAtMs),
       finishedAt,
       mode: "concurrent",
+      startedAt,
+      viewName,
+      warnings: preflight.warnings,
+    };
+  } finally {
+    await client.query("SELECT pg_advisory_unlock($1)", [VIEW_SYNC_LOCK_KEY]);
+  }
+}
+
+export async function rebuildMaterializedViewForMaintenance(
+  client: MaterializedViewMaintenanceClient,
+  viewName: string,
+  options: MaterializedViewMaintenanceRebuildOptions = {},
+): Promise<MaterializedViewMaintenanceRebuildResult> {
+  if (!findInventoryItem(viewName)) {
+    throw new Error(`${viewName} is not in the canonical materialized view inventory`);
+  }
+
+  const canonicalSql = readCanonicalViewSql(viewName, options.viewsDir);
+  const lockResult = await client.query("SELECT pg_try_advisory_lock($1) AS locked", [
+    VIEW_SYNC_LOCK_KEY,
+  ]);
+  if (booleanField(lockResult.rows[0], "locked") !== true) {
+    throw new Error("materialized view maintenance lock is already held");
+  }
+
+  try {
+    await client.query("SET application_name = 'dofek-materialized-view-maintenance'");
+    await client.query("SET lock_timeout = '5s'");
+    await client.query("SET statement_timeout = '45min'");
+
+    const preflight = await runQuietDatabasePreflight(client);
+    if (!preflight.ok) {
+      throw new Error(`quiet database preflight failed: ${preflight.failures.join("; ")}`);
+    }
+
+    const startedAt = new Date();
+    const startedAtMs = performance.now();
+    await ensureMaterializedViewTrackingTables(client);
+    await client.query(
+      `DROP MATERIALIZED VIEW IF EXISTS ${quoteQualifiedIdentifier(viewName)} CASCADE`,
+    );
+    for (const statement of splitSqlStatements(canonicalSql)) {
+      await client.query(statement);
+    }
+    const dependencyFingerprintHash = await computeViewDependencyFingerprintHash(client, viewName);
+    await recordMaterializedViewHash(
+      client,
+      viewName,
+      hashViewContent(canonicalSql),
+      dependencyFingerprintHash,
+    );
+    const finishedAt = new Date();
+
+    return {
+      durationMs: Math.round(performance.now() - startedAtMs),
+      finishedAt,
+      mode: "rebuild",
       startedAt,
       viewName,
       warnings: preflight.warnings,

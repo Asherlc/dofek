@@ -345,6 +345,29 @@ jobs:
 
           planner_required="$(sed -n 's/^required=//p' "$planner_output_file" | tail -n 1)"
           planner_reasons="$(sed -n 's/^reasons=//p' "$planner_output_file" | tail -n 1)"
+          rebuild_views="$(printf '%s\n' "$planner_reasons" | tr ',' '\n' | awk -F: '
+            $1 == "view_definition_changed" || $1 == "dependency_fingerprint_changed" {
+              if ($2 != "") {
+                print $2
+              }
+            }
+          ' | sort -u | awk '
+            BEGIN {
+              first = 1
+            }
+            NF {
+              if (!first) {
+                printf ", "
+              }
+              printf "%s", $0
+              first = 0
+            }
+            END {
+              if (!first) {
+                printf "\n"
+              }
+            }
+          ')"
 
           if [ -z "$planner_required" ]; then
             echo "::error::Materialized view sync planner did not emit required=<bool>"
@@ -353,11 +376,20 @@ jobs:
 
           echo "required=${planner_required}" >> "$GITHUB_OUTPUT"
           echo "reasons=${planner_reasons}" >> "$GITHUB_OUTPUT"
+          echo "rebuild_views=${rebuild_views}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$rebuild_views" ]; then
+            echo "Materialized views requiring rebuild: ${rebuild_views}"
+          fi
 
       - name: Fail on required materialized view maintenance
         if: steps.view_sync_plan.outputs.required == 'true' && inputs.refresh_materialized_views != true
         run: |
           echo "::error::Materialized view maintenance is required but automatic view sync is disabled: ${{ steps.view_sync_plan.outputs.reasons }}"
+          if [ -n "${{ steps.view_sync_plan.outputs.rebuild_views }}" ]; then
+            echo "::error::Materialized views requiring rebuild: ${{ steps.view_sync_plan.outputs.rebuild_views }}"
+          fi
+          echo "::error::Run the Materialized View Maintenance workflow for a planned rebuild, or rerun this deploy with refresh_materialized_views=true."
           exit 1
 
       - name: Run blocking materialized view maintenance

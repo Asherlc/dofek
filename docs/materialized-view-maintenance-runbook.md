@@ -30,6 +30,7 @@ Commands:
 pnpm tsx src/db/run-materialized-view-maintenance.ts inventory
 pnpm tsx src/db/run-materialized-view-maintenance.ts preflight
 pnpm tsx src/db/run-materialized-view-maintenance.ts refresh fitness.v_daily_metrics
+pnpm tsx src/db/run-materialized-view-maintenance.ts rebuild fitness.provider_stats
 pnpm tsx src/db/run-materialized-view-maintenance.ts sync
 ```
 
@@ -40,6 +41,26 @@ sets a statement timeout, and prints the final duration.
 `sync` runs the quiet-DB preflight and then runs `syncMaterializedViews()` as a
 blocking command. This is the path used by manual deploys when
 `refresh_materialized_views=true`.
+
+`rebuild <view>` is the explicit maintenance-window path for an existing
+canonical materialized view whose definition changed. It holds the same advisory
+lock, runs the quiet-DB preflight, drops the named view with `CASCADE`, recreates
+it from `drizzle/_views`, and records the new hash.
+
+## GitHub Manual Action
+
+For the common production case, use **Actions → Materialized View Maintenance →
+Run workflow**. The defaults run against production and rebuild
+`fitness.provider_stats` from the `latest` image. Override `image_tag` only when
+you need maintenance to run from a specific deployed image tag.
+
+The workflow:
+
+1. checks that Postgres is writable;
+2. prints the current materialized-view sync plan;
+3. rebuilds the selected canonical materialized view;
+4. runs the normal blocking materialized-view sync; and
+5. fails if the planner still reports `required=true`.
 
 ## Production One-Shot Command
 
@@ -53,8 +74,9 @@ timeout 50m docker run --rm --network dofek_default \
   -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts preflight'
 ```
 
-Replace `preflight` with `inventory`, `sync`, or `refresh <view-name>` as
-needed. Use the exact image tag being deployed or investigated.
+Replace `preflight` with `inventory`, `sync`, `refresh <view-name>`, or
+`rebuild <view-name>` as needed. Use the exact image tag being deployed or
+investigated.
 
 ## Quiet Database Preflight
 
@@ -164,6 +186,13 @@ memory, and temporary disk.
 4. For deploy/manual sync maintenance, use the blocking sync command:
 
    ```bash
+   pnpm tsx src/db/run-materialized-view-maintenance.ts sync
+   ```
+
+   For a definition change on an existing view, rebuild that one view first:
+
+   ```bash
+   pnpm tsx src/db/run-materialized-view-maintenance.ts rebuild fitness.provider_stats
    pnpm tsx src/db/run-materialized-view-maintenance.ts sync
    ```
 

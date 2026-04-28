@@ -698,3 +698,45 @@ bounded retry, then runs the same policy against `e2e-server:latest`:
 The scanner still needs registry and vulnerability database access at runtime.
 The removed failure mode was the un-cached GitHub release tarball installer in
 the action step.
+
+## 2026-04-28: Materialized view definition-change deploy gate
+
+### Impact
+
+A deploy could not proceed after the planner reported required materialized-view
+maintenance for `fitness.provider_stats`. App serving was protected because the
+deploy failed before attempting an automatic full-history rebuild under traffic.
+
+### Evidence That Mattered
+
+The deploy emitted:
+
+```text
+Materialized view maintenance is required but automatic view sync is disabled:
+view_definition_changed:fitness.provider_stats:b65eca7aff54a516a141c7ed496c2415ec39b07fde249e9fa4272cc9c760a795
+```
+
+That reason maps to an existing materialized view whose canonical SQL changed.
+The normal `sync` command intentionally refuses to drop and recreate such a view
+without an explicit maintenance action.
+
+### Root Cause
+
+The canonical `fitness.provider_stats` materialized-view definition changed, but
+the available operator path required rerunning deploy with the correct manual
+input or hand-running the container command. There was no dedicated GitHub
+Actions button for the safe explicit rebuild path.
+
+### Fix or Mitigation
+
+Added an explicit `rebuild <view>` maintenance command and a manual
+`Materialized View Maintenance` GitHub Action. The action defaults to rebuilding
+`fitness.provider_stats`, runs the quiet-DB preflight, rebuilds the selected
+canonical view, runs normal blocking sync, and verifies the planner reports
+`required=false`.
+
+### Remaining Risk
+
+Rebuilding a materialized view is still heavy database maintenance. Operators
+should run it during a planned maintenance window and stop if preflight reports
+recovery mode, active lock waits, or other full-history maintenance.
