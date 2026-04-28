@@ -145,8 +145,9 @@ resource "terraform_data" "data_volume_mount_alias" {
       "target=/mnt/HC_Volume_${hcloud_volume.dofek_data[0].id}",
       "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
       "ln -sfn \"$target\" /mnt/dofek-data",
-      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/databasus",
+      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/databasus /mnt/dofek-data/redis",
       "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek_databasus_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/databasus -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/databasus/; fi",
+      "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek_redis_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/redis -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/redis/; fi",
     ]
   }
 }
@@ -172,7 +173,8 @@ resource "terraform_data" "staging_data_volume_mount_alias" {
       "target=/mnt/HC_Volume_${hcloud_volume.dofek_staging_data[0].id}",
       "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
       "ln -sfn \"$target\" /mnt/dofek-data",
-      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/databasus",
+      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/databasus /mnt/dofek-data/redis",
+      "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek-staging_redis_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/redis -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/redis/; fi",
     ]
   }
 }
@@ -224,6 +226,47 @@ resource "terraform_data" "staging_otel_config_sync" {
   provisioner "remote-exec" {
     inline = [
       "docker service ls --format '{{.Name}}' | grep -qx dofek-staging_collector && docker service update --force dofek-staging_collector || true",
+    ]
+  }
+}
+
+# Apply Redis kernel configuration to existing servers
+resource "terraform_data" "redis_kernel_config" {
+  triggers_replace = [
+    "redis-overcommit-v1"
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sysctl -w vm.overcommit_memory=1",
+      "sh -c 'echo \"vm.overcommit_memory=1\" > /etc/sysctl.d/99-redis.conf'"
+    ]
+  }
+}
+
+resource "terraform_data" "staging_redis_kernel_config" {
+  triggers_replace = [
+    "redis-overcommit-v1"
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek_staging.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sysctl -w vm.overcommit_memory=1",
+      "sh -c 'echo \"vm.overcommit_memory=1\" > /etc/sysctl.d/99-redis.conf'"
     ]
   }
 }
