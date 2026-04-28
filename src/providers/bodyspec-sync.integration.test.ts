@@ -218,8 +218,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     server.resetHandlers();
+    if (ctx) await ctx.cleanup();
   });
 
   afterAll(() => {
