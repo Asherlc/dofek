@@ -6,8 +6,9 @@
 -- preferred over API data (1Hz) automatically, and cross-provider data (e.g.
 -- Apple Watch HR for a Peloton ride) is included.
 --
--- Downstream consumers (activity_summary, getStream, getHrZones) read from this
--- view instead of reimplementing best-source selection independently.
+-- Downstream rollups (activity_summary, provider_stats) read from this view.
+-- Latency-sensitive activity detail endpoints compute a request-scoped equivalent
+-- from raw metric_stream rows so stale full-history refreshes do not hide data.
 
 CREATE MATERIALIZED VIEW fitness.deduped_sensor AS
 

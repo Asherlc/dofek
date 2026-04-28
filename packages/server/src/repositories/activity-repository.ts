@@ -166,8 +166,18 @@ export class ActivityRepository extends BaseRepository {
             a.name,
             a.provider_id,
             a.source_providers,
-            s.avg_hr,
-            s.max_hr,
+            COALESCE(
+              s.avg_hr,
+              CASE WHEN jsonb_typeof(a.raw->'avgHeartRate') = 'number'
+                THEN (a.raw->>'avgHeartRate')::real
+              END
+            ) AS avg_hr,
+            COALESCE(
+              s.max_hr,
+              CASE WHEN jsonb_typeof(a.raw->'maxHeartRate') = 'number'
+                THEN (a.raw->>'maxHeartRate')::smallint
+              END
+            ) AS max_hr,
             s.avg_power,
             s.total_distance AS distance_meters,
             COUNT(*) OVER()::int AS total_count
@@ -221,26 +231,129 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const rows = await this.query(
       streamPointRowSchema,
-      sql`WITH pivoted AS (
+      sql`WITH target_activity AS (
+            SELECT id, user_id, started_at, ended_at, member_activity_ids
+            FROM fitness.v_activity a
+            WHERE a.id = ${activityId}
+              AND a.user_id = ${this.userId}
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
+          ),
+          activity_members AS (
             SELECT
-              ds.recorded_at,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'heart_rate')::SMALLINT AS heart_rate,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'power')::SMALLINT AS power,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'speed') AS speed,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'cadence')::SMALLINT AS cadence,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'altitude') AS altitude,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lat') AS lat,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lng') AS lng
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-            GROUP BY ds.recorded_at
+              ta.id AS canonical_id,
+              ta.user_id,
+              unnest(ta.member_activity_ids) AS member_id
+            FROM target_activity ta
+          ),
+          linked_best_source AS (
+            SELECT DISTINCT ON (canonical_id, channel)
+              canonical_id,
+              channel,
+              provider_id
+            FROM (
+              SELECT
+                am.canonical_id,
+                ms.channel,
+                ms.provider_id,
+                COUNT(*) AS sample_count
+              FROM fitness.metric_stream ms
+              JOIN activity_members am ON ms.activity_id = am.member_id
+              WHERE ms.activity_id IS NOT NULL
+                AND ms.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+              GROUP BY am.canonical_id, ms.channel, ms.provider_id
+            ) counts
+            ORDER BY canonical_id, channel, sample_count DESC
+          ),
+          linked_sample_bounds AS (
+            SELECT am.canonical_id, MAX(ms.recorded_at) AS last_linked_sample_at
+            FROM fitness.metric_stream ms
+            JOIN activity_members am ON ms.activity_id = am.member_id
+            WHERE ms.activity_id IS NOT NULL
+            GROUP BY am.canonical_id
+          ),
+          fallback_windows AS (
+            SELECT
+              ta.id AS canonical_id,
+              ta.user_id,
+              ta.started_at,
+              COALESCE(ta.ended_at, lsb.last_linked_sample_at) AS fallback_ended_at
+            FROM target_activity ta
+            LEFT JOIN linked_sample_bounds lsb ON lsb.canonical_id = ta.id
+          ),
+          ambient_best_source AS (
+            SELECT DISTINCT ON (canonical_id, channel)
+              canonical_id,
+              channel,
+              provider_id
+            FROM (
+              SELECT
+                fw.canonical_id,
+                ms.channel,
+                ms.provider_id,
+                COUNT(*) AS sample_count
+              FROM fitness.metric_stream ms
+              JOIN fallback_windows fw ON fw.user_id = ms.user_id
+              LEFT JOIN linked_best_source lbs
+                ON lbs.canonical_id = fw.canonical_id
+                AND lbs.channel = ms.channel
+              WHERE ms.activity_id IS NULL
+                AND fw.fallback_ended_at IS NOT NULL
+                AND ms.recorded_at >= fw.started_at
+                AND ms.recorded_at <= fw.fallback_ended_at
+                AND ms.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
+                AND lbs.canonical_id IS NULL
+              GROUP BY fw.canonical_id, ms.channel, ms.provider_id
+            ) counts
+            ORDER BY canonical_id, channel, sample_count DESC
+          ),
+          scoped_sensor AS (
+            SELECT
+              am.canonical_id AS activity_id,
+              am.user_id,
+              ms.recorded_at,
+              ms.channel,
+              MAX(ms.scalar) AS scalar
+            FROM fitness.metric_stream ms
+            JOIN activity_members am ON ms.activity_id = am.member_id
+            JOIN linked_best_source lbs
+              ON am.canonical_id = lbs.canonical_id
+              AND ms.channel = lbs.channel
+              AND ms.provider_id = lbs.provider_id
+            WHERE ms.activity_id IS NOT NULL
+              AND ms.scalar IS NOT NULL
+            GROUP BY am.canonical_id, am.user_id, ms.recorded_at, ms.channel
+            UNION ALL
+            SELECT
+              fw.canonical_id AS activity_id,
+              fw.user_id,
+              ms.recorded_at,
+              ms.channel,
+              MAX(ms.scalar) AS scalar
+            FROM fitness.metric_stream ms
+            JOIN fallback_windows fw ON fw.user_id = ms.user_id
+            JOIN ambient_best_source abs
+              ON fw.canonical_id = abs.canonical_id
+              AND ms.channel = abs.channel
+              AND ms.provider_id = abs.provider_id
+            WHERE ms.activity_id IS NULL
+              AND fw.fallback_ended_at IS NOT NULL
+              AND ms.recorded_at >= fw.started_at
+              AND ms.recorded_at <= fw.fallback_ended_at
+              AND ms.scalar IS NOT NULL
+            GROUP BY fw.canonical_id, fw.user_id, ms.recorded_at, ms.channel
+          ),
+          pivoted AS (
+            SELECT
+              ss.recorded_at,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'heart_rate')::SMALLINT AS heart_rate,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'power')::SMALLINT AS power,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'speed') AS speed,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'cadence')::SMALLINT AS cadence,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'altitude') AS altitude,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'lat') AS lat,
+              MAX(ss.scalar) FILTER (WHERE ss.channel = 'lng') AS lng
+            FROM scoped_sensor ss
+            GROUP BY ss.recorded_at
           ),
           numbered AS (
             SELECT p.*, ROW_NUMBER() OVER (ORDER BY p.recorded_at) AS rn,
@@ -261,7 +374,108 @@ export class ActivityRepository extends BaseRepository {
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const rows = await this.query(
       hrZoneRowSchema,
-      sql`WITH params AS (
+      sql`WITH target_activity AS (
+            SELECT id, user_id, started_at, ended_at, member_activity_ids
+            FROM fitness.v_activity a
+            WHERE a.id = ${activityId}
+              AND a.user_id = ${this.userId}
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
+          ),
+          activity_members AS (
+            SELECT
+              ta.id AS canonical_id,
+              ta.user_id,
+              unnest(ta.member_activity_ids) AS member_id
+            FROM target_activity ta
+          ),
+          linked_best_source AS (
+            SELECT DISTINCT ON (canonical_id, channel)
+              canonical_id,
+              channel,
+              provider_id
+            FROM (
+              SELECT
+                am.canonical_id,
+                ms.channel,
+                ms.provider_id,
+                COUNT(*) AS sample_count
+              FROM fitness.metric_stream ms
+              JOIN activity_members am ON ms.activity_id = am.member_id
+              WHERE ms.activity_id IS NOT NULL
+                AND ms.channel = 'heart_rate'
+              GROUP BY am.canonical_id, ms.channel, ms.provider_id
+            ) counts
+            ORDER BY canonical_id, channel, sample_count DESC
+          ),
+          linked_sample_bounds AS (
+            SELECT am.canonical_id, MAX(ms.recorded_at) AS last_linked_sample_at
+            FROM fitness.metric_stream ms
+            JOIN activity_members am ON ms.activity_id = am.member_id
+            WHERE ms.activity_id IS NOT NULL
+            GROUP BY am.canonical_id
+          ),
+          fallback_windows AS (
+            SELECT
+              ta.id AS canonical_id,
+              ta.user_id,
+              ta.started_at,
+              COALESCE(ta.ended_at, lsb.last_linked_sample_at) AS fallback_ended_at
+            FROM target_activity ta
+            LEFT JOIN linked_sample_bounds lsb ON lsb.canonical_id = ta.id
+          ),
+          ambient_best_source AS (
+            SELECT DISTINCT ON (canonical_id, channel)
+              canonical_id,
+              channel,
+              provider_id
+            FROM (
+              SELECT
+                fw.canonical_id,
+                ms.channel,
+                ms.provider_id,
+                COUNT(*) AS sample_count
+              FROM fitness.metric_stream ms
+              JOIN fallback_windows fw ON fw.user_id = ms.user_id
+              LEFT JOIN linked_best_source lbs
+                ON lbs.canonical_id = fw.canonical_id
+                AND lbs.channel = ms.channel
+              WHERE ms.activity_id IS NULL
+                AND fw.fallback_ended_at IS NOT NULL
+                AND ms.recorded_at >= fw.started_at
+                AND ms.recorded_at <= fw.fallback_ended_at
+                AND ms.channel = 'heart_rate'
+                AND lbs.canonical_id IS NULL
+              GROUP BY fw.canonical_id, ms.channel, ms.provider_id
+            ) counts
+            ORDER BY canonical_id, channel, sample_count DESC
+          ),
+          hr_samples AS (
+            SELECT ms.scalar AS heart_rate
+            FROM fitness.metric_stream ms
+            JOIN activity_members am ON ms.activity_id = am.member_id
+            JOIN linked_best_source lbs
+              ON am.canonical_id = lbs.canonical_id
+              AND ms.channel = lbs.channel
+              AND ms.provider_id = lbs.provider_id
+            WHERE ms.activity_id IS NOT NULL
+              AND ms.channel = 'heart_rate'
+              AND ms.scalar IS NOT NULL
+            UNION ALL
+            SELECT ms.scalar AS heart_rate
+            FROM fitness.metric_stream ms
+            JOIN fallback_windows fw ON fw.user_id = ms.user_id
+            JOIN ambient_best_source abs
+              ON fw.canonical_id = abs.canonical_id
+              AND ms.channel = abs.channel
+              AND ms.provider_id = abs.provider_id
+            WHERE ms.activity_id IS NULL
+              AND fw.fallback_ended_at IS NOT NULL
+              AND ms.recorded_at >= fw.started_at
+              AND ms.recorded_at <= fw.fallback_ended_at
+              AND ms.channel = 'heart_rate'
+              AND ms.scalar IS NOT NULL
+          ),
+          params AS (
             SELECT
               up.max_hr,
               COALESCE(rhr.resting_hr, 60) AS resting_hr
@@ -272,18 +486,6 @@ export class ActivityRepository extends BaseRepository {
             )}
             WHERE up.id = ${this.userId}
               AND up.max_hr IS NOT NULL
-          ),
-          hr_samples AS (
-            SELECT ds.scalar AS heart_rate
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel = 'heart_rate'
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
           )
           SELECT
             z.zone,

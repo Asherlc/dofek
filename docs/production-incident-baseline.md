@@ -48,6 +48,61 @@ while preserving hard failures for unrelated Terraform errors.
 The PR will not receive a live review app until Hetzner can allocate the
 configured server or the review-app location/server type is changed.
 
+## 2026-04-28: Activity Heart Rate Hidden By Stale Sensor Projection
+
+### Impact
+
+The activity detail page for activity `b1bbbc97-1bd9-47c8-9f0a-1f2ee748fec6`
+showed no heart-rate data even though raw WHOOP and Apple Health heart-rate
+samples existed for the workout window. Related post-sync maintenance also
+repeatedly restarted Postgres, causing short recovery-mode windows.
+
+### What Happened
+
+The WHOOP strength activity was the canonical `fitness.v_activity` row and
+merged Apple Health workout member rows correctly. Raw `fitness.metric_stream`
+contained heart-rate samples during the activity window, but
+`fitness.deduped_sensor` still projected those samples under an older Apple
+Health member activity ID. Activity detail endpoints read the stale
+`deduped_sensor` view, so the page had no stream points for the canonical ID.
+
+### Evidence That Mattered
+
+- Failing user-visible path:
+  `/activity/b1bbbc97-1bd9-47c8-9f0a-1f2ee748fec6`
+- Raw data check: `metric_stream` had 27,766 WHOOP heart-rate samples and 4,437
+  WHOOP BLE heart-rate samples during the activity window.
+- Stale projection check: `deduped_sensor` had no rows for the canonical WHOOP
+  activity ID, but did have 591 heart-rate rows for Apple Health member activity
+  `20796d9d-abd4-4efc-b7d4-1f435bb4478e`.
+- First fatal DB log line:
+  `Failed process was running: REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`
+- Postgres then logged `FATAL: the database system is in recovery mode`.
+
+### Root Cause
+
+Routine post-sync maintenance was still trying to rebuild full-history
+metric-stream materialized views on the live 2 GiB DB container. The
+`fitness.deduped_sensor` concurrent refresh was OOM-killed by the kernel, so the
+view stayed stale while `fitness.v_activity` moved forward.
+
+### Fix Or Mitigation
+
+Activity detail stream and heart-rate zone reads now compute the requested
+canonical activity directly from raw `metric_stream` rows and
+`v_activity.member_activity_ids`, so the page no longer depends on
+`deduped_sensor` freshness. Routine post-sync and request-time self-healing now
+refresh only lightweight views; full-history metric-stream views are left to the
+explicit materialized-view maintenance runbook.
+
+### Remaining Risk
+
+Other analytics paths that still read `fitness.deduped_sensor` or
+`fitness.activity_summary` can remain stale until planned materialized-view
+maintenance succeeds. Those full-history projections still need a bounded
+replacement or incremental refresh strategy before they are safe for routine
+automation.
+
 ## 2026-04-26: Review App Server Quota Exhausted
 
 ### Impact

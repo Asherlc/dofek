@@ -11,6 +11,7 @@ describe("Activity router", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   let metricOnlyActivityId: string;
+  let staleCanonicalActivityId: string;
   let cyclingActivityId: string;
   let walkingActivityId: string;
 
@@ -23,6 +24,14 @@ describe("Activity router", () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES
+            ('apple_health', 'Apple Health', ${TEST_USER_ID}),
+            ('whoop', 'WHOOP', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
 
@@ -105,6 +114,73 @@ describe("Activity router", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider_priority (provider_id, priority)
+          VALUES ('whoop', 10), ('apple_health', 20)
+          ON CONFLICT (provider_id) DO UPDATE SET priority = EXCLUDED.priority`,
+    );
+
+    const staleMemberActivities = await testCtx.db.execute<{
+      id: string;
+      provider_id: string;
+    }>(
+      sql`WITH inserted AS (
+            INSERT INTO fitness.activity (
+              provider_id, user_id, external_id, activity_type, started_at, ended_at, raw
+            ) VALUES
+            (
+              'apple_health',
+              ${TEST_USER_ID},
+              'hk:workout:stale-member',
+              'strength_training',
+              CURRENT_TIMESTAMP - INTERVAL '3 days',
+              CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '10 minutes',
+              '{"sourceName":"WHOOP"}'::jsonb
+            ),
+            (
+              'whoop',
+              ${TEST_USER_ID},
+              'whoop-stale-member',
+              'strength',
+              CURRENT_TIMESTAMP - INTERVAL '3 days',
+              CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '10 minutes',
+              '{"avgHeartRate":122,"maxHeartRate":130}'::jsonb
+            )
+            RETURNING id, provider_id
+          )
+          SELECT id, provider_id FROM inserted`,
+    );
+    const staleAppleHealthActivity = staleMemberActivities.find(
+      (activity) => activity.provider_id === "apple_health",
+    );
+    const staleWhoopActivity = staleMemberActivities.find(
+      (activity) => activity.provider_id === "whoop",
+    );
+    if (!staleAppleHealthActivity || !staleWhoopActivity) {
+      throw new Error("Failed to insert stale view regression activities");
+    }
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.metric_stream (
+            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+          ) VALUES
+          (CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'apple_health', NULL, 'api', 'heart_rate', ${staleAppleHealthActivity.id}, 120, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'apple_health', NULL, 'api', 'heart_rate', ${staleAppleHealthActivity.id}, 124, NULL),
+          (CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '3 seconds', ${TEST_USER_ID}, 'apple_health', NULL, 'api', 'heart_rate', ${staleAppleHealthActivity.id}, 130, NULL)`,
+    );
+
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    const staleCanonicalRows = await testCtx.db.execute<{ id: string }>(
+      sql`SELECT id
+          FROM fitness.v_activity
+          WHERE member_activity_ids @> ARRAY[${staleWhoopActivity.id}::uuid]`,
+    );
+    const staleCanonical = staleCanonicalRows[0]?.id;
+    if (!staleCanonical) {
+      throw new Error("Failed to resolve stale view regression canonical activity");
+    }
+    staleCanonicalActivityId = staleCanonical;
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -223,6 +299,18 @@ describe("Activity router", () => {
       expect(points.length).toBeGreaterThan(0);
       expect(points[0]?.heartRate).toBe(150);
       expect(points[0]?.power).toBe(210);
+    });
+
+    it("returns member activity heart rate when deduped_sensor is stale", async () => {
+      const result = await query("activity.stream", {
+        id: staleCanonicalActivityId,
+        maxPoints: 500,
+      });
+      const points = result.result?.data;
+      expect(Array.isArray(points)).toBe(true);
+      expect(points.map((point: { heartRate: number | null }) => point.heartRate)).toEqual([
+        120, 124, 130,
+      ]);
     });
   });
 

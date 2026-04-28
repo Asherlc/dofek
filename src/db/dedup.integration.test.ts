@@ -101,6 +101,12 @@ interface DedupedSensorRow extends Record<string, unknown> {
   scalar: number;
 }
 
+async function refreshActivityMetricViews(database: TestContext["db"]) {
+  await database.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+  await database.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+  await database.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+}
+
 describe("Deduplication materialized views", () => {
   let ctx: TestContext;
 
@@ -250,7 +256,7 @@ describe("Deduplication materialized views", () => {
       },
     ]);
 
-    await refreshDedupViews(ctx.db);
+    await refreshActivityMetricViews(ctx.db);
 
     const rows = await ctx.db.execute<ActivityViewRow>(
       sql`SELECT * FROM fitness.v_activity
@@ -282,7 +288,7 @@ describe("Deduplication materialized views", () => {
       },
     ]);
 
-    await refreshDedupViews(ctx.db);
+    await refreshActivityMetricViews(ctx.db);
 
     const rows = await ctx.db.execute<ActivityViewRow>(
       sql`SELECT * FROM fitness.v_activity WHERE started_at::date = '2026-03-10'`,
@@ -422,12 +428,13 @@ describe("Deduplication materialized views", () => {
   });
 
   it("activity_summary aggregates per-activity stats from metric_stream", async () => {
+    const testExternalId = `wahoo-ride-ms-${randomUUID()}`;
     // Create an activity with metric streams
     const wahooActivityRows = await ctx.db
       .insert(activity)
       .values({
         providerId: "wahoo",
-        externalId: "wahoo-ride-ms",
+        externalId: testExternalId,
         activityType: "cycling",
         startedAt: new Date("2026-03-05T10:00:00Z"),
         endedAt: new Date("2026-03-05T11:00:00Z"),
@@ -447,7 +454,7 @@ describe("Deduplication materialized views", () => {
           ('2026-03-05T10:00:06Z', ${TEST_USER_ID}, 'wahoo', 'api', 'power', ${wahooActivity.id}, 210)`,
     );
 
-    await refreshDedupViews(ctx.db);
+    await refreshActivityMetricViews(ctx.db);
 
     const rows = await ctx.db.execute<ActivitySummaryRow>(
       sql`SELECT * FROM fitness.activity_summary WHERE activity_id = ${wahooActivity.id}`,
@@ -501,7 +508,7 @@ describe("Deduplication materialized views", () => {
           ('2026-03-06T10:25:00Z', ${TEST_USER_ID}, 'apple_health', 'api', 'heart_rate', NULL, 160)`,
     );
 
-    await refreshDedupViews(ctx.db);
+    await refreshActivityMetricViews(ctx.db);
 
     const summaryRows = await ctx.db.execute<ActivitySummaryRow>(
       sql`SELECT * FROM fitness.activity_summary WHERE activity_id = ${testActivity.id}`,

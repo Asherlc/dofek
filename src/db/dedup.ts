@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { logger } from "../logger.ts";
 import type { SyncDatabase } from "./index.ts";
 import { refreshMaterializedView } from "./materialized-view-refresh.ts";
-import { ALL_MATERIALIZED_VIEWS, DEDUP_VIEWS, ROLLUP_VIEWS } from "./materialized-views.ts";
+import { POST_SYNC_VIEWS } from "./materialized-views.ts";
 
 /**
  * Check whether a "relation does not exist" error occurred.
@@ -20,7 +20,7 @@ export function isRelationMissingError(error: unknown): boolean {
 }
 
 /**
- * Refresh all deduplication materialized views.
+ * Refresh lightweight post-sync materialized views.
  * Call after every sync run to keep canonical data up-to-date.
  *
  * CONCURRENTLY allows reads during refresh (requires unique index).
@@ -30,6 +30,9 @@ export function isRelationMissingError(error: unknown): boolean {
  * v_activity) must not prevent other views (e.g. v_daily_metrics) from
  * being refreshed.
  *
+ * Full-history metric-stream views are intentionally excluded from routine
+ * post-sync refreshes. They are refreshed only through planned maintenance.
+ *
  * When a view is missing entirely (e.g. CASCADE-dropped or lost due to
  * disk-full), triggers a full view sync to recreate it from the canonical
  * SQL definitions before retrying.
@@ -38,7 +41,7 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
   const errors: unknown[] = [];
   let viewsMissing = false;
 
-  for (const view of [...DEDUP_VIEWS, ...ROLLUP_VIEWS]) {
+  for (const view of POST_SYNC_VIEWS) {
     try {
       await refreshView(db, view);
     } catch (error) {
@@ -74,7 +77,7 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
 
     // Retry refreshes after recreation
     const retryErrors: unknown[] = [];
-    for (const view of ALL_MATERIALIZED_VIEWS) {
+    for (const view of POST_SYNC_VIEWS) {
       try {
         await refreshView(db, view);
       } catch (error) {

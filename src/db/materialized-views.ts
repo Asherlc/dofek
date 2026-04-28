@@ -20,9 +20,19 @@ export const ROLLUP_VIEWS = ["fitness.activity_summary", "fitness.provider_stats
 /** All materialized views in dependency order (dedup first, then rollup). */
 export const ALL_MATERIALIZED_VIEWS = [...DEDUP_VIEWS, ...ROLLUP_VIEWS] as const;
 
-/** Subset of views that depend on activity data and need refresh after activity syncs. */
-export const ACTIVITY_VIEWS = [
+/**
+ * Views safe to refresh automatically after routine syncs.
+ *
+ * Full-history metric-stream views (`deduped_sensor`, `activity_summary`,
+ * `provider_stats`) are maintained through the explicit maintenance runbook;
+ * rebuilding them during normal post-sync work can overwhelm production.
+ */
+export const POST_SYNC_VIEWS = [
   "fitness.v_activity",
-  "fitness.deduped_sensor",
-  "fitness.activity_summary",
+  "fitness.v_sleep",
+  "fitness.v_body_measurement",
+  "fitness.v_daily_metrics",
 ] as const;
+
+/** Activity views safe for request-time stale-view self-healing. */
+export const ACTIVITY_VIEWS = ["fitness.v_activity"] as const;
