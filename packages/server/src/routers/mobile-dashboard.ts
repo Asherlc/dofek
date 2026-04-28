@@ -210,10 +210,10 @@ export const mobileDashboardRouter = router({
             SELECT
               ${sleepNightDate(tz)} AS sleep_date,
               duration_minutes,
-              deep_pct,
-              rem_pct,
-              light_pct,
-              awake_pct
+              CASE WHEN duration_minutes > 0 THEN deep_minutes::real / duration_minutes * 100 ELSE 0 END AS deep_pct,
+              CASE WHEN duration_minutes > 0 THEN rem_minutes::real / duration_minutes * 100 ELSE 0 END AS rem_pct,
+              CASE WHEN duration_minutes > 0 THEN light_minutes::real / duration_minutes * 100 ELSE 0 END AS light_pct,
+              CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct
             FROM fitness.v_sleep
             WHERE user_id = ${ctx.userId}
               AND is_nap = false
