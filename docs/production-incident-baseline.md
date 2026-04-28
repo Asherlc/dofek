@@ -7,6 +7,47 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-04-28: Review App Hetzner Placement Unavailable
+
+### Impact
+
+PR #1037 failed the `Deploy Review App` check before a review server could be
+created. Application build and test checks were not implicated.
+
+### What Happened
+
+The review-app workflow reached Terraform apply, planned one new
+`hcloud_server.review` named `dofek-pr-1037`, and requested the configured
+review-app server type in `nbg1`.
+
+### Evidence That Mattered
+
+- Failing step: `Apply review app infrastructure`
+- First fatal line:
+  `Error: error during placement (resource_unavailable, 9f92993d621029d2c01b7868edfa5bb5)`
+- Terraform resource: `hcloud_server.review` in `server.tf` line 27
+- Planned server attributes included `server_type = "cax11"` and
+  `location = "nbg1"`
+
+### Root Cause
+
+Hetzner could not place the configured review-app server type in the configured
+location. This differed from the previous `resource_limit_exceeded` quota
+failure; the account can still have free server quota when regional placement
+capacity is unavailable.
+
+### Fix Or Mitigation
+
+The review-app workflow now treats `resource_unavailable` / `error during
+placement` as a non-code review-app skip. It posts a PR comment explaining that
+Hetzner could not allocate the configured review server and exits successfully,
+while preserving hard failures for unrelated Terraform errors.
+
+### Remaining Risk
+
+The PR will not receive a live review app until Hetzner can allocate the
+configured server or the review-app location/server type is changed.
+
 ## 2026-04-26: Review App Server Quota Exhausted
 
 ### Impact
