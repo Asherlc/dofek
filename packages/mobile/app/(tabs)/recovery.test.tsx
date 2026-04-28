@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockTrendsData: Record<string, unknown> | undefined;
 let mockDailyMetricsData: Record<string, unknown>[];
+let mockHrvVariabilityData: Record<string, unknown>[];
 let mockReadinessData: Record<string, unknown>[];
 let sparkLinePropsCalls: Record<string, unknown>[];
 
@@ -15,7 +16,7 @@ function q(getData: () => unknown = () => undefined) {
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     recovery: {
-      hrvVariability: q(() => []),
+      hrvVariability: q(() => mockHrvVariabilityData),
       readinessScore: q(() => mockReadinessData),
       workloadRatio: q(() => []),
     },
@@ -87,8 +88,24 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
     mockDailyMetricsData = [];
+    mockHrvVariabilityData = [];
     mockReadinessData = [];
     sparkLinePropsCalls = [];
+  });
+
+  it("displays Heart Rate Variability from daily metric trends", async () => {
+    mockTrendsData = { latest_hrv: 44 };
+    mockHrvVariabilityData = [
+      { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
+      { date: "2026-04-06", hrv: 24, rollingMean: 44, rollingCoefficientOfVariation: 4 },
+    ];
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(screen.getByText("44")).toBeTruthy();
+    expect(screen.queryByText("24")).toBeNull();
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {
