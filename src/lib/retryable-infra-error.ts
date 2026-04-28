@@ -1,3 +1,4 @@
+// cspell:ignore maxretriesperrequest
 const RETRYABLE_INFRA_ERROR_CODES = new Set([
   "ECONNRESET",
   "ECONNREFUSED",
