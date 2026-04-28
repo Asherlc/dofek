@@ -1,6 +1,6 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hetzner Hypertables rollups fanout -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
@@ -903,3 +903,42 @@ The manual action can still fail after a successful target rebuild when a stored
 canonical hash or dependency fingerprint genuinely changes. Operators should not
 interpret a successful target rebuild as proof that no other view needs explicit
 maintenance; the final planner verification remains the source of truth.
+
+## 2026-04-28: Manual view maintenance verification was too indirect
+
+### Impact
+
+The manual `Materialized View Maintenance` workflow could end with
+`synced=0 skipped=7 refreshed=0`, which only proved the post-rebuild sync had no
+remaining view work. That was not meaningful evidence that the selected target
+view had actually been rebuilt during the workflow.
+
+### Evidence That Mattered
+
+The weak verification output was:
+
+```text
+warning=1 long-running maintenance-like query is active
+synced=0 skipped=7 refreshed=0
+```
+
+### Root Cause
+
+The final evidence came from the global post-rebuild sync step, not from the
+target rebuild step. The workflow also depended on pulling Docker images even
+though the production database is reachable through a private SSH tunnel to the
+server's loopback-only Postgres port.
+
+### Fix or Mitigation
+
+The manual workflow now runs the checked-out branch directly with `pnpm tsx`
+over an SSH tunnel instead of pulling Docker images. It also adds target-specific
+verification steps: one checks for `rebuilt=<view> mode=rebuild` in the rebuild
+output, and another confirms the target materialized view exists and is
+populated after the rebuild.
+
+### Remaining Risk
+
+The target populated check proves the rebuilt view exists and is usable, but it
+does not prove query-level correctness for the view contents. The final planner
+check still verifies that no canonical materialized-view maintenance remains.

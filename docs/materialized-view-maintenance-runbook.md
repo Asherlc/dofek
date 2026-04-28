@@ -1,5 +1,7 @@
 # Materialized View Maintenance Runbook
 
+<!-- cspell:ignore tablename indexdef rollups -->
+
 This runbook covers planned materialized-view maintenance in production. It is
 for explicit maintenance windows, not normal deploys.
 
@@ -55,33 +57,37 @@ it from `drizzle/_views`, and records the new hash.
 
 For the common production case, use **Actions → Materialized View Maintenance →
 Run workflow**. The defaults run against production and rebuild
-`fitness.provider_stats` from the `latest` image. Override `image_tag` only when
-you need maintenance to run from a specific deployed image tag.
+`fitness.provider_stats` from the checked-out workflow branch. The action opens
+an SSH tunnel to the server's loopback-only Postgres port and runs the
+maintenance TypeScript command directly; it does not pull or run Docker images.
 
 The workflow:
 
-1. checks that Postgres is writable;
-2. prints the current materialized-view sync plan;
-3. cancels active refreshes for the selected canonical materialized view;
-4. rebuilds the selected canonical materialized view;
-5. runs the normal blocking materialized-view sync; and
-6. fails if the planner still reports `required=true`.
+1. installs Node dependencies from the checked-out branch;
+2. opens a private SSH tunnel to Postgres;
+3. checks that Postgres is writable;
+4. prints the current materialized-view sync plan;
+5. cancels active refreshes for the selected canonical materialized view;
+6. rebuilds the selected canonical materialized view;
+7. verifies the rebuild command reported `rebuilt=<view> mode=rebuild`;
+8. runs the normal blocking materialized-view sync;
+9. verifies the target materialized view exists and is populated; and
+10. fails if the planner still reports `required=true`.
 
 ## Production One-Shot Command
 
-Run the maintenance command from the deployed image attached to the swarm network:
+Run the maintenance command from a local checkout through an SSH tunnel to the
+server's loopback-only Postgres port:
 
 ```bash
-timeout 50m docker run --rm --network dofek_default \
-  --env-file .env.prod \
-  --entrypoint sh \
-  ghcr.io/asherlc/dofek:<tag> \
-  -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts preflight'
+ssh -fN -L 127.0.0.1:15432:127.0.0.1:5432 dofek-server
+infisical run --env=prod -- \
+  bash -lc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@127.0.0.1:15432/health"; pnpm tsx src/db/run-materialized-view-maintenance.ts preflight'
 ```
 
 Replace `preflight` with `inventory`, `sync`, `refresh <view-name>`,
-`cancel-refreshes <view-name>`, or `rebuild <view-name>` as needed. Use the
-exact image tag being deployed or investigated.
+`cancel-refreshes <view-name>`, or `rebuild <view-name>` as needed. URL-encode
+`POSTGRES_PASSWORD` in `DATABASE_URL` if it contains URL-reserved characters.
 
 ## Quiet Database Preflight
 
