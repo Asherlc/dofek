@@ -162,7 +162,6 @@ jobs:
           DATABASUS_HOST_RULE_INPUT: ${{ inputs.databasus_host_rule }}
           PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
         run: |
-          cat "$INFISICAL_ENV_FILE_PATH" >> "$GITHUB_ENV"
           {
             echo "INFISICAL_ENV_FILE=$INFISICAL_ENV_FILE_PATH"
             echo "DEPLOY_ENVIRONMENT=$DEPLOY_ENVIRONMENT"
@@ -191,6 +190,48 @@ jobs:
           write_multiline_env DATABASUS_HOST_RULE "$DATABASUS_HOST_RULE_INPUT"
           write_multiline_env PGADMIN_HOST_RULE "$PGADMIN_HOST_RULE_INPUT"
 
+      - name: Create dotenv command runner
+        run: |
+          cat > "$RUNNER_TEMP/run-with-dotenv-env.mjs" <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { spawnSync } from "node:child_process";
+
+          const dotenvPath = process.env.INFISICAL_ENV_FILE;
+          if (!dotenvPath) {
+            console.error("::error::INFISICAL_ENV_FILE is required");
+            process.exit(1);
+          }
+
+          const command = process.argv[2];
+          const args = process.argv.slice(3);
+          if (!command) {
+            console.error("::error::Command is required");
+            process.exit(1);
+          }
+
+          const childEnv = { ...process.env };
+          for (const line of readFileSync(dotenvPath, "utf8").split(/\r?\n/)) {
+            if (!line || line.startsWith("#")) {
+              continue;
+            }
+            const separatorIndex = line.indexOf("=");
+            if (separatorIndex <= 0) {
+              continue;
+            }
+            childEnv[line.slice(0, separatorIndex)] = line.slice(separatorIndex + 1);
+          }
+
+          const result = spawnSync(command, args, {
+            env: childEnv,
+            stdio: "inherit",
+          });
+          if (result.error) {
+            console.error(`::error::${result.error.message}`);
+            process.exit(1);
+          }
+          process.exit(result.status ?? 1);
+          NODE
+
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -207,6 +248,19 @@ jobs:
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
           docker pull "postgres:18-alpine"
 
+      - name: Validate host bind mount paths
+        run: |
+          docker run --rm \
+            --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
+            postgres:18-alpine sh -euc '
+              for path in /mnt/dofek-data/postgres /mnt/dofek-data/databasus /mnt/dofek-data/redis; do
+                if [ ! -d "$path" ]; then
+                  echo "::error::Required host bind mount path is missing: $path"
+                  exit 1
+                fi
+              done
+            '
+
       - name: Bootstrap stack (if DB service is missing)
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
@@ -216,7 +270,7 @@ jobs:
             echo "Swarm DB service exists with a running task; skipping bootstrap deploy."
           else
             echo "Swarm DB service is missing or not running; running bootstrap stack deploy."
-            docker stack deploy -c deploy/stack.yml --with-registry-auth "$STACK_NAME"
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth "$STACK_NAME"
           fi
 
       - name: Wait for Postgres writable
@@ -272,7 +326,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false "$STACK_NAME"
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false "$STACK_NAME"
 
       - name: Plan materialized view sync
         id: view_sync_plan

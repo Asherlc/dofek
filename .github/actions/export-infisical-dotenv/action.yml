@@ -87,4 +87,18 @@ runs:
           --template="$render_template" \
           --silent > "$INFISICAL_OUTPUT_PATH"
 
+        while IFS= read -r line || [ -n "$line" ]; do
+          case "$line" in
+            ""|\#*) continue ;;
+          esac
+          value="${line#*=}"
+          if [ "$value" = "$line" ] || [ -z "$value" ]; then
+            continue
+          fi
+          value="${value//'%'/'%25'}"
+          value="${value//$'\r'/'%0D'}"
+          value="${value//$'\n'/'%0A'}"
+          echo "::add-mask::$value"
+        done < "$INFISICAL_OUTPUT_PATH"
+
         echo "output_path=$INFISICAL_OUTPUT_PATH" >> "$GITHUB_OUTPUT"

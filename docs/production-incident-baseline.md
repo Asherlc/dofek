@@ -552,3 +552,57 @@ The failed job log also appeared to print Infisical-exported environment values
 in plain text. Those credentials should be treated as exposed until the relevant
 secrets are rotated and the deploy workflow masks or avoids logging exported
 secrets.
+
+## 2026-04-28: Redis bind-mount deploy rollback gap and secret log exposure
+
+### Impact
+
+The `Deploy Web` workflow run `25067751341` stalled in `Deploy stack` and was
+cancelled after the stack rollout could not converge. Production Redis stayed at
+`0/1`, web tasks crash-looped because Redis DNS was unavailable, and the job log
+exposed Infisical-exported environment values during later step cleanup output.
+
+### Evidence That Mattered
+
+The first fatal Swarm task error was:
+
+```text
+invalid mount config for type "bind": bind source path does not exist: /mnt/dofek-data/redis
+```
+
+`dofek_web` reported `rollback_completed`, but `dofek_redis` reported
+`update paused due to failure or early termination of task ...` and retained the
+new bind mount spec. Terraform in the same run printed `No changes` and
+`Resources: 0 added, 0 changed, 0 destroyed`, proving the updated directory
+creation command did not execute on the existing server.
+
+### Root Cause
+
+Commit `04756404` moved Redis persistence from a Docker named volume to
+`/mnt/dofek-data/redis`, but the existing
+`terraform_data.data_volume_mount_alias` trigger was not changed, so Terraform
+did not rerun the remote provisioner that creates that directory. The Redis
+service also lacked `deploy.update_config.failure_action: rollback`, so Swarm
+paused the failed Redis update instead of reverting it. Separately, the deploy
+workflow appended the entire Infisical dotenv file to `GITHUB_ENV`, causing
+GitHub Actions to print Infisical-only secrets in later step environment blocks.
+
+### Fix or Mitigation
+
+- Bumped the production and staging Terraform mount-alias triggers so directory
+  creation and legacy Redis volume copy run on existing servers.
+- Added a pre-deploy host bind-mount path validation step before any
+  `docker stack deploy`.
+- Added Redis `failure_action: rollback` so a failed Redis service update reverts
+  instead of pausing on the broken spec.
+- Stopped appending the Infisical dotenv file to `GITHUB_ENV`; stack deploy now
+  runs through a temporary Node helper that injects the dotenv values only into
+  the child `docker stack deploy` process.
+- Added masking for every rendered Infisical dotenv value immediately after
+  export.
+
+### Remaining Risk
+
+The values already printed in run `25067751341` should be rotated and the run log
+should be treated as sensitive until rotation is complete. Future deploys should
+fail before stack mutation if a required host bind path is missing.
