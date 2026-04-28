@@ -492,7 +492,7 @@ describe("selectRecentDailyLoad", () => {
     expect(selectRecentDailyLoad(rows)).toEqual(rows[1]);
   });
 
-  it("returns latest row even when load is zero (rest day shows 0 strain)", () => {
+  it("returns latest row even when load is zero", () => {
     const rows = [
       { date: "2026-03-14", dailyLoad: 31.2 },
       { date: "2026-03-15", dailyLoad: 0 },

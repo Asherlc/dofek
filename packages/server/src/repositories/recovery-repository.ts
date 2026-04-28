@@ -131,7 +131,7 @@ export class WorkloadDay {
   }
 
   get strain(): number {
-    return StrainScore.fromRawLoad(this.dailyLoad).value;
+    return StrainScore.fromAcuteLoad(this.#row.acuteLoad).value;
   }
 
   get acuteLoad(): number {
@@ -719,21 +719,18 @@ export class RecoveryRepository extends BaseRepository {
 
     const acuteWindow = 7;
     const chronicWindow = 28;
-    let acuteLoad = 0;
+    let acuteLoadTotal = 0;
     let chronicLoad = 0;
-    let currentStrain = 0;
 
     for (const row of loads) {
       const daysAgo = Math.floor(
         (new Date(endDate).getTime() - new Date(row.date).getTime()) / 86400000,
       );
-      if (daysAgo < acuteWindow) acuteLoad += row.daily_load;
+      if (daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
       if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
-      if (row.date === endDate) {
-        currentStrain = StrainScore.fromRawLoad(row.daily_load).value;
-      }
     }
-    acuteLoad /= acuteWindow;
+    const currentStrain = StrainScore.fromAcuteLoad(acuteLoadTotal).value;
+    const acuteLoad = acuteLoadTotal / acuteWindow;
     chronicLoad /= chronicWindow;
 
     return computeStrainTargetResult({

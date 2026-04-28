@@ -348,7 +348,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.timeSeries[0]?.workloadRatio).toBeNull();
   });
 
-  it("computes strain from dailyLoad using StrainScore.fromRawLoad", async () => {
+  it("computes zero strain from zero acute load", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -365,11 +365,10 @@ describe("recoveryRouter.workloadRatio", () => {
     });
     const result = await caller.workloadRatio({});
 
-    // dailyLoad = 0 -> StrainScore.fromRawLoad(0).value = 0
     expect(result.timeSeries[0]?.strain).toBe(0);
   });
 
-  it("computes non-zero strain for positive dailyLoad", async () => {
+  it("computes non-zero strain for positive acute load", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -399,7 +398,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(executeMock).toHaveBeenCalled();
   });
 
-  it("displayedStrain and displayedDate always reflect the latest row", async () => {
+  it("displayedStrain and displayedDate reflect latest rolling strain", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -423,10 +422,8 @@ describe("recoveryRouter.workloadRatio", () => {
     });
     const result = await caller.workloadRatio({});
 
-    // selectRecentDailyLoad always returns the latest row (today's actual state)
-    // even when daily load is 0 (rest day / no sync yet)
     expect(result.displayedDate).toBe("2026-03-02");
-    expect(result.displayedStrain).toBe(0);
+    expect(result.displayedStrain).toBeGreaterThan(0);
   });
 });
 
@@ -1193,13 +1190,16 @@ describe("recoveryRouter.strainTarget", () => {
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
   });
 
-  it("computes current strain from today's load", async () => {
+  it("computes current strain from recent acute load", async () => {
     const today = "2026-03-23";
     const executeMock = vi.fn();
     // First call: readinessRows
     executeMock.mockResolvedValueOnce([]);
-    // Second call: loads (one with today's date)
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 100 }]);
+    // Second call: loads (recent load with no load today)
+    executeMock.mockResolvedValueOnce([
+      { date: "2026-03-22", daily_load: 100 },
+      { date: today, daily_load: 0 },
+    ]);
 
     const caller = createCaller({
       db: { execute: executeMock },
@@ -1207,7 +1207,6 @@ describe("recoveryRouter.strainTarget", () => {
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // currentStrain should be derived from today's load
     expect(result.currentStrain).toBeGreaterThan(0);
   });
 
@@ -1431,8 +1430,7 @@ describe("recoveryRouter.strainTarget", () => {
     const result = await caller.strainTarget({ endDate: today });
 
     // tenDaysAgo is outside the 7-day acute window,
-    // but inside the 28-day chronic window
-    // so currentStrain should be 0 (no load on today)
+    // but inside the 28-day chronic window.
     expect(result.currentStrain).toBe(0);
   });
 
@@ -1536,9 +1534,9 @@ describe("recoveryRouter.strainTarget", () => {
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // Acute load should be low (few recent days), chronic moderate
+    // Acute load is zero, chronic load is moderate.
     expect(result.targetStrain).toBeGreaterThan(0);
-    expect(result.currentStrain).toBe(0); // no load on today
+    expect(result.currentStrain).toBe(0);
   });
 
   it("excludes loads at exactly 7 days ago from acute window", async () => {
@@ -1561,8 +1559,7 @@ describe("recoveryRouter.strainTarget", () => {
     // If mutation changes < to <=, the 1000 load enters acute and target changes dramatically
     // With correct logic: acute ≈ 70/7 = 10, chronic ≈ 1070/28 ≈ 38.2
     expect(result.targetStrain).toBeGreaterThan(0);
-    // Verify that today has no strain since no load on today
-    expect(result.currentStrain).toBe(0);
+    expect(result.currentStrain).toBeGreaterThan(0);
   });
 
   it("progressPercent reflects currentStrain relative to targetStrain", async () => {
@@ -1587,7 +1584,7 @@ describe("recoveryRouter.strainTarget", () => {
     expect(result.progressPercent).toBeLessThanOrEqual(200); // sanity
   });
 
-  it("computes currentStrain from today's load", async () => {
+  it("computes currentStrain from acute load when today has load", async () => {
     const today = "2026-03-28";
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce([]);
@@ -1945,11 +1942,11 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
     expect(result.timeSeries[0]?.date).toBe("2026-03-15");
   });
 
-  it("strain is derived from rounded dailyLoad", async () => {
+  it("strain is derived from rounded acuteLoad", async () => {
     const rows = [
       {
         date: "2026-03-01",
-        daily_load: 200,
+        daily_load: 0,
         acute_load: 500,
         chronic_load: 400,
         workload_ratio: 1.25,
