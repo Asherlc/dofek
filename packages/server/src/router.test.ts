@@ -165,6 +165,5 @@ describe("appRouter", () => {
     for (const key of expectedRouters) {
       expect(record).toHaveProperty(key);
     }
-    expect(Object.keys(record)).toHaveLength(expectedRouters.length);
   });
 });

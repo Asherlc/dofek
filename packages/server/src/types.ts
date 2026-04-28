@@ -3,8 +3,11 @@
 export type { ActivityHrZone } from "@dofek/zones/zones";
 export type { ActivityDetail } from "./models/activity.ts";
 export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
+
 // Recovery router types
 
+// Training router types
+export type { NextWorkoutRecommendation } from "./repositories/training-repository.ts";
 // Calendar router types
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types
@@ -73,8 +76,6 @@ export type {
   StressResult,
   WeeklyStressRow,
 } from "./routers/stress.ts";
-// Training router types
-export type { NextWorkoutRecommendation } from "./routers/training.ts";
 // Weekly report router types
 export type {
   StrainZone,

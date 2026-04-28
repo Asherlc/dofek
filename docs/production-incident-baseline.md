@@ -427,3 +427,45 @@ The host server (`ubuntu-24.04`) ran out of disk space on its root partition. Do
 ### Remaining Risk
 
 Docker volumes and non-image artifacts can still accumulate on the root disk. Redis is no longer exposed to root-disk exhaustion for RDB snapshots, but the host still needs disk monitoring and periodic review of `docker system df` output.
+
+## 2026-04-28: PR 1041 mobile dashboard integration failure
+
+### Impact
+
+PR checks for `Asher-Cohen/mobile-pages-take-too-long-to-render` (PR #1041)
+were blocked by failing test gates:
+
+- `Test / Integration Tests`
+- `Test / Mutation Testing`
+- `Test / Stryker (0)`
+- `Test / Unit & Integration Tests`
+- `Test / Test Gate`
+- `CI Gate`
+
+### Evidence That Mattered
+
+The first fatal database log line in run `25027801889` was:
+
+```text
+ERROR: column "deep_pct" does not exist at character 185
+```
+
+The failing query came from `mobileDashboard.dashboard` and selected
+`deep_pct`, `rem_pct`, `light_pct`, and `awake_pct` directly from
+`fitness.v_sleep`.
+
+### Root Cause
+
+`fitness.v_sleep` exposes raw sleep-stage minute columns, not derived percentage
+columns, while the mobile dashboard route expected percentage columns to exist.
+
+### Fix or Mitigation
+
+The mobile dashboard sleep query now derives stage percentages from
+`deep_minutes`, `rem_minutes`, `light_minutes`, `awake_minutes`, and
+`duration_minutes` in SQL.
+
+### Remaining Risk
+
+No remaining risk is known for this failure mode after the targeted mobile
+dashboard integration test and changed-test suite passed locally.

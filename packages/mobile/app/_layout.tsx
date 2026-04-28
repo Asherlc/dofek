@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -107,23 +107,41 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
 
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 1000 * 60 * 5,
+            gcTime: 1000 * 60 * 30,
+            refetchOnMount: false,
+            refetchOnWindowFocus: false,
+          },
+        },
+      }),
+  );
 
   const trpcClient = useMemo(() => {
     const url = getTrpcUrl(serverUrl);
     const versionHeaders = getVersionHeaders();
+    const commonOptions = {
+      url,
+      methodOverride: "POST" as const,
+      headers: () => {
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const defaultHeaders = { ...versionHeaders, "x-timezone": timezone };
+        return sessionToken
+          ? { Authorization: `Bearer ${sessionToken}`, ...defaultHeaders }
+          : defaultHeaders;
+      },
+    };
+
     return trpc.createClient({
       links: [
-        httpBatchLink({
-          url,
-          methodOverride: "POST",
-          headers: () => {
-            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const defaultHeaders = { ...versionHeaders, "x-timezone": timezone };
-            return sessionToken
-              ? { Authorization: `Bearer ${sessionToken}`, ...defaultHeaders }
-              : defaultHeaders;
-          },
+        splitLink({
+          condition: (operation) => operation.type === "mutation",
+          true: httpBatchLink(commonOptions),
+          false: httpLink(commonOptions),
         }),
       ],
     });
