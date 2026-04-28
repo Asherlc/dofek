@@ -10,6 +10,7 @@ import {
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
 } from "./garmin.ts";
+import type { SyncOptions } from "./types.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
@@ -170,10 +171,10 @@ function createMockDb(): MockDb {
 // Typed wrapper to call provider.sync() with a mock DB.
 // The mock DB duck-types SyncDatabase at runtime but cannot satisfy the
 // Drizzle branded type at compile time, so we widen via bind().
-function syncProvider(provider: GarminProvider, db: MockDb, since: Date) {
+function syncProvider(provider: GarminProvider, db: MockDb, since: Date, options?: SyncOptions) {
   // Use Reflect.apply to call sync() with a mock DB that structurally
   // matches SyncDatabase at runtime but not at compile time
-  return Reflect.apply(provider.sync, provider, [db, since]) satisfies Promise<{
+  return Reflect.apply(provider.sync, provider, [db, since, options]) satisfies Promise<{
     provider: string;
     recordsSynced: number;
     errors: { message: string; cause?: unknown }[];
@@ -969,6 +970,25 @@ describe("GarminProvider.sync()", () => {
     await syncProvider(provider, db, new Date());
 
     expect(mocks.withSyncLog).toHaveBeenCalledTimes(5);
+  });
+
+  it("resumes from a saved checkpoint instead of restarting completed phases", async () => {
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue({ phase: "daily_metrics", nextDate: "2026-04-27" }),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await syncProvider(provider, db, new Date("2026-04-26T00:00:00.000Z"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+      checkpoint: checkpointStore,
+    });
+
+    const syncedDataTypes = mocks.withSyncLog.mock.calls.map((call) => call[2]);
+    expect(syncedDataTypes).toEqual(["daily_metrics", "stress", "heart_rate"]);
+    expect(mocks.client.getSleepData).not.toHaveBeenCalled();
+    expect(mocks.client.getDailySummary).toHaveBeenCalledWith("2026-04-27");
+    expect(checkpointStore.clear).toHaveBeenCalledOnce();
   });
 
   it("does not call captureException for 204 (no data) errors", async () => {

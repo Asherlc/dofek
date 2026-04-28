@@ -3,7 +3,9 @@ import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import type { SyncCheckpointStore, SyncError } from "../providers/types.ts";
 import {
   syncDuration,
   syncErrorsTotal,
@@ -31,11 +33,45 @@ function computePercentage(
 interface SyncJob {
   data: SyncJobData;
   updateProgress: (data: object) => Promise<void>;
+  updateData: (data: SyncJobData) => Promise<void>;
+}
+
+function resolveSince(data: SyncJobData): Date {
+  if (data.sinceIso) {
+    const since = new Date(data.sinceIso);
+    if (Number.isNaN(since.getTime())) {
+      throw new Error(`Invalid sync job sinceIso: ${data.sinceIso}`);
+    }
+    return since;
+  }
+  return data.sinceDays ? new Date(Date.now() - data.sinceDays * 24 * 60 * 60 * 1000) : new Date(0);
+}
+
+function createCheckpointStore(job: SyncJob): SyncCheckpointStore {
+  return {
+    load: async () => job.data.checkpoint ?? null,
+    save: async (checkpoint: unknown) => {
+      const nextData = { ...job.data, checkpoint };
+      await job.updateData(nextData);
+      job.data = nextData;
+    },
+    clear: async () => {
+      const { checkpoint: _checkpoint, ...nextData } = job.data;
+      await job.updateData(nextData);
+      job.data = nextData;
+    },
+  };
+}
+
+function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
+  return (
+    errors.find((syncError) => isRetryableInfraError(syncError.cause ?? syncError.message)) ?? null
+  );
 }
 
 export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
-  const { providerId, sinceDays } = job.data;
-  const since = sinceDays ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000) : new Date(0);
+  const { providerId } = job.data;
+  const since = resolveSince(job.data);
 
   // Lazy-import provider registration
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
@@ -107,8 +143,15 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
             });
           },
           userId: job.data.userId,
+          checkpoint: createCheckpointStore(job),
         }),
       );
+      const retryableInfraError = firstRetryableInfraSyncError(result.errors);
+      if (retryableInfraError) {
+        throw retryableInfraError.cause instanceof Error
+          ? retryableInfraError.cause
+          : new Error(retryableInfraError.message);
+      }
       completedCount++;
       const hasErrors = result.errors.length > 0;
       const parts = [`${result.recordsSynced} synced`];
@@ -155,6 +198,20 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
       }
     } catch (err: unknown) {
+      if (isRetryableInfraError(err)) {
+        const message = err instanceof Error ? err.message : String(err);
+        Sentry.captureException(err, { tags: { provider: provider.id, retryable: "true" } });
+        providerStatus[provider.id] = {
+          status: "running",
+          message: "Infrastructure unavailable; retrying",
+        };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        logger.warn(`[worker] ${provider.name} infrastructure failure, retrying: ${message}`);
+        throw err;
+      }
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
       Sentry.captureException(err, { tags: { provider: provider.id } });
