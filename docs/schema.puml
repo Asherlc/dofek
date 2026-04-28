@@ -271,6 +271,9 @@ entity "food_entry" {
   provider_serving_id : text
   number_of_units : real
   logged_at : timestamp
+  source_name : text
+  started_at : timestamp
+  ended_at : timestamp
   barcode : text
   serving_unit : text
   serving_weight_grams : real
@@ -479,14 +482,6 @@ entity "nutrition_daily" {
   user_id : uuid <<FK>>
   water_ml : integer
   created_at : timestamp
-}
-
-entity "nutrition_daily_nutrient" {
-  user_id : uuid <<FK>>
-  date : date
-  provider_id : text <<FK>>
-  nutrient_id : text <<FK>>
-  amount : real
 }
 
 entity "oauth_token" {
@@ -766,9 +761,6 @@ provider ||--o{ metric_stream
 activity ||--o{ metric_stream
 provider ||--o{ nutrition_daily
 user_profile ||--o{ nutrition_daily
-user_profile ||--o{ nutrition_daily_nutrient
-provider ||--o{ nutrition_daily_nutrient
-nutrient ||--o{ nutrition_daily_nutrient
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
 user_profile ||--o{ orientation_sample

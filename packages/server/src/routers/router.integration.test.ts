@@ -198,16 +198,18 @@ describe("Router coverage", () => {
     // ── Nutrition data for predictions ──
     for (let i = 0; i < 30; i++) {
       await testCtx.db.execute(
-        sql`WITH daily AS (
-              INSERT INTO fitness.nutrition_daily (user_id, provider_id, date)
-              VALUES (${TEST_USER_ID}, 'dofek', CURRENT_DATE - ${i}::int)
-              ON CONFLICT (user_id, date, provider_id) DO UPDATE
-              SET water_ml = fitness.nutrition_daily.water_ml
-              RETURNING user_id, provider_id, date
+        sql`WITH new_entry AS (
+              INSERT INTO fitness.food_entry (
+                user_id, provider_id, date, external_id, food_name, source_name, confirmed
+              ) VALUES (
+                ${TEST_USER_ID}, 'dofek',
+                CURRENT_DATE - ${i}::int,
+                ${`daily-nutrition-${i}`}, NULL, 'Fixture', true
+              ) RETURNING id
             )
-            INSERT INTO fitness.nutrition_daily_nutrient (user_id, provider_id, date, nutrient_id, amount)
-            SELECT user_id, provider_id, date, nutrient_id, amount
-            FROM daily
+            INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+            SELECT id, nutrient_id, amount
+            FROM new_entry
             CROSS JOIN (VALUES
               ('calories', 2200::real),
               ('protein', 120::real),

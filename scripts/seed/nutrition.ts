@@ -21,21 +21,46 @@ async function seedDailyNutrition(sql: Sql, random: SeedRandom, today: Date): Pr
     const date = daysBefore(today, daysAgo);
     const trainingDay = daysAgo % 7 !== 0;
     const calories = trainingDay ? random.int(2_250, 2_850) : random.int(1_950, 2_350);
-    await sql`
-      INSERT INTO fitness.nutrition_daily (
-        date, provider_id, user_id, calories, protein_g, carbs_g, fat_g,
-        saturated_fat_g, cholesterol_mg, sodium_mg, potassium_mg, fiber_g,
-        sugar_g, vitamin_c_mg, vitamin_d_mcg, calcium_mg, iron_mg,
-        magnesium_mg, zinc_mg, omega3_mg, water_ml
+    const [{ id: foodEntryId }] = await sql<FoodEntryRow[]>`
+      INSERT INTO fitness.food_entry (
+        provider_id, user_id, external_id, date, food_name, source_name, logged_at, confirmed
       ) VALUES (
-        ${date}, 'apple_health', ${USER_ID}, ${calories}, ${random.int(135, 185)},
-        ${trainingDay ? random.int(250, 380) : random.int(160, 260)}, ${random.int(62, 98)},
-        ${random.int(16, 28)}, ${random.int(120, 260)}, ${random.int(1_800, 3_100)},
-        ${random.int(2_800, 4_500)}, ${random.int(24, 46)}, ${random.int(35, 85)},
-        ${random.int(60, 150)}, ${random.int(12, 42)}, ${random.int(720, 1_250)},
-        ${random.float(9, 18, 1)}, ${random.int(280, 520)}, ${random.float(9, 17, 1)},
-        ${random.int(850, 1_800)}, ${random.int(2_200, 3_800)}
-      ) ON CONFLICT DO NOTHING
+        'apple_health', ${USER_ID}, ${`seed-daily-nutrition-${daysAgo}`}, ${date},
+        NULL, 'Seed daily total', ${timestampAt(date, 12, 0)}, true
+      )
+      ON CONFLICT (user_id, provider_id, external_id) DO UPDATE
+        SET date = EXCLUDED.date,
+            food_name = EXCLUDED.food_name,
+            source_name = EXCLUDED.source_name,
+            logged_at = EXCLUDED.logged_at,
+            confirmed = EXCLUDED.confirmed
+      RETURNING id
+    `;
+
+    await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id = ${foodEntryId}`;
+    await sql`
+      INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+      SELECT ${foodEntryId}, nutrient_id, amount
+      FROM (VALUES
+        ('calories', ${calories}::real),
+        ('protein', ${random.int(135, 185)}::real),
+        ('carbohydrate', ${trainingDay ? random.int(250, 380) : random.int(160, 260)}::real),
+        ('fat', ${random.int(62, 98)}::real),
+        ('saturated_fat', ${random.int(16, 28)}::real),
+        ('cholesterol', ${random.int(120, 260)}::real),
+        ('sodium', ${random.int(1_800, 3_100)}::real),
+        ('potassium', ${random.int(2_800, 4_500)}::real),
+        ('fiber', ${random.int(24, 46)}::real),
+        ('sugar', ${random.int(35, 85)}::real),
+        ('vitamin_c', ${random.int(60, 150)}::real),
+        ('vitamin_d', ${random.int(12, 42)}::real),
+        ('calcium', ${random.int(720, 1_250)}::real),
+        ('iron', ${random.float(9, 18, 1)}::real),
+        ('magnesium', ${random.int(280, 520)}::real),
+        ('zinc', ${random.float(9, 17, 1)}::real),
+        ('omega_3', ${random.int(850, 1_800)}::real),
+        ('water', ${random.int(2_200, 3_800)}::real)
+      ) AS nutrient_values(nutrient_id, amount)
     `;
   }
 }
@@ -72,22 +97,28 @@ async function seedFoodEntries(sql: Sql, random: SeedRandom, today: Date): Promi
         ) RETURNING id
       `;
 
+      await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id = ${foodEntryId}`;
       await sql`
-        INSERT INTO fitness.food_entry_nutrition (
-          food_entry_id, calories, protein_g, carbs_g, fat_g, saturated_fat_g,
-          sodium_mg, potassium_mg, fiber_g, sugar_g, vitamin_c_mg, vitamin_d_mcg,
-          calcium_mg, iron_mg, magnesium_mg, zinc_mg, omega3_mg
-        ) VALUES (
-          ${foodEntryId}, ${calories + random.int(-35, 35)},
-          ${meal === "breakfast" ? 38 : meal === "lunch" ? 54 : 48},
-          ${meal === "breakfast" ? 58 : meal === "lunch" ? 92 : 74},
-          ${meal === "breakfast" ? 15 : meal === "lunch" ? 24 : 36},
-          ${meal === "dinner" ? 8 : 4}, ${random.int(420, 920)}, ${random.int(650, 1_250)},
-          ${meal === "breakfast" ? 9 : 12}, ${meal === "breakfast" ? 24 : 9},
-          ${random.int(18, 75)}, ${meal === "dinner" ? 18 : 4}, ${random.int(180, 420)},
-          ${random.float(2.4, 5.2, 1)}, ${random.int(85, 180)}, ${random.float(2.1, 5.4, 1)},
-          ${meal === "dinner" ? 1_200 : 260}
-        )
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT ${foodEntryId}, nutrient_id, amount
+        FROM (VALUES
+          ('calories', ${calories + random.int(-35, 35)}::real),
+          ('protein', ${meal === "breakfast" ? 38 : meal === "lunch" ? 54 : 48}::real),
+          ('carbohydrate', ${meal === "breakfast" ? 58 : meal === "lunch" ? 92 : 74}::real),
+          ('fat', ${meal === "breakfast" ? 15 : meal === "lunch" ? 24 : 36}::real),
+          ('saturated_fat', ${meal === "dinner" ? 8 : 4}::real),
+          ('sodium', ${random.int(420, 920)}::real),
+          ('potassium', ${random.int(650, 1_250)}::real),
+          ('fiber', ${meal === "breakfast" ? 9 : 12}::real),
+          ('sugar', ${meal === "breakfast" ? 24 : 9}::real),
+          ('vitamin_c', ${random.int(18, 75)}::real),
+          ('vitamin_d', ${meal === "dinner" ? 18 : 4}::real),
+          ('calcium', ${random.int(180, 420)}::real),
+          ('iron', ${random.float(2.4, 5.2, 1)}::real),
+          ('magnesium', ${random.int(85, 180)}::real),
+          ('zinc', ${random.float(2.1, 5.4, 1)}::real),
+          ('omega_3', ${meal === "dinner" ? 1_200 : 260}::real)
+        ) AS nutrient_values(nutrient_id, amount)
       `;
     }
   }
@@ -132,19 +163,18 @@ async function seedSupplements(sql: Sql): Promise<void> {
       RETURNING id
     `;
 
+    await sql`DELETE FROM fitness.supplement_nutrient WHERE supplement_id = ${supplementId}`;
     await sql`
-      INSERT INTO fitness.supplement_nutrition (
-        supplement_id, vitamin_d_mcg, calcium_mg, magnesium_mg, zinc_mg, omega3_mg
-      ) VALUES (
-        ${supplementId}, ${vitaminDMcg}, ${calciumMg}, ${magnesiumMg}, ${zincMg}, ${omega3Mg}
-      )
-      ON CONFLICT (supplement_id) DO UPDATE
-        SET vitamin_d_mcg = EXCLUDED.vitamin_d_mcg,
-            calcium_mg = EXCLUDED.calcium_mg,
-            magnesium_mg = EXCLUDED.magnesium_mg,
-            zinc_mg = EXCLUDED.zinc_mg,
-            omega3_mg = EXCLUDED.omega3_mg,
-            updated_at = NOW()
+      INSERT INTO fitness.supplement_nutrient (supplement_id, nutrient_id, amount)
+      SELECT ${supplementId}, nutrient_id, amount
+      FROM (VALUES
+        ('vitamin_d', ${vitaminDMcg}::real),
+        ('calcium', ${calciumMg}::real),
+        ('magnesium', ${magnesiumMg}::real),
+        ('zinc', ${zincMg}::real),
+        ('omega_3', ${omega3Mg}::real)
+      ) AS nutrient_values(nutrient_id, amount)
+      WHERE amount > 0
     `;
   }
 }

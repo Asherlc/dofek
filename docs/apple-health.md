@@ -19,7 +19,7 @@ The `export.xml` can be 1GB+ for users with years of data. We use a SAX streamin
 
 **Date format**: `"2024-03-01 10:30:00 -0500"` (not ISO 8601). Parse with `new Date(str)` which handles this format.
 
-**Daily aggregation boundary**: For `daily_metrics` and `nutrition_daily`, always use the source calendar day from the raw Apple Health timestamp string (`YYYY-MM-DD`) rather than `toISOString().slice(0, 10)`. Converting through UTC can shift near-midnight local records into the next/previous day and make dashboard daily charts appear empty or delayed.
+**Daily aggregation boundary**: For `daily_metrics` and unnamed nutrition `food_entry` rows, always use the source calendar day from the raw Apple Health timestamp string (`YYYY-MM-DD`) rather than `toISOString().slice(0, 10)`. Converting through UTC can shift near-midnight local records into the next/previous day and make dashboard daily charts appear empty or delayed.
 
 ### Record Elements
 
@@ -99,6 +99,12 @@ A single export may contain records from multiple health systems (e.g., UCSF Hea
 ## Provider ID Unification
 
 As of migration `0037`, the `apple_health_kit` provider ID (iOS HealthKit live sync) was consolidated into `apple_health` (XML export import). Both are ingestion paths for the same Apple Watch data, so they now share a single provider ID. The migration merges overlapping `daily_metrics` rows with `COALESCE`, preferring XML export values.
+
+## Mobile Nutrition Write-Back
+
+The iOS app writes direct Dofek food entries back to Apple Health as dietary energy, protein, carbohydrates, and total fat. The server endpoint filters this export to confirmed `provider_id = 'dofek'` rows, so nutrition imported or synced from Apple Health, Cronometer, Slack, and other providers is never written back to Apple Health.
+
+Mobile stores a local fingerprint ledger for each written food entry. If a direct Dofek entry changes, the app deletes prior Dofek-written HealthKit samples by their HealthKit sync identifiers before writing the replacement samples.
 
 ## Workout Source Attribution
 

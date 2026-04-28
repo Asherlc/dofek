@@ -510,3 +510,92 @@ The mobile dashboard sleep query now derives stage percentages from
 
 No remaining risk is known for this failure mode after the targeted mobile
 dashboard integration test and changed-test suite passed locally.
+
+## 2026-04-28: False HRV anomaly from mixed provider baseline
+
+### Impact
+
+Production showed a `Health Warning` for Heart Rate Variability:
+
+```text
+Heart Rate Variability: 24.336102 (baseline: 57.5 +/- 11.8, z-score: -2.81)
+```
+
+The warning was misleading because the displayed value came from Apple Health,
+while the baseline was mostly derived from WHOOP-backed `v_daily_metrics` rows.
+
+### Evidence That Mattered
+
+Production `fitness.daily_metrics` had `2026-04-28` HRV `24.336102` from
+`apple_health` / `Asher's Apple Watch`. WHOOP had recent HRV rows on prior days
+but no `2026-04-28` daily HRV row at the time of the warning. Comparing the same
+Apple Watch series against itself showed `2026-04-28` at about `-0.89` standard
+deviations, not an anomaly.
+
+Production also had `0` rows in both `fitness.provider_priority` and
+`fitness.device_priority`, and the server image did not copy
+`provider-priority.json`, so post-sync maintenance could not populate priority
+tables in the deployed container.
+
+### Root Cause
+
+Anomaly detection computed HRV baselines from `fitness.v_daily_metrics`, which
+can switch providers day to day. When the preferred WHOOP HRV row was missing
+for the target date, the target value fell back to Apple Health but was still
+compared to the WHOOP-shaped baseline.
+
+### Fix or Mitigation
+
+HRV anomaly detection now selects the target day's best HRV source and computes
+the HRV baseline only from prior rows with the same `provider_id` and
+`source_name`. The server image now includes `provider-priority.json`, and
+post-sync maintenance syncs provider priorities before refreshing materialized
+views so the same run uses current priorities.
+
+### Remaining Risk
+
+Resting heart rate anomaly detection still uses `v_daily_metrics`; if provider
+scale differences appear there too, it should get the same same-source baseline
+treatment.
+
+## 2026-04-28: Production deploy blocked by duplicate billing migration
+
+### Impact
+
+The `Deploy Web` workflow failed before `docker stack deploy`, so production did
+not roll forward to image `sha-245e71a`.
+
+### Evidence That Mattered
+
+GitHub Actions run `25065442578`, job `73431274787`, failed in `Run migrations`.
+The first fatal migration line was:
+
+```text
+error: [migrate] error: relation "user_billing_stripe_customer_idx" already exists
+```
+
+The log showed `0002_add_user_billing.sql` being retried while earlier deploys
+had already applied the same billing table/index shape through
+`0004_add_user_billing.sql`.
+
+### Root Cause
+
+Concurrent migration numbering left two billing migrations in the history.
+Production had already created the billing indexes from `0004_add_user_billing.sql`,
+then later saw `0002_add_user_billing.sql` as pending and failed because its
+index creation statements were not idempotent.
+
+### Fix or Mitigation
+
+Changed `drizzle/0002_add_user_billing.sql` to use
+`CREATE INDEX IF NOT EXISTS` for the two billing indexes, matching the already
+idempotent `0004_add_user_billing.sql`. Added an integration test that applies
+the pending `0002_add_user_billing.sql` against a database where the billing
+indexes already exist.
+
+### Remaining Risk
+
+The failed job log also appeared to print Infisical-exported environment values
+in plain text. Those credentials should be treated as exposed until the relevant
+secrets are rotated and the deploy workflow masks or avoids logging exported
+secrets.

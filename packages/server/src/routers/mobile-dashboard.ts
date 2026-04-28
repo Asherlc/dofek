@@ -332,12 +332,7 @@ export const mobileDashboardRouter = router({
       const chronicLoad =
         metricsRows.slice(0, 28).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0) / 4;
       const isLatestStrainRecent = metricsRows[0] != null && isRecent(metricsRows[0].date, endDate);
-      const latestStrainDailyLoad = isLatestStrainRecent
-        ? Math.round(Number(metricsRows[0]?.daily_load ?? 0) * 10) / 10
-        : 0;
-      const dailyStrain = isLatestStrainRecent
-        ? StrainScore.fromRawLoad(latestStrainDailyLoad).value
-        : 0;
+      const dailyStrain = isLatestStrainRecent ? StrainScore.fromAcuteLoad(acuteLoad).value : 0;
       const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
 
       const strainResult: MobileDashboardResult["strain"] = {

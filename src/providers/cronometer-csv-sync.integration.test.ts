@@ -47,12 +47,30 @@ const viewRowSchema = z
   })
   .merge(nutrientRowSchema);
 
+const dailyNutritionRowSchema = z.object({
+  date: z.string(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+});
+
 /** Query the view for a specific food by name */
 async function queryFoodFromView(db: TestContext["db"], foodName: string) {
   const rows = await db.execute<z.infer<typeof viewRowSchema>>(
     sql`SELECT * FROM fitness.v_food_entry_with_nutrition WHERE food_name = ${foodName} LIMIT 1`,
   );
   return rows[0] ?? null;
+}
+
+async function queryDailyNutritionFromView(db: TestContext["db"]) {
+  return db.execute<z.infer<typeof dailyNutritionRowSchema>>(
+    sql`
+      SELECT date, calories, protein_g, carbs_g, fat_g
+      FROM fitness.v_nutrition_daily
+      WHERE provider_id = ${CRONOMETER_PROVIDER_ID}
+    `,
+  );
 }
 
 // ============================================================
@@ -105,26 +123,15 @@ describe("importCronometerCsv() (integration)", () => {
     expect(chicken.protein_g).toBeCloseTo(53);
   });
 
-  it("aggregates daily nutrition totals into nutrition_daily", async () => {
+  it("derives daily nutrition totals from food entries", async () => {
     const result = await importCronometerCsv(ctx.db, SIMPLE_CSV, TEST_USER_ID);
 
     expect(result.errors).toHaveLength(0);
 
-    const dailyRows = await ctx.db.execute<{
-      date: string;
-      provider_id: string;
-      calories: number | null;
-      protein_g: number | null;
-      carbs_g: number | null;
-      fat_g: number | null;
-    }>(
-      sql`SELECT date, provider_id, calories, protein_g, carbs_g, fat_g
-          FROM fitness.v_nutrition_daily_with_nutrients
-          WHERE provider_id = ${CRONOMETER_PROVIDER_ID}`,
-    );
+    const dailyRows = await queryDailyNutritionFromView(ctx.db);
 
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
-    if (!march1) throw new Error("expected nutrition_daily for 2026-03-01");
+    if (!march1) throw new Error("expected daily nutrition for 2026-03-01");
 
     // 150 + 105 + 280 = 535 calories
     expect(march1.calories).toBe(535);
@@ -136,22 +143,13 @@ describe("importCronometerCsv() (integration)", () => {
     expect(march1.fat_g).toBeCloseTo(9.4);
   });
 
-  it("creates separate nutrition_daily rows for different days", async () => {
+  it("derives separate daily nutrition rows for different days", async () => {
     const result = await importCronometerCsv(ctx.db, MULTI_DAY_CSV, TEST_USER_ID);
 
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
 
-    const dailyRows = await ctx.db.execute<{
-      date: string;
-      provider_id: string;
-      calories: number | null;
-      protein_g: number | null;
-    }>(
-      sql`SELECT date, provider_id, calories, protein_g
-          FROM fitness.v_nutrition_daily_with_nutrients
-          WHERE provider_id = ${CRONOMETER_PROVIDER_ID}`,
-    );
+    const dailyRows = await queryDailyNutritionFromView(ctx.db);
 
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
     const march2 = dailyRows.find((r) => r.date === "2026-03-02");

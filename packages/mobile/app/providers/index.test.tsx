@@ -204,12 +204,24 @@ vi.mock("../../modules/health-kit", () => ({
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+  writeDietarySamples: vi.fn().mockResolvedValue(true),
+  deleteDietarySamples: vi.fn().mockResolvedValue(0),
 }));
 
 const mockSyncHealthKit = vi.fn().mockResolvedValue({ inserted: 0, errors: [] });
 
 vi.mock("../../lib/health-kit-sync", () => ({
   syncHealthKitToServer: (...args: unknown[]) => mockSyncHealthKit(...args),
+}));
+
+const mockSyncDofekFoodToHealthKit = vi.fn().mockResolvedValue({
+  written: 0,
+  skipped: 0,
+  errors: [],
+});
+
+vi.mock("../../lib/health-kit-food-writeback", () => ({
+  syncDofekFoodToHealthKit: (...args: unknown[]) => mockSyncDofekFoodToHealthKit(...args),
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -256,6 +268,9 @@ vi.mock("../../lib/trpc", () => ({
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        },
+        food: {
+          healthKitWriteBackEntries: { query: vi.fn().mockResolvedValue([]) },
         },
       },
       sync: {
@@ -650,6 +665,11 @@ describe("ProvidersScreen", () => {
     mockHasEverAuthorized.mockReset().mockReturnValue(true);
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
+    mockSyncDofekFoodToHealthKit.mockReset().mockResolvedValue({
+      written: 0,
+      skipped: 0,
+      errors: [],
+    });
     setupDefaultMocks();
   });
 
@@ -1241,6 +1261,28 @@ describe("ProvidersScreen", () => {
 
     await waitFor(() => {
       expect(mockSyncHealthKit).toHaveBeenCalledWith(expect.objectContaining({ syncRangeDays: 7 }));
+    });
+  });
+
+  it("writes direct Dofek food entries back to Apple Health when Sync is clicked", async () => {
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Sync")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Sync"));
+
+    await waitFor(() => {
+      expect(mockSyncDofekFoodToHealthKit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      );
     });
   });
 

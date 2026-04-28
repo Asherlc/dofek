@@ -19,6 +19,19 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
     logger.info("[post-sync] Running global post-sync maintenance");
 
     try {
+      const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
+        "../db/provider-priority.ts"
+      );
+      const config = loadProviderPriorityConfig();
+      if (config) {
+        await syncProviderPriorities(db, config);
+      }
+    } catch (err) {
+      logger.error(`[post-sync] Failed to sync provider priorities: ${err}`);
+      Sentry.captureException(err, { tags: { postSyncStep: "syncProviderPriorities" } });
+    }
+
+    try {
       const { refreshDedupViews } = await import("../db/dedup.ts");
       await refreshDedupViews(db);
     } catch (err) {
@@ -32,19 +45,6 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
     } catch (err) {
       logger.error(`[post-sync] Failed to update max HR: ${err}`);
       Sentry.captureException(err, { tags: { postSyncStep: "updateMaxHr" } });
-    }
-
-    try {
-      const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
-        "../db/provider-priority.ts"
-      );
-      const config = loadProviderPriorityConfig();
-      if (config) {
-        await syncProviderPriorities(db, config);
-      }
-    } catch (err) {
-      logger.error(`[post-sync] Failed to sync provider priorities: ${err}`);
-      Sentry.captureException(err, { tags: { postSyncStep: "syncProviderPriorities" } });
     }
 
     logger.info("[post-sync] Global post-sync maintenance complete");

@@ -19,7 +19,7 @@ describe("tableInfo", () => {
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
     ["metricStream", "fitness.metric_stream", "recorded_at", "recorded_at"],
-    ["nutritionDaily", "fitness.nutrition_daily", "date", "date"],
+    ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
     ["journalEntries", "fitness.journal_entry", "date", "id"],
@@ -353,7 +353,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "recorded_at",
       });
       expect(tableInfo("nutritionDaily")).toStrictEqual({
-        table: "fitness.nutrition_daily",
+        table: "fitness.v_nutrition_daily",
         orderColumn: "date",
         idColumn: "date",
       });

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
+import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
 import type { SyncTrpcClient } from "../../lib/health-kit-sync";
 import { syncHealthKitToServer } from "../../lib/health-kit-sync";
 import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
@@ -20,6 +21,7 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import {
+  deleteDietarySamples,
   getRequestStatus,
   hasEverAuthorized,
   isAvailable as isHealthKitAvailable,
@@ -29,6 +31,7 @@ import {
   queryWorkoutRoutes,
   queryWorkouts,
   requestPermissions,
+  writeDietarySamples,
 } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
@@ -52,6 +55,16 @@ async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
   // Clean up the Inbox copy now that the data is in memory
   file.delete();
   return blob;
+}
+
+function ymdDaysAgo(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toLocaleDateString("en-CA");
+}
+
+function todayYmd(): string {
+  return new Date().toLocaleDateString("en-CA");
 }
 
 export default function ProvidersScreen() {
@@ -163,7 +176,21 @@ export default function ProvidersScreen() {
           syncRangeDays: fullSync ? null : 7,
           onProgress: setHealthKitProgress,
         });
-        setHealthKitProgress(`Done — ${result.inserted} records synced`);
+        setHealthKitProgress("Writing Dofek food to Apple Health...");
+        const foodWriteBack = await syncDofekFoodToHealthKit({
+          trpcClient,
+          healthKit: {
+            writeDietarySamples,
+            deleteDietarySamples,
+          },
+          startDate: fullSync ? "1970-01-01" : ymdDaysAgo(7),
+          endDate: todayYmd(),
+        });
+        const foodSummary =
+          foodWriteBack.errors.length > 0
+            ? `${foodWriteBack.written} foods written, ${foodWriteBack.errors.length} food errors`
+            : `${foodWriteBack.written} foods written`;
+        setHealthKitProgress(`Done — ${result.inserted} records synced, ${foodSummary}`);
         trpcUtils.invalidate();
       } catch (error: unknown) {
         captureException(error, { context: "healthkit-manual-sync" });

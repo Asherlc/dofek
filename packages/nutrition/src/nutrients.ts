@@ -14,7 +14,8 @@ export type NutrientCategory =
   | "vitamin"
   | "mineral"
   | "fatty_acid"
-  | "stimulant";
+  | "stimulant"
+  | "hydration";
 
 export interface NutrientDefinition {
   /** Stable identifier, used as DB primary key. e.g. 'vitamin_a', 'calcium' */
@@ -590,6 +591,23 @@ const STIMULANTS: NutrientDefinition[] = [
   },
 ];
 
+// ── Hydration ──────────────────────────────────────────────────────────────
+
+const HYDRATION: NutrientDefinition[] = [
+  {
+    id: "water",
+    displayName: "Water",
+    unit: "ml",
+    category: "hydration",
+    rda: null,
+    sortOrder: 700,
+    openFoodFactsKey: null,
+    conversionFactor: 1,
+    legacyFieldName: "waterMl",
+    legacyColumnName: "water_ml",
+  },
+];
+
 // ── Exported catalog ────────────────────────────────────────────────────────
 
 /** Complete catalog of all tracked micronutrients, sorted by category then sortOrder. */
@@ -601,6 +619,7 @@ export const NUTRIENTS: readonly NutrientDefinition[] = [
   ...MINERALS,
   ...FATTY_ACIDS,
   ...STIMULANTS,
+  ...HYDRATION,
 ] as const;
 
 // ── Lookup indexes (built once at import time) ──────────────────────────────

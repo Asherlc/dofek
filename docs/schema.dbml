@@ -500,13 +500,16 @@ table fitness.food_entry {
   external_id text
   date date [not null]
   meal meal
-  food_name text [not null]
+  food_name text
   food_description text
   category food_category
   provider_food_id text
   provider_serving_id text
   number_of_units real
   logged_at "timestamp with time zone"
+  source_name text
+  started_at "timestamp with time zone"
+  ended_at "timestamp with time zone"
   barcode text
   serving_unit text
   serving_weight_grams real
@@ -778,19 +781,6 @@ table fitness.nutrition_daily {
   indexes {
     (user_id, date, provider_id) [pk]
     (user_id, provider_id) [name: 'nutrition_daily_user_provider_idx']
-  }
-}
-
-table fitness.nutrition_daily_nutrient {
-  user_id uuid [not null]
-  date date [not null]
-  provider_id text [not null]
-  nutrient_id text [not null]
-  amount real [not null]
-
-  indexes {
-    (user_id, date, provider_id, nutrient_id) [pk]
-    (user_id, date, provider_id) [name: 'nutrition_daily_nutrient_lookup_idx']
   }
 }
 
@@ -1180,12 +1170,6 @@ ref metric_stream_activity_id_activity_id_fk: fitness.metric_stream.activity_id 
 ref nutrition_daily_provider_id_provider_id_fk: fitness.nutrition_daily.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref nutrition_daily_user_id_user_profile_id_fk: fitness.nutrition_daily.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref nutrition_daily_nutrient_user_id_user_profile_id_fk: fitness.nutrition_daily_nutrient.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref nutrition_daily_nutrient_provider_id_provider_id_fk: fitness.nutrition_daily_nutrient.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref nutrition_daily_nutrient_nutrient_id_nutrient_id_fk: fitness.nutrition_daily_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
 
 ref oauth_token_user_id_user_profile_id_fk: fitness.oauth_token.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

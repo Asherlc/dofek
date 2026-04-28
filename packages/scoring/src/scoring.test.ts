@@ -707,6 +707,16 @@ describe("StrainScore", () => {
     });
   });
 
+  describe("fromAcuteLoad", () => {
+    it("converts seven-day acute load through its daily average", () => {
+      expect(StrainScore.fromAcuteLoad(700).value).toBe(StrainScore.fromRawLoad(100).value);
+    });
+
+    it("carries recent load through rest days", () => {
+      expect(StrainScore.fromAcuteLoad(350).value).toBeGreaterThan(0);
+    });
+  });
+
   describe("color", () => {
     it("returns textSecondary for light strain (< 10)", () => {
       expect(new StrainScore(5).color).toBe(textColors.secondary);

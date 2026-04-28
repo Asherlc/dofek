@@ -11,15 +11,14 @@ import {
   activity,
   bodyMeasurement,
   dailyMetrics,
+  foodEntry,
+  foodEntryNutrient,
   healthEvent,
   labResult,
-  nutritionDaily,
-  nutritionDailyNutrient,
   sleepSession,
   sleepStage,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
-import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
@@ -123,7 +122,7 @@ const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierDistanceWheelchair",
 ]);
 
-// Nutrition records -> nutritionDaily (aggregate by day)
+// Nutrition records -> foodEntry + foodEntryNutrient rows.
 export const NUTRITION_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierDietaryEnergyConsumed: "calories",
   HKQuantityTypeIdentifierDietaryProtein: "proteinG",
@@ -551,88 +550,82 @@ export async function upsertNutritionBatch(
   providerId: string,
   records: HealthRecord[],
 ): Promise<number> {
-  const userId = getTokenUserId();
-  if (!userId) {
-    throw new Error("Missing user context for Apple Health nutrition import");
-  }
-  // Aggregate nutrition by date
-  const byDate = new Map<string, Map<string, number>>();
+  let count = 0;
   for (const r of records) {
     const field = NUTRITION_TYPES[r.type];
     if (!field) continue;
     const dateKey = r.startDateCalendarDay ?? dateToString(r.startDate);
-    if (!byDate.has(dateKey)) byDate.set(dateKey, new Map());
-    const day = byDate.get(dateKey) ?? new Map();
-    day.set(field, (day.get(field) ?? 0) + r.value);
-  }
-
-  const rows: { row: typeof nutritionDaily.$inferInsert; nutrients: Map<string, number> }[] = [];
-  for (const [dateKey, nutrients] of byDate) {
-    const row: typeof nutritionDaily.$inferInsert = {
-      date: dateKey,
-      providerId,
+    const externalId = [
+      "ah",
+      "nutrition",
+      r.type,
+      r.sourceName ?? "unknown-source",
+      r.startDate.toISOString(),
+      r.endDate.toISOString(),
+    ].join(":");
+    const raw = {
+      type: r.type,
+      unit: r.unit,
+      value: r.value,
+      sourceName: r.sourceName,
+      startDate: r.startDate.toISOString(),
+      endDate: r.endDate.toISOString(),
+      creationDate: r.creationDate?.toISOString(),
     };
-    const nutrientRows = new Map<string, number>();
+    const foodRows = await db
+      .insert(foodEntry)
+      .values([
+        {
+          providerId,
+          externalId,
+          date: dateKey,
+          foodName: null,
+          sourceName: r.sourceName,
+          loggedAt: r.creationDate ?? r.startDate,
+          startedAt: r.startDate,
+          endedAt: r.endDate,
+          raw,
+          confirmed: true,
+        },
+      ])
+      .onConflictDoUpdate({
+        target: [foodEntry.userId, foodEntry.providerId, foodEntry.externalId],
+        set: {
+          date: dateKey,
+          foodName: null,
+          sourceName: r.sourceName,
+          loggedAt: r.creationDate ?? r.startDate,
+          startedAt: r.startDate,
+          endedAt: r.endDate,
+          raw,
+          confirmed: true,
+        },
+      })
+      .returning({ id: foodEntry.id });
+    const foodEntryId = foodRows[0]?.id;
+    if (!foodEntryId) continue;
 
-    for (const [field, value] of nutrients) {
-      if (field === "waterMl") {
-        row.waterMl = Math.round(value);
-        continue;
-      }
-      const nutrientId = NUTRIENT_ID_MAP[field];
-      if (!nutrientId) continue;
-      nutrientRows.set(nutrientId, (nutrientRows.get(nutrientId) ?? 0) + value);
-    }
-    rows.push({ row, nutrients: nutrientRows });
-  }
+    const nutrientId = NUTRIENT_ID_MAP[field];
+    if (!nutrientId) continue;
 
-  // Multi-row upsert with COALESCE to preserve existing non-null values
-  for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500);
-    const insertRows = batch.map(({ row }) => row);
-    await insertWithDuplicateDiag(
-      "nutrition_daily",
-      (row) => `${row.date}:${row.providerId}`,
-      insertRows,
-      (b) =>
-        db
-          .insert(nutritionDaily)
-          .values(b)
-          .onConflictDoUpdate({
-            target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
-            set: {
-              // Nutrition is always additive (import.ts clears before import)
-              waterMl: sql`coalesce(${nutritionDaily.waterMl}, 0) + coalesce(excluded.water_ml, 0)`,
-            },
-          }),
-    );
-    const nutrientBatch = batch.flatMap(({ row, nutrients }) =>
-      Array.from(nutrients.entries()).map(([nutrientId, amount]) => ({
-        userId,
-        date: row.date,
-        providerId: row.providerId,
-        nutrientId,
-        amount: nutrientId === "calories" ? Math.round(amount) : amount,
-      })),
-    );
-    if (nutrientBatch.length > 0) {
-      await db
-        .insert(nutritionDailyNutrient)
-        .values(nutrientBatch)
-        .onConflictDoUpdate({
-          target: [
-            nutritionDailyNutrient.userId,
-            nutritionDailyNutrient.date,
-            nutritionDailyNutrient.providerId,
-            nutritionDailyNutrient.nutrientId,
-          ],
-          set: {
-            amount: sql`fitness.nutrition_daily_nutrient.amount + excluded.amount`,
-          },
-        });
-    }
+    await db
+      .insert(foodEntryNutrient)
+      .values([
+        {
+          foodEntryId,
+          nutrientId,
+          amount: field === "calories" || field === "waterMl" ? Math.round(r.value) : r.value,
+        },
+      ])
+      .onConflictDoUpdate({
+        target: [foodEntryNutrient.foodEntryId, foodEntryNutrient.nutrientId],
+        set: {
+          amount: sql`excluded.amount`,
+        },
+      });
+    count++;
   }
-  return rows.length;
+  return count;
 }
 
 export async function upsertHealthEventBatch(

@@ -27,7 +27,8 @@ export interface NutrientFieldDefinition {
     | "vitamin"
     | "mineral"
     | "fatty_acid"
-    | "stimulant";
+    | "stimulant"
+    | "hydration";
 }
 
 export const NUTRIENT_FIELDS: readonly NutrientFieldDefinition[] = [
@@ -334,6 +335,14 @@ export const NUTRIENT_FIELDS: readonly NutrientFieldDefinition[] = [
     unit: "mg",
     category: "stimulant",
   },
+  {
+    key: "waterMl",
+    column: "water_ml",
+    columnType: "real",
+    label: "Water",
+    unit: "ml",
+    category: "hydration",
+  },
 ] as const;
 
 /** camelCase nutrient keys (e.g., 'calories', 'proteinG', 'vitaminAMcg') */
@@ -389,6 +398,7 @@ export const NUTRIENT_ID_MAP: Record<string, string> = {
   omega3Mg: "omega_3",
   omega6Mg: "omega_6",
   caffeineMg: "caffeine",
+  waterMl: "water",
 };
 
 /** Map of canonical fitness.nutrient.id → legacy camelCase key */
@@ -440,6 +450,7 @@ export const nutrientFieldsSchema = z.object({
   omega3Mg: z.number().nonnegative().nullish(),
   omega6Mg: z.number().nonnegative().nullish(),
   caffeineMg: z.number().nonnegative().nullish(),
+  waterMl: z.number().nonnegative().nullish(),
 });
 
 const nullableNumberFromRow = z.preprocess(
@@ -487,6 +498,7 @@ export const nutrientRowSchema = z.object({
   omega3_mg: nullableNumberFromRow,
   omega6_mg: nullableNumberFromRow,
   caffeine_mg: nullableNumberFromRow,
+  water_ml: nullableNumberFromRow,
 });
 
 /** Type for nutrient values in camelCase */

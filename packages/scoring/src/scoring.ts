@@ -10,6 +10,7 @@ import { statusColors, textColors } from "./colors.ts";
 export class StrainScore {
   static readonly #SCALE_FACTOR = 3.5;
   static readonly #MAX = 21;
+  static readonly #ACUTE_LOAD_DAYS = 7;
 
   constructor(readonly value: number) {}
 
@@ -39,6 +40,10 @@ export class StrainScore {
     const strain = StrainScore.#SCALE_FACTOR * Math.log(1 + rawLoad);
     const value = Math.round(Math.min(strain, StrainScore.#MAX) * 10) / 10;
     return new StrainScore(value);
+  }
+
+  static fromAcuteLoad(acuteLoad: number): StrainScore {
+    return StrainScore.fromRawLoad(acuteLoad / StrainScore.#ACUTE_LOAD_DAYS);
   }
 }
 

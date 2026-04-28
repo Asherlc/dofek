@@ -40,6 +40,7 @@ describe("NUTRIENTS catalog", () => {
       "mineral",
       "fatty_acid",
       "stimulant",
+      "hydration",
     ];
     for (const nutrient of NUTRIENTS) {
       expect(validCategories).toContain(nutrient.category);
@@ -64,13 +65,14 @@ describe("NUTRIENTS catalog", () => {
     expect(vitaminIds).toContain("vitamin_b12");
   });
 
-  it("includes macros and caffeine in the canonical catalog", () => {
+  it("includes macros, caffeine, and water in the canonical catalog", () => {
     expect(getNutrientById("calories")?.legacyFieldName).toBe("calories");
     expect(getNutrientById("protein")?.legacyFieldName).toBe("proteinG");
     expect(getNutrientById("carbohydrate")?.legacyFieldName).toBe("carbsG");
     expect(getNutrientById("fat")?.legacyFieldName).toBe("fatG");
     expect(getNutrientById("fiber")?.legacyFieldName).toBe("fiberG");
     expect(getNutrientById("caffeine")?.legacyFieldName).toBe("caffeineMg");
+    expect(getNutrientById("water")?.legacyFieldName).toBe("waterMl");
   });
 
   it("includes all expected minerals", () => {
@@ -150,6 +152,7 @@ describe("legacyFieldsToNutrients", () => {
       calciumMg: 200,
       omega3Mg: 2500,
       caffeineMg: 95,
+      waterMl: 500,
     });
     expect(result).toEqual({
       calories: 250,
@@ -158,6 +161,7 @@ describe("legacyFieldsToNutrients", () => {
       calcium: 200,
       omega_3: 2500,
       caffeine: 95,
+      water: 500,
     });
   });
 

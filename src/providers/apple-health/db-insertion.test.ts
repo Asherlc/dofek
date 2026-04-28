@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
   ALL_ROUTED_TYPES,
@@ -26,8 +26,6 @@ import type { HealthWorkout } from "./workouts.ts";
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
 }
-
-const TEST_TOKEN_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 function createMockDb(returningData: Record<string, unknown>[] = []): {
   db: SyncDatabase;
@@ -855,16 +853,16 @@ describe("upsertDailyMetricsBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertNutritionBatch", () => {
-  beforeEach(() => {
-    process.env.TEST_TOKEN_USER_ID = TEST_TOKEN_USER_ID;
-  });
+  function createNutritionMockDb(): ReturnType<typeof createMockDb> {
+    return createMockDb([{ id: "food-entry-1" }]);
+  }
 
-  afterEach(() => {
-    delete process.env.TEST_TOKEN_USER_ID;
-  });
+  function capturedNutritionRows(capture: MockInsertCapture): Record<string, unknown>[] {
+    return capture.values.filter((_, index) => index % 2 === 1).flat();
+  }
 
   it("uses the source calendar day for nutrition instead of UTC-shifted date", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const parsedRecord = parseRecord({
       type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
       value: "500",
@@ -880,12 +878,51 @@ describe("upsertNutritionBatch", () => {
 
     await upsertNutritionBatch(db, "apple_health", [parsedRecord]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01" });
-    expect(findCapturedNutrient(capture, "calories")?.amount).toBe(500);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      date: "2024-03-01",
+      foodName: null,
+      sourceName: "Apple Watch",
+    });
+    expect(capture.values[1]?.[0]).toMatchObject({ nutrientId: "calories", amount: 500 });
   });
 
-  it("aggregates calories by day", async () => {
-    const { db, capture } = createMockDb();
+  it("stores Apple Health nutrition as unnamed food entry nutrition rows", async () => {
+    const { db, capture } = createNutritionMockDb();
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierDietaryProtein",
+        value: 45.5,
+        unit: "g",
+        sourceName: "Cronometer",
+        startDate: new Date("2024-03-01T20:00:00Z"),
+        endDate: new Date("2024-03-01T20:00:10Z"),
+      }),
+    ];
+
+    const count = await upsertNutritionBatch(db, "apple_health", records);
+
+    expect(count).toBe(1);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      providerId: "apple_health",
+      externalId:
+        "ah:nutrition:HKQuantityTypeIdentifierDietaryProtein:Cronometer:2024-03-01T20:00:00.000Z:2024-03-01T20:00:10.000Z",
+      date: "2024-03-01",
+      foodName: null,
+      sourceName: "Cronometer",
+      loggedAt: records[0]?.creationDate,
+      startedAt: records[0]?.startDate,
+      endedAt: records[0]?.endDate,
+      confirmed: true,
+    });
+    expect(capture.values[1]?.[0]).toMatchObject({
+      foodEntryId: "food-entry-1",
+      nutrientId: "protein",
+      amount: 45.5,
+    });
+  });
+
+  it("stores calorie samples separately for derived daily aggregation", async () => {
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryEnergyConsumed",
@@ -900,13 +937,17 @@ describe("upsertNutritionBatch", () => {
     ];
 
     const count = await upsertNutritionBatch(db, "p1", records);
-    expect(count).toBe(1);
+    expect(count).toBe(2);
     expect(capture.values[0]?.[0]).toMatchObject({ date: "2024-03-01" });
-    expect(findCapturedNutrient(capture, "calories")?.amount).toBe(1450);
+    expect(capture.values[2]?.[0]).toMatchObject({ date: "2024-03-01" });
+    expect(capturedNutritionRows(capture)).toEqual([
+      expect.objectContaining({ nutrientId: "calories", amount: 650 }),
+      expect.objectContaining({ nutrientId: "calories", amount: 800 }),
+    ]);
   });
 
   it("maps protein", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryProtein",
@@ -920,7 +961,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps carbs", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryCarbohydrates",
@@ -934,7 +975,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps fat", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryFatTotal",
@@ -948,7 +989,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps fiber", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryFiber",
@@ -962,7 +1003,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps water and rounds", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({
         type: "HKQuantityTypeIdentifierDietaryWater",
@@ -972,7 +1013,7 @@ describe("upsertNutritionBatch", () => {
     ];
 
     await upsertNutritionBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ waterMl: 2501 });
+    expect(capturedNutritionRows(capture)[0]).toMatchObject({ nutrientId: "water", amount: 2501 });
   });
 
   it("skips non-nutrition record types", async () => {
@@ -984,7 +1025,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary sodium", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySodium", value: 1500 })];
 
     await upsertNutritionBatch(db, "p1", records);
@@ -992,7 +1033,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary sugar", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietarySugar", value: 30 })];
 
     await upsertNutritionBatch(db, "p1", records);
@@ -1000,7 +1041,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary cholesterol", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryCholesterol", value: 200 }),
     ];
@@ -1010,7 +1051,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary saturated fat", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryFatSaturated", value: 15 }),
     ];
@@ -1020,7 +1061,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary potassium", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierDietaryPotassium", value: 3500 })];
 
     await upsertNutritionBatch(db, "p1", records);
@@ -1028,7 +1069,7 @@ describe("upsertNutritionBatch", () => {
   });
 
   it("maps dietary vitamins and minerals", async () => {
-    const { db, capture } = createMockDb();
+    const { db, capture } = createNutritionMockDb();
     const records = [
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminA", value: 900 }),
       makeRecord({ type: "HKQuantityTypeIdentifierDietaryVitaminC", value: 90 }),
@@ -1608,16 +1649,8 @@ describe("upsertDailyMetricsBatch — HRV averaging", () => {
 });
 
 describe("upsertNutritionBatch — deduplication", () => {
-  beforeEach(() => {
-    process.env.TEST_TOKEN_USER_ID = TEST_TOKEN_USER_ID;
-  });
-
-  afterEach(() => {
-    delete process.env.TEST_TOKEN_USER_ID;
-  });
-
-  it("aggregates nutrition records for the same date into one row", async () => {
-    const { db, capture } = createMockDb();
+  it("keeps separate nutrition samples for derived daily aggregation", async () => {
+    const { db, capture } = createMockDb([{ id: "food-entry-1" }]);
 
     const records = [
       makeRecord({
@@ -1637,11 +1670,10 @@ describe("upsertNutritionBatch — deduplication", () => {
     ];
 
     const count = await upsertNutritionBatch(db, "apple_health", records);
-    // Both records are on the same day → aggregated into 1 row
-    expect(count).toBe(1);
-    expect(capture.values).toHaveLength(2);
+    expect(count).toBe(2);
+    expect(capture.values).toHaveLength(4);
     expect(capture.values[0]).toHaveLength(1);
-    expect(findCapturedNutrient(capture, "calories")?.amount).toBe(1300);
+    expect(capture.values[2]).toHaveLength(1);
   });
 });
 

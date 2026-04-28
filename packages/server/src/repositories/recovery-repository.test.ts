@@ -202,8 +202,8 @@ describe("WorkloadDay", () => {
     expect(day.dailyLoad).toBe(150.5);
   });
 
-  it("computes strain from daily load", () => {
-    const day = new WorkloadDay(makeRow({ dailyLoad: 200 }));
+  it("computes strain from acute load", () => {
+    const day = new WorkloadDay(makeRow({ acuteLoad: 700 }));
     expect(day.strain).toBeTypeOf("number");
     expect(day.strain).toBeGreaterThanOrEqual(0);
   });
@@ -250,10 +250,15 @@ describe("WorkloadDay", () => {
     expect(day.workloadRatio).toBe(1.15);
   });
 
-  it("strain is derived from dailyLoad (changes when dailyLoad changes)", () => {
-    const low = new WorkloadDay(makeRow({ dailyLoad: 50 }));
-    const high = new WorkloadDay(makeRow({ dailyLoad: 500 }));
+  it("strain is derived from acute load (changes when recent load changes)", () => {
+    const low = new WorkloadDay(makeRow({ dailyLoad: 0, acuteLoad: 350 }));
+    const high = new WorkloadDay(makeRow({ dailyLoad: 0, acuteLoad: 700 }));
     expect(high.strain).toBeGreaterThan(low.strain);
+  });
+
+  it("keeps strain above zero on rest days with recent load", () => {
+    const day = new WorkloadDay(makeRow({ dailyLoad: 0, acuteLoad: 350 }));
+    expect(day.strain).toBeGreaterThan(0);
   });
 
   it("serializes to API shape via toDetail()", () => {
@@ -281,7 +286,7 @@ describe("computeWorkloadResult", () => {
     expect(result.displayedDate).toBeNull();
   });
 
-  it("returns the most recent day strain as displayedStrain", () => {
+  it("returns the most recent rolling strain as displayedStrain", () => {
     const days = [
       new WorkloadDay({
         date: "2024-03-14",
@@ -292,7 +297,7 @@ describe("computeWorkloadResult", () => {
       }),
       new WorkloadDay({
         date: "2024-03-15",
-        dailyLoad: 100,
+        dailyLoad: 0,
         acuteLoad: 500,
         chronicLoad: 400,
         workloadRatio: 1.25,
@@ -301,8 +306,7 @@ describe("computeWorkloadResult", () => {
     const result = computeWorkloadResult(days);
     expect(result.displayedStrain).toBeTypeOf("number");
     expect(result.displayedDate).toBeTypeOf("string");
-    // displayedStrain should use the ?? 0 fallback only when empty
-    expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
+    expect(result.displayedStrain).toBeGreaterThan(0);
   });
 
   it("includes strain in each time series entry", () => {
@@ -1851,30 +1855,27 @@ describe("RecoveryRepository", () => {
       expect(Number.isFinite(result.targetStrain)).toBe(true);
     });
 
-    it("sets currentStrain from endDate's load (not other dates)", async () => {
+    it("sets currentStrain from recent acute load, not only endDate load", async () => {
       const loadRows = [
         { date: "2024-03-14", daily_load: 500 },
-        { date: "2024-03-15", daily_load: 100 },
+        { date: "2024-03-15", daily_load: 0 },
       ];
       const { repo } = makeStrainRepository([
         [], // no daily metrics
         loadRows,
       ]);
       const result = await repo.getStrainTarget(28, "2024-03-15");
-      // currentStrain should be based on daily_load=100, not 500
-      // StrainScore.fromRawLoad(100).value should be less than fromRawLoad(500).value
       expect(result.currentStrain).toBeGreaterThan(0);
     });
 
-    it("returns 0 currentStrain when endDate has no load data", async () => {
+    it("keeps currentStrain above 0 when recent load exists before endDate", async () => {
       const loadRows = [{ date: "2024-03-14", daily_load: 500 }];
       const { repo } = makeStrainRepository([
         [], // no daily metrics
         loadRows,
       ]);
       const result = await repo.getStrainTarget(28, "2024-03-15");
-      // No load on endDate => currentStrain stays 0
-      expect(result.currentStrain).toBe(0);
+      expect(result.currentStrain).toBeGreaterThan(0);
     });
 
     it("uses 120 - resting_hr for restingHrScore (not resting_hr directly)", async () => {

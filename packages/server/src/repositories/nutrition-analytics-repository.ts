@@ -366,7 +366,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       caloricBalanceRowSchema,
       sql`WITH nutrition AS (
             SELECT date, SUM(calories) AS calories_in
-            FROM fitness.v_nutrition_daily_with_nutrients
+            FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${queryDays}::int
               ${this.dateAccessPredicate(sql`date`)}
@@ -428,7 +428,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       adaptiveTdeeRowSchema,
       sql`WITH nutrition AS (
             SELECT date, SUM(calories) AS calories_in
-            FROM fitness.v_nutrition_daily_with_nutrients
+            FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${days}::int
               ${this.dateAccessPredicate(sql`date`)}
@@ -470,7 +470,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               nd.protein_g,
               nd.carbs_g,
               nd.fat_g
-            FROM fitness.v_nutrition_daily_with_nutrients nd
+            FROM fitness.v_nutrition_daily nd
             WHERE nd.user_id = ${this.userId}
               AND nd.date > CURRENT_DATE - ${days}::int
               AND nd.calories > 0

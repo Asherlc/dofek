@@ -876,27 +876,6 @@ export const nutritionDaily = fitness.table(
   ],
 );
 
-export const nutritionDailyNutrient = fitness.table(
-  "nutrition_daily_nutrient",
-  {
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => userProfile.id),
-    date: date("date").notNull(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    nutrientId: text("nutrient_id")
-      .notNull()
-      .references(() => nutrient.id),
-    amount: real("amount").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.userId, table.date, table.providerId, table.nutrientId] }),
-    index("nutrition_daily_nutrient_lookup_idx").on(table.userId, table.date, table.providerId),
-  ],
-);
-
 export const foodEntry = fitness.table(
   "food_entry",
   {
@@ -911,13 +890,16 @@ export const foodEntry = fitness.table(
     externalId: text("external_id"),
     date: date("date").notNull(),
     meal: mealEnum("meal"),
-    foodName: text("food_name").notNull(),
+    foodName: text("food_name"),
     foodDescription: text("food_description"),
     category: foodCategoryEnum("category"),
     providerFoodId: text("provider_food_id"),
     providerServingId: text("provider_serving_id"),
     numberOfUnits: real("number_of_units"),
     loggedAt: timestamp("logged_at", { withTimezone: true }),
+    sourceName: text("source_name"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
     barcode: text("barcode"),
     servingUnit: text("serving_unit"),
     servingWeightGrams: real("serving_weight_grams"),

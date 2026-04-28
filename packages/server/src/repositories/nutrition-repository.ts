@@ -91,7 +91,8 @@ export class NutritionRepository {
     const rows = await executeWithSchema(
       this.#db,
       nutritionDailyDbSchema,
-      sql`SELECT * FROM fitness.v_nutrition_daily_with_nutrients
+      sql`SELECT *
+          FROM fitness.v_nutrition_daily
           WHERE user_id = ${this.#userId}
             AND date > ${startDate}::date
           ORDER BY date ASC`,

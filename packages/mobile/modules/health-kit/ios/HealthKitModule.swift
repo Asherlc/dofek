@@ -303,25 +303,94 @@ public class HealthKitModule: Module {
             self.healthStore.execute(query)
         }
 
-        AsyncFunction("writeDietaryEnergy") { (calories: Double, dateStr: String, promise: Promise) in
-            guard let type = HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed) else {
-                promise.reject("INVALID_TYPE", "Dietary energy type not available")
-                return
-            }
-            guard let date = HealthKitQueries.parseDate(dateStr) else {
-                promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
-                return
-            }
+        AsyncFunction("writeDietarySamples") { (sampleInputs: [[String: Any]], promise: Promise) in
+            var samples: [HKQuantitySample] = []
 
-            let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
-            let sample = HKQuantitySample(type: type, quantity: quantity, start: date, end: date)
+            for sampleInput in sampleInputs {
+                guard let typeIdentifier = sampleInput["typeIdentifier"] as? String,
+                      let quantityType = dietaryWriteQuantityType(for: typeIdentifier) else {
+                    promise.reject("INVALID_TYPE", "Unsupported dietary quantity type")
+                    return
+                }
+                guard let valueNumber = sampleInput["value"] as? NSNumber else {
+                    promise.reject("INVALID_VALUE", "Dietary sample value must be a number")
+                    return
+                }
+                guard let startDateString = sampleInput["startDate"] as? String,
+                      let endDateString = sampleInput["endDate"] as? String,
+                      let startDate = HealthKitQueries.parseDate(startDateString),
+                      let endDate = HealthKitQueries.parseDate(endDateString) else {
+                    promise.reject("INVALID_DATE", "Invalid ISO 8601 date format")
+                    return
+                }
+                guard let syncIdentifier = sampleInput["syncIdentifier"] as? String,
+                      let syncVersionNumber = sampleInput["syncVersion"] as? NSNumber,
+                      let foodEntryId = sampleInput["foodEntryId"] as? String,
+                      let foodName = sampleInput["foodName"] as? String,
+                      let fingerprint = sampleInput["fingerprint"] as? String else {
+                    promise.reject("INVALID_METADATA", "Dietary sample metadata is required")
+                    return
+                }
+
+                let unit = HealthKitQueries.preferredUnit(for: quantityType)
+                let quantity = HKQuantity(unit: unit, doubleValue: valueNumber.doubleValue)
+                let metadata: [String: Any] = [
+                    HKMetadataKeySyncIdentifier: syncIdentifier,
+                    HKMetadataKeySyncVersion: syncVersionNumber.intValue,
+                    "DofekFoodEntryId": foodEntryId,
+                    "DofekFoodName": foodName,
+                    "DofekFoodFingerprint": fingerprint,
+                    "DofekNutrientType": typeIdentifier,
+                ]
+                samples.append(
+                    HKQuantitySample(
+                        type: quantityType,
+                        quantity: quantity,
+                        start: startDate,
+                        end: endDate,
+                        metadata: metadata
+                    )
+                )
+            }
 
             Task {
                 do {
-                    try await self.healthStore.save(sample)
+                    try await self.healthStore.save(samples)
                     promise.resolve(true)
                 } catch {
                     promise.reject("WRITE_ERROR", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("deleteDietarySamples") { (syncIdentifiers: [String], promise: Promise) in
+            guard !syncIdentifiers.isEmpty else {
+                promise.resolve(0)
+                return
+            }
+
+            Task {
+                do {
+                    var deletedTotal = 0
+                    for sampleType in writeTypes {
+                        let predicate = HKQuery.predicateForObjects(
+                            withMetadataKey: HKMetadataKeySyncIdentifier,
+                            allowedValues: syncIdentifiers
+                        )
+                        let deletedCount: Int = try await withCheckedThrowingContinuation { continuation in
+                            self.healthStore.deleteObjects(of: sampleType, predicate: predicate) { _, deletedCount, error in
+                                if let error = error {
+                                    continuation.resume(throwing: error)
+                                    return
+                                }
+                                continuation.resume(returning: deletedCount)
+                            }
+                        }
+                        deletedTotal += deletedCount
+                    }
+                    promise.resolve(deletedTotal)
+                } catch {
+                    promise.reject("DELETE_ERROR", error.localizedDescription)
                 }
             }
         }

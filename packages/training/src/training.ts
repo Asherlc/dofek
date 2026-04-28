@@ -565,9 +565,8 @@ export function collapseWeeklyVolumeActivityTypes(
 
 /**
  * Pick the daily load row to display in "current strain" UI.
- * Always returns the latest (most recent) row so the dashboard reflects
- * the current day's actual state — including 0 strain on rest days or
- * days where no data has synced yet.
+ * Always returns the latest (most recent) row so the dashboard reflects the
+ * current day's rolling workload state.
  */
 export function selectRecentDailyLoad<T extends DailyLoadRow>(rows: T[]): T | null {
   if (rows.length === 0) return null;

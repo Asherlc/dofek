@@ -44,7 +44,8 @@ VALUES
   ('choline', 'Choline', 'mg', 'mineral', 550, 413, 'choline', 1),
   ('omega_3', 'Omega-3', 'mg', 'fatty_acid', NULL, 500, 'omega-3-fat', 1000),
   ('omega_6', 'Omega-6', 'mg', 'fatty_acid', NULL, 501, 'omega-6-fat', 1000),
-  ('caffeine', 'Caffeine', 'mg', 'stimulant', NULL, 600, 'caffeine', 1)
+  ('caffeine', 'Caffeine', 'mg', 'stimulant', NULL, 600, 'caffeine', 1),
+  ('water', 'Water', 'ml', 'hydration', NULL, 700, NULL, 1)
 ON CONFLICT (id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   unit = EXCLUDED.unit,
@@ -53,29 +54,6 @@ ON CONFLICT (id) DO UPDATE SET
   sort_order = EXCLUDED.sort_order,
   open_food_facts_key = EXCLUDED.open_food_facts_key,
   conversion_factor = EXCLUDED.conversion_factor;
-
-ALTER TABLE ONLY fitness.nutrition_daily
-  DROP CONSTRAINT IF EXISTS nutrition_daily_date_provider_id_pk;
-
-DROP INDEX IF EXISTS fitness.nutrition_daily_user_date_provider_uidx;
-
-ALTER TABLE ONLY fitness.nutrition_daily
-  ADD CONSTRAINT nutrition_daily_user_date_provider_pk PRIMARY KEY (user_id, date, provider_id);
-
-CREATE TABLE fitness.nutrition_daily_nutrient (
-  user_id uuid NOT NULL REFERENCES fitness.user_profile(id),
-  date date NOT NULL,
-  provider_id text NOT NULL REFERENCES fitness.provider(id),
-  nutrient_id text NOT NULL REFERENCES fitness.nutrient(id),
-  amount real NOT NULL,
-  PRIMARY KEY (user_id, date, provider_id, nutrient_id),
-  FOREIGN KEY (user_id, date, provider_id)
-    REFERENCES fitness.nutrition_daily(user_id, date, provider_id)
-    ON DELETE CASCADE
-);
-
-CREATE INDEX nutrition_daily_nutrient_lookup_idx
-  ON fitness.nutrition_daily_nutrient (user_id, date, provider_id);
 
 INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
 SELECT fen.food_entry_id, nutrient_values.nutrient_id, nutrient_values.amount
@@ -118,7 +96,8 @@ CROSS JOIN LATERAL (
     ('chromium', fen.chromium_mcg),
     ('iodine', fen.iodine_mcg),
     ('omega_3', fen.omega3_mg),
-    ('omega_6', fen.omega6_mg)
+    ('omega_6', fen.omega6_mg),
+    ('water', fen.water_ml::real)
 ) AS nutrient_values(nutrient_id, amount)
 WHERE nutrient_values.amount IS NOT NULL
 ON CONFLICT (food_entry_id, nutrient_id) DO UPDATE SET amount = EXCLUDED.amount;
@@ -169,97 +148,53 @@ CROSS JOIN LATERAL (
 WHERE nutrient_values.amount IS NOT NULL
 ON CONFLICT (supplement_id, nutrient_id) DO UPDATE SET amount = EXCLUDED.amount;
 
-INSERT INTO fitness.nutrition_daily_nutrient (user_id, date, provider_id, nutrient_id, amount)
-SELECT nd.user_id, nd.date, nd.provider_id, nutrient_values.nutrient_id, nutrient_values.amount
-FROM fitness.nutrition_daily nd
-CROSS JOIN LATERAL (
-  VALUES
-    ('calories', nd.calories::real),
-    ('protein', nd.protein_g),
-    ('carbohydrate', nd.carbs_g),
-    ('fat', nd.fat_g),
-    ('saturated_fat', nd.saturated_fat_g),
-    ('polyunsaturated_fat', nd.polyunsaturated_fat_g),
-    ('monounsaturated_fat', nd.monounsaturated_fat_g),
-    ('trans_fat', nd.trans_fat_g),
-    ('cholesterol', nd.cholesterol_mg),
-    ('sodium', nd.sodium_mg),
-    ('potassium', nd.potassium_mg),
-    ('fiber', nd.fiber_g),
-    ('sugar', nd.sugar_g),
-    ('vitamin_a', nd.vitamin_a_mcg),
-    ('vitamin_c', nd.vitamin_c_mg),
-    ('vitamin_d', nd.vitamin_d_mcg),
-    ('vitamin_e', nd.vitamin_e_mg),
-    ('vitamin_k', nd.vitamin_k_mcg),
-    ('vitamin_b1', nd.vitamin_b1_mg),
-    ('vitamin_b2', nd.vitamin_b2_mg),
-    ('vitamin_b3', nd.vitamin_b3_mg),
-    ('vitamin_b5', nd.vitamin_b5_mg),
-    ('vitamin_b6', nd.vitamin_b6_mg),
-    ('vitamin_b7', nd.vitamin_b7_mcg),
-    ('vitamin_b9', nd.vitamin_b9_mcg),
-    ('vitamin_b12', nd.vitamin_b12_mcg),
-    ('calcium', nd.calcium_mg),
-    ('iron', nd.iron_mg),
-    ('magnesium', nd.magnesium_mg),
-    ('zinc', nd.zinc_mg),
-    ('selenium', nd.selenium_mcg),
-    ('copper', nd.copper_mg),
-    ('manganese', nd.manganese_mg),
-    ('chromium', nd.chromium_mcg),
-    ('iodine', nd.iodine_mcg),
-    ('omega_3', nd.omega3_mg),
-    ('omega_6', nd.omega6_mg)
-) AS nutrient_values(nutrient_id, amount)
-WHERE nutrient_values.amount IS NOT NULL
-ON CONFLICT (user_id, date, provider_id, nutrient_id) DO UPDATE SET amount = EXCLUDED.amount;
-
 DROP VIEW IF EXISTS fitness.v_food_entry_with_nutrition;
 DROP VIEW IF EXISTS fitness.v_supplement_with_nutrition;
+DROP VIEW IF EXISTS fitness.v_nutrition_daily;
+DROP VIEW IF EXISTS fitness.v_nutrition_daily_with_nutrients;
 
 DROP TABLE fitness.food_entry_nutrition;
 DROP TABLE fitness.supplement_nutrition;
 DROP TABLE fitness.nutrition_data;
 
 ALTER TABLE fitness.nutrition_daily
-  DROP COLUMN calories,
-  DROP COLUMN protein_g,
-  DROP COLUMN carbs_g,
-  DROP COLUMN fat_g,
-  DROP COLUMN saturated_fat_g,
-  DROP COLUMN polyunsaturated_fat_g,
-  DROP COLUMN monounsaturated_fat_g,
-  DROP COLUMN trans_fat_g,
-  DROP COLUMN cholesterol_mg,
-  DROP COLUMN sodium_mg,
-  DROP COLUMN potassium_mg,
-  DROP COLUMN fiber_g,
-  DROP COLUMN sugar_g,
-  DROP COLUMN vitamin_a_mcg,
-  DROP COLUMN vitamin_c_mg,
-  DROP COLUMN vitamin_d_mcg,
-  DROP COLUMN vitamin_e_mg,
-  DROP COLUMN vitamin_k_mcg,
-  DROP COLUMN vitamin_b1_mg,
-  DROP COLUMN vitamin_b2_mg,
-  DROP COLUMN vitamin_b3_mg,
-  DROP COLUMN vitamin_b5_mg,
-  DROP COLUMN vitamin_b6_mg,
-  DROP COLUMN vitamin_b7_mcg,
-  DROP COLUMN vitamin_b9_mcg,
-  DROP COLUMN vitamin_b12_mcg,
-  DROP COLUMN calcium_mg,
-  DROP COLUMN iron_mg,
-  DROP COLUMN magnesium_mg,
-  DROP COLUMN zinc_mg,
-  DROP COLUMN selenium_mcg,
-  DROP COLUMN copper_mg,
-  DROP COLUMN manganese_mg,
-  DROP COLUMN chromium_mcg,
-  DROP COLUMN iodine_mcg,
-  DROP COLUMN omega3_mg,
-  DROP COLUMN omega6_mg;
+  DROP COLUMN IF EXISTS calories,
+  DROP COLUMN IF EXISTS protein_g,
+  DROP COLUMN IF EXISTS carbs_g,
+  DROP COLUMN IF EXISTS fat_g,
+  DROP COLUMN IF EXISTS saturated_fat_g,
+  DROP COLUMN IF EXISTS polyunsaturated_fat_g,
+  DROP COLUMN IF EXISTS monounsaturated_fat_g,
+  DROP COLUMN IF EXISTS trans_fat_g,
+  DROP COLUMN IF EXISTS cholesterol_mg,
+  DROP COLUMN IF EXISTS sodium_mg,
+  DROP COLUMN IF EXISTS potassium_mg,
+  DROP COLUMN IF EXISTS fiber_g,
+  DROP COLUMN IF EXISTS sugar_g,
+  DROP COLUMN IF EXISTS vitamin_a_mcg,
+  DROP COLUMN IF EXISTS vitamin_c_mg,
+  DROP COLUMN IF EXISTS vitamin_d_mcg,
+  DROP COLUMN IF EXISTS vitamin_e_mg,
+  DROP COLUMN IF EXISTS vitamin_k_mcg,
+  DROP COLUMN IF EXISTS vitamin_b1_mg,
+  DROP COLUMN IF EXISTS vitamin_b2_mg,
+  DROP COLUMN IF EXISTS vitamin_b3_mg,
+  DROP COLUMN IF EXISTS vitamin_b5_mg,
+  DROP COLUMN IF EXISTS vitamin_b6_mg,
+  DROP COLUMN IF EXISTS vitamin_b7_mcg,
+  DROP COLUMN IF EXISTS vitamin_b9_mcg,
+  DROP COLUMN IF EXISTS vitamin_b12_mcg,
+  DROP COLUMN IF EXISTS calcium_mg,
+  DROP COLUMN IF EXISTS iron_mg,
+  DROP COLUMN IF EXISTS magnesium_mg,
+  DROP COLUMN IF EXISTS zinc_mg,
+  DROP COLUMN IF EXISTS selenium_mcg,
+  DROP COLUMN IF EXISTS copper_mg,
+  DROP COLUMN IF EXISTS manganese_mg,
+  DROP COLUMN IF EXISTS chromium_mcg,
+  DROP COLUMN IF EXISTS iodine_mcg,
+  DROP COLUMN IF EXISTS omega3_mg,
+  DROP COLUMN IF EXISTS omega6_mg;
 
 CREATE VIEW fitness.v_food_entry_with_nutrition AS
 SELECT
@@ -276,6 +211,9 @@ SELECT
   fe.provider_serving_id,
   fe.number_of_units,
   fe.logged_at,
+  fe.source_name,
+  fe.started_at,
+  fe.ended_at,
   fe.barcode,
   fe.serving_unit,
   fe.serving_weight_grams,
@@ -318,6 +256,7 @@ SELECT
   MAX(fen.amount) FILTER (WHERE fen.nutrient_id = 'omega_3') AS omega3_mg,
   MAX(fen.amount) FILTER (WHERE fen.nutrient_id = 'omega_6') AS omega6_mg,
   MAX(fen.amount) FILTER (WHERE fen.nutrient_id = 'caffeine') AS caffeine_mg,
+  MAX(fen.amount) FILTER (WHERE fen.nutrient_id = 'water')::integer AS water_ml,
   fe.raw,
   fe.confirmed,
   fe.created_at
@@ -375,60 +314,59 @@ SELECT
   MAX(sn.amount) FILTER (WHERE sn.nutrient_id = 'omega_3') AS omega3_mg,
   MAX(sn.amount) FILTER (WHERE sn.nutrient_id = 'omega_6') AS omega6_mg,
   MAX(sn.amount) FILTER (WHERE sn.nutrient_id = 'caffeine') AS caffeine_mg,
+  NULL::integer AS water_ml,
   s.created_at,
   s.updated_at
 FROM fitness.supplement s
 LEFT JOIN fitness.supplement_nutrient sn ON sn.supplement_id = s.id
 GROUP BY s.id;
 
-CREATE VIEW fitness.v_nutrition_daily_with_nutrients AS
+CREATE VIEW fitness.v_nutrition_daily AS
 SELECT
-  nd.date,
-  nd.provider_id,
-  nd.user_id,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'calories')::integer AS calories,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'protein') AS protein_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'carbohydrate') AS carbs_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'fat') AS fat_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'saturated_fat') AS saturated_fat_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'polyunsaturated_fat') AS polyunsaturated_fat_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'monounsaturated_fat') AS monounsaturated_fat_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'trans_fat') AS trans_fat_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'cholesterol') AS cholesterol_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'sodium') AS sodium_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'potassium') AS potassium_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'fiber') AS fiber_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'sugar') AS sugar_g,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_a') AS vitamin_a_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_c') AS vitamin_c_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_d') AS vitamin_d_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_e') AS vitamin_e_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_k') AS vitamin_k_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b1') AS vitamin_b1_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b2') AS vitamin_b2_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b3') AS vitamin_b3_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b5') AS vitamin_b5_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b6') AS vitamin_b6_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b7') AS vitamin_b7_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b9') AS vitamin_b9_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'vitamin_b12') AS vitamin_b12_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'calcium') AS calcium_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'iron') AS iron_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'magnesium') AS magnesium_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'zinc') AS zinc_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'selenium') AS selenium_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'copper') AS copper_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'manganese') AS manganese_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'chromium') AS chromium_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'iodine') AS iodine_mcg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'omega_3') AS omega3_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'omega_6') AS omega6_mg,
-  MAX(ndn.amount) FILTER (WHERE ndn.nutrient_id = 'caffeine') AS caffeine_mg,
-  nd.water_ml,
-  nd.created_at
-FROM fitness.nutrition_daily nd
-LEFT JOIN fitness.nutrition_daily_nutrient ndn
-  ON ndn.user_id = nd.user_id
-  AND ndn.date = nd.date
-  AND ndn.provider_id = nd.provider_id
-GROUP BY nd.user_id, nd.date, nd.provider_id, nd.water_ml, nd.created_at;
+  fe.date,
+  fe.provider_id,
+  fe.user_id,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'calories')::integer AS calories,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'protein') AS protein_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'carbohydrate') AS carbs_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'fat') AS fat_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'saturated_fat') AS saturated_fat_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'polyunsaturated_fat') AS polyunsaturated_fat_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'monounsaturated_fat') AS monounsaturated_fat_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'trans_fat') AS trans_fat_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'cholesterol') AS cholesterol_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'sodium') AS sodium_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'potassium') AS potassium_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'fiber') AS fiber_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'sugar') AS sugar_g,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_a') AS vitamin_a_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_c') AS vitamin_c_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_d') AS vitamin_d_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_e') AS vitamin_e_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_k') AS vitamin_k_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b1') AS vitamin_b1_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b2') AS vitamin_b2_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b3') AS vitamin_b3_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b5') AS vitamin_b5_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b6') AS vitamin_b6_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b7') AS vitamin_b7_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b9') AS vitamin_b9_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'vitamin_b12') AS vitamin_b12_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'calcium') AS calcium_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'iron') AS iron_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'magnesium') AS magnesium_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'zinc') AS zinc_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'selenium') AS selenium_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'copper') AS copper_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'manganese') AS manganese_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'chromium') AS chromium_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'iodine') AS iodine_mcg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'omega_3') AS omega3_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'omega_6') AS omega6_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'caffeine') AS caffeine_mg,
+  SUM(fen.amount) FILTER (WHERE fen.nutrient_id = 'water')::integer AS water_ml,
+  MIN(fe.created_at) AS created_at
+FROM fitness.food_entry fe
+JOIN fitness.food_entry_nutrient fen ON fen.food_entry_id = fe.id
+WHERE fe.confirmed = true
+GROUP BY fe.date, fe.provider_id, fe.user_id;

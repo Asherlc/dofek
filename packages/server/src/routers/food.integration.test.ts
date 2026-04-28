@@ -150,6 +150,86 @@ describe("Food router", () => {
     });
   });
 
+  describe("healthKitWriteBackEntries query", () => {
+    it("returns only confirmed Dofek-owned food entries for Apple Health write-back", async () => {
+      const uniqueSuffix = crypto.randomUUID();
+      const direct = await mutate("food.create", {
+        date: "2025-03-10",
+        meal: "lunch",
+        foodName: "Direct Dofek Meal",
+        calories: 610,
+        proteinG: 42,
+        carbsG: 58,
+        fatG: 18,
+      });
+
+      await testCtx.db.execute(sql`
+        INSERT INTO fitness.provider (id, name, user_id)
+        VALUES ('cronometer', 'Cronometer', ${TEST_USER_ID})
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await testCtx.db.execute(sql`
+        WITH synced_entry AS (
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, external_id, date, meal, food_name, confirmed
+          )
+          VALUES (
+            ${TEST_USER_ID}, 'cronometer', ${`cron-${uniqueSuffix}`}, '2025-03-10'::date,
+            'lunch', 'Synced Cronometer Meal', true
+          )
+          RETURNING id
+        )
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT id, nutrient_id, amount
+        FROM synced_entry
+        CROSS JOIN (VALUES
+          ('calories', 700::real),
+          ('protein', 50::real),
+          ('carbohydrate', 60::real),
+          ('fat', 20::real)
+        ) AS nutrient_values(nutrient_id, amount)
+      `);
+      await testCtx.db.execute(sql`
+        WITH unconfirmed_entry AS (
+          INSERT INTO fitness.food_entry (
+            user_id, provider_id, external_id, date, meal, food_name, confirmed
+          )
+          VALUES (
+            ${TEST_USER_ID}, 'dofek', ${`draft-${uniqueSuffix}`}, '2025-03-10'::date,
+            'snack', 'Unconfirmed Dofek Meal', false
+          )
+          RETURNING id
+        )
+        INSERT INTO fitness.food_entry_nutrient (food_entry_id, nutrient_id, amount)
+        SELECT id, nutrient_id, amount
+        FROM unconfirmed_entry
+        CROSS JOIN (VALUES
+          ('calories', 100::real),
+          ('protein', 5::real),
+          ('carbohydrate', 10::real),
+          ('fat', 2::real)
+        ) AS nutrient_values(nutrient_id, amount)
+      `);
+
+      const result = await query("food.healthKitWriteBackEntries", {
+        startDate: "2025-03-10",
+        endDate: "2025-03-10",
+      });
+
+      expect(result.result.data).toEqual([
+        {
+          id: direct.result.data.id,
+          date: "2025-03-10",
+          food_name: "Direct Dofek Meal",
+          calories: 610,
+          protein_g: 42,
+          carbs_g: 58,
+          fat_g: 18,
+        },
+      ]);
+    });
+  });
+
   describe("update mutation", () => {
     let entryId: string;
 

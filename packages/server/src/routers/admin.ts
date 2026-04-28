@@ -96,7 +96,7 @@ const foodEntryRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   user_name: z.string().nullable(),
-  food_name: z.string(),
+  food_name: z.string().nullable(),
   calories: z.coerce.number().nullable(),
   protein_g: z.coerce.number().nullable(),
   meal: z.string().nullable(),
@@ -164,7 +164,6 @@ export const adminRouter = router({
         UNION ALL SELECT 'nutrient', COUNT(*)::text FROM fitness.nutrient
         UNION ALL SELECT 'food_entry_nutrient', COUNT(*)::text FROM fitness.food_entry_nutrient
         UNION ALL SELECT 'supplement_nutrient', COUNT(*)::text FROM fitness.supplement_nutrient
-        UNION ALL SELECT 'nutrition_daily_nutrient', COUNT(*)::text FROM fitness.nutrition_daily_nutrient
         UNION ALL SELECT 'metric_stream', COUNT(*)::text FROM fitness.metric_stream
       ) counts ORDER BY row_count DESC`,
     );

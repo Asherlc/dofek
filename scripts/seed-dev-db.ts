@@ -169,7 +169,7 @@ async function verifySeed() {
     [
       "nutrition days",
       85,
-      `SELECT COUNT(*)::int AS count FROM fitness.nutrition_daily WHERE user_id = '${USER_ID}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.v_nutrition_daily WHERE user_id = '${USER_ID}'`,
     ],
     [
       "food entries",

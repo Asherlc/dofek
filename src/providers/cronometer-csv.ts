@@ -1,13 +1,8 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { NUTRIENT_FIELDS, nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
-import {
-  foodEntry,
-  foodEntryNutrient,
-  nutritionDaily,
-  nutritionDailyNutrient,
-} from "../db/schema.ts";
+import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -276,9 +271,6 @@ export async function importCronometerCsv(
 
   const entries = parseCronometerCsv(csvText);
 
-  // Track daily aggregates for nutritionDaily
-  const dailyAggregates = new Map<string, Record<string, number>>();
-
   for (const entry of entries) {
     try {
       // Generate deterministic external ID from date + meal + foodName + amount
@@ -390,62 +382,9 @@ export async function importCronometerCsv(
       }
 
       recordsSynced++;
-
-      // Accumulate daily totals
-      const dayKey = entry.date;
-      const dayTotals = dailyAggregates.get(dayKey) ?? {};
-      const nutritionRecord: Record<string, unknown> = nutritionValues;
-      for (const field of NUTRIENT_FIELDS) {
-        const value = nutritionRecord[field.key];
-        if (typeof value === "number") {
-          dayTotals[field.key] = (dayTotals[field.key] ?? 0) + value;
-        }
-      }
-      dailyAggregates.set(dayKey, dayTotals);
     } catch (err) {
       errors.push({
         message: `Failed to import "${entry.foodName}" on ${entry.date}: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-    }
-  }
-
-  // Upsert daily nutrition aggregates
-  for (const [dateStr, totals] of dailyAggregates) {
-    try {
-      await db
-        .insert(nutritionDaily)
-        .values({
-          date: dateStr,
-          providerId: CRONOMETER_PROVIDER_ID,
-          userId: effectiveUserId,
-        })
-        .onConflictDoNothing({
-          target: [nutritionDaily.userId, nutritionDaily.date, nutritionDaily.providerId],
-        });
-      await db
-        .delete(nutritionDailyNutrient)
-        .where(
-          sql`${nutritionDailyNutrient.userId} = ${effectiveUserId} AND ${nutritionDailyNutrient.date} = ${dateStr}::date AND ${nutritionDailyNutrient.providerId} = ${CRONOMETER_PROVIDER_ID}`,
-        );
-      const nutrientEntries = nutrientAmountEntriesFromLegacyFields(totals);
-      if (nutrientEntries.length > 0) {
-        await db.insert(nutritionDailyNutrient).values(
-          nutrientEntries.map((nutrientEntry) => ({
-            userId: effectiveUserId,
-            date: dateStr,
-            providerId: CRONOMETER_PROVIDER_ID,
-            nutrientId: nutrientEntry.nutrientId,
-            amount:
-              nutrientEntry.nutrientId === "calories"
-                ? Math.round(nutrientEntry.amount)
-                : nutrientEntry.amount,
-          })),
-        );
-      }
-    } catch (err) {
-      errors.push({
-        message: `Failed to upsert daily nutrition for ${dateStr}: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

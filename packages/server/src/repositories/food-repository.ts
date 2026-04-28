@@ -5,7 +5,7 @@ import {
 } from "dofek/db/nutrient-columns";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,6 +29,15 @@ const fieldColumnMap: Record<string, string> = {
 
 import { nutrientRowSchema } from "dofek/db/nutrient-columns";
 
+const nullableStringSchema = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? null);
+
+const nullableTimestampStringSchema = timestampStringSchema
+  .nullish()
+  .transform((value) => value ?? null);
+
 export const foodEntryRowSchema = z
   .object({
     id: z.string(),
@@ -37,13 +46,16 @@ export const foodEntryRowSchema = z
     external_id: z.string().nullable(),
     date: z.string(),
     meal: z.string().nullable(),
-    food_name: z.string(),
+    food_name: z.string().nullable(),
     food_description: z.string().nullable(),
     category: z.string().nullable(),
     provider_food_id: z.string().nullable(),
     provider_serving_id: z.string().nullable(),
     number_of_units: z.coerce.number().nullable(),
-    logged_at: z.string().nullable(),
+    logged_at: timestampStringSchema.nullable(),
+    source_name: nullableStringSchema,
+    started_at: nullableTimestampStringSchema,
+    ended_at: nullableTimestampStringSchema,
     barcode: z.string().nullable(),
     serving_unit: z.string().nullable(),
     serving_weight_grams: z.coerce.number().nullable(),
@@ -75,6 +87,16 @@ const foodSearchRowSchema = z.object({
   number_of_units: z.coerce.number().nullable(),
 });
 
+const healthKitWriteBackFoodEntryRowSchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  food_name: z.string(),
+  calories: z.coerce.number().nullable(),
+  protein_g: z.coerce.number().nullable(),
+  carbs_g: z.coerce.number().nullable(),
+  fat_g: z.coerce.number().nullable(),
+});
+
 const idRowSchema = z.object({ id: z.string() });
 
 // ---------------------------------------------------------------------------
@@ -84,6 +106,7 @@ const idRowSchema = z.object({ id: z.string() });
 export type FoodEntryRow = z.infer<typeof foodEntryRowSchema>;
 export type DailyTotalsRow = z.infer<typeof dailyTotalsRowSchema>;
 export type FoodSearchRow = z.infer<typeof foodSearchRowSchema>;
+export type HealthKitWriteBackFoodEntryRow = z.infer<typeof healthKitWriteBackFoodEntryRowSchema>;
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -109,7 +132,7 @@ export class FoodEntry {
     return this.#row.meal;
   }
 
-  get foodName(): string {
+  get foodName(): string | null {
     return this.#row.food_name;
   }
 
@@ -425,11 +448,31 @@ export class FoodRepository {
           FROM fitness.v_food_entry_with_nutrition fe
           WHERE fe.user_id = ${this.#userId}
             AND fe.confirmed = true
+            AND fe.food_name IS NOT NULL
             AND fe.food_name ILIKE ${searchPattern}
           ORDER BY fe.food_name ASC
           LIMIT ${limit}`,
     );
     return rows.map((row) => new FoodSearchResult(row));
+  }
+
+  /** Direct Dofek food entries that mobile can write back to Apple Health. */
+  async healthKitWriteBackEntries(
+    startDate: string,
+    endDate: string,
+  ): Promise<HealthKitWriteBackFoodEntryRow[]> {
+    return executeWithSchema(
+      this.#db,
+      healthKitWriteBackFoodEntryRowSchema,
+      sql`SELECT id, date, food_name, calories, protein_g, carbs_g, fat_g
+          FROM fitness.v_food_entry_with_nutrition
+          WHERE user_id = ${this.#userId}
+            AND provider_id = ${DOFEK_PROVIDER_ID}
+            AND confirmed = true
+            AND date >= ${startDate}::date
+            AND date <= ${endDate}::date
+          ORDER BY date ASC, food_name ASC, id ASC`,
+    );
   }
 
   /** Ensure the 'dofek' provider row exists (for self-created entries). */
