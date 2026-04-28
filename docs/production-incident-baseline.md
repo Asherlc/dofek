@@ -7,6 +7,47 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-04-28: Review App Hetzner Placement Unavailable
+
+### Impact
+
+PR #1037 failed the `Deploy Review App` check before a review server could be
+created. Application build and test checks were not implicated.
+
+### What Happened
+
+The review-app workflow reached Terraform apply, planned one new
+`hcloud_server.review` named `dofek-pr-1037`, and requested the configured
+review-app server type in `nbg1`.
+
+### Evidence That Mattered
+
+- Failing step: `Apply review app infrastructure`
+- First fatal line:
+  `Error: error during placement (resource_unavailable, 9f92993d621029d2c01b7868edfa5bb5)`
+- Terraform resource: `hcloud_server.review` in `server.tf` line 27
+- Planned server attributes included `server_type = "cax11"` and
+  `location = "nbg1"`
+
+### Root Cause
+
+Hetzner could not place the configured review-app server type in the configured
+location. This differed from the previous `resource_limit_exceeded` quota
+failure; the account can still have free server quota when regional placement
+capacity is unavailable.
+
+### Fix Or Mitigation
+
+The review-app workflow now treats `resource_unavailable` / `error during
+placement` as a non-code review-app skip. It posts a PR comment explaining that
+Hetzner could not allocate the configured review server and exits successfully,
+while preserving hard failures for unrelated Terraform errors.
+
+### Remaining Risk
+
+The PR will not receive a live review app until Hetzner can allocate the
+configured server or the review-app location/server type is changed.
+
 ## 2026-04-26: Review App Server Quota Exhausted
 
 ### Impact
@@ -516,3 +557,45 @@ views so the same run uses current priorities.
 Resting heart rate anomaly detection still uses `v_daily_metrics`; if provider
 scale differences appear there too, it should get the same same-source baseline
 treatment.
+
+## 2026-04-28: Production deploy blocked by duplicate billing migration
+
+### Impact
+
+The `Deploy Web` workflow failed before `docker stack deploy`, so production did
+not roll forward to image `sha-245e71a`.
+
+### Evidence That Mattered
+
+GitHub Actions run `25065442578`, job `73431274787`, failed in `Run migrations`.
+The first fatal migration line was:
+
+```text
+error: [migrate] error: relation "user_billing_stripe_customer_idx" already exists
+```
+
+The log showed `0002_add_user_billing.sql` being retried while earlier deploys
+had already applied the same billing table/index shape through
+`0004_add_user_billing.sql`.
+
+### Root Cause
+
+Concurrent migration numbering left two billing migrations in the history.
+Production had already created the billing indexes from `0004_add_user_billing.sql`,
+then later saw `0002_add_user_billing.sql` as pending and failed because its
+index creation statements were not idempotent.
+
+### Fix or Mitigation
+
+Changed `drizzle/0002_add_user_billing.sql` to use
+`CREATE INDEX IF NOT EXISTS` for the two billing indexes, matching the already
+idempotent `0004_add_user_billing.sql`. Added an integration test that applies
+the pending `0002_add_user_billing.sql` against a database where the billing
+indexes already exist.
+
+### Remaining Risk
+
+The failed job log also appeared to print Infisical-exported environment values
+in plain text. Those credentials should be treated as exposed until the relevant
+secrets are rotated and the deploy workflow masks or avoids logging exported
+secrets.
