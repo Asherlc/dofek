@@ -43,6 +43,12 @@ vi.mock("dofek/jobs/provider-queue-config", () => ({
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
+  SYNC_JOB_RETRY_OPTIONS: {
+    attempts: 288,
+    backoff: { type: "fixed", delay: 300_000 },
+    removeOnComplete: { age: 86_400, count: 1_000 },
+    removeOnFail: { age: 604_800, count: 1_000 },
+  },
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
@@ -453,16 +459,28 @@ describe("syncRouter", () => {
         { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
         { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
       ]);
-      expect(mockAdd).toHaveBeenNthCalledWith(1, "sync", {
-        providerId: "strava",
-        sinceDays: undefined,
-        userId: "user-1",
-      });
-      expect(mockAdd).toHaveBeenNthCalledWith(2, "sync", {
-        providerId: "wahoo",
-        sinceDays: undefined,
-        userId: "user-1",
-      });
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        1,
+        "sync",
+        {
+          providerId: "strava",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          userId: "user-1",
+        },
+        expect.objectContaining({ attempts: 288 }),
+      );
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        2,
+        "sync",
+        {
+          providerId: "wahoo",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          userId: "user-1",
+        },
+        expect.objectContaining({ attempts: 288 }),
+      );
     });
 
     it("excludes unconnected providers from sync-all fan-out", async () => {
@@ -540,11 +558,16 @@ describe("syncRouter", () => {
         { providerId: "strava", jobId: "strava:job-strava", queueName: "sync-strava" },
       ]);
       expect(mockAdd).toHaveBeenCalledTimes(1);
-      expect(mockAdd).toHaveBeenCalledWith("sync", {
-        providerId: "strava",
-        sinceDays: undefined,
-        userId: "user-1",
-      });
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        {
+          providerId: "strava",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          userId: "user-1",
+        },
+        expect.objectContaining({ attempts: 288 }),
+      );
     });
 
     it("validates provider exists before enqueuing", async () => {
@@ -562,11 +585,48 @@ describe("syncRouter", () => {
       expect(result.providerJobs).toEqual([
         { providerId: "wahoo", jobId: "wahoo:job-123", queueName: "sync-wahoo" },
       ]);
-      expect(mockAdd).toHaveBeenCalledWith("sync", {
-        providerId: "wahoo",
-        sinceDays: undefined,
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        {
+          providerId: "wahoo",
+          sinceDays: undefined,
+          sinceIso: "1970-01-01T00:00:00.000Z",
+          userId: "user-1",
+        },
+        expect.objectContaining({ attempts: 288 }),
+      );
+    });
+
+    it("stores a fixed since timestamp when sinceDays is provided", async () => {
+      const now = new Date("2026-04-28T12:00:00.000Z").getTime();
+      const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
       });
+
+      try {
+        await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      } finally {
+        dateNowSpy.mockRestore();
+      }
+
+      expect(mockAdd).toHaveBeenCalledWith(
+        "sync",
+        {
+          providerId: "wahoo",
+          sinceDays: 7,
+          sinceIso: "2026-04-21T12:00:00.000Z",
+          userId: "user-1",
+        },
+        expect.objectContaining({
+          attempts: 288,
+          backoff: { type: "fixed", delay: 300_000 },
+        }),
+      );
     });
 
     it("finds the correct provider among multiple", async () => {

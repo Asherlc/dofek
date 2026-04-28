@@ -1,4 +1,4 @@
-import type { ConnectionOptions } from "bullmq";
+import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { Queue } from "bullmq";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
@@ -7,7 +7,9 @@ import type { ProviderSyncTier } from "./provider-queue-config.ts";
 export interface SyncJobData {
   providerId?: string;
   sinceDays?: number;
+  sinceIso?: string;
   userId: string;
+  checkpoint?: unknown;
 }
 
 export interface ImportJobData {
@@ -63,6 +65,12 @@ export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
 export const TRAINING_EXPORT_QUEUE = "training-export";
 export const POST_SYNC_DEBOUNCE_MS = 10_000;
+export const SYNC_JOB_RETRY_OPTIONS = {
+  attempts: 288,
+  backoff: { type: "fixed", delay: 300_000 },
+  removeOnComplete: { age: 86_400, count: 1_000 },
+  removeOnFail: { age: 604_800, count: 1_000 },
+} satisfies JobsOptions;
 
 const GLOBAL_POST_SYNC_JOB_NAME = "global-maintenance";
 const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";

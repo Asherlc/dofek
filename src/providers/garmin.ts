@@ -23,9 +23,11 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
+  SyncCheckpointStore,
   SyncError,
   SyncOptions,
   SyncProvider,
@@ -105,6 +107,31 @@ export function eachDay(since: Date, until: Date): string[] {
 
 const SYNC_CURSOR_KEY = "garmin_sync_cursor";
 
+const garminSyncPhaseSchema = z.enum([
+  "activities",
+  "sleep",
+  "daily_metrics",
+  "stress",
+  "heart_rate",
+  "complete",
+]);
+type GarminSyncPhase = z.infer<typeof garminSyncPhaseSchema>;
+
+const GARMIN_SYNC_PHASES: GarminSyncPhase[] = [
+  "activities",
+  "sleep",
+  "daily_metrics",
+  "stress",
+  "heart_rate",
+  "complete",
+];
+
+const garminSyncCheckpointSchema = z.object({
+  phase: garminSyncPhaseSchema,
+  nextDate: z.string().optional(),
+});
+type GarminSyncCheckpoint = z.infer<typeof garminSyncCheckpointSchema>;
+
 function resolveScopedUserId(userId?: string): string {
   const scopedUserId = userId ?? getTokenUserId();
   if (!scopedUserId) {
@@ -142,6 +169,57 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string)
     });
 }
 
+async function loadGarminSyncCheckpoint(
+  checkpointStore?: SyncCheckpointStore,
+): Promise<GarminSyncCheckpoint> {
+  if (!checkpointStore) return { phase: "activities" };
+  const rawCheckpoint = await checkpointStore.load();
+  const result = garminSyncCheckpointSchema.safeParse(rawCheckpoint);
+  return result.success ? result.data : { phase: "activities" };
+}
+
+function shouldSyncPhase(checkpoint: GarminSyncCheckpoint, phase: GarminSyncPhase): boolean {
+  if (checkpoint.phase === "complete") return false;
+  return GARMIN_SYNC_PHASES.indexOf(phase) >= GARMIN_SYNC_PHASES.indexOf(checkpoint.phase);
+}
+
+function datesForPhase(
+  dates: string[],
+  checkpoint: GarminSyncCheckpoint,
+  phase: GarminSyncPhase,
+): string[] {
+  const nextDate = checkpoint.nextDate;
+  if (checkpoint.phase !== phase || !nextDate) return dates;
+  const resumeIndex = dates.findIndex((date) => date >= nextDate);
+  return resumeIndex === -1 ? [] : dates.slice(resumeIndex);
+}
+
+function checkpointForNextPhase(phase: GarminSyncPhase, firstDate?: string): GarminSyncCheckpoint {
+  const nextPhase = GARMIN_SYNC_PHASES[GARMIN_SYNC_PHASES.indexOf(phase) + 1] ?? "complete";
+  return firstDate ? { phase: nextPhase, nextDate: firstDate } : { phase: nextPhase };
+}
+
+async function saveGarminCheckpoint(
+  checkpointStore: SyncCheckpointStore | undefined,
+  checkpoint: GarminSyncCheckpoint,
+): Promise<void> {
+  await checkpointStore?.save(checkpoint);
+}
+
+async function saveNextDateCheckpoint(
+  checkpointStore: SyncCheckpointStore | undefined,
+  phase: GarminSyncPhase,
+  dates: string[],
+  date: string,
+): Promise<void> {
+  const dateIndex = dates.indexOf(date);
+  const nextDate = dateIndex >= 0 ? dates[dateIndex + 1] : undefined;
+  await saveGarminCheckpoint(
+    checkpointStore,
+    nextDate ? { phase, nextDate } : checkpointForNextPhase(phase, dates[0]),
+  );
+}
+
 // ============================================================
 // Error helpers
 // ============================================================
@@ -167,6 +245,7 @@ class SyncErrorTracker {
 
   /** Record an error. Only the first error per operation is sent to Sentry. */
   record(context: string, error: unknown): void {
+    if (isRetryableInfraError(error)) throw error;
     if (isNoDataError(error)) return;
 
     this.errors.push({ context, error });
@@ -288,6 +367,7 @@ export class GarminProvider implements SyncProvider {
     try {
       internalTokens = await this.#resolveTokens(db, scopedUserId);
     } catch (err) {
+      if (isRetryableInfraError(err)) throw err;
       return {
         provider: this.id,
         recordsSynced: 0,
@@ -302,6 +382,7 @@ export class GarminProvider implements SyncProvider {
     const cursor = await loadSyncCursor(db, scopedUserId);
     const effectiveSince = cursor ? new Date(cursor) : since;
     const now = new Date();
+    const checkpoint = await loadGarminSyncCheckpoint(options?.checkpoint);
 
     const recordsSynced = await this.#syncViaConnectApi(
       db,
@@ -310,10 +391,13 @@ export class GarminProvider implements SyncProvider {
       now,
       errors,
       scopedUserId,
+      checkpoint,
+      options?.checkpoint,
     );
 
     // Save sync cursor
     await saveSyncCursor(db, now.toISOString(), scopedUserId);
+    await options?.checkpoint?.clear();
 
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
@@ -329,6 +413,8 @@ export class GarminProvider implements SyncProvider {
     until: Date,
     errors: SyncError[],
     userId?: string,
+    checkpoint: GarminSyncCheckpoint = { phase: "activities" },
+    checkpointStore?: SyncCheckpointStore,
   ): Promise<number> {
     const scopedUserId = resolveScopedUserId(userId);
     let client: GarminConnectClient;
@@ -352,103 +438,146 @@ export class GarminProvider implements SyncProvider {
     let recordsSynced = 0;
 
     // Sync activities (paginated)
-    try {
-      const count = await withSyncLog(
-        db,
-        this.id,
-        "activities",
-        async () => {
-          const activitiesCount = await this.#syncConnectActivities(db, client, scopedUserId);
-          return { recordCount: activitiesCount, result: activitiesCount };
-        },
-        scopedUserId,
-      );
-      recordsSynced += count;
-    } catch (err) {
-      errors.push({
-        message: `Activities sync failed: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+    if (shouldSyncPhase(checkpoint, "activities")) {
+      try {
+        const count = await withSyncLog(
+          db,
+          this.id,
+          "activities",
+          async () => {
+            const activitiesCount = await this.#syncConnectActivities(db, client, scopedUserId);
+            return { recordCount: activitiesCount, result: activitiesCount };
+          },
+          scopedUserId,
+        );
+        recordsSynced += count;
+        await saveGarminCheckpoint(checkpointStore, checkpointForNextPhase("activities", dates[0]));
+      } catch (err) {
+        if (isRetryableInfraError(err)) throw err;
+        errors.push({
+          message: `Activities sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // Sync sleep (day-by-day)
-    try {
-      const count = await withSyncLog(
-        db,
-        this.id,
-        "sleep",
-        async () => {
-          const sleepCount = await this.#syncConnectSleep(db, client, dates);
-          return { recordCount: sleepCount, result: sleepCount };
-        },
-        scopedUserId,
-      );
-      recordsSynced += count;
-    } catch (err) {
-      errors.push({
-        message: `Sleep sync failed: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+    if (shouldSyncPhase(checkpoint, "sleep")) {
+      try {
+        const count = await withSyncLog(
+          db,
+          this.id,
+          "sleep",
+          async () => {
+            const sleepCount = await this.#syncConnectSleep(
+              db,
+              client,
+              datesForPhase(dates, checkpoint, "sleep"),
+              checkpointStore,
+            );
+            return { recordCount: sleepCount, result: sleepCount };
+          },
+          scopedUserId,
+        );
+        recordsSynced += count;
+        await saveGarminCheckpoint(checkpointStore, checkpointForNextPhase("sleep", dates[0]));
+      } catch (err) {
+        if (isRetryableInfraError(err)) throw err;
+        errors.push({
+          message: `Sleep sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // Sync daily metrics with training data (day-by-day)
-    try {
-      const count = await withSyncLog(
-        db,
-        this.id,
-        "daily_metrics",
-        async () => {
-          const dailyMetricsCount = await this.#syncConnectDailyMetrics(db, client, dates);
-          return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
-        },
-        scopedUserId,
-      );
-      recordsSynced += count;
-    } catch (err) {
-      errors.push({
-        message: `Daily metrics sync failed: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+    if (shouldSyncPhase(checkpoint, "daily_metrics")) {
+      try {
+        const count = await withSyncLog(
+          db,
+          this.id,
+          "daily_metrics",
+          async () => {
+            const dailyMetricsCount = await this.#syncConnectDailyMetrics(
+              db,
+              client,
+              datesForPhase(dates, checkpoint, "daily_metrics"),
+              checkpointStore,
+            );
+            return { recordCount: dailyMetricsCount, result: dailyMetricsCount };
+          },
+          scopedUserId,
+        );
+        recordsSynced += count;
+        await saveGarminCheckpoint(
+          checkpointStore,
+          checkpointForNextPhase("daily_metrics", dates[0]),
+        );
+      } catch (err) {
+        if (isRetryableInfraError(err)) throw err;
+        errors.push({
+          message: `Daily metrics sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // Sync stress time-series (day-by-day)
-    try {
-      const count = await withSyncLog(
-        db,
-        this.id,
-        "stress",
-        async () => {
-          const stressCount = await this.#syncConnectStress(db, client, dates);
-          return { recordCount: stressCount, result: stressCount };
-        },
-        scopedUserId,
-      );
-      recordsSynced += count;
-    } catch (err) {
-      errors.push({
-        message: `Stress sync failed: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+    if (shouldSyncPhase(checkpoint, "stress")) {
+      try {
+        const count = await withSyncLog(
+          db,
+          this.id,
+          "stress",
+          async () => {
+            const stressCount = await this.#syncConnectStress(
+              db,
+              client,
+              datesForPhase(dates, checkpoint, "stress"),
+              checkpointStore,
+            );
+            return { recordCount: stressCount, result: stressCount };
+          },
+          scopedUserId,
+        );
+        recordsSynced += count;
+        await saveGarminCheckpoint(checkpointStore, checkpointForNextPhase("stress", dates[0]));
+      } catch (err) {
+        if (isRetryableInfraError(err)) throw err;
+        errors.push({
+          message: `Stress sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     // Sync heart rate time-series (day-by-day)
-    try {
-      const count = await withSyncLog(
-        db,
-        this.id,
-        "heart_rate",
-        async () => {
-          const heartRateCount = await this.#syncConnectHeartRate(db, client, dates);
-          return { recordCount: heartRateCount, result: heartRateCount };
-        },
-        scopedUserId,
-      );
-      recordsSynced += count;
-    } catch (err) {
-      errors.push({
-        message: `Heart rate sync failed: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
+    if (shouldSyncPhase(checkpoint, "heart_rate")) {
+      try {
+        const count = await withSyncLog(
+          db,
+          this.id,
+          "heart_rate",
+          async () => {
+            const heartRateCount = await this.#syncConnectHeartRate(
+              db,
+              client,
+              datesForPhase(dates, checkpoint, "heart_rate"),
+              checkpointStore,
+            );
+            return { recordCount: heartRateCount, result: heartRateCount };
+          },
+          scopedUserId,
+        );
+        recordsSynced += count;
+        await saveGarminCheckpoint(checkpointStore, { phase: "complete" });
+      } catch (err) {
+        if (isRetryableInfraError(err)) throw err;
+        errors.push({
+          message: `Heart rate sync failed: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
     }
 
     return recordsSynced;
@@ -562,6 +691,7 @@ export class GarminProvider implements SyncProvider {
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
+    checkpointStore?: SyncCheckpointStore,
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("sleep");
@@ -617,6 +747,7 @@ export class GarminProvider implements SyncProvider {
       } catch (error) {
         tracker.record(date, error);
       }
+      await saveNextDateCheckpoint(checkpointStore, "sleep", dates, date);
     }
 
     tracker.throwIfErrors();
@@ -628,6 +759,7 @@ export class GarminProvider implements SyncProvider {
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
+    checkpointStore?: SyncCheckpointStore,
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("daily_metrics");
@@ -705,6 +837,7 @@ export class GarminProvider implements SyncProvider {
       } catch (error) {
         tracker.record(date, error);
       }
+      await saveNextDateCheckpoint(checkpointStore, "daily_metrics", dates, date);
     }
 
     tracker.throwIfErrors();
@@ -715,6 +848,7 @@ export class GarminProvider implements SyncProvider {
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
+    checkpointStore?: SyncCheckpointStore,
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("stress");
@@ -735,6 +869,7 @@ export class GarminProvider implements SyncProvider {
       } catch (error) {
         tracker.record(date, error);
       }
+      await saveNextDateCheckpoint(checkpointStore, "stress", dates, date);
     }
 
     tracker.throwIfErrors();
@@ -745,6 +880,7 @@ export class GarminProvider implements SyncProvider {
     db: SyncDatabase,
     client: GarminConnectClient,
     dates: string[],
+    checkpointStore?: SyncCheckpointStore,
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("heart_rate");
@@ -765,6 +901,7 @@ export class GarminProvider implements SyncProvider {
       } catch (error) {
         tracker.record(date, error);
       }
+      await saveNextDateCheckpoint(checkpointStore, "heart_rate", dates, date);
     }
 
     tracker.throwIfErrors();

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
-import type { SyncProvider, SyncResult } from "../providers/types.ts";
+import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -88,17 +88,36 @@ const mockDb: SyncDatabase = {
 };
 
 interface MockJob {
-  data: { providerId?: string; sinceDays?: number; userId: string };
+  data: {
+    providerId?: string;
+    sinceDays?: number;
+    sinceIso?: string;
+    userId: string;
+    checkpoint?: unknown;
+  };
   updateProgress: ReturnType<typeof vi.fn>;
+  updateData: ReturnType<typeof vi.fn>;
 }
 
 function createMockJob(
-  data: { providerId?: string; sinceDays?: number; userId?: string } = {},
+  data: {
+    providerId?: string;
+    sinceDays?: number;
+    sinceIso?: string;
+    userId?: string;
+    checkpoint?: unknown;
+  } = {},
 ): MockJob {
-  return {
+  const job: MockJob = {
     data: { userId: "user-1", ...data },
     updateProgress: vi.fn().mockResolvedValue(undefined),
+    updateData: vi.fn(),
   };
+  job.updateData.mockImplementation((nextData: MockJob["data"]) => {
+    job.data = nextData;
+    return Promise.resolve();
+  });
+  return job;
 }
 
 function createMockProvider(overrides: Partial<SyncProvider> = {}): SyncProvider {
@@ -344,6 +363,24 @@ describe("processSyncJob", () => {
     });
   });
 
+  it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {
+    const infraError = new Error("FATAL: the database system is in recovery mode");
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(infraError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin" });
+
+    await expect(runSyncJob(job, mockDb)).rejects.toThrow("database system is in recovery mode");
+
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
   it("reports returned sync errors to Sentry", async () => {
     const cause = new Error("original cause");
     const provider = createMockProvider({
@@ -500,6 +537,55 @@ describe("processSyncJob", () => {
       expectedSince,
       expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
     );
+  });
+
+  it("uses sinceIso instead of recomputing sinceDays on retry", async () => {
+    const provider = createMockProvider({ id: "test", name: "Test" });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const sinceIso = "2026-03-15T12:00:00.000Z";
+
+    await runSyncJob(createMockJob({ sinceDays: 30, sinceIso }), mockDb);
+
+    expect(provider.sync).toHaveBeenCalledWith(
+      mockDb,
+      new Date(sinceIso),
+      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+    );
+  });
+
+  it("passes a Redis-backed checkpoint store to providers", async () => {
+    const initialCheckpoint = { phase: "sleep", nextDate: "2026-03-02" };
+    const savedCheckpoint = { phase: "daily_metrics", nextDate: "2026-03-03" };
+    const observedCheckpoints: unknown[] = [];
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi
+        .fn()
+        .mockImplementation(
+          async (_db: SyncDatabase, _since: Date, options?: SyncOptions): Promise<SyncResult> => {
+            observedCheckpoints.push(await options?.checkpoint?.load());
+            await options?.checkpoint?.save(savedCheckpoint);
+            return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
+          },
+        ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", checkpoint: initialCheckpoint });
+
+    await runSyncJob(job, mockDb);
+
+    expect(observedCheckpoints).toEqual([initialCheckpoint]);
+    expect(job.updateData).toHaveBeenCalledWith({
+      providerId: "garmin",
+      userId: "user-1",
+      checkpoint: savedCheckpoint,
+    });
+    expect(job.data.checkpoint).toEqual(savedCheckpoint);
   });
 
   it("uses epoch when sinceDays is not provided", async () => {

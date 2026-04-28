@@ -74,6 +74,12 @@ export interface SyncError {
  */
 export type SyncProgressCallback = (percentage: number, message: string) => void;
 
+export interface SyncCheckpointStore {
+  load(): Promise<unknown | null>;
+  save(checkpoint: unknown): Promise<void>;
+  clear(): Promise<void>;
+}
+
 // ============================================================
 // Provider auth type discrimination
 // ============================================================
@@ -125,6 +131,8 @@ export interface SyncOptions {
   onProgress?: SyncProgressCallback;
   /** User ID for attributing sync log entries */
   userId?: string;
+  /** Provider-owned checkpoint state for retryable job resumes */
+  checkpoint?: SyncCheckpointStore;
 }
 
 /**

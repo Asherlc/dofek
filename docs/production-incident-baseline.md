@@ -7,6 +7,54 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-04-28: Garmin Sync Lost Status During DB Recovery
+
+### Impact
+
+Garmin Connect sync appeared to lose status in the web UI while sync jobs were
+still present in Redis. Some Garmin jobs failed or stalled instead of cleanly
+resuming from the point where database writes stopped.
+
+### What Happened
+
+Redis showed a Garmin sync job still active with provider progress marked
+`running`, while prior Garmin jobs had failed or stalled. Production Postgres was
+periodically entering recovery at the same time the Garmin sync tried to persist
+records and update `fitness.user_settings` for `garmin_sync_cursor`.
+
+### Evidence That Mattered
+
+- UI message source: `pollSyncJob()` returns `Lost sync status` when
+  `sync.syncStatus` returns `null`.
+- Redis job evidence: Garmin job `525` remained active while jobs `519` through
+  `524` had failed or stalled.
+- Postgres fatal line: `FATAL: the database system is in recovery mode`.
+- Kernel evidence: repeated Postgres OOM kills inside the DB cgroup.
+- Heavy workload correlation: active
+  `REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`.
+
+### Root Cause
+
+A memory-heavy `fitness.deduped_sensor` materialized-view refresh pushed
+Postgres into OOM/recovery. Garmin sync treated the resulting database failures
+as ordinary provider errors, so BullMQ could not reliably retry the same job
+from an in-progress checkpoint.
+
+### Fix Or Mitigation
+
+The active `fitness.deduped_sensor` refresh was canceled after confirming
+Postgres had recovered. Sync jobs now store a fixed `sinceIso`, pass
+provider-owned checkpoint state through BullMQ job data, and rethrow retryable
+infrastructure failures so BullMQ retries the same job. Garmin now checkpoints
+completed phases and dates, then resumes from the saved checkpoint on retry.
+
+### Remaining Risk
+
+Checkpointed retries make provider sync more durable, but they do not remove the
+underlying DB memory pressure from expensive materialized-view refreshes. The
+refresh workflow still needs bounded execution and stronger scheduling so it
+cannot compete with live sync writes.
+
 ## 2026-04-28: Review App Hetzner Placement Unavailable
 
 ### Impact

@@ -4,6 +4,7 @@ import {
   createSyncQueue,
   getProviderSyncQueue,
   providerSyncQueueName,
+  SYNC_JOB_RETRY_OPTIONS,
   type SyncJobData,
 } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
@@ -71,6 +72,8 @@ const syncJobDataSchema = z.object({
   userId: z.string(),
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
+  sinceIso: z.string().optional(),
+  checkpoint: z.unknown().optional(),
 });
 
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
@@ -92,6 +95,12 @@ export function parseJobId(compositeId: string): { providerId: string | null; ra
     };
   }
   return { providerId: null, rawId: compositeId };
+}
+
+function resolveSinceIso(sinceDays?: number): string {
+  return sinceDays
+    ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString()
+    : new Date(0).toISOString();
 }
 
 // ── Provider registration (race-safe) ──
@@ -279,11 +288,16 @@ export const syncRouter = router({
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
         const queue = getProviderSyncQueue(providerId);
-        const job = await queue.add("sync", {
-          providerId,
-          sinceDays: input.sinceDays,
-          userId: ctx.userId,
-        });
+        const job = await queue.add(
+          "sync",
+          {
+            providerId,
+            sinceDays: input.sinceDays,
+            sinceIso: resolveSinceIso(input.sinceDays),
+            userId: ctx.userId,
+          },
+          SYNC_JOB_RETRY_OPTIONS,
+        );
         const jobId = toJobId(job.id, providerId);
         return {
           providerId,
