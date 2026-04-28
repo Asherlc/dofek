@@ -57,16 +57,81 @@ function accessLabel(
     : "Full access from local grant";
 }
 
+type AdminUserAccess =
+  | { kind: "full"; paid: true; reason: "paid_grant" | "stripe_subscription" }
+  | {
+      kind: "limited";
+      paid: false;
+      reason: "free_signup_week";
+      startDate: string;
+      endDateExclusive: string;
+    };
+
+export interface AdminUserDetail {
+  profile: {
+    id: string;
+    name: string;
+    email: string | null;
+    birth_date: string | null;
+    is_admin: boolean;
+    created_at: string;
+    updated_at: string;
+  };
+  flags: {
+    providerGuideDismissed: boolean;
+  };
+  billing: {
+    user_id: string;
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+    stripe_subscription_status: string | null;
+    stripe_current_period_end: string | null;
+    paid_grant_reason: string | null;
+    created_at: string;
+    updated_at: string;
+  } | null;
+  access: AdminUserAccess;
+  stripeLinks: {
+    customer: string | null;
+    subscription: string | null;
+  };
+  accounts: {
+    id: string;
+    auth_provider: string;
+    provider_account_id: string;
+    email: string | null;
+    name: string | null;
+    created_at: string;
+  }[];
+  providers: {
+    id: string;
+    name: string;
+    created_at: string;
+  }[];
+  sessions: {
+    id: string;
+    created_at: string;
+    expires_at: string;
+  }[];
+}
+
+export interface AdminUserDetailViewProps {
+  detail: AdminUserDetail | null | undefined;
+  errorMessage?: string;
+  isAdminViewer: boolean;
+  isLoading: boolean;
+  onToggleAdmin?: () => void;
+  onTogglePaidGrant?: () => void;
+  onToggleProviderGuideDismissed?: () => void;
+  setAdminPending?: boolean;
+  setPaidGrantPending?: boolean;
+  setProviderGuideDismissedPending?: boolean;
+}
+
 export function AdminUserDetailPage() {
   const { user } = useAuth();
   if (!user?.isAdmin) {
-    return (
-      <PageLayout title="Admin User">
-        <div className="card p-8 text-center">
-          <p className="text-muted">You do not have admin access.</p>
-        </div>
-      </PageLayout>
-    );
+    return <AdminUserDetailView detail={undefined} isAdminViewer={false} isLoading={false} />;
   }
 
   return <AdminUserDetailContent />;
@@ -89,7 +154,65 @@ function AdminUserDetailContent() {
     onSuccess: refreshDetail,
   });
 
-  if (detailQuery.isLoading) {
+  return (
+    <AdminUserDetailView
+      detail={detailQuery.data}
+      errorMessage={detailQuery.error?.message}
+      isAdminViewer={true}
+      isLoading={detailQuery.isLoading}
+      onToggleAdmin={() => {
+        if (!detailQuery.data) return;
+        setAdminMutation.mutate({
+          userId: detailQuery.data.profile.id,
+          isAdmin: !detailQuery.data.profile.is_admin,
+        });
+      }}
+      onTogglePaidGrant={() => {
+        if (!detailQuery.data) return;
+        const hasPaidGrant =
+          detailQuery.data.billing?.paid_grant_reason !== null && detailQuery.data.billing !== null;
+        setPaidGrantMutation.mutate({
+          userId: detailQuery.data.profile.id,
+          enabled: !hasPaidGrant,
+        });
+      }}
+      onToggleProviderGuideDismissed={() => {
+        if (!detailQuery.data) return;
+        setProviderGuideDismissedMutation.mutate({
+          userId: detailQuery.data.profile.id,
+          dismissed: !detailQuery.data.flags.providerGuideDismissed,
+        });
+      }}
+      setAdminPending={setAdminMutation.isPending}
+      setPaidGrantPending={setPaidGrantMutation.isPending}
+      setProviderGuideDismissedPending={setProviderGuideDismissedMutation.isPending}
+    />
+  );
+}
+
+export function AdminUserDetailView({
+  detail,
+  errorMessage,
+  isAdminViewer,
+  isLoading,
+  onToggleAdmin,
+  onTogglePaidGrant,
+  onToggleProviderGuideDismissed,
+  setAdminPending = false,
+  setPaidGrantPending = false,
+  setProviderGuideDismissedPending = false,
+}: AdminUserDetailViewProps) {
+  if (!isAdminViewer) {
+    return (
+      <PageLayout title="Admin User">
+        <div className="card p-8 text-center">
+          <p className="text-muted">You do not have admin access.</p>
+        </div>
+      </PageLayout>
+    );
+  }
+
+  if (isLoading) {
     return (
       <PageLayout title="Admin User">
         <div className="card p-8 text-center">
@@ -99,15 +222,14 @@ function AdminUserDetailContent() {
     );
   }
 
-  if (detailQuery.error) {
+  if (errorMessage) {
     return (
       <PageLayout title="Admin User">
-        <div className="card p-4 text-center text-red-400 text-xs">{detailQuery.error.message}</div>
+        <div className="card p-4 text-center text-red-400 text-xs">{errorMessage}</div>
       </PageLayout>
     );
   }
 
-  const detail = detailQuery.data;
   if (!detail) {
     return (
       <PageLayout title="Admin User">
@@ -148,13 +270,8 @@ function AdminUserDetailContent() {
                 </div>
                 <button
                   type="button"
-                  disabled={setAdminMutation.isPending}
-                  onClick={() =>
-                    setAdminMutation.mutate({
-                      userId: detail.profile.id,
-                      isAdmin: !detail.profile.is_admin,
-                    })
-                  }
+                  disabled={setAdminPending}
+                  onClick={onToggleAdmin}
                   className="px-3 py-1.5 text-xs rounded border border-border-strong text-foreground hover:bg-card-hover disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
                 >
                   {detail.profile.is_admin ? "Remove admin" : "Make admin"}
@@ -170,13 +287,8 @@ function AdminUserDetailContent() {
                 </div>
                 <button
                   type="button"
-                  disabled={setProviderGuideDismissedMutation.isPending}
-                  onClick={() =>
-                    setProviderGuideDismissedMutation.mutate({
-                      userId: detail.profile.id,
-                      dismissed: !detail.flags.providerGuideDismissed,
-                    })
-                  }
+                  disabled={setProviderGuideDismissedPending}
+                  onClick={onToggleProviderGuideDismissed}
                   className="px-3 py-1.5 text-xs rounded border border-border-strong text-foreground hover:bg-card-hover disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
                 >
                   {detail.flags.providerGuideDismissed
@@ -217,13 +329,8 @@ function AdminUserDetailContent() {
               ) : null}
               <button
                 type="button"
-                disabled={setPaidGrantMutation.isPending}
-                onClick={() =>
-                  setPaidGrantMutation.mutate({
-                    userId: detail.profile.id,
-                    enabled: !hasPaidGrant,
-                  })
-                }
+                disabled={setPaidGrantPending}
+                onClick={onTogglePaidGrant}
                 className="px-3 py-1.5 text-xs rounded border border-border-strong text-foreground hover:bg-card-hover disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
               >
                 {hasPaidGrant ? "Revoke free access" : "Grant free access"}
