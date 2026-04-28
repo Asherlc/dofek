@@ -3,7 +3,6 @@ import {
   formatDurationMinutes,
   formatSleepDebtInline,
   isToday,
-  isYesterday,
 } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { readinessLevelColor } from "@dofek/scoring/scoring";
@@ -56,61 +55,35 @@ function capitalize(value: string): string {
 export default function TodayScreen() {
   const router = useRouter();
   const providerGuide = useProviderGuide();
-  const days = 30;
   const endDate = useTodayQueryDate();
 
-  // Fetch readiness/recovery score
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days, endDate });
-  const readinessData = readinessQuery.error ? [] : (readinessQuery.data ?? []);
-  const latestReadiness = readinessData[readinessData.length - 1];
-  const todayReadiness = (() => {
-    if (!latestReadiness) return undefined;
-    const readinessDate = new Date(`${latestReadiness.date}T00:00:00`);
-    return isToday(readinessDate) || isYesterday(readinessDate) ? latestReadiness : undefined;
-  })();
+  // Consolidated dashboard data fetch
+  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
+  const dashboardData = dashboardQuery.data;
 
-  // Fetch sleep analytics for last night
-  const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
-  const sleepResult = sleepQuery.data;
-  const nightly = sleepResult?.nightly ?? [];
-  const mostRecentNight = nightly[nightly.length - 1];
-  const lastNight = (() => {
-    if (!mostRecentNight) return undefined;
-    const date = new Date(`${mostRecentNight.date}T00:00:00`);
-    return isToday(date) || isYesterday(date) ? mostRecentNight : undefined;
-  })();
+  // Derived readiness/recovery
+  const todayReadiness = dashboardData?.readiness ?? undefined;
+  const recoveryScore = todayReadiness?.score ?? null;
+
+  // Derived sleep
+  const sleepResult = dashboardData?.sleep;
+  const lastNight = sleepResult?.lastNight ?? undefined;
   const sleepDebt = sleepResult?.sleepDebt ?? 0;
 
-  // Fetch workload ratio for strain
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days, endDate });
-  const workloadResult = workloadQuery.data;
+  // Derived strain
+  const strainResult = dashboardData?.strain;
+  const dailyStrain = strainResult?.dailyStrain ?? 0;
 
   // Auto-sync when data is stale
-  const dailyMetricsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const metrics = dailyMetricsQuery.data;
-  useAutoSync(metrics?.latest_date);
+  useAutoSync(dashboardData?.latestDate ?? undefined);
 
-  // Next workout recommendation
-  const nextWorkoutQuery = trpc.training.nextWorkout.useQuery({ endDate });
-  const nextWorkout = nextWorkoutQuery.data;
+  // Recommendations and alerts from consolidated query
+  const nextWorkout = dashboardData?.nextWorkout;
+  const sleepNeed = dashboardData?.sleepNeed;
+  const anomalies = dashboardData?.anomalies;
 
-  // Sleep need
-  const sleepNeedQuery = trpc.sleepNeed.calculate.useQuery({ endDate });
-  const sleepNeed = sleepNeedQuery.data;
-
-  // Anomaly detection
-  const anomalyQuery = trpc.anomalyDetection.check.useQuery({ endDate });
-  const anomalies = anomalyQuery.data;
-
-  const recoveryScore = todayReadiness?.readinessScore ?? null;
-  const strainIsToday = workloadResult?.displayedDate
-    ? isToday(new Date(`${workloadResult.displayedDate}T00:00:00`))
-    : false;
-  const dailyStrain = strainIsToday ? (workloadResult?.displayedStrain ?? 0) : 0;
-
-  const readinessLoading = readinessQuery.isLoading;
-  const workloadLoading = workloadQuery.isLoading;
-  const sleepAnalyticsLoading = sleepQuery.isLoading;
+  const isLoading = dashboardQuery.isLoading;
+  const isError = dashboardQuery.isError;
 
   const triggerSync = trpc.sync.triggerSync.useMutation();
   const { refreshing, onRefresh } = useRefresh(() => {
@@ -119,6 +92,17 @@ export default function TodayScreen() {
 
   function handleLogFood() {
     router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}`);
+  }
+
+  if (isError) {
+    return (
+      <View style={styles.container}>
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(dashboardQuery.error, "Failed to load dashboard.")}
+        />
+      </View>
+    );
   }
 
   return (
@@ -144,7 +128,7 @@ export default function TodayScreen() {
           <Text style={styles.anomalyIcon}>{"\u26A0\uFE0F"}</Text>
           <Text style={styles.anomalyText}>
             {anomalies.anomalies[0]?.metric}: {anomalies.anomalies[0]?.value} (baseline{" "}
-            {anomalies.anomalies[0]?.baselineMean} ± {anomalies.anomalies[0]?.baselineStddev})
+            {anomalies.anomalies[0]?.baselineMean} \u00b1 {anomalies.anomalies[0]?.baselineStddev})
           </Text>
         </View>
       )}
@@ -169,15 +153,8 @@ export default function TodayScreen() {
             description="This ring visualizes your readiness score based on recovery-related signals."
             textStyle={styles.sectionLabel}
           />
-          {readinessLoading ? (
+          {isLoading ? (
             <SkeletonCircle size={180} />
-          ) : readinessQuery.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(readinessQuery.error, "Failed to load recovery data.")}
-              minHeight={180}
-              style={styles.ringState}
-            />
           ) : recoveryScore != null ? (
             <RecoveryRing score={recoveryScore} size={180} />
           ) : (
@@ -197,15 +174,8 @@ export default function TodayScreen() {
             description="This gauge shows your most recent daily training strain relative to your recent baseline."
             textStyle={styles.sectionLabel}
           />
-          {workloadLoading ? (
+          {isLoading ? (
             <SkeletonCircle size={120} />
-          ) : workloadQuery.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(workloadQuery.error, "Failed to load strain data.")}
-              minHeight={120}
-              style={styles.gaugeState}
-            />
           ) : (
             <StrainGauge strain={dailyStrain} size={120} />
           )}
@@ -247,7 +217,7 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep summary */}
-      {!sleepAnalyticsLoading && lastNight && (
+      {!isLoading && lastNight && (
         <Animated.View
           entering={FadeInUp.delay(160)
             .duration(duration.slow)
@@ -341,65 +311,47 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep Coach */}
-      {sleepNeedQuery.error ? (
+      {!isLoading && sleepNeed && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Coach">
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(
-                sleepNeedQuery.error,
-                "Failed to load sleep coach data.",
-              )}
-            />
+            {sleepNeed.canRecommend ? (
+              <>
+                <Text style={styles.sleepNeedTotal}>
+                  {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
+                </Text>
+                <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+              </>
+            ) : (
+              <Text style={styles.sleepNeedMissing}>
+                Need last night's sleep for recommendation
+              </Text>
+            )}
+            <View style={styles.sleepNeedBreakdown}>
+              <View style={styles.sleepNeedRow}>
+                <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                <Text style={styles.sleepNeedValue}>
+                  {formatDurationMinutes(sleepNeed.baselineMinutes)}
+                </Text>
+              </View>
+              <View style={styles.sleepNeedRow}>
+                <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                <Text style={styles.sleepNeedValue}>
+                  +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+                </Text>
+              </View>
+              <View style={styles.sleepNeedRow}>
+                <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                <Text style={styles.sleepNeedValue}>
+                  +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                </Text>
+              </View>
+            </View>
           </Card>
         </Animated.View>
-      ) : (
-        sleepNeed != null && (
-          <Animated.View
-            entering={FadeInUp.delay(320)
-              .duration(duration.slow)
-              .easing(Easing.bezier(0.16, 1, 0.3, 1))}
-          >
-            <Card title="Sleep Coach">
-              {sleepNeed.canRecommend ? (
-                <>
-                  <Text style={styles.sleepNeedTotal}>
-                    {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
-                  </Text>
-                  <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
-                </>
-              ) : (
-                <Text style={styles.sleepNeedMissing}>
-                  Need last night's sleep for recommendation
-                </Text>
-              )}
-              <View style={styles.sleepNeedBreakdown}>
-                <View style={styles.sleepNeedRow}>
-                  <Text style={styles.sleepNeedLabel}>Baseline need</Text>
-                  <Text style={styles.sleepNeedValue}>
-                    {formatDurationMinutes(sleepNeed.baselineMinutes)}
-                  </Text>
-                </View>
-                <View style={styles.sleepNeedRow}>
-                  <Text style={styles.sleepNeedLabel}>Strain debt</Text>
-                  <Text style={styles.sleepNeedValue}>
-                    +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-                  </Text>
-                </View>
-                <View style={styles.sleepNeedRow}>
-                  <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
-                  <Text style={styles.sleepNeedValue}>
-                    +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          </Animated.View>
-        )
       )}
     </ScrollView>
   );
