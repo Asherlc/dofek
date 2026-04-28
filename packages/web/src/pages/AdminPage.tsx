@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -310,7 +311,6 @@ function OverviewTab() {
 
 function UsersTab() {
   const { data, isLoading, error } = trpc.admin.users.useQuery();
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const trpcUtils = trpc.useUtils();
   const setAdminMutation = trpc.admin.setAdmin.useMutation({
     onSuccess: () => trpcUtils.admin.users.invalidate(),
@@ -319,7 +319,19 @@ function UsersTab() {
   const columns = useMemo<ColumnDef<NonNullable<typeof data>[number], unknown>[]>(
     () => [
       { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
-      { accessorKey: "name", header: "Name" },
+      {
+        id: "name",
+        header: "Name",
+        cell: ({ row }) => (
+          <Link
+            to="/admin/users/$userId"
+            params={{ userId: row.original.id }}
+            className="text-accent hover:underline"
+          >
+            {row.original.name}
+          </Link>
+        ),
+      },
       { id: "email", header: "Email", cell: ({ row }) => row.original.email ?? "\u2014" },
       {
         id: "is_admin",
@@ -347,19 +359,17 @@ function UsersTab() {
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <button
-            type="button"
-            onClick={() =>
-              setExpandedUserId(expandedUserId === row.original.id ? null : row.original.id)
-            }
-            className="text-accent hover:underline cursor-pointer"
+          <Link
+            to="/admin/users/$userId"
+            params={{ userId: row.original.id }}
+            className="text-accent hover:underline"
           >
-            {expandedUserId === row.original.id ? "Hide" : "Details"}
-          </button>
+            Details
+          </Link>
         ),
       },
     ],
-    [expandedUserId, setAdminMutation],
+    [setAdminMutation],
   );
 
   if (isLoading) return <LoadingState />;
@@ -369,66 +379,6 @@ function UsersTab() {
     <div className="space-y-4">
       <AdminCard title="All Users">
         <DataTable columns={columns} data={data ?? []} />
-      </AdminCard>
-      {expandedUserId && <UserDetailPanel userId={expandedUserId} />}
-    </div>
-  );
-}
-
-function UserDetailPanel({ userId }: { userId: string }) {
-  const { data, isLoading, error } = trpc.admin.userDetail.useQuery({ userId });
-
-  if (isLoading) return <LoadingState />;
-  if (error) return <ErrorState message={error.message} />;
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <AdminCard title="Auth Accounts">
-        {data?.accounts.length === 0 ? (
-          <p className="p-3 text-xs text-muted">No accounts</p>
-        ) : (
-          <div className="divide-y divide-border/50">
-            {data?.accounts.map((account) => (
-              <div key={account.id} className="p-3 text-xs space-y-1">
-                <div className="font-medium text-foreground">{account.auth_provider}</div>
-                <div className="text-muted">{account.email ?? account.provider_account_id}</div>
-                <div className="text-dim">{formatTimestamp(account.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </AdminCard>
-      <AdminCard title="Data Providers">
-        {data?.providers.length === 0 ? (
-          <p className="p-3 text-xs text-muted">No providers</p>
-        ) : (
-          <div className="divide-y divide-border/50">
-            {data?.providers.map((provider) => (
-              <div key={provider.id} className="p-3 text-xs space-y-1">
-                <div className="font-medium text-foreground">{provider.name}</div>
-                <div className="text-muted font-mono">{provider.id}</div>
-                <div className="text-dim">{formatTimestamp(provider.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </AdminCard>
-      <AdminCard title="Recent Sessions">
-        {data?.sessions.length === 0 ? (
-          <p className="p-3 text-xs text-muted">No sessions</p>
-        ) : (
-          <div className="divide-y divide-border/50">
-            {data?.sessions.map((session) => (
-              <div key={session.id} className="p-3 text-xs space-y-1">
-                <div className="font-mono text-muted">{session.id.slice(0, 16)}...</div>
-                <div className="text-dim">
-                  Created: {formatTimestamp(session.created_at)} — Expires:{" "}
-                  {formatTimestamp(session.expires_at)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </AdminCard>
     </div>
   );

@@ -46,6 +46,7 @@ import { Route as NutritionSupplementsRouteImport } from './routes/nutrition/sup
 import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition/analytics'
 import { Route as BodyHeartRateRouteImport } from './routes/body/heart-rate'
 import { Route as ActivityIdRouteImport } from './routes/activity.$id'
+import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users/$userId'
 
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
@@ -234,10 +235,15 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
   path: '/activity/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminUsersUserIdRoute = AdminUsersUserIdRouteImport.update({
+  id: '/users/$userId',
+  path: '/users/$userId',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
@@ -273,10 +279,11 @@ export interface FileRoutesByFullPath {
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
+  '/admin/users/$userId': typeof AdminUsersUserIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/behavior-impact': typeof BehaviorImpactRoute
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
@@ -308,11 +315,12 @@ export interface FileRoutesByTo {
   '/nutrition': typeof NutritionIndexRoute
   '/providers': typeof ProvidersIndexRoute
   '/training': typeof TrainingIndexRoute
+  '/admin/users/$userId': typeof AdminUsersUserIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/admin': typeof AdminRouteWithChildren
   '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/breathwork': typeof BreathworkRoute
@@ -348,6 +356,7 @@ export interface FileRoutesById {
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
   '/training/': typeof TrainingIndexRoute
+  '/admin/users/$userId': typeof AdminUsersUserIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -389,6 +398,7 @@ export interface FileRouteTypes {
     | '/nutrition/'
     | '/providers/'
     | '/training/'
+    | '/admin/users/$userId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -424,6 +434,7 @@ export interface FileRouteTypes {
     | '/nutrition'
     | '/providers'
     | '/training'
+    | '/admin/users/$userId'
   id:
     | '__root__'
     | '/'
@@ -463,11 +474,12 @@ export interface FileRouteTypes {
     | '/nutrition/'
     | '/providers/'
     | '/training/'
+    | '/admin/users/$userId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRoute
+  AdminRoute: typeof AdminRouteWithChildren
   BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRouteWithChildren
   BreathworkRoute: typeof BreathworkRoute
@@ -752,8 +764,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActivityIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users/$userId': {
+      id: '/admin/users/$userId'
+      path: '/users/$userId'
+      fullPath: '/admin/users/$userId'
+      preLoaderRoute: typeof AdminUsersUserIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
+
+interface AdminRouteChildren {
+  AdminUsersUserIdRoute: typeof AdminUsersUserIdRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminUsersUserIdRoute: AdminUsersUserIdRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface BodyRouteChildren {
   BodyHeartRateRoute: typeof BodyHeartRateRoute
@@ -823,7 +852,7 @@ const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRoute: AdminRoute,
+  AdminRoute: AdminRouteWithChildren,
   BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRouteWithChildren,
   BreathworkRoute: BreathworkRoute,

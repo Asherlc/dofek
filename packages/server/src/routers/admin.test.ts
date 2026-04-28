@@ -49,6 +49,28 @@ function makeCaller(execute: ReturnType<typeof vi.fn>) {
   return createCaller({ db: { execute }, userId: "admin-1", timezone: "UTC" });
 }
 
+function getSqlText(query: unknown): string {
+  if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
+    return "";
+  }
+  const queryChunks = query.queryChunks;
+  if (!Array.isArray(queryChunks)) {
+    return "";
+  }
+  return queryChunks
+    .map((chunk) => {
+      if (typeof chunk === "string") {
+        return chunk;
+      }
+      if (typeof chunk !== "object" || chunk === null || !("value" in chunk)) {
+        return "";
+      }
+      const value = chunk.value;
+      return Array.isArray(value) ? value.join("") : "";
+    })
+    .join("");
+}
+
 /** Helper: mock db.execute that returns different values on successive calls */
 function mockPaginatedExecute(rows: unknown[], countRows: unknown[]) {
   const execute = vi.fn();
@@ -91,8 +113,32 @@ describe("adminRouter", () => {
   });
 
   describe("userDetail", () => {
-    it("returns accounts, providers, and sessions for a user", async () => {
+    it("returns profile, flags, billing, access, Stripe links, accounts, providers, and sessions for a user", async () => {
       const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-02T00:00:00Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([{ value: true }]);
+      execute.mockResolvedValueOnce([
+        {
+          user_id: "00000000-0000-0000-0000-000000000001",
+          stripe_customer_id: "cus_123",
+          stripe_subscription_id: "sub_123",
+          stripe_subscription_status: "active",
+          stripe_current_period_end: "2026-05-01T00:00:00Z",
+          paid_grant_reason: null,
+          created_at: "2024-01-03T00:00:00Z",
+          updated_at: "2024-01-04T00:00:00Z",
+        },
+      ]);
       execute.mockResolvedValueOnce([
         {
           id: "acc-1",
@@ -117,11 +163,32 @@ describe("adminRouter", () => {
       const result = await caller.userDetail({
         userId: "00000000-0000-0000-0000-000000000001",
       });
+      expect(result.profile.name).toBe("Test");
+      expect(result.flags.providerGuideDismissed).toBe(true);
+      expect(result.billing?.stripe_customer_id).toBe("cus_123");
+      expect(result.billing?.stripe_subscription_status).toBe("active");
+      expect(result.access).toEqual({
+        kind: "full",
+        paid: true,
+        reason: "stripe_subscription",
+      });
+      expect(result.stripeLinks).toEqual({
+        customer: "https://dashboard.stripe.com/customers/cus_123",
+        subscription: "https://dashboard.stripe.com/subscriptions/sub_123",
+      });
       expect(result.accounts).toHaveLength(1);
       expect(result.providers).toHaveLength(1);
       expect(result.sessions).toHaveLength(1);
       expect(result.accounts[0]?.auth_provider).toBe("google");
       expect(result.providers[0]?.id).toBe("whoop");
+    });
+
+    it("throws when the target user does not exist", async () => {
+      const caller = makeCaller(vi.fn().mockResolvedValueOnce([]));
+
+      await expect(
+        caller.userDetail({ userId: "00000000-0000-0000-0000-000000000099" }),
+      ).rejects.toThrow("User not found");
     });
   });
 
@@ -135,6 +202,58 @@ describe("adminRouter", () => {
       });
       expect(result).toEqual({ ok: true });
       expect(execute).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("setProviderGuideDismissed", () => {
+    it("stores provider guide dismissal for the target user", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.setProviderGuideDismissed({
+        userId: "00000000-0000-0000-0000-000000000002",
+        dismissed: true,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("fitness.user_settings");
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("ON CONFLICT");
+    });
+  });
+
+  describe("setPaidGrant", () => {
+    it("stores an admin grant when free access is enabled", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.setPaidGrant({
+        userId: "00000000-0000-0000-0000-000000000002",
+        enabled: true,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("fitness.user_billing");
+      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("paid_grant_reason");
+    });
+
+    it("clears only the local paid grant when free access is disabled", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.setPaidGrant({
+        userId: "00000000-0000-0000-0000-000000000002",
+        enabled: false,
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(execute).toHaveBeenCalledOnce();
+      const queryText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("paid_grant_reason = null");
+      expect(queryText).not.toContain("stripe_customer_id");
+      expect(queryText).not.toContain("stripe_subscription_id");
+      expect(queryText).not.toContain("stripe_subscription_status");
     });
   });
 
