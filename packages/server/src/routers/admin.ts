@@ -1,8 +1,12 @@
 import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
+import { queryCache } from "dofek/lib/cache";
 import { createTrainingExportQueue } from "dofek/jobs/queues";
+import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { adminProcedure, router } from "../trpc.ts";
@@ -22,6 +26,31 @@ const userRowSchema = z.object({
   email: z.string().nullable(),
   birth_date: z.string().nullable(),
   is_admin: z.boolean(),
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
+});
+
+const userDetailProfileSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  birth_date: z.string().nullable(),
+  is_admin: z.boolean(),
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
+});
+
+const userDetailSettingsFlagSchema = z.object({
+  value: z.unknown(),
+});
+
+const userDetailBillingSchema = z.object({
+  user_id: z.string(),
+  stripe_customer_id: z.string().nullable(),
+  stripe_subscription_id: z.string().nullable(),
+  stripe_subscription_status: z.string().nullable(),
+  stripe_current_period_end: timestampStringSchema.nullable(),
+  paid_grant_reason: z.string().nullable(),
   created_at: timestampStringSchema,
   updated_at: timestampStringSchema,
 });
@@ -185,7 +214,39 @@ export const adminRouter = router({
   userDetail: adminProcedure
     .input(z.object({ userId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const [accounts, providers, sessions] = await Promise.all([
+      const [profiles, flags, billingRows, accounts, providers, sessions] = await Promise.all([
+        executeWithSchema(
+          ctx.db,
+          userDetailProfileSchema,
+          sql`SELECT id, name, email, birth_date::text, is_admin, created_at::text, updated_at::text
+              FROM fitness.user_profile
+              WHERE id = ${input.userId}
+              LIMIT 1`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          userDetailSettingsFlagSchema,
+          sql`SELECT value
+              FROM fitness.user_settings
+              WHERE user_id = ${input.userId}
+                AND key = ${PROVIDER_GUIDE_SETTINGS_KEY}
+              LIMIT 1`,
+        ),
+        executeWithSchema(
+          ctx.db,
+          userDetailBillingSchema,
+          sql`SELECT user_id,
+                     stripe_customer_id,
+                     stripe_subscription_id,
+                     stripe_subscription_status,
+                     stripe_current_period_end::text AS stripe_current_period_end,
+                     paid_grant_reason,
+                     created_at::text AS created_at,
+                     updated_at::text AS updated_at
+              FROM fitness.user_billing
+              WHERE user_id = ${input.userId}
+              LIMIT 1`,
+        ),
         executeWithSchema(
           ctx.db,
           userDetailAccountSchema,
@@ -211,7 +272,35 @@ export const adminRouter = router({
               ORDER BY created_at DESC LIMIT 20`,
         ),
       ]);
-      return { accounts, providers, sessions };
+      const profile = profiles[0];
+      if (!profile) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      }
+      const billing = billingRows[0] ?? null;
+      const access = resolveAccessWindow({
+        userCreatedAt: profile.created_at,
+        paidGrantReason: billing?.paid_grant_reason ?? null,
+        stripeSubscriptionStatus: billing?.stripe_subscription_status ?? null,
+      });
+      return {
+        profile,
+        flags: {
+          providerGuideDismissed: flags[0]?.value === true,
+        },
+        billing,
+        access,
+        stripeLinks: {
+          customer: billing?.stripe_customer_id
+            ? `https://dashboard.stripe.com/customers/${billing.stripe_customer_id}`
+            : null,
+          subscription: billing?.stripe_subscription_id
+            ? `https://dashboard.stripe.com/subscriptions/${billing.stripe_subscription_id}`
+            : null,
+        },
+        accounts,
+        providers,
+        sessions,
+      };
     }),
 
   /** Toggle admin status for a user */
@@ -221,6 +310,43 @@ export const adminRouter = router({
       await ctx.db.execute(
         sql`UPDATE fitness.user_profile SET is_admin = ${input.isAdmin}, updated_at = NOW()
             WHERE id = ${input.userId}`,
+      );
+      return { ok: true };
+    }),
+
+  /** Toggle the provider guide dismissal flag for a user */
+  setProviderGuideDismissed: adminProcedure
+    .input(z.object({ userId: z.string().uuid(), dismissed: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.execute(
+        sql`INSERT INTO fitness.user_settings (user_id, key, value, updated_at)
+            VALUES (${input.userId}, ${PROVIDER_GUIDE_SETTINGS_KEY}, ${JSON.stringify(input.dismissed)}::jsonb, NOW())
+            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      );
+      await queryCache.invalidateByPrefix(`${input.userId}:providerGuide.`);
+      return { ok: true };
+    }),
+
+  /** Toggle local free-access grant without mutating Stripe */
+  setPaidGrant: adminProcedure
+    .input(z.object({ userId: z.string().uuid(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.enabled) {
+        await ctx.db.execute(
+          sql`INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+              VALUES (${input.userId}, 'admin_grant')
+              ON CONFLICT (user_id) DO UPDATE SET
+                paid_grant_reason = EXCLUDED.paid_grant_reason,
+                updated_at = NOW()`,
+        );
+        return { ok: true };
+      }
+
+      await ctx.db.execute(
+        sql`UPDATE fitness.user_billing
+            SET paid_grant_reason = null,
+                updated_at = NOW()
+            WHERE user_id = ${input.userId}`,
       );
       return { ok: true };
     }),
