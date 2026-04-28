@@ -90,6 +90,34 @@ describe("run-materialized-view-maintenance main()", () => {
     );
   });
 
+  it("prints usage for help commands without connecting", async () => {
+    for (const helpCommand of [undefined, "help", "--help", "-h"]) {
+      process.argv = ["node", "run-materialized-view-maintenance.ts"];
+      if (helpCommand) {
+        process.argv.push(helpCommand);
+      }
+      mockClientConstructor.mockClear();
+      stdoutWriteSpy.mockClear();
+
+      await main();
+
+      expect(mockClientConstructor).not.toHaveBeenCalled();
+      expect(stdoutWriteSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Usage: pnpm tsx src/db/run-materialized-view-maintenance.ts"),
+      );
+      expect(stdoutWriteSpy).toHaveBeenCalledWith(expect.stringContaining("rebuild <view-name>"));
+    }
+  });
+
+  it("requires DATABASE_URL for database-backed commands", async () => {
+    process.argv.push("preflight");
+    delete process.env.DATABASE_URL;
+
+    await expect(main()).rejects.toThrow("DATABASE_URL environment variable is required");
+
+    expect(mockClientConstructor).not.toHaveBeenCalled();
+  });
+
   it("runs quiet database preflight and exits nonzero on failures", async () => {
     process.argv.push("preflight");
     mockRunQuietDatabasePreflight.mockResolvedValue({
@@ -105,6 +133,33 @@ describe("run-materialized-view-maintenance main()", () => {
     expect(mockClientEnd).toHaveBeenCalled();
   });
 
+  it("prints preflight warnings before reporting ok", async () => {
+    process.argv.push("preflight");
+    mockRunQuietDatabasePreflight.mockResolvedValue({
+      activeMaintenanceQueryCount: 1,
+      failures: [],
+      lockWaitCount: 0,
+      ok: true,
+      warnings: ["1 long-running maintenance-like query is active"],
+    });
+
+    await main();
+
+    expect(stdoutWriteSpy).toHaveBeenCalledWith(
+      "warning=1 long-running maintenance-like query is active\n",
+    );
+    expect(stdoutWriteSpy).toHaveBeenCalledWith("ok=true\n");
+  });
+
+  it("requires a view name for refresh", async () => {
+    process.argv.push("refresh");
+
+    await expect(main()).rejects.toThrow("refresh requires a view name");
+
+    expect(mockRefreshMaterializedViewForMaintenance).not.toHaveBeenCalled();
+    expect(mockClientEnd).toHaveBeenCalledOnce();
+  });
+
   it("runs a blocking maintenance refresh command", async () => {
     process.argv.push("refresh", "fitness.v_daily_metrics");
     mockRefreshMaterializedViewForMaintenance.mockResolvedValue({
@@ -113,7 +168,7 @@ describe("run-materialized-view-maintenance main()", () => {
       mode: "concurrent",
       startedAt: new Date("2026-04-26T12:00:00.000Z"),
       viewName: "fitness.v_daily_metrics",
-      warnings: [],
+      warnings: ["1 long-running maintenance-like query is active"],
     });
 
     await main();
@@ -123,8 +178,20 @@ describe("run-materialized-view-maintenance main()", () => {
       "fitness.v_daily_metrics",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
+      "warning=1 long-running maintenance-like query is active\n",
+    );
+    expect(stdoutWriteSpy).toHaveBeenCalledWith(
       "refreshed=fitness.v_daily_metrics mode=concurrent duration_ms=12\n",
     );
+  });
+
+  it("requires a view name for rebuild", async () => {
+    process.argv.push("rebuild");
+
+    await expect(main()).rejects.toThrow("rebuild requires a view name");
+
+    expect(mockRebuildMaterializedViewForMaintenance).not.toHaveBeenCalled();
+    expect(mockClientEnd).toHaveBeenCalledOnce();
   });
 
   it("runs blocking materialized view sync after preflight", async () => {
@@ -144,7 +211,27 @@ describe("run-materialized-view-maintenance main()", () => {
     expect(mockSyncMaterializedViews).toHaveBeenCalledWith(
       "postgres://test:test@localhost:5432/test",
     );
+    expect(mockClientEnd).toHaveBeenCalledOnce();
     expect(stdoutWriteSpy).toHaveBeenCalledWith("synced=0 skipped=6 refreshed=1\n");
+  });
+
+  it("prints sync preflight warnings and exits nonzero on failures", async () => {
+    process.argv.push("sync");
+    mockRunQuietDatabasePreflight.mockResolvedValue({
+      activeMaintenanceQueryCount: 1,
+      failures: ["1 lock wait is active"],
+      lockWaitCount: 1,
+      ok: false,
+      warnings: ["1 long-running maintenance-like query is active"],
+    });
+
+    await expect(main()).rejects.toThrow("quiet database preflight failed: 1 lock wait is active");
+
+    expect(stdoutWriteSpy).toHaveBeenCalledWith(
+      "warning=1 long-running maintenance-like query is active\n",
+    );
+    expect(mockSyncMaterializedViews).not.toHaveBeenCalled();
+    expect(mockClientEnd).toHaveBeenCalledOnce();
   });
 
   it("runs a blocking materialized view rebuild command", async () => {
@@ -155,7 +242,7 @@ describe("run-materialized-view-maintenance main()", () => {
       mode: "rebuild",
       startedAt: new Date("2026-04-26T12:00:00.000Z"),
       viewName: "fitness.v_daily_metrics",
-      warnings: [],
+      warnings: ["1 long-running maintenance-like query is active"],
     });
 
     await main();
@@ -165,7 +252,18 @@ describe("run-materialized-view-maintenance main()", () => {
       "fitness.v_daily_metrics",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
+      "warning=1 long-running maintenance-like query is active\n",
+    );
+    expect(stdoutWriteSpy).toHaveBeenCalledWith(
       "rebuilt=fitness.v_daily_metrics mode=rebuild duration_ms=35\n",
     );
+  });
+
+  it("throws usage for unknown commands", async () => {
+    process.argv.push("unknown");
+
+    await expect(main()).rejects.toThrow("unknown command: unknown");
+
+    expect(mockClientEnd).toHaveBeenCalledOnce();
   });
 });
