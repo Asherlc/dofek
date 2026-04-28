@@ -59,6 +59,18 @@ describe("processPostSyncJob", () => {
     expect(mockRefitAllParams).not.toHaveBeenCalled();
   });
 
+  it("syncs provider priorities before refreshing views", async () => {
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
+
+    const priorityCallOrder = mockSyncProviderPriorities.mock.invocationCallOrder[0];
+    const refreshCallOrder = mockRefreshDedupViews.mock.invocationCallOrder[0];
+    if (priorityCallOrder === undefined || refreshCallOrder === undefined) {
+      throw new Error("Expected provider priority sync and view refresh to run");
+    }
+
+    expect(priorityCallOrder).toBeLessThan(refreshCallOrder);
+  });
+
   it("runs only per-user refit for a user refit job", async () => {
     await processPostSyncJob(makeUserRefitJob("user-1"), fakeDb);
 

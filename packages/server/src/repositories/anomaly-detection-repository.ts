@@ -148,17 +148,64 @@ export class AnomalyDetectionRepository {
             SELECT
               date,
               resting_hr,
-              hrv,
               AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
               STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
-              COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count,
-              AVG(hrv) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS hrv_mean,
-              STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS hrv_sd,
-              COUNT(hrv) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS hrv_count
+              COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.#userId}
               AND date > ${dateWindowStart(endDate, BASELINE_LOOKBACK_DAYS)}
             ORDER BY date ASC
+          ),
+          ranked_daily AS (
+            SELECT
+              d.*,
+              COALESCE(dp.recovery_priority, pp.recovery_priority, dp.priority, pp.priority, 100) AS recovery_prio
+            FROM fitness.daily_metrics d
+            LEFT JOIN fitness.provider_priority pp ON pp.provider_id = d.provider_id
+            LEFT JOIN LATERAL (
+              SELECT dp2.recovery_priority, dp2.priority
+              FROM fitness.device_priority dp2
+              WHERE dp2.provider_id = d.provider_id
+                AND d.source_name LIKE dp2.source_name_pattern
+              ORDER BY length(dp2.source_name_pattern) DESC
+              LIMIT 1
+            ) dp ON true
+            WHERE d.user_id = ${this.#userId}
+              AND d.hrv IS NOT NULL
+              AND d.date = ${dateWindowEnd(endDate)}
+          ),
+          target_hrv AS (
+            SELECT date, user_id, provider_id, source_name, hrv
+            FROM ranked_daily
+            ORDER BY recovery_prio ASC, provider_id ASC, source_name ASC NULLS LAST
+            LIMIT 1
+          ),
+          hrv_baseline AS (
+            SELECT
+              target.date,
+              target.hrv,
+              history.hrv_mean,
+              history.hrv_sd,
+              history.hrv_count
+            FROM target_hrv target
+            LEFT JOIN LATERAL (
+              SELECT
+                AVG(history_rows.hrv) AS hrv_mean,
+                STDDEV_POP(history_rows.hrv) AS hrv_sd,
+                COUNT(history_rows.hrv) AS hrv_count
+              FROM (
+                SELECT hrv
+                FROM fitness.daily_metrics history
+                WHERE history.user_id = target.user_id
+                  AND history.provider_id = target.provider_id
+                  AND history.source_name IS NOT DISTINCT FROM target.source_name
+                  AND history.hrv IS NOT NULL
+                  AND history.date < target.date
+                  AND history.date > target.date - ${BASELINE_LOOKBACK_DAYS}::int
+                ORDER BY history.date DESC
+                LIMIT ${BASELINE_WINDOW_DAYS}
+              ) history_rows
+            ) history ON true
           ),
           sleep_raw AS (
             SELECT
@@ -187,9 +234,10 @@ export class AnomalyDetectionRepository {
           SELECT
             b.date::text,
             b.resting_hr, b.rhr_mean, b.rhr_sd, b.rhr_count,
-            b.hrv, b.hrv_mean, b.hrv_sd, b.hrv_count,
+            h.hrv, h.hrv_mean, h.hrv_sd, h.hrv_count,
             s.duration_minutes, s.sleep_mean, s.sleep_sd, s.sleep_count
           FROM baseline b
+          LEFT JOIN hrv_baseline h ON h.date = b.date
           LEFT JOIN sleep s ON s.date = b.date
           WHERE b.date = ${dateWindowEnd(endDate)}
           LIMIT 1`,
@@ -282,25 +330,74 @@ export class AnomalyDetectionRepository {
             SELECT
               date,
               resting_hr,
-              hrv,
               AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
               STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
-              COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count,
-              AVG(hrv) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS hrv_mean,
-              STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS hrv_sd,
-              COUNT(hrv) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS hrv_count
+              COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.#userId}
               AND date > CURRENT_DATE - ${queryDays}::int
             ORDER BY date ASC
+          ),
+          ranked_daily AS (
+            SELECT
+              d.*,
+              COALESCE(dp.recovery_priority, pp.recovery_priority, dp.priority, pp.priority, 100) AS recovery_prio,
+              ROW_NUMBER() OVER (
+                PARTITION BY d.date, d.user_id
+                ORDER BY COALESCE(dp.recovery_priority, pp.recovery_priority, dp.priority, pp.priority, 100) ASC,
+                         d.provider_id ASC,
+                         d.source_name ASC NULLS LAST
+              ) AS source_rank
+            FROM fitness.daily_metrics d
+            LEFT JOIN fitness.provider_priority pp ON pp.provider_id = d.provider_id
+            LEFT JOIN LATERAL (
+              SELECT dp2.recovery_priority, dp2.priority
+              FROM fitness.device_priority dp2
+              WHERE dp2.provider_id = d.provider_id
+                AND d.source_name LIKE dp2.source_name_pattern
+              ORDER BY length(dp2.source_name_pattern) DESC
+              LIMIT 1
+            ) dp ON true
+            WHERE d.user_id = ${this.#userId}
+              AND d.hrv IS NOT NULL
+              AND d.date > CURRENT_DATE - ${queryDays}::int
+          ),
+          hrv_baseline AS (
+            SELECT
+              target.date,
+              target.hrv,
+              history.hrv_mean,
+              history.hrv_sd,
+              history.hrv_count
+            FROM ranked_daily target
+            LEFT JOIN LATERAL (
+              SELECT
+                AVG(history_rows.hrv) AS hrv_mean,
+                STDDEV_POP(history_rows.hrv) AS hrv_sd,
+                COUNT(history_rows.hrv) AS hrv_count
+              FROM (
+                SELECT hrv
+                FROM fitness.daily_metrics history
+                WHERE history.user_id = target.user_id
+                  AND history.provider_id = target.provider_id
+                  AND history.source_name IS NOT DISTINCT FROM target.source_name
+                  AND history.hrv IS NOT NULL
+                  AND history.date < target.date
+                  AND history.date > target.date - ${BASELINE_LOOKBACK_DAYS}::int
+                ORDER BY history.date DESC
+                LIMIT ${BASELINE_WINDOW_DAYS}
+              ) history_rows
+            ) history ON true
+            WHERE target.source_rank = 1
           )
           SELECT
-            date::text,
-            resting_hr, rhr_mean, rhr_sd, rhr_count,
-            hrv, hrv_mean, hrv_sd, hrv_count
-          FROM baseline
-          WHERE date > CURRENT_DATE - ${days}::int
-          ORDER BY date ASC`,
+            b.date::text,
+            b.resting_hr, b.rhr_mean, b.rhr_sd, b.rhr_count,
+            h.hrv, h.hrv_mean, h.hrv_sd, h.hrv_count
+          FROM baseline b
+          LEFT JOIN hrv_baseline h ON h.date = b.date
+          WHERE b.date > CURRENT_DATE - ${days}::int
+          ORDER BY b.date ASC`,
     );
 
     const anomalies: AnomalyRow[] = [];
