@@ -600,9 +600,12 @@ GitHub Actions to print Infisical-only secrets in later step environment blocks.
   the child `docker stack deploy` process.
 - Added masking for every rendered Infisical dotenv value immediately after
   export.
+- Deleted GitHub Actions logs for the unsafe runs `25067751341` and
+  `25069173318` after capturing the incident evidence.
 
 ### Remaining Risk
 
-The values already printed in run `25067751341` should be rotated and the run log
-should be treated as sensitive until rotation is complete. Future deploys should
-fail before stack mutation if a required host bind path is missing.
+The values already printed in the unsafe deploy logs should still be rotated;
+log deletion reduces exposure but does not prove the values were never read.
+Future deploys should fail before stack mutation if a required host bind path is
+missing.
