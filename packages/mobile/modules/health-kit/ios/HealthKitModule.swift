@@ -377,7 +377,7 @@ public class HealthKitModule: Module {
                             withMetadataKey: HKMetadataKeySyncIdentifier,
                             allowedValues: syncIdentifiers
                         )
-                        let deletedCount: Int = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+                        let deletedCount: Int = try await withCheckedThrowingContinuation { continuation in
                             self.healthStore.deleteObjects(of: sampleType, predicate: predicate) { _, deletedCount, error in
                                 if let error = error {
                                     continuation.resume(throwing: error)
