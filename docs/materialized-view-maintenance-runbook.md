@@ -56,10 +56,12 @@ it from `drizzle/_views`, and records the new hash.
 ## GitHub Manual Action
 
 For the common production case, use **Actions → Materialized View Maintenance →
-Run workflow**. The defaults run against production and rebuild
-`fitness.provider_stats` from the checked-out workflow branch. The action opens
-an SSH tunnel to the server's loopback-only Postgres port and runs the
-maintenance TypeScript command directly; it does not pull or run Docker images.
+Run workflow**. Choose `environment=production` or `environment=staging`; the
+workflow derives the matching Infisical environment and SSH tunnel target. The
+defaults run against production and rebuild `fitness.provider_stats` from the
+checked-out workflow branch. The action opens an SSH tunnel to the selected
+server's loopback-only Postgres port and runs the maintenance TypeScript command
+directly; it does not pull or run Docker images.
 
 The workflow:
 

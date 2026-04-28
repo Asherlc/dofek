@@ -935,7 +935,9 @@ The manual workflow now runs the checked-out branch directly with `pnpm tsx`
 over an SSH tunnel instead of pulling Docker images. It also adds target-specific
 verification steps: one checks for `rebuilt=<view> mode=rebuild` in the rebuild
 output, and another confirms the target materialized view exists and is
-populated after the rebuild.
+populated after the rebuild. A follow-up change simplifies dispatch to a single
+`environment` choice (`production` or `staging`) and derives the matching
+Infisical environment plus SSH tunnel target internally.
 
 ### Remaining Risk
 

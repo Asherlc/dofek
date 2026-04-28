@@ -3,6 +3,14 @@ name: Materialized View Maintenance
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment to maintain"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - "production"
+          - "staging"
       view_name:
         description: "Canonical materialized view to rebuild"
         required: false
@@ -16,36 +24,25 @@ on:
           - "fitness.v_activity"
           - "fitness.v_sleep"
           - "fitness.v_body_measurement"
-      server_host:
-        description: "SSH host with local Postgres access (defaults to SERVER_HOST secret)"
-        required: false
-        type: string
-      infisical_environment:
-        description: "Infisical environment to export"
-        required: false
-        default: prod
-        type: string
-      stack_name:
-        description: "Maintenance concurrency scope"
-        required: false
-        default: dofek
-        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: materialized-view-maintenance-${{ inputs.stack_name || 'dofek' }}
+  group: materialized-view-maintenance-${{ inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
   rebuild:
-    name: Rebuild Materialized View
+    name: Rebuild Materialized View (${{ inputs.environment || 'production' }})
     runs-on: ubuntu-latest
     env:
-      SERVER_HOST: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
-      INFISICAL_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
+      # staging.dofek.asherlc.com is Cloudflare-proxied for HTTPS. The
+      # staging-portainer host is a non-proxied DNS record on the same server and
+      # is used here only as the SSH tunnel endpoint.
+      SERVER_HOST: ${{ inputs.environment == 'staging' && 'staging-portainer.dofek.asherlc.com' || secrets.SERVER_HOST }}
+      INFISICAL_ENVIRONMENT: ${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
       VIEW_NAME: ${{ inputs.view_name || 'fitness.provider_stats' }}
       POSTGRES_TUNNEL_PORT: "15432"
     steps:
@@ -56,15 +53,15 @@ jobs:
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host
         with:
-          host: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          host: ${{ inputs.environment == 'staging' && 'staging-portainer.dofek.asherlc.com' || secrets.SERVER_HOST }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Export Infisical deploy secrets file via OIDC
         uses: ./.github/actions/export-infisical-dotenv
         with:
-          env: ${{ inputs.infisical_environment || 'prod' }}
+          env: ${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
           template: .github/templates/infisical-dotenv.tmpl
-          output_path: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+          output_path: ${{ github.workspace }}/.env.${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
 
       - name: Export dotenv path
         run: echo "INFISICAL_ENV_FILE=${GITHUB_WORKSPACE}/.env.${INFISICAL_ENVIRONMENT}" >> "$GITHUB_ENV"
