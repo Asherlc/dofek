@@ -854,11 +854,20 @@ available and failed in `Pull maintenance images`:
 Error response from daemon: failed to resolve reference "ghcr.io/asherlc/dofek:pr-1064": ghcr.io/asherlc/dofek:pr-1064: not found
 ```
 
-After the image tag existed, the rerun reached the changed step and completed
+After the image tag existed, the rerun reached the changed path and completed
 the target rebuild:
 
 ```text
 rebuilt=fitness.provider_stats mode=rebuild duration_ms=70132
+```
+
+A follow-up run after the workflow was split into separate cancellation and
+rebuild steps showed both target steps passing independently:
+
+```text
+canceling_refreshes=fitness.provider_stats
+canceled_refreshes=fitness.provider_stats
+rebuilt=fitness.provider_stats mode=rebuild duration_ms=105478
 ```
 
 The first fatal line was in `Run post-rebuild materialized view sync`:
@@ -869,9 +878,10 @@ Error: Materialized view maintenance required: fitness.v_activity (live definiti
 
 ### Root Cause
 
-The branch verification exercised the new target-refresh cancellation step and
-rebuild path, but production still reported live-definition drift for every
-canonical materialized view during the existing post-rebuild sync step.
+The branch verification exercised the target-refresh cancellation path and
+rebuild path, including the later split into separate workflow steps, but
+production still reported live-definition drift for every canonical
+materialized view during the existing post-rebuild sync step.
 
 ### Fix or Mitigation
 
