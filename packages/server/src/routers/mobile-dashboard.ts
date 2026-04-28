@@ -92,7 +92,7 @@ export const mobileDashboardRouter = router({
         daily_load: z.coerce.number(),
       });
 
-        const metricsRows = await executeWithSchema(
+      const metricsRows = await executeWithSchema(
         ctx.db,
         readinessSchema,
         sql`
