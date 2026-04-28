@@ -834,3 +834,54 @@ destructive rebuild.
 The maintenance command only cancels refreshes for the target view. Other active
 database work can still make the quiet preflight fail, which is intentional for
 planned maintenance.
+
+## 2026-04-28: Branch verification rebuild failed in post-rebuild sync
+
+### Impact
+
+A manual `Materialized View Maintenance` workflow run from branch
+`Asherlc/cancel-view-refreshes` rebuilt `fitness.provider_stats` successfully
+from the PR image, but the workflow still failed before the final planner
+verification. The rebuild did not run for an hour; the rebuild command reported
+about 70 seconds of database work.
+
+### Evidence That Mattered
+
+The first attempt used `image_tag=pr-1064` before the review-app image tag was
+available and failed in `Pull maintenance images`:
+
+```text
+Error response from daemon: failed to resolve reference "ghcr.io/asherlc/dofek:pr-1064": ghcr.io/asherlc/dofek:pr-1064: not found
+```
+
+After the image tag existed, the rerun reached the changed step and completed
+the target rebuild:
+
+```text
+rebuilt=fitness.provider_stats mode=rebuild duration_ms=70132
+```
+
+The first fatal line was in `Run post-rebuild materialized view sync`:
+
+```text
+Error: Materialized view maintenance required: fitness.v_activity (live definition differs from canonical definition), fitness.v_sleep (live definition differs from canonical definition), fitness.v_body_measurement (live definition differs from canonical definition), fitness.v_daily_metrics (live definition differs from canonical definition), fitness.deduped_sensor (live definition differs from canonical definition), fitness.activity_summary (live definition differs from canonical definition), fitness.provider_stats (live definition differs from canonical definition)
+```
+
+### Root Cause
+
+The branch verification exercised the new target-refresh cancellation and
+rebuild path, but production still reported live-definition drift for every
+canonical materialized view during the existing post-rebuild sync step.
+
+### Fix or Mitigation
+
+No code mitigation was applied in this verification step. The rebuild behavior
+under test completed quickly from the branch image, and the remaining failure is
+the broader live-definition drift detected by normal materialized-view sync.
+
+### Remaining Risk
+
+The manual action can still fail after a successful target rebuild when other
+canonical materialized views require explicit maintenance. Operators should not
+interpret a successful target rebuild as proof that the full materialized-view
+planner is clean.
