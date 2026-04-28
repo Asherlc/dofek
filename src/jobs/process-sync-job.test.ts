@@ -92,6 +92,7 @@ interface MockJob {
     providerId?: string;
     sinceDays?: number;
     sinceIso?: string;
+    targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
     userId: string;
     checkpoint?: unknown;
   };
@@ -104,6 +105,7 @@ function createMockJob(
     providerId?: string;
     sinceDays?: number;
     sinceIso?: string;
+    targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
     userId?: string;
     checkpoint?: unknown;
   } = {},

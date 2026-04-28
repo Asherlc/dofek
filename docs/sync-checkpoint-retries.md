@@ -7,6 +7,7 @@ Provider sync jobs should survive transient infrastructure failures without star
 ## Design
 
 - Provider sync jobs carry a stable `sinceIso` timestamp in BullMQ job data. Retries reuse that timestamp instead of recomputing the window from `sinceDays`.
+- Provider sync jobs also carry the target refresh window as `targetRefreshWindow`, either `{ type: "full" }` or `{ type: "days", days: number }`. This preserves the requested window label while `sinceIso` preserves the exact retry boundary.
 - Provider sync jobs may carry provider-owned checkpoint data in BullMQ job data. This keeps retry state in Redis with the job and avoids a second retry ledger.
 - `SyncOptions` exposes a checkpoint store with `load`, `save`, and `clear`.
 - Providers save a checkpoint only after a durable chunk has been written to the database.

@@ -73,6 +73,12 @@ const syncJobDataSchema = z.object({
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
   sinceIso: z.string().optional(),
+  targetRefreshWindow: z
+    .discriminatedUnion("type", [
+      z.object({ type: z.literal("full") }),
+      z.object({ type: z.literal("days"), days: z.number() }),
+    ])
+    .optional(),
   checkpoint: z.unknown().optional(),
 });
 
@@ -101,6 +107,10 @@ function resolveSinceIso(sinceDays?: number): string {
   return sinceDays
     ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString()
     : new Date(0).toISOString();
+}
+
+function resolveTargetRefreshWindow(sinceDays?: number): SyncJobData["targetRefreshWindow"] {
+  return sinceDays ? { type: "days", days: sinceDays } : { type: "full" };
 }
 
 // ── Provider registration (race-safe) ──
@@ -294,6 +304,7 @@ export const syncRouter = router({
             providerId,
             sinceDays: input.sinceDays,
             sinceIso: resolveSinceIso(input.sinceDays),
+            targetRefreshWindow: resolveTargetRefreshWindow(input.sinceDays),
             userId: ctx.userId,
           },
           SYNC_JOB_RETRY_OPTIONS,

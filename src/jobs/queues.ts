@@ -8,6 +8,7 @@ export interface SyncJobData {
   providerId?: string;
   sinceDays?: number;
   sinceIso?: string;
+  targetRefreshWindow?: { type: "full" } | { type: "days"; days: number };
   userId: string;
   checkpoint?: unknown;
 }
