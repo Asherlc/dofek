@@ -165,7 +165,7 @@ export default function RecoveryScreen() {
   const endDate = useTodayQueryDate();
 
   // HRV trend
-  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days });
+  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days, endDate });
   const hrvData = hrvQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
@@ -188,7 +188,6 @@ export default function RecoveryScreen() {
   // Daily metrics for SpO2 and skin temp
   const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const trendsData = trendsQuery.data;
-  const latestHrvValue = trendsData?.latest_hrv ?? null;
   const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const dailyMetricsData = dailyMetricsQuery.data ?? [];
 
@@ -314,7 +313,7 @@ export default function RecoveryScreen() {
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
-            value={latestHrvValue != null ? String(Math.round(latestHrvValue)) : "--"}
+            value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
             unit="ms"
             trend={hrvValues.slice(-14)}
             color={colors.positive}

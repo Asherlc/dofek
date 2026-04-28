@@ -167,7 +167,7 @@ export const recoveryRouter = router({
    * Fetches extra warmup rows to ensure window functions have data from day 1.
    */
   hrvVariability: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
       const queryDays = input.days + 7;
       const hrvRowSchema = z.object({
@@ -185,7 +185,8 @@ export const recoveryRouter = router({
                 hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > CURRENT_DATE - ${queryDays}::int
+                AND date > ${dateWindowStart(input.endDate, queryDays)}
+                AND date <= ${dateWindowEnd(input.endDate)}
                 AND hrv IS NOT NULL
                 ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
               ORDER BY date ASC
@@ -202,7 +203,7 @@ export const recoveryRouter = router({
                 ELSE NULL
               END AS rolling_cv
             FROM daily
-            WHERE date > CURRENT_DATE - ${input.days}::int
+            WHERE date > ${dateWindowStart(input.endDate, input.days)}
             ORDER BY date ASC`,
       );
 

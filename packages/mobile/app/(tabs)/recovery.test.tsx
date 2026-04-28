@@ -93,11 +93,11 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     sparkLinePropsCalls = [];
   });
 
-  it("displays Heart Rate Variability from daily metric trends", async () => {
-    mockTrendsData = { latest_hrv: 44 };
+  it("displays Heart Rate Variability from the recovery HRV query", async () => {
+    mockTrendsData = { latest_hrv: 24 };
     mockHrvVariabilityData = [
       { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
-      { date: "2026-04-06", hrv: 24, rollingMean: 44, rollingCoefficientOfVariation: 4 },
+      { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
     ];
 
     const { default: RecoveryScreen } = await import("./recovery");
