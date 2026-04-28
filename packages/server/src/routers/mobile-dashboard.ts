@@ -98,20 +98,20 @@ export const mobileDashboardRouter = router({
         sql`
           WITH metrics_with_baselines AS (
             SELECT
-              date AS metric_date,
+              dm.date AS metric_date,
               hrv,
               resting_hr,
               respiratory_rate_avg AS respiratory_rate,
-              AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
-              STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
-              AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
-              STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
-              AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
-              STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${ctx.userId}
-              AND date > ${endDate}::date - 60
-              AND date <= ${endDate}
+              AVG(hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
+              STDDEV_POP(hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
+              AVG(resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
+              STDDEV_POP(resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
+              AVG(respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
+              STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
+            FROM fitness.v_daily_metrics dm
+            WHERE dm.user_id = ${ctx.userId}
+              AND dm.date > ${endDate}::date - 60
+              AND dm.date <= ${endDate}
           ),
           daily_loads AS (
             SELECT
