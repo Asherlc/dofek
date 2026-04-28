@@ -949,3 +949,43 @@ verification run found the staging Infisical environment currently exports no
 `POSTGRES_PASSWORD` and the staging host has no running `dofek-staging` services.
 Staging maintenance will fail loudly until the staging stack and secrets are
 provisioned.
+
+## 2026-04-28: Manual view maintenance inputs were over-condensed
+
+### Impact
+
+The manual `Materialized View Maintenance` workflow correctly condensed
+environment selection to `production` or `staging`, but the initial follow-up
+risked making target selection too narrow for operators who need to rebuild more
+than one materialized view in one maintenance window.
+
+### Evidence That Mattered
+
+The workflow had a single-select target input:
+
+```text
+view_name=fitness.provider_stats
+```
+
+That preserved choosing one target, but not choosing multiple target views.
+
+### Root Cause
+
+GitHub Actions `choice` inputs are single-select. Keeping target selection as a
+choice field made the UI simple but did not represent the operational need to
+select one or more canonical materialized views.
+
+### Fix or Mitigation
+
+The workflow now keeps one environment selector and uses a `view_names` string
+input for targets. Operators can provide one view name, comma-separated view
+names, newline-separated view names, or `all`. The workflow resolves that input
+against the canonical inventory, preserves dependency order, cancels refreshes
+for each target, rebuilds each target one at a time, and verifies every selected
+view was rebuilt and populated.
+
+### Remaining Risk
+
+The `view_names` field is free text because workflow dispatch does not support a
+multi-select choice input. Invalid names fail before database maintenance starts,
+and the runbook lists the accepted format.

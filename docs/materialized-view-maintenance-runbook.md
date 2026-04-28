@@ -57,11 +57,13 @@ it from `drizzle/_views`, and records the new hash.
 
 For the common production case, use **Actions → Materialized View Maintenance →
 Run workflow**. Choose `environment=production` or `environment=staging`; the
-workflow derives the matching Infisical environment and SSH tunnel target. The
-defaults run against production and rebuild `fitness.provider_stats` from the
-checked-out workflow branch. The action opens an SSH tunnel to the selected
-server's loopback-only Postgres port and runs the maintenance TypeScript command
-directly; it does not pull or run Docker images.
+workflow derives the matching Infisical environment and SSH tunnel target. Set
+`view_names` to one canonical materialized view, comma-separated or
+newline-separated view names, or `all`. The defaults run against production and
+rebuild `fitness.provider_stats` from the checked-out workflow branch. The
+action opens an SSH tunnel to the selected server's loopback-only Postgres port
+and runs the maintenance TypeScript command directly; it does not pull or run
+Docker images.
 
 The workflow:
 
@@ -69,12 +71,13 @@ The workflow:
 2. opens a private SSH tunnel to Postgres;
 3. checks that Postgres is writable;
 4. prints the current materialized-view sync plan;
-5. cancels active refreshes for the selected canonical materialized view;
-6. rebuilds the selected canonical materialized view;
-7. verifies the rebuild command reported `rebuilt=<view> mode=rebuild`;
-8. runs the normal blocking materialized-view sync;
-9. verifies the target materialized view exists and is populated; and
-10. fails if the planner still reports `required=true`.
+5. resolves the requested target views against the canonical inventory;
+6. cancels active refreshes for the selected canonical materialized views;
+7. rebuilds the selected canonical materialized views one at a time;
+8. verifies each rebuild command reported `rebuilt=<view> mode=rebuild`;
+9. runs the normal blocking materialized-view sync;
+10. verifies each target materialized view exists and is populated; and
+11. fails if the planner still reports `required=true`.
 
 ## Production One-Shot Command
 
