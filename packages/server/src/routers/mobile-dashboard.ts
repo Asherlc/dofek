@@ -123,7 +123,7 @@ export const mobileDashboardRouter = router({
           daily_loads AS (
             SELECT
               (ended_at AT TIME ZONE ${tz})::date AS metric_date,
-              COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0), 0)
+              COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0)
                 AS daily_load
             FROM fitness.activity_summary
             WHERE user_id = ${ctx.userId}
