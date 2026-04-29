@@ -50,6 +50,14 @@ describe("MATERIALIZED_VIEW_REFRESH_INVENTORY", () => {
         viewName: "fitness.deduped_sensor",
       }),
       expect.objectContaining({
+        concurrentRefreshIndex: "derived_resting_heart_rate_user_date_idx",
+        viewName: "fitness.derived_resting_heart_rate",
+      }),
+      expect.objectContaining({
+        concurrentRefreshIndex: "derived_vo2max_estimates_activity_method_idx",
+        viewName: "fitness.derived_vo2max_estimates",
+      }),
+      expect.objectContaining({
         concurrentRefreshIndex: "activity_summary_pk",
         viewName: "fitness.activity_summary",
       }),

@@ -44,8 +44,8 @@ describe("refreshDedupViews", () => {
 
     await refreshDedupViews(mockDb);
 
-    // 5 dedup views + 2 rollup views = 7 total refreshes
-    expect(mockExecute).toHaveBeenCalledTimes(7);
+    // 7 dedup/derived views + 2 rollup views = 9 total refreshes
+    expect(mockExecute).toHaveBeenCalledTimes(9);
 
     // Verify order: dedup views first
     const calls = mockExecute.mock.calls.map((c) => c[0]);
@@ -54,9 +54,11 @@ describe("refreshDedupViews", () => {
     expect(calls[2]).toContain("fitness.v_body_measurement");
     expect(calls[3]).toContain("fitness.v_daily_metrics");
     expect(calls[4]).toContain("fitness.deduped_sensor");
+    expect(calls[5]).toContain("fitness.derived_resting_heart_rate");
+    expect(calls[6]).toContain("fitness.derived_vo2max_estimates");
     // Then rollup views
-    expect(calls[5]).toContain("fitness.activity_summary");
-    expect(calls[6]).toContain("fitness.provider_stats");
+    expect(calls[7]).toContain("fitness.activity_summary");
+    expect(calls[8]).toContain("fitness.provider_stats");
   });
 
   it("does not fall back to blocking refresh during post-sync refreshes", async () => {
@@ -65,15 +67,21 @@ describe("refreshDedupViews", () => {
 
     mockExecute.mockRejectedValue(new Error("cannot refresh concurrently"));
 
-    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh 7 view(s)");
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh 9 view(s)");
 
-    expect(mockExecute).toHaveBeenCalledTimes(7);
+    expect(mockExecute).toHaveBeenCalledTimes(9);
     expect(mockExecute.mock.calls.map((call) => String(call[0]))).toEqual([
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_daily_metrics"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor"),
+      expect.stringContaining(
+        "REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.derived_resting_heart_rate",
+      ),
+      expect.stringContaining(
+        "REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.derived_vo2max_estimates",
+      ),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.provider_stats"),
     ]);

@@ -13,6 +13,8 @@ export const DEDUP_VIEWS = [
   "fitness.v_body_measurement",
   "fitness.v_daily_metrics",
   "fitness.deduped_sensor",
+  "fitness.derived_resting_heart_rate",
+  "fitness.derived_vo2max_estimates",
 ] as const;
 
 export const ROLLUP_VIEWS = ["fitness.activity_summary", "fitness.provider_stats"] as const;
