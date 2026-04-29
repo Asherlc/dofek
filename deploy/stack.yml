@@ -53,6 +53,7 @@ services:
       JOB_FILES_DIR: /app/job-files
       PUBLIC_URL: ${PUBLIC_URL:-https://dofek.asherlc.com}
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD}@clickhouse:8123
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-web
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
@@ -157,6 +158,19 @@ services:
       resources:
         limits:
           memory: 2G
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.3.20-alpine
+    environment:
+      CLICKHOUSE_DB: fitness
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - /mnt/dofek-data/clickhouse:/var/lib/clickhouse
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   databasus:
     image: databasus/databasus:v3.32.1

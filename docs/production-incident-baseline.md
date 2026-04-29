@@ -788,3 +788,65 @@ canonical view, runs normal blocking sync, and verifies the planner reports
 Rebuilding a materialized view is still heavy database maintenance. Operators
 should run it during a planned maintenance window and stop if preflight reports
 recovery mode, active lock waits, or other full-history maintenance.
+
+## 2026-04-28: Activity HR missing and `deduped_sensor` refresh OOM
+
+### Impact
+
+The activity detail page for
+`b1bbbc97-1bd9-47c8-9f0a-1f2ee748fec6` showed no heart-rate stream or summary,
+even though raw heart-rate samples existed for the workout window. Two attempted
+full concurrent refreshes of `fitness.deduped_sensor` exceeded the production
+Postgres container memory limit and briefly put Postgres into crash recovery.
+
+### Evidence That Mattered
+
+Production queries showed the canonical activity existed in `fitness.v_activity`
+with WHOOP and Apple Health member activities, and raw `fitness.metric_stream`
+had linked Apple Health heart-rate samples plus ambient WHOOP heart-rate samples
+around the workout. `fitness.deduped_sensor` and `fitness.activity_summary`
+returned no rows for the canonical activity ID.
+
+Postgres logs showed the fatal refresh failure:
+
+```text
+client backend (...) was terminated by signal 9: Killed
+DETAIL: Failed process was running: REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+FATAL: the database system is in recovery mode
+```
+
+Kernel logs confirmed the cause was the memory cgroup OOM killer selecting the
+Postgres backend running the refresh, not disk exhaustion. Host checks showed
+the data volume had free space and Postgres recovered with
+`pg_is_in_recovery() = false`; `/healthz` returned `{"status":"ok"}` after
+recovery.
+
+### Root Cause
+
+The data model currently depends on a full `fitness.deduped_sensor` materialized
+view rebuild to map metric-stream samples onto canonical activities. That full
+refresh is too memory-heavy for the current production DB container and can be
+killed by the cgroup OOM killer. The attempted manual refresh also raced with an
+existing post-sync refresh, proving duplicate full-history maintenance can stack
+up.
+
+Separately, the Strong CSV workout data was not present in `fitness.activity`.
+The only Strong CSV import log was successful on 2026-04-27 with 83 records, but
+there were zero `strong-csv` activity rows after the 2026-04-28
+`0004_merge_strength_workout.sql` migration. The likely cause is that older
+Strong CSV data lived only in the dropped `fitness.strength_workout` path and was
+not recoverable from the live schema after that migration.
+
+### Fix or Mitigation
+
+No code or schema fix was shipped during this investigation. The unsafe
+request-time refresh approach was tested locally and then backed out after
+production evidence showed full `deduped_sensor` refreshes can OOM Postgres.
+
+### Remaining Risk
+
+The target activity still needs a safer remediation path for showing HR without
+requiring a full `deduped_sensor` refresh. Candidate fixes are a targeted
+per-activity stream query fallback or an incremental activity-summary refresh
+path. Strong CSV recovery likely requires re-importing the CSV or restoring the
+old `strength_workout` rows from a backup into a reviewed forward migration.

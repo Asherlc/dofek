@@ -8,6 +8,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 
 - [../README.md](../README.md): repository overview, local development, and the high-level architecture.
 - [../deploy/README.md](../deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
+- [clickhouse-metric-stream.md](clickhouse-metric-stream.md): rebuildable ClickHouse projection for heavy `metric_stream` reads.
 - [schema.md](schema.md): canonical database model and storage philosophy.
 - [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.

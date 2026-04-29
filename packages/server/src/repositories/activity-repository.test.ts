@@ -85,6 +85,28 @@ describe("ActivityRepository", () => {
     return { repo, execute };
   }
 
+  function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
+    const execute = vi.fn().mockResolvedValue(postgresRows);
+    const database = { execute };
+    const sensorStore = {
+      getStream: vi.fn().mockResolvedValue([
+        {
+          recorded_at: "2024-01-15T10:00:00.000Z",
+          heart_rate: 140,
+          power: null,
+          speed: null,
+          cadence: null,
+          altitude: null,
+          lat: null,
+          lng: null,
+        },
+      ]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([{ zone: 1, seconds: 3 }]),
+    };
+    const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
+    return { repo, execute, sensorStore };
+  }
+
   describe("list", () => {
     it("returns empty items when no data", async () => {
       const { repo } = makeRepository([]);
@@ -290,6 +312,41 @@ describe("ActivityRepository", () => {
       expect(result[0]?.toDetail().heartRate).toBe(140);
       expect(result[1]?.toDetail().power).toBeNull();
     });
+
+    it("delegates to the configured sensor store after resolving the activity window", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "activity-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["activity-id", "source-activity-id"],
+        },
+      ]);
+
+      const result = await repo.getStream("activity-id", 500);
+
+      expect(result).toHaveLength(1);
+      expect(sensorStore.getStream).toHaveBeenCalledWith(
+        {
+          activityId: "activity-id",
+          userId: "user-1",
+          startedAt: "2024-01-15T10:00:00.000Z",
+          endedAt: "2024-01-15T11:00:00.000Z",
+          memberActivityIds: ["activity-id", "source-activity-id"],
+        },
+        500,
+      );
+    });
+
+    it("does not query the sensor store when the activity is not visible", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([]);
+
+      const result = await repo.getStream("activity-id", 500);
+
+      expect(result).toEqual([]);
+      expect(sensorStore.getStream).not.toHaveBeenCalled();
+    });
   });
 
   describe("getHrZones", () => {
@@ -350,6 +407,31 @@ describe("ActivityRepository", () => {
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiled = dialect.sqlToQuery(sqlObject);
       expect(compiled.params).toEqual(expect.arrayContaining([275]));
+    });
+
+    it("delegates to the configured sensor store after resolving the activity window", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "activity-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["activity-id"],
+        },
+      ]);
+
+      await repo.getPowerZones("activity-id", 275);
+
+      expect(sensorStore.getPowerZoneSeconds).toHaveBeenCalledWith(
+        {
+          activityId: "activity-id",
+          userId: "user-1",
+          startedAt: "2024-01-15T10:00:00.000Z",
+          endedAt: "2024-01-15T11:00:00.000Z",
+          memberActivityIds: ["activity-id"],
+        },
+        275,
+      );
     });
   });
 

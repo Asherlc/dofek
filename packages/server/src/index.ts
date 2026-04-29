@@ -10,6 +10,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
+import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import {
   createExportQueue,
   createImportQueue,
@@ -28,6 +29,7 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
+import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
@@ -52,7 +54,10 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 }
 
 /** Create the Express app with all routes. */
-export function createApp(db: import("dofek/db").Database): express.Express {
+export function createApp(
+  db: import("dofek/db").Database,
+  sensorStore?: import("./repositories/activity-repository.ts").ActivitySensorStore,
+): express.Express {
   initSentry();
   const app = express();
 
@@ -61,13 +66,17 @@ export function createApp(db: import("dofek/db").Database): express.Express {
     res.json({ status: "ok" });
   });
 
-  setupRoutes(app, db);
+  setupRoutes(app, db, sensorStore);
   // Sentry error handler must be after all routes
   app.use(sentryErrorHandler());
   return app;
 }
 
-function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
+function setupRoutes(
+  app: express.Express,
+  db: import("dofek/db").Database,
+  sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore | undefined,
+) {
   // ── Compression + Cookies ──
   // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
   // which is required for tRPC's httpBatchStreamLink to deliver results incrementally.
@@ -183,6 +192,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         const accessWindow = session ? await getAccessWindowForUser(db, session.userId) : undefined;
         return {
           db,
+          sensorStore,
           userId: session?.userId ?? null,
           timezone,
           appVersion,
@@ -263,7 +273,10 @@ export async function main() {
     throw new Error("DATABASE_URL environment variable is required");
   }
   const db = createDatabaseFromEnv();
-  const app = createApp(db);
+  const sensorStore = process.env.CLICKHOUSE_URL
+    ? new ClickHouseActivitySensorStore(createClickHouseClientFromEnv())
+    : undefined;
+  const app = createApp(db, sensorStore);
 
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);

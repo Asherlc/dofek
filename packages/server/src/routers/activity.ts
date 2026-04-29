@@ -90,7 +90,13 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       const points = await repo.getStream(input.id, input.maxPoints);
       return points.map((point) => point.toDetail());
     }),
@@ -110,6 +116,7 @@ export const activityRouter = router({
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const activity = await activityRepo.findById(input.id);
       if (!activity) {

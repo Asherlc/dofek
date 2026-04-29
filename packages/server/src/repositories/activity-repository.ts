@@ -1,6 +1,7 @@
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
 import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
@@ -78,6 +79,14 @@ const powerZoneRowSchema = z.object({
   seconds: z.coerce.number(),
 });
 
+const activitySensorWindowRowSchema = z.object({
+  id: z.string(),
+  user_id: z.string(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  member_activity_ids: z.array(z.string()),
+});
+
 // ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
@@ -91,6 +100,22 @@ export interface StreamPointRow {
   altitude: number | null;
   lat: number | null;
   lng: number | null;
+}
+
+export interface ActivitySensorWindow {
+  activityId: string;
+  userId: string;
+  startedAt: string;
+  endedAt: string | null;
+  memberActivityIds: string[];
+}
+
+export interface ActivitySensorStore {
+  getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]>;
+  getPowerZoneSeconds(
+    window: ActivitySensorWindow,
+    ftp: number,
+  ): Promise<z.infer<typeof powerZoneRowSchema>[]>;
 }
 
 /** A single data point from an activity's metric stream. */
@@ -130,6 +155,19 @@ export interface ListInput {
 
 /** Data access for activity queries. */
 export class ActivityRepository extends BaseRepository {
+  readonly #sensorStore?: ActivitySensorStore;
+
+  constructor(
+    db: Pick<import("dofek/db").Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" },
+    sensorStore?: ActivitySensorStore,
+  ) {
+    super(db, userId, timezone, accessWindow);
+    this.#sensorStore = sensorStore;
+  }
+
   /** Paginated activity list with summary metrics. Self-heals stale views on the first page. */
   async list(
     input: ListInput,
@@ -219,6 +257,13 @@ export class ActivityRepository extends BaseRepository {
 
   /** Downsampled metric stream for a single activity. */
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
+    if (this.#sensorStore) {
+      const window = await this.#findActivitySensorWindow(activityId);
+      if (!window) return [];
+      const rows = await this.#sensorStore.getStream(window, maxPoints);
+      return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
+    }
+
     const rows = await this.query(
       streamPointRowSchema,
       sql`WITH pivoted AS (
@@ -314,6 +359,12 @@ export class ActivityRepository extends BaseRepository {
     activityId: string,
     ftp: number,
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
+    if (this.#sensorStore) {
+      const window = await this.#findActivitySensorWindow(activityId);
+      if (!window) return mapPowerZones([]);
+      return mapPowerZones(await this.#sensorStore.getPowerZoneSeconds(window, ftp));
+    }
+
     const rows = await this.query(
       powerZoneRowSchema,
       sql`WITH power_samples AS (
@@ -347,6 +398,31 @@ export class ActivityRepository extends BaseRepository {
     );
 
     return mapPowerZones(rows);
+  }
+
+  async #findActivitySensorWindow(activityId: string): Promise<ActivitySensorWindow | null> {
+    const rows = await this.query(
+      activitySensorWindowRowSchema,
+      sql`SELECT
+            a.id,
+            a.user_id,
+            a.started_at::text AS started_at,
+            a.ended_at::text AS ended_at,
+            a.member_activity_ids
+          FROM fitness.v_activity a
+          WHERE a.id = ${activityId}
+            AND a.user_id = ${this.userId}
+            ${this.timestampAccessPredicate(sql`a.started_at`)}`,
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      activityId: row.id,
+      userId: row.user_id,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      memberActivityIds: row.member_activity_ids,
+    };
   }
 
   /** Delete an activity by ID. */

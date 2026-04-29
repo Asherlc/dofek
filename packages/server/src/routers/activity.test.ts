@@ -14,6 +14,7 @@ vi.mock("../trpc.ts", async () => {
   const trpc = initTRPC
     .context<{
       db: unknown;
+      sensorStore?: unknown;
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
@@ -386,6 +387,49 @@ describe("activityRouter", () => {
   });
 
   describe("stream", () => {
+    it("uses the configured sensor store for stream points", async () => {
+      const postgresExecute = vi.fn().mockResolvedValue([]);
+      const sensorStore = {
+        getStream: vi.fn().mockResolvedValue([
+          {
+            recorded_at: "2024-01-01T10:00:00Z",
+            heart_rate: 150,
+            power: null,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            lat: null,
+            lng: null,
+          },
+        ]),
+        getPowerZoneSeconds: vi.fn(),
+      };
+      const caller = createCaller({
+        db: {
+          execute: postgresExecute.mockResolvedValueOnce([
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              user_id: "user-1",
+              started_at: "2024-01-01T10:00:00Z",
+              ended_at: "2024-01-01T11:00:00Z",
+              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+            },
+          ]),
+        },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.stream({
+        id: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result).toHaveLength(1);
+      expect(postgresExecute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.getStream).toHaveBeenCalledTimes(1);
+    });
+
     it("returns mapped stream points", async () => {
       const rows = [
         {
