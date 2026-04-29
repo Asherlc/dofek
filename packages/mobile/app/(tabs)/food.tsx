@@ -1,3 +1,4 @@
+import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -17,6 +18,7 @@ import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 import { type FoodEntryRow, FoodEntrySchema } from "../../types/api";
+import { type LoggerTab, TABS } from "../food/add-types";
 
 const MEALS = [
   { key: "breakfast", label: "Breakfast" },
@@ -118,6 +120,10 @@ export default function FoodScreen() {
     router.push(`/food/add?meal=${mealKey}&date=${dateString}`);
   }
 
+  function handleOpenFoodInput(mode: LoggerTab) {
+    router.push(`/food/add?meal=${autoMealType()}&date=${dateString}&mode=${mode}`);
+  }
+
   function handleDeleteFood(id: string) {
     deleteMutation.mutate({ id });
   }
@@ -209,6 +215,22 @@ export default function FoodScreen() {
           >
             <Text style={styles.sectionLinkText}>Supplements</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.foodInputCard}>
+          <Text style={styles.foodInputTitle}>Food input</Text>
+          <View style={styles.foodInputGrid}>
+            {TABS.map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                onPress={() => handleOpenFoodInput(key)}
+                style={styles.foodInputButton}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.foodInputButtonText}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <View style={styles.aiInputCard}>
@@ -380,6 +402,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.accent,
     fontWeight: "600",
+  },
+  foodInputCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 12,
+    gap: 10,
+  },
+  foodInputTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  foodInputGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  foodInputButton: {
+    flexGrow: 1,
+    flexBasis: "45%",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    backgroundColor: colors.background,
+  },
+  foodInputButtonText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
   },
   aiInputCard: {
     borderRadius: 16,

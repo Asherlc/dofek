@@ -3,10 +3,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockRouterPush = vi.fn();
 const foodRefetchMock = vi.fn();
 const analyzeItemsMutateAsyncMock = vi.fn();
 const createAiEntryMutateAsyncMock = vi.fn();
 const deleteMutateMock = vi.fn();
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}));
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -44,6 +49,7 @@ vi.mock("../../lib/useRefresh", () => ({
 describe("FoodScreen AI meal confirmation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRouterPush.mockClear();
     analyzeItemsMutateAsyncMock.mockResolvedValue({
       items: [
         {
@@ -99,5 +105,31 @@ describe("FoodScreen AI meal confirmation", () => {
         sodiumMg: 140,
       });
     });
+  });
+
+  it("opens every food input mode from the nutrition screen", async () => {
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    fireEvent.click(screen.getByText("Search"));
+    expect(mockRouterPush).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^\/food\/add\?meal=[a-z]+&date=\d{4}-\d{2}-\d{2}&mode=search$/),
+    );
+
+    fireEvent.click(screen.getByText("Scan"));
+    expect(mockRouterPush).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^\/food\/add\?meal=[a-z]+&date=\d{4}-\d{2}-\d{2}&mode=scan$/),
+    );
+
+    fireEvent.click(screen.getByText("Quick Add"));
+    expect(mockRouterPush).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^\/food\/add\?meal=[a-z]+&date=\d{4}-\d{2}-\d{2}&mode=quickadd$/),
+    );
+
+    fireEvent.click(screen.getByText("AI"));
+    expect(mockRouterPush).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^\/food\/add\?meal=[a-z]+&date=\d{4}-\d{2}-\d{2}&mode=ai$/),
+    );
   });
 });

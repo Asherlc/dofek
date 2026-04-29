@@ -91,7 +91,7 @@ export default function TodayScreen() {
   });
 
   function handleLogFood() {
-    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}`);
+    router.push(`/food/add?meal=${autoMealType()}&date=${formatDateYmd()}&mode=quickadd`);
   }
 
   if (isError) {
