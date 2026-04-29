@@ -198,7 +198,9 @@ describe("TodayScreen independent loading states", () => {
 
     fireEvent.click(screen.getByText("Log Food"));
 
-    expect(mockRouterPush).toHaveBeenCalledWith("/food/add?meal=snack&date=2026-03-21");
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/food/add?meal=snack&date=2026-03-21&mode=quickadd",
+    );
   });
 
   it("shows a recovery error panel when the readiness query fails", async () => {
