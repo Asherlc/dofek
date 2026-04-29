@@ -32,7 +32,11 @@ const SUPPORTED_OUTDOOR_VO2_MAX_ACTIVITY_TYPES = [
 ] as const;
 
 export function estimateCyclingVo2Max(input: CyclingVo2MaxInput): number | null {
-  if (input.weightKg === null || input.weightKg <= 0) {
+  if (!Number.isFinite(input.fiveMinutePowerWatts)) {
+    return null;
+  }
+
+  if (input.weightKg === null || !Number.isFinite(input.weightKg) || input.weightKg <= 0) {
     return null;
   }
 
@@ -51,6 +55,16 @@ export function estimateCyclingVo2Max(input: CyclingVo2MaxInput): number | null 
 
 export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | null {
   if (
+    !Number.isFinite(input.speedMetersPerMinute) ||
+    !Number.isFinite(input.grade) ||
+    !Number.isFinite(input.averageHeartRate) ||
+    !Number.isFinite(input.restingHeartRate) ||
+    !Number.isFinite(input.maxHeartRate)
+  ) {
+    return null;
+  }
+
+  if (
     input.speedMetersPerMinute < MIN_ACSM_SPEED_METERS_PER_MINUTE ||
     input.speedMetersPerMinute > MAX_ACSM_SPEED_METERS_PER_MINUTE
   ) {
@@ -62,6 +76,11 @@ export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | n
   }
 
   const heartRateReserve = input.maxHeartRate - input.restingHeartRate;
+
+  if (heartRateReserve <= 0) {
+    return null;
+  }
+
   const intensityFraction = (input.averageHeartRate - input.restingHeartRate) / heartRateReserve;
 
   if (
