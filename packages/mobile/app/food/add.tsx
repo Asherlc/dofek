@@ -21,6 +21,7 @@ import { getTrpcUrl, SERVER_URL } from "../../lib/server";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
+import { AiMealTab } from "./AiMealTab.tsx";
 import { styles } from "./add-styles.ts";
 import {
   FoodEntrySchema,
@@ -33,9 +34,13 @@ import { FoodDetailForm } from "./FoodDetailForm.tsx";
 import { FoodResultCard } from "./FoodResultCard.tsx";
 import { QuickAddTab } from "./QuickAddTab.tsx";
 
+function isLoggerTab(value: string | undefined): value is LoggerTab {
+  return TABS.some((tab) => tab.key === value);
+}
+
 export default function AddFoodScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ meal?: string; date?: string }>();
+  const params = useLocalSearchParams<{ meal?: string; date?: string; mode?: string }>();
   const date = params.date ?? formatDateYmd();
   const { sessionToken } = useAuth();
   const apiUrl = getTrpcUrl(SERVER_URL);
@@ -45,7 +50,9 @@ export default function AddFoodScreen() {
   );
 
   // ── Tab state ──
-  const [activeTab, setActiveTab] = useState<LoggerTab>("search");
+  const [activeTab, setActiveTab] = useState<LoggerTab>(() =>
+    isLoggerTab(params.mode) ? params.mode : "search",
+  );
 
   // ── Search state ──
   const [searchQuery, setSearchQuery] = useState("");
@@ -160,6 +167,13 @@ export default function AddFoodScreen() {
       Alert.alert("Error", error.message);
     },
   });
+
+  const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
+  const createAiEntryMutation = trpc.food.create.useMutation();
+  type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
+  const [aiMealInput, setAiMealInput] = useState("");
+  const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
+  const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
   const quickAddMutation = trpc.food.quickAdd.useMutation({
     onSuccess: () => {
@@ -386,6 +400,51 @@ export default function AddFoodScreen() {
     });
   }
 
+  async function handleAnalyzeAiMeal() {
+    const trimmedInput = aiMealInput.trim();
+    if (!trimmedInput) return;
+
+    setAiMealInputError(null);
+    try {
+      const parsedResult = await analyzeItemsMutation.mutateAsync({ description: trimmedInput });
+      setPendingAiMealItems(parsedResult.items);
+    } catch (error) {
+      captureException(error, { source: "food-add-ai-meal-input" });
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not log this meal with AI input";
+      setAiMealInputError(errorMessage);
+    }
+  }
+
+  async function handleConfirmAiMeal() {
+    if (pendingAiMealItems.length === 0) return;
+
+    setAiMealInputError(null);
+    try {
+      for (const parsedItem of pendingAiMealItems) {
+        await createAiEntryMutation.mutateAsync({
+          date,
+          nutrients: {},
+          ...parsedItem,
+        });
+      }
+      await utils.food.byDate.invalidate({ date });
+      setAiMealInput("");
+      setPendingAiMealItems([]);
+      router.back();
+    } catch (error) {
+      captureException(error, { source: "food-add-ai-meal-confirm" });
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not log this meal with AI input";
+      setAiMealInputError(errorMessage);
+    }
+  }
+
+  function handleAiMealInputChange(value: string) {
+    setAiMealInput(value);
+    setPendingAiMealItems([]);
+  }
+
   // ── Barcode scanner overlay (full-screen) ──
   if (activeTab === "scan" && !showForm) {
     return <BarcodeScanner onScanned={handleBarcodeScan} onClose={() => setActiveTab("search")} />;
@@ -572,6 +631,22 @@ export default function AddFoodScreen() {
           isWide={isWide}
           isSaving={quickAddMutation.isPending}
           onSave={handleQuickAddSave}
+        />
+      )}
+
+      {/* AI tab */}
+      {activeTab === "ai" && (
+        <AiMealTab
+          value={aiMealInput}
+          onValueChange={handleAiMealInputChange}
+          error={aiMealInputError}
+          items={pendingAiMealItems}
+          isWide={isWide}
+          isAnalyzing={analyzeItemsMutation.isPending}
+          isSaving={createAiEntryMutation.isPending}
+          onAnalyze={handleAnalyzeAiMeal}
+          onCancel={() => setPendingAiMealItems([])}
+          onConfirm={handleConfirmAiMeal}
         />
       )}
     </KeyboardAvoidingView>

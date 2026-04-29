@@ -1032,6 +1032,46 @@ admin user route fallback and the existing `/admin/queues` middleware behavior.
 The fix is covered by server unit tests. Production still needs the normal web
 deploy before the live URL changes from 404 to the app shell.
 
+## 2026-04-29: iOS AI meal input surfaced raw JSON parse errors
+
+### Impact
+
+iOS users could see a low-level AI structured-output error such as "bad JSON
+character" or "No object generated" when the AI meal parser could not turn the
+input into valid food items.
+
+### Evidence That Mattered
+
+Production Axiom traces showed recent `food.analyzeItemsWithAi` traffic reaching
+Gemini, with intermittent Gemini `503` responses followed by successful retries.
+Sentry had no matching mobile error events. A local call to
+`analyzeNutritionItems("p", ...)` reproduced the server-side structured-output
+failure:
+
+```text
+AI_NoObjectGeneratedError: No object generated: response did not match schema.
+```
+
+### Root Cause
+
+The `food.analyzeItemsWithAi` router passed AI SDK structured-output parse and
+validation failures straight through to the client, so the iOS screen rendered a
+provider/parser implementation detail instead of an actionable user message.
+
+### Fix or Mitigation
+
+The router now maps AI structured-output failures to a `BAD_REQUEST` tRPC error
+with the message `Describe the foods and amounts you want to log.` Other
+unexpected errors still propagate and are reported by the existing tRPC error
+handler.
+
+### Remaining Risk
+
+This improves the user-facing failure mode but does not add deeper provider
+telemetry for malformed AI responses. If structured-output failures become
+frequent for well-formed meal descriptions, add provider/output diagnostics that
+do not record raw food text.
+
 ## 2026-04-29: Admin user URL rendered admin overview instead of detail
 
 ### Impact
