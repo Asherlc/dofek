@@ -795,6 +795,12 @@ describe("static file serving", () => {
     expect(res.headers.get("cache-control")).toContain("no-cache");
   });
 
+  it("serves index.html for admin app routes", async () => {
+    const res = await fetch(`${baseUrl}/admin/users/00000000-0000-0000-0000-000000000001`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("SPA");
+  });
+
   it("serves static assets from /assets/", async () => {
     const res = await fetch(`${baseUrl}/assets/app-abc123.js`);
     expect(res.status).toBe(200);
