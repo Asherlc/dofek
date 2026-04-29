@@ -85,7 +85,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -97,7 +97,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 200,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 160,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -109,7 +109,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 39,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -118,7 +118,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0.16,
+        gradeFraction: 0.16,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -127,7 +127,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 137,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -139,7 +139,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 40,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -148,7 +148,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 450,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -160,7 +160,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: -0.15,
+        gradeFraction: -0.15,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -169,7 +169,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0.15,
+        gradeFraction: 0.15,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -181,7 +181,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 138,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -190,7 +190,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 190,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -202,7 +202,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 60,
         restingHeartRate: 60,
         maxHeartRate: 60,
@@ -211,7 +211,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 100,
         restingHeartRate: 190,
         maxHeartRate: 60,
@@ -223,7 +223,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: Number.NaN,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -232,7 +232,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: Number.POSITIVE_INFINITY,
+        gradeFraction: Number.POSITIVE_INFINITY,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -241,7 +241,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: Number.NaN,
         restingHeartRate: 60,
         maxHeartRate: 190,
@@ -250,7 +250,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: Number.NEGATIVE_INFINITY,
         maxHeartRate: 190,
@@ -259,7 +259,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
-        grade: 0,
+        gradeFraction: 0,
         averageHeartRate: 140,
         restingHeartRate: 60,
         maxHeartRate: Number.POSITIVE_INFINITY,

@@ -5,7 +5,7 @@ export interface CyclingVo2MaxInput {
 
 export interface AcsmVo2MaxInput {
   speedMetersPerMinute: number;
-  grade: number;
+  gradeFraction: number;
   averageHeartRate: number;
   restingHeartRate: number;
   maxHeartRate: number;
@@ -56,7 +56,7 @@ export function estimateCyclingVo2Max(input: CyclingVo2MaxInput): number | null 
 export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | null {
   if (
     !Number.isFinite(input.speedMetersPerMinute) ||
-    !Number.isFinite(input.grade) ||
+    !Number.isFinite(input.gradeFraction) ||
     !Number.isFinite(input.averageHeartRate) ||
     !Number.isFinite(input.restingHeartRate) ||
     !Number.isFinite(input.maxHeartRate)
@@ -71,7 +71,7 @@ export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | n
     return null;
   }
 
-  if (input.grade < MIN_ACSM_GRADE || input.grade > MAX_ACSM_GRADE) {
+  if (input.gradeFraction < MIN_ACSM_GRADE || input.gradeFraction > MAX_ACSM_GRADE) {
     return null;
   }
 
@@ -92,8 +92,8 @@ export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | n
 
   const oxygenCost =
     input.speedMetersPerMinute >= RUNNING_SPEED_THRESHOLD_METERS_PER_MINUTE
-      ? getRunningOxygenCost(input.speedMetersPerMinute, input.grade)
-      : getWalkingOxygenCost(input.speedMetersPerMinute, input.grade);
+      ? getRunningOxygenCost(input.speedMetersPerMinute, input.gradeFraction)
+      : getWalkingOxygenCost(input.speedMetersPerMinute, input.gradeFraction);
 
   return oxygenCost / intensityFraction;
 }
@@ -121,10 +121,10 @@ export function isSupportedOutdoorVo2MaxActivityType(activityType: string): bool
   );
 }
 
-function getWalkingOxygenCost(speedMetersPerMinute: number, grade: number): number {
-  return 0.1 * speedMetersPerMinute + 1.8 * speedMetersPerMinute * grade + 3.5;
+function getWalkingOxygenCost(speedMetersPerMinute: number, gradeFraction: number): number {
+  return 0.1 * speedMetersPerMinute + 1.8 * speedMetersPerMinute * gradeFraction + 3.5;
 }
 
-function getRunningOxygenCost(speedMetersPerMinute: number, grade: number): number {
-  return 0.2 * speedMetersPerMinute + 0.9 * speedMetersPerMinute * grade + 3.5;
+function getRunningOxygenCost(speedMetersPerMinute: number, gradeFraction: number): number {
+  return 0.2 * speedMetersPerMinute + 0.9 * speedMetersPerMinute * gradeFraction + 3.5;
 }
