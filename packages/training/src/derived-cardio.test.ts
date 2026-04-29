@@ -276,6 +276,14 @@ describe("averageVo2MaxEstimates", () => {
   it("returns null when all estimates are null", () => {
     expect(averageVo2MaxEstimates([null, null])).toBeNull();
   });
+
+  it("averages only finite VO2 max estimates", () => {
+    expect(averageVo2MaxEstimates([Number.NaN, Number.POSITIVE_INFINITY, 40])).toBe(40);
+  });
+
+  it("returns null when no finite VO2 max estimates remain", () => {
+    expect(averageVo2MaxEstimates([Number.NaN, Number.POSITIVE_INFINITY, null])).toBeNull();
+  });
 });
 
 describe("isSupportedOutdoorVo2MaxActivityType", () => {

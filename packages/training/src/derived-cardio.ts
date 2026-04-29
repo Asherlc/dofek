@@ -99,7 +99,9 @@ export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | n
 }
 
 export function averageVo2MaxEstimates(estimates: readonly (number | null)[]): number | null {
-  const validEstimates = estimates.filter((estimate) => estimate !== null);
+  const validEstimates = estimates.filter(
+    (estimate): estimate is number => estimate !== null && Number.isFinite(estimate),
+  );
 
   if (validEstimates.length === 0) {
     return null;
