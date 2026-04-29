@@ -1072,6 +1072,106 @@ telemetry for malformed AI responses. If structured-output failures become
 frequent for well-formed meal descriptions, add provider/output diagnostics that
 do not record raw food text.
 
+## 2026-04-29: Staging deploy blocked by empty Infisical environment
+
+### Impact
+
+The `Deploy Web` workflow could not complete for staging. Production deploys
+were unaffected, but staging could not be bootstrapped from CI until required
+secrets and maintenance state were repaired.
+
+### Evidence That Mattered
+
+Run `25114876237`, job `73599120397`, failed in
+`Bootstrap stack (if DB service is missing)` with:
+
+```text
+required variable PGADMIN_DEFAULT_EMAIL is missing a value
+```
+
+The staging Infisical template export rendered zero non-empty variables, while
+the production export rendered 56. The staging host also had an empty Postgres
+data directory with no `PG_VERSION`, so generating a new staging-only
+`POSTGRES_PASSWORD` was safe.
+
+A later rerun reached stack deploy and migrations, then the OTA service logged:
+
+```text
+EXPO_APP_ID not set
+```
+
+After secrets were present, the planner reported required materialized-view
+maintenance for all seven canonical views because the newly bootstrapped staging
+database had no acknowledged canonical view fingerprints.
+
+### Root Cause
+
+The `staging` Infisical environment was effectively empty. Stack interpolation
+failed on required deploy secrets first, then OTA startup failed on
+`EXPO_APP_ID`, and finally the fresh staging database needed the normal blocking
+materialized-view sync before the deploy gate could pass.
+
+The public staging app URL also exposed a separate DNS issue: Cloudflare was
+proxying `staging.dofek.asherlc.com`, but the edge TLS certificate did not cover
+that second-level hostname, so HTTPS failed before reaching Traefik.
+
+### Fix or Mitigation
+
+Populated staging Infisical with generated staging-safe secrets, copied the
+shared infrastructure credentials that the existing stack requires, added
+`EXPO_APP_ID`, and reran staging deploy with
+`refresh_materialized_views=true`. Run `25116944316` completed successfully,
+including Terraform apply, stack deploy, migrations, and blocking
+materialized-view maintenance.
+
+Changed the Terraform-managed `staging.dofek.asherlc.com` record to DNS-only so
+Traefik serves the origin Let's Encrypt certificate directly.
+
+### Remaining Risk
+
+Staging still does not have Stripe test keys or provider OAuth credentials unless
+they are added intentionally. Add fail-fast deploy validation for OTA-only
+runtime requirements such as `EXPO_APP_ID`, and document the minimum staging
+Infisical secret checklist.
+
+## 2026-04-29: Review app deploy failed on Docker SSH transport
+
+### Impact
+
+PR #1073 had otherwise green CI, but `Deploy Review App` failed before the
+review stack could start. The application image built successfully and the
+dedicated review server was created.
+
+### Evidence That Mattered
+
+Run `25117699121`, job `73610459050`, failed in `Deploy review stack` with:
+
+```text
+Connection timed out during banner exchange
+Connection to 116.203.81.197 port 22 timed out
+```
+
+The previous `Wait for review server bootstrap` step had succeeded, and later
+SSH inspection showed `ssh` and `docker` active on `dofek-pr-1073`. `docker
+version` over `DOCKER_HOST=ssh://root@116.203.81.197` also succeeded once the
+host key was trusted locally.
+
+### Root Cause
+
+The readiness gate only proved a normal SSH session that ran `docker info`
+inside the host. The failing deploy command used Docker's SSH transport, which
+can fail separately while a freshly provisioned review server is still settling.
+
+### Fix or Mitigation
+
+The review-app bootstrap gate now also verifies `DOCKER_HOST=ssh://root@...`
+with `docker version` before the workflow starts `docker compose`.
+
+### Remaining Risk
+
+This moves Docker SSH transport readiness into the existing 300-second bootstrap
+gate. If future review-app failures occur after that gate passes, inspect the
+first fatal line before adding broader retries.
 ## 2026-04-29: Admin user URL rendered admin overview instead of detail
 
 ### Impact
