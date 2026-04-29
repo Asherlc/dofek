@@ -990,6 +990,28 @@ The `view_names` field is free text because workflow dispatch does not support a
 multi-select choice input. Invalid names fail before database maintenance starts,
 and the runbook lists the accepted format.
 
+## 2026-04-29: Direct admin user URLs returned Express 404
+
+### Impact
+
+Direct navigation to web admin user detail pages, such as
+`/admin/users/f923fed7-d934-4cd9-8cb9-8e83020d0e69`, did not load the app.
+Users already inside the single-page app could still navigate through client-side
+routes, but hard refreshes and copied links failed.
+
+### Evidence That Mattered
+
+The production response for the direct URL was:
+
+```text
+HTTP/2 404
+Cannot GET /admin/users/f923fed7-d934-4cd9-8cb9-8e83020d0e69
+```
+
+The new regression test reproduced the same failure locally before the fix:
+
+```text
+expected 404 to be 200
 ## 2026-04-29: iOS AI meal input surfaced raw JSON parse errors
 
 ### Impact
@@ -1012,6 +1034,21 @@ AI_NoObjectGeneratedError: No object generated: response did not match schema.
 
 ### Root Cause
 
+The Express single-page app fallback excluded every `/admin/` path so that the
+server-owned Bull Board route at `/admin/queues` would not be served by the web
+app. That exclusion was broader than the actual server route and blocked web app
+routes under `/admin/users/...`.
+
+### Fix or Mitigation
+
+The fallback now excludes only `/admin/queues`, leaving other `/admin/...` paths
+to receive `index.html` and load TanStack Router. Server tests now cover both the
+admin user route fallback and the existing `/admin/queues` middleware behavior.
+
+### Remaining Risk
+
+The fix is covered by server unit tests. Production still needs the normal web
+deploy before the live URL changes from 404 to the app shell.
 The `food.analyzeItemsWithAi` router passed AI SDK structured-output parse and
 validation failures straight through to the client, so the iOS screen rendered a
 provider/parser implementation detail instead of an actionable user message.
