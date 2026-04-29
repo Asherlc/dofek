@@ -95,12 +95,17 @@ export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | n
       ? getRunningOxygenCost(input.speedMetersPerMinute, input.gradeFraction)
       : getWalkingOxygenCost(input.speedMetersPerMinute, input.gradeFraction);
 
+  if (oxygenCost <= 0 || !Number.isFinite(oxygenCost)) {
+    return null;
+  }
+
   return oxygenCost / intensityFraction;
 }
 
 export function averageVo2MaxEstimates(estimates: readonly (number | null)[]): number | null {
   const validEstimates = estimates.filter(
-    (estimate): estimate is number => estimate !== null && Number.isFinite(estimate),
+    (estimate): estimate is number =>
+      estimate !== null && Number.isFinite(estimate) && estimate > 0,
   );
 
   if (validEstimates.length === 0) {

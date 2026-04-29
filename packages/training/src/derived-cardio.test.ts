@@ -165,7 +165,7 @@ describe("estimateSubmaximalAcsmVo2Max", () => {
         restingHeartRate: 60,
         maxHeartRate: 190,
       }),
-    ).toBeCloseTo(-21.94);
+    ).toBeNull();
     expect(
       estimateSubmaximalAcsmVo2Max({
         speedMetersPerMinute: 100,
@@ -279,6 +279,10 @@ describe("averageVo2MaxEstimates", () => {
 
   it("averages only finite VO2 max estimates", () => {
     expect(averageVo2MaxEstimates([Number.NaN, Number.POSITIVE_INFINITY, 40])).toBe(40);
+  });
+
+  it("averages only positive VO2 max estimates", () => {
+    expect(averageVo2MaxEstimates([-10, 0, 40, 50])).toBe(45);
   });
 
   it("returns null when no finite VO2 max estimates remain", () => {
