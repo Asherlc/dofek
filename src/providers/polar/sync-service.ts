@@ -345,7 +345,6 @@ export class PolarSyncService {
                   providerId: this.#providerId,
                   steps: parsedDailyMetrics.steps,
                   activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
-                  restingHr: parsedDailyMetrics.restingHr,
                   hrv: parsedDailyMetrics.hrv,
                   respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                 })
@@ -359,7 +358,6 @@ export class PolarSyncService {
                   set: {
                     steps: parsedDailyMetrics.steps,
                     activeEnergyKcal: parsedDailyMetrics.activeEnergyKcal,
-                    restingHr: parsedDailyMetrics.restingHr,
                     hrv: parsedDailyMetrics.hrv,
                     respiratoryRateAvg: parsedDailyMetrics.respiratoryRateAvg,
                   },

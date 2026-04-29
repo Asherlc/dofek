@@ -53,18 +53,17 @@ describe("dailyMetrics data correctness", () => {
 
     // ── Insert 30 days of daily metrics from apple_health with real data ──
     for (let i = 30; i >= 4; i--) {
-      const rhr = 55 + Math.round(Math.cos(i * 0.3) * 5);
       const hrv = 50 + Math.round(Math.sin(i * 0.3) * 10);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
       const activeEnergy = 400 + Math.round(Math.cos(i) * 100);
       const spo2 = 96 + Math.round(Math.sin(i * 0.5) * 2);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, hrv, steps,
+              date, provider_id, user_id, hrv, steps,
               active_energy_kcal, spo2_avg
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'apple_health', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps},
+              'apple_health', ${TEST_USER_ID}, ${hrv}, ${steps},
               ${activeEnergy}, ${spo2}
             ) ON CONFLICT DO NOTHING`,
       );
@@ -142,7 +141,6 @@ describe("dailyMetrics data correctness", () => {
       // metric values should come from the most recent day where each metric exists.
       const result = await query<{
         latest_date: string | null;
-        latest_resting_hr: number | null;
         latest_hrv: number | null;
         latest_steps: number | null;
       }>("dailyMetrics.trends", { days: 30, endDate });
@@ -153,7 +151,6 @@ describe("dailyMetrics data correctness", () => {
       expect(result.latest_date).toBe(endDate);
 
       // Metrics should use latest available non-null values in the window.
-      expect(result.latest_resting_hr).not.toBeNull();
       expect(result.latest_hrv).not.toBeNull();
       expect(result.latest_steps).not.toBeNull();
     });
@@ -163,34 +160,28 @@ describe("dailyMetrics data correctness", () => {
       const dayWithData = subtractDays(endDate, 4);
       const result = await query<{
         latest_date: string | null;
-        latest_resting_hr: number | null;
         latest_hrv: number | null;
         latest_steps: number | null;
       }>("dailyMetrics.trends", { days: 30, endDate: dayWithData });
 
       expect(result).not.toBeNull();
       expect(result.latest_date).toBe(dayWithData);
-      expect(result.latest_resting_hr).not.toBeNull();
       expect(result.latest_hrv).not.toBeNull();
       expect(result.latest_steps).not.toBeNull();
     });
 
     it("returns averages computed across the full window", async () => {
       const result = await query<{
-        avg_resting_hr: number | null;
         avg_hrv: number | null;
         avg_steps: number | null;
       }>("dailyMetrics.trends", { days: 30, endDate });
 
       expect(result).not.toBeNull();
       // Averages should be computed (not null) since we have 27 days of data
-      expect(result.avg_resting_hr).not.toBeNull();
       expect(result.avg_hrv).not.toBeNull();
       expect(result.avg_steps).not.toBeNull();
 
       // Sanity check: averages should be in expected ranges
-      expect(result.avg_resting_hr).toBeGreaterThan(40);
-      expect(result.avg_resting_hr).toBeLessThan(100);
       expect(result.avg_steps).toBeGreaterThan(5000);
       expect(result.avg_steps).toBeLessThan(15000);
     });
@@ -198,8 +189,8 @@ describe("dailyMetrics data correctness", () => {
     it("returns all-null values when no data exists in the window", async () => {
       // Use a 1-day window far in the future where no data exists.
       const result = await query<{
-        avg_resting_hr: number | null;
-        latest_resting_hr: number | null;
+        avg_hrv: number | null;
+        latest_hrv: number | null;
         latest_date: string | null;
       }>("dailyMetrics.trends", {
         days: 1,
@@ -209,8 +200,8 @@ describe("dailyMetrics data correctness", () => {
       // stats CTE returns a row of nulls (SQL aggregate on empty set),
       // and LEFT JOIN today produces no match — so all fields are null
       expect(result).not.toBeNull();
-      expect(result.avg_resting_hr).toBeNull();
-      expect(result.latest_resting_hr).toBeNull();
+      expect(result.avg_hrv).toBeNull();
+      expect(result.latest_hrv).toBeNull();
       expect(result.latest_date).toBeNull();
     });
 

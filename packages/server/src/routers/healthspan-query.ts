@@ -79,14 +79,18 @@ export async function fetchHealthspanRawData(
         ),
         metrics_agg AS (
           SELECT
-            AVG(resting_hr) AS avg_resting_hr,
-            AVG(steps) AS avg_steps,
-            (SELECT vo2max FROM fitness.v_daily_metrics
-             WHERE user_id = ${ctx.userId} AND vo2max IS NOT NULL
-             ORDER BY date DESC LIMIT 1) AS latest_vo2max
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${ctx.userId}
-            AND date > ${dateWindowStart(endDate, totalDays)}
+            (SELECT AVG(resting_hr)
+             FROM fitness.derived_resting_heart_rate
+             WHERE user_id = ${ctx.userId}
+               AND date > ${dateWindowStart(endDate, totalDays)}) AS avg_resting_hr,
+            (SELECT AVG(steps)
+             FROM fitness.v_daily_metrics
+             WHERE user_id = ${ctx.userId}
+               AND date > ${dateWindowStart(endDate, totalDays)}) AS avg_steps,
+            (SELECT AVG(vo2max)
+             FROM fitness.derived_vo2max_estimates
+             WHERE user_id = ${ctx.userId}
+               AND activity_date > ${dateWindowStart(endDate, totalDays)}) AS latest_vo2max
         ),
         hr_zone_time AS (
           SELECT
@@ -109,12 +113,11 @@ export async function fetchHealthspanRawData(
           FROM fitness.activity_summary asum
           JOIN fitness.user_profile up3 ON up3.id = asum.user_id
           JOIN LATERAL (
-            SELECT dm2.resting_hr
-            FROM fitness.v_daily_metrics dm2
-            WHERE dm2.user_id = asum.user_id
-              AND dm2.date <= (asum.started_at AT TIME ZONE ${ctx.timezone})::date
-              AND dm2.resting_hr IS NOT NULL
-            ORDER BY dm2.date DESC LIMIT 1
+            SELECT drhr.resting_hr
+            FROM fitness.derived_resting_heart_rate drhr
+            WHERE drhr.user_id = asum.user_id
+              AND drhr.date <= (asum.started_at AT TIME ZONE ${ctx.timezone})::date
+            ORDER BY drhr.date DESC LIMIT 1
           ) rhr2 ON true
           JOIN LATERAL (
             SELECT
@@ -144,16 +147,50 @@ export async function fetchHealthspanRawData(
           ORDER BY recorded_at DESC
           LIMIT 1
         ),
-        weekly_metrics AS (
+        weekly_rhr AS (
           SELECT
             date_trunc('week', date)::date AS week_start,
-            AVG(resting_hr) AS avg_rhr,
-            AVG(steps) AS avg_steps,
-            AVG(vo2max) AS avg_vo2max
+            AVG(resting_hr) AS avg_rhr
+          FROM fitness.derived_resting_heart_rate
+          WHERE user_id = ${ctx.userId}
+            AND date > ${dateWindowStart(endDate, totalDays)}
+          GROUP BY date_trunc('week', date)
+        ),
+        weekly_steps AS (
+          SELECT
+            date_trunc('week', date)::date AS week_start,
+            AVG(steps) AS avg_steps
           FROM fitness.v_daily_metrics
           WHERE user_id = ${ctx.userId}
             AND date > ${dateWindowStart(endDate, totalDays)}
           GROUP BY date_trunc('week', date)
+        ),
+        weekly_vo2 AS (
+          SELECT
+            date_trunc('week', activity_date)::date AS week_start,
+            AVG(vo2max) AS avg_vo2max
+          FROM fitness.derived_vo2max_estimates
+          WHERE user_id = ${ctx.userId}
+            AND activity_date > ${dateWindowStart(endDate, totalDays)}
+          GROUP BY date_trunc('week', activity_date)
+        ),
+        weekly_dates AS (
+          SELECT week_start FROM weekly_rhr
+          UNION
+          SELECT week_start FROM weekly_steps
+          UNION
+          SELECT week_start FROM weekly_vo2
+        ),
+        weekly_metrics AS (
+          SELECT
+            wd.week_start,
+            wr.avg_rhr,
+            ws.avg_steps,
+            wv.avg_vo2max
+          FROM weekly_dates wd
+          LEFT JOIN weekly_rhr wr ON wr.week_start = wd.week_start
+          LEFT JOIN weekly_steps ws ON ws.week_start = wd.week_start
+          LEFT JOIN weekly_vo2 wv ON wv.week_start = wd.week_start
           ORDER BY week_start ASC
         )
         SELECT

@@ -241,8 +241,8 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, since);
 
     expect(result.provider).toBe("zwift");
-    // 2 activities + 1 power curve record
-    expect(result.recordsSynced).toBe(3);
+    // 2 activities; power curve data is raw provider-derived data and is not stored as daily metrics.
+    expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
 
     // Verify activity rows
@@ -273,15 +273,12 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     expect(powerSamples.length).toBeGreaterThan(0);
 
-    // Verify power curve wrote daily metrics (vo2max)
+    // Provider VO2 Max is ignored; canonical VO2 Max is derived from raw activity data.
     const dailyRows = await ctx.db
       .select()
       .from(dailyMetrics)
       .where(eq(dailyMetrics.providerId, "zwift"));
-    expect(dailyRows).toHaveLength(1);
-    const daily = dailyRows[0];
-    if (!daily) throw new Error("expected daily metrics");
-    expect(daily.vo2max).toBeCloseTo(52.3);
+    expect(dailyRows).toHaveLength(0);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -430,8 +427,7 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const provider = new ZwiftProvider();
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
-    // Activity should still be synced (counted)
-    // power curve also synced = at least 1 from activities
+    // Activity should still be synced and counted.
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
     // But there should be a stream error
     expect(result.errors.length).toBeGreaterThanOrEqual(1);
@@ -552,8 +548,8 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
-    // 1 activity + 1 power-curve metrics row
-    expect(result.recordsSynced).toBe(2);
+    // 1 activity; provider VO2 Max and fixed power-curve daily metrics are ignored.
+    expect(result.recordsSynced).toBe(1);
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");

@@ -206,12 +206,15 @@ export class WeeklyReportRepository {
           ),
           metrics_daily AS (
             SELECT
-              date,
-              resting_hr,
-              hrv
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(endDate, totalDays)}
+              dm.date,
+              drhr.resting_hr,
+              dm.hrv
+            FROM fitness.v_daily_metrics dm
+            LEFT JOIN fitness.derived_resting_heart_rate drhr
+              ON drhr.user_id = dm.user_id
+             AND drhr.date = dm.date
+            WHERE dm.user_id = ${this.#userId}
+              AND dm.date > ${dateWindowStart(endDate, totalDays)}
           ),
           weekly AS (
             SELECT

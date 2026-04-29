@@ -230,7 +230,6 @@ export class WhoopProvider implements SyncProvider {
                 .values({
                   date: cycleDay,
                   providerId: this.id,
-                  restingHr: parsed.restingHr,
                   hrv: parsed.hrv,
                   spo2Avg: parsed.spo2,
                   skinTempC: parsed.skinTemp,
@@ -243,7 +242,6 @@ export class WhoopProvider implements SyncProvider {
                     dailyMetrics.sourceName,
                   ],
                   set: {
-                    restingHr: parsed.restingHr,
                     hrv: parsed.hrv,
                     spo2Avg: parsed.spo2,
                     skinTempC: parsed.skinTemp,

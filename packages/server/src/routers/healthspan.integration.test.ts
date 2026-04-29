@@ -39,14 +39,14 @@ describe("healthspan zone time with variable-interval HR data", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Daily metrics with resting HR (needed for LATERAL join in healthspan query)
+    // Daily metrics with steps. Resting HR is derived from raw sleep-window HR samples.
     for (let i = 30; i >= 0; i--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, steps, vo2max
+              date, provider_id, user_id, steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID}, ${RESTING_HR}, 10000, 45
+              'test_provider', ${TEST_USER_ID}, 10000
             ) ON CONFLICT DO NOTHING`,
       );
     }
@@ -95,6 +95,25 @@ describe("healthspan zone time with variable-interval HR data", () => {
             480, 'sleep'
           )`,
     );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.sleep_session (
+            provider_id, user_id, started_at, ended_at,
+            duration_minutes, sleep_type
+          ) VALUES (
+            'test_provider', ${TEST_USER_ID},
+            CURRENT_DATE - INTERVAL '3 days' + INTERVAL '22 hours',
+            CURRENT_DATE - INTERVAL '2 days' + INTERVAL '6 hours',
+            480, 'sleep'
+          )`,
+    );
+    const restingHeartRateValues = Array.from({ length: 30 }, (_, index) => {
+      return `(CURRENT_DATE - INTERVAL '2 days' + INTERVAL '1 hour' + ${index} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${RESTING_HR}, NULL)`;
+    });
+    await testCtx.db.execute(
+      sql.raw(`INSERT INTO fitness.metric_stream (
+        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+      ) VALUES ${restingHeartRateValues.join(",\n")}`),
+    );
 
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
@@ -104,6 +123,8 @@ describe("healthspan zone time with variable-interval HR data", () => {
     );
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_resting_heart_rate`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_vo2max_estimates`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {

@@ -144,14 +144,17 @@ export class AnomalyDetectionRepository {
     const rows = await executeWithSchema(
       this.#db,
       anomalyCheckRowSchema,
-      sql`WITH baseline AS (
-            SELECT
-              date,
-              resting_hr,
-              AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
-              STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
-              COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
-            FROM fitness.v_daily_metrics
+      sql`WITH target_date AS (
+          SELECT ${dateWindowEnd(endDate)}::date AS date
+        ),
+        baseline AS (
+          SELECT
+            date,
+            resting_hr,
+            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
+            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
+            COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
+            FROM fitness.derived_resting_heart_rate
             WHERE user_id = ${this.#userId}
               AND date > ${dateWindowStart(endDate, BASELINE_LOOKBACK_DAYS)}
             ORDER BY date ASC
@@ -232,14 +235,14 @@ export class AnomalyDetectionRepository {
             ORDER BY date ASC
           )
           SELECT
-            b.date::text,
+            target_date.date::text,
             b.resting_hr, b.rhr_mean, b.rhr_sd, b.rhr_count,
             h.hrv, h.hrv_mean, h.hrv_sd, h.hrv_count,
             s.duration_minutes, s.sleep_mean, s.sleep_sd, s.sleep_count
-          FROM baseline b
-          LEFT JOIN hrv_baseline h ON h.date = b.date
-          LEFT JOIN sleep s ON s.date = b.date
-          WHERE b.date = ${dateWindowEnd(endDate)}
+          FROM target_date
+          LEFT JOIN baseline b ON b.date = target_date.date
+          LEFT JOIN hrv_baseline h ON h.date = target_date.date
+          LEFT JOIN sleep s ON s.date = target_date.date
           LIMIT 1`,
     );
 
@@ -327,13 +330,13 @@ export class AnomalyDetectionRepository {
       this.#db,
       anomalyHistoryRowSchema,
       sql`WITH baseline AS (
-            SELECT
-              date,
-              resting_hr,
-              AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
-              STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
-              COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
-            FROM fitness.v_daily_metrics
+          SELECT
+            date,
+            resting_hr,
+            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
+            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
+            COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
+            FROM fitness.derived_resting_heart_rate
             WHERE user_id = ${this.#userId}
               AND date > CURRENT_DATE - ${queryDays}::int
             ORDER BY date ASC
@@ -389,15 +392,21 @@ export class AnomalyDetectionRepository {
               ) history_rows
             ) history ON true
             WHERE target.source_rank = 1
+          ),
+          dates AS (
+            SELECT date FROM baseline
+            UNION
+            SELECT date FROM hrv_baseline
           )
           SELECT
-            b.date::text,
+            dates.date::text,
             b.resting_hr, b.rhr_mean, b.rhr_sd, b.rhr_count,
             h.hrv, h.hrv_mean, h.hrv_sd, h.hrv_count
-          FROM baseline b
-          LEFT JOIN hrv_baseline h ON h.date = b.date
-          WHERE b.date > CURRENT_DATE - ${days}::int
-          ORDER BY b.date ASC`,
+          FROM dates
+          LEFT JOIN baseline b ON b.date = dates.date
+          LEFT JOIN hrv_baseline h ON h.date = dates.date
+          WHERE dates.date > CURRENT_DATE - ${days}::int
+          ORDER BY dates.date ASC`,
     );
 
     const anomalies: AnomalyRow[] = [];

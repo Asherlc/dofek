@@ -30,6 +30,8 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `daily_metrics.mindful_minutes` | Never populated by any provider. Dead column removed in migration 0042. |
 | `daily_metrics.environmental_audio_exposure` | Apple Health stores raw audio exposure readings in sensor_sample (channel='audio_exposure') — daily averages can be derived from there. No provider ever populated this column. Removed in migration 0042. |
 | `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in sensor_sample, never aggregated to daily. Removed in migration 0042. |
+| `daily_metrics.resting_hr` | Derived from low-percentile sleep-window heart-rate samples. Removed in migration 0007. |
+| `daily_metrics.vo2max` | Derived from qualifying activity-level estimates using transparent public equations. Removed in migration 0007. |
 
 The `activity_summary` materialized view computes all of these at refresh time from `sensor_sample` data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
@@ -39,9 +41,7 @@ The `activity_summary` materialized view computes all of these at refresh time f
 
 | Column | Why it's raw |
 |---|---|
-| `resting_hr` | Measured by the device during sleep/rest. We don't have the raw PPG waveforms to recompute it. |
 | `hrv` | RMSSD/SDNN computed from R-R intervals during sleep. We don't store beat-to-beat R-R data. |
-| `vo2max` | Device-estimated from HR + speed/power during specific workouts using proprietary models (Firstbeat, etc.). Not reproducible from our data. |
 | `spo2_avg` | Pulse oximeter reading. Raw infrared/red light sensor data is not stored. |
 | `respiratory_rate_avg` | Derived from accelerometer + PPG during sleep. Raw sensor streams unavailable. |
 | `steps` | Accelerometer-counted throughout the day. We don't store raw accelerometer data. |
@@ -55,6 +55,10 @@ The `activity_summary` materialized view computes all of these at refresh time f
 | `skin_temp_c` | Skin temperature sensor (WHOOP, Oura ring). Raw thermistor data unavailable. |
 | `stress_high_minutes`, `recovery_high_minutes` | Oura's proprietary stress/recovery classification from HRV + motion. |
 | `resilience_level` | Oura's resilience score, proprietary algorithm. |
+
+### Derived cardio metrics
+
+Resting heart rate and VO2 Max are derived server-side. Resting heart rate comes from low-percentile sleep-window heart-rate samples. VO2 Max is averaged from qualifying activity-level estimates based on transparent public equations. Provider VO2 Max values are ignored for canonical scoring.
 
 #### `sensor_sample` — unified time-series table
 

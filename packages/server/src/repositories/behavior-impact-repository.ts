@@ -119,22 +119,25 @@ export class BehaviorImpactRepository {
           ),
           readiness AS (
             SELECT
-              date,
+              dm.date,
               AVG(
                 CASE
-                  WHEN resting_hr IS NOT NULL AND hrv IS NOT NULL
-                  THEN (100 - LEAST(resting_hr, 100)) * 0.5 + LEAST(hrv / 2.0, 50)
-                  WHEN resting_hr IS NOT NULL
-                  THEN 100 - LEAST(resting_hr, 100)
-                  WHEN hrv IS NOT NULL
-                  THEN LEAST(hrv, 100)
+                  WHEN drhr.resting_hr IS NOT NULL AND dm.hrv IS NOT NULL
+                  THEN (100 - LEAST(drhr.resting_hr, 100)) * 0.5 + LEAST(dm.hrv / 2.0, 50)
+                  WHEN drhr.resting_hr IS NOT NULL
+                  THEN 100 - LEAST(drhr.resting_hr, 100)
+                  WHEN dm.hrv IS NOT NULL
+                  THEN LEAST(dm.hrv, 100)
                   ELSE NULL
                 END
               ) AS readiness_score
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
-              AND date >= (CURRENT_DATE - ${days}::int)
-            GROUP BY date
+            FROM fitness.v_daily_metrics dm
+            LEFT JOIN fitness.derived_resting_heart_rate drhr
+              ON drhr.user_id = dm.user_id
+             AND drhr.date = dm.date
+            WHERE dm.user_id = ${this.#userId}
+              AND dm.date >= (CURRENT_DATE - ${days}::int)
+            GROUP BY dm.date
           ),
           joined AS (
             SELECT

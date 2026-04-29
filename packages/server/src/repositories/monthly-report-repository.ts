@@ -157,10 +157,13 @@ export class MonthlyReportRepository {
             ORDER BY date, duration_minutes DESC NULLS LAST
           ),
           metrics_daily AS (
-            SELECT date, resting_hr, hrv
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.#userId}
-              AND date >= date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval
+            SELECT dm.date, drhr.resting_hr, dm.hrv
+            FROM fitness.v_daily_metrics dm
+            LEFT JOIN fitness.derived_resting_heart_rate drhr
+              ON drhr.user_id = dm.user_id
+             AND drhr.date = dm.date
+            WHERE dm.user_id = ${this.#userId}
+              AND dm.date >= date_trunc('month', CURRENT_DATE) - (${months}::int || ' months')::interval
           )
           SELECT
             date_trunc('month', d.date)::date AS month_start,

@@ -248,7 +248,6 @@ describe("PolarProvider.sync() (integration)", () => {
     if (!daily) throw new Error("expected daily metrics");
     expect(daily.steps).toBe(11200);
     expect(daily.activeEnergyKcal).toBe(850);
-    expect(daily.restingHr).toBe(52);
     expect(daily.hrv).toBeCloseTo(48.5);
     expect(daily.respiratoryRateAvg).toBeCloseTo(14.8);
   });
@@ -286,7 +285,6 @@ describe("PolarProvider.sync() (integration)", () => {
     const march5 = dailyRows.find((r) => r.date === "2026-03-05");
     if (!march5) throw new Error("expected daily metrics for 2026-03-05");
     expect(march5.steps).toBe(8500);
-    expect(march5.restingHr).toBeNull();
     expect(march5.hrv).toBeNull();
   });
 

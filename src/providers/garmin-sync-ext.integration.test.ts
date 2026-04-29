@@ -507,15 +507,11 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
     if (!march1) throw new Error("expected daily metrics for 2026-03-01");
     expect(march1.steps).toBe(12500);
-    expect(march1.restingHr).toBe(55);
     expect(march1.flightsClimbed).toBe(14);
     expect(march1.exerciseMinutes).toBe(70); // 30 + 40
 
     // HRV enrichment
     expect(march1.hrv).toBeCloseTo(40); // lastNightAvg from fakeHrvSummary
-
-    // VO2max from training status
-    expect(march1.vo2max).toBeCloseTo(52.3); // latestRunVo2Max
   });
 
   it("syncs daily metrics without HRV when HRV endpoint fails", async () => {
@@ -547,9 +543,8 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     const march1 = dailyRows.find((r) => r.date === "2026-03-01");
     if (!march1) throw new Error("expected daily metrics");
     expect(march1.steps).toBe(12500);
-    // HRV and VO2max should be undefined when endpoints fail
+    // HRV should be undefined when the endpoint fails.
     expect(march1.hrv).toBeNull();
-    expect(march1.vo2max).toBeNull();
   });
 
   it("syncs stress time-series into metric_stream", async () => {

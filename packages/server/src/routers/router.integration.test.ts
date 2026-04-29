@@ -48,18 +48,17 @@ describe("Router coverage", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // ── Daily metrics with HRV + resting HR for 90 days ──
+    // ── Daily metrics with HRV for 90 days ──
     for (let i = 90; i >= 0; i--) {
-      const rhr = 52 + Math.round(Math.cos(i * 0.3) * 3);
       const hrv = 55 + Math.round(Math.sin(i * 0.3) * 5);
       const steps = 8000 + Math.round(Math.sin(i) * 2000);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, hrv, steps, vo2max,
+              date, provider_id, user_id, hrv, steps,
               active_energy_kcal, basal_energy_kcal
             ) VALUES (
               CURRENT_DATE - ${i}::int,
-              'test_provider', ${TEST_USER_ID}, ${rhr}, ${hrv}, ${steps}, 45,
+              'test_provider', ${TEST_USER_ID}, ${hrv}, ${steps},
               500, 1800
             ) ON CONFLICT DO NOTHING`,
       );
@@ -82,8 +81,17 @@ describe("Router coverage", () => {
               'test_provider', ${TEST_USER_ID},
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours 30 minutes',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
-              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
-            )`,
+	              ${duration}, ${deep}, ${rem}, ${light}, ${awake}, ${efficiency}, 'sleep'
+	            )`,
+      );
+      const restingHeartRateValues = Array.from({ length: 30 }, (_, sampleIndex) => {
+        const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
+        return `((CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '1 hour' + ${sampleIndex} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${restingHeartRate}, NULL)`;
+      });
+      await testCtx.db.execute(
+        sql.raw(`INSERT INTO fitness.metric_stream (
+          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+        ) VALUES ${restingHeartRateValues.join(",\n")}`),
       );
     }
 
@@ -270,6 +278,8 @@ describe("Router coverage", () => {
     );
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_resting_heart_rate`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_vo2max_estimates`);
 
     // Start server
     const app = createApp(testCtx.db);

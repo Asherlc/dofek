@@ -68,8 +68,8 @@ export class PmcRepository extends BaseRepository {
                   WHERE a2.user_id = ${this.userId} AND a2.max_hr IS NOT NULL
                 )) AS global_max_hr,
                 COALESCE(up.resting_hr, (
-                  SELECT resting_hr FROM fitness.v_daily_metrics
-                  WHERE user_id = ${this.userId} AND resting_hr IS NOT NULL ORDER BY date DESC LIMIT 1
+                  SELECT resting_hr FROM fitness.derived_resting_heart_rate
+                  WHERE user_id = ${this.userId} ORDER BY date DESC LIMIT 1
                 ), 60) AS resting_hr,
                 asum.activity_id AS id,
                 (asum.started_at AT TIME ZONE ${this.timezone})::date AS date,

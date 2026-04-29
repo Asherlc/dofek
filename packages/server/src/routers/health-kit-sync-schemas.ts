@@ -9,7 +9,6 @@ export const INTEGER_DAILY_COLUMNS = new Set([
   "steps",
   "flights_climbed",
   "exercise_minutes",
-  "resting_hr",
   "stand_hours",
 ]);
 
@@ -131,9 +130,7 @@ export const additiveDailyMetricTypes: Record<
 
 /** Point-in-time daily metrics -- use latest value for the day */
 export const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
-  HKQuantityTypeIdentifierRestingHeartRate: { column: "resting_hr" },
   HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
-  HKQuantityTypeIdentifierVO2Max: { column: "vo2max" },
   HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
   HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
   HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
@@ -276,9 +273,7 @@ export interface DailyMetricAccumulator {
   cyclingDistanceKm: number;
   flightsClimbed: number;
   exerciseMinutes: number;
-  restingHr: number | null;
   hrv: number | null;
-  vo2max: number | null;
   walkingSpeed: number | null;
   walkingStepLength: number | null;
   walkingDoubleSupportPct: number | null;
@@ -294,9 +289,7 @@ export function createEmptyAccumulator(): DailyMetricAccumulator {
     cyclingDistanceKm: 0,
     flightsClimbed: 0,
     exerciseMinutes: 0,
-    restingHr: null,
     hrv: null,
-    vo2max: null,
     walkingSpeed: null,
     walkingStepLength: null,
     walkingDoubleSupportPct: null,
@@ -313,9 +306,7 @@ export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator
   cycling_distance_km: "cyclingDistanceKm",
   flights_climbed: "flightsClimbed",
   exercise_minutes: "exerciseMinutes",
-  resting_hr: "restingHr",
   hrv: "hrv",
-  vo2max: "vo2max",
   walking_speed: "walkingSpeed",
   walking_step_length: "walkingStepLength",
   walking_double_support_pct: "walkingDoubleSupportPct",

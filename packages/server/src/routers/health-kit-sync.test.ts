@@ -388,7 +388,7 @@ describe("healthKitSyncRouter", () => {
 
       const result = await caller.pushQuantitySamples({
         samples: [
-          makeSample({ type: "HKQuantityTypeIdentifierRestingHeartRate", value: 55, uuid: "rhr1" }),
+          makeSample({ type: "HKQuantityTypeIdentifierWalkingSpeed", value: 1.3, uuid: "speed1" }),
           makeSample({
             type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
             value: 65,
@@ -2082,8 +2082,8 @@ describe("healthKitSyncRouter", () => {
       const jan15 = daily.get("2024-01-15\x00iPhone");
 
       expect(jan15).toBeDefined();
-      expect(jan15?.restingHr).toBe(55);
-      expect(jan15?.vo2max).toBe(42.5);
+      expect(Object.hasOwn(jan15 ?? {}, "restingHr")).toBe(false);
+      expect(Object.hasOwn(jan15 ?? {}, "vo2max")).toBe(false);
       expect(jan15?.walkingSpeed).toBe(1.3);
       expect(jan15?.walkingStepLength).toBe(0.72);
       expect(jan15?.walkingDoubleSupportPct).toBe(0.28);
@@ -2114,7 +2114,7 @@ describe("healthKitSyncRouter", () => {
       expect(jan15).toBeDefined();
       expect(jan15?.steps).toBe(100);
       // Heart rate should not appear as any daily metric
-      expect(jan15?.restingHr).toBeNull();
+      expect(Object.hasOwn(jan15 ?? {}, "restingHr")).toBe(false);
     });
 
     it("branches HRV samples into separate collection (kills if(true) on hrv column check)", () => {
@@ -2138,7 +2138,7 @@ describe("healthKitSyncRouter", () => {
 
       expect(jan15).toBeDefined();
       expect(jan15?.hrv).toBe(35);
-      expect(jan15?.restingHr).toBe(60);
+      expect(Object.hasOwn(jan15 ?? {}, "restingHr")).toBe(false);
     });
   });
 
@@ -2212,19 +2212,9 @@ describe("healthKitSyncRouter", () => {
       await caller.pushQuantitySamples({
         samples: [
           makeSample({
-            type: "HKQuantityTypeIdentifierRestingHeartRate",
-            value: 55,
-            uuid: "rhr-insert",
-          }),
-          makeSample({
             type: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
             value: 45,
             uuid: "hrv-insert",
-          }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierVO2Max",
-            value: 42,
-            uuid: "vo2-insert",
           }),
           makeSample({
             type: "HKQuantityTypeIdentifierWalkingSpeed",
@@ -2255,10 +2245,10 @@ describe("healthKitSyncRouter", () => {
       });
       expect(dailyInsertCall).toBeDefined();
       const serialized = JSON.stringify(dailyInsertCall?.[0]);
-      // Verify all point-in-time columns are present
-      expect(serialized).toContain("resting_hr");
+      // Verify point-in-time columns are present
+      expect(serialized).not.toContain("resting_hr");
       expect(serialized).toContain("hrv");
-      expect(serialized).toContain("vo2max");
+      expect(serialized).not.toContain("vo2max");
       expect(serialized).toContain("walking_speed");
       expect(serialized).toContain("walking_step_length");
       expect(serialized).toContain("walking_double_support_pct");
@@ -2295,9 +2285,9 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({
-            type: "HKQuantityTypeIdentifierVO2Max",
-            value: 42,
-            uuid: "vo2-categorize",
+            type: "HKQuantityTypeIdentifierWalkingSpeed",
+            value: 1.3,
+            uuid: "speed-categorize",
           }),
         ],
       });

@@ -85,6 +85,8 @@ describe("Router transformation logic", () => {
     );
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_resting_heart_rate`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_vo2max_estimates`);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -295,6 +297,7 @@ describe("Router transformation logic", () => {
       // Insert 30 nights of sleep data + daily HRV
       const sleepInserts: ReturnType<typeof sql>[] = [];
       const metricsInserts: ReturnType<typeof sql>[] = [];
+      const heartRateInserts: ReturnType<typeof sql>[] = [];
 
       for (let i = 1; i <= 30; i++) {
         const date = new Date();
@@ -317,13 +320,22 @@ describe("Router transformation logic", () => {
         // Daily metrics: HRV varies with sleep quality (higher sleep = higher HRV next day)
         const hrv = 40 + (durationMin - 400) * 0.5;
         metricsInserts.push(
-          sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, hrv, resting_hr, steps)
-              VALUES (${dateStr}::date, 'test-provider', ${TEST_USER_ID}, ${hrv}, ${55 + Math.round(Math.random() * 10)}, ${8000 + Math.round(Math.random() * 4000)})
+          sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, hrv, steps)
+              VALUES (${dateStr}::date, 'test-provider', ${TEST_USER_ID}, ${hrv}, ${8000 + Math.round(Math.random() * 4000)})
               ON CONFLICT DO NOTHING`,
         );
+        for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+          heartRateInserts.push(
+            sql`INSERT INTO fitness.metric_stream
+                (recorded_at, user_id, provider_id, source_type, channel, scalar)
+                VALUES (${new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString()},
+                        ${TEST_USER_ID}, 'test-provider', 'api', 'heart_rate',
+                        ${55 + Math.round(Math.random() * 10)})`,
+          );
+        }
       }
 
-      for (const insert of [...sleepInserts, ...metricsInserts]) {
+      for (const insert of [...sleepInserts, ...metricsInserts, ...heartRateInserts]) {
         await testCtx.db.execute(insert);
       }
 
@@ -657,7 +669,7 @@ describe("Router transformation logic", () => {
 
       const rhrMetric = data.metrics.find((m: { name: string }) => m.name === "Resting Heart Rate");
       expect(rhrMetric).toBeDefined();
-      // Inserted resting_hr of 55-65, avg should be ~60
+      // Derived resting HR should be in a plausible adult range.
       if (rhrMetric.value !== null) {
         expect(rhrMetric.value).toBeGreaterThan(50);
         expect(rhrMetric.value).toBeLessThan(70);

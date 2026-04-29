@@ -791,7 +791,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(bpRow?.diastolicBp).toBe(80);
   });
 
-  it("creates per-source daily_metrics rows with steps, distance, resting HR", async () => {
+  it("creates per-source daily_metrics rows with steps and distance", async () => {
     const rows = await ctx.db.select().from(schema.dailyMetrics);
     const dayRows = rows.filter((r) => r.date === "2024-03-01");
     expect(dayRows.length).toBeGreaterThanOrEqual(1);
@@ -803,8 +803,6 @@ describe("importAppleHealthFile — full DB integration", () => {
 
     // Steps come from iPhone source in the test fixture: 1250 + 800 = 2050
     expect(iPhoneRow?.steps).toBe(2050);
-    // Resting HR comes from Apple Watch source
-    expect(watchRow?.restingHr).toBe(52);
     // Flights come from iPhone source (same as steps)
     expect(iPhoneRow?.flightsClimbed).toBe(3);
     // Distance from iPhone: 523.7 m → 0.5237 km

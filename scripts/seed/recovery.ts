@@ -22,21 +22,20 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
     const hardBlock = daysAgo >= 24 && daysAgo <= 38;
     const badSleepWeek = daysAgo >= 9 && daysAgo <= 15;
     const highStressDay = daysAgo === 12;
-    const restingHr = 50 + Math.round(daysAgo / 60) + (badSleepWeek ? 7 : 0) + random.int(-2, 2);
     const heartRateVariability = 72 - Math.round(daysAgo / 18) - (badSleepWeek ? 16 : 0);
     const steps = hardBlock ? random.int(11_000, 16_000) : random.int(6_000, 12_500);
 
     await sql`
       INSERT INTO fitness.daily_metrics (
-        date, provider_id, user_id, resting_hr, hrv, vo2max, spo2_avg,
+        date, provider_id, user_id, hrv, spo2_avg,
         respiratory_rate_avg, skin_temp_c, stress_high_minutes, recovery_high_minutes,
         steps, active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km,
         flights_climbed, exercise_minutes, walking_speed, walking_step_length,
         walking_double_support_pct, walking_asymmetry_pct, walking_steadiness,
         stand_hours, resilience_level, source_name
       ) VALUES (
-        ${date}, 'whoop', ${USER_ID}, ${restingHr}, ${Math.max(28, heartRateVariability + random.int(-4, 4))},
-        ${random.float(47, 55, 1)}, ${random.float(95.4, 99.1, 1)},
+        ${date}, 'whoop', ${USER_ID}, ${Math.max(28, heartRateVariability + random.int(-4, 4))},
+        ${random.float(95.4, 99.1, 1)},
         ${random.float(13.2, 16.8, 1)}, ${random.float(35.8, 36.9, 1)},
         ${highStressDay ? 180 : random.int(20, 85)}, ${highStressDay ? 20 : random.int(70, 180)},
         ${steps}, ${hardBlock ? random.int(780, 1_150) : random.int(360, 760)}, 1810,
@@ -104,6 +103,7 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
       lightMinutes,
       awakeMinutes,
     );
+    await seedSleepHeartRateSamples(sql, random, startedAt, endedAt, daysAgo);
 
     if (daysAgo <= 30) {
       const appleStart = addMinutes(startedAt, 90);
@@ -124,6 +124,36 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
         )
       `;
     }
+  }
+}
+
+async function seedSleepHeartRateSamples(
+  sql: Sql,
+  random: SeedRandom,
+  startedAt: string,
+  endedAt: string,
+  daysAgo: number,
+): Promise<void> {
+  const badSleepWeek = daysAgo >= 9 && daysAgo <= 15;
+  const trendDaysAgo = daysAgo - 1;
+  const restingHeartRate =
+    50 + Math.round(trendDaysAgo / 60) + (badSleepWeek ? 7 : 0) + random.int(-2, 2);
+  const startedAtMilliseconds = new Date(startedAt).getTime();
+  const endedAtMilliseconds = new Date(endedAt).getTime();
+  const intervalMilliseconds = (endedAtMilliseconds - startedAtMilliseconds) / 31;
+
+  for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+    const recordedAt = new Date(
+      startedAtMilliseconds + Math.round(intervalMilliseconds * (sampleIndex + 1)),
+    ).toISOString();
+    const heartRate = restingHeartRate + random.int(0, 10);
+    await sql`
+      INSERT INTO fitness.metric_stream (
+        recorded_at, provider_id, user_id, source_type, channel, scalar
+      ) VALUES (
+        ${recordedAt}, 'whoop', ${USER_ID}, 'api', 'heart_rate', ${heartRate}
+      )
+    `;
   }
 }
 

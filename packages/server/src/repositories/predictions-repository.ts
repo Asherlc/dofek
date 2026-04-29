@@ -333,11 +333,14 @@ export class PredictionsRepository {
     return executeWithSchema(
       this.#db,
       dailyRowSchema,
-      sql`SELECT date, resting_hr, hrv, spo2_avg, steps, active_energy_kcal, skin_temp_c
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.#userId}
-            AND date > CURRENT_DATE - ${days}::int
-          ORDER BY date ASC`,
+      sql`SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.active_energy_kcal, dm.skin_temp_c
+          FROM fitness.v_daily_metrics dm
+          LEFT JOIN fitness.derived_resting_heart_rate drhr
+            ON drhr.user_id = dm.user_id
+           AND drhr.date = dm.date
+          WHERE dm.user_id = ${this.#userId}
+            AND dm.date > CURRENT_DATE - ${days}::int
+          ORDER BY dm.date ASC`,
     );
   }
 

@@ -202,19 +202,22 @@ async function fitReadinessFromDb(db: Database, userId: string) {
   const rows = await db.execute(
     sql`WITH metrics_base AS (
           SELECT
-            date,
-            hrv,
-            resting_hr,
-            respiratory_rate_avg AS respiratory_rate,
-            AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean,
-            STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd,
-            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean,
-            STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd,
-            AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean,
-            STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${userId}
-            AND date > CURRENT_DATE - 425
+            dm.date,
+            dm.hrv,
+            drhr.resting_hr,
+            dm.respiratory_rate_avg AS respiratory_rate,
+            AVG(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean,
+            STDDEV_POP(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd,
+            AVG(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean,
+            STDDEV_POP(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd,
+            AVG(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean,
+            STDDEV_POP(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd
+          FROM fitness.v_daily_metrics dm
+          LEFT JOIN fitness.derived_resting_heart_rate drhr
+            ON drhr.user_id = dm.user_id
+           AND drhr.date = dm.date
+          WHERE dm.user_id = ${userId}
+            AND dm.date > CURRENT_DATE - 425
         ),
         metrics AS (
           SELECT
@@ -324,16 +327,25 @@ export function parseStressRows(rows: Record<string, unknown>[]): StressThreshol
 
 async function fitStressFromDb(db: Database, userId: string) {
   const rows = await db.execute(
-    sql`SELECT
+    sql`WITH metrics AS (
+          SELECT
+            dm.date,
+            dm.hrv,
+            drhr.resting_hr
+          FROM fitness.v_daily_metrics dm
+          JOIN fitness.derived_resting_heart_rate drhr
+            ON drhr.user_id = dm.user_id
+           AND drhr.date = dm.date
+          WHERE dm.user_id = ${userId}
+            AND dm.date > CURRENT_DATE - 425
+            AND dm.hrv IS NOT NULL
+        )
+        SELECT
           (hrv - AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW))
             / NULLIF(STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW), 0) AS hrv_z,
           (resting_hr - AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW))
             / NULLIF(STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW), 0) AS rhr_z
-        FROM fitness.v_daily_metrics
-        WHERE user_id = ${userId}
-          AND date > CURRENT_DATE - 425
-          AND hrv IS NOT NULL
-          AND resting_hr IS NOT NULL
+        FROM metrics
         ORDER BY date ASC`,
   );
 

@@ -45,17 +45,14 @@ type MetricEntry = {
 };
 
 const trendRowSchema = z.object({
-  avg_resting_hr: z.number().nullable(),
   avg_hrv: z.number().nullable(),
   avg_spo2: z.number().nullable(),
   avg_steps: z.number().nullable(),
   avg_active_energy: z.number().nullable(),
   avg_skin_temp: z.number().nullable(),
-  stddev_resting_hr: z.number().nullable(),
   stddev_hrv: z.number().nullable(),
   stddev_spo2: z.number().nullable(),
   stddev_skin_temp: z.number().nullable(),
-  latest_resting_hr: z.number().nullable(),
   latest_hrv: z.number().nullable(),
   latest_spo2: z.number().nullable(),
   latest_steps: z.number().nullable(),
@@ -67,7 +64,6 @@ type TrendRow = z.infer<typeof trendRowSchema>;
 
 const dailyMetricRowSchema = z.object({
   date: z.string(),
-  resting_hr: z.number().nullable(),
   hrv: z.number().nullable(),
   spo2_avg: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
@@ -207,14 +203,6 @@ export function Dashboard() {
   const healthMetrics = useMemo(() => {
     if (!trendData) return [];
     const entries: (MetricEntry | false)[] = [
-      {
-        label: "Resting HR",
-        value: trendData.latest_resting_hr,
-        avg: trendData.avg_resting_hr,
-        stddev: trendData.stddev_resting_hr,
-        unit: "bpm",
-        lowerBetter: true,
-      },
       {
         label: "Heart Rate Variability (HRV)",
         value: trendData.latest_hrv,

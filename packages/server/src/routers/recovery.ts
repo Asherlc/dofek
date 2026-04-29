@@ -449,20 +449,23 @@ export const recoveryRouter = router({
         readinessRowSchema,
         sql`WITH metrics_with_baselines AS (
               SELECT
-                date::text AS date,
-                hrv,
-                resting_hr,
-                respiratory_rate_avg AS respiratory_rate,
-                AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
-                STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
-                AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
-                STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
-                AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
-                STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
-              FROM fitness.v_daily_metrics
-              WHERE user_id = ${ctx.userId}
-                AND date > ${dateWindowStart(input.endDate, queryDays)}
-                ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
+                dm.date::text AS date,
+                dm.hrv,
+                drhr.resting_hr,
+                dm.respiratory_rate_avg AS respiratory_rate,
+                AVG(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
+                STDDEV_POP(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
+                AVG(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
+                STDDEV_POP(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
+                AVG(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
+                STDDEV_POP(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
+              FROM fitness.v_daily_metrics dm
+              LEFT JOIN fitness.derived_resting_heart_rate drhr
+                ON drhr.user_id = dm.user_id
+               AND drhr.date = dm.date
+              WHERE dm.user_id = ${ctx.userId}
+                AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
+                ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
             ),
             sleep_eff AS (
               SELECT DISTINCT ON (local_date)
@@ -588,10 +591,13 @@ export const recoveryRouter = router({
           respiratory_rate_avg: z.number().nullable(),
         }),
         sql`
-          SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${ctx.userId}
-          ORDER BY date DESC
+          SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.respiratory_rate_avg
+          FROM fitness.v_daily_metrics dm
+          LEFT JOIN fitness.derived_resting_heart_rate drhr
+            ON drhr.user_id = dm.user_id
+           AND drhr.date = dm.date
+          WHERE dm.user_id = ${ctx.userId}
+          ORDER BY dm.date DESC
           LIMIT 1
         `,
       );

@@ -3,7 +3,7 @@ import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "zwift-client/client
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { activity, dailyMetrics } from "../db/schema.ts";
+import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -330,46 +330,6 @@ export class ZwiftProvider implements SyncProvider {
     } catch (err) {
       errors.push({
         message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-    }
-
-    // 2. Sync power curve as daily metrics (FTP, VO2max)
-    try {
-      const powerCount = await withSyncLog(
-        db,
-        this.id,
-        "power_curve",
-        async () => {
-          const curve = await runWithAuthRetry((activeClient) => activeClient.getPowerCurve());
-          if (!curve.zFtp && !curve.vo2Max) return { recordCount: 0, result: 0 };
-
-          const today = new Date().toISOString().slice(0, 10);
-          await db
-            .insert(dailyMetrics)
-            .values({
-              date: today,
-              providerId: this.id,
-              vo2max: curve.vo2Max,
-            })
-            .onConflictDoUpdate({
-              target: [
-                dailyMetrics.userId,
-                dailyMetrics.date,
-                dailyMetrics.providerId,
-                dailyMetrics.sourceName,
-              ],
-              set: { vo2max: curve.vo2Max },
-            });
-
-          return { recordCount: 1, result: 1 };
-        },
-        options?.userId,
-      );
-      recordsSynced += powerCount;
-    } catch (err) {
-      errors.push({
-        message: `power_curve: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

@@ -651,9 +651,7 @@ export const dailyMetrics = fitness.table(
       .notNull()
       .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
-    restingHr: integer("resting_hr"),
     hrv: real("hrv"),
-    vo2max: real("vo2max"),
     spo2Avg: real("spo2_avg"),
     respiratoryRateAvg: real("respiratory_rate_avg"),
     steps: integer("steps"),

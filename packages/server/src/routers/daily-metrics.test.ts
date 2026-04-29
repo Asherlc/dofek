@@ -49,8 +49,8 @@ describe("dailyMetricsRouter", () => {
   describe("list", () => {
     it("returns daily metric rows", async () => {
       const rows = [
-        { date: "2024-01-15", resting_hr: 55, hrv: 65 },
-        { date: "2024-01-16", resting_hr: 56, hrv: 62 },
+        { date: "2024-01-15", hrv: 65 },
+        { date: "2024-01-16", hrv: 62 },
       ];
       const caller = makeCaller(rows);
       const result = await caller.list({ days: 30, endDate: "2024-01-16" });
@@ -65,7 +65,7 @@ describe("dailyMetricsRouter", () => {
 
   describe("latest", () => {
     it("returns the latest daily metric", async () => {
-      const rows = [{ date: "2024-01-16", resting_hr: 56, hrv: 62 }];
+      const rows = [{ date: "2024-01-16", hrv: 62 }];
       const caller = makeCaller(rows);
       const result = await caller.latest();
       expect(result).toEqual(rows[0]);
@@ -82,9 +82,9 @@ describe("dailyMetricsRouter", () => {
     it("filters rows by cutoff date derived from endDate param", async () => {
       // today=2024-01-16, days=30 → cutoff = 2023-12-17
       const rows = [
-        { date: "2023-12-16", hrv: 50, resting_hr: 55, mean_60d: 52, sd_60d: 5, mean_7d: 51 },
-        { date: "2023-12-17", hrv: 55, resting_hr: 54, mean_60d: 53, sd_60d: 5, mean_7d: 52 },
-        { date: "2024-01-16", hrv: 60, resting_hr: 55, mean_60d: 55, sd_60d: 5, mean_7d: 58 },
+        { date: "2023-12-16", hrv: 50, mean_60d: 52, sd_60d: 5, mean_7d: 51 },
+        { date: "2023-12-17", hrv: 55, mean_60d: 53, sd_60d: 5, mean_7d: 52 },
+        { date: "2024-01-16", hrv: 60, mean_60d: 55, sd_60d: 5, mean_7d: 58 },
       ];
       const caller = makeCaller(rows);
       const result = await caller.hrvBaseline({ days: 30, endDate: "2024-01-16" });
@@ -102,17 +102,14 @@ describe("dailyMetricsRouter", () => {
     it("returns first row or null", async () => {
       const rows = [
         {
-          avg_resting_hr: 55,
           avg_hrv: 60,
           avg_spo2: 98,
           avg_steps: 8000,
           avg_active_energy: 500,
           avg_skin_temp: 36.5,
-          stddev_resting_hr: 3.2,
           stddev_hrv: 10.5,
           stddev_spo2: 0.5,
           stddev_skin_temp: 0.3,
-          latest_resting_hr: 54,
           latest_hrv: 62,
           latest_spo2: 98,
           latest_steps: 9000,
@@ -145,17 +142,14 @@ describe("dailyMetricsRouter", () => {
 
       const rows = [
         {
-          avg_resting_hr: "55.00",
           avg_hrv: "60.00",
           avg_spo2: "98.00",
           avg_steps: "8000",
           avg_active_energy: "500.00",
           avg_skin_temp: "36.50",
-          stddev_resting_hr: "3.20",
           stddev_hrv: "10.50",
           stddev_spo2: "0.50",
           stddev_skin_temp: "0.30",
-          latest_resting_hr: 54,
           latest_hrv: 62,
           latest_spo2: 98,
           latest_steps: 9000,
@@ -168,8 +162,8 @@ describe("dailyMetricsRouter", () => {
       ];
       const caller = makeCaller(rows);
       const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
-      expect(result?.avg_resting_hr).toBe(55);
-      expect(typeof result?.avg_resting_hr).toBe("number");
+      expect(result?.avg_hrv).toBe(60);
+      expect(typeof result?.avg_hrv).toBe("number");
       expect(result?.stddev_hrv).toBe(10.5);
       expect(typeof result?.stddev_hrv).toBe("number");
     });

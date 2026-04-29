@@ -16,7 +16,7 @@ The `NUTRIENTS` constant is the single source of truth for micronutrient metadat
 - **Nutrient Extraction**: `lookupBarcode` and `searchFoods` use `zod` schemas to safely parse the OFF API v2 response, preferring `_serving` fields over `_100g` when available.
 
 ### Daily Metrics & Body Measurements (`daily-metrics.ts`, `body-measurements.ts`)
-- **Canonical Types**: Defines `DAILY_METRIC_TYPES` (resting HR, steps, VO2max, etc.) and `MEASUREMENT_TYPES` (weight, body fat %, blood pressure).
+- **Canonical Types**: Defines `DAILY_METRIC_TYPES` (heart rate variability, steps, skin temperature, etc.) and `MEASUREMENT_TYPES` (weight, body fat %, blood pressure).
 - **Priority Logic**: Metrics have a `priorityCategory` ("recovery" or "activity") used by the database view to deduplicate data when multiple providers report for the same day.
 - **Unit Management**: Standardizes units (kg, bpm, ms, etc.) across the system.
 

@@ -142,9 +142,9 @@ describe("type routing constants", () => {
   });
 
   it("DAILY_METRIC_TYPES contains expected types", () => {
-    expect(DAILY_METRIC_TYPES.has("HKQuantityTypeIdentifierRestingHeartRate")).toBe(true);
+    expect(DAILY_METRIC_TYPES.has("HKQuantityTypeIdentifierRestingHeartRate")).toBe(false);
     expect(DAILY_METRIC_TYPES.has("HKQuantityTypeIdentifierStepCount")).toBe(true);
-    expect(DAILY_METRIC_TYPES.has("HKQuantityTypeIdentifierVO2Max")).toBe(true);
+    expect(DAILY_METRIC_TYPES.has("HKQuantityTypeIdentifierVO2Max")).toBe(false);
     expect(DAILY_METRIC_TYPES.has("HKQuantityTypeIdentifierWalkingSpeed")).toBe(true);
   });
 
@@ -568,7 +568,7 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ basalEnergyKcal: 1500 });
   });
 
-  it("keeps latest value for point-in-time types (resting HR)", async () => {
+  it("ignores provider resting HR as a daily metric", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -583,9 +583,9 @@ describe("upsertDailyMetricsBatch", () => {
       }),
     ];
 
-    await upsertDailyMetricsBatch(db, "p1", records);
-    // Point-in-time: last value overwrites
-    expect(capture.values[0]?.[0]).toMatchObject({ restingHr: 54 });
+    const count = await upsertDailyMetricsBatch(db, "p1", records);
+    expect(count).toBe(0);
+    expect(capture.values).toHaveLength(0);
   });
 
   it("converts walking distance from meters to km", async () => {
@@ -672,7 +672,7 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ hrv: 45.2 });
   });
 
-  it("maps VO2Max", async () => {
+  it("ignores provider VO2 Max as a daily metric", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -682,8 +682,9 @@ describe("upsertDailyMetricsBatch", () => {
       }),
     ];
 
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ vo2max: 48.5 });
+    const count = await upsertDailyMetricsBatch(db, "p1", records);
+    expect(count).toBe(0);
+    expect(capture.values).toHaveLength(0);
   });
 
   it("maps walking speed", async () => {
@@ -756,7 +757,7 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ walkingSteadiness: 0.95 });
   });
 
-  it("does not use walking HR average as fallback for restingHr", async () => {
+  it("does not use walking HR average as fallback for resting HR", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -767,11 +768,10 @@ describe("upsertDailyMetricsBatch", () => {
     ];
 
     await upsertDailyMetricsBatch(db, "p1", records);
-    // Should NOT have restingHr
-    expect(capture.values[0]?.[0]?.restingHr).toBeUndefined();
+    expect(Object.hasOwn(capture.values[0]?.[0] ?? {}, "restingHr")).toBe(false);
   });
 
-  it("does not use walking HR average to set restingHr", async () => {
+  it("does not use resting HR or walking HR average as daily resting HR", async () => {
     const { db, capture } = createMockDb();
     const records = [
       makeRecord({
@@ -787,8 +787,7 @@ describe("upsertDailyMetricsBatch", () => {
     ];
 
     await upsertDailyMetricsBatch(db, "p1", records);
-    // restingHr should be from RestingHeartRate, not WalkingHeartRateAverage
-    expect(capture.values[0]?.[0]).toMatchObject({ restingHr: 52 });
+    expect(Object.hasOwn(capture.values[0]?.[0] ?? {}, "restingHr")).toBe(false);
   });
 
   it("separates records across different days", async () => {

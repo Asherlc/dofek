@@ -130,16 +130,6 @@ describe("HealthKit sync router", () => {
             uuid: "steps-uuid-2",
           },
           {
-            type: "HKQuantityTypeIdentifierRestingHeartRate",
-            value: 55,
-            unit: "count/min",
-            startDate: "2025-06-02T07:00:00Z",
-            endDate: "2025-06-02T07:00:00Z",
-            sourceName: "Apple Watch",
-            sourceBundle: "com.apple.health",
-            uuid: "rhr-uuid-1",
-          },
-          {
             type: "HKQuantityTypeIdentifierDistanceWalkingRunning",
             value: 2500,
             unit: "m",
@@ -152,7 +142,7 @@ describe("HealthKit sync router", () => {
         ],
       });
 
-      expect(result.result.data.inserted).toBe(4);
+      expect(result.result.data.inserted).toBe(3);
       expect(result.result.data.errors).toEqual([]);
 
       // Check aggregated daily metrics
@@ -164,8 +154,6 @@ describe("HealthKit sync router", () => {
       expect(rows.length).toBe(1);
       // Steps should be summed: 3000 + 5000
       expect(rows[0]?.steps).toBe(8000);
-      // Resting HR is point-in-time (latest value)
-      expect(rows[0]?.resting_hr).toBe(55);
       // Distance in km: 2500m / 1000
       expect(rows[0]?.distance_km).toBeCloseTo(2.5, 1);
     });
@@ -209,7 +197,7 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.hrv).toBeCloseTo(80, 1);
     });
 
-    it("handles VO2Max as a point-in-time metric", async () => {
+    it("does not store provider VO2 Max as a daily metric", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
           {
@@ -232,8 +220,7 @@ describe("HealthKit sync router", () => {
             WHERE provider_id = 'apple_health'
               AND date = '2025-06-03'`,
       );
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.vo2max).toBeCloseTo(48.5, 1);
+      expect(rows.length).toBe(0);
     });
   });
 

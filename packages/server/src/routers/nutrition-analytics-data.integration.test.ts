@@ -101,11 +101,11 @@ describe("Nutrition analytics data coverage", () => {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
               date, provider_id, user_id, active_energy_kcal, basal_energy_kcal,
-              resting_hr, steps
+              steps
             ) VALUES (
               CURRENT_DATE - ${i}::int,
               'test_provider', ${TEST_USER_ID},
-              ${activeEnergy}, ${basalEnergy}, 55, 8000
+              ${activeEnergy}, ${basalEnergy}, 8000
             ) ON CONFLICT DO NOTHING`,
       );
     }

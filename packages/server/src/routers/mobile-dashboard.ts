@@ -98,10 +98,13 @@ export const mobileDashboardRouter = router({
           WITH metrics_base AS (
             SELECT
               dm.date AS metric_date,
-              hrv,
-              resting_hr,
-              respiratory_rate_avg AS respiratory_rate
+              dm.hrv,
+              drhr.resting_hr,
+              dm.respiratory_rate_avg AS respiratory_rate
             FROM fitness.v_daily_metrics dm
+            LEFT JOIN fitness.derived_resting_heart_rate drhr
+              ON drhr.user_id = dm.user_id
+             AND drhr.date = dm.date
             WHERE dm.user_id = ${ctx.userId}
               AND dm.date > ${endDate}::date - 60
               AND dm.date <= ${endDate}

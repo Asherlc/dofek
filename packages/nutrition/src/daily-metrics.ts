@@ -40,17 +40,6 @@ export interface DailyMetricTypeDefinition {
 
 const RECOVERY: DailyMetricTypeDefinition[] = [
   {
-    id: "resting_hr",
-    displayName: "Resting Heart Rate",
-    unit: "bpm",
-    category: "recovery",
-    priorityCategory: "recovery",
-    sortOrder: 100,
-    isInteger: true,
-    legacyFieldName: "restingHr",
-    legacyColumnName: "resting_hr",
-  },
-  {
     id: "hrv",
     displayName: "Heart Rate Variability",
     unit: "ms",
@@ -60,17 +49,6 @@ const RECOVERY: DailyMetricTypeDefinition[] = [
     isInteger: false,
     legacyFieldName: "hrv",
     legacyColumnName: "hrv",
-  },
-  {
-    id: "vo2max",
-    displayName: "VO2max",
-    unit: "ml/kg/min",
-    category: "recovery",
-    priorityCategory: "recovery",
-    sortOrder: 102,
-    isInteger: false,
-    legacyFieldName: "vo2max",
-    legacyColumnName: "vo2max",
   },
   {
     id: "spo2_avg",

@@ -168,8 +168,8 @@ export class EfficiencyRepository extends BaseRepository {
       sql`SELECT
             up.max_hr,
             EXISTS (
-              SELECT 1 FROM fitness.v_daily_metrics dm
-              WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
+              SELECT 1 FROM fitness.derived_resting_heart_rate drhr
+              WHERE drhr.user_id = up.id
             ) AS has_resting_hr,
             (SELECT COUNT(DISTINCT a.id)
              FROM fitness.v_activity a
@@ -219,12 +219,11 @@ export class EfficiencyRepository extends BaseRepository {
                 FROM fitness.deduped_sensor hr
                 JOIN fitness.v_activity a ON a.id = hr.activity_id
                 JOIN LATERAL (
-                  SELECT dm.resting_hr
-                  FROM fitness.v_daily_metrics dm
-                  WHERE dm.user_id = up.id
-                    AND dm.date <= (a.started_at AT TIME ZONE ${this.timezone})::date
-                    AND dm.resting_hr IS NOT NULL
-                  ORDER BY dm.date DESC
+                  SELECT drhr.resting_hr
+                  FROM fitness.derived_resting_heart_rate drhr
+                  WHERE drhr.user_id = up.id
+                    AND drhr.date <= (a.started_at AT TIME ZONE ${this.timezone})::date
+                  ORDER BY drhr.date DESC
                   LIMIT 1
                 ) rhr ON true
                 WHERE a.user_id = up.id

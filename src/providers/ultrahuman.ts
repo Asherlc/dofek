@@ -211,16 +211,14 @@ export class UltrahumanProvider implements SyncProvider {
               const { daily, sleep } = parseUltrahumanMetrics(dateStr, dayMetrics);
 
               // Upsert daily metrics
-              if (daily.restingHr || daily.hrv || daily.steps || daily.vo2max) {
+              if (daily.hrv || daily.steps || daily.exerciseMinutes || daily.skinTempC) {
                 await db
                   .insert(dailyMetrics)
                   .values({
                     date: daily.date,
                     providerId: this.id,
-                    restingHr: daily.restingHr,
                     hrv: daily.hrv,
                     steps: daily.steps,
-                    vo2max: daily.vo2max,
                     exerciseMinutes: daily.exerciseMinutes,
                     skinTempC: daily.skinTempC,
                   })
@@ -232,10 +230,8 @@ export class UltrahumanProvider implements SyncProvider {
                       dailyMetrics.sourceName,
                     ],
                     set: {
-                      restingHr: daily.restingHr,
                       hrv: daily.hrv,
                       steps: daily.steps,
-                      vo2max: daily.vo2max,
                       exerciseMinutes: daily.exerciseMinutes,
                       skinTempC: daily.skinTempC,
                     },

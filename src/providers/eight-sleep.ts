@@ -196,14 +196,13 @@ export class EightSleepProvider implements SyncProvider {
           for (const day of trendDays) {
             const parsed = parseEightSleepDailyMetrics(day);
             // Skip if no quality data
-            if (!parsed.restingHr && !parsed.hrv && !parsed.respiratoryRateAvg) continue;
+            if (!parsed.hrv && !parsed.respiratoryRateAvg && !parsed.skinTempC) continue;
             try {
               await db
                 .insert(dailyMetrics)
                 .values({
                   date: parsed.date,
                   providerId: this.id,
-                  restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                   hrv: parsed.hrv,
                   respiratoryRateAvg: parsed.respiratoryRateAvg,
                   skinTempC: parsed.skinTempC,
@@ -216,7 +215,6 @@ export class EightSleepProvider implements SyncProvider {
                     dailyMetrics.sourceName,
                   ],
                   set: {
-                    restingHr: parsed.restingHr ? Math.round(parsed.restingHr) : undefined,
                     hrv: parsed.hrv,
                     respiratoryRateAvg: parsed.respiratoryRateAvg,
                     skinTempC: parsed.skinTempC,

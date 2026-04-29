@@ -11,7 +11,6 @@ import {
   parseHeartRateTimeSeries,
   parseHrvSummary,
   parseStressTimeSeries,
-  parseTrainingStatus,
 } from "garmin-connect/parsing";
 import type { GarminTokens } from "garmin-connect/types";
 import { z } from "zod";
@@ -763,9 +762,8 @@ export class GarminProvider implements SyncProvider {
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("daily_metrics");
-    // HRV/training are enrichment — track separately but don't fail the sync
+    // HRV is enrichment — track separately but don't fail the sync.
     const hrvTracker = new SyncErrorTracker("hrv");
-    const trainingTracker = new SyncErrorTracker("training_status");
 
     for (const date of dates) {
       try {
@@ -776,22 +774,12 @@ export class GarminProvider implements SyncProvider {
 
         // Also fetch training status and HRV for enrichment
         let hrv: number | undefined;
-        let vo2max: number | undefined;
-
         try {
           const hrvData = await client.getHrvSummary(date);
           const parsedHrv = parseHrvSummary(hrvData);
           hrv = parsedHrv.lastNightAvg ?? parsedHrv.lastNight;
         } catch (error) {
           hrvTracker.record(date, error);
-        }
-
-        try {
-          const trainingData = await client.getTrainingStatus(date);
-          const parsedTraining = parseTrainingStatus(trainingData, date);
-          vo2max = parsedTraining.vo2MaxRunning ?? parsedTraining.vo2MaxCycling;
-        } catch (error) {
-          trainingTracker.record(date, error);
         }
 
         await db
@@ -803,13 +791,11 @@ export class GarminProvider implements SyncProvider {
             distanceKm: parsed.distanceKm,
             activeEnergyKcal: parsed.activeEnergyKcal,
             basalEnergyKcal: parsed.basalEnergyKcal,
-            restingHr: parsed.restingHr,
             spo2Avg: parsed.spo2Avg,
             respiratoryRateAvg: parsed.respiratoryRateAvg,
             flightsClimbed: parsed.flightsClimbed,
             exerciseMinutes: parsed.exerciseMinutes,
             hrv,
-            vo2max,
           })
           .onConflictDoUpdate({
             target: [
@@ -823,13 +809,11 @@ export class GarminProvider implements SyncProvider {
               distanceKm: parsed.distanceKm,
               activeEnergyKcal: parsed.activeEnergyKcal,
               basalEnergyKcal: parsed.basalEnergyKcal,
-              restingHr: parsed.restingHr,
               spo2Avg: parsed.spo2Avg,
               respiratoryRateAvg: parsed.respiratoryRateAvg,
               flightsClimbed: parsed.flightsClimbed,
               exerciseMinutes: parsed.exerciseMinutes,
               hrv,
-              vo2max,
             },
           });
 

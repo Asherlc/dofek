@@ -155,8 +155,13 @@ describe("categorize", () => {
   });
 
   it("categorizes point-in-time daily metric types", () => {
-    expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("pointInTimeDailyMetric");
-    expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("pointInTimeDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierWalkingSpeed")).toBe("pointInTimeDailyMetric");
+    expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe("pointInTimeDailyMetric");
+  });
+
+  it("does not categorize provider resting HR or VO2 Max as daily metrics", () => {
+    expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("healthEvent");
+    expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("healthEvent");
   });
 
   it("categorizes metric stream types", () => {
@@ -234,23 +239,22 @@ describe("aggregateDailyMetricSamples", () => {
   it("handles point-in-time metrics (last value wins)", () => {
     const samples = [
       makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 60,
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.2,
         uuid: "1",
       }),
       makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 62,
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.4,
         uuid: "2",
       }),
     ];
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
-    // Last value overwrites
-    expect(accumulator?.restingHr).toBe(62);
+    expect(accumulator?.walkingSpeed).toBe(1.4);
   });
 
-  it("handles VO2Max as point-in-time", () => {
+  it("ignores provider VO2 Max as a daily metric", () => {
     const samples = [
       makeSample({
         type: "HKQuantityTypeIdentifierVO2Max",
@@ -260,7 +264,7 @@ describe("aggregateDailyMetricSamples", () => {
     ];
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
-    expect(accumulator?.vo2max).toBe(45.5);
+    expect(Object.hasOwn(accumulator ?? {}, "vo2max")).toBe(false);
   });
 
   it("uses += (accumulation) for additive metrics, not = (replacement)", () => {
@@ -340,7 +344,7 @@ describe("aggregateDailyMetricSamples", () => {
     const accumulator = result.get("2024-01-15\0iPhone");
     expect(accumulator?.steps).toBe(0);
     expect(accumulator?.activeEnergyKcal).toBe(0);
-    expect(accumulator?.restingHr).toBeNull();
+    expect(Object.hasOwn(accumulator ?? {}, "restingHr")).toBe(false);
   });
 
   it("accumulates cycling distance with transform (meters to km)", () => {
@@ -515,9 +519,7 @@ describe("aggregateDailyMetricSamples", () => {
     expect(accumulator?.cyclingDistanceKm).toBe(0);
     expect(accumulator?.flightsClimbed).toBe(0);
     expect(accumulator?.exerciseMinutes).toBe(0);
-    expect(accumulator?.restingHr).toBeNull();
     expect(accumulator?.hrv).toBeNull();
-    expect(accumulator?.vo2max).toBeNull();
     expect(accumulator?.walkingSpeed).toBeNull();
     expect(accumulator?.walkingStepLength).toBeNull();
     expect(accumulator?.walkingDoubleSupportPct).toBeNull();
@@ -527,21 +529,12 @@ describe("aggregateDailyMetricSamples", () => {
   it("uses = (replacement) for point-in-time metrics, not +=", () => {
     // Point-in-time metrics should replace, not accumulate
     const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 58,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 62,
-        uuid: "2",
-      }),
+      makeSample({ type: "HKQuantityTypeIdentifierWalkingSpeed", value: 1.2, uuid: "1" }),
+      makeSample({ type: "HKQuantityTypeIdentifierWalkingSpeed", value: 1.4, uuid: "2" }),
     ];
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
-    // Last value wins (= assignment), not sum (58 + 62 = 120)
-    expect(accumulator?.restingHr).toBe(62);
+    expect(accumulator?.walkingSpeed).toBe(1.4);
   });
 });
 
@@ -1001,7 +994,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
     expect(execute).toHaveBeenCalled();
   });
 
-  it("processes resting HR as integer column", async () => {
+  it("does not process provider resting HR as a daily metric", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
     await repo.processDailyMetrics([
@@ -1016,7 +1009,7 @@ describe("INTEGER_DAILY_COLUMNS", () => {
         uuid: "int-rhr",
       },
     ]);
-    expect(execute).toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 });
 
@@ -1658,8 +1651,8 @@ describe("aggregateDailyMetricSamples (mutation-killing: transforms)", () => {
     const accumulator = result.get("2024-01-15\0iPhone");
     if (accumulator) {
       expect(accumulator.steps).toBe(0);
-      expect(accumulator.restingHr).toBeNull();
-      expect(accumulator.vo2max).toBeNull();
+      expect(Object.hasOwn(accumulator, "restingHr")).toBe(false);
+      expect(Object.hasOwn(accumulator, "vo2max")).toBe(false);
     }
   });
 });
@@ -1960,12 +1953,12 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
   it("skips additive fields with value 0 (only inserts when > 0)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
-    // A point-in-time metric with value — should still insert even though steps=0
+    // A point-in-time metric with value should still insert even though steps=0.
     const samples: HealthKitSample[] = [
       {
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 60,
-        unit: "count/min",
+        type: "HKQuantityTypeIdentifierWalkingSpeed",
+        value: 1.3,
+        unit: "m/s",
         startDate: "2024-01-15T10:00:00Z",
         endDate: "2024-01-15T10:00:00Z",
         sourceName: "iPhone",

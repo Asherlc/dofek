@@ -1972,14 +1972,14 @@ describe("OuraProvider.sync()", () => {
     );
     expect(val.steps).toBe(9500);
     expect(val.activeEnergyKcal).toBe(450);
-    // HRV and resting HR come from sleep data (actual measurements),
-    // not readiness contributor scores
+    // HRV comes from sleep data (actual measurements), not readiness contributor scores.
+    // Resting HR and VO2 Max are derived by server-side views, not stored from providers.
     expect(val.hrv).toBe(48);
-    expect(val.restingHr).toBe(45);
+    expect("restingHr" in val).toBe(false);
     expect(val.exerciseMinutes).toBe(75);
     expect(val.skinTempC).toBe(-0.15);
     expect(val.spo2Avg).toBe(97.5);
-    expect(val.vo2max).toBe(42.5);
+    expect("vo2max" in val).toBe(false);
     expect(val.stressHighMinutes).toBe(90);
     expect(val.recoveryHighMinutes).toBe(180);
     expect(val.resilienceLevel).toBe("solid");
@@ -2863,12 +2863,12 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     );
     expect(metricsRow.steps).toBe(9500);
     expect(metricsRow.spo2Avg).toBe(97.5);
-    expect(metricsRow.vo2max).toBe(42.5);
+    expect("vo2max" in metricsRow).toBe(false);
     expect(metricsRow.stressHighMinutes).toBe(90);
     expect(metricsRow.recoveryHighMinutes).toBe(180);
     expect(metricsRow.resilienceLevel).toBe("solid");
     expect(metricsRow.hrv).toBe(66);
-    expect(metricsRow.restingHr).toBe(40);
+    expect("restingHr" in metricsRow).toBe(false);
   });
 
   it("syncs only daily metrics for daily_readiness", async () => {

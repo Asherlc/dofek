@@ -641,10 +641,13 @@ export class RecoveryRepository extends BaseRepository {
     const rows = await this.query(
       strainMetricsRowSchema,
       sql`
-        SELECT date, resting_hr, hrv, spo2_avg, respiratory_rate_avg
-        FROM fitness.daily_metrics
-        WHERE user_id = ${this.userId}
-        ORDER BY date DESC
+        SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.respiratory_rate_avg
+        FROM fitness.v_daily_metrics dm
+        LEFT JOIN fitness.derived_resting_heart_rate drhr
+          ON drhr.user_id = dm.user_id
+         AND drhr.date = dm.date
+        WHERE dm.user_id = ${this.userId}
+        ORDER BY dm.date DESC
         LIMIT 1
       `,
     );

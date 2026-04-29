@@ -293,9 +293,9 @@ export class CyclingAdvancedRepository {
           JOIN fitness.user_profile up ON up.id = asum.user_id
           CROSS JOIN LATERAL (
             SELECT COALESCE(up.resting_hr, (
-              SELECT dm.resting_hr FROM fitness.v_daily_metrics dm
-              WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
-              ORDER BY dm.date DESC LIMIT 1
+              SELECT drhr.resting_hr FROM fitness.derived_resting_heart_rate drhr
+              WHERE drhr.user_id = up.id
+              ORDER BY drhr.date DESC LIMIT 1
             ), 60)::float AS val
           ) rhr
           WHERE up.id = ${this.#userId}
@@ -423,9 +423,9 @@ export class CyclingAdvancedRepository {
             JOIN fitness.user_profile up ON up.id = asum.user_id
             CROSS JOIN LATERAL (
               SELECT COALESCE(up.resting_hr, (
-                SELECT dm.resting_hr FROM fitness.v_daily_metrics dm
-                WHERE dm.user_id = up.id AND dm.resting_hr IS NOT NULL
-                ORDER BY dm.date DESC LIMIT 1
+                SELECT drhr.resting_hr FROM fitness.derived_resting_heart_rate drhr
+                WHERE drhr.user_id = up.id
+                ORDER BY drhr.date DESC LIMIT 1
               ), 60)::float AS val
             ) rhr
             WHERE up.id = ${this.#userId}

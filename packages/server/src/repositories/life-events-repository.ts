@@ -184,23 +184,29 @@ export class LifeEventsRepository {
     const startDate = event.started_at;
     const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);
 
-    const beforeClause = sql`user_id = ${this.#userId} AND date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)`;
+    const beforeClause = sql`dm.user_id = ${this.#userId} AND dm.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)`;
     const afterClause = endDate
-      ? sql`user_id = ${this.#userId} AND date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
-      : sql`user_id = ${this.#userId} AND date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`;
+      ? sql`dm.user_id = ${this.#userId} AND dm.date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
+      : sql`dm.user_id = ${this.#userId} AND dm.date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`;
 
     const metrics = await executeWithSchema(
       this.#db,
       metricsComparisonRowSchema,
       sql`
 			WITH before_period AS (
-				SELECT 'before' as period, *
-				FROM fitness.v_daily_metrics
+				SELECT 'before' as period, dm.*, drhr.resting_hr
+				FROM fitness.v_daily_metrics dm
+				LEFT JOIN fitness.derived_resting_heart_rate drhr
+				  ON drhr.user_id = dm.user_id
+				 AND drhr.date = dm.date
 				WHERE ${beforeClause}
 			),
 			after_period AS (
-				SELECT 'after' as period, *
-				FROM fitness.v_daily_metrics
+				SELECT 'after' as period, dm.*, drhr.resting_hr
+				FROM fitness.v_daily_metrics dm
+				LEFT JOIN fitness.derived_resting_heart_rate drhr
+				  ON drhr.user_id = dm.user_id
+				 AND drhr.date = dm.date
 				WHERE ${afterClause}
 			),
 			combined AS (

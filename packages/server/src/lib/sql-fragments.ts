@@ -197,7 +197,7 @@ export function acwrCte(userId: string, timezone: string, endDate: string, days:
 
 /**
  * Reusable CTE that computes rolling AVG and STDDEV_POP window statistics
- * for daily vitals (HRV, resting HR, respiratory rate) from `v_daily_metrics`.
+ * for daily vitals (HRV, derived resting HR, respiratory rate).
  *
  * Returns a single CTE named `vitals_baseline` with the raw metrics plus
  * rolling statistics columns named `{metric}_mean_{windowSize}d` and
@@ -221,20 +221,26 @@ export function vitalsBaselineCte(
   const preceding = windowSize - 1;
   return sql`vitals_baseline AS (
     SELECT
-      date,
-      hrv,
-      resting_hr,
-      respiratory_rate_avg,
-      AVG(hrv) OVER (ORDER BY date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_mean_${windowSize}d`)},
-      STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_stddev_${windowSize}d`)},
-      AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_mean_${windowSize}d`)},
-      STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_stddev_${windowSize}d`)},
-      AVG(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_mean_${windowSize}d`)},
-      STDDEV_POP(respiratory_rate_avg) OVER (ORDER BY date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_stddev_${windowSize}d`)}
-    FROM fitness.v_daily_metrics
-    WHERE user_id = ${userId}
-      AND date > ${dateWindowStart(endDate, queryDays)}
-    ORDER BY date ASC
+      base.date,
+      base.hrv,
+      drhr.resting_hr,
+      base.respiratory_rate_avg,
+      AVG(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_mean_${windowSize}d`)},
+      STDDEV_POP(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_stddev_${windowSize}d`)},
+      AVG(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_mean_${windowSize}d`)},
+      STDDEV_POP(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_stddev_${windowSize}d`)},
+      AVG(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_mean_${windowSize}d`)},
+      STDDEV_POP(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_stddev_${windowSize}d`)}
+    FROM (
+      SELECT date, user_id, hrv, respiratory_rate_avg
+      FROM fitness.v_daily_metrics
+      WHERE user_id = ${userId}
+        AND date > ${dateWindowStart(endDate, queryDays)}
+    ) base
+    LEFT JOIN fitness.derived_resting_heart_rate drhr
+      ON drhr.user_id = base.user_id
+     AND drhr.date = base.date
+    ORDER BY base.date ASC
   )`;
 }
 
@@ -291,12 +297,11 @@ export function heartRateZoneColumns(
  */
 export function restingHeartRateLateral(userIdExpression: SQL, dateExpression: SQL): SQL {
   return sql`LATERAL (
-    SELECT dm.resting_hr
-    FROM fitness.v_daily_metrics dm
-    WHERE dm.user_id = ${userIdExpression}
-      AND dm.date <= ${dateExpression}
-      AND dm.resting_hr IS NOT NULL
-    ORDER BY dm.date DESC
+    SELECT drhr.resting_hr
+    FROM fitness.derived_resting_heart_rate drhr
+    WHERE drhr.user_id = ${userIdExpression}
+      AND drhr.date <= ${dateExpression}
+    ORDER BY drhr.date DESC
     LIMIT 1
   ) rhr ON true`;
 }
