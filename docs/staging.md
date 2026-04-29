@@ -15,6 +15,7 @@ Staging is a production-shaped deployment used to test full deploy, migration, a
 - Infisical environment: `staging`
 
 Terraform provisions a separate Hetzner server and block storage volume for staging. The staging stack uses the same `deploy/stack.yml` as production with environment-specific host rules and public URLs passed by `.github/workflows/deploy-web.yml`.
+Staging DNS records point directly at the staging server so Traefik can serve the origin Let's Encrypt certificate.
 
 ## Deploy
 

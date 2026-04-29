@@ -30,9 +30,8 @@ jobs:
     name: Rebuild Materialized View (${{ inputs.environment || 'production' }})
     runs-on: ubuntu-latest
     env:
-      # staging.dofek.asherlc.com is Cloudflare-proxied for HTTPS. The
-      # staging-portainer host is a non-proxied DNS record on the same server and
-      # is used here only as the SSH tunnel endpoint.
+      # staging-portainer is a DNS-only record on the same staging server and is
+      # used here only as the SSH tunnel endpoint.
       SERVER_HOST: ${{ inputs.environment == 'staging' && 'staging-portainer.dofek.asherlc.com' || secrets.SERVER_HOST }}
       INFISICAL_ENVIRONMENT: ${{ inputs.environment == 'staging' && 'staging' || 'prod' }}
       VIEW_NAMES: ${{ inputs.view_names || 'fitness.provider_stats' }}
