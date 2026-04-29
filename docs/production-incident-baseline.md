@@ -1031,3 +1031,50 @@ admin user route fallback and the existing `/admin/queues` middleware behavior.
 
 The fix is covered by server unit tests. Production still needs the normal web
 deploy before the live URL changes from 404 to the app shell.
+
+## 2026-04-29: Admin user URL rendered admin overview instead of detail
+
+### Impact
+
+After the Express 404 fix deployed, direct navigation to
+`/admin/users/f923fed7-d934-4cd9-8cb9-8e83020d0e69` returned the single-page app
+shell but still did not show the user detail page. Admins remained on the admin
+overview content even though the URL matched the nested user detail route.
+
+### Evidence That Mattered
+
+Production returned the app shell successfully:
+
+```text
+HTTP/2 200
+cache-control: no-cache
+```
+
+The focused router regression test reproduced the remaining client-side failure:
+
+```text
+Unable to find an element with the text: Billing.
+```
+
+The rendered DOM showed the admin overview page and tab bar, not the user detail
+page.
+
+### Root Cause
+
+The TanStack Router `/admin/users/$userId` route was nested under `/admin`, but
+the lazy `/admin` route rendered `AdminPage` directly and did not render an
+`<Outlet />`. The child route matched, but React never mounted the user detail
+component.
+
+### Fix or Mitigation
+
+The `/admin` route is now a parent layout that renders `<Outlet />`, and the
+admin dashboard moved to the `/admin/` index child route. A router regression
+test now renders `/admin/users/:userId` through the generated route tree and
+asserts that the user detail page appears.
+
+### Remaining Risk
+
+The fix is covered by route and page unit tests. Production needs a web deploy
+containing the route tree update before the live admin user URL renders the
+detail page.
