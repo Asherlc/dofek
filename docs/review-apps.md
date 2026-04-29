@@ -118,3 +118,16 @@ To resolve it:
 
 Do not change Terraform timeouts, add retries, or rerun repeatedly until the
 capacity issue is fixed. The first fatal log line above is the root cause.
+
+### Docker SSH Transport Failures
+
+If `Deploy Review App` reaches `Deploy review stack` and fails with:
+
+```text
+Connection timed out during banner exchange
+```
+
+the server was provisioned, but Docker could not open its `ssh://` transport to
+the new host. The bootstrap gate verifies normal SSH, Docker, Docker Compose,
+and Docker's SSH transport before running `docker compose` so this fails during
+readiness instead of after the deploy begins.

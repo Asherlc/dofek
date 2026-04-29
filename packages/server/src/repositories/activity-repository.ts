@@ -87,6 +87,41 @@ const activitySensorWindowRowSchema = z.object({
   member_activity_ids: z.array(z.string()),
 });
 
+const heartRateZoneParamsRowSchema = z.object({
+  max_hr: z.coerce.number(),
+  resting_hr: z.coerce.number(),
+});
+
+const activitySummaryReadModelRowSchema = z.object({
+  activity_id: z.string(),
+  avg_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  max_power: z.number().nullable(),
+  avg_speed: z.number().nullable(),
+  max_speed: z.number().nullable(),
+  avg_cadence: z.number().nullable(),
+  total_distance: z.number().nullable(),
+  elevation_gain_m: z.number().nullable(),
+  elevation_loss_m: z.number().nullable(),
+  sample_count: z.number().nullable(),
+});
+
+const powerCurveSampleSchema = z.object({
+  activity_id: z.string(),
+  activity_date: z.string(),
+  power: z.coerce.number(),
+  interval_s: z.coerce.number(),
+});
+
+const normalizedPowerSampleSchema = z.object({
+  activity_id: z.string(),
+  activity_date: z.string(),
+  activity_name: z.string().nullable(),
+  power: z.coerce.number(),
+  interval_s: z.coerce.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
@@ -111,7 +146,35 @@ export interface ActivitySensorWindow {
 }
 
 export interface ActivitySensorStore {
+  getActivitySummaries(
+    activityIds: string[],
+  ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
+  getPowerCurveSamples(
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<z.infer<typeof powerCurveSampleSchema>[]>;
+  getNormalizedPowerSamples(
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<z.infer<typeof normalizedPowerSampleSchema>[]>;
+  getHeartRateCurveRows(
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<Array<{ duration_seconds: number; best_hr: number; activity_date: string }>>;
+  getPaceCurveRows(
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>>;
   getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]>;
+  getHeartRateZoneSeconds(
+    window: ActivitySensorWindow,
+    maxHr: number,
+    restingHr: number,
+  ): Promise<z.infer<typeof hrZoneRowSchema>[]>;
   getPowerZoneSeconds(
     window: ActivitySensorWindow,
     ftp: number,
@@ -181,8 +244,9 @@ export class ActivityRepository extends BaseRepository {
         ? await this.queryWithViewRefresh(queryFn, input.days, "activityList")
         : await queryFn();
 
-    const totalCount = rows.length > 0 ? (rows[0]?.total_count ?? 0) : 0;
-    const items = rows.map(({ total_count, ...rest }) => rest);
+    const hydratedRows = await this.#withActivitySummaries(rows);
+    const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
+    const items = hydratedRows.map(({ total_count, ...rest }) => rest);
     return { items, totalCount };
   }
 
@@ -204,13 +268,12 @@ export class ActivityRepository extends BaseRepository {
             a.name,
             a.provider_id,
             a.source_providers,
-            s.avg_hr,
-            s.max_hr,
-            s.avg_power,
-            s.total_distance AS distance_meters,
+            NULL::double precision AS avg_hr,
+            NULL::smallint AS max_hr,
+            NULL::double precision AS avg_power,
+            NULL::double precision AS distance_meters,
             COUNT(*) OVER()::int AS total_count
           FROM fitness.v_activity a
-          LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
           WHERE a.user_id = ${this.userId}
             AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
             ${typeFilter}
@@ -235,123 +298,82 @@ export class ActivityRepository extends BaseRepository {
             a.raw->>'sourceName' AS subsource,
             a.source_providers,
             a.source_external_ids,
-            s.avg_hr,
-            s.max_hr,
-            s.avg_power,
-            s.max_power,
-            s.avg_speed,
-            s.max_speed,
-            s.avg_cadence,
-            s.total_distance,
-            s.elevation_gain_m,
-            s.elevation_loss_m,
-            s.sample_count
+            NULL::double precision AS avg_hr,
+            NULL::smallint AS max_hr,
+            NULL::double precision AS avg_power,
+            NULL::smallint AS max_power,
+            NULL::double precision AS avg_speed,
+            NULL::double precision AS max_speed,
+            NULL::double precision AS avg_cadence,
+            NULL::double precision AS total_distance,
+            NULL::double precision AS elevation_gain_m,
+            NULL::double precision AS elevation_loss_m,
+            NULL::integer AS sample_count
           FROM fitness.v_activity a
-          LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
           WHERE a.id = ${activityId}
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
-    return rows[0] ?? null;
+    const hydratedRows = await this.#withActivitySummaries(rows);
+    return hydratedRows[0] ?? null;
+  }
+
+  async #withActivitySummaries<TRow extends { id: string }>(rows: TRow[]): Promise<TRow[]> {
+    const sensorStore = this.#requireSensorStore("activity summaries");
+    if (rows.length === 0) {
+      return rows;
+    }
+
+    const summaries = await sensorStore.getActivitySummaries(rows.map((row) => row.id));
+    const summaryByActivityId = new Map(
+      summaries.map((summary) => [
+        summary.activity_id,
+        activitySummaryReadModelRowSchema.parse(summary),
+      ]),
+    );
+
+    return rows.map((row) => {
+      const summary = summaryByActivityId.get(row.id);
+      if (!summary) {
+        return row;
+      }
+      return {
+        ...row,
+        avg_hr: summary.avg_hr,
+        max_hr: summary.max_hr,
+        avg_power: summary.avg_power,
+        max_power: summary.max_power,
+        avg_speed: summary.avg_speed,
+        max_speed: summary.max_speed,
+        avg_cadence: summary.avg_cadence,
+        total_distance: summary.total_distance,
+        distance_meters: summary.total_distance,
+        elevation_gain_m: summary.elevation_gain_m,
+        elevation_loss_m: summary.elevation_loss_m,
+        sample_count: summary.sample_count,
+      };
+    });
   }
 
   /** Downsampled metric stream for a single activity. */
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
-    if (this.#sensorStore) {
-      const window = await this.#findActivitySensorWindow(activityId);
-      if (!window) return [];
-      const rows = await this.#sensorStore.getStream(window, maxPoints);
-      return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
-    }
-
-    const rows = await this.query(
-      streamPointRowSchema,
-      sql`WITH pivoted AS (
-            SELECT
-              ds.recorded_at,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'heart_rate')::SMALLINT AS heart_rate,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'power')::SMALLINT AS power,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'speed') AS speed,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'cadence')::SMALLINT AS cadence,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'altitude') AS altitude,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lat') AS lat,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lng') AS lng
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-            GROUP BY ds.recorded_at
-          ),
-          numbered AS (
-            SELECT p.*, ROW_NUMBER() OVER (ORDER BY p.recorded_at) AS rn,
-                   COUNT(*) OVER () AS total
-            FROM pivoted p
-          )
-          SELECT recorded_at::text AS recorded_at,
-                 heart_rate, power, speed, cadence, altitude, lat, lng
-          FROM numbered
-          WHERE rn % GREATEST(1, total / ${maxPoints}) = 0
-          ORDER BY recorded_at`,
-    );
-
-    return rows.map((row) => new StreamPoint(row));
+    const sensorStore = this.#requireSensorStore("activity streams");
+    const window = await this.#findActivitySensorWindow(activityId);
+    if (!window) return [];
+    const rows = await sensorStore.getStream(window, maxPoints);
+    return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
   /** HR zone distribution for a single activity using Karvonen zones. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
-    const rows = await this.query(
-      hrZoneRowSchema,
-      sql`WITH params AS (
-            SELECT
-              up.max_hr,
-              COALESCE(rhr.resting_hr, 60) AS resting_hr
-            FROM fitness.user_profile up
-            LEFT JOIN ${restingHeartRateLateral(
-              sql`up.id`,
-              sql`(SELECT (a.started_at AT TIME ZONE ${this.timezone})::date FROM fitness.v_activity a WHERE a.id = ${activityId} AND a.user_id = ${this.userId})`,
-            )}
-            WHERE up.id = ${this.userId}
-              AND up.max_hr IS NOT NULL
-          ),
-          hr_samples AS (
-            SELECT ds.scalar AS heart_rate
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel = 'heart_rate'
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-          )
-          SELECT
-            z.zone,
-            COUNT(hs.heart_rate)::int AS seconds
-          FROM params p
-          CROSS JOIN (VALUES (1), (2), (3), (4), (5)) AS z(zone)
-          LEFT JOIN hr_samples hs ON
-            CASE z.zone
-              WHEN 1 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.5
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
-              WHEN 2 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
-              WHEN 3 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
-              WHEN 4 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
-              WHEN 5 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
-            END
-          GROUP BY z.zone
-          ORDER BY z.zone`,
+    const sensorStore = this.#requireSensorStore("heart-rate zones");
+    const window = await this.#findActivitySensorWindow(activityId);
+    if (!window) return mapHrZones([]);
+    const params = await this.#findHeartRateZoneParams(window);
+    if (!params) return mapHrZones([]);
+    return mapHrZones(
+      await sensorStore.getHeartRateZoneSeconds(window, params.max_hr, params.resting_hr),
     );
-
-    return mapHrZones(rows);
   }
 
   /** Cycling power zone distribution for a single activity using 7 zones relative to FTP. */
@@ -359,45 +381,17 @@ export class ActivityRepository extends BaseRepository {
     activityId: string,
     ftp: number,
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
-    if (this.#sensorStore) {
-      const window = await this.#findActivitySensorWindow(activityId);
-      if (!window) return mapPowerZones([]);
-      return mapPowerZones(await this.#sensorStore.getPowerZoneSeconds(window, ftp));
+    const sensorStore = this.#requireSensorStore("power zones");
+    const window = await this.#findActivitySensorWindow(activityId);
+    if (!window) return mapPowerZones([]);
+    return mapPowerZones(await sensorStore.getPowerZoneSeconds(window, ftp));
+  }
+
+  #requireSensorStore(featureName: string): ActivitySensorStore {
+    if (!this.#sensorStore) {
+      throw new Error(`ClickHouse activity analytics store is required for ${featureName}`);
     }
-
-    const rows = await this.query(
-      powerZoneRowSchema,
-      sql`WITH power_samples AS (
-            SELECT ds.scalar AS power
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel = 'power'
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-          )
-          SELECT
-            z.zone,
-            COUNT(ps.power)::int AS seconds
-          FROM (VALUES (1), (2), (3), (4), (5), (6), (7)) AS z(zone)
-          LEFT JOIN power_samples ps ON
-            CASE z.zone
-              WHEN 1 THEN ps.power < ${ftp} * 0.55
-              WHEN 2 THEN ps.power >= ${ftp} * 0.55 AND ps.power < ${ftp} * 0.75
-              WHEN 3 THEN ps.power >= ${ftp} * 0.75 AND ps.power < ${ftp} * 0.9
-              WHEN 4 THEN ps.power >= ${ftp} * 0.9 AND ps.power < ${ftp} * 1.05
-              WHEN 5 THEN ps.power >= ${ftp} * 1.05 AND ps.power < ${ftp} * 1.2
-              WHEN 6 THEN ps.power >= ${ftp} * 1.2 AND ps.power < ${ftp} * 1.5
-              WHEN 7 THEN ps.power >= ${ftp} * 1.5
-            END
-          GROUP BY z.zone
-          ORDER BY z.zone`,
-    );
-
-    return mapPowerZones(rows);
+    return this.#sensorStore;
   }
 
   async #findActivitySensorWindow(activityId: string): Promise<ActivitySensorWindow | null> {
@@ -423,6 +417,25 @@ export class ActivityRepository extends BaseRepository {
       endedAt: row.ended_at,
       memberActivityIds: row.member_activity_ids,
     };
+  }
+
+  async #findHeartRateZoneParams(
+    window: ActivitySensorWindow,
+  ): Promise<z.infer<typeof heartRateZoneParamsRowSchema> | null> {
+    const rows = await this.query(
+      heartRateZoneParamsRowSchema,
+      sql`SELECT
+            up.max_hr,
+            COALESCE(rhr.resting_hr, 60) AS resting_hr
+          FROM fitness.user_profile up
+          LEFT JOIN ${restingHeartRateLateral(
+            sql`up.id`,
+            sql`(${window.startedAt}::timestamptz AT TIME ZONE ${this.timezone})::date`,
+          )}
+          WHERE up.id = ${this.userId}
+            AND up.max_hr IS NOT NULL`,
+    );
+    return rows[0] ?? null;
   }
 
   /** Delete an activity by ID. */

@@ -17,7 +17,7 @@ function RecoveryTab() {
   const { days } = useTrainingDays();
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
-  const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days });
+  const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days, endDate });
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days });
   const readiness = trpc.recovery.readinessScore.useQuery({ days, endDate });

@@ -1,3 +1,4 @@
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { fitCriticalHeartRate } from "../repositories/duration-curves-repository.ts";
 
@@ -54,7 +55,7 @@ describe("fitCriticalHeartRate", () => {
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
   return {
     router: trpc.router,
@@ -84,8 +85,19 @@ const { createTestCallerFactory } = await import("./test-helpers.ts");
 const createCaller = createTestCallerFactory(durationCurvesRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
+  const sensorStore = {
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue(rows),
+    getPaceCurveRows: vi.fn().mockResolvedValue(rows),
+  };
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
+    sensorStore,
     userId: "user-1",
     timezone: "UTC",
   });
@@ -95,8 +107,8 @@ describe("durationCurvesRouter", () => {
   describe("hrCurve", () => {
     it("returns heart rate curve data", async () => {
       const rows = [
-        { duration_seconds: 300, best_heart_rate: 185 },
-        { duration_seconds: 600, best_heart_rate: 180 },
+        { duration_seconds: 300, best_hr: 185, activity_date: "2026-04-01" },
+        { duration_seconds: 600, best_hr: 180, activity_date: "2026-04-02" },
       ];
       const caller = makeCaller(rows);
       const result = await caller.hrCurve({ days: 90 });
@@ -119,8 +131,8 @@ describe("durationCurvesRouter", () => {
   describe("paceCurve", () => {
     it("returns pace curve data", async () => {
       const rows = [
-        { duration_seconds: 300, best_pace_s_per_km: 240 },
-        { duration_seconds: 600, best_pace_s_per_km: 260 },
+        { duration_seconds: 300, best_pace: 240, activity_date: "2026-04-01" },
+        { duration_seconds: 600, best_pace: 260, activity_date: "2026-04-02" },
       ];
       const caller = makeCaller(rows);
       const result = await caller.paceCurve({ days: 90 });
@@ -131,6 +143,18 @@ describe("durationCurvesRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.paceCurve({});
       expect(result.points).toEqual([]);
+    });
+  });
+
+  it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.hrCurve({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "PRECONDITION_FAILED",
     });
   });
 });

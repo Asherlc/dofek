@@ -4,6 +4,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helper.ts";
 
 describe("Activity router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -106,7 +107,7 @@ describe("Activity router", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

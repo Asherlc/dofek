@@ -5,6 +5,7 @@ import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
+import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -86,12 +87,36 @@ import { activityRouter } from "./activity.ts";
 
 const createCaller = createTestCallerFactory(activityRouter);
 
-function makeCaller(rows: Record<string, unknown>[] = []) {
+function makeCaller(
+  rows: Record<string, unknown>[] = [],
+  sensorStore: unknown = makeSensorStoreStub(),
+) {
+  return createCaller({
+    db: { execute: vi.fn().mockResolvedValue(rows) },
+    sensorStore,
+    userId: "user-1",
+    timezone: "UTC",
+  });
+}
+
+function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
     timezone: "UTC",
   });
+}
+
+function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    ...overrides,
+  };
 }
 
 function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
@@ -157,7 +182,7 @@ describe("activityRouter", () => {
       });
     });
 
-    it("returns stats from activity_summary join", async () => {
+    it("returns stats from the activity summary read model", async () => {
       const rows = [
         {
           id: "a1",
@@ -190,6 +215,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -224,6 +250,7 @@ describe("activityRouter", () => {
         .mockResolvedValueOnce([activityRow]); // 6. retry list
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -240,6 +267,7 @@ describe("activityRouter", () => {
         .mockResolvedValueOnce([{ count: 0 }]); // 2. base table count: no data
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -252,6 +280,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -269,6 +298,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockRejectedValue(missingViewError);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -282,6 +312,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockRejectedValue(new Error("connection refused"));
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -292,6 +323,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -387,9 +419,18 @@ describe("activityRouter", () => {
   });
 
   describe("stream", () => {
+    it("throws PRECONDITION_FAILED when analytics store is not configured", async () => {
+      const caller = makeCallerWithoutSensorStore();
+
+      await expect(caller.stream({ id: "00000000-0000-0000-0000-000000000001" })).rejects.toThrow(
+        "ClickHouse activity analytics store is required for activity streams",
+      );
+    });
+
     it("uses the configured sensor store for stream points", async () => {
       const postgresExecute = vi.fn().mockResolvedValue([]);
       const sensorStore = {
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
         getStream: vi.fn().mockResolvedValue([
           {
             recorded_at: "2024-01-01T10:00:00Z",
@@ -402,6 +443,7 @@ describe("activityRouter", () => {
             lng: null,
           },
         ]),
+        getHeartRateZoneSeconds: vi.fn(),
         getPowerZoneSeconds: vi.fn(),
       };
       const caller = createCaller({
@@ -431,45 +473,83 @@ describe("activityRouter", () => {
     });
 
     it("returns mapped stream points", async () => {
-      const rows = [
-        {
-          recorded_at: "2024-01-01T10:00:00Z",
-          heart_rate: 150,
-          power: 200,
-          speed: 8.5,
-          cadence: 85,
-          altitude: 100,
-          lat: 40.7128,
-          lng: -74.006,
-          distance: 1000,
+      const sensorStore = {
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([
+          {
+            recorded_at: "2024-01-01T10:00:00Z",
+            heart_rate: 150,
+            power: 200,
+            speed: 8.5,
+            cadence: 85,
+            altitude: 100,
+            lat: 40.7128,
+            lng: -74.006,
+          },
+        ]),
+        getHeartRateZoneSeconds: vi.fn(),
+        getPowerZoneSeconds: vi.fn(),
+      };
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              user_id: "user-1",
+              started_at: "2024-01-01T10:00:00Z",
+              ended_at: "2024-01-01T11:00:00Z",
+              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+            },
+          ]),
         },
-      ];
-      const caller = makeCaller(rows);
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const result = await caller.stream({
         id: "00000000-0000-0000-0000-000000000001",
       });
 
       expect(result).toHaveLength(1);
-      expect(result[0]?.recordedAt).toBe("2024-01-01T10:00:00Z");
+      expect(result[0]?.recordedAt).toBe("2024-01-01T10:00:00.000Z");
       expect(result[0]?.heartRate).toBe(150);
       expect(result[0]?.power).toBe(200);
     });
 
     it("handles null values in stream points", async () => {
-      const rows = [
-        {
-          recorded_at: "2024-01-01T10:00:00Z",
-          heart_rate: null,
-          power: null,
-          speed: null,
-          cadence: null,
-          altitude: null,
-          lat: null,
-          lng: null,
-          distance: null,
+      const sensorStore = {
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([
+          {
+            recorded_at: "2024-01-01T10:00:00Z",
+            heart_rate: null,
+            power: null,
+            speed: null,
+            cadence: null,
+            altitude: null,
+            lat: null,
+            lng: null,
+          },
+        ]),
+        getHeartRateZoneSeconds: vi.fn(),
+        getPowerZoneSeconds: vi.fn(),
+      };
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              user_id: "user-1",
+              started_at: "2024-01-01T10:00:00Z",
+              ended_at: "2024-01-01T11:00:00Z",
+              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+            },
+          ]),
         },
-      ];
-      const caller = makeCaller(rows);
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const result = await caller.stream({
         id: "00000000-0000-0000-0000-000000000001",
       });
@@ -495,11 +575,32 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("strengthExercises", () => {
+    it("uses the configured sensor store when resolving the activity", async () => {
+      const getExercisesForActivitySpy = vi
+        .spyOn(StrengthRepository.prototype, "getExercisesForActivity")
+        .mockResolvedValue([]);
+      const activityId = "00000000-0000-0000-0000-000000000001";
+
+      const caller = makeCaller([
+        makeActivityRow({
+          id: activityId,
+        }),
+      ]);
+      const result = await caller.strengthExercises({ id: activityId });
+
+      expect(result).toEqual([]);
+      expect(getExercisesForActivitySpy).toHaveBeenCalledWith(activityId);
+      getExercisesForActivitySpy.mockRestore();
+    });
+  });
+
   describe("access window gating", () => {
     it("list passes accessWindow to repository (limited window returns empty)", async () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
         accessWindow: {
@@ -518,6 +619,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
         accessWindow: {
@@ -537,6 +639,7 @@ describe("activityRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeSensorStoreStub(),
         userId: "user-1",
         timezone: "UTC",
         accessWindow: {
@@ -553,15 +656,46 @@ describe("activityRouter", () => {
   });
 
   describe("hrZones", () => {
+    it("throws PRECONDITION_FAILED when analytics store is not configured", async () => {
+      const caller = makeCallerWithoutSensorStore();
+
+      await expect(caller.hrZones({ id: "00000000-0000-0000-0000-000000000001" })).rejects.toThrow(
+        "ClickHouse activity analytics store is required for heart-rate zones",
+      );
+    });
+
     it("returns 5 zones with labels", async () => {
-      const rows = [
-        { zone: 1, seconds: 600 },
-        { zone: 2, seconds: 1200 },
-        { zone: 3, seconds: 900 },
-        { zone: 4, seconds: 300 },
-        { zone: 5, seconds: 60 },
-      ];
-      const caller = makeCaller(rows);
+      const sensorStore = {
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn(),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([
+          { zone: 1, seconds: 600 },
+          { zone: 2, seconds: 1200 },
+          { zone: 3, seconds: 900 },
+          { zone: 4, seconds: 300 },
+          { zone: 5, seconds: 60 },
+        ]),
+        getPowerZoneSeconds: vi.fn(),
+      };
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ])
+            .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]),
+        },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const result = await caller.hrZones({
         id: "00000000-0000-0000-0000-000000000001",
       });
@@ -578,8 +712,31 @@ describe("activityRouter", () => {
     });
 
     it("defaults missing zones to 0 seconds", async () => {
-      const rows = [{ zone: 2, seconds: 500 }];
-      const caller = makeCaller(rows);
+      const sensorStore = {
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn(),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([{ zone: 2, seconds: 500 }]),
+        getPowerZoneSeconds: vi.fn(),
+      };
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                id: "00000000-0000-0000-0000-000000000001",
+                user_id: "user-1",
+                started_at: "2024-01-01T10:00:00Z",
+                ended_at: "2024-01-01T11:00:00Z",
+                member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+              },
+            ])
+            .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]),
+        },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const result = await caller.hrZones({
         id: "00000000-0000-0000-0000-000000000001",
       });
@@ -619,7 +776,7 @@ describe("activityRouter", () => {
       const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
-      const caller = makeCaller();
+      const caller = makeCaller([], makeSensorStoreStub());
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result).toBeNull();
@@ -629,6 +786,14 @@ describe("activityRouter", () => {
       findByIdSpy.mockRestore();
       getEftpTrendSpy.mockRestore();
       getPowerZonesSpy.mockRestore();
+    });
+
+    it("throws PRECONDITION_FAILED for cycling activities when analytics store is missing", async () => {
+      const caller = makeCallerWithoutSensorStore();
+
+      await expect(
+        caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toThrow("ClickHouse activity analytics store is required for power analysis");
     });
 
     it("returns zones and ftp for cycling activities with power data", async () => {
@@ -652,7 +817,10 @@ describe("activityRouter", () => {
         .spyOn(ActivityRepository.prototype, "getPowerZones")
         .mockResolvedValue(zones);
 
-      const caller = makeCaller();
+      const caller = makeCaller([], {
+        getPowerCurveSamples: vi.fn(),
+        getNormalizedPowerSamples: vi.fn(),
+      });
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(getEftpTrendSpy).toHaveBeenCalledWith(90);

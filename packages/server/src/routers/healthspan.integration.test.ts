@@ -271,4 +271,53 @@ describe("healthspan zone time with variable-interval HR data", () => {
       expect(ratio).toBeLessThan(1.3);
     }
   });
+
+  it("includes power zone high-intensity work when heart-rate samples are absent", async () => {
+    const actResult = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES (
+            'test_provider', ${TEST_USER_ID}, 'cycling',
+            CURRENT_TIMESTAMP - INTERVAL '1 day',
+            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '600 seconds',
+            'Power Zone Intervals'
+          ) RETURNING id`,
+    );
+    const actId = actResult[0]?.id;
+    if (!actId) throw new Error("Failed to insert activity");
+
+    const sensorValues: string[] = [];
+    for (let sampleIndex = 0; sampleIndex < 120; sampleIndex++) {
+      const offsetSeconds = sampleIndex * 5;
+      const ts = `CURRENT_TIMESTAMP - INTERVAL '1 day' + ${offsetSeconds} * INTERVAL '1 second'`;
+      sensorValues.push(
+        `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', 230, NULL)`,
+      );
+    }
+    await testCtx.db.execute(
+      sql.raw(`INSERT INTO fitness.metric_stream (
+        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+      ) VALUES ${sensorValues.join(",\n")}`),
+    );
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+
+    const summaryRows = await testCtx.db.execute<{ power_sample_count: number }>(
+      sql`SELECT power_sample_count
+          FROM fitness.activity_summary
+          WHERE activity_id = ${actId}`,
+    );
+    expect(summaryRows[0]?.power_sample_count).toBe(120);
+
+    const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
+
+    const highIntensity = result.metrics.find((m) => m.name === "High Intensity");
+    expect(highIntensity).toBeDefined();
+    expect(highIntensity?.value).not.toBeNull();
+
+    if (highIntensity?.value != null) {
+      expect(highIntensity.value).toBeGreaterThan(3);
+    }
+  });
 });

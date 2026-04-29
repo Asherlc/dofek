@@ -10,6 +10,14 @@ services:
   db:
     image: timescale/timescaledb:2.26.2-pg18
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_wal_senders=4
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health

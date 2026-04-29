@@ -10,7 +10,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
-import { createClickHouseClientFromEnv } from "dofek/db/clickhouse";
+import { bootstrapClickHouseFromEnv, createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import {
   createExportQueue,
   createImportQueue,
@@ -272,10 +272,14 @@ export async function main() {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is required");
   }
+  const clickHouseUrl = process.env.CLICKHOUSE_URL;
+  if (!clickHouseUrl) {
+    throw new Error("CLICKHOUSE_URL environment variable is required");
+  }
   const db = createDatabaseFromEnv();
-  const sensorStore = process.env.CLICKHOUSE_URL
-    ? new ClickHouseActivitySensorStore(createClickHouseClientFromEnv())
-    : undefined;
+  const clickHouseClient = createClickHouseClientFromEnv();
+  await bootstrapClickHouseFromEnv(clickHouseClient);
+  const sensorStore = new ClickHouseActivitySensorStore(clickHouseClient);
   const app = createApp(db, sensorStore);
 
   app.listen(PORT, () => {

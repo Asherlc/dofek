@@ -6,6 +6,7 @@ vi.mock("../trpc.ts", async () => {
   const trpc = initTRPC
     .context<{
       db: unknown;
+      sensorStore?: unknown;
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
@@ -346,6 +347,7 @@ describe("powerRouter", () => {
       );
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(samples) },
+        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
         userId: "user-1",
         timezone: "UTC",
       });
@@ -361,6 +363,7 @@ describe("powerRouter", () => {
     it("returns empty points when no data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
       });
@@ -389,6 +392,10 @@ describe("powerRouter", () => {
 
       const caller = createCaller({
         db: { execute },
+        sensorStore: {
+          getNormalizedPowerSamples: vi.fn().mockResolvedValue(normalizedPowerSamples),
+          getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),
+        },
         userId: "user-1",
         timezone: "UTC",
       });

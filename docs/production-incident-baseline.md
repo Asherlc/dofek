@@ -1,6 +1,6 @@
 # Production Incident Baseline
 
-<!-- cspell:ignore Hetzner Hypertables rollups fanout -->
+<!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore -->
 
 This document summarizes production failure modes observed so far. It is not a
 full incident log or a replacement for runbooks. Use it to build shared memory
@@ -789,64 +789,432 @@ Rebuilding a materialized view is still heavy database maintenance. Operators
 should run it during a planned maintenance window and stop if preflight reports
 recovery mode, active lock waits, or other full-history maintenance.
 
-## 2026-04-28: Activity HR missing and `deduped_sensor` refresh OOM
+## 2026-04-28: Manual materialized-view maintenance blocked by post-sync refresh
 
 ### Impact
 
-The activity detail page for
-`b1bbbc97-1bd9-47c8-9f0a-1f2ee748fec6` showed no heart-rate stream or summary,
-even though raw heart-rate samples existed for the workout window. Two attempted
-full concurrent refreshes of `fitness.deduped_sensor` exceeded the production
-Postgres container memory limit and briefly put Postgres into crash recovery.
+A manually requested deploy with `refresh_materialized_views=true` failed after
+the swarm rollout completed. The app stayed up, but the required blocking
+materialized-view maintenance did not run.
 
 ### Evidence That Mattered
 
-Production queries showed the canonical activity existed in `fitness.v_activity`
-with WHOOP and Apple Health member activities, and raw `fitness.metric_stream`
-had linked Apple Health heart-rate samples plus ambient WHOOP heart-rate samples
-around the workout. `fitness.deduped_sensor` and `fitness.activity_summary`
-returned no rows for the canonical activity ID.
-
-Postgres logs showed the fatal refresh failure:
+The failing step was `Run blocking materialized view maintenance`, and the first
+fatal line was:
 
 ```text
-client backend (...) was terminated by signal 9: Killed
-DETAIL: Failed process was running: REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
-FATAL: the database system is in recovery mode
+Error: quiet database preflight failed: 1 lock wait is active
 ```
 
-Kernel logs confirmed the cause was the memory cgroup OOM killer selecting the
-Postgres backend running the refresh, not disk exhaustion. Host checks showed
-the data volume had free space and Postgres recovered with
-`pg_is_in_recovery() = false`; `/healthz` returned `{"status":"ok"}` after
-recovery.
+Production Postgres activity at the same time showed two active statements for
+the same view:
+
+```text
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+One session was actively refreshing and the other was waiting on a relation
+lock.
 
 ### Root Cause
 
-The data model currently depends on a full `fitness.deduped_sensor` materialized
-view rebuild to map metric-stream samples onto canonical activities. That full
-refresh is too memory-heavy for the current production DB container and can be
-killed by the cgroup OOM killer. The attempted manual refresh also raced with an
-existing post-sync refresh, proving duplicate full-history maintenance can stack
-up.
-
-Separately, the Strong CSV workout data was not present in `fitness.activity`.
-The only Strong CSV import log was successful on 2026-04-27 with 83 records, but
-there were zero `strong-csv` activity rows after the 2026-04-28
-`0004_merge_strength_workout.sql` migration. The likely cause is that older
-Strong CSV data lived only in the dropped `fitness.strength_workout` path and was
-not recoverable from the live schema after that migration.
+Worker post-sync maintenance was already refreshing materialized views while the
+manual maintenance action started. The manual maintenance preflight correctly
+refused to begin while an overlapping refresh was waiting on a lock.
 
 ### Fix or Mitigation
 
-No code or schema fix was shipped during this investigation. The unsafe
-request-time refresh approach was tested locally and then backed out after
-production evidence showed full `deduped_sensor` refreshes can OOM Postgres.
+The manual maintenance workflow now cancels in-progress
+`REFRESH MATERIALIZED VIEW` statements for the selected view before running the
+quiet database preflight and destructive rebuild.
 
 ### Remaining Risk
 
-The target activity still needs a safer remediation path for showing HR without
-requiring a full `deduped_sensor` refresh. Candidate fixes are a targeted
-per-activity stream query fallback or an incremental activity-summary refresh
-path. Strong CSV recovery likely requires re-importing the CSV or restoring the
-old `strength_workout` rows from a backup into a reviewed forward migration.
+The maintenance workflow only cancels refreshes for the target view. Other
+active database work can still make the quiet preflight fail, which is
+intentional for planned maintenance.
+
+## 2026-04-28: Branch verification rebuild failed in post-rebuild sync
+
+### Impact
+
+A manual `Materialized View Maintenance` workflow run from branch
+`Asherlc/cancel-view-refreshes` rebuilt `fitness.provider_stats` successfully
+from the PR image, but the workflow still failed before the final planner
+verification. The rebuild did not run for an hour; the rebuild command reported
+about 70 seconds of database work.
+
+### Evidence That Mattered
+
+The first attempt used `image_tag=pr-1064` before the review-app image tag was
+available and failed in `Pull maintenance images`:
+
+```text
+Error response from daemon: failed to resolve reference "ghcr.io/asherlc/dofek:pr-1064": ghcr.io/asherlc/dofek:pr-1064: not found
+```
+
+After the image tag existed, the rerun reached the changed path and completed
+the target rebuild:
+
+```text
+rebuilt=fitness.provider_stats mode=rebuild duration_ms=70132
+```
+
+A follow-up run after the workflow was split into separate cancellation and
+rebuild steps showed both target steps passing independently:
+
+```text
+canceling_refreshes=fitness.provider_stats
+canceled_refreshes=fitness.provider_stats
+rebuilt=fitness.provider_stats mode=rebuild duration_ms=105478
+```
+
+The first fatal line was in `Run post-rebuild materialized view sync`:
+
+```text
+Error: Materialized view maintenance required: fitness.v_activity (live definition differs from canonical definition), fitness.v_sleep (live definition differs from canonical definition), fitness.v_body_measurement (live definition differs from canonical definition), fitness.v_daily_metrics (live definition differs from canonical definition), fitness.deduped_sensor (live definition differs from canonical definition), fitness.activity_summary (live definition differs from canonical definition), fitness.provider_stats (live definition differs from canonical definition)
+```
+
+### Root Cause
+
+The branch verification exercised the target-refresh cancellation path and
+rebuild path, including the later split into separate workflow steps, but
+production still reported live-definition drift for every canonical
+materialized view during the existing post-rebuild sync step. Follow-up
+investigation found that `syncMaterializedViews()` treated PostgreSQL's
+`pg_get_viewdef()` output as a second source of truth even when the stored
+canonical SQL hash and dependency fingerprint matched. That PostgreSQL-rendered
+definition comparison produced false drift for tracked, hash-clean production
+views.
+
+### Fix or Mitigation
+
+`syncMaterializedViews()` now treats the stored canonical SQL hash plus
+dependency fingerprint as authoritative for already-tracked views. It still
+requires manual maintenance when the stored hash changes, when the dependency
+fingerprint changes, or when a tracked view is missing and must be recreated.
+Live definition comparison remains limited to adopting untracked existing
+views.
+
+### Remaining Risk
+
+The manual action can still fail after a successful target rebuild when a stored
+canonical hash or dependency fingerprint genuinely changes. Operators should not
+interpret a successful target rebuild as proof that no other view needs explicit
+maintenance; the final planner verification remains the source of truth.
+
+## 2026-04-28: Manual view maintenance verification was too indirect
+
+### Impact
+
+The manual `Materialized View Maintenance` workflow could end with
+`synced=0 skipped=7 refreshed=0`, which only proved the post-rebuild sync had no
+remaining view work. That was not meaningful evidence that the selected target
+view had actually been rebuilt during the workflow.
+
+### Evidence That Mattered
+
+The weak verification output was:
+
+```text
+warning=1 long-running maintenance-like query is active
+synced=0 skipped=7 refreshed=0
+```
+
+### Root Cause
+
+The final evidence came from the global post-rebuild sync step, not from the
+target rebuild step. The workflow also depended on pulling Docker images even
+though the production database is reachable through a private SSH tunnel to the
+server's loopback-only Postgres port.
+
+### Fix or Mitigation
+
+The manual workflow now runs the checked-out branch directly with `pnpm tsx`
+over an SSH tunnel instead of pulling Docker images. It also adds target-specific
+verification steps: one checks for `rebuilt=<view> mode=rebuild` in the rebuild
+output, and another confirms the target materialized view exists and is
+populated after the rebuild. A follow-up change simplifies dispatch to a single
+`environment` choice (`production` or `staging`) and derives the matching
+Infisical environment plus SSH tunnel target internally.
+
+### Remaining Risk
+
+The target populated check proves the rebuilt view exists and is usable, but it
+does not prove query-level correctness for the view contents. The final planner
+check still verifies that no canonical materialized-view maintenance remains.
+Staging dispatch is wired through the same workflow field, but a branch
+verification run found the staging Infisical environment currently exports no
+`POSTGRES_PASSWORD` and the staging host has no running `dofek-staging` services.
+Staging maintenance will fail loudly until the staging stack and secrets are
+provisioned.
+
+## 2026-04-28: Manual view maintenance inputs were over-condensed
+
+### Impact
+
+The manual `Materialized View Maintenance` workflow correctly condensed
+environment selection to `production` or `staging`, but the initial follow-up
+risked making target selection too narrow for operators who need to rebuild more
+than one materialized view in one maintenance window.
+
+### Evidence That Mattered
+
+The workflow had a single-select target input:
+
+```text
+view_name=fitness.provider_stats
+```
+
+That preserved choosing one target, but not choosing multiple target views.
+
+### Root Cause
+
+GitHub Actions `choice` inputs are single-select. Keeping target selection as a
+choice field made the UI simple but did not represent the operational need to
+select one or more canonical materialized views.
+
+### Fix or Mitigation
+
+The workflow now keeps one environment selector and uses a `view_names` string
+input for targets. Operators can provide one view name, comma-separated view
+names, newline-separated view names, or `all`. The workflow resolves that input
+against the canonical inventory, preserves dependency order, cancels refreshes
+for each target, rebuilds each target one at a time, and verifies every selected
+view was rebuilt and populated.
+
+### Remaining Risk
+
+The `view_names` field is free text because workflow dispatch does not support a
+multi-select choice input. Invalid names fail before database maintenance starts,
+and the runbook lists the accepted format.
+
+## 2026-04-29: Direct admin user URLs returned Express 404
+
+### Impact
+
+Direct navigation to web admin user detail pages, such as
+`/admin/users/f923fed7-d934-4cd9-8cb9-8e83020d0e69`, did not load the app.
+Users already inside the single-page app could still navigate through client-side
+routes, but hard refreshes and copied links failed.
+
+### Evidence That Mattered
+
+The production response for the direct URL was:
+
+```text
+HTTP/2 404
+Cannot GET /admin/users/f923fed7-d934-4cd9-8cb9-8e83020d0e69
+```
+
+The new regression test reproduced the same failure locally before the fix:
+
+```text
+expected 404 to be 200
+```
+
+### Root Cause
+
+The Express single-page app fallback excluded every `/admin/` path so that the
+server-owned Bull Board route at `/admin/queues` would not be served by the web
+app. That exclusion was broader than the actual server route and blocked web app
+routes under `/admin/users/...`.
+
+### Fix or Mitigation
+
+The fallback now excludes only `/admin/queues`, leaving other `/admin/...` paths
+to receive `index.html` and load TanStack Router. Server tests now cover both the
+admin user route fallback and the existing `/admin/queues` middleware behavior.
+
+### Remaining Risk
+
+The fix is covered by server unit tests. Production still needs the normal web
+deploy before the live URL changes from 404 to the app shell.
+
+## 2026-04-29: iOS AI meal input surfaced raw JSON parse errors
+
+### Impact
+
+iOS users could see a low-level AI structured-output error such as "bad JSON
+character" or "No object generated" when the AI meal parser could not turn the
+input into valid food items.
+
+### Evidence That Mattered
+
+Production Axiom traces showed recent `food.analyzeItemsWithAi` traffic reaching
+Gemini, with intermittent Gemini `503` responses followed by successful retries.
+Sentry had no matching mobile error events. A local call to
+`analyzeNutritionItems("p", ...)` reproduced the server-side structured-output
+failure:
+
+```text
+AI_NoObjectGeneratedError: No object generated: response did not match schema.
+```
+
+### Root Cause
+
+The `food.analyzeItemsWithAi` router passed AI SDK structured-output parse and
+validation failures straight through to the client, so the iOS screen rendered a
+provider/parser implementation detail instead of an actionable user message.
+
+### Fix or Mitigation
+
+The router now maps AI structured-output failures to a `BAD_REQUEST` tRPC error
+with the message `Describe the foods and amounts you want to log.` Other
+unexpected errors still propagate and are reported by the existing tRPC error
+handler.
+
+### Remaining Risk
+
+This improves the user-facing failure mode but does not add deeper provider
+telemetry for malformed AI responses. If structured-output failures become
+frequent for well-formed meal descriptions, add provider/output diagnostics that
+do not record raw food text.
+
+## 2026-04-29: Staging deploy blocked by empty Infisical environment
+
+### Impact
+
+The `Deploy Web` workflow could not complete for staging. Production deploys
+were unaffected, but staging could not be bootstrapped from CI until required
+secrets and maintenance state were repaired.
+
+### Evidence That Mattered
+
+Run `25114876237`, job `73599120397`, failed in
+`Bootstrap stack (if DB service is missing)` with:
+
+```text
+required variable PGADMIN_DEFAULT_EMAIL is missing a value
+```
+
+The staging Infisical template export rendered zero non-empty variables, while
+the production export rendered 56. The staging host also had an empty Postgres
+data directory with no `PG_VERSION`, so generating a new staging-only
+`POSTGRES_PASSWORD` was safe.
+
+A later rerun reached stack deploy and migrations, then the OTA service logged:
+
+```text
+EXPO_APP_ID not set
+```
+
+After secrets were present, the planner reported required materialized-view
+maintenance for all seven canonical views because the newly bootstrapped staging
+database had no acknowledged canonical view fingerprints.
+
+### Root Cause
+
+The `staging` Infisical environment was effectively empty. Stack interpolation
+failed on required deploy secrets first, then OTA startup failed on
+`EXPO_APP_ID`, and finally the fresh staging database needed the normal blocking
+materialized-view sync before the deploy gate could pass.
+
+The public staging app URL also exposed a separate DNS issue: Cloudflare was
+proxying `staging.dofek.asherlc.com`, but the edge TLS certificate did not cover
+that second-level hostname, so HTTPS failed before reaching Traefik.
+
+### Fix or Mitigation
+
+Populated staging Infisical with generated staging-safe secrets, copied the
+shared infrastructure credentials that the existing stack requires, added
+`EXPO_APP_ID`, and reran staging deploy with
+`refresh_materialized_views=true`. Run `25116944316` completed successfully,
+including Terraform apply, stack deploy, migrations, and blocking
+materialized-view maintenance.
+
+Changed the Terraform-managed `staging.dofek.asherlc.com` record to DNS-only so
+Traefik serves the origin Let's Encrypt certificate directly.
+
+### Remaining Risk
+
+Staging still does not have Stripe test keys or provider OAuth credentials unless
+they are added intentionally. Add fail-fast deploy validation for OTA-only
+runtime requirements such as `EXPO_APP_ID`, and document the minimum staging
+Infisical secret checklist.
+
+## 2026-04-29: Review app deploy failed on Docker SSH transport
+
+### Impact
+
+PR #1073 had otherwise green CI, but `Deploy Review App` failed before the
+review stack could start. The application image built successfully and the
+dedicated review server was created.
+
+### Evidence That Mattered
+
+Run `25117699121`, job `73610459050`, failed in `Deploy review stack` with:
+
+```text
+Connection timed out during banner exchange
+Connection to 116.203.81.197 port 22 timed out
+```
+
+The previous `Wait for review server bootstrap` step had succeeded, and later
+SSH inspection showed `ssh` and `docker` active on `dofek-pr-1073`. `docker
+version` over `DOCKER_HOST=ssh://root@116.203.81.197` also succeeded once the
+host key was trusted locally.
+
+### Root Cause
+
+The readiness gate only proved a normal SSH session that ran `docker info`
+inside the host. The failing deploy command used Docker's SSH transport, which
+can fail separately while a freshly provisioned review server is still settling.
+
+### Fix or Mitigation
+
+The review-app bootstrap gate now also verifies `DOCKER_HOST=ssh://root@...`
+with `docker version` before the workflow starts `docker compose`.
+
+### Remaining Risk
+
+This moves Docker SSH transport readiness into the existing 300-second bootstrap
+gate. If future review-app failures occur after that gate passes, inspect the
+first fatal line before adding broader retries.
+## 2026-04-29: Admin user URL rendered admin overview instead of detail
+
+### Impact
+
+After the Express 404 fix deployed, direct navigation to
+`/admin/users/f923fed7-d934-4cd9-8cb9-8e83020d0e69` returned the single-page app
+shell but still did not show the user detail page. Admins remained on the admin
+overview content even though the URL matched the nested user detail route.
+
+### Evidence That Mattered
+
+Production returned the app shell successfully:
+
+```text
+HTTP/2 200
+cache-control: no-cache
+```
+
+The focused router regression test reproduced the remaining client-side failure:
+
+```text
+Unable to find an element with the text: Billing.
+```
+
+The rendered DOM showed the admin overview page and tab bar, not the user detail
+page.
+
+### Root Cause
+
+The TanStack Router `/admin/users/$userId` route was nested under `/admin`, but
+the lazy `/admin` route rendered `AdminPage` directly and did not render an
+`<Outlet />`. The child route matched, but React never mounted the user detail
+component.
+
+### Fix or Mitigation
+
+The `/admin` route is now a parent layout that renders `<Outlet />`, and the
+admin dashboard moved to the `/admin/` index child route. A router regression
+test now renders `/admin/users/:userId` through the generated route tree and
+asserts that the user detail page appears.
+
+### Remaining Risk
+
+The fix is covered by route and page unit tests. Production needs a web deploy
+containing the route tree update before the live admin user URL renders the
+detail page.

@@ -9,7 +9,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - **Compute**: Hetzner Cloud `cax11` ARM64 servers running Ubuntu 24.04. Production uses `dofek`; staging uses `dofek-staging`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
-  - **ClickHouse**: Runs in the swarm as a rebuildable raw `metric_stream` projection for heavy activity stream reads. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **ClickHouse**: Runs in the swarm as the stored deduped sensor read model for heavy activity stream reads, backed by native Postgres replication. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
@@ -47,7 +47,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
-- PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, and `maintenance_work_mem=64MB`.
+- PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, and logical replication settings for ClickHouse CDC.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 
@@ -132,8 +132,10 @@ CI (main) -> build dofek + dofek-ml (same tag)
    5. Bootstrap step for clean-slate hosts: if `docker service inspect <stack>_db` fails, run
       `docker stack deploy -c deploy/stack.yml --with-registry-auth <stack>` first so the swarm DB service and overlay network exist.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
-   7. Run **schema migrations only** as a one-shot container attached to the swarm overlay network:
+   7. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
+      When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
+      analytics migrations before the stack update.
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
    9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.

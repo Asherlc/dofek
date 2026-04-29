@@ -40,15 +40,17 @@ export const WeeklyVolumeRowSchema = z.object({
 
 export type WeeklyVolumeRow = z.infer<typeof WeeklyVolumeRowSchema>;
 
-export const FoodEntrySchema = z.object({
-  id: z.string(),
-  food_name: z.string().nullable(),
-  food_description: z.string().nullable(),
-  meal: z.string().nullable(),
-  calories: z.number().nullable(),
-  protein_g: z.number().nullable(),
-  carbs_g: z.number().nullable(),
-  fat_g: z.number().nullable(),
-});
+export const FoodEntrySchema = z
+  .object({
+    id: z.string(),
+    food_name: z.string().nullable(),
+    food_description: z.string().nullable(),
+    meal: z.string().nullable(),
+    calories: z.number().nullable(),
+    protein_g: z.number().nullable(),
+    carbs_g: z.number().nullable(),
+    fat_g: z.number().nullable(),
+  })
+  .passthrough();
 
 export type FoodEntryRow = z.infer<typeof FoodEntrySchema>;

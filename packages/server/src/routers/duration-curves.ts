@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { DurationCurvesRepository } from "../repositories/duration-curves-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -12,7 +13,14 @@ export const durationCurvesRouter = router({
   hrCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }) => {
-      const repo = new DurationCurvesRepository(ctx.db, ctx.userId, ctx.timezone);
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for duration curves. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new DurationCurvesRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.getHrCurve(input.days);
     }),
 
@@ -24,7 +32,14 @@ export const durationCurvesRouter = router({
   paceCurve: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }) => {
-      const repo = new DurationCurvesRepository(ctx.db, ctx.userId, ctx.timezone);
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for duration curves. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new DurationCurvesRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.getPaceCurve(input.days);
     }),
 });

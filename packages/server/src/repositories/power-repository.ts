@@ -5,115 +5,19 @@ import {
   DURATION_LABELS,
   fitCriticalPower,
 } from "@dofek/training/power-analysis";
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
-import { z } from "zod";
-import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-
-// ── Zod schemas for DB results ───────────────────────────────
-
-const powerCurveSampleSchema = z.object({
-  activity_id: z.string(),
-  activity_date: dateStringSchema,
-  power: z.coerce.number(),
-  interval_s: z.coerce.number(),
-});
-
-const normalizedPowerSampleSchema = z.object({
-  activity_id: z.string(),
-  activity_date: dateStringSchema,
-  activity_name: z.string().nullable(),
-  power: z.coerce.number(),
-  interval_s: z.coerce.number(),
-});
-
-// ── Query builders ───────────────────────────────────────────
-
-/**
- * Fetch per-sample power data for power curve computation.
- * Includes zero-power (coasting) samples. Returns samples ordered
- * by activity then time, with the per-activity recording interval.
- */
-function powerCurveSamplesQuery(days: number, userId: string, timezone: string) {
-  return sql`
-    WITH activity_info AS (
-      SELECT ds.activity_id,
-             (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
-             GREATEST(ROUND(
-               EXTRACT(EPOCH FROM MAX(ds.recorded_at) - MIN(ds.recorded_at))::numeric
-               / NULLIF(COUNT(*) - 1, 0)
-             )::int, 1) AS interval_s
-      FROM fitness.deduped_sensor ds
-      JOIN fitness.v_activity a ON a.id = ds.activity_id
-      WHERE ds.user_id = ${userId}
-        AND ds.channel = 'power'
-        AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-        AND ${enduranceTypeFilter("a")}
-      GROUP BY ds.activity_id, a.started_at
-      HAVING COUNT(*) > 1
-    )
-    SELECT ds.activity_id,
-           ai.activity_date,
-           COALESCE(ds.scalar, 0) AS power,
-           ai.interval_s
-    FROM fitness.deduped_sensor ds
-    JOIN activity_info ai ON ai.activity_id = ds.activity_id
-    WHERE ds.channel = 'power'
-    ORDER BY ds.activity_id, ds.recorded_at
-  `;
-}
-
-/**
- * Fetch per-sample power data for Normalized Power computation.
- * Excludes zero-power samples (coasting) since they'd artificially
- * lower Normalized Power. Only includes activities with >= 240 power-positive samples
- * (~20 min at any sample rate).
- */
-function normalizedPowerSamplesQuery(days: number, userId: string, timezone: string) {
-  return sql`
-    WITH activity_info AS (
-      SELECT ds.activity_id,
-             (a.started_at AT TIME ZONE ${timezone})::date::text AS activity_date,
-             a.name AS activity_name,
-             GREATEST(ROUND(
-               EXTRACT(EPOCH FROM MAX(ds.recorded_at) - MIN(ds.recorded_at))::numeric
-               / NULLIF(COUNT(*) - 1, 0)
-             )::int, 1) AS interval_s
-      FROM fitness.deduped_sensor ds
-      JOIN fitness.v_activity a ON a.id = ds.activity_id
-      WHERE ds.user_id = ${userId}
-        AND ds.channel = 'power'
-        AND ds.scalar > 0
-        AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-        AND ${enduranceTypeFilter("a")}
-      GROUP BY ds.activity_id, a.started_at, a.name
-      HAVING COUNT(*) >= 240
-    )
-    SELECT ds.activity_id,
-           ai.activity_date,
-           ai.activity_name,
-           ds.scalar AS power,
-           ai.interval_s
-    FROM fitness.deduped_sensor ds
-    JOIN activity_info ai ON ai.activity_id = ds.activity_id
-    WHERE ds.channel = 'power'
-      AND ds.scalar > 0
-    ORDER BY ds.activity_id, ds.recorded_at
-  `;
-}
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ── Repository ───────────────────────────────────────────────
 
 export class PowerRepository {
-  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
+  constructor(userId: string, timezone: string, sensorStore: ActivitySensorStore) {
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /**
@@ -129,10 +33,10 @@ export class PowerRepository {
     }[];
     model: CriticalPowerModel | null;
   }> {
-    const samples = await executeWithSchema(
-      this.#db,
-      powerCurveSampleSchema,
-      powerCurveSamplesQuery(days, this.#userId, this.#timezone),
+    const samples = await this.#sensorStore.getPowerCurveSamples(
+      days,
+      this.#userId,
+      this.#timezone,
     );
 
     const results = computePowerCurve(samples);
@@ -157,10 +61,10 @@ export class PowerRepository {
     currentEftp: number | null;
     model: CriticalPowerModel | null;
   }> {
-    const normalizedPowerSamples = await executeWithSchema(
-      this.#db,
-      normalizedPowerSampleSchema,
-      normalizedPowerSamplesQuery(days, this.#userId, this.#timezone),
+    const normalizedPowerSamples = await this.#sensorStore.getNormalizedPowerSamples(
+      days,
+      this.#userId,
+      this.#timezone,
     );
 
     const normalizedPowerResults = computeNormalizedPower(normalizedPowerSamples);
@@ -172,10 +76,10 @@ export class PowerRepository {
     }));
 
     // Compute current eFTP via CP model from last 90 days' power curve
-    const powerCurveSamples = await executeWithSchema(
-      this.#db,
-      powerCurveSampleSchema,
-      powerCurveSamplesQuery(90, this.#userId, this.#timezone),
+    const powerCurveSamples = await this.#sensorStore.getPowerCurveSamples(
+      90,
+      this.#userId,
+      this.#timezone,
     );
 
     const powerCurveResults = computePowerCurve(powerCurveSamples);

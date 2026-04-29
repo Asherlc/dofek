@@ -41,21 +41,47 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(query).toHaveBeenCalledWith(
       expect.objectContaining({
         format: "JSONEachRow",
-        query: expect.stringContaining("fitness.metric_stream"),
+        query: expect.stringContaining("analytics.deduped_sensor"),
         query_params: expect.objectContaining({
+          activityId: window.activityId,
           userId: window.userId,
-          memberActivityIds: window.memberActivityIds,
-          startedAt: window.startedAt,
-          endedAt: window.endedAt,
           maxPoints: 500,
         }),
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("linked_best_source");
-    expect(queryText).toContain("ambient_best_source");
-    expect(queryText).toContain("fitness.metric_stream AS metric_stream FINAL");
-    expect(queryText).toContain("activity_id IN {memberActivityIds:Array(UUID)}");
+    expect(queryText).not.toContain("fitness.metric_stream");
+    expect(queryText).not.toContain("fitness.deduped_sensor");
+    expect(queryText).toContain("activity_id = {activityId:UUID}");
+  });
+
+  it("queries activity summaries from the ClickHouse analytics schema", async () => {
+    const { store, query } = makeStore([
+      {
+        activity_id: window.activityId,
+        avg_hr: 145,
+        max_hr: 170,
+        avg_power: 210,
+        max_power: 400,
+        avg_speed: 8,
+        max_speed: 12,
+        avg_cadence: 85,
+        total_distance: 30000,
+        elevation_gain_m: 500,
+        elevation_loss_m: 450,
+        sample_count: 3600,
+      },
+    ]);
+
+    const rows = await store.getActivitySummaries([window.activityId]);
+
+    expect(rows[0]?.avg_hr).toBe(145);
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("FROM analytics.activity_summary"),
+        query_params: { activityIds: [window.activityId] },
+      }),
+    );
   });
 
   it("counts power zones from the same bounded source selection", async () => {
@@ -68,13 +94,41 @@ describe("ClickHouseActivitySensorStore", () => {
       expect.objectContaining({
         format: "JSONEachRow",
         query_params: expect.objectContaining({
+          activityId: window.activityId,
           ftp: 275,
-          memberActivityIds: window.memberActivityIds,
         }),
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("linked_best_source");
+    expect(queryText).toContain("analytics.deduped_sensor");
     expect(queryText).toContain("channel = 'power'");
+  });
+
+  it("clamps heart-rate duration windows to at least one sample", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getHeartRateCurveRows(30, window.userId, "UTC");
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain(
+      "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
+    );
+    expect(queryText).not.toContain(
+      "/ toFloat64(toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
+    );
+  });
+
+  it("clamps pace duration windows to at least one sample", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getPaceCurveRows(30, window.userId, "UTC");
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain(
+      "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
+    );
+    expect(queryText).not.toContain(
+      "/ toFloat64(toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
+    );
   });
 });

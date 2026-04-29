@@ -195,21 +195,25 @@ jobs:
           set -e
           if [ "$apply_code" -ne 0 ]; then
             if grep -qE "server limit reached|resource_limit_exceeded" "$apply_output"; then
-              echo "review_app_skipped=true" >> "$GITHUB_OUTPUT"
-              echo "review_host=unavailable" >> "$GITHUB_OUTPUT"
-              echo "review_url=unavailable" >> "$GITHUB_OUTPUT"
-              echo "review_server_ip=unavailable" >> "$GITHUB_OUTPUT"
-              echo "review_app_skip_reason=Hetzner returned a server quota error while trying to provision a new review server. Infra capacity needs to be increased or old review app resources cleaned up." >> "$GITHUB_OUTPUT"
+              {
+                echo "review_app_skipped=true"
+                echo "review_host=unavailable"
+                echo "review_url=unavailable"
+                echo "review_server_ip=unavailable"
+                echo "review_app_skip_reason=Hetzner returned a server quota error while trying to provision a new review server. Infra capacity needs to be increased or old review app resources cleaned up."
+              } >> "$GITHUB_OUTPUT"
               echo "::warning::Review app skipped due Hetzner server limit reached for PR #${{ github.event.pull_request.number }}."
               rm -f "$apply_output"
               exit 0
             fi
             if grep -qE "error during placement|resource_unavailable" "$apply_output"; then
-              echo "review_app_skipped=true" >> "$GITHUB_OUTPUT"
-              echo "review_host=unavailable" >> "$GITHUB_OUTPUT"
-              echo "review_url=unavailable" >> "$GITHUB_OUTPUT"
-              echo "review_server_ip=unavailable" >> "$GITHUB_OUTPUT"
-              echo "review_app_skip_reason=Hetzner could not allocate the configured review app server type in the configured location. This is provider capacity/placement availability, not a code failure in this PR." >> "$GITHUB_OUTPUT"
+              {
+                echo "review_app_skipped=true"
+                echo "review_host=unavailable"
+                echo "review_url=unavailable"
+                echo "review_server_ip=unavailable"
+                echo "review_app_skip_reason=Hetzner could not allocate the configured review app server type in the configured location. This is provider capacity/placement availability, not a code failure in this PR."
+              } >> "$GITHUB_OUTPUT"
               echo "::warning::Review app skipped because Hetzner could not allocate the configured review app server for PR #${{ github.event.pull_request.number }}."
               rm -f "$apply_output"
               exit 0
@@ -310,8 +314,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! timeout 300 ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" \
-            'cloud-init status --wait >/dev/null 2>&1 && docker info >/dev/null 2>&1 && docker compose version >/dev/null 2>&1'; then
+          docker_host="ssh://root@${REVIEW_SERVER_IP}"
+          deadline_seconds=$((SECONDS + 300))
+
+          until ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" \
+            'cloud-init status --wait >/dev/null 2>&1 && docker info >/dev/null 2>&1 && docker compose version >/dev/null 2>&1' &&
+            DOCKER_HOST="${docker_host}" docker version >/dev/null 2>&1; do
+            if [ "$SECONDS" -ge "$deadline_seconds" ]; then
+              echo "::error::Review server bootstrap did not complete within 300s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+          if [ "$SECONDS" -ge "$deadline_seconds" ]; then
             echo "::error::Review server bootstrap did not complete within 300s"
             exit 1
           fi
@@ -326,8 +342,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db redis
-          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db redis
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db clickhouse redis
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db clickhouse redis
 
           for attempt in $(seq 1 36); do
             if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T db pg_isready -U health -d health; then
@@ -335,6 +351,17 @@ jobs:
             fi
             if [ "$attempt" -eq 36 ]; then
               echo "::error::Review app database did not become ready within 180s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+          for attempt in $(seq 1 36); do
+            if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T clickhouse sh -lc "wget -qO- http://localhost:8123/ping | grep -q Ok"; then
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::Review app ClickHouse did not become ready within 180s"
               exit 1
             fi
             sleep 5

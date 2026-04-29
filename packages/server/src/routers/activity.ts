@@ -53,7 +53,13 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       try {
         return await repo.list(input);
       } catch (error) {
@@ -71,7 +77,13 @@ export const activityRouter = router({
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       const row = await repo.findById(input.id);
 
       if (!row) {
@@ -90,6 +102,13 @@ export const activityRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for activity streams. Set CLICKHOUSE_URL and retry.",
+        });
+      }
       const repo = new ActivityRepository(
         ctx.db,
         ctx.userId,
@@ -104,13 +123,33 @@ export const activityRouter = router({
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for heart-rate zones. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
       return repo.getHrZones(input.id);
     }),
 
   powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
+        });
+      }
       const activityRepo = new ActivityRepository(
         ctx.db,
         ctx.userId,
@@ -125,7 +164,7 @@ export const activityRouter = router({
       if (!isCyclingActivity(activity.activity_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
 
-      const powerRepo = new PowerRepository(ctx.db, ctx.userId, ctx.timezone);
+      const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
       const { currentEftp } = await powerRepo.getEftpTrend(90);
       if (currentEftp == null) return null;
 
@@ -141,6 +180,7 @@ export const activityRouter = router({
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const activity = await activityRepo.findById(input.id);
       if (!activity) {

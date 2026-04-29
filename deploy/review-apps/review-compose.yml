@@ -9,6 +9,7 @@ services:
       ENABLE_DEV_LOGIN: "true"
       PUBLIC_URL: https://${REVIEW_HOST:?REVIEW_HOST is required}
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${POSTGRES_PASSWORD}@clickhouse:8123
       REDIS_URL: redis://redis:6379
       JOB_FILES_DIR: /app/job-files
       SLACK_SIGNING_SECRET: ""
@@ -20,6 +21,8 @@ services:
       - "3000:3000"
     depends_on:
       db:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -35,6 +38,14 @@ services:
 
   db:
     image: timescale/timescaledb:2.26.2-pg18
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_wal_senders=4
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
@@ -50,6 +61,22 @@ services:
       retries: 12
       start_period: 30s
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.3.20-alpine
+    environment:
+      CLICKHOUSE_DB: fitness
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
   redis:
     image: redis:7-alpine
     volumes:
@@ -63,5 +90,6 @@ services:
 
 volumes:
   db_data:
+  clickhouse_data:
   redis_data:
   job_files:

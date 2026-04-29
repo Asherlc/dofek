@@ -5,6 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helper.ts";
 
 /**
  * Integration tests covering uncovered transformation logic in tRPC router endpoints.
@@ -338,7 +339,7 @@ describe("Router data coverage", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     // Start server
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

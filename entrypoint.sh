@@ -21,9 +21,6 @@ NODE="node --experimental-transform-types --enable-source-maps --disable-warning
 
 case "${1:-sync}" in
   web)
-    if [ -n "${CLICKHOUSE_URL:-}" ]; then
-      $NODE src/db/run-sync-clickhouse.ts
-    fi
     exec $NODE packages/server/src/index.ts
     ;;
   sync)

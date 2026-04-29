@@ -1,4 +1,4 @@
-name: Deploy App
+name: Deploy Web Stack
 
 on:
   workflow_call:
@@ -102,12 +102,12 @@ on:
         type: boolean
 
 concurrency:
-  group: deploy-app-${{ inputs.stack_name || 'dofek' }}
+  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}
   cancel-in-progress: false
 
 jobs:
-  app:
-    name: Deploy App
+  web-stack:
+    name: Deploy Web Stack
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -253,7 +253,7 @@ jobs:
           docker run --rm \
             --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
             postgres:18-alpine sh -euc '
-              for path in /mnt/dofek-data/postgres /mnt/dofek-data/databasus /mnt/dofek-data/redis; do
+              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis; do
                 if [ ! -d "$path" ]; then
                   echo "::error::Required host bind mount path is missing: $path"
                   exit 1
@@ -261,15 +261,25 @@ jobs:
               done
             '
 
-      - name: Bootstrap stack (if DB service is missing)
+      - name: Bootstrap stack (if data services are missing)
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
+          db_running=false
+          clickhouse_running=false
           if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
             docker service ps "${STACK_NAME}_db" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
-            echo "Swarm DB service exists with a running task; skipping bootstrap deploy."
+            db_running=true
+          fi
+          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1 && \
+            docker service ps "${STACK_NAME}_clickhouse" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
+            clickhouse_running=true
+          fi
+
+          if [ "$db_running" = true ] && [ "$clickhouse_running" = true ]; then
+            echo "Swarm DB and ClickHouse services exist with running tasks; skipping bootstrap deploy."
           else
-            echo "Swarm DB service is missing or not running; running bootstrap stack deploy."
+            echo "Swarm DB or ClickHouse service is missing or not running; running bootstrap stack deploy."
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth "$STACK_NAME"
           fi
 
@@ -295,6 +305,24 @@ jobs:
             sleep 5
           done
 
+      - name: Wait for ClickHouse
+        run: |
+          for attempt in $(seq 1 36); do
+            clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              postgres:18-alpine sh -euc \
+              "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
+            if [ "$clickhouse_output" = "Ok." ]; then
+              echo "ClickHouse is reachable."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::ClickHouse did not become reachable within 180s"
+              exit 1
+            fi
+            echo "ClickHouse readiness attempt ${attempt}/36: retrying in 5s..."
+            sleep 5
+          done
+
       - name: Run migrations
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
@@ -306,7 +334,7 @@ jobs:
               --env-file "$INFISICAL_ENV_FILE" \
               --entrypoint sh \
               "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-              -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; exec ./entrypoint.sh migrate" >"$migration_output_file" 2>&1; then
+              -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; export CLICKHOUSE_URL=\"http://default:\${CLICKHOUSE_PASSWORD}@clickhouse:8123\"; exec ./entrypoint.sh migrate" >"$migration_output_file" 2>&1; then
               echo "Migration attempt ${attempt}/12 succeeded."
               break
             fi
