@@ -1128,3 +1128,42 @@ Staging still does not have Stripe test keys or provider OAuth credentials unles
 they are added intentionally. Add fail-fast deploy validation for OTA-only
 runtime requirements such as `EXPO_APP_ID`, and document the minimum staging
 Infisical secret checklist.
+
+## 2026-04-29: Review app deploy failed on Docker SSH transport
+
+### Impact
+
+PR #1073 had otherwise green CI, but `Deploy Review App` failed before the
+review stack could start. The application image built successfully and the
+dedicated review server was created.
+
+### Evidence That Mattered
+
+Run `25117699121`, job `73610459050`, failed in `Deploy review stack` with:
+
+```text
+Connection timed out during banner exchange
+Connection to 116.203.81.197 port 22 timed out
+```
+
+The previous `Wait for review server bootstrap` step had succeeded, and later
+SSH inspection showed `ssh` and `docker` active on `dofek-pr-1073`. `docker
+version` over `DOCKER_HOST=ssh://root@116.203.81.197` also succeeded once the
+host key was trusted locally.
+
+### Root Cause
+
+The readiness gate only proved a normal SSH session that ran `docker info`
+inside the host. The failing deploy command used Docker's SSH transport, which
+can fail separately while a freshly provisioned review server is still settling.
+
+### Fix or Mitigation
+
+The review-app bootstrap gate now also verifies `DOCKER_HOST=ssh://root@...`
+with `docker version` before the workflow starts `docker compose`.
+
+### Remaining Risk
+
+This moves Docker SSH transport readiness into the existing 300-second bootstrap
+gate. If future review-app failures occur after that gate passes, inspect the
+first fatal line before adding broader retries.
