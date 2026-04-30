@@ -117,11 +117,27 @@ describe("ActivityRepository", () => {
       expect(result.totalCount).toBe(0);
     });
 
-    it("fails when no sensor store is configured", async () => {
-      const { repo } = makeRepository([]);
-      await expect(
-        repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 }),
-      ).rejects.toThrow("ClickHouse activity analytics store is required for activity summaries");
+    it("returns rows without summaries when no sensor store is configured", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "abc-123",
+          activity_type: "cycling",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Morning Ride",
+          provider_id: "garmin",
+          source_providers: ["garmin"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+      expect(result.totalCount).toBe(1);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toHaveProperty("id", "abc-123");
     });
 
     it("returns items and totalCount", async () => {
@@ -244,11 +260,35 @@ describe("ActivityRepository", () => {
       expect(result).toBeNull();
     });
 
-    it("fails when no sensor store is configured", async () => {
-      const { repo } = makeRepository([]);
-      await expect(repo.findById("some-id")).rejects.toThrow(
-        "ClickHouse activity analytics store is required for activity summaries",
-      );
+    it("returns a row without summaries when no sensor store is configured", async () => {
+      const { repo } = makeRepository([
+        {
+          id: "abc-123",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T10:45:00.000Z",
+          name: "Morning Run",
+          notes: "",
+          provider_id: "garmin",
+          subsource: "Garmin Connect",
+          source_providers: ["garmin"],
+          source_external_ids: [{ providerId: "garmin", externalId: "activity-1" }],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          elevation_loss_m: null,
+          sample_count: null,
+        },
+      ]);
+      const result = await repo.findById("abc-123");
+      expect(result).not.toBeNull();
+      expect(result).toHaveProperty("id", "abc-123");
     });
 
     it("returns activity row when found", async () => {

@@ -13,7 +13,8 @@ export const powerRouter = router({
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "ClickHouse activity analytics store is required for power analysis.",
+          message:
+            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
         });
       }
       const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
@@ -25,7 +26,8 @@ export const powerRouter = router({
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "ClickHouse activity analytics store is required for power analysis.",
+          message:
+            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
         });
       }
       const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);

@@ -319,7 +319,10 @@ export class ActivityRepository extends BaseRepository {
   }
 
   async #withActivitySummaries<TRow extends { id: string }>(rows: TRow[]): Promise<TRow[]> {
-    const sensorStore = this.#requireSensorStore("activity summaries");
+    const sensorStore = this.#sensorStore;
+    if (!sensorStore) {
+      return rows;
+    }
     if (rows.length === 0) {
       return rows;
     }

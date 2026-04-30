@@ -41,7 +41,12 @@ describe("run-migrate main()", () => {
     clickHouseClient.query.mockReset();
     clickHouseClient.close.mockReset();
     process.env.CLICKHOUSE_URL = "http://default:health@localhost:8123";
-    mockCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
+    mockCreateClickHouseClientFromEnv.mockImplementation(() => {
+      if (!process.env.CLICKHOUSE_URL) {
+        throw new Error("CLICKHOUSE_URL is required");
+      }
+      return clickHouseClient;
+    });
     mockRunClickHouseMigrations.mockResolvedValue(0);
     mockSyncMaterializedViews.mockResolvedValue({ synced: 0, skipped: 0, refreshed: 0 });
   });

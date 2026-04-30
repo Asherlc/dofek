@@ -265,10 +265,14 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
         const bestValue = bestMovingAverage(values, windowSize);
         const existing = bestRows.get(durationSeconds);
         if (!existing || bestValue > existing.best_value) {
+          const activityDate = activitySamples[0]?.activity_date;
+          if (!activityDate) {
+            continue;
+          }
           bestRows.set(durationSeconds, {
             duration_seconds: durationSeconds,
             best_value: bestValue,
-            activity_date: activitySamples[0]?.activity_date ?? "",
+            activity_date: activityDate,
           });
         }
       }
