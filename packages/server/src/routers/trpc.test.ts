@@ -16,10 +16,21 @@ vi.mock("../lib/metrics.ts", () => ({
   trpcCacheLookupDuration: { observe: vi.fn() },
   trpcDbQueryDuration: { observe: vi.fn() },
   trpcProcedureDuration: { observe: vi.fn() },
+  trpcSlowQueriesTotal: { inc: vi.fn() },
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: { warn: vi.fn() },
 }));
 
 import { queryCache } from "dofek/lib/cache";
-import { cacheHitsTotal, cacheMissesTotal } from "../lib/metrics.ts";
+import {
+  cacheHitsTotal,
+  cacheMissesTotal,
+  trpcProcedureDuration,
+  trpcSlowQueriesTotal,
+} from "../lib/metrics.ts";
+import { logger } from "../logger.ts";
 import {
   adminProcedure,
   CacheTTL,
@@ -211,6 +222,39 @@ describe("trpc", () => {
       const result = await caller.test();
       expect(result).toBe("admin-123");
     });
+
+    it("passes the resolved access window to admin procedures", async () => {
+      vi.doMock("../auth/admin.ts", () => ({
+        isAdmin: vi.fn().mockResolvedValue(true),
+      }));
+      const accessWindow: AccessWindow = {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      };
+      const testRouter = router({
+        test: adminProcedure.query(({ ctx }) => ({
+          userId: ctx.userId,
+          accessWindow: ctx.accessWindow,
+        })),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "admin-123",
+        timezone: "UTC",
+        accessWindow,
+      });
+
+      await expect(caller.test()).resolves.toEqual({
+        userId: "admin-123",
+        accessWindow,
+      });
+    });
   });
 
   describe("cached middleware", () => {
@@ -232,6 +276,28 @@ describe("trpc", () => {
       expect(result).toBe("cached-value");
       expect(cacheHitsTotal.inc).toHaveBeenCalledWith({ procedure: "cachedQuery" });
       expect(queryCache.set).not.toHaveBeenCalled();
+    });
+
+    it("records cache-hit procedure metrics with expected labels and seconds", async () => {
+      vi.mocked(queryCache.get).mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return "cached-value";
+      });
+      const createCaller = createCachedRouter();
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+      const startedAt = performance.now();
+
+      await expect(caller.cachedQuery()).resolves.toBe("cached-value");
+      const finishedAt = performance.now();
+
+      expect(trpcProcedureDuration.observe).toHaveBeenCalledWith(
+        { procedure: "cachedQuery", type: "query", cache_hit: "true" },
+        expect.any(Number),
+      );
+      const observedSeconds = vi.mocked(trpcProcedureDuration.observe).mock.calls[0]?.[1];
+      expect(observedSeconds).toBeGreaterThan(0.02);
+      expect(observedSeconds).toBeLessThan(0.2);
+      expect(observedSeconds).toBeCloseTo((finishedAt - startedAt) / 1000, 1);
     });
 
     it("calls next() and caches result on cache miss", async () => {
@@ -258,6 +324,42 @@ describe("trpc", () => {
 
       await caller.cachedQuery();
       expect(queryCache.get).toHaveBeenCalledWith(expect.stringContaining("user-abc:"));
+    });
+
+    it("logs slow uncached procedures with anon and unknown fallbacks", async () => {
+      vi.mocked(queryCache.get).mockResolvedValue(undefined);
+      const nowSpy = vi
+        .spyOn(performance, "now")
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(1010)
+        .mockReturnValueOnce(1020)
+        .mockReturnValueOnce(1030)
+        .mockReturnValueOnce(1735)
+        .mockReturnValueOnce(1750);
+      const testRouter = router({
+        cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
+      });
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: {},
+        userId: "user-1",
+        timezone: "UTC",
+        appVersion: undefined,
+        assetsVersion: undefined,
+      });
+
+      await expect(caller.cachedQuery()).resolves.toBe("db-result");
+
+      expect(trpcSlowQueriesTotal.inc).toHaveBeenCalledWith({
+        procedure: "cachedQuery",
+        type: "query",
+      });
+      expect(logger.warn).toHaveBeenCalledWith(
+        "[trpc] Slow query procedure=cachedQuery type=query user_id=user-1 db_duration_ms=705 total_duration_ms=750 cache_hit=false app_version=unknown assets_version=unknown",
+      );
+
+      nowSpy.mockRestore();
     });
   });
 });

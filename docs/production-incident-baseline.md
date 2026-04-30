@@ -1363,3 +1363,75 @@ targeted trends integration test, and full local changed-test coverage. If a
 future review-app failure mentions shell parsing again, inspect the rendered
 `run` script first; if a future trends test failure mentions continuous
 aggregates, verify the schema object type before adding refresh logic.
+
+## 2026-04-29: Review app readiness probe and Stryker shard failed on uncovered guard branches
+
+### Impact
+
+PR `#1075` still had two failing CI paths after the previous fixes:
+`Deploy Review App` timed out waiting for ClickHouse, and `Test / Stryker (1)`
+failed the mutation threshold. The umbrella `Test / Mutation Testing` job then
+failed because that shard failed.
+
+### Evidence That Mattered
+
+Review app fatal lines:
+
+```text
+wget: can't connect to remote host: Connection refused
+##[error]Review app ClickHouse did not become ready within 180s
+```
+
+Local repro inside the review ClickHouse container:
+
+```text
+wget -qO- http://127.0.0.1:8123/ping  # Ok.
+wget -qO- http://localhost:8123/ping   # Connection refused
+getent hosts localhost                 # ::1 localhost localhost
+```
+
+Stryker fatal line from the local shard repro of the exact CI file set:
+
+```text
+Final mutation score 73.74 under breaking threshold 75
+```
+
+The surviving mutants were concentrated in:
+`packages/server/src/routers/duration-curves.ts`,
+`packages/server/src/routers/power.ts`,
+`packages/server/src/trpc.ts`, and `src/db/run-migrate.ts`.
+
+### Root Cause
+
+The review-app workflow probed ClickHouse with `http://localhost:8123/ping`
+inside the container. In that image, `localhost` resolved to IPv6 `::1`, while
+ClickHouse was listening on IPv4; the compose healthcheck already used
+`127.0.0.1`, which is why the container was healthy but the workflow probe
+timed out.
+
+Separately, the Stryker shard was not crashing; it was correctly reporting
+surviving mutants because recently added ClickHouse-required branches and tRPC
+metrics/logging paths did not have sufficiently specific tests.
+
+### Fix or Mitigation
+
+The workflow probe now uses `http://127.0.0.1:8123/ping` to match the container
+healthcheck and the actual listening socket.
+
+Targeted tests now cover:
+
+- missing `sensorStore` preconditions in duration-curve and power routers
+- admin middleware propagation of `accessWindow`
+- cache-hit duration metrics and slow-query logging in `trpc`
+- `run-migrate` early `CLICKHOUSE_URL` failure and optional ClickHouse client
+  shutdown
+
+The exact local Stryker shard rerun for the CI file set finished at a mutation
+score of `94.95`, above the break threshold of `75`.
+
+### Remaining Risk
+
+The direct-run footer in `src/db/run-migrate.ts` is still uncovered by Stryker,
+but it no longer affects the threshold for this shard. If a future review-app
+ClickHouse check fails again, inspect name resolution inside the container
+before changing waits or retries.

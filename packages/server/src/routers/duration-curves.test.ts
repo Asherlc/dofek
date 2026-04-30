@@ -157,4 +157,18 @@ describe("durationCurvesRouter", () => {
       code: "PRECONDITION_FAILED",
     });
   });
+
+  it("throws PRECONDITION_FAILED for paceCurve when sensor store is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.paceCurve({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "PRECONDITION_FAILED",
+      message:
+        "ClickHouse activity analytics store is required for duration curves. Set CLICKHOUSE_URL and retry.",
+    });
+  });
 });

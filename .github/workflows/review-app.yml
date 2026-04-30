@@ -375,7 +375,7 @@ jobs:
           done
 
           for attempt in $(seq 1 36); do
-            if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T clickhouse sh -lc "wget -qO- http://localhost:8123/ping | grep -q Ok"; then
+            if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T clickhouse sh -lc "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"; then
               break
             fi
             if [ "$attempt" -eq 36 ]; then

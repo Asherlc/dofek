@@ -30,7 +30,11 @@ const mockLogger = vi.mocked(logger);
 describe("run-migrate main()", () => {
   const originalUrl = process.env.DATABASE_URL;
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
-  const clickHouseClient = { command: vi.fn(), query: vi.fn(), close: vi.fn() };
+  const clickHouseClient: {
+    command: ReturnType<typeof vi.fn>;
+    query: ReturnType<typeof vi.fn>;
+    close?: ReturnType<typeof vi.fn>;
+  } = { command: vi.fn(), query: vi.fn(), close: vi.fn() };
 
   beforeEach(() => {
     mockRunMigrations.mockReset();
@@ -39,7 +43,7 @@ describe("run-migrate main()", () => {
     mockSyncMaterializedViews.mockReset();
     clickHouseClient.command.mockReset();
     clickHouseClient.query.mockReset();
-    clickHouseClient.close.mockReset();
+    clickHouseClient.close = vi.fn();
     process.env.CLICKHOUSE_URL = "http://default:health@localhost:8123";
     mockCreateClickHouseClientFromEnv.mockImplementation(() => {
       if (!process.env.CLICKHOUSE_URL) {
@@ -73,6 +77,8 @@ describe("run-migrate main()", () => {
     process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
     delete process.env.CLICKHOUSE_URL;
     await expect(main()).rejects.toThrow("CLICKHOUSE_URL");
+    expect(mockRunMigrations).not.toHaveBeenCalled();
+    expect(mockCreateClickHouseClientFromEnv).not.toHaveBeenCalled();
   });
 
   it("runs migrations and logs the count", async () => {
@@ -99,6 +105,19 @@ describe("run-migrate main()", () => {
     expect(clickHouseClient.close).toHaveBeenCalled();
     expect(mockLogger.info).toHaveBeenCalledWith(
       expect.stringContaining("1 ClickHouse migration(s) applied"),
+    );
+  });
+
+  it("does not require close() on the ClickHouse client", async () => {
+    process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    clickHouseClient.close = undefined;
+    mockRunMigrations.mockResolvedValue(1);
+    mockCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
+
+    await expect(main()).resolves.toBeUndefined();
+    expect(mockRunClickHouseMigrations).toHaveBeenCalledWith(
+      clickHouseClient,
+      "postgres://test:test@localhost:5432/test",
     );
   });
 

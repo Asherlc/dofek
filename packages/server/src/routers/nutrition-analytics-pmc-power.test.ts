@@ -1,3 +1,4 @@
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -370,6 +371,20 @@ describe("powerRouter", () => {
       const result = await caller.powerCurve({ days: 90 });
       expect(result.points).toEqual([]);
     });
+
+    it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.powerCurve({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "PRECONDITION_FAILED",
+        message:
+          "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
+      });
+    });
   });
 
   describe("eftpTrend", () => {
@@ -404,6 +419,20 @@ describe("powerRouter", () => {
       expect(result.trend).toHaveLength(1);
       // Normalized Power of constant 260W = 260, eFTP = 260 * 0.95 = 247
       expect(result.trend[0]?.eftp).toBe(247);
+    });
+
+    it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.eftpTrend({ days: 365 })).rejects.toMatchObject<Partial<TRPCError>>({
+        code: "PRECONDITION_FAILED",
+        message:
+          "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
+      });
     });
   });
 });
