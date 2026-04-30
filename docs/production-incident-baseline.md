@@ -1556,12 +1556,38 @@ The next rerun reached the migration step and showed that the workflow encoded
 rendered Infisical dotenv file. Updated the migration step to run that encoding
 through the existing dotenv command runner.
 
+A later rerun reached the migration container and then appeared stuck. Production
+Postgres showed one migration session holding advisory lock `728370291` while
+running:
+
+```sql
+UPDATE fitness.metric_stream
+SET id = gen_random_uuid()
+WHERE id IS NULL;
+```
+
+The table was a compressed Timescale hypertable with 195 chunks, 189 compressed
+chunks, and about 37 GB of chunk data. Later workflow retries were not applying
+migrations; they were blocked on the same advisory lock. Because the workflow
+wrapped `docker run` with the runner-side `timeout` while using remote Docker
+over SSH, each timeout killed the local Docker client but left the remote
+migration container running.
+
+Updated the migration step to run one named migration container with a 50-minute
+timeout and explicit cleanup of that remote container on failure or timeout.
+The longer timeout is intentionally scoped to migrations because this release
+contains a one-time 37 GB compressed-hypertable backfill; the named-container
+cleanup prevents future runner-side timeouts from leaking remote migration
+processes.
+
 ### Remaining Risk
 
 This fixes the missed ClickHouse provisioning run, the missing ClickHouse
-secret, and the migration-step dotenv mismatch. Future changes to the
-`/mnt/dofek-data` directory list still require a corresponding trigger bump in
-the same commit. Future stack-level environment variables must be added to
-Infisical before the workflow that references them is merged or deployed, and
-workflow steps must read Infisical-only secrets from the rendered dotenv file
-rather than from the runner environment.
+secret, the migration-step dotenv mismatch, and the remote migration-container
+leak. Future changes to the `/mnt/dofek-data` directory list still require a
+corresponding trigger bump in the same commit. Future stack-level environment
+variables must be added to Infisical before the workflow that references them is
+merged or deployed, and workflow steps must read Infisical-only secrets from the
+rendered dotenv file rather than from the runner environment. Large compressed
+hypertable backfills should be called out in deploy planning so the migration
+timeout is intentional rather than discovered during release.
