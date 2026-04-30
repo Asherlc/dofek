@@ -1613,6 +1613,15 @@ stack file remains the desired-state source of truth; the pre-migration service
 update makes the needed resource limit effective before the migration that
 requires it.
 
+Production then showed the heavy Postgres statement disappear from
+`pg_stat_activity` while the migration Node process stayed alive with no active
+Postgres or ClickHouse query and an external HTTPS connection from the
+instrumented entrypoint. Updated the deploy migration command to run
+`src/db/run-migrate.ts` directly with Node's TypeScript support, without the
+OpenTelemetry instrumentation imports used by the long-running app entrypoint.
+The deploy step still captures container logs, but the one-shot migration no
+longer depends on telemetry export shutdown behavior to finish the release.
+
 ### Remaining Risk
 
 This fixes the missed ClickHouse provisioning run, the missing ClickHouse
