@@ -1313,3 +1313,53 @@ asserts that the user detail page appears.
 The fix is covered by route and page unit tests. Production needs a web deploy
 containing the route tree update before the live admin user URL renders the
 detail page.
+
+## 2026-04-29: Review app workflow and Stryker failed on stale shell/test assumptions
+
+### Impact
+
+PR `#1075` had two failing CI paths: `Deploy Review App` exited before writing
+review app overrides, and `Test / Stryker (1)` repeatedly errored during the
+trends integration test setup. The umbrella `Test / Mutation Testing` job then
+failed because the Stryker shard failed.
+
+### Evidence That Mattered
+
+Review app fatal lines:
+
+```text
+warning: here-document at line 4 delimited by end-of-file (wanted `EOF')
+unexpected EOF while looking for matching `)'
+```
+
+Stryker fatal DB line:
+
+```text
+ERROR: relation "cagg_metric_daily" is not a continuous aggregate
+STATEMENT: CALL refresh_continuous_aggregate('fitness.cagg_metric_daily', NULL, NULL)
+```
+
+### Root Cause
+
+The review-app workflow generated encoded database URLs with a Node heredoc
+whose closing `EOF` was indented inside the YAML `run` block, so Bash never saw
+the terminator. Separately, `packages/server/src/routers/trends-data.integration.test.ts`
+still assumed `fitness.cagg_metric_daily` and `fitness.cagg_metric_weekly` were
+continuous aggregates even though the baseline schema defines them as plain
+views.
+
+### Fix or Mitigation
+
+The workflow now uses `node --eval` instead of a heredoc to derive encoded
+`DATABASE_URL` and `CLICKHOUSE_URL` values. The trends integration test no
+longer calls `refresh_continuous_aggregate()` for those relations and instead
+documents that the baseline test schema exposes the inserted rows through views
+immediately.
+
+### Remaining Risk
+
+The fixes are covered by a direct shell probe of the workflow snippet, the
+targeted trends integration test, and full local changed-test coverage. If a
+future review-app failure mentions shell parsing again, inspect the rendered
+`run` script first; if a future trends test failure mentions continuous
+aggregates, verify the schema object type before adding refresh logic.

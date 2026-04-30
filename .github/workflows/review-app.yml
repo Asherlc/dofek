@@ -292,20 +292,20 @@ jobs:
           set -euo pipefail
 
           database_url_and_clickhouse_url="$(
-            node - "${{ github.workspace }}/.env.review" <<'EOF'
-            const fs = require("node:fs");
+            node --eval '
+              const fs = require("node:fs");
 
-            const envFilePath = process.argv[2];
-            const lines = fs.readFileSync(envFilePath, "utf8").split(/\r?\n/);
-            const postgresPasswordLine = lines.find((line) => line.startsWith("POSTGRES_PASSWORD="));
-            if (!postgresPasswordLine) {
-              throw new Error("POSTGRES_PASSWORD is required in review env file");
-            }
-            const postgresPassword = postgresPasswordLine.slice("POSTGRES_PASSWORD=".length);
-            const encodedPassword = encodeURIComponent(postgresPassword);
-            console.log(`DATABASE_URL=postgres://health:${encodedPassword}@db:5432/health`);
-            console.log(`CLICKHOUSE_URL=http://default:${encodedPassword}@clickhouse:8123`);
-            EOF
+              const envFilePath = process.argv[1];
+              const lines = fs.readFileSync(envFilePath, "utf8").split(/\r?\n/);
+              const postgresPasswordLine = lines.find((line) => line.startsWith("POSTGRES_PASSWORD="));
+              if (!postgresPasswordLine) {
+                throw new Error("POSTGRES_PASSWORD is required in review env file");
+              }
+              const postgresPassword = postgresPasswordLine.slice("POSTGRES_PASSWORD=".length);
+              const encodedPassword = encodeURIComponent(postgresPassword);
+              console.log(`DATABASE_URL=postgres://health:${encodedPassword}@db:5432/health`);
+              console.log(`CLICKHOUSE_URL=http://default:${encodedPassword}@clickhouse:8123`);
+            ' "${{ github.workspace }}/.env.review"
           )"
 
           {
