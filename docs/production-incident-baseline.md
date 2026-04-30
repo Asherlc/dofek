@@ -1810,3 +1810,30 @@ not receive raw historic metric samples through `postgres_fitness.metric_stream`
 The real fix still requires an offline maintenance job to backfill stable row
 IDs, add the Timescale-compatible primary key, and then re-enable raw
 ClickHouse replication.
+
+### Stack Deploy Follow-up Evidence
+
+After the migration cleanup deployed, the `Run migrations` step succeeded, but
+`docker stack deploy` rolled back `dofek_worker`:
+
+```text
+service rollback paused: update paused due to failure or early termination of task
+```
+
+Worker logs showed the first fatal app line:
+
+```text
+[migrate] Error: ClickHouse URL is malformed. Expected format: http[s]://[username:password@]hostname:port[/database][?param1=value1&param2=value2]
+```
+
+The migration container already URL-encoded `CLICKHOUSE_PASSWORD` before
+constructing `CLICKHOUSE_URL`; the normal app services interpolated the raw
+password into `deploy/stack.yml`, so reserved URL characters in the password
+made the app `CLICKHOUSE_URL` invalid.
+
+### Stack Deploy Follow-up Fix
+
+The deploy workflow now exports `CLICKHOUSE_PASSWORD_ENCODED` once after the
+Infisical dotenv file is available. `deploy/stack.yml` uses that encoded value
+for `web` and `worker` `CLICKHOUSE_URL` interpolation, while the ClickHouse
+service still receives the raw `CLICKHOUSE_PASSWORD`.

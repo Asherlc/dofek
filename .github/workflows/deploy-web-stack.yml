@@ -232,6 +232,13 @@ jobs:
           process.exit(result.status ?? 1);
           NODE
 
+      - name: Export encoded ClickHouse password
+        run: |
+          encoded_clickhouse_password="$(
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'const password = process.env.CLICKHOUSE_PASSWORD; if (!password) { throw new Error("CLICKHOUSE_PASSWORD is required"); } process.stdout.write(encodeURIComponent(password));'
+          )"
+          echo "CLICKHOUSE_PASSWORD_ENCODED=$encoded_clickhouse_password" >> "$GITHUB_ENV"
+
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -350,9 +357,6 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           migration_output_file="$RUNNER_TEMP/migrate.log"
-          encoded_clickhouse_password="$(
-            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'const password = process.env.CLICKHOUSE_PASSWORD; if (!password) { throw new Error("CLICKHOUSE_PASSWORD is required"); } process.stdout.write(encodeURIComponent(password));'
-          )"
           migration_container="${STACK_NAME}_migrate_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           cleanup_migration_container() {
             docker rm -f "$migration_container" >/dev/null 2>&1 || true
@@ -363,7 +367,7 @@ jobs:
           cleanup_migration_container
           docker run --detach --name "$migration_container" --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \
-            --env "CLICKHOUSE_PASSWORD_ENCODED=$encoded_clickhouse_password" \
+            --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
