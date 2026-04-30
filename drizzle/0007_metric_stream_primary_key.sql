@@ -11,15 +11,6 @@ UPDATE fitness.metric_stream
 SET id = gen_random_uuid()
 WHERE id IS NULL;
 --> statement-breakpoint
-ALTER TABLE fitness.metric_stream
-ADD CONSTRAINT metric_stream_id_not_null_chk CHECK (id IS NOT NULL) NOT VALID;
---> statement-breakpoint
-ALTER TABLE fitness.metric_stream
-VALIDATE CONSTRAINT metric_stream_id_not_null_chk;
---> statement-breakpoint
-ALTER TABLE fitness.metric_stream
-ALTER COLUMN id SET NOT NULL;
---> statement-breakpoint
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -35,6 +26,3 @@ END $$;
 --> statement-breakpoint
 ALTER TABLE fitness.metric_stream
 REPLICA IDENTITY USING INDEX metric_stream_pkey;
---> statement-breakpoint
-ALTER TABLE fitness.metric_stream
-DROP CONSTRAINT metric_stream_id_not_null_chk;

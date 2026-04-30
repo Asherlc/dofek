@@ -63,6 +63,45 @@ Any future date-sensitive E2E seeds that use UTC string slicing can still drift
  around local-midnight boundaries, and any new cached server query path added to
  Cypress fixtures needs explicit invalidation or isolated cache keys.
 
+## 2026-04-29: PR 1075 Stryker Failed on metric_stream PK Migration
+
+### Impact
+
+PR #1075 remained blocked after the review-comment patch because the `Test /
+Stryker (0)` job could not finish database setup.
+
+### What Happened
+
+The new `metric_stream` replica-identity migration tried to validate a temporary
+`CHECK (id IS NOT NULL)` constraint on a Timescale hypertable that already had
+columnstore enabled.
+
+### Evidence That Mattered
+
+- Failing job: `Test / Stryker (0)`
+- First fatal line:
+  `ERROR: operation not supported on hypertables that have columnstore enabled`
+- Failing SQL:
+  `ALTER TABLE fitness.metric_stream VALIDATE CONSTRAINT metric_stream_id_not_null_chk;`
+
+### Root Cause
+
+The migration used a PostgreSQL-style staged `NOT NULL` rollout that Timescale
+does not allow once columnstore is enabled on the hypertable.
+
+### Fix Or Mitigation
+
+The migration now keeps the supported steps only: add nullable `id`, set the
+UUID default, backfill existing rows, add the composite primary key directly,
+and then set replica identity to that key. A focused integration test now
+covers that exact columnstore-enabled path.
+
+### Remaining Risk
+
+Future schema changes on `fitness.metric_stream` still need Timescale-specific
+validation. Standard PostgreSQL `VALIDATE CONSTRAINT` / staged `SET NOT NULL`
+patterns are not safe assumptions once columnstore is enabled.
+
 ## 2026-04-28: Garmin Sync Lost Status During DB Recovery
 
 ### Impact
