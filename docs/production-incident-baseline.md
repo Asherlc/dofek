@@ -1583,12 +1583,37 @@ intentionally scoped to migrations because this release contains a one-time
 37 GB compressed-hypertable backfill; the named-container cleanup prevents
 future runner-side timeouts from leaking remote migration processes.
 
+The next retry showed that even with the server-side timeout, a long attached
+`docker run` over SSH can fail with:
+
+```text
+client_loop: send disconnect: Broken pipe
+error waiting for container
+```
+
+Updated the migration step again to start the migration container detached,
+then poll `docker inspect` with short SSH calls and collect `docker logs` after
+the container exits. This keeps the release job from depending on one long-lived
+SSH stream while the database is doing a multi-minute table rewrite.
+
+Staging also failed after Postgres migrations and materialized-view sync because
+ClickHouse exceeded the service's 1 GB memory limit while applying the
+ClickHouse migrations:
+
+```text
+(total) memory limit exceeded ... current RSS: 966.99 MiB, maximum: 921.60 MiB
+```
+
+Raised the ClickHouse service memory limit to 2 GB so the ClickHouse migration
+has enough memory to create the Postgres bridge and analytics read models.
+
 ### Remaining Risk
 
 This fixes the missed ClickHouse provisioning run, the missing ClickHouse
-secret, the migration-step dotenv mismatch, and the remote migration-container
-leak. Future changes to the `/mnt/dofek-data` directory list still require a
-corresponding trigger bump in the same commit. Future stack-level environment
+secret, the migration-step dotenv mismatch, the remote migration-container leak,
+the long-lived SSH session failure mode, and the ClickHouse memory ceiling seen
+on staging. Future changes to the `/mnt/dofek-data` directory list still require
+a corresponding trigger bump in the same commit. Future stack-level environment
 variables must be added to Infisical before the workflow that references them is
 merged or deployed, and workflow steps must read Infisical-only secrets from the
 rendered dotenv file rather than from the runner environment. Large compressed

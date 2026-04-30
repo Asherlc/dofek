@@ -338,17 +338,46 @@ jobs:
           trap cleanup_migration_container EXIT
 
           echo "Starting migration container ${migration_container}..."
-          if timeout 55m docker run --name "$migration_container" --rm --network "${STACK_NAME}_default" \
+          cleanup_migration_container
+          docker run --detach --name "$migration_container" --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$encoded_clickhouse_password" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'timeout -k 30 3000 sh -euc '"'"'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh migrate'"'"'' >"$migration_output_file" 2>&1; then
+            -euc 'timeout -k 30 3000 sh -euc '"'"'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh migrate'"'"''
+
+          migration_timeout_seconds=3300
+          migration_start_seconds=$SECONDS
+          while true; do
+            container_state="$(docker inspect --format '{{.State.Running}} {{.State.ExitCode}}' "$migration_container" 2>/dev/null || true)"
+            if [ -z "$container_state" ]; then
+              echo "::error::Migration container ${migration_container} disappeared before completion"
+              exit 1
+            fi
+
+            migration_running="$(printf '%s\n' "$container_state" | awk '{print $1}')"
+            migration_exit_code="$(printf '%s\n' "$container_state" | awk '{print $2}')"
+            if [ "$migration_running" = "false" ]; then
+              break
+            fi
+
+            elapsed_seconds=$((SECONDS - migration_start_seconds))
+            if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
+              echo "::error::Migration exceeded ${migration_timeout_seconds}s"
+              cleanup_migration_container
+              exit 1
+            fi
+
+            echo "Migration still running after ${elapsed_seconds}s..."
+            sleep 15
+          done
+
+          docker logs "$migration_container" >"$migration_output_file" 2>&1 || true
+          if [ "$migration_exit_code" -eq 0 ]; then
             echo "Migration succeeded."
             trap - EXIT
             cleanup_migration_container
           else
-            migration_exit_code=$?
             echo "Migration failed (exit code ${migration_exit_code})."
             echo "Migration output (last 60 lines):"
             tail -n 60 "$migration_output_file" || true
