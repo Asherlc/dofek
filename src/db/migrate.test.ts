@@ -120,105 +120,24 @@ describe("runMigrations", () => {
     expect(executedQueries()).toContain("CREATE TABLE b (id INT)");
   });
 
-  it("backfills metric_stream IDs in bounded Timescale chunk ranges", async () => {
+  it("executes migration statements without custom marker hooks", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
-    mockReaddirSync.mockReturnValue(["0007_metric_stream_primary_key.sql"]);
-    mockReadFileSync.mockReturnValue("-- dofek:backfill-metric-stream-id");
-    const chunkRows = [
-      {
-        chunk_schema: "_timescaledb_internal",
-        chunk_name: "_hyper_1_1_chunk",
-        range_start: "2026-01-01T00:00:00.000Z",
-        range_end: "2026-01-01T02:00:00.000Z",
-      },
-      {
-        chunk_schema: "_timescaledb_internal",
-        chunk_name: "_hyper_1_2_chunk",
-        range_start: "2026-01-02T00:30:00.000Z",
-        range_end: "2026-01-02T01:00:00.000Z",
-      },
-    ];
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text.includes("timescaledb_information.chunks")) {
-        return Promise.resolve({ rows: chunkRows });
-      }
-      if (text.includes("UPDATE fitness.metric_stream AS metric_stream")) {
-        return Promise.resolve({ rows: [], rowCount: 7 });
-      }
-      return Promise.resolve({ rows: [] });
-    });
+    mockReaddirSync.mockReturnValue(["0007_metric_stream_replica_identity.sql"]);
+    mockReadFileSync.mockReturnValue(
+      "SELECT 1--> statement-breakpoint\n-- dofek:backfill-metric-stream-id",
+    );
 
     await runMigrations("postgres://localhost/test", "/tmp/migrations");
 
-    const backfillCalls = mockClientQuery.mock.calls.filter(([text]) =>
-      String(text).includes("UPDATE fitness.metric_stream AS metric_stream"),
+    expect(executedQueries()).toContain("SELECT 1");
+    expect(executedQueries()).toContain("-- dofek:backfill-metric-stream-id");
+    expect(executedQueries().some((query) => query.includes("UPDATE fitness.metric_stream"))).toBe(
+      false,
     );
-    expect(backfillCalls).toHaveLength(2);
-    expect(executedQueries()).toContain(
-      "SET timescaledb.max_tuples_decompressed_per_dml_transaction = 0",
-    );
-    expect(String(backfillCalls[0]?.[0])).not.toContain("ctid");
-    expect(String(backfillCalls[0]?.[0])).not.toContain("LIMIT");
-    expect(backfillCalls[0]?.[1]).toEqual([
-      new Date("2026-01-01T00:00:00.000Z"),
-      new Date("2026-01-01T02:00:00.000Z"),
-    ]);
-    expect(backfillCalls[1]?.[1]).toEqual([
-      new Date("2026-01-02T00:30:00.000Z"),
-      new Date("2026-01-02T01:00:00.000Z"),
-    ]);
-  });
-
-  it("falls back to hourly metric_stream ID backfill when a chunk exceeds Timescale decompression limits", async () => {
-    const { runMigrations } = await import("./migrate.ts");
-
-    mockReaddirSync.mockReturnValue(["0007_metric_stream_primary_key.sql"]);
-    mockReadFileSync.mockReturnValue("-- dofek:backfill-metric-stream-id");
-    const chunkRows = [
-      {
-        chunk_schema: "_timescaledb_internal",
-        chunk_name: "_hyper_1_1_chunk",
-        range_start: "2026-01-01T00:00:00.000Z",
-        range_end: "2026-01-01T02:00:00.000Z",
-      },
-    ];
-    let updateAttempts = 0;
-    mockClientQuery.mockImplementation((text: string) => {
-      if (text.includes("timescaledb_information.chunks")) {
-        return Promise.resolve({ rows: chunkRows });
-      }
-      if (text.includes("UPDATE fitness.metric_stream AS metric_stream")) {
-        updateAttempts++;
-        if (updateAttempts === 1) {
-          return Promise.reject(new Error("tuple decompression limit exceeded by operation"));
-        }
-        return Promise.resolve({ rows: [], rowCount: 5 });
-      }
-      return Promise.resolve({ rows: [] });
-    });
-
-    await runMigrations("postgres://localhost/test", "/tmp/migrations");
-
-    const backfillCalls = mockClientQuery.mock.calls.filter(([text]) =>
-      String(text).includes("UPDATE fitness.metric_stream AS metric_stream"),
-    );
-    expect(backfillCalls).toHaveLength(3);
-    expect(backfillCalls[0]?.[1]).toEqual([
-      new Date("2026-01-01T00:00:00.000Z"),
-      new Date("2026-01-01T02:00:00.000Z"),
-    ]);
-    expect(backfillCalls[1]?.[1]).toEqual([
-      new Date("2026-01-01T00:00:00.000Z"),
-      new Date("2026-01-01T01:00:00.000Z"),
-    ]);
-    expect(backfillCalls[2]?.[1]).toEqual([
-      new Date("2026-01-01T01:00:00.000Z"),
-      new Date("2026-01-01T02:00:00.000Z"),
-    ]);
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      expect.stringContaining("Falling back to one-hour metric_stream ID backfill"),
-    );
+    expect(
+      executedQueries().some((query) => query.includes("timescaledb_information.chunks")),
+    ).toBe(false);
   });
 
   it("returns 0 when no pending migrations exist", async () => {

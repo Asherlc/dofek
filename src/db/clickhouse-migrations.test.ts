@@ -13,9 +13,10 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("DROP TABLE IF EXISTS fitness.metric_stream");
     expect(sql).toContain("DROP TABLE IF EXISTS fitness.deduped_sensor");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.deduped_sensor");
-    expect(sql).toContain(
-      "ENGINE = MaterializedPostgreSQL('db:5432', 'health', 'health', 'secret')",
-    );
+    expect(sql).toContain("DROP DATABASE IF EXISTS postgres_fitness SYNC");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).not.toContain("MaterializedPostgreSQL");
     expect(sql).toContain(
       "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
     );
@@ -38,7 +39,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:secret@db:5432/health");
 
-    expect(count).toBe(2);
+    expect(count).toBe(3);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -49,6 +50,16 @@ describe("runClickHouseMigrations", () => {
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining("DROP TABLE IF EXISTS fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP DATABASE IF EXISTS postgres_fitness SYNC",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
       }),
     );
     expect(command).toHaveBeenCalledWith(

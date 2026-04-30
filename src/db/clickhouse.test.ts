@@ -20,17 +20,20 @@ describe("parsePostgresConnectionForClickHouse", () => {
 });
 
 describe("buildClickHouseBootstrapStatements", () => {
-  it("creates native Postgres bridges and a ClickHouse deduped sensor view", () => {
+  it("creates a local metric stream placeholder and ClickHouse read models", () => {
     const sql = buildClickHouseBootstrapStatements("postgres://health:secret@db:5432/health").join(
       "\n",
     );
 
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
-    expect(sql).toContain(
-      "ENGINE = MaterializedPostgreSQL('db:5432', 'health', 'health', 'secret')",
-    );
-    expect(sql).toContain("materialized_postgresql_tables_list = 'metric_stream'");
+    expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("activity_id Nullable(UUID)");
+    expect(sql).toContain("recorded_at DateTime64(6, 'UTC')");
+    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).not.toContain("MaterializedPostgreSQL");
+    expect(sql).not.toContain("materialized_postgresql_tables_list");
     expect(sql).toContain(
       "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
     );

@@ -1782,3 +1782,31 @@ Kept the backfill chunk-bounded and resumable, but set
 session before the chunk updates. This removes the Timescale per-DML
 decompression cap for this controlled migration session without changing the
 database-wide setting.
+
+### Final Follow-up Evidence
+
+The controlled chunk update avoided the decompression limit but was still not a
+deploy-time migration. A remaining chunk with `163,506` null-ID rows took about
+fourteen minutes, while the historic table still had about `187M` rows requiring
+IDs. Production also had exact duplicate metric rows, so there was no safe
+natural-key primary key shortcut for `fitness.metric_stream`.
+
+### Final Fix
+
+Stopped trying to backfill historic `metric_stream.id` values and add the
+primary key during deploy. Migration `0007_metric_stream_primary_key.sql` now
+only adds the nullable `id` column, gives future rows a `gen_random_uuid()`
+default, and leaves the table on `REPLICA IDENTITY FULL`. ClickHouse migration
+`0003_disable_materialized_metric_stream` drops any previous
+`postgres_fitness` MaterializedPostgreSQL database and recreates
+`postgres_fitness.metric_stream` as an empty local MergeTree placeholder so
+analytics schema creation can complete while raw metric replication remains
+disabled.
+
+### Remaining Risk
+
+ClickHouse activity stream and summary read models remain schema-present but do
+not receive raw historic metric samples through `postgres_fitness.metric_stream`.
+The real fix still requires an offline maintenance job to backfill stable row
+IDs, add the Timescale-compatible primary key, and then re-enable raw
+ClickHouse replication.

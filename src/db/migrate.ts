@@ -6,20 +6,6 @@ import { logger } from "../logger.ts";
 
 /** Postgres advisory lock key — serializes concurrent migration runs across containers */
 export const MIGRATION_LOCK_KEY = 728370291;
-const METRIC_STREAM_ID_BACKFILL_MARKER = "-- dofek:backfill-metric-stream-id";
-const METRIC_STREAM_ID_BACKFILL_WINDOW_MILLISECONDS = 60 * 60 * 1000;
-
-interface MetricStreamChunkRow {
-  chunk_schema: string;
-  chunk_name: string;
-  range_start: Date | string | null;
-  range_end: Date | string | null;
-}
-
-interface MetricStreamNullIdBoundsRow {
-  range_start: Date | string | null;
-  range_end: Date | string | null;
-}
 
 /**
  * Detect migration files that share the same numeric prefix (e.g., two 0049_* files).
@@ -60,152 +46,6 @@ function parseStatements(content: string): Array<string> {
     .split("--> statement-breakpoint")
     .map((statement) => statement.trim())
     .filter(Boolean);
-}
-
-async function backfillMetricStreamIdsForChunkRange(
-  client: Client,
-  rangeStart: Date | string,
-  rangeEnd: Date | string,
-): Promise<number> {
-  const chunkRangeStart = parseMigrationDate(rangeStart);
-  const chunkRangeEnd = parseMigrationDate(rangeEnd);
-  if (chunkRangeEnd <= chunkRangeStart) {
-    throw new Error("metric_stream ID backfill chunk range did not advance");
-  }
-
-  const result = await client.query(
-    `UPDATE fitness.metric_stream AS metric_stream
-      SET id = gen_random_uuid()
-      WHERE metric_stream.id IS NULL
-        AND metric_stream.recorded_at >= $1
-        AND metric_stream.recorded_at < $2`,
-    [chunkRangeStart, chunkRangeEnd],
-  );
-  return result.rowCount ?? 0;
-}
-
-async function backfillMetricStreamIdsForHourlyWindows(
-  client: Client,
-  rangeStart: Date | string,
-  rangeEnd: Date | string,
-): Promise<number> {
-  let totalRows = 0;
-  let windowStart = parseMigrationDate(rangeStart);
-  const finalRangeEnd = parseMigrationDate(rangeEnd);
-
-  while (windowStart < finalRangeEnd) {
-    const nextWindowEnd = new Date(
-      Math.min(
-        windowStart.getTime() + METRIC_STREAM_ID_BACKFILL_WINDOW_MILLISECONDS,
-        finalRangeEnd.getTime(),
-      ),
-    );
-    if (nextWindowEnd <= windowStart) {
-      throw new Error("metric_stream ID backfill time window did not advance");
-    }
-
-    const result = await client.query(
-      `UPDATE fitness.metric_stream AS metric_stream
-      SET id = gen_random_uuid()
-      WHERE metric_stream.id IS NULL
-        AND metric_stream.recorded_at >= $1
-        AND metric_stream.recorded_at < $2`,
-      [windowStart, nextWindowEnd],
-    );
-    totalRows += result.rowCount ?? 0;
-    windowStart = nextWindowEnd;
-  }
-
-  return totalRows;
-}
-
-function isTimescaleTupleDecompressionLimitError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("tuple decompression limit exceeded");
-}
-
-async function backfillMetricStreamIdsWithoutChunkRanges(client: Client): Promise<number> {
-  const boundsResult = await client.query<MetricStreamNullIdBoundsRow>(`
-    SELECT
-      min(recorded_at) AS range_start,
-      max(recorded_at) + INTERVAL '1 millisecond' AS range_end
-    FROM fitness.metric_stream
-    WHERE id IS NULL
-  `);
-
-  const bounds = boundsResult.rows[0];
-  if (!bounds?.range_start || !bounds.range_end) {
-    return 0;
-  }
-
-  return backfillMetricStreamIdsForChunkRange(client, bounds.range_start, bounds.range_end);
-}
-
-function parseMigrationDate(value: Date | string): Date {
-  if (value instanceof Date) {
-    return value;
-  }
-
-  const parsedDate = new Date(value);
-  if (Number.isNaN(parsedDate.getTime())) {
-    throw new Error(`Invalid migration timestamp: ${value}`);
-  }
-  return parsedDate;
-}
-
-async function backfillMetricStreamIds(client: Client): Promise<void> {
-  logger.info("[migrate] Backfilling metric_stream.id in Timescale chunk ranges");
-  await client.query("SET timescaledb.max_tuples_decompressed_per_dml_transaction = 0");
-
-  const chunksResult = await client.query<MetricStreamChunkRow>(`
-    SELECT chunk_schema, chunk_name, range_start, range_end
-    FROM timescaledb_information.chunks
-    WHERE hypertable_schema = 'fitness'
-      AND hypertable_name = 'metric_stream'
-    ORDER BY range_start NULLS FIRST, chunk_schema, chunk_name
-  `);
-
-  if (chunksResult.rows.length === 0) {
-    const totalRows = await backfillMetricStreamIdsWithoutChunkRanges(client);
-    logger.info(`[migrate] Backfilled ${totalRows} metric_stream.id row(s) without chunk ranges`);
-    return;
-  }
-
-  let totalRows = 0;
-  for (const chunk of chunksResult.rows) {
-    if (!chunk.range_start || !chunk.range_end) {
-      logger.warn(
-        `[migrate] Skipping metric_stream chunk with missing time bounds: ${chunk.chunk_schema}.${chunk.chunk_name}`,
-      );
-      continue;
-    }
-
-    let chunkRows: number;
-    try {
-      chunkRows = await backfillMetricStreamIdsForChunkRange(
-        client,
-        chunk.range_start,
-        chunk.range_end,
-      );
-    } catch (error: unknown) {
-      if (!isTimescaleTupleDecompressionLimitError(error)) {
-        throw error;
-      }
-      logger.warn(
-        `[migrate] Falling back to one-hour metric_stream ID backfill for ${chunk.chunk_schema}.${chunk.chunk_name}`,
-      );
-      chunkRows = await backfillMetricStreamIdsForHourlyWindows(
-        client,
-        chunk.range_start,
-        chunk.range_end,
-      );
-    }
-    totalRows += chunkRows;
-    logger.info(
-      `[migrate] Backfilled ${chunkRows} metric_stream.id row(s) in ${chunk.chunk_schema}.${chunk.chunk_name}`,
-    );
-  }
-
-  logger.info(`[migrate] Backfilled ${totalRows} metric_stream.id row(s) across Timescale chunks`);
 }
 
 /**
@@ -326,11 +166,7 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
       const contentHash = computeContentHash(content);
       const requiresRefresh = migrationRequiresMaterializedViewRefresh(content);
       for (const stmt of parseStatements(content)) {
-        if (stmt === METRIC_STREAM_ID_BACKFILL_MARKER) {
-          await backfillMetricStreamIds(client);
-        } else {
-          await client.query(stmt);
-        }
+        await client.query(stmt);
       }
       await client.query(
         `INSERT INTO drizzle.__drizzle_migrations (

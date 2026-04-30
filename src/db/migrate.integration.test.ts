@@ -94,32 +94,28 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
   });
 
-  it("gives metric_stream a replica-safe primary key", async () => {
+  it("gives metric_stream full replica identity without a deploy-time primary key backfill", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
-      // cspell:ignore attname relreplident indrelid relnamespace attrelid attnum indkey nspname relname indisprimary
-      const result = await client.query<{
-        column_name: string;
+      const replicaIdentityResult = await client.query<{
         replica_identity: string;
       }>(
-        `SELECT attribute.attname AS column_name, class.relreplident AS replica_identity
-         FROM pg_index index
-         JOIN pg_class class ON class.oid = index.indrelid
+        `SELECT class.relreplident AS replica_identity
+         FROM pg_class class
          JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
-         JOIN pg_attribute attribute
-           ON attribute.attrelid = index.indrelid
-          AND attribute.attnum = ANY(index.indkey)
          WHERE namespace.nspname = 'fitness'
-           AND class.relname = 'metric_stream'
-           AND index.indisprimary
-         ORDER BY array_position(index.indkey, attribute.attnum)`,
+           AND class.relname = 'metric_stream'`,
       );
+      expect(replicaIdentityResult.rows).toEqual([{ replica_identity: "f" }]);
 
-      expect(result.rows).toEqual([
-        { column_name: "id", replica_identity: "i" },
-        { column_name: "recorded_at", replica_identity: "i" },
-      ]);
+      const primaryKeyResult = await client.query<{ primary_key_count: string }>(`
+        SELECT count(*) AS primary_key_count
+        FROM pg_constraint
+        WHERE conrelid = 'fitness.metric_stream'::regclass
+          AND contype = 'p'
+      `);
+      expect(primaryKeyResult.rows).toEqual([{ primary_key_count: "0" }]);
     } finally {
       await client.end();
     }

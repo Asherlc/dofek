@@ -1,16 +1,19 @@
 # ClickHouse Metric Stream Projection
 
-`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse uses
-native Postgres replication to keep a local copy of the raw stream and then
-maintains stored `analytics.deduped_sensor` and `analytics.activity_summary`
-refreshable materialized views for activity stream, zone, and summary reads.
+`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
+currently uses an empty local `postgres_fitness.metric_stream` placeholder while
+the historic Postgres table is missing a primary key. The stored
+`analytics.deduped_sensor` and `analytics.activity_summary` refreshable
+materialized views remain in place so the schema is stable, but raw metric rows
+are not replicated into ClickHouse until a separate offline backfill adds stable
+row IDs and a primary key.
 
 ```text
 Postgres/Timescale fitness.metric_stream
         |
-        | ClickHouse MaterializedPostgreSQL
+        | offline ID backfill + PK still required
         v
-ClickHouse postgres_fitness.metric_stream
+ClickHouse postgres_fitness.metric_stream placeholder
         |
         | refreshable materialized view
         v
@@ -25,7 +28,7 @@ Activity stream, zone, and summary reads
 ```
 
 Runtime API queries must read `analytics.deduped_sensor` or
-`analytics.activity_summary`, not the raw metric stream. The raw replicated table
+`analytics.activity_summary`, not the raw metric stream. The raw ClickHouse table
 exists only as the source for ClickHouse refresh jobs. Derived rows are never
 synced back to Postgres.
 
@@ -57,10 +60,11 @@ ClickHouse migrations run from the normal one-shot `migrate` container when
 ClickHouse read models or old custom sync tables, belongs there so API startup
 does not repeatedly delete analytical state.
 
-ClickHouse migrations create and update the bridge databases and read models:
+ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness`: a `MaterializedPostgreSQL` database that replicates
-  `fitness.metric_stream`.
+- `postgres_fitness.metric_stream`: an empty local MergeTree placeholder for the
+  raw metric stream. This intentionally does not use `MaterializedPostgreSQL`
+  until the Postgres hypertable has a stable primary key.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.
@@ -69,8 +73,9 @@ ClickHouse migrations create and update the bridge databases and read models:
 - `analytics.activity_summary`: a refreshable materialized view refreshed from
   `analytics.deduped_sensor`.
 
-Postgres must run with `wal_level=logical`, `max_replication_slots`, and
-`max_wal_senders` enabled so ClickHouse can subscribe to changes.
+Postgres still runs with `wal_level=logical`, `max_replication_slots`, and
+`max_wal_senders` enabled so ClickHouse can subscribe to changes once the raw
+metric stream replication path is re-enabled.
 
 API startup only verifies that the migrated ClickHouse tables exist. It must not
 create or rewrite analytical schema, because production runs multiple web

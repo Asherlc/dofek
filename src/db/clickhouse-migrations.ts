@@ -34,6 +34,17 @@ function clickHouseMigrations(postgresConnectionString: string) {
       id: "0002_clickhouse_postgres_bridge_and_activity_read_models",
       statements: buildClickHouseBootstrapStatements(postgresConnectionString),
     },
+    {
+      id: "0003_disable_materialized_metric_stream",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        "DROP VIEW IF EXISTS analytics.deduped_sensor",
+        "DROP TABLE IF EXISTS analytics.deduped_sensor",
+        "DROP DATABASE IF EXISTS postgres_fitness SYNC",
+        ...buildClickHouseBootstrapStatements(postgresConnectionString),
+      ],
+    },
   ];
 }
 

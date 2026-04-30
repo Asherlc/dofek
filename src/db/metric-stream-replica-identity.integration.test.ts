@@ -6,7 +6,7 @@ import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
 
-describe("metric_stream primary key migration", () => {
+describe("metric_stream replica identity migration", () => {
   let connectionString: string;
   let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
 
@@ -45,7 +45,7 @@ describe("metric_stream primary key migration", () => {
     }
   });
 
-  it("adds a replica-safe primary key using the chunk-range ID backfill", async () => {
+  it("adds an ID default and full replica identity without backfilling historic rows", async () => {
     const client = new Client({ connectionString });
     await client.connect();
     try {
@@ -85,7 +85,7 @@ describe("metric_stream primary key migration", () => {
           ('2026-01-03T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 220)
       `);
 
-      const tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-primary-key-"));
+      const tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-replica-identity-"));
       const migrationContent = readFileSync(
         join(import.meta.dirname, "../../drizzle/0007_metric_stream_primary_key.sql"),
         "utf-8",
@@ -95,27 +95,25 @@ describe("metric_stream primary key migration", () => {
       const migrationCount = await runMigrations(connectionString, tmpDir);
       expect(migrationCount).toBe(1);
 
-      const primaryKeyResult = await client.query<{
-        column_name: string;
+      const replicaIdentityResult = await client.query<{
         replica_identity: string;
       }>(`
-        -- cspell:ignore attname relreplident indrelid relnamespace attrelid attnum indkey nspname relname indisprimary pgcrypto segmentby pkey
-        SELECT attribute.attname AS column_name, class.relreplident AS replica_identity
-        FROM pg_index index
-        JOIN pg_class class ON class.oid = index.indrelid
+        -- cspell:ignore relreplident nspname relname
+        SELECT class.relreplident AS replica_identity
+        FROM pg_class class
         JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
-        JOIN pg_attribute attribute
-          ON attribute.attrelid = index.indrelid
-         AND attribute.attnum = ANY(index.indkey)
         WHERE namespace.nspname = 'fitness'
           AND class.relname = 'metric_stream'
-          AND index.indisprimary
-        ORDER BY array_position(index.indkey, attribute.attnum)
       `);
-      expect(primaryKeyResult.rows).toEqual([
-        { column_name: "id", replica_identity: "i" },
-        { column_name: "recorded_at", replica_identity: "i" },
-      ]);
+      expect(replicaIdentityResult.rows).toEqual([{ replica_identity: "f" }]);
+
+      const primaryKeyResult = await client.query<{ primary_key_count: string }>(`
+        SELECT count(*) AS primary_key_count
+        FROM pg_constraint
+        WHERE conrelid = 'fitness.metric_stream'::regclass
+          AND contype = 'p'
+      `);
+      expect(primaryKeyResult.rows).toEqual([{ primary_key_count: "0" }]);
 
       const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
         SELECT is_nullable
@@ -124,12 +122,23 @@ describe("metric_stream primary key migration", () => {
           AND table_name = 'metric_stream'
           AND column_name = 'id'
       `);
-      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+      expect(nullableResult.rows).toEqual([{ is_nullable: "YES" }]);
 
       const nullIdResult = await client.query<{ missing_id_count: string }>(
         "SELECT count(*) AS missing_id_count FROM fitness.metric_stream WHERE id IS NULL",
       );
-      expect(nullIdResult.rows).toEqual([{ missing_id_count: "0" }]);
+      expect(nullIdResult.rows).toEqual([{ missing_id_count: "3" }]);
+
+      const insertedResult = await client.query<{ generated_id: string | null }>(`
+        INSERT INTO fitness.metric_stream (
+          recorded_at, user_id, provider_id, source_type, channel, scalar
+        )
+        VALUES ('2026-01-04T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 230)
+        RETURNING id AS generated_id
+      `);
+      expect(insertedResult.rows[0]?.generated_id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     } finally {
       await client.end();
     }
