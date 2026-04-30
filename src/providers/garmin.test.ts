@@ -566,6 +566,8 @@ describe("GarminProvider.sync()", () => {
       .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
       .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
 
+    expect(sensorRows).toHaveLength(9);
+    expect(sensorRows.every((row) => row?.scalar != null)).toBe(true);
     expect(sensorRows.length).toBeGreaterThan(0);
     expect(sensorRows).toContainEqual(
       expect.objectContaining({ channel: "heart_rate", scalar: 150 }),
@@ -982,6 +984,38 @@ describe("GarminProvider.sync()", () => {
     expect(syncedDataTypes).toEqual(["daily_metrics", "stress", "heart_rate"]);
     expect(mocks.client.getSleepData).not.toHaveBeenCalled();
     expect(mocks.client.getDailySummary).toHaveBeenCalledWith("2026-04-27");
+    expect(checkpointStore.clear).toHaveBeenCalledOnce();
+  });
+
+  it("resumes an in-progress date phase and advances checkpoints by date then phase", async () => {
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue({ phase: "sleep", nextDate: "2026-04-27" }),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await syncProvider(provider, db, new Date("2026-04-25T00:00:00.000Z"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+      checkpoint: checkpointStore,
+    });
+
+    expect(mocks.client.getActivities).not.toHaveBeenCalled();
+    expect(mocks.client.getSleepData).not.toHaveBeenCalledWith("2026-04-25");
+    expect(mocks.client.getSleepData).not.toHaveBeenCalledWith("2026-04-26");
+    expect(mocks.client.getSleepData).toHaveBeenCalledWith("2026-04-27");
+    expect(checkpointStore.save).toHaveBeenCalledWith({
+      phase: "sleep",
+      nextDate: "2026-04-28",
+    });
+    expect(checkpointStore.save).toHaveBeenCalledWith({
+      phase: "daily_metrics",
+      nextDate: "2026-04-27",
+    });
+    expect(checkpointStore.save).toHaveBeenCalledWith({
+      phase: "stress",
+      nextDate: "2026-04-25",
+    });
+    expect(checkpointStore.save).toHaveBeenCalledWith({ phase: "complete" });
     expect(checkpointStore.clear).toHaveBeenCalledOnce();
   });
 

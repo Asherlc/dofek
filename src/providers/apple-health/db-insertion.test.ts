@@ -127,6 +127,12 @@ describe("type routing constants", () => {
     expect(METRIC_STREAM_TYPES.HKQuantityTypeIdentifierHeadphoneAudioExposure).toBe(
       "audioExposure",
     );
+    expect(METRIC_STREAM_TYPES.HKQuantityTypeIdentifierAppleSleepingWristTemperature).toBe(
+      "skinTemperature",
+    );
+    expect(METRIC_STREAM_TYPES.HKQuantityTypeIdentifierElectrodermalActivity).toBe(
+      "electrodermalActivity",
+    );
   });
 
   it("BODY_MEASUREMENT_TYPES contains expected types", () => {
@@ -167,6 +173,12 @@ describe("type routing constants", () => {
 
   it("ALL_ROUTED_TYPES does not include unknown types", () => {
     expect(ALL_ROUTED_TYPES.has("SomeRandomType")).toBe(false);
+  });
+
+  it("ALL_ROUTED_TYPES leaves provider resting HR and VO2 Max as health events", () => {
+    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierRestingHeartRate")).toBe(false);
+    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierWalkingHeartRateAverage")).toBe(true);
+    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierVO2Max")).toBe(false);
   });
 });
 
@@ -302,6 +314,24 @@ describe("upsertMetricStreamBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({
       channel: "electrodermal_activity",
       scalar: 0.5,
+    });
+  });
+
+  it("maps sleeping wrist temperature to skin temperature", async () => {
+    const { db, capture } = createMockDb();
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+        value: 33.4,
+      }),
+    ];
+
+    const count = await upsertMetricStreamBatch(db, "p1", records);
+
+    expect(count).toBe(1);
+    expect(capture.values[0]?.[0]).toMatchObject({
+      channel: "skin_temperature",
+      scalar: 33.4,
     });
   });
 });
@@ -1139,6 +1169,43 @@ describe("upsertHealthEventBatch", () => {
 
     await upsertHealthEventBatch(db, "p1", records);
     expect(capture.values).toHaveLength(0);
+  });
+
+  it("stores provider resting HR and VO2 Max as health events", async () => {
+    const { db, capture } = createMockDb();
+    const date = new Date("2024-03-02T06:00:00Z");
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierRestingHeartRate",
+        value: 51,
+        unit: "count/min",
+        startDate: date,
+        endDate: date,
+      }),
+      makeRecord({
+        type: "HKQuantityTypeIdentifierVO2Max",
+        value: 47.2,
+        unit: "mL/min/kg",
+        startDate: date,
+        endDate: date,
+      }),
+    ];
+
+    const count = await upsertHealthEventBatch(db, "p1", records);
+
+    expect(count).toBe(2);
+    expect(capture.values[0]).toEqual([
+      expect.objectContaining({
+        type: "HKQuantityTypeIdentifierRestingHeartRate",
+        value: 51,
+        unit: "count/min",
+      }),
+      expect.objectContaining({
+        type: "HKQuantityTypeIdentifierVO2Max",
+        value: 47.2,
+        unit: "mL/min/kg",
+      }),
+    ]);
   });
 
   it("batches in groups of 5000", async () => {
