@@ -1745,3 +1745,24 @@ instead of one update per hour inside each chunk. The statement still filters by
 `id IS NULL` and `recorded_at >= $1 AND recorded_at < $2`, so already completed
 chunks from prior attempts remain committed and the migration is still
 resumable.
+
+### Third Follow-up Evidence
+
+The first chunk-range production rerun got past the already-backfilled chunks
+quickly, then failed on the next compressed chunk with:
+
+```text
+error: tuple decompression limit exceeded by operation
+```
+
+That showed a full chunk-range update can exceed TimescaleDB's per-DML
+decompression limit on chunks that still contain too many `id IS NULL` rows.
+
+### Third Follow-up Fix
+
+Kept the chunk-range update as the fast path for already-complete and smaller
+chunks, but added a targeted fallback: when a chunk-range update hits the
+Timescale tuple decompression limit, the migration retries that same chunk in
+one-hour `recorded_at` windows. This keeps the deployment from spending hourly
+queries on every already-finished chunk while keeping each DML statement below
+the decompression cap for large remaining chunks.

@@ -167,6 +167,57 @@ describe("runMigrations", () => {
     ]);
   });
 
+  it("falls back to hourly metric_stream ID backfill when a chunk exceeds Timescale decompression limits", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0007_metric_stream_primary_key.sql"]);
+    mockReadFileSync.mockReturnValue("-- dofek:backfill-metric-stream-id");
+    const chunkRows = [
+      {
+        chunk_schema: "_timescaledb_internal",
+        chunk_name: "_hyper_1_1_chunk",
+        range_start: "2026-01-01T00:00:00.000Z",
+        range_end: "2026-01-01T02:00:00.000Z",
+      },
+    ];
+    let updateAttempts = 0;
+    mockClientQuery.mockImplementation((text: string) => {
+      if (text.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({ rows: chunkRows });
+      }
+      if (text.includes("UPDATE fitness.metric_stream AS metric_stream")) {
+        updateAttempts++;
+        if (updateAttempts === 1) {
+          return Promise.reject(new Error("tuple decompression limit exceeded by operation"));
+        }
+        return Promise.resolve({ rows: [], rowCount: 5 });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    const backfillCalls = mockClientQuery.mock.calls.filter(([text]) =>
+      String(text).includes("UPDATE fitness.metric_stream AS metric_stream"),
+    );
+    expect(backfillCalls).toHaveLength(3);
+    expect(backfillCalls[0]?.[1]).toEqual([
+      new Date("2026-01-01T00:00:00.000Z"),
+      new Date("2026-01-01T02:00:00.000Z"),
+    ]);
+    expect(backfillCalls[1]?.[1]).toEqual([
+      new Date("2026-01-01T00:00:00.000Z"),
+      new Date("2026-01-01T01:00:00.000Z"),
+    ]);
+    expect(backfillCalls[2]?.[1]).toEqual([
+      new Date("2026-01-01T01:00:00.000Z"),
+      new Date("2026-01-01T02:00:00.000Z"),
+    ]);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining("Falling back to one-hour metric_stream ID backfill"),
+    );
+  });
+
   it("returns 0 when no pending migrations exist", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
