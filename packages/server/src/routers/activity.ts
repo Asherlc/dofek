@@ -143,13 +143,6 @@ export const activityRouter = router({
   powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
-      if (!ctx.sensorStore) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message:
-            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
-        });
-      }
       const activityRepo = new ActivityRepository(
         ctx.db,
         ctx.userId,
@@ -163,6 +156,13 @@ export const activityRouter = router({
       }
       if (!isCyclingActivity(activity.activity_type)) return null;
       if (activity.avg_power == null && activity.max_power == null) return null;
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
+        });
+      }
 
       const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
       const { currentEftp } = await powerRepo.getEftpTrend(90);

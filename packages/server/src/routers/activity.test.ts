@@ -748,7 +748,7 @@ describe("activityRouter", () => {
   });
 
   describe("powerZones", () => {
-    it("returns null for non-cycling activities", async () => {
+    it("returns null for non-cycling activities even when analytics store is missing", async () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(
@@ -757,7 +757,7 @@ describe("activityRouter", () => {
       const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
-      const caller = makeCaller();
+      const caller = makeCallerWithoutSensorStore();
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result).toBeNull();
@@ -769,14 +769,14 @@ describe("activityRouter", () => {
       getPowerZonesSpy.mockRestore();
     });
 
-    it("returns null for cycling activities without power data", async () => {
+    it("returns null for cycling activities without power data even when analytics store is missing", async () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(makeActivityRow({ avg_power: null, max_power: null }));
       const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
-      const caller = makeCaller([], makeSensorStoreStub());
+      const caller = makeCallerWithoutSensorStore();
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result).toBeNull();
@@ -789,11 +789,18 @@ describe("activityRouter", () => {
     });
 
     it("throws PRECONDITION_FAILED for cycling activities when analytics store is missing", async () => {
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(
+          makeActivityRow({ activity_type: "cycling", avg_power: 210, max_power: 340 }),
+        );
       const caller = makeCallerWithoutSensorStore();
 
       await expect(
         caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" }),
       ).rejects.toThrow("ClickHouse activity analytics store is required for power analysis");
+
+      findByIdSpy.mockRestore();
     });
 
     it("returns zones and ftp for cycling activities with power data", async () => {
@@ -836,7 +843,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(null);
-      const caller = makeCaller();
+      const caller = makeCallerWithoutSensorStore();
 
       await expect(
         caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" }),

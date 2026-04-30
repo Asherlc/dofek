@@ -46,7 +46,7 @@ export function tableInfo(dataType: DataType): {
       return {
         table: "fitness.metric_stream",
         orderColumn: "recorded_at",
-        idColumn: "recorded_at",
+        idColumn: "id",
       };
     case "nutritionDaily":
       return { table: "fitness.v_nutrition_daily", orderColumn: "date", idColumn: "date" };

@@ -56,6 +56,9 @@ describe("Dashboard – Daily Steps chart", () => {
   });
 
   it("renders the Daily Steps chart when step data is present", () => {
+    const startDateValue = new Date();
+    startDateValue.setDate(startDateValue.getDate() - 6);
+    const startDate = formatLocalDate(startDateValue);
     const endDate = formatLocalDate(new Date());
 
     cy.task("runQuery", {
@@ -63,7 +66,7 @@ describe("Dashboard – Daily Steps chart", () => {
         SELECT steps
         FROM fitness.v_daily_metrics
         WHERE user_id = '${TEST_USER_ID}'
-          AND date <= '${endDate}'
+          AND date BETWEEN '${startDate}' AND '${endDate}'
         ORDER BY date ASC
       `,
     }).then((res) => {
