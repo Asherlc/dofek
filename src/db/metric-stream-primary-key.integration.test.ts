@@ -1,6 +1,10 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "pg";
 import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runMigrations } from "./migrate.ts";
 
 describe("metric_stream primary key migration", () => {
   let connectionString: string;
@@ -41,25 +45,30 @@ describe("metric_stream primary key migration", () => {
     }
   });
 
-  it("adds a replica-safe primary key without validating a NOT NULL check", async () => {
+  it("adds a replica-safe primary key using the chunked ID backfill", async () => {
     const client = new Client({ connectionString });
     await client.connect();
     try {
+      await client.query("CREATE EXTENSION IF NOT EXISTS timescaledb");
       await client.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
       await client.query("CREATE SCHEMA IF NOT EXISTS fitness");
       await client.query(`
-        CREATE TABLE fitness.metric_stream_ci_repro (
+        CREATE TABLE fitness.metric_stream (
           recorded_at timestamptz NOT NULL,
           user_id uuid NOT NULL,
           provider_id text NOT NULL,
-          channel text NOT NULL
+          source_type text NOT NULL,
+          channel text NOT NULL,
+          activity_id uuid,
+          scalar real,
+          vector real[]
         )
       `);
       await client.query(
-        "SELECT create_hypertable('fitness.metric_stream_ci_repro', 'recorded_at', if_not_exists => TRUE)",
+        "SELECT create_hypertable('fitness.metric_stream', 'recorded_at', if_not_exists => TRUE)",
       );
       await client.query(`
-        ALTER TABLE fitness.metric_stream_ci_repro
+        ALTER TABLE fitness.metric_stream
         SET (
           timescaledb.compress = true,
           timescaledb.compress_segmentby = 'user_id,provider_id,channel',
@@ -67,23 +76,24 @@ describe("metric_stream primary key migration", () => {
         )
       `);
       await client.query(`
-        INSERT INTO fitness.metric_stream_ci_repro (recorded_at, user_id, provider_id, channel)
-        VALUES (now(), gen_random_uuid(), 'garmin', 'power')
+        INSERT INTO fitness.metric_stream (
+          recorded_at, user_id, provider_id, source_type, channel, scalar
+        )
+        VALUES
+          ('2026-01-01T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 200),
+          ('2026-01-02T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 210),
+          ('2026-01-03T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 220)
       `);
 
-      await client.query("ALTER TABLE fitness.metric_stream_ci_repro ADD COLUMN id uuid");
-      await client.query(
-        "ALTER TABLE fitness.metric_stream_ci_repro ALTER COLUMN id SET DEFAULT gen_random_uuid()",
+      const tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-primary-key-"));
+      const migrationContent = readFileSync(
+        join(import.meta.dirname, "../../drizzle/0007_metric_stream_primary_key.sql"),
+        "utf-8",
       );
-      await client.query(
-        "UPDATE fitness.metric_stream_ci_repro SET id = gen_random_uuid() WHERE id IS NULL",
-      );
-      await client.query(
-        "ALTER TABLE fitness.metric_stream_ci_repro ADD CONSTRAINT metric_stream_ci_repro_pkey PRIMARY KEY (id, recorded_at)",
-      );
-      await client.query(
-        "ALTER TABLE fitness.metric_stream_ci_repro REPLICA IDENTITY USING INDEX metric_stream_ci_repro_pkey",
-      );
+      writeFileSync(join(tmpDir, "0007_metric_stream_primary_key.sql"), migrationContent);
+
+      const migrationCount = await runMigrations(connectionString, tmpDir);
+      expect(migrationCount).toBe(1);
 
       const primaryKeyResult = await client.query<{
         column_name: string;
@@ -98,7 +108,7 @@ describe("metric_stream primary key migration", () => {
           ON attribute.attrelid = index.indrelid
          AND attribute.attnum = ANY(index.indkey)
         WHERE namespace.nspname = 'fitness'
-          AND class.relname = 'metric_stream_ci_repro'
+          AND class.relname = 'metric_stream'
           AND index.indisprimary
         ORDER BY array_position(index.indkey, attribute.attnum)
       `);
@@ -111,10 +121,15 @@ describe("metric_stream primary key migration", () => {
         SELECT is_nullable
         FROM information_schema.columns
         WHERE table_schema = 'fitness'
-          AND table_name = 'metric_stream_ci_repro'
+          AND table_name = 'metric_stream'
           AND column_name = 'id'
       `);
       expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+
+      const nullIdResult = await client.query<{ missing_id_count: string }>(
+        "SELECT count(*) AS missing_id_count FROM fitness.metric_stream WHERE id IS NULL",
+      );
+      expect(nullIdResult.rows).toEqual([{ missing_id_count: "0" }]);
     } finally {
       await client.end();
     }

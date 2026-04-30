@@ -1645,3 +1645,55 @@ workflow steps must read Infisical-only secrets from the rendered dotenv file
 rather than from the runner environment. Large compressed hypertable backfills
 should be called out in deploy planning so the migration timeout is intentional
 rather than discovered during release.
+
+## 2026-04-30: Metric Stream Primary Key Backfill Split Into Chunk Batches
+
+### Symptoms
+
+Production deploy remained blocked in the schema migration step after the
+earlier ClickHouse bind-mount and migration-runner fixes. The pending migration
+was still `0007_metric_stream_primary_key.sql`.
+
+### User Impact
+
+Production could not advance to the new stack image because migrations run
+before `docker stack deploy`. Staging had already moved past this point, but
+production remained on the previous release.
+
+### Evidence
+
+Production catalog checks showed `fitness.metric_stream` still had no primary
+key, and `187,684,929` rows still had `id IS NULL`. The failed migration path
+was the single full-history statement:
+
+```sql
+UPDATE fitness.metric_stream
+SET id = gen_random_uuid()
+WHERE id IS NULL;
+```
+
+The table was a compressed Timescale hypertable, so this one statement attempted
+to rewrite the historical compressed workload as one unbounded operation.
+
+### Root Cause
+
+`0007_metric_stream_primary_key.sql` used a single full-table UUID backfill for
+a large compressed hypertable. The migration runner executed each migration
+statement separately, but the backfill itself was still one unbounded statement,
+so production could not complete the migration reliably.
+
+### Fix or Mitigation
+
+Replaced the full-table backfill statement in `0007_metric_stream_primary_key.sql`
+with a migration-runner marker that performs the `metric_stream.id` backfill in
+bounded batches of `100,000` rows per Timescale chunk time range. Each batch is
+its own Postgres query, so progress commits incrementally before the migration
+adds the composite primary key `(id, recorded_at)` and switches replica identity
+to that key.
+
+### Remaining Risk
+
+The production rerun still has to build the primary-key index after the ID
+backfill completes, and that operation may take time on the 187M-row hypertable.
+If that becomes the next blocker, investigate it separately rather than adding
+generic deploy retries.

@@ -7,9 +7,7 @@ ALTER COLUMN id SET DEFAULT gen_random_uuid();
 ALTER TABLE fitness.metric_stream
 REPLICA IDENTITY FULL;
 --> statement-breakpoint
-UPDATE fitness.metric_stream
-SET id = gen_random_uuid()
-WHERE id IS NULL;
+-- dofek:backfill-metric-stream-id
 --> statement-breakpoint
 DO $$
 BEGIN
