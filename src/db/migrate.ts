@@ -7,11 +7,16 @@ import { logger } from "../logger.ts";
 /** Postgres advisory lock key — serializes concurrent migration runs across containers */
 export const MIGRATION_LOCK_KEY = 728370291;
 const METRIC_STREAM_ID_BACKFILL_MARKER = "-- dofek:backfill-metric-stream-id";
-const METRIC_STREAM_ID_BACKFILL_BATCH_SIZE = 100_000;
+const METRIC_STREAM_ID_BACKFILL_WINDOW_MILLISECONDS = 60 * 60 * 1000;
 
 interface MetricStreamChunkRow {
   chunk_schema: string;
   chunk_name: string;
+  range_start: Date | string | null;
+  range_end: Date | string | null;
+}
+
+interface MetricStreamNullIdBoundsRow {
   range_start: Date | string | null;
   range_end: Date | string | null;
 }
@@ -62,65 +67,67 @@ async function backfillMetricStreamIdsForTimeRange(
   rangeStart: Date | string,
   rangeEnd: Date | string,
 ): Promise<number> {
-  let updatedRows = 0;
   let totalRows = 0;
+  let windowStart = parseMigrationDate(rangeStart);
+  const finalRangeEnd = parseMigrationDate(rangeEnd);
 
-  do {
+  while (windowStart < finalRangeEnd) {
+    const nextWindowEnd = new Date(
+      Math.min(
+        windowStart.getTime() + METRIC_STREAM_ID_BACKFILL_WINDOW_MILLISECONDS,
+        finalRangeEnd.getTime(),
+      ),
+    );
+    if (nextWindowEnd <= windowStart) {
+      throw new Error("metric_stream ID backfill time window did not advance");
+    }
+
     const result = await client.query(
-      `WITH candidate_rows AS (
-        SELECT ctid
-        FROM fitness.metric_stream
-        WHERE id IS NULL
-          AND recorded_at >= $1
-          AND recorded_at < $2
-        LIMIT $3
-      )
-      UPDATE fitness.metric_stream AS metric_stream
+      `UPDATE fitness.metric_stream AS metric_stream
       SET id = gen_random_uuid()
-      FROM candidate_rows
-      WHERE metric_stream.ctid = candidate_rows.ctid
-        AND metric_stream.id IS NULL
+      WHERE metric_stream.id IS NULL
         AND metric_stream.recorded_at >= $1
         AND metric_stream.recorded_at < $2`,
-      [rangeStart, rangeEnd, METRIC_STREAM_ID_BACKFILL_BATCH_SIZE],
+      [windowStart, nextWindowEnd],
     );
-    updatedRows = result.rowCount ?? 0;
-    totalRows += updatedRows;
-  } while (updatedRows > 0);
+    totalRows += result.rowCount ?? 0;
+    windowStart = nextWindowEnd;
+  }
 
   return totalRows;
 }
 
 async function backfillMetricStreamIdsWithoutChunkRanges(client: Client): Promise<number> {
-  let updatedRows = 0;
-  let totalRows = 0;
+  const boundsResult = await client.query<MetricStreamNullIdBoundsRow>(`
+    SELECT
+      min(recorded_at) AS range_start,
+      max(recorded_at) + INTERVAL '1 millisecond' AS range_end
+    FROM fitness.metric_stream
+    WHERE id IS NULL
+  `);
 
-  do {
-    const result = await client.query(
-      `WITH candidate_rows AS (
-        SELECT ctid
-        FROM fitness.metric_stream
-        WHERE id IS NULL
-        LIMIT $1
-      )
-      UPDATE fitness.metric_stream AS metric_stream
-      SET id = gen_random_uuid()
-      FROM candidate_rows
-      WHERE metric_stream.ctid = candidate_rows.ctid
-        AND metric_stream.id IS NULL`,
-      [METRIC_STREAM_ID_BACKFILL_BATCH_SIZE],
-    );
-    updatedRows = result.rowCount ?? 0;
-    totalRows += updatedRows;
-  } while (updatedRows > 0);
+  const bounds = boundsResult.rows[0];
+  if (!bounds?.range_start || !bounds.range_end) {
+    return 0;
+  }
 
-  return totalRows;
+  return backfillMetricStreamIdsForTimeRange(client, bounds.range_start, bounds.range_end);
+}
+
+function parseMigrationDate(value: Date | string): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error(`Invalid migration timestamp: ${value}`);
+  }
+  return parsedDate;
 }
 
 async function backfillMetricStreamIds(client: Client): Promise<void> {
-  logger.info(
-    `[migrate] Backfilling metric_stream.id in batches of ${METRIC_STREAM_ID_BACKFILL_BATCH_SIZE}`,
-  );
+  logger.info("[migrate] Backfilling metric_stream.id in one-hour time windows");
 
   const chunksResult = await client.query<MetricStreamChunkRow>(`
     SELECT chunk_schema, chunk_name, range_start, range_end

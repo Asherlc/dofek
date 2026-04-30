@@ -120,7 +120,7 @@ describe("runMigrations", () => {
     expect(executedQueries()).toContain("CREATE TABLE b (id INT)");
   });
 
-  it("backfills metric_stream IDs in bounded Timescale chunk batches", async () => {
+  it("backfills metric_stream IDs in bounded Timescale time windows", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0007_metric_stream_primary_key.sql"]);
@@ -130,22 +130,21 @@ describe("runMigrations", () => {
         chunk_schema: "_timescaledb_internal",
         chunk_name: "_hyper_1_1_chunk",
         range_start: "2026-01-01T00:00:00.000Z",
-        range_end: "2026-01-02T00:00:00.000Z",
+        range_end: "2026-01-01T02:00:00.000Z",
       },
       {
         chunk_schema: "_timescaledb_internal",
         chunk_name: "_hyper_1_2_chunk",
-        range_start: "2026-01-02T00:00:00.000Z",
-        range_end: "2026-01-03T00:00:00.000Z",
+        range_start: "2026-01-02T00:30:00.000Z",
+        range_end: "2026-01-02T01:00:00.000Z",
       },
     ];
-    const updateRowCounts = [100_000, 7, 0, 42, 0];
     mockClientQuery.mockImplementation((text: string) => {
       if (text.includes("timescaledb_information.chunks")) {
         return Promise.resolve({ rows: chunkRows });
       }
       if (text.includes("UPDATE fitness.metric_stream AS metric_stream")) {
-        return Promise.resolve({ rows: [], rowCount: updateRowCounts.shift() ?? 0 });
+        return Promise.resolve({ rows: [], rowCount: 7 });
       }
       return Promise.resolve({ rows: [] });
     });
@@ -155,17 +154,20 @@ describe("runMigrations", () => {
     const backfillCalls = mockClientQuery.mock.calls.filter(([text]) =>
       String(text).includes("UPDATE fitness.metric_stream AS metric_stream"),
     );
-    expect(backfillCalls).toHaveLength(5);
-    expect(String(backfillCalls[0]?.[0])).toContain("LIMIT $3");
+    expect(backfillCalls).toHaveLength(3);
+    expect(String(backfillCalls[0]?.[0])).not.toContain("ctid");
+    expect(String(backfillCalls[0]?.[0])).not.toContain("LIMIT");
     expect(backfillCalls[0]?.[1]).toEqual([
-      "2026-01-01T00:00:00.000Z",
-      "2026-01-02T00:00:00.000Z",
-      100_000,
+      new Date("2026-01-01T00:00:00.000Z"),
+      new Date("2026-01-01T01:00:00.000Z"),
     ]);
-    expect(backfillCalls[3]?.[1]).toEqual([
-      "2026-01-02T00:00:00.000Z",
-      "2026-01-03T00:00:00.000Z",
-      100_000,
+    expect(backfillCalls[1]?.[1]).toEqual([
+      new Date("2026-01-01T01:00:00.000Z"),
+      new Date("2026-01-01T02:00:00.000Z"),
+    ]);
+    expect(backfillCalls[2]?.[1]).toEqual([
+      new Date("2026-01-02T00:30:00.000Z"),
+      new Date("2026-01-02T01:00:00.000Z"),
     ]);
   });
 

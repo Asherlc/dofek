@@ -1697,3 +1697,34 @@ The production rerun still has to build the primary-key index after the ID
 backfill completes, and that operation may take time on the 187M-row hypertable.
 If that becomes the next blocker, investigate it separately rather than adding
 generic deploy retries.
+
+### Follow-up Evidence
+
+The first production rerun with the bounded backfill image built and pushed both
+`sha-d68d1a7` images, passed Terraform and image pulls, then failed immediately
+in the migration container with:
+
+```text
+error: transparent decompression only supports tableoid system column
+```
+
+That error came from using `ctid` to identify a limited set of rows inside
+compressed Timescale chunks. Timescale transparent decompression does not expose
+`ctid`; only `tableoid` is available as a system column in that path.
+
+### Follow-up Fix
+
+Changed the metric_stream ID backfill again to avoid system columns entirely.
+The runner now updates `metric_stream.id` by one-hour `recorded_at` windows
+within each Timescale chunk time range:
+
+```sql
+UPDATE fitness.metric_stream AS metric_stream
+SET id = gen_random_uuid()
+WHERE metric_stream.id IS NULL
+  AND metric_stream.recorded_at >= $1
+  AND metric_stream.recorded_at < $2;
+```
+
+This preserves bounded progress without relying on unsupported compressed-chunk
+system columns.

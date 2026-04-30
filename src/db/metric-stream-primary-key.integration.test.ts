@@ -45,7 +45,7 @@ describe("metric_stream primary key migration", () => {
     }
   });
 
-  it("adds a replica-safe primary key using the chunked ID backfill", async () => {
+  it("adds a replica-safe primary key using the time-window ID backfill", async () => {
     const client = new Client({ connectionString });
     await client.connect();
     try {
