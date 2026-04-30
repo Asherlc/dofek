@@ -1551,10 +1551,17 @@ absent from both Infisical environments, so `docker stack config` failed while
 interpolating ClickHouse environment variables. Added `CLICKHOUSE_PASSWORD` to
 both `prod` and `staging` in Infisical.
 
+The next rerun reached the migration step and showed that the workflow encoded
+`CLICKHOUSE_PASSWORD` from the runner process environment instead of the
+rendered Infisical dotenv file. Updated the migration step to run that encoding
+through the existing dotenv command runner.
+
 ### Remaining Risk
 
-This fixes the missed ClickHouse provisioning run and the missing ClickHouse
-secret. Future changes to the `/mnt/dofek-data` directory list still require a
-corresponding trigger bump in the same commit. Future stack-level environment
-variables must be added to Infisical before the workflow that references them is
-merged or deployed.
+This fixes the missed ClickHouse provisioning run, the missing ClickHouse
+secret, and the migration-step dotenv mismatch. Future changes to the
+`/mnt/dofek-data` directory list still require a corresponding trigger bump in
+the same commit. Future stack-level environment variables must be added to
+Infisical before the workflow that references them is merged or deployed, and
+workflow steps must read Infisical-only secrets from the rendered dotenv file
+rather than from the runner environment.

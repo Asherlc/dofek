@@ -329,7 +329,7 @@ jobs:
         run: |
           migration_output_file="$RUNNER_TEMP/migrate.log"
           encoded_clickhouse_password="$(
-            node -e 'const password = process.env.CLICKHOUSE_PASSWORD; if (!password) { throw new Error("CLICKHOUSE_PASSWORD is required"); } process.stdout.write(encodeURIComponent(password));'
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" node -e 'const password = process.env.CLICKHOUSE_PASSWORD; if (!password) { throw new Error("CLICKHOUSE_PASSWORD is required"); } process.stdout.write(encodeURIComponent(password));'
           )"
           for attempt in $(seq 1 12); do
             echo "Starting migration attempt ${attempt}/12..."
