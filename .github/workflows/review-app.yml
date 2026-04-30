@@ -291,12 +291,30 @@ jobs:
         run: |
           set -euo pipefail
 
+          database_url_and_clickhouse_url="$(
+            node - "${{ github.workspace }}/.env.review" <<'EOF'
+            const fs = require("node:fs");
+
+            const envFilePath = process.argv[2];
+            const lines = fs.readFileSync(envFilePath, "utf8").split(/\r?\n/);
+            const postgresPasswordLine = lines.find((line) => line.startsWith("POSTGRES_PASSWORD="));
+            if (!postgresPasswordLine) {
+              throw new Error("POSTGRES_PASSWORD is required in review env file");
+            }
+            const postgresPassword = postgresPasswordLine.slice("POSTGRES_PASSWORD=".length);
+            const encodedPassword = encodeURIComponent(postgresPassword);
+            console.log(`DATABASE_URL=postgres://health:${encodedPassword}@db:5432/health`);
+            console.log(`CLICKHOUSE_URL=http://default:${encodedPassword}@clickhouse:8123`);
+            EOF
+          )"
+
           {
             echo "ENABLE_DEV_LOGIN=true"
             echo "SLACK_SIGNING_SECRET="
             echo "SLACK_BOT_TOKEN="
             echo "SLACK_APP_TOKEN="
             echo "PUBLIC_URL=https://${REVIEW_HOST}"
+            echo "${database_url_and_clickhouse_url}"
           } >> "${{ github.workspace }}/.env.review"
 
       - name: Login to GHCR
