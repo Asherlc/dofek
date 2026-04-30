@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { createPostgresTestActivitySensorStore } from "./activity-sensor-store.test-helper.ts";
 import { DerivedCardioRepository } from "./derived-cardio-repository.ts";
 
 let testContext: TestContext | null = null;
@@ -63,10 +64,14 @@ describe("DerivedCardioRepository integration", () => {
 
   it("averages all qualifying cycling VO2 max estimates", async () => {
     testContext = await setupTestDatabase();
-    const repo = new DerivedCardioRepository(testContext.db, {
-      userId: TEST_USER_ID,
-      timezone: "UTC",
-    });
+    const repo = new DerivedCardioRepository(
+      testContext.db,
+      {
+        userId: TEST_USER_ID,
+        timezone: "UTC",
+      },
+      createPostgresTestActivitySensorStore(testContext.db),
+    );
 
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
       VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})

@@ -332,6 +332,7 @@ describe("DurationCurvesRepository", () => {
       getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
       getPowerCurveSamples: vi.fn().mockResolvedValue([]),
       getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
       getHeartRateCurveRows: vi.fn().mockResolvedValue(rows),
       getPaceCurveRows: vi.fn().mockResolvedValue(rows),
     } satisfies ConstructorParameters<typeof DurationCurvesRepository>[2];

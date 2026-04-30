@@ -1,3 +1,4 @@
+import { averageVo2MaxEstimates } from "@dofek/training/derived-cardio";
 import { ZONE_BOUNDARIES_FTP } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -28,6 +29,8 @@ const rawRowSchema = z.object({
 });
 
 export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
+
+type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
 
 /**
  * Fetch the raw aggregates and weekly history needed to compute a Healthspan score.
@@ -88,10 +91,7 @@ export async function fetchHealthspanRawData(
              FROM fitness.v_daily_metrics
              WHERE user_id = ${ctx.userId}
                AND date > ${dateWindowStart(endDate, totalDays)}) AS avg_steps,
-            (SELECT AVG(vo2max)
-             FROM fitness.derived_vo2max_estimates
-             WHERE user_id = ${ctx.userId}
-               AND activity_date > ${dateWindowStart(endDate, totalDays)}) AS latest_vo2max
+            NULL::real AS latest_vo2max
         ),
         hr_zone_time AS (
           SELECT
@@ -182,32 +182,20 @@ export async function fetchHealthspanRawData(
             AND date > ${dateWindowStart(endDate, totalDays)}
           GROUP BY date_trunc('week', date)
         ),
-        weekly_vo2 AS (
-          SELECT
-            date_trunc('week', activity_date)::date AS week_start,
-            AVG(vo2max) AS avg_vo2max
-          FROM fitness.derived_vo2max_estimates
-          WHERE user_id = ${ctx.userId}
-            AND activity_date > ${dateWindowStart(endDate, totalDays)}
-          GROUP BY date_trunc('week', activity_date)
-        ),
         weekly_dates AS (
           SELECT week_start FROM weekly_rhr
           UNION
           SELECT week_start FROM weekly_steps
-          UNION
-          SELECT week_start FROM weekly_vo2
         ),
         weekly_metrics AS (
           SELECT
             wd.week_start,
             wr.avg_rhr,
             ws.avg_steps,
-            wv.avg_vo2max
+            NULL::real AS avg_vo2max
           FROM weekly_dates wd
           LEFT JOIN weekly_rhr wr ON wr.week_start = wd.week_start
           LEFT JOIN weekly_steps ws ON ws.week_start = wd.week_start
-          LEFT JOIN weekly_vo2 wv ON wv.week_start = wd.week_start
           ORDER BY week_start ASC
         )
         SELECT
@@ -234,5 +222,60 @@ export async function fetchHealthspanRawData(
         LEFT JOIN body_latest bl ON true`,
   );
 
-  return rows[0] ?? null;
+  const row = rows[0] ?? null;
+  if (!row || !ctx.sensorStore) {
+    return row;
+  }
+
+  const vo2MaxEstimates = await ctx.sensorStore.getVo2MaxEstimates(
+    endDate,
+    totalDays,
+    ctx.userId,
+    ctx.timezone,
+  );
+  return {
+    ...row,
+    latest_vo2max: averageVo2MaxEstimates(vo2MaxEstimates.map((estimate) => estimate.vo2max)),
+    weekly_history: mergeWeeklyVo2Max(row.weekly_history, vo2MaxEstimates),
+  };
+}
+
+function mergeWeeklyVo2Max(
+  history: WeeklyHistoryRow[] | null,
+  estimates: Array<{ activity_date: string; vo2max: number }>,
+): WeeklyHistoryRow[] | null {
+  const weeklyRows = new Map<string, WeeklyHistoryRow>();
+  for (const row of history ?? []) {
+    weeklyRows.set(row.week_start, row);
+  }
+
+  const estimatesByWeek = new Map<string, number[]>();
+  for (const estimate of estimates) {
+    const weekStart = getIsoWeekStart(estimate.activity_date);
+    const weekEstimates = estimatesByWeek.get(weekStart) ?? [];
+    weekEstimates.push(estimate.vo2max);
+    estimatesByWeek.set(weekStart, weekEstimates);
+  }
+
+  for (const [weekStart, weekEstimates] of estimatesByWeek) {
+    const existing = weeklyRows.get(weekStart);
+    weeklyRows.set(weekStart, {
+      week_start: weekStart,
+      avg_rhr: existing?.avg_rhr ?? null,
+      avg_steps: existing?.avg_steps ?? null,
+      avg_vo2max: averageVo2MaxEstimates(weekEstimates),
+    });
+  }
+
+  const mergedRows = [...weeklyRows.values()].sort((left, right) =>
+    left.week_start.localeCompare(right.week_start),
+  );
+  return mergedRows.length > 0 ? mergedRows : history;
+}
+
+function getIsoWeekStart(dateString: string): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - daysSinceMonday);
+  return date.toISOString().slice(0, 10);
 }

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import { DerivedCardioRepository } from "./derived-cardio-repository.ts";
 
 function makeDb(rows: Record<string, unknown>[]) {
@@ -8,23 +9,58 @@ function makeDb(rows: Record<string, unknown>[]) {
 }
 
 describe("DerivedCardioRepository", () => {
-  it("averages all qualifying VO2 max estimates returned by the query", async () => {
-    const repo = new DerivedCardioRepository(makeDb([{ vo2max: "40" }, { vo2max: "50" }]), {
-      userId: "user-1",
-      timezone: "America/Los_Angeles",
-    });
+  it("averages VO2 max estimates returned by the sensor store", async () => {
+    const execute = vi.fn().mockRejectedValue(new Error("VO2 max should not query Postgres"));
+    const sensorStore = {
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([
+        {
+          activity_id: "activity-1",
+          activity_date: "2026-04-27",
+          method: "cycling_power",
+          vo2max: 40,
+        },
+        {
+          activity_id: "activity-2",
+          activity_date: "2026-04-28",
+          method: "cycling_power",
+          vo2max: 50,
+        },
+      ]),
+    } satisfies Pick<ActivitySensorStore, "getVo2MaxEstimates">;
+    const repo = new DerivedCardioRepository(
+      { execute },
+      {
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      },
+      sensorStore,
+    );
 
     const result = await repo.getVo2MaxAverage("2026-04-28", 90);
 
     expect(result?.value).toBe(45);
     expect(result?.sampleCount).toBe(2);
+    expect(sensorStore.getVo2MaxEstimates).toHaveBeenCalledWith(
+      "2026-04-28",
+      90,
+      "user-1",
+      "America/Los_Angeles",
+    );
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("returns null when no VO2 max estimates qualify", async () => {
-    const repo = new DerivedCardioRepository(makeDb([]), {
-      userId: "user-1",
-      timezone: "America/Los_Angeles",
-    });
+    const sensorStore = {
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    } satisfies Pick<ActivitySensorStore, "getVo2MaxEstimates">;
+    const repo = new DerivedCardioRepository(
+      makeDb([]),
+      {
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      },
+      sensorStore,
+    );
 
     await expect(repo.getVo2MaxAverage("2026-04-28", 90)).resolves.toBeNull();
   });

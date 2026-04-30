@@ -92,6 +92,7 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn().mockResolvedValue([]),
     getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue(rows),
     getPaceCurveRows: vi.fn().mockResolvedValue(rows),
   };

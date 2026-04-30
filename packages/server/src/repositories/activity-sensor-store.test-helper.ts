@@ -38,6 +38,13 @@ interface ZoneRow {
   seconds: number;
 }
 
+interface Vo2MaxEstimateRow {
+  activity_id: string;
+  activity_date: string;
+  method: string;
+  vo2max: number;
+}
+
 const CURVE_DURATIONS_SECONDS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200];
 
 export function createPostgresTestActivitySensorStore(db: ExecutableDatabase): ActivitySensorStore {
@@ -122,6 +129,25 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
         power: sample.scalar,
         interval_s: sample.interval_s,
       }));
+  }
+
+  async getVo2MaxEstimates(
+    endDate: string,
+    days: number,
+    userId: string,
+  ): Promise<Vo2MaxEstimateRow[]> {
+    return this.#db.execute<Vo2MaxEstimateRow>(
+      sql`SELECT
+            activity_id::text AS activity_id,
+            activity_date::text AS activity_date,
+            method,
+            vo2max::real AS vo2max
+          FROM fitness.derived_vo2max_estimates
+          WHERE user_id = ${userId}::uuid
+            AND activity_date > (${endDate}::date - ${days}::int)
+            AND activity_date <= ${endDate}::date
+          ORDER BY activity_date, activity_id, method`,
+    );
   }
 
   async getHeartRateCurveRows(

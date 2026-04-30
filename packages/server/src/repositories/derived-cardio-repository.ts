@@ -3,10 +3,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-
-const vo2MaxEstimateRowSchema = z.object({
-  vo2max: z.coerce.number(),
-});
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 const dailyRestingHeartRateRowSchema = z.object({
   date: dateStringSchema,
@@ -31,20 +28,28 @@ export interface DailyRestingHeartRate {
 export class DerivedCardioRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #ctx: DerivedCardioContext;
+  readonly #sensorStore?: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, ctx: DerivedCardioContext) {
+  constructor(
+    db: Pick<Database, "execute">,
+    ctx: DerivedCardioContext,
+    sensorStore?: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#ctx = ctx;
+    this.#sensorStore = sensorStore;
   }
 
   async getVo2MaxAverage(endDate: string, days: number): Promise<DerivedVo2MaxAverage | null> {
-    const rows = await executeWithSchema(
-      this.#db,
-      vo2MaxEstimateRowSchema,
-      sql`SELECT vo2max FROM fitness.derived_vo2max_estimates
-          WHERE user_id = ${this.#ctx.userId}
-            AND activity_date > (${endDate}::date - ${days}::int)
-            AND activity_date <= ${endDate}::date`,
+    if (!this.#sensorStore) {
+      throw new Error("VO2 max estimates require an activity sensor store");
+    }
+
+    const rows = await this.#sensorStore.getVo2MaxEstimates(
+      endDate,
+      days,
+      this.#ctx.userId,
+      this.#ctx.timezone,
     );
     const value = averageVo2MaxEstimates(rows.map((row) => row.vo2max));
     return value === null ? null : { value, sampleCount: rows.length };

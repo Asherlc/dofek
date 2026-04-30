@@ -122,6 +122,13 @@ const normalizedPowerSampleSchema = z.object({
   interval_s: z.coerce.number(),
 });
 
+const vo2MaxEstimateSchema = z.object({
+  activity_id: z.string(),
+  activity_date: z.string(),
+  method: z.string(),
+  vo2max: z.coerce.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
@@ -159,6 +166,12 @@ export interface ActivitySensorStore {
     userId: string,
     timezone: string,
   ): Promise<z.infer<typeof normalizedPowerSampleSchema>[]>;
+  getVo2MaxEstimates(
+    endDate: string,
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<z.infer<typeof vo2MaxEstimateSchema>[]>;
   getHeartRateCurveRows(
     days: number,
     userId: string,

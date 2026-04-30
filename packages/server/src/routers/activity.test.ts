@@ -115,6 +115,7 @@ function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn().mockResolvedValue([]),
     getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
