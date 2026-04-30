@@ -416,7 +416,16 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false "$STACK_NAME"
+          set +e
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false "$STACK_NAME"
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "::error::docker stack deploy exceeded 20m"
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
 
       - name: Plan materialized view sync
         id: view_sync_plan

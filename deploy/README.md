@@ -138,7 +138,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
+   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    10. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
       - a canonical `drizzle/_views/*.sql` hash changed

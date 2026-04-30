@@ -1837,3 +1837,23 @@ The deploy workflow now exports `CLICKHOUSE_PASSWORD_ENCODED` once after the
 Infisical dotenv file is available. `deploy/stack.yml` uses that encoded value
 for `web` and `worker` `CLICKHOUSE_URL` interpolation, while the ClickHouse
 service still receives the raw `CLICKHOUSE_PASSWORD`.
+
+### Stack Rollout Recovery Evidence
+
+After the encoded password fix, production migrations succeeded and `dofek_web`
+updated to `sha-0d4aa69`, but the GitHub Actions `docker stack deploy
+--detach=false` process remained stuck. Live Swarm state showed `dofek_worker`
+had rolled back to the older `sha-7af8b2f` service spec, where
+`CLICKHOUSE_URL` still contained the raw password. That rollback target
+crash-looped with the same malformed ClickHouse URL error, leaving the worker at
+`0/1` while the deploy step waited indefinitely.
+
+### Stack Rollout Recovery Fix
+
+Recovered `dofek_worker` to the committed `sha-0d4aa69` image with the same
+URL-encoded `CLICKHOUSE_URL` already present on the healthy `dofek_web` service.
+After recovery, Swarm reported `dofek_web` `2/2`, `dofek_worker` `1/1`, and
+`dofek_training-export-worker` `1/1`; `/healthz` returned `{"status":"ok"}`.
+The deploy workflow now wraps `docker stack deploy --detach=false` in a
+20-minute timeout so a future wedged rollout hard-fails with an explicit error
+instead of leaving the job running indefinitely.
