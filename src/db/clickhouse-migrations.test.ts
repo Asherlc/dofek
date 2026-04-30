@@ -16,6 +16,9 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain(
       "ENGINE = MaterializedPostgreSQL('db:5432', 'health', 'health', 'secret')",
     );
+    expect(sql).toContain(
+      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
+    );
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
   });

@@ -564,6 +564,7 @@ export const activityInterval = fitness.table(
 export const metricStream = fitness.table(
   "metric_stream",
   {
+    id: uuid("id").defaultRandom().notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
     userId: uuid("user_id")
       .notNull()
@@ -585,6 +586,7 @@ export const metricStream = fitness.table(
       table.channel,
       table.recordedAt,
     ),
+    primaryKey({ columns: [table.id, table.recordedAt] }),
     index("metric_stream_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
     index("metric_stream_provider_time_idx").on(table.providerId, table.recordedAt),
   ],

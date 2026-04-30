@@ -28,7 +28,11 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: health
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok && container_ip=$$(hostname -i | awk '{print $$1}') && wget -qO- \"http://$${container_ip}:8123/ping\" | grep -q Ok",
+        ]
       interval: 2s
       timeout: 5s
       retries: 20

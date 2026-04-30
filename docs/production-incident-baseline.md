@@ -7,6 +7,62 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-04-29: PR 1075 CI Blocked by ClickHouse Bootstrap and Web E2E Drift
+
+### Impact
+
+PR #1075 could not merge because CI failed in the database migration and web E2E
+jobs.
+
+### What Happened
+
+The branch introduced ClickHouse-backed activity read models and a new
+`metric_stream` replica identity requirement. CI initially failed while
+bootstrapping the ClickHouse PostgreSQL bridge for activity views, and the web
+E2E suite separately failed because Cypress seeded rows with UTC calendar dates
+while the app queried local dates and reused stale per-user query-cache state
+between tests.
+
+### Evidence That Mattered
+
+- ClickHouse fatal line:
+  `Table postgres_fitness.metric_stream has no primary key and no replica identity index`
+- ClickHouse bridge failure came from using the `fitness` schema bridge for
+  activity membership data instead of a dedicated scalar-only `clickhouse`
+  schema/view bridge.
+- Web E2E failure symptoms:
+  - nutrition queries returned zero rows for a seeded "today" date
+  - dashboard chart tests fell back to `No data available`
+  - Cypress cleanup hit `food_entry_provider_id_provider_id_fk`
+  - cached empty query results survived between tests
+
+### Root Cause
+
+Two separate root causes blocked CI:
+
+- `fitness.metric_stream` lacked a replica-safe primary key / replica identity
+  for ClickHouse `MaterializedPostgreSQL`.
+- Cypress test setup was not aligned with the app's local-date semantics and
+  did not fully clear dependent data plus server query cache between tests.
+
+### Fix Or Mitigation
+
+- Added an `id` column plus composite primary key `(id, recorded_at)` for
+  `fitness.metric_stream`, set replica identity to that key, and updated the
+  ClickHouse bridge to read from `clickhouse.v_activity` and
+  `clickhouse.v_activity_members`.
+- Synced Postgres materialized views before ClickHouse migrations.
+- Switched Cypress seeds to local-date formatting, expanded cleanup to remove
+  dependent rows and `user_settings`, invalidated the per-user query cache, and
+  made the dashboard assertion verify the rendered section rather than a brittle
+  canvas selector.
+
+### Remaining Risk
+
+Any future date-sensitive E2E seeds that use UTC string slicing can still drift
+ around local-midnight boundaries, and any new cached server query path added to
+ Cypress fixtures needs explicit invalidation or isolated cache keys.
+
 ## 2026-04-28: Garmin Sync Lost Status During DB Recovery
 
 ### Impact

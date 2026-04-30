@@ -32,7 +32,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     );
     expect(sql).toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).toContain(
-      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'fitness')",
+      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
     );
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
@@ -41,6 +41,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("REFRESH EVERY 1 MINUTE");
     expect(sql).toContain("FROM postgres_fitness.metric_stream");
     expect(sql).toContain("FROM postgres_fitness_live.v_activity");
+    expect(sql).toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",

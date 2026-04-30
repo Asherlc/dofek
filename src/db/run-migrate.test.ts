@@ -7,6 +7,9 @@ vi.mock("./clickhouse.ts", () => ({
 vi.mock("./clickhouse-migrations.ts", () => ({
   runClickHouseMigrations: vi.fn(),
 }));
+vi.mock("./sync-views.ts", () => ({
+  syncMaterializedViews: vi.fn(),
+}));
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), error: vi.fn() },
 }));
@@ -16,10 +19,12 @@ import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
 import { runMigrations } from "./migrate.ts";
 import { main } from "./run-migrate.ts";
+import { syncMaterializedViews } from "./sync-views.ts";
 
 const mockRunMigrations = vi.mocked(runMigrations);
 const mockCreateClickHouseClientFromEnv = vi.mocked(createClickHouseClientFromEnv);
 const mockRunClickHouseMigrations = vi.mocked(runClickHouseMigrations);
+const mockSyncMaterializedViews = vi.mocked(syncMaterializedViews);
 const mockLogger = vi.mocked(logger);
 
 describe("run-migrate main()", () => {
@@ -31,12 +36,14 @@ describe("run-migrate main()", () => {
     mockRunMigrations.mockReset();
     mockCreateClickHouseClientFromEnv.mockReset();
     mockRunClickHouseMigrations.mockReset();
+    mockSyncMaterializedViews.mockReset();
     clickHouseClient.command.mockReset();
     clickHouseClient.query.mockReset();
     clickHouseClient.close.mockReset();
     process.env.CLICKHOUSE_URL = "http://default:health@localhost:8123";
     mockCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
     mockRunClickHouseMigrations.mockResolvedValue(0);
+    mockSyncMaterializedViews.mockResolvedValue({ synced: 0, skipped: 0, refreshed: 0 });
   });
 
   afterEach(() => {
@@ -90,13 +97,22 @@ describe("run-migrate main()", () => {
     );
   });
 
-  it("does not run view synchronization", async () => {
+  it("syncs Postgres materialized views before ClickHouse migrations", async () => {
     process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
     mockRunMigrations.mockResolvedValue(0);
+    mockSyncMaterializedViews.mockResolvedValue({ synced: 0, skipped: 6, refreshed: 1 });
 
     await main();
 
-    expect(mockLogger.info).not.toHaveBeenCalledWith(expect.stringContaining("[views]"));
+    expect(mockSyncMaterializedViews).toHaveBeenCalledWith(
+      "postgres://test:test@localhost:5432/test",
+    );
+    expect(mockRunClickHouseMigrations.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mockSyncMaterializedViews.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      "[migrate] Materialized views synced=0 skipped=6 refreshed=1",
+    );
   });
 
   it("propagates errors from runMigrations", async () => {

@@ -79,7 +79,7 @@ ENGINE = MaterializedPostgreSQL(${hostAndPort}, ${database}, ${user}, ${password
 SETTINGS materialized_postgresql_schema = 'fitness',
          materialized_postgresql_tables_list = 'metric_stream'`,
     `CREATE DATABASE IF NOT EXISTS postgres_fitness_live
-ENGINE = PostgreSQL(${hostAndPort}, ${database}, ${user}, ${password}, 'fitness')`,
+ENGINE = PostgreSQL(${hostAndPort}, ${database}, ${user}, ${password}, 'clickhouse')`,
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor
 REFRESH EVERY 1 MINUTE
 ENGINE = MergeTree
@@ -89,12 +89,12 @@ AS
 WITH
 activity_members AS (
   SELECT
-    id AS activity_id,
+    activity_id,
     user_id,
     started_at,
     ended_at,
-    arrayJoin(member_activity_ids) AS member_activity_id
-  FROM postgres_fitness_live.v_activity
+    member_activity_id
+  FROM postgres_fitness_live.v_activity_members
 ),
 linked_best_source AS (
   SELECT

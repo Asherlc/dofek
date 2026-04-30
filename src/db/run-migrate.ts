@@ -2,6 +2,7 @@ import { logger } from "../logger.ts";
 import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
 import { runMigrations } from "./migrate.ts";
+import { syncMaterializedViews } from "./sync-views.ts";
 
 export async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
@@ -15,6 +16,10 @@ export async function main(): Promise<void> {
 
   const count = await runMigrations(databaseUrl);
   logger.info(`[migrate] Done — ${count} migration(s) applied`);
+  const viewResult = await syncMaterializedViews(databaseUrl);
+  logger.info(
+    `[migrate] Materialized views synced=${viewResult.synced} skipped=${viewResult.skipped} refreshed=${viewResult.refreshed}`,
+  );
 
   const clickHouseClient = createClickHouseClientFromEnv();
   try {

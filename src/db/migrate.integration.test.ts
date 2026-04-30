@@ -93,4 +93,32 @@ describe("runMigrations", () => {
 
     expect(count).toBe(1);
   });
+
+  it("gives metric_stream a replica-safe primary key", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+
+    const result = await client.query<{
+      column_name: string;
+      replica_identity: string;
+    }>(
+      `SELECT attribute.attname AS column_name, class.relreplident AS replica_identity
+       FROM pg_index index
+       JOIN pg_class class ON class.oid = index.indrelid
+       JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
+       JOIN pg_attribute attribute
+         ON attribute.attrelid = index.indrelid
+        AND attribute.attnum = ANY(index.indkey)
+       WHERE namespace.nspname = 'fitness'
+         AND class.relname = 'metric_stream'
+         AND index.indisprimary
+       ORDER BY array_position(index.indkey, attribute.attnum)`,
+    );
+
+    expect(result.rows).toEqual([
+      { column_name: "id", replica_identity: "i" },
+      { column_name: "recorded_at", replica_identity: "i" },
+    ]);
+    await client.end();
+  });
 });

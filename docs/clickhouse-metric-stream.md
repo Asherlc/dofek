@@ -61,7 +61,9 @@ ClickHouse migrations create and update the bridge databases and read models:
 
 - `postgres_fitness`: a `MaterializedPostgreSQL` database that replicates
   `fitness.metric_stream`.
-- `postgres_fitness_live`: a PostgreSQL database bridge for `fitness.v_activity`.
+- `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
+  the Postgres `clickhouse` schema:
+  `clickhouse.v_activity` and `clickhouse.v_activity_members`.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
   minute from the replicated raw rows and activity membership.
 - `analytics.activity_summary`: a refreshable materialized view refreshed from
