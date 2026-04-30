@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { createPostgresTestActivitySensorStore } from "./activity-sensor-store.test-helper.ts";
+import { createPostgresTestActivitySensorStore } from "./activity-sensor-store.test-helpers.ts";
 import { DerivedCardioRepository } from "./derived-cardio-repository.ts";
 
 let testContext: TestContext | null = null;
