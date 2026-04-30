@@ -295,6 +295,8 @@ export class CyclingAdvancedRepository {
             SELECT COALESCE(up.resting_hr, (
               SELECT drhr.resting_hr FROM fitness.derived_resting_heart_rate drhr
               WHERE drhr.user_id = up.id
+                AND drhr.date <= (asum.started_at AT TIME ZONE ${this.#timezone})::date
+                AND drhr.resting_hr IS NOT NULL
               ORDER BY drhr.date DESC LIMIT 1
             ), 60)::float AS val
           ) rhr

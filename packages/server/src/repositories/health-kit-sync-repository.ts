@@ -33,6 +33,11 @@ const INTEGER_METRIC_STREAM_COLUMNS = new Set([
 
 const MAX_SLEEP_SESSION_GAP_MS = 90 * 60 * 1000;
 
+const ignoredProviderDerivedTypes = new Set([
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierVO2Max",
+]);
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -302,7 +307,9 @@ export function categorize(
   | "additiveDailyMetric"
   | "pointInTimeDailyMetric"
   | "metricStream"
+  | "ignored"
   | "healthEvent" {
+  if (ignoredProviderDerivedTypes.has(type)) return "ignored";
   if (type in bodyMeasurementTypes) return "bodyMeasurement";
   if (type in additiveDailyMetricTypes) return "additiveDailyMetric";
   if (type in pointInTimeDailyMetricTypes) return "pointInTimeDailyMetric";

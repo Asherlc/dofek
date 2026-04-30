@@ -14,6 +14,7 @@ import {
 } from "./db-insertion.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
+import { healthRecord } from "./test-helpers.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const PROVIDER_ID = "apple_health";
@@ -248,7 +249,7 @@ describe("db-insertion deduplication (integration)", () => {
       ]);
     });
 
-    it("does not store provider VO2 max or resting heart rate as daily metrics", async () => {
+    it("ignores provider VO2 max and resting heart rate summaries", async () => {
       const date = new Date("2025-09-03T06:00:00Z");
       const records: HealthRecord[] = [
         healthRecord("HKQuantityTypeIdentifierRestingHeartRate", 52, date, "count/min"),
@@ -259,7 +260,7 @@ describe("db-insertion deduplication (integration)", () => {
       const eventCount = await upsertHealthEventBatch(ctx.db, PROVIDER_ID, records);
 
       expect(dailyCount).toBe(0);
-      expect(eventCount).toBe(2);
+      expect(eventCount).toBe(0);
 
       const dailyRows = await ctx.db
         .select()
@@ -276,10 +277,7 @@ describe("db-insertion deduplication (integration)", () => {
         .where(sql`${schema.healthEvent.startDate} = ${date.toISOString()}::timestamptz`)
         .orderBy(schema.healthEvent.type);
 
-      expect(eventRows).toEqual([
-        { type: "HKQuantityTypeIdentifierRestingHeartRate", value: 52 },
-        { type: "HKQuantityTypeIdentifierVO2Max", value: 48.5 },
-      ]);
+      expect(eventRows).toHaveLength(0);
     });
   });
 
@@ -454,22 +452,3 @@ describe("db-insertion deduplication (integration)", () => {
     });
   });
 });
-
-function healthRecord(
-  type: string,
-  value: number,
-  startDate: Date,
-  unit: string,
-  sourceName = "Apple Watch",
-): HealthRecord {
-  return {
-    type,
-    sourceName,
-    unit,
-    value,
-    startDateCalendarDay: startDate.toISOString().slice(0, 10),
-    startDate,
-    endDate: startDate,
-    creationDate: startDate,
-  };
-}

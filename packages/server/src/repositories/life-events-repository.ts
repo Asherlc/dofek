@@ -184,30 +184,53 @@ export class LifeEventsRepository {
     const startDate = event.started_at;
     const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);
 
-    const beforeClause = sql`dm.user_id = ${this.#userId} AND dm.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)`;
-    const afterClause = endDate
-      ? sql`dm.user_id = ${this.#userId} AND dm.date BETWEEN ${startDate}::date AND ${endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`}`
-      : sql`dm.user_id = ${this.#userId} AND dm.date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`;
+    const afterEndDate = endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`;
 
     const metrics = await executeWithSchema(
       this.#db,
       metricsComparisonRowSchema,
       sql`
-			WITH before_period AS (
-				SELECT 'before' as period, dm.*, drhr.resting_hr
+			WITH before_dates AS (
+				SELECT dm.date
 				FROM fitness.v_daily_metrics dm
+				WHERE dm.user_id = ${this.#userId}
+				  AND dm.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
+				UNION
+				SELECT drhr.date
+				FROM fitness.derived_resting_heart_rate drhr
+				WHERE drhr.user_id = ${this.#userId}
+				  AND drhr.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
+			),
+			after_dates AS (
+				SELECT dm.date
+				FROM fitness.v_daily_metrics dm
+				WHERE dm.user_id = ${this.#userId}
+				  AND dm.date BETWEEN ${startDate}::date AND ${endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`}
+				UNION
+				SELECT drhr.date
+				FROM fitness.derived_resting_heart_rate drhr
+				WHERE drhr.user_id = ${this.#userId}
+				  AND drhr.date BETWEEN ${startDate}::date AND ${endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`}
+			),
+			before_period AS (
+				SELECT 'before' as period, dm.hrv, dm.steps, dm.active_energy_kcal, drhr.resting_hr
+				FROM before_dates dates
+				LEFT JOIN fitness.v_daily_metrics dm
+				  ON dm.user_id = ${this.#userId}
+				 AND dm.date = dates.date
 				LEFT JOIN fitness.derived_resting_heart_rate drhr
-				  ON drhr.user_id = dm.user_id
-				 AND drhr.date = dm.date
-				WHERE ${beforeClause}
+				  ON drhr.user_id = ${this.#userId}
+				 AND drhr.date = dates.date
 			),
 			after_period AS (
-				SELECT 'after' as period, dm.*, drhr.resting_hr
-				FROM fitness.v_daily_metrics dm
+				SELECT 'after' as period, dm.hrv, dm.steps, dm.active_energy_kcal, drhr.resting_hr
+				FROM after_dates dates
+				LEFT JOIN fitness.v_daily_metrics dm
+				  ON dm.user_id = ${this.#userId}
+				 AND dm.date = dates.date
 				LEFT JOIN fitness.derived_resting_heart_rate drhr
-				  ON drhr.user_id = dm.user_id
-				 AND drhr.date = dm.date
-				WHERE ${afterClause}
+				  ON drhr.user_id = ${this.#userId}
+				 AND drhr.date = dates.date
 			),
 			combined AS (
 				SELECT * FROM before_period

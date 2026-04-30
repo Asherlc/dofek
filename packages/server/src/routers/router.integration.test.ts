@@ -87,7 +87,7 @@ describe("Router coverage", () => {
       );
       const restingHeartRateValues = Array.from({ length: 30 }, (_, sampleIndex) => {
         const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
-        return `((CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '1 hour' + ${sampleIndex} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${restingHeartRate}, NULL)`;
+        return `((CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '1 hour' + ${sampleIndex} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${restingHeartRate}, NULL)`;
       });
       await testCtx.db.execute(
         sql.raw(`INSERT INTO fitness.metric_stream (

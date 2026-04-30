@@ -592,13 +592,30 @@ export const recoveryRouter = router({
           respiratory_rate_avg: z.number().nullable(),
         }),
         sql`
-          SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.respiratory_rate_avg
-          FROM fitness.v_daily_metrics dm
+          WITH metric_dates AS (
+            SELECT dm.date
+            FROM fitness.v_daily_metrics dm
+            WHERE dm.user_id = ${ctx.userId}
+              AND dm.date > ${dateWindowStart(input.endDate, input.days)}
+              AND dm.date <= ${dateWindowEnd(input.endDate)}
+              ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
+            UNION
+            SELECT drhr.date
+            FROM fitness.derived_resting_heart_rate drhr
+            WHERE drhr.user_id = ${ctx.userId}
+              AND drhr.date > ${dateWindowStart(input.endDate, input.days)}
+              AND drhr.date <= ${dateWindowEnd(input.endDate)}
+              ${dateAccessPredicate(ctx.accessWindow, sql`drhr.date`)}
+          )
+          SELECT dates.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.respiratory_rate_avg
+          FROM metric_dates dates
+          LEFT JOIN fitness.v_daily_metrics dm
+            ON dm.user_id = ${ctx.userId}
+           AND dm.date = dates.date
           LEFT JOIN fitness.derived_resting_heart_rate drhr
-            ON drhr.user_id = dm.user_id
-           AND drhr.date = dm.date
-          WHERE dm.user_id = ${ctx.userId}
-          ORDER BY dm.date DESC
+            ON drhr.user_id = ${ctx.userId}
+           AND drhr.date = dates.date
+          ORDER BY dates.date DESC
           LIMIT 1
         `,
       );

@@ -4,6 +4,7 @@ import {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
+  IGNORED_PROVIDER_DERIVED_TYPES,
   insertWithDuplicateDiag,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
@@ -175,10 +176,14 @@ describe("type routing constants", () => {
     expect(ALL_ROUTED_TYPES.has("SomeRandomType")).toBe(false);
   });
 
-  it("ALL_ROUTED_TYPES leaves provider resting HR and VO2 Max as health events", () => {
-    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierRestingHeartRate")).toBe(false);
+  it("ALL_ROUTED_TYPES includes ignored provider resting HR and VO2 Max summaries", () => {
+    expect(IGNORED_PROVIDER_DERIVED_TYPES.has("HKQuantityTypeIdentifierRestingHeartRate")).toBe(
+      true,
+    );
+    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierRestingHeartRate")).toBe(true);
     expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierWalkingHeartRateAverage")).toBe(true);
-    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierVO2Max")).toBe(false);
+    expect(IGNORED_PROVIDER_DERIVED_TYPES.has("HKQuantityTypeIdentifierVO2Max")).toBe(true);
+    expect(ALL_ROUTED_TYPES.has("HKQuantityTypeIdentifierVO2Max")).toBe(true);
   });
 });
 
@@ -1171,7 +1176,7 @@ describe("upsertHealthEventBatch", () => {
     expect(capture.values).toHaveLength(0);
   });
 
-  it("stores provider resting HR and VO2 Max as health events", async () => {
+  it("ignores provider resting HR and VO2 Max health events", async () => {
     const { db, capture } = createMockDb();
     const date = new Date("2024-03-02T06:00:00Z");
     const records = [
@@ -1193,19 +1198,8 @@ describe("upsertHealthEventBatch", () => {
 
     const count = await upsertHealthEventBatch(db, "p1", records);
 
-    expect(count).toBe(2);
-    expect(capture.values[0]).toEqual([
-      expect.objectContaining({
-        type: "HKQuantityTypeIdentifierRestingHeartRate",
-        value: 51,
-        unit: "count/min",
-      }),
-      expect.objectContaining({
-        type: "HKQuantityTypeIdentifierVO2Max",
-        value: 47.2,
-        unit: "mL/min/kg",
-      }),
-    ]);
+    expect(count).toBe(0);
+    expect(capture.values).toHaveLength(0);
   });
 
   it("batches in groups of 5000", async () => {

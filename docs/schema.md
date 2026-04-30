@@ -101,7 +101,7 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.daily_metrics` | Device-reported daily health data — RHR, HRV, steps, SpO2, walking biomechanics |
+| `fitness.daily_metrics` | Device-reported daily health data — HRV, steps, SpO2, walking biomechanics |
 
 ### Materialized Views
 

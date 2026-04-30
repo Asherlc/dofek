@@ -106,6 +106,12 @@ export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierUVExposure",
 ]);
 
+// Provider-computed summaries that are derived from raw streams server-side.
+export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierVO2Max",
+]);
+
 // Additive daily metrics (summed across all records in a day)
 const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierStepCount",
@@ -147,6 +153,7 @@ export const ALL_ROUTED_TYPES = new Set([
   ...Object.keys(METRIC_STREAM_TYPES),
   ...BODY_MEASUREMENT_TYPES,
   ...DAILY_METRIC_TYPES,
+  ...IGNORED_PROVIDER_DERIVED_TYPES,
   ...Object.keys(NUTRITION_TYPES),
   "HKCategoryTypeIdentifierSleepAnalysis", // handled separately in SAX parser
 ]);

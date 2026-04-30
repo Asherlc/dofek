@@ -159,9 +159,9 @@ describe("categorize", () => {
     expect(categorize("HKQuantityTypeIdentifierWalkingStepLength")).toBe("pointInTimeDailyMetric");
   });
 
-  it("does not categorize provider resting HR or VO2 Max as daily metrics", () => {
-    expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("healthEvent");
-    expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("healthEvent");
+  it("ignores provider resting HR and VO2 Max summaries", () => {
+    expect(categorize("HKQuantityTypeIdentifierRestingHeartRate")).toBe("ignored");
+    expect(categorize("HKQuantityTypeIdentifierVO2Max")).toBe("ignored");
   });
 
   it("categorizes metric stream types", () => {

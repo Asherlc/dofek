@@ -5,7 +5,7 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
 import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
-import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ const normalizedPowerSampleSchema = z.object({
 
 const vo2MaxEstimateSchema = z.object({
   activity_id: z.string(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
   method: z.string(),
   vo2max: z.coerce.number(),
 });
