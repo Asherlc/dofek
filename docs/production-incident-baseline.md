@@ -1546,8 +1546,15 @@ Bumped the production and staging data-volume mount-alias trigger strings so
 the next Terraform apply replaces those `terraform_data` resources and reruns
 the existing provisioners that create `/mnt/dofek-data/clickhouse`.
 
+The rerun then exposed a second missing prerequisite: `CLICKHOUSE_PASSWORD` was
+absent from both Infisical environments, so `docker stack config` failed while
+interpolating ClickHouse environment variables. Added `CLICKHOUSE_PASSWORD` to
+both `prod` and `staging` in Infisical.
+
 ### Remaining Risk
 
-This fixes the missed ClickHouse provisioning run. Future changes to the
-`/mnt/dofek-data` directory list still require a corresponding trigger bump in
-the same commit.
+This fixes the missed ClickHouse provisioning run and the missing ClickHouse
+secret. Future changes to the `/mnt/dofek-data` directory list still require a
+corresponding trigger bump in the same commit. Future stack-level environment
+variables must be added to Infisical before the workflow that references them is
+merged or deployed.
