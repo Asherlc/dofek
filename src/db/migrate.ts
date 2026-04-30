@@ -7,7 +7,6 @@ import { logger } from "../logger.ts";
 /** Postgres advisory lock key — serializes concurrent migration runs across containers */
 export const MIGRATION_LOCK_KEY = 728370291;
 const METRIC_STREAM_ID_BACKFILL_MARKER = "-- dofek:backfill-metric-stream-id";
-const METRIC_STREAM_ID_BACKFILL_WINDOW_MILLISECONDS = 60 * 60 * 1000;
 
 interface MetricStreamChunkRow {
   chunk_schema: string;
@@ -62,39 +61,26 @@ function parseStatements(content: string): Array<string> {
     .filter(Boolean);
 }
 
-async function backfillMetricStreamIdsForTimeRange(
+async function backfillMetricStreamIdsForChunkRange(
   client: Client,
   rangeStart: Date | string,
   rangeEnd: Date | string,
 ): Promise<number> {
-  let totalRows = 0;
-  let windowStart = parseMigrationDate(rangeStart);
-  const finalRangeEnd = parseMigrationDate(rangeEnd);
+  const chunkRangeStart = parseMigrationDate(rangeStart);
+  const chunkRangeEnd = parseMigrationDate(rangeEnd);
+  if (chunkRangeEnd <= chunkRangeStart) {
+    throw new Error("metric_stream ID backfill chunk range did not advance");
+  }
 
-  while (windowStart < finalRangeEnd) {
-    const nextWindowEnd = new Date(
-      Math.min(
-        windowStart.getTime() + METRIC_STREAM_ID_BACKFILL_WINDOW_MILLISECONDS,
-        finalRangeEnd.getTime(),
-      ),
-    );
-    if (nextWindowEnd <= windowStart) {
-      throw new Error("metric_stream ID backfill time window did not advance");
-    }
-
-    const result = await client.query(
-      `UPDATE fitness.metric_stream AS metric_stream
+  const result = await client.query(
+    `UPDATE fitness.metric_stream AS metric_stream
       SET id = gen_random_uuid()
       WHERE metric_stream.id IS NULL
         AND metric_stream.recorded_at >= $1
         AND metric_stream.recorded_at < $2`,
-      [windowStart, nextWindowEnd],
-    );
-    totalRows += result.rowCount ?? 0;
-    windowStart = nextWindowEnd;
-  }
-
-  return totalRows;
+    [chunkRangeStart, chunkRangeEnd],
+  );
+  return result.rowCount ?? 0;
 }
 
 async function backfillMetricStreamIdsWithoutChunkRanges(client: Client): Promise<number> {
@@ -111,7 +97,7 @@ async function backfillMetricStreamIdsWithoutChunkRanges(client: Client): Promis
     return 0;
   }
 
-  return backfillMetricStreamIdsForTimeRange(client, bounds.range_start, bounds.range_end);
+  return backfillMetricStreamIdsForChunkRange(client, bounds.range_start, bounds.range_end);
 }
 
 function parseMigrationDate(value: Date | string): Date {
@@ -127,7 +113,7 @@ function parseMigrationDate(value: Date | string): Date {
 }
 
 async function backfillMetricStreamIds(client: Client): Promise<void> {
-  logger.info("[migrate] Backfilling metric_stream.id in one-hour time windows");
+  logger.info("[migrate] Backfilling metric_stream.id in Timescale chunk ranges");
 
   const chunksResult = await client.query<MetricStreamChunkRow>(`
     SELECT chunk_schema, chunk_name, range_start, range_end
@@ -152,7 +138,7 @@ async function backfillMetricStreamIds(client: Client): Promise<void> {
       continue;
     }
 
-    const chunkRows = await backfillMetricStreamIdsForTimeRange(
+    const chunkRows = await backfillMetricStreamIdsForChunkRange(
       client,
       chunk.range_start,
       chunk.range_end,

@@ -120,7 +120,7 @@ describe("runMigrations", () => {
     expect(executedQueries()).toContain("CREATE TABLE b (id INT)");
   });
 
-  it("backfills metric_stream IDs in bounded Timescale time windows", async () => {
+  it("backfills metric_stream IDs in bounded Timescale chunk ranges", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
     mockReaddirSync.mockReturnValue(["0007_metric_stream_primary_key.sql"]);
@@ -154,18 +154,14 @@ describe("runMigrations", () => {
     const backfillCalls = mockClientQuery.mock.calls.filter(([text]) =>
       String(text).includes("UPDATE fitness.metric_stream AS metric_stream"),
     );
-    expect(backfillCalls).toHaveLength(3);
+    expect(backfillCalls).toHaveLength(2);
     expect(String(backfillCalls[0]?.[0])).not.toContain("ctid");
     expect(String(backfillCalls[0]?.[0])).not.toContain("LIMIT");
     expect(backfillCalls[0]?.[1]).toEqual([
       new Date("2026-01-01T00:00:00.000Z"),
-      new Date("2026-01-01T01:00:00.000Z"),
-    ]);
-    expect(backfillCalls[1]?.[1]).toEqual([
-      new Date("2026-01-01T01:00:00.000Z"),
       new Date("2026-01-01T02:00:00.000Z"),
     ]);
-    expect(backfillCalls[2]?.[1]).toEqual([
+    expect(backfillCalls[1]?.[1]).toEqual([
       new Date("2026-01-02T00:30:00.000Z"),
       new Date("2026-01-02T01:00:00.000Z"),
     ]);

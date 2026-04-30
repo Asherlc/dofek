@@ -1728,3 +1728,20 @@ WHERE metric_stream.id IS NULL
 
 This preserves bounded progress without relying on unsupported compressed-chunk
 system columns.
+
+### Second Follow-up Evidence
+
+The production rerun with one-hour windows was correct but still too
+under-batched for the deploy window. Production had `195` Timescale chunks for
+`fitness.metric_stream`, which meant up to `32,760` hourly update statements
+before the migration could add the primary key. After roughly twenty minutes the
+container had only completed a small subset of chunks, so the run was cancelled
+before the workflow timeout killed it.
+
+### Second Follow-up Fix
+
+Changed the marker handler to issue one bounded update per Timescale chunk range
+instead of one update per hour inside each chunk. The statement still filters by
+`id IS NULL` and `recorded_at >= $1 AND recorded_at < $2`, so already completed
+chunks from prior attempts remain committed and the migration is still
+resumable.
