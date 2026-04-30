@@ -1573,12 +1573,15 @@ wrapped `docker run` with the runner-side `timeout` while using remote Docker
 over SSH, each timeout killed the local Docker client but left the remote
 migration container running.
 
-Updated the migration step to run one named migration container with a 50-minute
-timeout and explicit cleanup of that remote container on failure or timeout.
-The longer timeout is intentionally scoped to migrations because this release
-contains a one-time 37 GB compressed-hypertable backfill; the named-container
-cleanup prevents future runner-side timeouts from leaking remote migration
-processes.
+Updated the migration step to run one named migration container with explicit
+cleanup of that remote container on failure or timeout. The first cleanup fix
+still depended on the runner-side `timeout docker run` regaining control over
+SSH, which did not happen reliably. The workflow now also runs BusyBox
+`timeout` inside the remote container, so the migration process exits from the
+server side even if the runner-side Docker client hangs. The longer timeout is
+intentionally scoped to migrations because this release contains a one-time
+37 GB compressed-hypertable backfill; the named-container cleanup prevents
+future runner-side timeouts from leaking remote migration processes.
 
 ### Remaining Risk
 
