@@ -14,8 +14,8 @@ queries while preserving the raw-data-only rule for `fitness.*`.
 This projection does not replace:
 
 - `fitness.metric_stream`
-- `fitness.deduped_sensor`
-- `fitness.activity_summary`
+- `analytics.deduped_sensor`
+- `analytics.activity_summary`
 - activity detail streams
 - duration curves that need ordered raw samples
 

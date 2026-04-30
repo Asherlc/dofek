@@ -1,22 +1,19 @@
 import { DURATION_LABELS, linearRegression } from "@dofek/training/power-analysis";
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ── Zod schemas for DB results ───────────────────────────────
 
 const hrCurveRowSchema = z.object({
   duration_seconds: z.coerce.number(),
   best_hr: z.coerce.number(),
-  activity_date: dateStringSchema,
+  activity_date: z.string(),
 });
 
 const paceCurveRowSchema = z.object({
   duration_seconds: z.coerce.number(),
   best_pace: z.coerce.number(),
-  activity_date: dateStringSchema,
+  activity_date: z.string(),
 });
 
 // ── Domain types ─────────────────────────────────────────────
@@ -74,14 +71,21 @@ export function fitCriticalHeartRate(
 // ── Repository ───────────────────────────────────────────────
 
 export class DurationCurvesRepository {
-  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore?: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
+  constructor(userId: string, timezone: string, sensorStore?: ActivitySensorStore) {
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
+  }
+
+  #requireSensorStore(): ActivitySensorStore {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for duration curves");
+    }
+    return this.#sensorStore;
   }
 
   /**
@@ -92,66 +96,9 @@ export class DurationCurvesRepository {
     points: HrCurvePoint[];
     model: CriticalHeartRateModel | null;
   }> {
-    const rows = await executeWithSchema(
-      this.#db,
-      hrCurveRowSchema,
-      sql`
-			WITH activity_hr AS (
-			  SELECT ds.activity_id, ds.recorded_at, ds.scalar AS heart_rate,
-			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
-			         ROW_NUMBER() OVER (
-			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-			         ) AS rn,
-			         SUM(ds.scalar) OVER (
-			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-			           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-			         ) AS cumsum
-			  FROM fitness.deduped_sensor ds
-			  JOIN fitness.v_activity a ON a.id = ds.activity_id
-			  WHERE ds.user_id = ${this.#userId}
-			    AND ds.channel = 'heart_rate'
-			    AND ds.scalar > 0
-			    AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-			    AND ${enduranceTypeFilter("a")}
-			),
-			sample_rate AS (
-			  SELECT activity_id,
-			         GREATEST(ROUND(
-			           EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
-			           / NULLIF(COUNT(*) - 1, 0)
-			         )::int, 1) AS interval_s
-			  FROM activity_hr
-			  GROUP BY activity_id
-			  HAVING COUNT(*) > 1
-			),
-			durations AS (
-			  SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
-			),
-			best_per_duration AS (
-			  SELECT
-			    d.duration_s AS duration_seconds,
-			    MAX(
-			      (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / ROUND(d.duration_s::numeric / sr.interval_s)
-			    )::int AS best_hr,
-			    (ARRAY_AGG(
-			      ap.activity_date::text ORDER BY
-			      (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / ROUND(d.duration_s::numeric / sr.interval_s) DESC
-			    ))[1] AS activity_date
-			  FROM durations d
-			  CROSS JOIN activity_hr ap
-			  JOIN sample_rate sr ON sr.activity_id = ap.activity_id
-			  LEFT JOIN activity_hr prev
-			    ON prev.activity_id = ap.activity_id
-			    AND prev.rn = ap.rn - ROUND(d.duration_s::numeric / sr.interval_s)::int
-			  WHERE ap.rn >= ROUND(d.duration_s::numeric / sr.interval_s)::int
-			  GROUP BY d.duration_s
-			)
-			SELECT duration_seconds, best_hr, activity_date
-			FROM best_per_duration
-			WHERE best_hr > 0
-			ORDER BY duration_seconds
-		`,
-    );
+    const rows = await this.#requireSensorStore()
+      .getHeartRateCurveRows(days, this.#userId, this.#timezone)
+      .then((curveRows) => curveRows.map((row) => hrCurveRowSchema.parse(row)));
 
     const results = rows.map((r) => ({
       durationSeconds: Number(r.duration_seconds),
@@ -172,69 +119,9 @@ export class DurationCurvesRepository {
    * Higher speed = better pace (lower s/km), so we want MAX average speed.
    */
   async getPaceCurve(days: number): Promise<{ points: PaceCurvePoint[] }> {
-    const rows = await executeWithSchema(
-      this.#db,
-      paceCurveRowSchema,
-      sql`
-			WITH activity_speed AS (
-			  SELECT ds.activity_id, ds.recorded_at, ds.scalar AS speed,
-			         (a.started_at AT TIME ZONE ${this.#timezone})::date AS activity_date,
-			         ROW_NUMBER() OVER (
-			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-			         ) AS rn,
-			         SUM(ds.scalar) OVER (
-			           PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-			           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-			         ) AS cumsum
-			  FROM fitness.deduped_sensor ds
-			  JOIN fitness.v_activity a ON a.id = ds.activity_id
-			  WHERE ds.user_id = ${this.#userId}
-			    AND ds.channel = 'speed'
-			    AND ds.scalar > 0
-			    AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-			    AND ${enduranceTypeFilter("a")}
-			),
-			sample_rate AS (
-			  SELECT activity_id,
-			         GREATEST(ROUND(
-			           EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
-			           / NULLIF(COUNT(*) - 1, 0)
-			         )::int, 1) AS interval_s
-			  FROM activity_speed
-			  GROUP BY activity_id
-			  HAVING COUNT(*) > 1
-			),
-			durations AS (
-			  SELECT unnest(ARRAY[5,15,30,60,120,300,600,1200,1800,3600,5400,7200]) AS duration_s
-			),
-			best_per_duration AS (
-			  SELECT
-			    d.duration_s AS duration_seconds,
-			    MAX(
-			      (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / ROUND(d.duration_s::numeric / sr.interval_s)
-			    ) AS best_speed_ms,
-			    (ARRAY_AGG(
-			      ap.activity_date::text ORDER BY
-			      (ap.cumsum - COALESCE(prev.cumsum, 0))::numeric / ROUND(d.duration_s::numeric / sr.interval_s) DESC
-			    ))[1] AS activity_date
-			  FROM durations d
-			  CROSS JOIN activity_speed ap
-			  JOIN sample_rate sr ON sr.activity_id = ap.activity_id
-			  LEFT JOIN activity_speed prev
-			    ON prev.activity_id = ap.activity_id
-			    AND prev.rn = ap.rn - ROUND(d.duration_s::numeric / sr.interval_s)::int
-			  WHERE ap.rn >= ROUND(d.duration_s::numeric / sr.interval_s)::int
-			  GROUP BY d.duration_s
-			)
-			SELECT
-			  duration_seconds,
-			  ROUND((1000.0 / NULLIF(best_speed_ms, 0))::numeric, 1) AS best_pace,
-			  activity_date
-			FROM best_per_duration
-			WHERE best_speed_ms > 0
-			ORDER BY duration_seconds
-		`,
-    );
+    const rows = await this.#requireSensorStore()
+      .getPaceCurveRows(days, this.#userId, this.#timezone)
+      .then((curveRows) => curveRows.map((row) => paceCurveRowSchema.parse(row)));
 
     const results = rows.map((r) => ({
       durationSeconds: Number(r.duration_seconds),

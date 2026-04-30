@@ -291,12 +291,30 @@ jobs:
         run: |
           set -euo pipefail
 
+          database_url_and_clickhouse_url="$(
+            node --eval '
+              const fs = require("node:fs");
+
+              const envFilePath = process.argv[1];
+              const lines = fs.readFileSync(envFilePath, "utf8").split(/\r?\n/);
+              const postgresPasswordLine = lines.find((line) => line.startsWith("POSTGRES_PASSWORD="));
+              if (!postgresPasswordLine) {
+                throw new Error("POSTGRES_PASSWORD is required in review env file");
+              }
+              const postgresPassword = postgresPasswordLine.slice("POSTGRES_PASSWORD=".length);
+              const encodedPassword = encodeURIComponent(postgresPassword);
+              console.log(`DATABASE_URL=postgres://health:${encodedPassword}@db:5432/health`);
+              console.log(`CLICKHOUSE_URL=http://default:${encodedPassword}@clickhouse:8123`);
+            ' "${{ github.workspace }}/.env.review"
+          )"
+
           {
             echo "ENABLE_DEV_LOGIN=true"
             echo "SLACK_SIGNING_SECRET="
             echo "SLACK_BOT_TOKEN="
             echo "SLACK_APP_TOKEN="
             echo "PUBLIC_URL=https://${REVIEW_HOST}"
+            echo "${database_url_and_clickhouse_url}"
           } >> "${{ github.workspace }}/.env.review"
 
       - name: Login to GHCR
@@ -342,8 +360,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db redis
-          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db redis
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db clickhouse redis
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db clickhouse redis
 
           for attempt in $(seq 1 36); do
             if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T db pg_isready -U health -d health; then
@@ -351,6 +369,17 @@ jobs:
             fi
             if [ "$attempt" -eq 36 ]; then
               echo "::error::Review app database did not become ready within 180s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+          for attempt in $(seq 1 36); do
+            if docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml exec -T clickhouse sh -lc "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"; then
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::Review app ClickHouse did not become ready within 180s"
               exit 1
             fi
             sleep 5

@@ -18,7 +18,7 @@ describe("tableInfo", () => {
     ["bodyMeasurements", "fitness.body_measurement", "recorded_at", "id"],
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
-    ["metricStream", "fitness.metric_stream", "recorded_at", "recorded_at"],
+    ["metricStream", "fitness.metric_stream", "recorded_at", "id"],
     ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -350,7 +350,7 @@ describe("ProviderDetailRepository", () => {
       expect(tableInfo("metricStream")).toStrictEqual({
         table: "fitness.metric_stream",
         orderColumn: "recorded_at",
-        idColumn: "recorded_at",
+        idColumn: "id",
       });
       expect(tableInfo("nutritionDaily")).toStrictEqual({
         table: "fitness.v_nutrition_daily",
@@ -453,13 +453,11 @@ describe("ProviderDetailRepository", () => {
       }
     });
 
-    it("tableInfo metricStream has matching idColumn and orderColumn (both recorded_at)", () => {
-      // This is unique: idColumn === orderColumn = "recorded_at"
-      // If one was mutated to "id", they would differ
+    it("tableInfo metricStream uses id as the row identifier and recorded_at for ordering", () => {
       const info = tableInfo("metricStream");
-      expect(info.idColumn).toBe("recorded_at");
+      expect(info.idColumn).toBe("id");
       expect(info.orderColumn).toBe("recorded_at");
-      expect(info.idColumn).toBe(info.orderColumn);
+      expect(info.idColumn).not.toBe(info.orderColumn);
     });
 
     it("tableInfo dailyMetrics has idColumn 'date' (not 'id')", () => {

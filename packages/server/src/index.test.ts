@@ -115,10 +115,15 @@ vi.mock("dofek/db", () => ({
     execute: vi.fn().mockResolvedValue([]),
   })),
 }));
+vi.mock("dofek/db/clickhouse", () => ({
+  bootstrapClickHouseFromEnv: vi.fn(() => Promise.resolve()),
+  createClickHouseClientFromEnv: vi.fn(() => ({ query: vi.fn() })),
+}));
 
 import * as Sentry from "@sentry/node";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { createDatabaseFromEnv } from "dofek/db";
+import { bootstrapClickHouseFromEnv, createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import express from "express";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
@@ -855,12 +860,18 @@ describe("static file serving", () => {
 
 describe("main", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
 
   afterEach(() => {
     if (originalDatabaseUrl === undefined) {
       delete process.env.DATABASE_URL;
     } else {
       process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+    if (originalClickHouseUrl === undefined) {
+      delete process.env.CLICKHOUSE_URL;
+    } else {
+      process.env.CLICKHOUSE_URL = originalClickHouseUrl;
     }
   });
 
@@ -869,9 +880,18 @@ describe("main", () => {
     await expect(main()).rejects.toThrow("DATABASE_URL environment variable is required");
   });
 
+  it("throws when CLICKHOUSE_URL is not set", async () => {
+    process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    delete process.env.CLICKHOUSE_URL;
+    await expect(main()).rejects.toThrow("CLICKHOUSE_URL environment variable is required");
+  });
+
   it("creates db and app when DATABASE_URL is set", async () => {
     process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    process.env.CLICKHOUSE_URL = "http://localhost:8123";
     vi.mocked(createDatabaseFromEnv).mockClear();
+    vi.mocked(bootstrapClickHouseFromEnv).mockClear();
+    vi.mocked(createClickHouseClientFromEnv).mockClear();
     vi.mocked(logger.info).mockClear();
 
     // main() calls app.listen which binds a port — use port 0 via env
@@ -885,6 +905,8 @@ describe("main", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(vi.mocked(createDatabaseFromEnv)).toHaveBeenCalled();
+      expect(vi.mocked(createClickHouseClientFromEnv)).toHaveBeenCalled();
+      expect(vi.mocked(bootstrapClickHouseFromEnv)).toHaveBeenCalled();
       expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.stringContaining("API running"));
     } finally {
       if (originalPort === undefined) {

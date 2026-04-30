@@ -1,3 +1,5 @@
+import { formatLocalDate } from "./test-helpers";
+
 const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
 
 describe("Nutrition page", () => {
@@ -22,7 +24,7 @@ describe("Nutrition page", () => {
   });
 
   it("renders food entries that have null calories without crashing", () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate(new Date());
 
     // Insert food entries with nutrition rows (one with calories, one without)
     cy.task("runQuery", {
