@@ -6,13 +6,12 @@ SELECT
   a.name,
   a.provider_id,
   a.source_providers,
-  s.avg_hr,
-  s.max_hr,
-  s.avg_power,
-  s.total_distance AS distance_meters,
+  NULL::double precision AS avg_hr,
+  NULL::smallint AS max_hr,
+  NULL::double precision AS avg_power,
+  NULL::double precision AS distance_meters,
   COUNT(*) OVER()::int AS total_count
 FROM fitness.v_activity a
-LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
 WHERE a.user_id = {{userId}}
   AND a.started_at > {{startedAfter}}
   {{typeFilter}}

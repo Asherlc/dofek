@@ -69,7 +69,7 @@ The `sensor_sample` table uses a "medium layout" — one row per (timestamp, cha
 
 **Dedup strategy:** When the same metric (e.g., heart_rate) comes from multiple sources (WHOOP API at 1Hz, WHOOP BLE at 50Hz), per (activity_id, channel), the provider with the most samples wins. The most granular source is automatically preferred without any knowledge of source types.
 
-**Ambient fallback heads up:** `fitness.deduped_sensor` uses ambient rows (`activity_id IS NULL`) as a fallback per (activity, channel) only when that activity has zero linked rows for the channel. The fallback window is bounded to `[activity.started_at, COALESCE(activity.ended_at, last_linked_sample_at)]`, where `last_linked_sample_at` is the latest linked sample timestamp for the canonical activity. Ambient rows outside this window are ignored.
+**Ambient fallback heads up:** `analytics.deduped_sensor` uses ambient rows (`activity_id IS NULL`) as a fallback per (activity, channel) only when that activity has zero linked rows for the channel. The fallback window is bounded to `[activity.started_at, COALESCE(activity.ended_at, last_linked_sample_at)]`, where `last_linked_sample_at` is the latest linked sample timestamp for the canonical activity. Ambient rows outside this window are ignored.
 
 **Source type:** The `source_type` column ('ble', 'file', 'api') is informational — for debugging and auditing. It is NOT used for dedup priority.
 
@@ -105,7 +105,6 @@ Existing materialized views are not dropped or rebuilt automatically during depl
 
 | View | Purpose |
 |------|---------|
-| `fitness.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from sensor_sample with dedup |
 | `fitness.v_metric_stream` | Pivot view — presents sensor_sample in wide-row format for legacy queries |
 
 ### Continuous Aggregates
@@ -121,11 +120,14 @@ Use Timescale continuous aggregates for straightforward time-bucket rollups wher
 
 ### Derived Read Models
 
-`analytics.*` contains rebuildable derived tables. These tables are not source of
-truth and may be dropped or rebuilt from `fitness.*`.
+ClickHouse `analytics.*` contains rebuildable derived tables. These tables are
+not source of truth and may be dropped or rebuilt from Postgres `fitness.*` raw
+tables through ClickHouse replication.
 
 | Table | Purpose |
 |-------|---------|
+| `analytics.deduped_sensor` | Stored per-activity sensor sample selection for stream and zone reads. |
+| `analytics.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from deduped sensor samples. |
 | `analytics.activity_training_summary` | Per-activity training summary and histograms used by app analytics. |
 | `analytics.activity_rollup_dirty` | Work queue for activity projection refresh. |
 

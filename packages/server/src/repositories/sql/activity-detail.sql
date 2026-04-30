@@ -9,19 +9,18 @@ SELECT
   a.raw->>'sourceName' AS subsource,
   a.source_providers,
   a.source_external_ids,
-  s.avg_hr,
-  s.max_hr,
-  s.avg_power,
-  s.max_power,
-  s.avg_speed,
-  s.max_speed,
-  s.avg_cadence,
-  s.total_distance,
-  s.elevation_gain_m,
-  s.elevation_loss_m,
-  s.sample_count
+  NULL::double precision AS avg_hr,
+  NULL::smallint AS max_hr,
+  NULL::double precision AS avg_power,
+  NULL::smallint AS max_power,
+  NULL::double precision AS avg_speed,
+  NULL::double precision AS max_speed,
+  NULL::double precision AS avg_cadence,
+  NULL::double precision AS total_distance,
+  NULL::double precision AS elevation_gain_m,
+  NULL::double precision AS elevation_loss_m,
+  NULL::integer AS sample_count
 FROM fitness.v_activity a
-LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
 WHERE a.id = {{activityId}}
   AND a.user_id = {{userId}}
   {{accessPredicate}}

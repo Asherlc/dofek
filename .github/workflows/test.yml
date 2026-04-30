@@ -473,8 +473,8 @@ jobs:
           set: |
             *.cache-from=type=gha,scope=e2e
             *.cache-to=type=gha,mode=max,scope=e2e
-      - name: Start e2e database
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db
+      - name: Start e2e dependencies
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse
       - name: Run e2e migrations
         run: docker compose -f docker-compose.e2e.yml run --rm migrate
       - name: Start e2e server
@@ -528,7 +528,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db redis migrate server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis migrate server
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
