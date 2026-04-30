@@ -1,4 +1,4 @@
-name: Deploy App
+name: Deploy Web Stack
 
 on:
   workflow_call:
@@ -102,12 +102,12 @@ on:
         type: boolean
 
 concurrency:
-  group: deploy-app-${{ inputs.stack_name || 'dofek' }}
+  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}
   cancel-in-progress: false
 
 jobs:
-  app:
-    name: Deploy App
+  web-stack:
+    name: Deploy Web Stack
     runs-on: ubuntu-latest
     permissions:
       contents: read

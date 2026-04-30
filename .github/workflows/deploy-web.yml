@@ -7,6 +7,15 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - staging
+          - production
       image_tag:
         description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
         required: false
@@ -25,83 +34,53 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-web
+  group: deploy-web-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'main' }}
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Deploy Check
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.resolve.outputs.image_tag }}
-      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
-    steps:
-      - name: Resolve deploy target
-        id: resolve
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_TAG: ${{ inputs.image_tag }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TAG="${INPUT_TAG:-latest}"
-            echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "Deploying image: $TAG"
-            exit 0
-          fi
-
-          SHA="$WORKFLOW_RUN_SHA"
-          SHORT_SHA=$(echo "$SHA" | head -c 7)
-          TAG="sha-${SHORT_SHA}"
-          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-
-          require_tag() {
-            local package_name="$1"
-            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
-              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
-              echo "::error::Docker image ${package_name}:$TAG not found. CI may not have pushed it."
-              exit 1
-            fi
-          }
-
-          require_tag "dofek"
-          require_tag "dofek-ml"
-
-          {
-            echo "image_tag=$TAG"
-            echo "should_deploy=true"
-          } >> "$GITHUB_OUTPUT"
-          echo "Deploying CI image tag across stack services: $TAG"
-
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - uses: ./.github/actions/append-dispatcher-run-summary
-        if: always()
-        with:
-          dispatching_run_id: ${{ github.event.workflow_run.id }}
-
-  terraform:
-    name: Deploy Infra
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-terraform.yml
+  production:
+    name: Deploy Web Production
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && (inputs.environment == 'production' || inputs.environment == 'both')
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/deploy-web-environment.yml
     with:
-      dispatching_run_id: ${{ github.run_id }}
+      environment_name: production
+      server_host_source: production
+      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
+      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+      refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
     secrets: inherit
 
-  deploy-app:
-    name: Deploy Stack
-    needs: [check, terraform]
-    if: needs.check.outputs.should_deploy == 'true'
-    uses: ./.github/workflows/deploy-app.yml
+  staging:
+    name: Deploy Web Staging
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' && (inputs.environment == 'staging' || inputs.environment == 'both')
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/deploy-web-environment.yml
     with:
-      image_tag: ${{ needs.check.outputs.image_tag }}
-      server_host: ${{ needs.terraform.outputs.server_host }}
-      dispatching_run_id: ${{ github.run_id }}
+      environment_name: staging
+      server_host_source: staging
+      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
+      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+      infisical_environment: staging
+      stack_name: dofek-staging
+      public_url: https://staging.dofek.asherlc.com
+      web_host_rule: 'Host(`staging.dofek.asherlc.com`)'
+      ota_base_url: https://staging-ota.dofek.asherlc.com
+      ota_host_rule: 'Host(`staging-ota.dofek.asherlc.com`)'
+      portainer_host_rule: 'Host(`staging-portainer.dofek.asherlc.com`)'
+      netdata_host_rule: 'Host(`staging-netdata.dofek.asherlc.com`)'
+      databasus_host_rule: 'Host(`staging-databasus.dofek.asherlc.com`)'
+      pgadmin_host_rule: 'Host(`staging-pgadmin.dofek.asherlc.com`)'
       refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
     secrets: inherit
 

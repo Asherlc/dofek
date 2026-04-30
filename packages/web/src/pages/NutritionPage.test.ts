@@ -30,6 +30,12 @@ describe("foodEntrySchema", () => {
     expect(first?.calories).toBe(250);
   });
 
+  it("preserves detailed nutrient fields returned by food.byDate", () => {
+    const input = [{ ...makeEntry(), sodium_mg: 680 }];
+    const [first] = entrySchema.parse(input);
+    expect(first?.sodium_mg).toBe(680);
+  });
+
   it("parses entries with null calories", () => {
     const input = [makeEntry({ calories: null })];
     const [first] = entrySchema.parse(input);

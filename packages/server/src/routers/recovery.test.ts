@@ -281,6 +281,20 @@ describe("recoveryRouter.hrvVariability", () => {
     await caller.hrvVariability({});
     expect(executeMock).toHaveBeenCalled();
   });
+
+  it("anchors the HRV window to the supplied endDate", async () => {
+    const executeMock = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+    });
+
+    await caller.hrvVariability({ days: 30, endDate: "2026-03-15" });
+
+    const sqlText = JSON.stringify(executeMock.mock.calls[0]?.[0]);
+    expect(sqlText).toContain("2026-03-15");
+    expect(sqlText).not.toContain("CURRENT_DATE");
+  });
 });
 
 // ── workloadRatio ───────────────────────────────────────────────

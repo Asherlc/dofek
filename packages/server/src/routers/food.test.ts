@@ -230,6 +230,21 @@ describe("foodRouter", () => {
       expect(result.items[0]).toHaveProperty("foodName", "Apple");
     });
 
+    it("returns an actionable error when AI cannot parse the meal", async () => {
+      const mockedAnalyzeNutritionItems = vi.mocked(analyzeNutritionItems);
+      const parseError = new Error("No object generated: response did not match schema.");
+      parseError.name = "AI_NoObjectGeneratedError";
+      mockedAnalyzeNutritionItems.mockRejectedValueOnce(parseError);
+
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.analyzeItemsWithAi({
+          description: "p",
+        }),
+      ).rejects.toThrow("Describe the foods and amounts you want to log.");
+    });
+
     it("overrides AI meal guess using the current localized time", async () => {
       const mockedAnalyzeNutritionItems = vi.mocked(analyzeNutritionItems);
       mockedAnalyzeNutritionItems.mockResolvedValueOnce({

@@ -955,7 +955,7 @@ describe("ProvidersScreen", () => {
     expect(screen.queryByText("Sync All")).toBeNull();
   });
 
-  it("passes readBlob that reads Expo file bytes and cleans up the shared file", async () => {
+  it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {
     mockImportSharedFile.mockResolvedValue({ providerId: "strong-csv", jobId: "job-share" });
     mockUseLocalSearchParams.mockReturnValue({
       sharedFile: "file:///tmp/strong.csv",
@@ -972,21 +972,32 @@ describe("ProvidersScreen", () => {
     expect(callArgs).toBeDefined();
     expect(callArgs?.[1]).toHaveProperty("readBlob");
     const readBlob: (uri: string) => Promise<Blob> = callArgs[1].readBlob;
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    const originalBlob = globalThis.Blob;
+    vi.stubGlobal(
+      "Blob",
+      class RejectingArrayBufferBlob extends originalBlob {
+        constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
+          if (parts?.some((part) => part instanceof ArrayBuffer || ArrayBuffer.isView(part))) {
+            throw new Error(
+              "Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported",
+            );
+          }
+          super(parts, options);
+        }
+      },
+    );
 
-    const blob = await readBlob("file:///tmp/strong.csv");
+    try {
+      const blob = await readBlob("file:///tmp/strong.csv");
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mockFileBytes).toHaveBeenCalled();
-    expect(blob).toBeInstanceOf(Blob);
-    expect(blob.size).toBeGreaterThan(0);
-    const text = await blob.text();
-    expect(text).toContain("Workout Name");
-
-    // Should clean up the Inbox copy after reading
-    expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/strong.csv");
-    vi.unstubAllGlobals();
+      expect(mockFileBytes).not.toHaveBeenCalled();
+      expect(blob.size).toBeGreaterThan(0);
+      const text = await blob.text();
+      expect(text).toContain("Workout Name");
+      expect(mockFileDelete).toHaveBeenCalledWith("file:///tmp/strong.csv");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("shows Expired status when provider needsReauth", async () => {

@@ -221,7 +221,7 @@ function setupRoutes(app: express.Express, db: import("dofek/db").Database) {
         if (
           req.path.startsWith("/api/") ||
           req.path.startsWith("/auth/") ||
-          req.path.startsWith("/admin/") ||
+          req.path.startsWith("/admin/queues") ||
           req.path.startsWith("/slack/") ||
           req.path === "/callback" ||
           req.path === "/healthz" ||

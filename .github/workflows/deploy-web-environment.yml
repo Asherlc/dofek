@@ -1,0 +1,168 @@
+name: Deploy Web Environment
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: "Human-readable deploy environment name"
+        required: true
+        type: string
+      server_host_source:
+        description: "Terraform output to use for the Docker SSH host: production or staging"
+        required: true
+        type: string
+      image_tag:
+        description: "Docker image tag to deploy directly"
+        required: false
+        type: string
+        default: ""
+      automatic_commit_sha:
+        description: "Commit SHA from the successful CI workflow_run"
+        required: false
+        type: string
+        default: ""
+      ci_run_id:
+        description: "CI workflow run ID that triggered this deploy"
+        required: false
+        type: string
+        default: ""
+      infisical_environment:
+        description: "Infisical environment to export for the stack"
+        required: false
+        type: string
+        default: prod
+      stack_name:
+        description: "Docker stack name"
+        required: false
+        type: string
+        default: dofek
+      public_url:
+        description: "Public app URL"
+        required: false
+        type: string
+        default: https://dofek.asherlc.com
+      web_host_rule:
+        description: "Traefik Host() rule for the app router"
+        required: false
+        type: string
+        default: ""
+      ota_base_url:
+        description: "Public OTA base URL"
+        required: false
+        type: string
+        default: https://ota.dofek.asherlc.com
+      ota_host_rule:
+        description: "Traefik Host() rule for OTA"
+        required: false
+        type: string
+        default: ""
+      portainer_host_rule:
+        description: "Traefik Host() rule for Portainer"
+        required: false
+        type: string
+        default: ""
+      netdata_host_rule:
+        description: "Traefik Host() rule for Netdata"
+        required: false
+        type: string
+        default: ""
+      databasus_host_rule:
+        description: "Traefik Host() rule for Databasus"
+        required: false
+        type: string
+        default: ""
+      pgadmin_host_rule:
+        description: "Traefik Host() rule for pgAdmin"
+        required: false
+        type: string
+        default: ""
+      refresh_materialized_views:
+        description: "Trigger the materialized-view refresh webhook after stack deploy"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+  id-token: write
+
+jobs:
+  check:
+    name: Resolve Web Deploy Target
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+    steps:
+      - name: Resolve deploy target
+        id: resolve
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          AUTOMATIC_COMMIT_SHA: ${{ inputs.automatic_commit_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          ENVIRONMENT_NAME: ${{ inputs.environment_name }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          elif [ -n "$AUTOMATIC_COMMIT_SHA" ]; then
+            SHORT_SHA=$(echo "$AUTOMATIC_COMMIT_SHA" | head -c 7)
+            TAG="sha-${SHORT_SHA}"
+          else
+            echo "::error::Either image_tag or automatic_commit_sha is required."
+            exit 1
+          fi
+
+          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+
+          require_tag() {
+            local package_name="$1"
+            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
+              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
+              echo "::error::Docker image ${package_name}:$TAG not found."
+              exit 1
+            fi
+          }
+
+          require_tag "dofek"
+          require_tag "dofek-ml"
+
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${ENVIRONMENT_NAME} web stack image tag: $TAG"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - uses: ./.github/actions/append-dispatcher-run-summary
+        if: inputs.ci_run_id != ''
+        with:
+          dispatching_run_id: ${{ inputs.ci_run_id }}
+
+  terraform:
+    name: Deploy Infra
+    needs: [check]
+    uses: ./.github/workflows/deploy-terraform.yml
+    with:
+      dispatching_run_id: ${{ github.run_id }}
+    secrets: inherit
+
+  deploy-web-stack:
+    name: Deploy Web Stack
+    needs: [check, terraform]
+    uses: ./.github/workflows/deploy-web-stack.yml
+    with:
+      image_tag: ${{ needs.check.outputs.image_tag }}
+      server_host: ${{ inputs.server_host_source == 'staging' && needs.terraform.outputs.staging_server_host || needs.terraform.outputs.server_host }}
+      infisical_environment: ${{ inputs.infisical_environment }}
+      stack_name: ${{ inputs.stack_name }}
+      public_url: ${{ inputs.public_url }}
+      web_host_rule: ${{ inputs.web_host_rule }}
+      ota_base_url: ${{ inputs.ota_base_url }}
+      ota_host_rule: ${{ inputs.ota_host_rule }}
+      portainer_host_rule: ${{ inputs.portainer_host_rule }}
+      netdata_host_rule: ${{ inputs.netdata_host_rule }}
+      databasus_host_rule: ${{ inputs.databasus_host_rule }}
+      pgadmin_host_rule: ${{ inputs.pgadmin_host_rule }}
+      dispatching_run_id: ${{ github.run_id }}
+      refresh_materialized_views: ${{ inputs.refresh_materialized_views }}
+    secrets: inherit

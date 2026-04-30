@@ -137,7 +137,7 @@ resource "cloudflare_dns_record" "staging_dofek_asherlc" {
   type    = "A"
   name    = "staging.dofek.asherlc.com"
   content = hcloud_server.dofek_staging.ipv4_address
-  proxied = true
+  proxied = false
   ttl     = 1
 }
 

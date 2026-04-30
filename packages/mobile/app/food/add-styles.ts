@@ -353,4 +353,93 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: "500",
   },
+
+  // ── AI meal tab ──
+  aiMealInput: {
+    minHeight: 120,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    padding: 14,
+    fontSize: 16,
+    color: colors.text,
+    marginBottom: 14,
+  },
+  aiMealError: {
+    color: colors.danger,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  aiMealReview: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    backgroundColor: colors.surface,
+    padding: 14,
+    gap: 10,
+  },
+  aiMealReviewTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  aiMealReviewItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    borderRadius: 10,
+    backgroundColor: colors.background,
+    padding: 10,
+  },
+  aiMealReviewText: {
+    flex: 1,
+  },
+  aiMealReviewName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  aiMealReviewDescription: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.textSecondary,
+  },
+  aiMealReviewCalories: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  aiMealReviewActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  aiMealCancelButton: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+  },
+  aiMealCancelText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  aiMealConfirmButton: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: colors.accent,
+  },
+  aiMealConfirmText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
 });

@@ -13,7 +13,7 @@
 ## Common Tasks
 
 ### Deploying a New Image Tag
-CI pushes images to GHCR, then `deploy-app.yml` runs `docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek` with `IMAGE_TAG` exported in the shell. Swarm does a rolling update; no manual intervention.
+CI pushes images to GHCR, then `deploy-web-stack.yml` runs `docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek` with `IMAGE_TAG` exported in the shell. Swarm does a rolling update; no manual intervention.
 
 To force a redeploy of the same tag (e.g., `latest` after a rebuild), re-run the workflow — `stack deploy` will detect no spec change but can be nudged with `docker --context prod service update --force --with-registry-auth dofek_web`.
 

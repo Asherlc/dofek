@@ -35,6 +35,7 @@ import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as ProvidersIndexRouteImport } from './routes/providers/index'
 import { Route as NutritionIndexRouteImport } from './routes/nutrition/index'
 import { Route as BodyIndexRouteImport } from './routes/body/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as TrainingStrengthRouteImport } from './routes/training/strength'
 import { Route as TrainingRunningRouteImport } from './routes/training/running'
 import { Route as TrainingRecoveryRouteImport } from './routes/training/recovery'
@@ -152,7 +153,7 @@ const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/admin.lazy').then((d) => d.Route))
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -180,6 +181,11 @@ const BodyIndexRoute = BodyIndexRouteImport.update({
   path: '/',
   getParentRoute: () => BodyRoute,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any).lazy(() => import('./routes/admin/index.lazy').then((d) => d.Route))
 const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
   id: '/strength',
   path: '/strength',
@@ -275,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/admin/': typeof AdminIndexRoute
   '/body/': typeof BodyIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
@@ -283,7 +290,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRouteWithChildren
   '/behavior-impact': typeof BehaviorImpactRoute
   '/breathwork': typeof BreathworkRoute
   '/correlation': typeof CorrelationRoute
@@ -311,6 +317,7 @@ export interface FileRoutesByTo {
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/admin': typeof AdminIndexRoute
   '/body': typeof BodyIndexRoute
   '/nutrition': typeof NutritionIndexRoute
   '/providers': typeof ProvidersIndexRoute
@@ -352,6 +359,7 @@ export interface FileRoutesById {
   '/training/recovery': typeof TrainingRecoveryRoute
   '/training/running': typeof TrainingRunningRoute
   '/training/strength': typeof TrainingStrengthRoute
+  '/admin/': typeof AdminIndexRoute
   '/body/': typeof BodyIndexRoute
   '/nutrition/': typeof NutritionIndexRoute
   '/providers/': typeof ProvidersIndexRoute
@@ -394,6 +402,7 @@ export interface FileRouteTypes {
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/admin/'
     | '/body/'
     | '/nutrition/'
     | '/providers/'
@@ -402,7 +411,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/behavior-impact'
     | '/breathwork'
     | '/correlation'
@@ -430,6 +438,7 @@ export interface FileRouteTypes {
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/admin'
     | '/body'
     | '/nutrition'
     | '/providers'
@@ -470,6 +479,7 @@ export interface FileRouteTypes {
     | '/training/recovery'
     | '/training/running'
     | '/training/strength'
+    | '/admin/'
     | '/body/'
     | '/nutrition/'
     | '/providers/'
@@ -687,6 +697,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BodyIndexRouteImport
       parentRoute: typeof BodyRoute
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/training/strength': {
       id: '/training/strength'
       path: '/strength'
@@ -775,10 +792,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminIndexRoute: typeof AdminIndexRoute
   AdminUsersUserIdRoute: typeof AdminUsersUserIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminIndexRoute: AdminIndexRoute,
   AdminUsersUserIdRoute: AdminUsersUserIdRoute,
 }
 

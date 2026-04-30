@@ -14,6 +14,8 @@ const meta = {
       protein_g: 46,
       carbs_g: 0,
       fat_g: 5,
+      sodium_mg: 640,
+      potassium_mg: 520,
     },
     onDelete: (id: string) => void id,
     deleting: false,
@@ -37,6 +39,8 @@ export const NoDescription: Story = {
       protein_g: 0,
       carbs_g: 25,
       fat_g: 0,
+      fiber_g: 4,
+      sugar_g: 19,
     },
   },
 };
@@ -44,5 +48,24 @@ export const NoDescription: Story = {
 export const Deleting: Story = {
   args: {
     deleting: true,
+  },
+};
+
+export const DetailedNutrition: Story = {
+  args: {
+    entry: {
+      id: "3",
+      food_name: "Chicken Bowl",
+      food_description: "1 bowl",
+      meal: "lunch",
+      calories: 420,
+      protein_g: 32,
+      carbs_g: 41.5,
+      fat_g: 12,
+      saturated_fat_g: 3.5,
+      sodium_mg: 680,
+      vitamin_c_mg: 18,
+      iron_mg: 3.2,
+    },
   },
 };

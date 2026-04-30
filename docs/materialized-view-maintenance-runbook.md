@@ -1,5 +1,7 @@
 # Materialized View Maintenance Runbook
 
+<!-- cspell:ignore tablename indexdef rollups -->
+
 This runbook covers planned materialized-view maintenance in production. It is
 for explicit maintenance windows, not normal deploys.
 
@@ -30,6 +32,7 @@ Commands:
 pnpm tsx src/db/run-materialized-view-maintenance.ts inventory
 pnpm tsx src/db/run-materialized-view-maintenance.ts preflight
 pnpm tsx src/db/run-materialized-view-maintenance.ts refresh fitness.v_daily_metrics
+pnpm tsx src/db/run-materialized-view-maintenance.ts cancel-refreshes fitness.provider_stats
 pnpm tsx src/db/run-materialized-view-maintenance.ts rebuild fitness.provider_stats
 pnpm tsx src/db/run-materialized-view-maintenance.ts sync
 ```
@@ -42,6 +45,9 @@ sets a statement timeout, and prints the final duration.
 blocking command. This is the path used by manual deploys when
 `refresh_materialized_views=true`.
 
+`cancel-refreshes <view>` cancels active `REFRESH MATERIALIZED VIEW` statements
+for the selected canonical view.
+
 `rebuild <view>` is the explicit maintenance-window path for an existing
 canonical materialized view whose definition changed. It holds the same advisory
 lock, runs the quiet-DB preflight, drops the named view with `CASCADE`, recreates
@@ -50,33 +56,43 @@ it from `drizzle/_views`, and records the new hash.
 ## GitHub Manual Action
 
 For the common production case, use **Actions → Materialized View Maintenance →
-Run workflow**. The defaults run against production and rebuild
-`fitness.provider_stats` from the `latest` image. Override `image_tag` only when
-you need maintenance to run from a specific deployed image tag.
+Run workflow**. Choose `environment=production` or `environment=staging`; the
+workflow derives the matching Infisical environment and SSH tunnel target. Set
+`view_names` to one canonical materialized view, comma-separated or
+newline-separated view names, or `all`. The defaults run against production and
+rebuild `fitness.provider_stats` from the checked-out workflow branch. The
+action opens an SSH tunnel to the selected server's loopback-only Postgres port
+and runs the maintenance TypeScript command directly; it does not pull or run
+Docker images.
 
 The workflow:
 
-1. checks that Postgres is writable;
-2. prints the current materialized-view sync plan;
-3. rebuilds the selected canonical materialized view;
-4. runs the normal blocking materialized-view sync; and
-5. fails if the planner still reports `required=true`.
+1. installs Node dependencies from the checked-out branch;
+2. opens a private SSH tunnel to Postgres;
+3. checks that Postgres is writable;
+4. prints the current materialized-view sync plan;
+5. resolves the requested target views against the canonical inventory;
+6. cancels active refreshes for the selected canonical materialized views;
+7. rebuilds the selected canonical materialized views one at a time;
+8. verifies each rebuild command reported `rebuilt=<view> mode=rebuild`;
+9. runs the normal blocking materialized-view sync;
+10. verifies each target materialized view exists and is populated; and
+11. fails if the planner still reports `required=true`.
 
 ## Production One-Shot Command
 
-Run the maintenance command from the deployed image attached to the swarm network:
+Run the maintenance command from a local checkout through an SSH tunnel to the
+server's loopback-only Postgres port:
 
 ```bash
-timeout 50m docker run --rm --network dofek_default \
-  --env-file .env.prod \
-  --entrypoint sh \
-  ghcr.io/asherlc/dofek:<tag> \
-  -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts preflight'
+ssh -fN -L 127.0.0.1:15432:127.0.0.1:5432 dofek-server
+infisical run --env=prod -- \
+  bash -lc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@127.0.0.1:15432/health"; pnpm tsx src/db/run-materialized-view-maintenance.ts preflight'
 ```
 
-Replace `preflight` with `inventory`, `sync`, `refresh <view-name>`, or
-`rebuild <view-name>` as needed. Use the exact image tag being deployed or
-investigated.
+Replace `preflight` with `inventory`, `sync`, `refresh <view-name>`,
+`cancel-refreshes <view-name>`, or `rebuild <view-name>` as needed. URL-encode
+`POSTGRES_PASSWORD` in `DATABASE_URL` if it contains URL-reserved characters.
 
 ## Quiet Database Preflight
 

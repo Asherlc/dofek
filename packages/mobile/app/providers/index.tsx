@@ -50,11 +50,14 @@ async function readBlobFromFileUri(fileUri: string): Promise<Blob> {
     const error = new Error(`Shared file does not exist: ${fileUri} (resolved: ${file.uri})`);
     throw error;
   }
-  const bytes = await file.bytes();
-  const blob = new Blob([bytes], file.type ? { type: file.type } : undefined);
-  // Clean up the Inbox copy now that the data is in memory
-  file.delete();
-  return blob;
+  return file;
+}
+
+function deleteSharedFile(fileUri: string): void {
+  const file = new ExpoFile(fileUri);
+  if (file.exists) {
+    file.delete();
+  }
 }
 
 function ymdDaysAgo(days: number): string {
@@ -341,6 +344,12 @@ export default function ProvidersScreen() {
           progress: 0,
           message: error instanceof Error ? error.message : "Import failed",
         });
+      } finally {
+        try {
+          deleteSharedFile(sharedFileUri);
+        } catch (error: unknown) {
+          captureException(error, { context: "share-import-cleanup", fileUri: sharedFileUri });
+        }
       }
     })();
   }, [sharedFileUri, serverUrl, sessionToken, trpcUtils]);

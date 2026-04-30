@@ -14,7 +14,7 @@ on:
         type: string
         default: ""
       refresh_materialized_views:
-        description: "Trigger materialized-view refresh after app deploy"
+        description: "Trigger materialized-view refresh after web stack deploy"
         required: false
         type: boolean
         default: false
@@ -27,7 +27,7 @@ on:
           - all
           - web
           - infra
-          - app
+          - web-stack
           - ios
           - ota
       image_tag:
@@ -35,7 +35,7 @@ on:
         required: false
         type: string
       refresh_materialized_views:
-        description: "Trigger materialized-view refresh after app deploy"
+        description: "Trigger materialized-view refresh after web stack deploy"
         required: false
         default: false
         type: boolean
@@ -56,7 +56,7 @@ jobs:
 
   docker:
     name: Docker Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -107,7 +107,7 @@ jobs:
 
   docker_ml:
     name: Docker ML Build & Push
-    if: inputs.image_tag == '' && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    if: inputs.image_tag == '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -152,16 +152,16 @@ jobs:
           cache-from: type=gha,scope=ml
           cache-to: type=gha,mode=max,scope=ml
 
-  app:
-    name: Deploy App
+  web-stack:
+    name: Deploy Web Stack
     needs: [terraform, docker, docker_ml]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && (inputs.target == 'app' || inputs.target == 'web' || inputs.target == 'all')
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     permissions:
       actions: read
       contents: read
       id-token: write
       packages: read
-    uses: ./.github/workflows/deploy-app.yml
+    uses: ./.github/workflows/deploy-web-stack.yml
     with:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
       server_host: ${{ needs.terraform.outputs.server_host || '' }}

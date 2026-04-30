@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
 import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
@@ -31,6 +32,15 @@ function mealFromLocalizedTime(timezone: string, date: Date): MealValue {
   if (localizedHour < 14) return "lunch";
   if (localizedHour < 17) return "snack";
   return "dinner";
+}
+
+function isAiStructuredOutputError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "AI_NoObjectGeneratedError" ||
+    error.message.includes("No object generated") ||
+    error.message.includes("Bad JSON character")
+  );
 }
 
 const foodCategoryValues = [
@@ -184,7 +194,18 @@ export const foodRouter = router({
       const currentTime = new Date();
       const localTime = localizedTimeString(ctx.timezone, currentTime);
       const inferredMeal = mealFromLocalizedTime(ctx.timezone, currentTime);
-      const analysis = await analyzeNutritionItems(input.description, localTime);
+      let analysis: Awaited<ReturnType<typeof analyzeNutritionItems>>;
+      try {
+        analysis = await analyzeNutritionItems(input.description, localTime);
+      } catch (error) {
+        if (isAiStructuredOutputError(error)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Describe the foods and amounts you want to log.",
+          });
+        }
+        throw error;
+      }
 
       return {
         ...analysis,

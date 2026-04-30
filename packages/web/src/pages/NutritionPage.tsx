@@ -3,6 +3,10 @@ import {
   formatDateYmd as formatDateForQuery,
   isToday,
 } from "@dofek/format/format";
+import {
+  type FoodEntryNutrientDetail,
+  foodEntryNutrientDetailsFromLegacyColumns,
+} from "@dofek/nutrition/food-entry-nutrition";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
@@ -25,16 +29,18 @@ const MEAL_LABELS: Record<MealType, string> = {
   other: "Other",
 };
 
-export const foodEntrySchema = z.object({
-  id: z.string(),
-  food_name: z.string().nullable(),
-  meal: z.string().nullable(),
-  calories: z.number().nullable(),
-  protein_g: z.number().nullable(),
-  carbs_g: z.number().nullable(),
-  fat_g: z.number().nullable(),
-  food_description: z.string().nullable(),
-});
+export const foodEntrySchema = z
+  .object({
+    id: z.string(),
+    food_name: z.string().nullable(),
+    meal: z.string().nullable(),
+    calories: z.number().nullable(),
+    protein_g: z.number().nullable(),
+    carbs_g: z.number().nullable(),
+    fat_g: z.number().nullable(),
+    food_description: z.string().nullable(),
+  })
+  .passthrough();
 export type FoodEntry = z.infer<typeof foodEntrySchema>;
 
 export function computeDailyTotals(entries: FoodEntry[]) {
@@ -55,6 +61,10 @@ export function computeDailyTotals(entries: FoodEntry[]) {
 
 export function computeMealCalories(entries: FoodEntry[]): number {
   return entries.reduce((sum, e) => sum + (e.calories ?? 0), 0);
+}
+
+export function getFoodEntryNutrientDetails(entry: FoodEntry): FoodEntryNutrientDetail[] {
+  return foodEntryNutrientDetailsFromLegacyColumns(entry);
 }
 
 export function NutritionPage() {
@@ -449,6 +459,7 @@ export function NutritionPage() {
                                 foodName={entry.food_name ?? "Unnamed nutrition entry"}
                                 servingDescription={entry.food_description}
                                 calories={entry.calories ?? 0}
+                                nutrients={getFoodEntryNutrientDetails(entry)}
                                 onDelete={() => handleDeleteFood(entry.id)}
                                 deleting={deleteMutation.isPending}
                               />
