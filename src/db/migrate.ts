@@ -154,6 +154,7 @@ function parseMigrationDate(value: Date | string): Date {
 
 async function backfillMetricStreamIds(client: Client): Promise<void> {
   logger.info("[migrate] Backfilling metric_stream.id in Timescale chunk ranges");
+  await client.query("SET timescaledb.max_tuples_decompressed_per_dml_transaction = 0");
 
   const chunksResult = await client.query<MetricStreamChunkRow>(`
     SELECT chunk_schema, chunk_name, range_start, range_end

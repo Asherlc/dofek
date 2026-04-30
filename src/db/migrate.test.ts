@@ -155,6 +155,9 @@ describe("runMigrations", () => {
       String(text).includes("UPDATE fitness.metric_stream AS metric_stream"),
     );
     expect(backfillCalls).toHaveLength(2);
+    expect(executedQueries()).toContain(
+      "SET timescaledb.max_tuples_decompressed_per_dml_transaction = 0",
+    );
     expect(String(backfillCalls[0]?.[0])).not.toContain("ctid");
     expect(String(backfillCalls[0]?.[0])).not.toContain("LIMIT");
     expect(backfillCalls[0]?.[1]).toEqual([

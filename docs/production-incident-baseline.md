@@ -1766,3 +1766,19 @@ Timescale tuple decompression limit, the migration retries that same chunk in
 one-hour `recorded_at` windows. This keeps the deployment from spending hourly
 queries on every already-finished chunk while keeping each DML statement below
 the decompression cap for large remaining chunks.
+
+### Fourth Follow-up Evidence
+
+The hybrid fallback worked, but production progress was still too slow for a
+deploy migration. The first large remaining chunk completed through hourly
+fallback with `187,218` rows, while the original production null-ID count was
+about `187.7M` rows. That made the backfill operationally too large for
+per-hour DML in the deploy timeout window.
+
+### Fourth Follow-up Fix
+
+Kept the backfill chunk-bounded and resumable, but set
+`timescaledb.max_tuples_decompressed_per_dml_transaction = 0` for the migration
+session before the chunk updates. This removes the Timescale per-DML
+decompression cap for this controlled migration session without changing the
+database-wide setting.
