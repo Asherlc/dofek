@@ -1435,3 +1435,70 @@ The direct-run footer in `src/db/run-migrate.ts` is still uncovered by Stryker,
 but it no longer affects the threshold for this shard. If a future review-app
 ClickHouse check fails again, inspect name resolution inside the container
 before changing waits or retries.
+
+## 2026-04-30: Cypress E2E CI job hung until GitHub Actions cancelled it
+
+### Impact
+
+PR `#1075` still had a failing CI path even after the review-app and Stryker
+fixes. `Test / E2E Tests (Web)` never exited from `pnpm e2e:web:run`, so the
+job sat for about six hours until GitHub Actions cancelled it. The gate jobs
+then failed because they depend on that E2E job.
+
+### Evidence That Mattered
+
+The failing job completed every setup step and then remained in the Cypress run
+step for the rest of the job lifetime:
+
+```text
+Run pnpm e2e:web:run
+...
+completedAt: 2026-04-30T09:54:34Z
+conclusion: cancelled
+```
+
+The local full E2E suite reproduced the relevant behavior boundary:
+
+```text
+pnpm e2e:web:run
+7 specs passed
+process exited cleanly
+```
+
+The only Cypress plugin path that touched the shared query cache was in
+`cypress.config.ts`:
+
+```ts
+await queryCache.invalidateByPrefix(`${userId}:`);
+```
+
+That plugin process did not run with `NODE_ENV=test` or
+`DISABLE_QUERY_CACHE=true`, while the server container already had
+`DISABLE_QUERY_CACHE: "true"` in `docker-compose.e2e.yml`.
+
+### Root Cause
+
+The Cypress host-side plugin imported the shared cache singleton and used it in
+the `cleanTestData` task solely to invalidate query-cache keys. In the E2E job,
+that plugin process did not get the test/cache-disabling environment that the
+server container gets, so it could take the Redis-backed cache path and keep a
+host-side handle open. That kept `cypress run` from exiting even after specs
+finished.
+
+### Fix or Mitigation
+
+Removed the plugin-side `queryCache` import and cache invalidation call from
+`cypress.config.ts`. The E2E server already disables the query cache in the
+compose stack, so the plugin-side invalidation was redundant.
+
+Validated with:
+
+- `pnpm exec cypress run --spec cypress/e2e/login.cy.ts`
+- `pnpm e2e:web:run`
+- `TEST_DATABASE_URL=postgres://health:health@127.0.0.1:5435/health REDIS_URL=redis://127.0.0.1:6379 pnpm test:changed`
+
+### Remaining Risk
+
+If a future Cypress job hangs after specs appear to finish, inspect host-side
+plugin imports for long-lived clients or timers before changing timeouts or
+adding explicit process exits.

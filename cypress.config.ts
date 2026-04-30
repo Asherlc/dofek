@@ -1,5 +1,4 @@
 import { defineConfig } from "cypress";
-import { queryCache } from "dofek/lib/cache";
 import { createTaggedQueryClient } from "./src/db/tagged-query-client.ts";
 
 const E2E_DB_URL = process.env.E2E_DATABASE_URL ?? "postgres://health:health@localhost:5436/health";
@@ -45,7 +44,6 @@ export default defineConfig({
           await sql`DELETE FROM fitness.user_settings WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.provider WHERE user_id = ${userId}`;
           await sql`DELETE FROM fitness.user_profile WHERE id = ${userId}`;
-          await queryCache.invalidateByPrefix(`${userId}:`);
           return null;
         },
 
