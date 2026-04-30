@@ -1606,6 +1606,12 @@ ClickHouse migrations:
 
 Raised the ClickHouse service memory limit to 2 GB so the ClickHouse migration
 has enough memory to create the Postgres bridge and analytics read models.
+Because migrations run before the normal `docker stack deploy`, the workflow
+also applies that ClickHouse memory limit with `docker service update` before
+running migrations, then waits for ClickHouse to become reachable again. The
+stack file remains the desired-state source of truth; the pre-migration service
+update makes the needed resource limit effective before the migration that
+requires it.
 
 ### Remaining Risk
 
