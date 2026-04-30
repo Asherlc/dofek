@@ -23,6 +23,17 @@ vi.mock("./sync-views.ts", () => ({
 
 const mockExecute = vi.fn().mockResolvedValue(undefined);
 
+const expectedRefreshedViews = [
+  "fitness.v_activity",
+  "fitness.v_sleep",
+  "fitness.v_body_measurement",
+  "fitness.v_daily_metrics",
+  "fitness.deduped_sensor",
+  "fitness.derived_resting_heart_rate",
+  "fitness.activity_summary",
+  "fitness.provider_stats",
+];
+
 function createMockDb() {
   return {
     execute: mockExecute,
@@ -44,20 +55,12 @@ describe("refreshDedupViews", () => {
 
     await refreshDedupViews(mockDb);
 
-    // 6 dedup/derived views + 2 rollup views = 8 total refreshes
-    expect(mockExecute).toHaveBeenCalledTimes(8);
+    expect(mockExecute).toHaveBeenCalledTimes(expectedRefreshedViews.length);
 
-    // Verify order: dedup views first
     const calls = mockExecute.mock.calls.map((c) => c[0]);
-    expect(calls[0]).toContain("fitness.v_activity");
-    expect(calls[1]).toContain("fitness.v_sleep");
-    expect(calls[2]).toContain("fitness.v_body_measurement");
-    expect(calls[3]).toContain("fitness.v_daily_metrics");
-    expect(calls[4]).toContain("fitness.deduped_sensor");
-    expect(calls[5]).toContain("fitness.derived_resting_heart_rate");
-    // Then rollup views
-    expect(calls[6]).toContain("fitness.activity_summary");
-    expect(calls[7]).toContain("fitness.provider_stats");
+    for (const [viewIndex, viewName] of expectedRefreshedViews.entries()) {
+      expect(calls[viewIndex]).toContain(viewName);
+    }
   });
 
   it("does not fall back to blocking refresh during post-sync refreshes", async () => {
@@ -66,9 +69,11 @@ describe("refreshDedupViews", () => {
 
     mockExecute.mockRejectedValue(new Error("cannot refresh concurrently"));
 
-    await expect(refreshDedupViews(mockDb)).rejects.toThrow("Failed to refresh 8 view(s)");
+    await expect(refreshDedupViews(mockDb)).rejects.toThrow(
+      `Failed to refresh ${expectedRefreshedViews.length} view(s)`,
+    );
 
-    expect(mockExecute).toHaveBeenCalledTimes(8);
+    expect(mockExecute).toHaveBeenCalledTimes(expectedRefreshedViews.length);
     expect(mockExecute.mock.calls.map((call) => String(call[0]))).toEqual([
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep"),

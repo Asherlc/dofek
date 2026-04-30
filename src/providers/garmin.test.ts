@@ -1016,7 +1016,25 @@ describe("GarminProvider.sync()", () => {
       nextDate: "2026-04-25",
     });
     expect(checkpointStore.save).toHaveBeenCalledWith({ phase: "complete" });
-    expect(checkpointStore.clear).toHaveBeenCalledOnce();
+
+    const savedCheckpoints = checkpointStore.save.mock.calls.map(([checkpoint]) => checkpoint);
+    const sleepAdvanceIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "sleep" && checkpoint.nextDate === "2026-04-28",
+    );
+    const dailyMetricsPhaseIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "daily_metrics" && checkpoint.nextDate === "2026-04-27",
+    );
+    const stressPhaseIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "stress" && checkpoint.nextDate === "2026-04-25",
+    );
+    const completeIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "complete",
+    );
+    expect(sleepAdvanceIndex).toBeGreaterThanOrEqual(0);
+    expect(sleepAdvanceIndex).toBeLessThan(dailyMetricsPhaseIndex);
+    expect(dailyMetricsPhaseIndex).toBeLessThan(stressPhaseIndex);
+    expect(stressPhaseIndex).toBeLessThan(completeIndex);
+    expect(checkpointStore.clear).toHaveBeenCalledTimes(1);
   });
 
   it("does not call captureException for 204 (no data) errors", async () => {

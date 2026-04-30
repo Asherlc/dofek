@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 let ctx: TestContext;
 
@@ -14,13 +16,17 @@ afterAll(async () => {
 
 describe("daily metrics schema", () => {
   it("does not expose stored resting HR or VO2 Max columns", async () => {
-    const columns = await ctx.db.execute<{ column_name: string }>(sql`
+    const columns = await executeWithSchema(
+      ctx.db,
+      z.object({ column_name: z.string() }),
+      sql`
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema = 'fitness'
         AND table_name = 'daily_metrics'
       ORDER BY column_name
-    `);
+    `,
+    );
 
     const columnNames = columns.map((row) => row.column_name);
     expect(columnNames).not.toContain("resting_hr");

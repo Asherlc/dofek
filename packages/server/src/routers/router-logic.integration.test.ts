@@ -329,7 +329,7 @@ describe("Router transformation logic", () => {
                 (recorded_at, user_id, provider_id, source_type, channel, scalar)
                 VALUES (${new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString()},
                         ${TEST_USER_ID}, 'test-provider', 'api', 'heart_rate',
-                        ${55 + Math.round(Math.random() * 10)})`,
+                        ${58})`,
           );
         }
       }
@@ -668,10 +668,9 @@ describe("Router transformation logic", () => {
 
       const rhrMetric = data.metrics.find((m: { name: string }) => m.name === "Resting Heart Rate");
       expect(rhrMetric).toBeDefined();
-      // Derived resting HR should be in a plausible adult range.
+      // Derived resting HR should come from the seeded overnight sensor samples.
       if (rhrMetric.value !== null) {
-        expect(rhrMetric.value).toBeGreaterThan(50);
-        expect(rhrMetric.value).toBeLessThan(70);
+        expect(rhrMetric.value).toBeCloseTo(58, 0);
       }
     });
   });

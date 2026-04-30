@@ -78,6 +78,27 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
+function makeAllNullTrendsRow(): Record<string, unknown> {
+  return {
+    avg_hrv: null,
+    avg_spo2: null,
+    avg_steps: null,
+    avg_active_energy: null,
+    avg_skin_temp: null,
+    stddev_hrv: null,
+    stddev_spo2: null,
+    stddev_skin_temp: null,
+    latest_hrv: null,
+    latest_spo2: null,
+    latest_steps: null,
+    latest_active_energy: null,
+    latest_skin_temp: null,
+    latest_date: null,
+    latest_steps_date: null,
+    latest_active_energy_date: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -390,7 +411,7 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("logs warning when trends returns all nulls but base table has data (stale view)", async () => {
-      const allNullRow = makeTrendsRow({ avg_hrv: null, latest_date: null });
+      const allNullRow = makeAllNullTrendsRow();
       const execute = vi
         .fn()
         // First call: trends query returns all nulls
@@ -400,7 +421,9 @@ describe("DailyMetricsRepository", () => {
         // Third call: REFRESH MATERIALIZED VIEW
         .mockResolvedValueOnce([])
         // Fourth call: retry trends query (still null — view may still be stale)
-        .mockResolvedValueOnce([allNullRow]);
+        .mockResolvedValueOnce([allNullRow])
+        // Fifth call: missing trend metrics check finds no additional base data
+        .mockResolvedValueOnce([]);
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining("View stale"));
@@ -409,7 +432,7 @@ describe("DailyMetricsRepository", () => {
     it("does not log warning when trends returns all nulls and base table is empty (new user)", async () => {
       const execute = vi
         .fn()
-        .mockResolvedValueOnce([makeTrendsRow({ avg_hrv: null, latest_date: null })])
+        .mockResolvedValueOnce([makeAllNullTrendsRow()])
         .mockResolvedValueOnce([]); // base table existence check — empty
       const repo = new DailyMetricsRepository({ execute }, "user-1");
       await repo.getTrends(30, "2025-03-15");
@@ -417,7 +440,7 @@ describe("DailyMetricsRepository", () => {
     });
 
     it("refreshes view and retries when trends all null but base table has data", async () => {
-      const allNullRow = makeTrendsRow({ avg_hrv: null, latest_date: null });
+      const allNullRow = makeAllNullTrendsRow();
       const populatedRow = makeTrendsRow();
       const execute = vi
         .fn()

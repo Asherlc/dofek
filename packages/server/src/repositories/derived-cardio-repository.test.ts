@@ -65,6 +65,44 @@ describe("DerivedCardioRepository", () => {
     await expect(repo.getVo2MaxAverage("2026-04-28", 90)).resolves.toBeNull();
   });
 
+  it("counts only VO2 max estimates used in the average", async () => {
+    const sensorStore = {
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([
+        {
+          activity_id: "activity-1",
+          activity_date: "2026-04-27",
+          method: "cycling_power",
+          vo2max: 40,
+        },
+        {
+          activity_id: "activity-2",
+          activity_date: "2026-04-28",
+          method: "cycling_power",
+          vo2max: null,
+        },
+        {
+          activity_id: "activity-3",
+          activity_date: "2026-04-28",
+          method: "cycling_power",
+          vo2max: 0,
+        },
+      ]),
+    } satisfies Pick<ActivitySensorStore, "getVo2MaxEstimates">;
+    const repo = new DerivedCardioRepository(
+      makeDb([]),
+      {
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      },
+      sensorStore,
+    );
+
+    await expect(repo.getVo2MaxAverage("2026-04-28", 90)).resolves.toEqual({
+      value: 40,
+      sampleCount: 1,
+    });
+  });
+
   it("maps resting HR rows from SQL", async () => {
     const repo = new DerivedCardioRepository(makeDb([{ date: "2026-04-27", resting_hr: "52" }]), {
       userId: "user-1",

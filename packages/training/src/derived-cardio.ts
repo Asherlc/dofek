@@ -103,10 +103,7 @@ export function estimateSubmaximalAcsmVo2Max(input: AcsmVo2MaxInput): number | n
 }
 
 export function averageVo2MaxEstimates(estimates: readonly (number | null)[]): number | null {
-  const validEstimates = estimates.filter(
-    (estimate): estimate is number =>
-      estimate !== null && Number.isFinite(estimate) && estimate > 0,
-  );
+  const validEstimates = estimates.filter(isValidVo2MaxEstimate);
 
   if (validEstimates.length === 0) {
     return null;
@@ -118,6 +115,10 @@ export function averageVo2MaxEstimates(estimates: readonly (number | null)[]): n
   );
 
   return totalEstimate / validEstimates.length;
+}
+
+export function isValidVo2MaxEstimate(estimate: number | null): estimate is number {
+  return estimate !== null && Number.isFinite(estimate) && estimate > 0;
 }
 
 export function isSupportedOutdoorVo2MaxActivityType(activityType: string): boolean {

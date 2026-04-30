@@ -802,7 +802,10 @@ describe("upsertDailyMetricsBatch", () => {
       }),
     ];
 
-    await upsertDailyMetricsBatch(db, "p1", records);
+    const count = await upsertDailyMetricsBatch(db, "p1", records);
+    expect(count).toBe(1);
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(1);
     expect(Object.hasOwn(capture.values[0]?.[0] ?? {}, "restingHr")).toBe(false);
   });
 
@@ -821,7 +824,10 @@ describe("upsertDailyMetricsBatch", () => {
       }),
     ];
 
-    await upsertDailyMetricsBatch(db, "p1", records);
+    const count = await upsertDailyMetricsBatch(db, "p1", records);
+    expect(count).toBe(1);
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(1);
     expect(Object.hasOwn(capture.values[0]?.[0] ?? {}, "restingHr")).toBe(false);
   });
 

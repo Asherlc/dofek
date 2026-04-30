@@ -1,4 +1,4 @@
-import { averageVo2MaxEstimates } from "@dofek/training/derived-cardio";
+import { averageVo2MaxEstimates, isValidVo2MaxEstimate } from "@dofek/training/derived-cardio";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -51,8 +51,10 @@ export class DerivedCardioRepository {
       this.#ctx.userId,
       this.#ctx.timezone,
     );
-    const value = averageVo2MaxEstimates(rows.map((row) => row.vo2max));
-    return value === null ? null : { value, sampleCount: rows.length };
+    const estimates = rows.map((row) => row.vo2max);
+    const value = averageVo2MaxEstimates(estimates);
+    const sampleCount = estimates.filter(isValidVo2MaxEstimate).length;
+    return value === null ? null : { value, sampleCount };
   }
 
   async getDailyRestingHeartRates(endDate: string, days: number): Promise<DailyRestingHeartRate[]> {
