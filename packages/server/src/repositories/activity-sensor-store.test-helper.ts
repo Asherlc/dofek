@@ -138,15 +138,41 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   ): Promise<Vo2MaxEstimateRow[]> {
     return this.#db.execute<Vo2MaxEstimateRow>(
       sql`SELECT
-            activity_id::text AS activity_id,
-            activity_date::text AS activity_date,
-            method,
-            vo2max::real AS vo2max
-          FROM fitness.derived_vo2max_estimates
-          WHERE user_id = ${userId}::uuid
-            AND activity_date > (${endDate}::date - ${days}::int)
-            AND activity_date <= ${endDate}::date
-          ORDER BY activity_date, activity_id, method`,
+            power.activity_id::text AS activity_id,
+            power.activity_date::text AS activity_date,
+            'cycling_power' AS method,
+            ((power.five_minute_power_watts / weight.weight_kg) * 10.8 + 7)::real AS vo2max
+          FROM (
+            SELECT
+              activity.id AS activity_id,
+              activity.started_at,
+              (activity.started_at AT TIME ZONE 'UTC')::date AS activity_date,
+              AVG(sensor.scalar) AS five_minute_power_watts,
+              COUNT(*) AS sample_count
+            FROM fitness.deduped_sensor sensor
+            JOIN fitness.v_activity activity ON activity.id = sensor.activity_id
+            WHERE sensor.user_id = ${userId}::uuid
+              AND sensor.channel = 'power'
+              AND sensor.scalar IS NOT NULL
+              AND sensor.scalar > 0
+              AND activity.activity_type = 'cycling'
+              AND (activity.started_at AT TIME ZONE 'UTC')::date > (${endDate}::date - ${days}::int)
+              AND (activity.started_at AT TIME ZONE 'UTC')::date <= ${endDate}::date
+            GROUP BY activity.id, activity.started_at
+            HAVING COUNT(*) >= 240
+          ) power
+          JOIN LATERAL (
+            SELECT body.weight_kg
+            FROM fitness.v_body_measurement body
+            WHERE body.user_id = ${userId}::uuid
+              AND body.weight_kg IS NOT NULL
+              AND body.recorded_at <= power.started_at
+            ORDER BY body.recorded_at DESC
+            LIMIT 1
+          ) weight ON true
+          WHERE power.five_minute_power_watts BETWEEN 50 AND 700
+            AND weight.weight_kg > 0
+          ORDER BY power.activity_date, power.activity_id, method`,
     );
   }
 

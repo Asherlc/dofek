@@ -280,7 +280,6 @@ describe("Router coverage", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_resting_heart_rate`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_vo2max_estimates`);
 
     // Start server
     const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));

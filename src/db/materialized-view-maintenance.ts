@@ -100,12 +100,6 @@ export const MATERIALIZED_VIEW_REFRESH_INVENTORY: MaterializedViewRefreshInvento
     notes: "Derives resting heart rate from sleep-window heart-rate samples.",
   },
   {
-    viewName: "fitness.derived_vo2max_estimates",
-    concurrentRefreshIndex: "derived_vo2max_estimates_activity_method_idx",
-    refreshRisk: "high",
-    notes: "Derives per-activity VO2 Max estimates from raw sensor streams.",
-  },
-  {
     viewName: "fitness.activity_summary",
     concurrentRefreshIndex: "activity_summary_pk",
     refreshRisk: "high",

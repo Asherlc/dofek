@@ -99,7 +99,6 @@ describe("DerivedCardioRepository integration", () => {
     await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
     await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_body_measurement`);
     await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_vo2max_estimates`);
 
     const result = await repo.getVo2MaxAverage("2026-04-28", 90);
 
