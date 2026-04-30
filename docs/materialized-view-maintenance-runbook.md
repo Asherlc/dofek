@@ -170,13 +170,16 @@ populated.
 | `fitness.v_sleep` | `v_sleep_id_idx` | Medium | Sleep de-duplication uses recursive overlap logic. |
 | `fitness.v_body_measurement` | `v_body_measurement_id_idx` | Low | Smaller body measurement de-duplication view. |
 | `fitness.v_daily_metrics` | `v_daily_metrics_date_idx` | Medium | Dashboard-facing daily metric priority view. |
-| `fitness.deduped_sensor` | `deduped_sensor_pk` | High | Scans metric stream data and joins activity data. |
-| `fitness.activity_summary` | `activity_summary_pk` | High | Depends on deduped sensor data and windowed calculations. |
+| `fitness.deduped_sensor` | `deduped_sensor_pk` | High | Scans metric stream data and joins activity data; still required by legacy Postgres callers. |
+| `fitness.activity_summary` | `activity_summary_pk` | High | Depends on deduped sensor data and windowed calculations; still required by legacy Postgres callers. |
 | `fitness.provider_stats` | `provider_stats_user_provider_idx` | High | Aggregates across many tables, including metric stream data. |
 
 `CONCURRENTLY` keeps readers available, but it does not make the refresh cheap.
-The high-risk views still scan large history and can consume meaningful CPU, IO,
-memory, and temporary disk.
+The high-risk Postgres views still scan large history and can consume meaningful
+CPU, IO, memory, and temporary disk. Sensor-derived read models live in
+ClickHouse `analytics.*`, but Postgres `fitness.deduped_sensor` and
+`fitness.activity_summary` remain operational dependencies until all legacy
+callers move to ClickHouse.
 
 ## Planned Refresh Procedure
 

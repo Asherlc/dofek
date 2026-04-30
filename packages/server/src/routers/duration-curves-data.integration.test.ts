@@ -4,6 +4,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helper.ts";
 
 /**
  * Integration tests for the duration-curves router with actual metric_stream data.
@@ -101,7 +102,7 @@ describe("Duration curves router — data tests", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
