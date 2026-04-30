@@ -1502,3 +1502,52 @@ Validated with:
 If a future Cypress job hangs after specs appear to finish, inspect host-side
 plugin imports for long-lived clients or timers before changing timeouts or
 adding explicit process exits.
+
+## 2026-04-30: Web deploy failed on missing ClickHouse bind-mount path
+
+### Impact
+
+The `Deploy Web` workflow for commit `7af8b2f972c09cc998efe62eaced0e8817f85dd7`
+failed for both production and staging before stack deployment. The app rollout
+did not proceed.
+
+### Evidence That Mattered
+
+Terraform ran first and reported no infrastructure changes:
+
+```text
+No changes. Your infrastructure matches the configuration.
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+```
+
+Both deploy-stack jobs then failed in `Validate host bind mount paths`:
+
+```text
+Required host bind mount path is missing: /mnt/dofek-data/clickhouse
+Process completed with exit code 1.
+```
+
+The ClickHouse rollout commit added `/mnt/dofek-data/clickhouse` to the
+Terraform `mkdir -p` command, but did not bump the
+`terraform_data.*data_volume_mount_alias` replacement triggers in the same
+commit.
+
+### Root Cause
+
+The ClickHouse host bind-mount directory was added to the Terraform
+remote-exec provisioner without replacing the existing `terraform_data`
+resources. Terraform provisioners only rerun on resource creation/replacement,
+so Terraform considered the resources current and did not create the new
+directory on either host.
+
+### Fix or Mitigation
+
+Bumped the production and staging data-volume mount-alias trigger strings so
+the next Terraform apply replaces those `terraform_data` resources and reruns
+the existing provisioners that create `/mnt/dofek-data/clickhouse`.
+
+### Remaining Risk
+
+This fixes the missed ClickHouse provisioning run. Future changes to the
+`/mnt/dofek-data` directory list still require a corresponding trigger bump in
+the same commit.

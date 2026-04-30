@@ -128,7 +128,7 @@ resource "terraform_data" "data_volume_mount_alias" {
   count = var.data_volume_size_gb > 0 ? 1 : 0
 
   triggers_replace = [
-    "volume-mount-alias-v4",
+    "volume-mount-alias-v5",
     hcloud_volume.dofek_data[0].id,
   ]
 
@@ -156,7 +156,7 @@ resource "terraform_data" "staging_data_volume_mount_alias" {
   count = var.staging_data_volume_size_gb > 0 ? 1 : 0
 
   triggers_replace = [
-    "volume-mount-alias-v2",
+    "volume-mount-alias-v3",
     hcloud_volume.dofek_staging_data[0].id,
   ]
 
