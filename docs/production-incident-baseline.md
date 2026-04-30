@@ -1622,15 +1622,26 @@ OpenTelemetry instrumentation imports used by the long-running app entrypoint.
 The deploy step still captures container logs, but the one-shot migration no
 longer depends on telemetry export shutdown behavior to finish the release.
 
+That did not resolve the production migration. A direct non-instrumented Node
+run still lost the active backend after the `UPDATE fitness.metric_stream ...`
+statement, and a follow-up count showed `187,684,929` rows still had `id IS
+NULL`. The workflow-only retry strategy is therefore blocked: production needs
+an explicit decision on how to complete `0007_metric_stream_primary_key.sql`
+without relying on the current Node migration runner to perform the 37 GB
+compressed-hypertable rewrite in one statement.
+
 ### Remaining Risk
 
 This fixes the missed ClickHouse provisioning run, the missing ClickHouse
 secret, the migration-step dotenv mismatch, the remote migration-container leak,
 the long-lived SSH session failure mode, and the ClickHouse memory ceiling seen
-on staging. Future changes to the `/mnt/dofek-data` directory list still require
-a corresponding trigger bump in the same commit. Future stack-level environment
-variables must be added to Infisical before the workflow that references them is
-merged or deployed, and workflow steps must read Infisical-only secrets from the
-rendered dotenv file rather than from the runner environment. Large compressed
-hypertable backfills should be called out in deploy planning so the migration
-timeout is intentional rather than discovered during release.
+on staging. Production deployment remains unresolved because
+`0007_metric_stream_primary_key.sql` cannot currently complete the
+`metric_stream` UUID backfill through the Node migration runner. Future changes
+to the `/mnt/dofek-data` directory list still require a corresponding trigger
+bump in the same commit. Future stack-level environment variables must be added
+to Infisical before the workflow that references them is merged or deployed, and
+workflow steps must read Infisical-only secrets from the rendered dotenv file
+rather than from the runner environment. Large compressed hypertable backfills
+should be called out in deploy planning so the migration timeout is intentional
+rather than discovered during release.
