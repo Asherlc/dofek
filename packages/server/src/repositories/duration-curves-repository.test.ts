@@ -325,9 +325,18 @@ describe("fitCriticalHeartRate", () => {
 
 describe("DurationCurvesRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new DurationCurvesRepository({ execute }, "user-1", "UTC");
-    return { repo, execute };
+    const sensorStore = {
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue(rows),
+      getPaceCurveRows: vi.fn().mockResolvedValue(rows),
+    } satisfies ConstructorParameters<typeof DurationCurvesRepository>[2];
+    const repo = new DurationCurvesRepository("user-1", "UTC", sensorStore);
+    return { repo, sensorStore };
   }
 
   describe("getHrCurve", () => {
@@ -370,10 +379,10 @@ describe("DurationCurvesRepository", () => {
       expect(result.points[0]?.label.length).toBeGreaterThan(0);
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("reads heart-rate duration rows from the ClickHouse analytics store", async () => {
+      const { repo, sensorStore } = makeRepository([]);
       await repo.getHrCurve(30);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.getHeartRateCurveRows).toHaveBeenCalledWith(30, "user-1", "UTC");
     });
   });
 
@@ -405,10 +414,10 @@ describe("DurationCurvesRepository", () => {
       });
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("reads pace duration rows from the ClickHouse analytics store", async () => {
+      const { repo, sensorStore } = makeRepository([]);
       await repo.getPaceCurve(30);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.getPaceCurveRows).toHaveBeenCalledWith(30, "user-1", "UTC");
     });
 
     it("converts numeric string fields to proper numbers", async () => {

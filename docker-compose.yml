@@ -10,10 +10,20 @@ services:
   db:
     image: timescale/timescaledb:2.26.2-pg18
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_wal_senders=4
     environment:
       POSTGRES_DB: health
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-health}
+    ports:
+      - "127.0.0.1:5435:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,6 +31,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.3.20-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: fitness
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-health}
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
 
   redis:
     image: redis:7-alpine
@@ -50,4 +73,5 @@ services:
 
 volumes:
   db_data:
+  clickhouse_data:
   redis_data:

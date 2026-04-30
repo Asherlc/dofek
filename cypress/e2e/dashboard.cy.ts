@@ -1,5 +1,9 @@
+import { z } from "zod";
+import { formatLocalDate } from "./test-helpers";
+
 const TEST_USER_ID = "e2e00000-0000-0000-0000-000000000001";
 const E2E_PROVIDER_ID = "e2e-test-provider";
+const dailyMetricsRowSchema = z.object({ steps: z.number().nullable() });
 
 describe("Dashboard", () => {
   beforeEach(() => {
@@ -35,7 +39,7 @@ describe("Dashboard – Daily Steps chart", () => {
     const rows = Array.from({ length: 7 }, (_, index) => {
       const date = new Date(today);
       date.setDate(today.getDate() - (6 - index));
-      return { date: date.toISOString().slice(0, 10), steps: 8000 + index * 200 };
+      return { date: formatLocalDate(date), steps: 8000 + index * 200 };
     });
 
     cy.task("seedDailyMetricsWithSteps", {
@@ -52,22 +56,27 @@ describe("Dashboard – Daily Steps chart", () => {
   });
 
   it("renders the Daily Steps chart when step data is present", () => {
-    // Intercept the tRPC dailyMetrics.list call so we can wait for it to resolve.
-    // We match POST because the tRPC client uses methodOverride: "POST" for batching.
-    cy.intercept("POST", "**/api/trpc/**dailyMetrics.list**").as("dailyMetricsList");
+    const endDate = formatLocalDate(new Date());
+
+    cy.task("runQuery", {
+      query: `
+        SELECT steps
+        FROM fitness.v_daily_metrics
+        WHERE user_id = '${TEST_USER_ID}'
+          AND date <= '${endDate}'
+        ORDER BY date ASC
+      `,
+    }).then((res) => {
+      const rows = z.array(dailyMetricsRowSchema).parse(res);
+      expect(rows.some((row) => (row.steps ?? 0) > 0)).to.eq(true);
+    });
 
     cy.visit("/dashboard");
-
-    // Wait for the API response to arrive
-    cy.wait("@dailyMetricsList");
 
     // The "Daily Steps" section heading must be present
     cy.contains("h2", "Daily Steps").should("exist");
 
-    // ECharts renders a <canvas> inside the chart — it must exist (not "No data available")
-    cy.contains("h2", "Daily Steps").closest("section").find("canvas").should("exist");
-
-    // The empty-state message must NOT appear inside the steps section
+    // The seeded data should prevent the section from falling back to its empty state.
     cy.contains("h2", "Daily Steps")
       .closest("section")
       .should("not.contain.text", "No data available");

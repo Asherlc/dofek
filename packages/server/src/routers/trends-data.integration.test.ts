@@ -8,11 +8,10 @@ import type { DailyTrendRow, WeeklyTrendRow } from "./trends.ts";
 
 /**
  * Integration tests for the trends router.
- * Inserts metric_stream data, refreshes the continuous aggregates
- * (cagg_metric_daily, cagg_metric_weekly), and verifies the endpoints
- * return correctly aggregated data.
+ * Inserts metric_stream data and verifies the endpoints return
+ * correctly aggregated data from the trend read models.
  */
-describe("Trends router — continuous aggregate data tests", () => {
+describe("Trends router — trend data tests", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
@@ -74,19 +73,8 @@ describe("Trends router — continuous aggregate data tests", () => {
       }
     }
 
-    // Refresh continuous aggregates
-    // The cagg_metric_daily and cagg_metric_weekly are continuous aggregates in TimescaleDB
-    try {
-      await testCtx.db.execute(
-        sql`CALL refresh_continuous_aggregate('fitness.cagg_metric_daily', NULL, NULL)`,
-      );
-      await testCtx.db.execute(
-        sql`CALL refresh_continuous_aggregate('fitness.cagg_metric_weekly', NULL, NULL)`,
-      );
-    } catch {
-      // If continuous aggregates don't exist (test DB might not have them),
-      // the router queries will just return empty arrays
-    }
+    // The baseline test schema defines these relations as views, so newly
+    // inserted metric_stream rows are visible without a refresh step.
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {

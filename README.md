@@ -28,30 +28,30 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 │ Apple Health │──┐
 ├─────────────┤  │
 │  Wahoo API  │──┤
-├─────────────┤  │     ┌──────────────┐     ┌──────────────┐     ┌───────────┐
-│  WHOOP API  │──┼────▶│  Sync Runner │────▶│ TimescaleDB  │────▶│ Web UI    │
-├─────────────┤  │     └──────────────┘     └──────────────┘     │ (Vite +   │
-│  Peloton    │──┤        (provider           (fitness schema)   │  React +  │
-├─────────────┤  │         plugins)                               │  tRPC)    │
-│  FatSecret  │──┤                                                └───────────┘
-├─────────────┤  │
-│  Withings   │──┤
-├─────────────┤  │
-│ RideWithGPS │──┤
-├─────────────┤  │
-│  Polar      │──┤
-├─────────────┤  │
-│  Garmin     │──┘
-└─────────────┘
+├─────────────┤  │     ┌──────────────┐     ┌──────────────┐
+│  WHOOP API  │──┼────▶│  Sync Runner │────▶│ TimescaleDB  │──┐
+├─────────────┤  │     └──────────────┘     └──────────────┘  │
+│  Peloton    │──┤        (provider           (raw fitness     │
+├─────────────┤  │         plugins)            schema)          │
+│  FatSecret  │──┤                         ┌──────────────┐    │
+├─────────────┤  │                         │ ClickHouse   │◀───┘
+│  Withings   │──┤                         │ projections  │
+├─────────────┤  │                         └──────┬───────┘
+│ RideWithGPS │──┤                                │
+├─────────────┤  │                                ▼
+│  Polar      │──┤                         ┌───────────┐
+├─────────────┤  │                         │ Web UI    │
+│  Garmin     │──┘                         │ (tRPC)    │
+└─────────────┘                            └───────────┘
 ```
 
-Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Data lands in a `fitness` Postgres schema. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Nutrition logging on web and iOS supports natural-language AI meal input that can split one message into multiple food items. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ; the `sync` mode remains available for manual one-shot runs.
+Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Raw data lands in a `fitness` Postgres schema. ClickHouse maintains a stored deduped sensor read model for heavy activity stream reads via native Postgres replication; derived rows are not written back to Postgres. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Nutrition logging on web and iOS supports natural-language AI meal input that can split one message into multiple food items. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ; the `sync` mode remains available for manual one-shot runs.
 
 ## Quick Start
 
 ```bash
 # Start local infrastructure
-docker compose up -d db redis
+docker compose up -d db clickhouse redis
 
 # Install dependencies
 pnpm install
@@ -114,7 +114,7 @@ The server imports shared code from the root package via `dofek` workspace depen
 ## Development
 
 ```bash
-docker compose up -d db redis   # required for integration tests and local workers
+docker compose up -d db clickhouse redis   # required for integration tests, projections, and local workers
 pnpm test                       # run tests
 pnpm test:watch                 # run tests in watch mode
 pnpm dev                        # run sync runner in dev mode
@@ -540,6 +540,7 @@ For production deploy-time secret injection, the required Infisical `prod` keys,
 - **TypeScript** — sync scripts, provider plugins, and web + mobile apps (Node 22 native type stripping at runtime — no tsx in production)
 - **Drizzle ORM** — type-safe schema and migrations
 - **TimescaleDB** — Postgres with time-series extensions (hypertables, continuous aggregates, compression)
+- **ClickHouse** — stored analytics read models for heavy activity stream and summary reads
 - **Vite + React** — web dashboard frontend
 - **Expo + React Native** — iOS mobile app with native HealthKit integration
 - **tRPC + Express** — API layer

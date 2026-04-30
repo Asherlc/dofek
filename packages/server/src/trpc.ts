@@ -12,9 +12,11 @@ import {
   trpcSlowQueriesTotal,
 } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
+import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
 
 export interface Context {
   db: Database;
+  sensorStore?: ActivitySensorStore;
   userId: string | null;
   /** IANA timezone from client (e.g. "America/Los_Angeles"). Falls back to "UTC". */
   timezone: string;

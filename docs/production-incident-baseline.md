@@ -7,6 +7,101 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-04-29: PR 1075 CI Blocked by ClickHouse Bootstrap and Web E2E Drift
+
+### Impact
+
+PR #1075 could not merge because CI failed in the database migration and web E2E
+jobs.
+
+### What Happened
+
+The branch introduced ClickHouse-backed activity read models and a new
+`metric_stream` replica identity requirement. CI initially failed while
+bootstrapping the ClickHouse PostgreSQL bridge for activity views, and the web
+E2E suite separately failed because Cypress seeded rows with UTC calendar dates
+while the app queried local dates and reused stale per-user query-cache state
+between tests.
+
+### Evidence That Mattered
+
+- ClickHouse fatal line:
+  `Table postgres_fitness.metric_stream has no primary key and no replica identity index`
+- ClickHouse bridge failure came from using the `fitness` schema bridge for
+  activity membership data instead of a dedicated scalar-only `clickhouse`
+  schema/view bridge.
+- Web E2E failure symptoms:
+  - nutrition queries returned zero rows for a seeded "today" date
+  - dashboard chart tests fell back to `No data available`
+  - Cypress cleanup hit `food_entry_provider_id_provider_id_fk`
+  - cached empty query results survived between tests
+
+### Root Cause
+
+Two separate root causes blocked CI:
+
+- `fitness.metric_stream` lacked a replica-safe primary key / replica identity
+  for ClickHouse `MaterializedPostgreSQL`.
+- Cypress test setup was not aligned with the app's local-date semantics and
+  did not fully clear dependent data plus server query cache between tests.
+
+### Fix Or Mitigation
+
+- Added an `id` column plus composite primary key `(id, recorded_at)` for
+  `fitness.metric_stream`, set replica identity to that key, and updated the
+  ClickHouse bridge to read from `clickhouse.v_activity` and
+  `clickhouse.v_activity_members`.
+- Synced Postgres materialized views before ClickHouse migrations.
+- Switched Cypress seeds to local-date formatting, expanded cleanup to remove
+  dependent rows and `user_settings`, invalidated the per-user query cache, and
+  made the dashboard assertion verify the rendered section rather than a brittle
+  canvas selector.
+
+### Remaining Risk
+
+Any future date-sensitive E2E seeds that use UTC string slicing can still drift
+ around local-midnight boundaries, and any new cached server query path added to
+ Cypress fixtures needs explicit invalidation or isolated cache keys.
+
+## 2026-04-29: PR 1075 Stryker Failed on metric_stream PK Migration
+
+### Impact
+
+PR #1075 remained blocked after the review-comment patch because the `Test /
+Stryker (0)` job could not finish database setup.
+
+### What Happened
+
+The new `metric_stream` replica-identity migration tried to validate a temporary
+`CHECK (id IS NOT NULL)` constraint on a Timescale hypertable that already had
+columnstore enabled.
+
+### Evidence That Mattered
+
+- Failing job: `Test / Stryker (0)`
+- First fatal line:
+  `ERROR: operation not supported on hypertables that have columnstore enabled`
+- Failing SQL:
+  `ALTER TABLE fitness.metric_stream VALIDATE CONSTRAINT metric_stream_id_not_null_chk;`
+
+### Root Cause
+
+The migration used a PostgreSQL-style staged `NOT NULL` rollout that Timescale
+does not allow once columnstore is enabled on the hypertable.
+
+### Fix Or Mitigation
+
+The migration now keeps the supported steps only: add nullable `id`, set the
+UUID default, backfill existing rows, add the composite primary key directly,
+and then set replica identity to that key. A focused integration test now
+covers that exact columnstore-enabled path.
+
+### Remaining Risk
+
+Future schema changes on `fitness.metric_stream` still need Timescale-specific
+validation. Standard PostgreSQL `VALIDATE CONSTRAINT` / staged `SET NOT NULL`
+patterns are not safe assumptions once columnstore is enabled.
+
 ## 2026-04-28: Garmin Sync Lost Status During DB Recovery
 
 ### Impact
@@ -1218,3 +1313,125 @@ asserts that the user detail page appears.
 The fix is covered by route and page unit tests. Production needs a web deploy
 containing the route tree update before the live admin user URL renders the
 detail page.
+
+## 2026-04-29: Review app workflow and Stryker failed on stale shell/test assumptions
+
+### Impact
+
+PR `#1075` had two failing CI paths: `Deploy Review App` exited before writing
+review app overrides, and `Test / Stryker (1)` repeatedly errored during the
+trends integration test setup. The umbrella `Test / Mutation Testing` job then
+failed because the Stryker shard failed.
+
+### Evidence That Mattered
+
+Review app fatal lines:
+
+```text
+warning: here-document at line 4 delimited by end-of-file (wanted `EOF')
+unexpected EOF while looking for matching `)'
+```
+
+Stryker fatal DB line:
+
+```text
+ERROR: relation "cagg_metric_daily" is not a continuous aggregate
+STATEMENT: CALL refresh_continuous_aggregate('fitness.cagg_metric_daily', NULL, NULL)
+```
+
+### Root Cause
+
+The review-app workflow generated encoded database URLs with a Node heredoc
+whose closing `EOF` was indented inside the YAML `run` block, so Bash never saw
+the terminator. Separately, `packages/server/src/routers/trends-data.integration.test.ts`
+still assumed `fitness.cagg_metric_daily` and `fitness.cagg_metric_weekly` were
+continuous aggregates even though the baseline schema defines them as plain
+views.
+
+### Fix or Mitigation
+
+The workflow now uses `node --eval` instead of a heredoc to derive encoded
+`DATABASE_URL` and `CLICKHOUSE_URL` values. The trends integration test no
+longer calls `refresh_continuous_aggregate()` for those relations and instead
+documents that the baseline test schema exposes the inserted rows through views
+immediately.
+
+### Remaining Risk
+
+The fixes are covered by a direct shell probe of the workflow snippet, the
+targeted trends integration test, and full local changed-test coverage. If a
+future review-app failure mentions shell parsing again, inspect the rendered
+`run` script first; if a future trends test failure mentions continuous
+aggregates, verify the schema object type before adding refresh logic.
+
+## 2026-04-29: Review app readiness probe and Stryker shard failed on uncovered guard branches
+
+### Impact
+
+PR `#1075` still had two failing CI paths after the previous fixes:
+`Deploy Review App` timed out waiting for ClickHouse, and `Test / Stryker (1)`
+failed the mutation threshold. The umbrella `Test / Mutation Testing` job then
+failed because that shard failed.
+
+### Evidence That Mattered
+
+Review app fatal lines:
+
+```text
+wget: can't connect to remote host: Connection refused
+##[error]Review app ClickHouse did not become ready within 180s
+```
+
+Local repro inside the review ClickHouse container:
+
+```text
+wget -qO- http://127.0.0.1:8123/ping  # Ok.
+wget -qO- http://localhost:8123/ping   # Connection refused
+getent hosts localhost                 # ::1 localhost localhost
+```
+
+Stryker fatal line from the local shard repro of the exact CI file set:
+
+```text
+Final mutation score 73.74 under breaking threshold 75
+```
+
+The surviving mutants were concentrated in:
+`packages/server/src/routers/duration-curves.ts`,
+`packages/server/src/routers/power.ts`,
+`packages/server/src/trpc.ts`, and `src/db/run-migrate.ts`.
+
+### Root Cause
+
+The review-app workflow probed ClickHouse with `http://localhost:8123/ping`
+inside the container. In that image, `localhost` resolved to IPv6 `::1`, while
+ClickHouse was listening on IPv4; the compose healthcheck already used
+`127.0.0.1`, which is why the container was healthy but the workflow probe
+timed out.
+
+Separately, the Stryker shard was not crashing; it was correctly reporting
+surviving mutants because recently added ClickHouse-required branches and tRPC
+metrics/logging paths did not have sufficiently specific tests.
+
+### Fix or Mitigation
+
+The workflow probe now uses `http://127.0.0.1:8123/ping` to match the container
+healthcheck and the actual listening socket.
+
+Targeted tests now cover:
+
+- missing `sensorStore` preconditions in duration-curve and power routers
+- admin middleware propagation of `accessWindow`
+- cache-hit duration metrics and slow-query logging in `trpc`
+- `run-migrate` early `CLICKHOUSE_URL` failure and optional ClickHouse client
+  shutdown
+
+The exact local Stryker shard rerun for the CI file set finished at a mutation
+score of `94.95`, above the break threshold of `75`.
+
+### Remaining Risk
+
+The direct-run footer in `src/db/run-migrate.ts` is still uncovered by Stryker,
+but it no longer affects the threshold for this shard. If a future review-app
+ClickHouse check fails again, inspect name resolution inside the container
+before changing waits or retries.
