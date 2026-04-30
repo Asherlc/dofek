@@ -98,6 +98,7 @@ describe("runMigrations", () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
 
+    // cspell:ignore attname relreplident indrelid relnamespace attrelid attnum indkey nspname relname indisprimary
     const result = await client.query<{
       column_name: string;
       replica_identity: string;
