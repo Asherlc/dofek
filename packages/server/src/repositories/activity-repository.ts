@@ -3,9 +3,16 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
+import { sqlFileTemplate } from "../lib/sql-file.ts";
 import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
+
+const activityListSql = sqlFileTemplate("./sql/activity-list.sql", import.meta.url);
+const activityDetailSql = sqlFileTemplate("./sql/activity-detail.sql", import.meta.url);
+const activityStreamSql = sqlFileTemplate("./sql/activity-stream.sql", import.meta.url);
+const hrZonesSql = sqlFileTemplate("./sql/hr-zones.sql", import.meta.url);
+const powerZonesSql = sqlFileTemplate("./sql/power-zones.sql", import.meta.url);
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -158,27 +165,14 @@ export class ActivityRepository extends BaseRepository {
         : sql``;
     return this.query(
       activityListRowSchema,
-      sql`SELECT
-            a.id,
-            a.activity_type,
-            a.started_at::text AS started_at,
-            a.ended_at::text AS ended_at,
-            a.name,
-            a.provider_id,
-            a.source_providers,
-            s.avg_hr,
-            s.max_hr,
-            s.avg_power,
-            s.total_distance AS distance_meters,
-            COUNT(*) OVER()::int AS total_count
-          FROM fitness.v_activity a
-          LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-          WHERE a.user_id = ${this.userId}
-            AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
-            ${typeFilter}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY a.started_at DESC
-          LIMIT ${input.limit} OFFSET ${input.offset}`,
+      activityListSql({
+        userId: sql`${this.userId}`,
+        startedAfter: sql`${timestampWindowStart(input.endDate, input.days)}`,
+        typeFilter,
+        accessPredicate: this.timestampAccessPredicate(sql`a.started_at`),
+        limit: sql`${input.limit}`,
+        offset: sql`${input.offset}`,
+      }),
     );
   }
 
@@ -186,33 +180,11 @@ export class ActivityRepository extends BaseRepository {
   async findById(activityId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,
-      sql`SELECT
-            a.id,
-            a.activity_type,
-            a.started_at::text AS started_at,
-            a.ended_at::text AS ended_at,
-            a.name,
-            a.notes,
-            a.provider_id,
-            a.raw->>'sourceName' AS subsource,
-            a.source_providers,
-            a.source_external_ids,
-            s.avg_hr,
-            s.max_hr,
-            s.avg_power,
-            s.max_power,
-            s.avg_speed,
-            s.max_speed,
-            s.avg_cadence,
-            s.total_distance,
-            s.elevation_gain_m,
-            s.elevation_loss_m,
-            s.sample_count
-          FROM fitness.v_activity a
-          LEFT JOIN fitness.activity_summary s ON s.activity_id = a.id
-          WHERE a.id = ${activityId}
-            AND a.user_id = ${this.userId}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}`,
+      activityDetailSql({
+        activityId: sql`${activityId}`,
+        userId: sql`${this.userId}`,
+        accessPredicate: this.timestampAccessPredicate(sql`a.started_at`),
+      }),
     );
     return rows[0] ?? null;
   }
@@ -221,37 +193,12 @@ export class ActivityRepository extends BaseRepository {
   async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
     const rows = await this.query(
       streamPointRowSchema,
-      sql`WITH pivoted AS (
-            SELECT
-              ds.recorded_at,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'heart_rate')::SMALLINT AS heart_rate,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'power')::SMALLINT AS power,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'speed') AS speed,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'cadence')::SMALLINT AS cadence,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'altitude') AS altitude,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lat') AS lat,
-              MAX(ds.scalar) FILTER (WHERE ds.channel = 'lng') AS lng
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-            GROUP BY ds.recorded_at
-          ),
-          numbered AS (
-            SELECT p.*, ROW_NUMBER() OVER (ORDER BY p.recorded_at) AS rn,
-                   COUNT(*) OVER () AS total
-            FROM pivoted p
-          )
-          SELECT recorded_at::text AS recorded_at,
-                 heart_rate, power, speed, cadence, altitude, lat, lng
-          FROM numbered
-          WHERE rn % GREATEST(1, total / ${maxPoints}) = 0
-          ORDER BY recorded_at`,
+      activityStreamSql({
+        activityId: sql`${activityId}`,
+        userId: sql`${this.userId}`,
+        accessPredicate: this.timestampAccessPredicate(sql`a.started_at`),
+        maxPoints: sql`${maxPoints}`,
+      }),
     );
 
     return rows.map((row) => new StreamPoint(row));
@@ -261,49 +208,15 @@ export class ActivityRepository extends BaseRepository {
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const rows = await this.query(
       hrZoneRowSchema,
-      sql`WITH params AS (
-            SELECT
-              up.max_hr,
-              COALESCE(rhr.resting_hr, 60) AS resting_hr
-            FROM fitness.user_profile up
-            LEFT JOIN ${restingHeartRateLateral(
-              sql`up.id`,
-              sql`(SELECT (a.started_at AT TIME ZONE ${this.timezone})::date FROM fitness.v_activity a WHERE a.id = ${activityId} AND a.user_id = ${this.userId})`,
-            )}
-            WHERE up.id = ${this.userId}
-              AND up.max_hr IS NOT NULL
-          ),
-          hr_samples AS (
-            SELECT ds.scalar AS heart_rate
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel = 'heart_rate'
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-          )
-          SELECT
-            z.zone,
-            COUNT(hs.heart_rate)::int AS seconds
-          FROM params p
-          CROSS JOIN (VALUES (1), (2), (3), (4), (5)) AS z(zone)
-          LEFT JOIN hr_samples hs ON
-            CASE z.zone
-              WHEN 1 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.5
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
-              WHEN 2 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.6
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
-              WHEN 3 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.7
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
-              WHEN 4 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.8
-                         AND hs.heart_rate < p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
-              WHEN 5 THEN hs.heart_rate >= p.resting_hr + (p.max_hr - p.resting_hr) * 0.9
-            END
-          GROUP BY z.zone
-          ORDER BY z.zone`,
+      hrZonesSql({
+        restingHeartRateLateral: restingHeartRateLateral(
+          sql`up.id`,
+          sql`(SELECT (a.started_at AT TIME ZONE ${this.timezone})::date FROM fitness.v_activity a WHERE a.id = ${activityId} AND a.user_id = ${this.userId})`,
+        ),
+        userId: sql`${this.userId}`,
+        activityId: sql`${activityId}`,
+        accessPredicate: this.timestampAccessPredicate(sql`a.started_at`),
+      }),
     );
 
     return mapHrZones(rows);
@@ -316,34 +229,12 @@ export class ActivityRepository extends BaseRepository {
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
     const rows = await this.query(
       powerZoneRowSchema,
-      sql`WITH power_samples AS (
-            SELECT ds.scalar AS power
-            FROM fitness.deduped_sensor ds
-            WHERE ds.activity_id = ${activityId}
-              AND ds.user_id = ${this.userId}
-              AND ds.channel = 'power'
-              AND EXISTS (
-                SELECT 1 FROM fitness.v_activity a
-                WHERE a.id = ${activityId} AND a.user_id = ${this.userId}
-                ${this.timestampAccessPredicate(sql`a.started_at`)}
-              )
-          )
-          SELECT
-            z.zone,
-            COUNT(ps.power)::int AS seconds
-          FROM (VALUES (1), (2), (3), (4), (5), (6), (7)) AS z(zone)
-          LEFT JOIN power_samples ps ON
-            CASE z.zone
-              WHEN 1 THEN ps.power < ${ftp} * 0.55
-              WHEN 2 THEN ps.power >= ${ftp} * 0.55 AND ps.power < ${ftp} * 0.75
-              WHEN 3 THEN ps.power >= ${ftp} * 0.75 AND ps.power < ${ftp} * 0.9
-              WHEN 4 THEN ps.power >= ${ftp} * 0.9 AND ps.power < ${ftp} * 1.05
-              WHEN 5 THEN ps.power >= ${ftp} * 1.05 AND ps.power < ${ftp} * 1.2
-              WHEN 6 THEN ps.power >= ${ftp} * 1.2 AND ps.power < ${ftp} * 1.5
-              WHEN 7 THEN ps.power >= ${ftp} * 1.5
-            END
-          GROUP BY z.zone
-          ORDER BY z.zone`,
+      powerZonesSql({
+        activityId: sql`${activityId}`,
+        userId: sql`${this.userId}`,
+        accessPredicate: this.timestampAccessPredicate(sql`a.started_at`),
+        ftp: sql`${ftp}`,
+      }),
     );
 
     return mapPowerZones(rows);
