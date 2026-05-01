@@ -94,7 +94,7 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
   });
 
-  it("gives metric_stream full replica identity without a deploy-time primary key backfill", async () => {
+  it("gives metric_stream full replica identity and a Timescale-compatible primary key", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
@@ -109,13 +109,24 @@ describe("runMigrations", () => {
       );
       expect(replicaIdentityResult.rows).toEqual([{ replica_identity: "f" }]);
 
-      const primaryKeyResult = await client.query<{ primary_key_count: string }>(`
-        SELECT count(*) AS primary_key_count
-        FROM pg_constraint
-        WHERE conrelid = 'fitness.metric_stream'::regclass
-          AND contype = 'p'
+      const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND column_name = 'id'
       `);
-      expect(primaryKeyResult.rows).toEqual([{ primary_key_count: "0" }]);
+      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+
+      const primaryKeyResult = await client.query<{ columns: string }>(`
+        SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND constraint_name = 'metric_stream_pkey'
+        GROUP BY constraint_name
+      `);
+      expect(primaryKeyResult.rows).toEqual([{ columns: "id,recorded_at" }]);
     } finally {
       await client.end();
     }

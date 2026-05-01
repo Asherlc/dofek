@@ -45,10 +45,12 @@ describe("metric_stream replica identity migration", () => {
     }
   });
 
-  it("adds an ID default and full replica identity without backfilling historic rows", async () => {
+  it("adds replica identity first, then backfills metric stream IDs and adds the primary key", async () => {
     const client = new Client({ connectionString });
     await client.connect();
     try {
+      await client.query("DROP SCHEMA IF EXISTS drizzle CASCADE");
+      await client.query("DROP SCHEMA IF EXISTS fitness CASCADE");
       await client.query("CREATE EXTENSION IF NOT EXISTS timescaledb");
       await client.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
       await client.query("CREATE SCHEMA IF NOT EXISTS fitness");
@@ -139,6 +141,49 @@ describe("metric_stream replica identity migration", () => {
       expect(insertedResult.rows[0]?.generated_id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
       );
+
+      const primaryKeyMigrationContent = readFileSync(
+        join(import.meta.dirname, "../../drizzle/0009_metric_stream_id_not_null_primary_key.sql"),
+        "utf-8",
+      );
+      writeFileSync(
+        join(tmpDir, "0009_metric_stream_id_not_null_primary_key.sql"),
+        primaryKeyMigrationContent,
+      );
+
+      const primaryKeyMigrationCount = await runMigrations(connectionString, tmpDir);
+      expect(primaryKeyMigrationCount).toBe(1);
+
+      const backfilledResult = await client.query<{ missing_id_count: string }>(
+        "SELECT count(*) AS missing_id_count FROM fitness.metric_stream WHERE id IS NULL",
+      );
+      expect(backfilledResult.rows).toEqual([{ missing_id_count: "0" }]);
+
+      const nonNullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND column_name = 'id'
+      `);
+      expect(nonNullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+
+      const finalPrimaryKeyResult = await client.query<{
+        constraint_name: string;
+        columns: string;
+      }>(`
+        SELECT
+          constraint_name,
+          string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND constraint_name = 'metric_stream_pkey'
+        GROUP BY constraint_name
+      `);
+      expect(finalPrimaryKeyResult.rows).toEqual([
+        { constraint_name: "metric_stream_pkey", columns: "id,recorded_at" },
+      ]);
     } finally {
       await client.end();
     }

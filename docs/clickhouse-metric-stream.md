@@ -2,16 +2,18 @@
 
 `fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
 currently uses an empty local `postgres_fitness.metric_stream` placeholder while
-the historic Postgres table is missing a primary key. The stored
+the raw metric stream replication path is disabled. Migration
+`drizzle/0009_metric_stream_id_not_null_primary_key.sql` backfills stable row
+IDs and adds the Timescale-compatible `(id, recorded_at)` primary key. The stored
 `analytics.deduped_sensor` and `analytics.activity_summary` refreshable
 materialized views remain in place so the schema is stable, but raw metric rows
-are not replicated into ClickHouse until a separate offline backfill adds stable
-row IDs and a primary key.
+are not replicated into ClickHouse until a separate change re-enables the
+MaterializedPostgreSQL source.
 
 ```text
 Postgres/Timescale fitness.metric_stream
         |
-        | offline ID backfill + PK still required
+        | raw MaterializedPostgreSQL replication still disabled
         v
 ClickHouse postgres_fitness.metric_stream placeholder
         |
@@ -64,7 +66,8 @@ ClickHouse migrations create and update the databases and read models:
 
 - `postgres_fitness.metric_stream`: an empty local MergeTree placeholder for the
   raw metric stream. This intentionally does not use `MaterializedPostgreSQL`
-  until the Postgres hypertable has a stable primary key.
+  until the replication path is explicitly re-enabled after the Postgres primary
+  key migration has landed.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.

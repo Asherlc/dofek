@@ -9,7 +9,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - **Compute**: Hetzner Cloud `cax11` ARM64 servers running Ubuntu 24.04. Production uses `dofek`; staging uses `dofek-staging`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. Raw `metric_stream` replication is temporarily disabled behind a local placeholder until the historic Timescale table has a stable primary key. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. Raw `metric_stream` replication is temporarily disabled behind a local placeholder; re-enable it only through the tracked ClickHouse migration path after the Postgres primary key migration has landed. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
