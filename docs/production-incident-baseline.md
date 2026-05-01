@@ -1933,20 +1933,31 @@ the only old decompressed chunk was recompressed, and production returned to
 `190` compressed chunks / `5` uncompressed chunks with no active backfill or
 materialized-view refresh sessions.
 
+Later testing against physical chunk
+`_timescaledb_internal._hyper_1_118_chunk` showed that the row rewrite itself
+was not the only bottleneck. With normal trigger execution, a 50k-row ID-only
+update took about 63 seconds and cancellation showed time inside
+`analytics.mark_activity_rollup_dirty_from_metric_stream_update()`. With
+session-local trigger execution suppressed via `session_replication_role =
+replica`, the same 50k-row update took about 2.2 seconds and the remaining
+198,250 rows in that test chunk updated in about 6.1 seconds.
+
 ### Root Cause
 
-The historic `metric_stream` table is too large for an in-deploy UUID rewrite,
-even when the work is bounded by Timescale chunks. Updating existing rows
-rewrites wide historical tuples and indexes, generates heavy WAL, and cannot
-complete inside the GitHub Actions migration watchdog. Compressed chunks also
-make row-by-row targeting and transparent decompression more constrained than a
-regular Postgres table.
+The historic `metric_stream` table is too large for an in-deploy UUID rewrite
+when the work fires metric-change triggers for every ID-only update. Updating
+existing rows rewrites wide historical tuples and indexes, generates WAL, and
+cannot complete inside the GitHub Actions migration watchdog when each row also
+marks activity rollups dirty. Compressed chunks also make row-by-row targeting
+and transparent decompression more constrained than a regular Postgres table.
 
 ### Fix or Mitigation
 
 The backfill was cancelled before another deploy timeout. The old decompressed
-chunk from the cancelled attempt was recompressed. No primary key was added in
-production.
+chunk from the cancelled attempt was recompressed. The migration was updated to
+run the ID-only rewrite with session-local trigger execution disabled, then
+restore normal trigger behavior before `SET NOT NULL` and primary-key DDL. No
+primary key was added in production yet.
 
 ### Remaining Risk
 

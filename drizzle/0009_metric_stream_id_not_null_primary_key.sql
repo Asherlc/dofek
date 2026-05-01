@@ -13,6 +13,7 @@ DECLARE
   chunk_count integer;
   current_chunk_index integer := 1;
   current_chunk_regclass regclass;
+  previous_replication_role text;
   should_compress_after boolean;
   updated_count integer;
 BEGIN
@@ -23,6 +24,8 @@ BEGIN
   PERFORM set_config('lock_timeout', '5s', false);
   PERFORM set_config('statement_timeout', '0', false);
   PERFORM set_config('timescaledb.max_tuples_decompressed_per_dml_transaction', '0', false);
+  previous_replication_role := current_setting('session_replication_role');
+  PERFORM set_config('session_replication_role', 'replica', false);
 
   DROP TABLE IF EXISTS pg_temp.metric_stream_backfill_chunks;
   CREATE TEMPORARY TABLE pg_temp.metric_stream_backfill_chunks ON COMMIT PRESERVE ROWS AS
@@ -113,6 +116,8 @@ BEGIN
 
     current_chunk_index := current_chunk_index + 1;
   END LOOP;
+
+  PERFORM set_config('session_replication_role', previous_replication_role, false);
 END;
 $$;
 --> statement-breakpoint
@@ -125,6 +130,8 @@ RESET lock_timeout;
 RESET statement_timeout;
 --> statement-breakpoint
 RESET timescaledb.max_tuples_decompressed_per_dml_transaction;
+--> statement-breakpoint
+RESET session_replication_role;
 --> statement-breakpoint
 DO $$
 BEGIN
