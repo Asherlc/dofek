@@ -1956,14 +1956,20 @@ and transparent decompression more constrained than a regular Postgres table.
 The backfill was cancelled before another deploy timeout. The old decompressed
 chunk from the cancelled attempt was recompressed. The migration was updated to
 run the ID-only rewrite with session-local trigger execution disabled, then
-restore normal trigger behavior before `SET NOT NULL` and primary-key DDL. No
-primary key was added in production yet.
+restore normal trigger behavior before `SET NOT NULL` and primary-key DDL.
+
+The final production run completed on 2026-05-01. The manual migration applied
+`drizzle/0009_metric_stream_id_not_null_primary_key.sql`, backfilled all NULL
+IDs, set `fitness.metric_stream.id` to `NOT NULL`, and added the
+Timescale-compatible primary key on `(id, recorded_at)`. A normal web-stack
+deploy then ran successfully from `Asherlc/metric-stream-id` at `sha-e1b2f55`
+and recorded migration `0009_metric_stream_id_not_null_primary_key.sql` in
+`drizzle.__drizzle_migrations`.
 
 ### Remaining Risk
 
-Do not deploy the previous parent-hypertable backfill as-is. `metric_stream`
-must stay because ClickHouse replication is blocked on a stable primary key or
-replica identity index. Complete the ID rewrite with physical chunk-targeted
-maintenance, keep materialized-view refreshes such as `fitness.deduped_sensor`
-out of the maintenance window, and then add the Timescale-compatible
-`(id, recorded_at)` identity.
+`metric_stream` now has the required identity for ClickHouse work. The migration
+left a small number of recently touched chunks uncompressed and increased disk
+usage to roughly 57% on `/mnt/dofek-data`; routine compression, autovacuum, and
+future maintenance should be monitored but no active backfill remained running.
+Replica identity stayed `FULL`, matching the existing migration and tests.
