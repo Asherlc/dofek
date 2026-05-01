@@ -1908,3 +1908,51 @@ any required service reports a rollback or paused update state.
 The worker's startup path still depends on ClickHouse being reachable while it
 runs migrations. Future deploys should now avoid the self-inflicted ClickHouse
 restart and should fail loudly if a required service rolls back anyway.
+
+## 2026-05-01: Metric Stream Primary Key Backfill Remains Unfit for Deploy
+
+### Symptoms
+
+Attempts to complete `fitness.metric_stream` ID backfill, `SET NOT NULL`, and
+primary-key migration in the production deploy path repeatedly failed or had to
+be stopped before completion.
+
+### Evidence
+
+The deploy migration path hit three distinct blockers:
+
+- `transparent decompression only supports tableoid system column`
+- `tuple decompression limit exceeded by operation`
+- `Migration exceeded 3300s`
+
+A follow-up manual prod run installed the committed chunked backfill procedure
+and started `CALL fitness.backfill_metric_stream_ids(50000);`. After about
+eleven minutes it was still inside the first chunk update, producing repeated
+WAL checkpoints every roughly 18-23 seconds. The active query was cancelled,
+the only old decompressed chunk was recompressed, and production returned to
+`190` compressed chunks / `5` uncompressed chunks with no active backfill or
+materialized-view refresh sessions.
+
+### Root Cause
+
+The historic `metric_stream` table is too large for an in-deploy UUID rewrite,
+even when the work is bounded by Timescale chunks. Updating existing rows
+rewrites wide historical tuples and indexes, generates heavy WAL, and cannot
+complete inside the GitHub Actions migration watchdog. Compressed chunks also
+make row-by-row targeting and transparent decompression more constrained than a
+regular Postgres table.
+
+### Fix or Mitigation
+
+The backfill was cancelled before another deploy timeout. The old decompressed
+chunk from the cancelled attempt was recompressed. No primary key was added in
+production.
+
+### Remaining Risk
+
+Do not deploy the current backfill-and-primary-key migration as-is. If
+`metric_stream` is being retired, remove the remaining refresh/read paths and
+drop or archive the table through an explicit cleanup migration instead. If the
+table must remain, treat the ID rewrite as offline maintenance outside the
+normal web deploy workflow and design it with separate WAL, timeout, and disk
+headroom controls.
