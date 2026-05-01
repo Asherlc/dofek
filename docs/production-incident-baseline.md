@@ -1993,13 +1993,23 @@ backfill migration attempted to derive global `recorded_at` bounds from the
 hypertable and remained active in Postgres during the deploy. Timescale metadata
 showed the table has `195` physical chunks spanning `1989-12-28` through
 `2104-02-14`, making a continuous 6-hour backfill range unfit for deploy.
+Follow-up investigation showed `ONLY fitness.metric_stream` had no rows while
+`fitness.metric_stream` had rows through the hypertable abstraction, and the
+ClickHouse-created publication `health_ch_publication` contained only
+`fitness.metric_stream`. None of the `195`
+`_timescaledb_internal._hyper_*_chunk` child tables were in the publication.
 
 ### Root Cause
 
-The ClickHouse `MaterializedPostgreSQL` initial snapshot did not materialize
-existing Timescale hypertable chunk rows for `metric_stream`. The first manual
-backfill design also treated the hypertable as one continuous time range instead
-of iterating the actual Timescale chunks.
+The ClickHouse `MaterializedPostgreSQL` initial snapshot and logical
+replication target the published Postgres relation, `fitness.metric_stream`.
+In TimescaleDB, the hypertable root relation is effectively an empty routing
+table; the data live in `_timescaledb_internal` chunk tables. Because
+`MaterializedPostgreSQL` created a publication for only the hypertable root, not
+the chunks, the initial snapshot copied no historical rows and live chunk writes
+were not discoverable by the CDC stream. The first manual backfill design also
+treated the hypertable as one continuous time range instead of iterating the
+actual Timescale chunks.
 
 ### Fix or Mitigation
 
@@ -2059,6 +2069,6 @@ ClickHouse-native table, or replace the replication source strategy entirely.
 
 `analytics.deduped_sensor` remains empty because its raw ClickHouse metric
 stream source is empty. Any strategy that keeps `MaterializedPostgreSQL` must
-also prove that it receives new `metric_stream` inserts from the Timescale
-hypertable; otherwise the canonical ClickHouse source needs to move to a
-ClickHouse-native ingestion path.
+also handle Timescale chunk publications and prove that chunk inserts map back
+into `postgres_fitness.metric_stream`; otherwise the canonical ClickHouse source
+needs to move to a ClickHouse-native ingestion path.
