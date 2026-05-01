@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
+// cspell:ignore pkey relname relnamespace relreplident nspname
+
 describe("runMigrations", () => {
   let ctx: TestContext;
 

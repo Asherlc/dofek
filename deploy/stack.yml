@@ -179,6 +179,107 @@ services:
         limits:
           memory: 2G
 
+  peerdb-catalog:
+    image: postgres:18-alpine
+    environment:
+      PGUSER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --locale=C.UTF-8
+    volumes:
+      - /mnt/dofek-data/peerdb-catalog:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+
+  peerdb-temporal:
+    image: temporalio/auto-setup:1.29
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_SEEDS: peerdb-catalog
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "workflow", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  peerdb-temporal-admin-tools:
+    image: temporalio/admin-tools:1.29
+    environment:
+      TEMPORAL_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_SHOW_STACKS: "1"
+
+  peerdb-minio:
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    environment:
+      MINIO_ROOT_USER: _peerdb_minioadmin
+      MINIO_ROOT_PASSWORD: _peerdb_minioadmin
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+    volumes:
+      - /mnt/dofek-data/peerdb-minio:/data
+    entrypoint: >
+      /bin/sh -euc "
+      minio server /data --console-address=:36987 &
+      sleep 2;
+      mc alias set peerdb-minio http://peerdb-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
+      wait
+      "
+
+  peerdb-flow-api:
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.18
+    environment: &peerdb-flow-environment
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CATALOG_DATABASE: postgres
+      TEMPORAL_HOST_PORT: peerdb-temporal:7233
+      TEMPORAL_CLIENT_CERT: ""
+      TEMPORAL_CLIENT_KEY: ""
+      PEERDB_TEMPORAL_NAMESPACE: default
+      PEERDB_ALLOWED_TARGETS: ""
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: _peerdb_minioadmin
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: _peerdb_minioadmin
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_REGION: us-east-1
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ENDPOINT_URL_S3: http://peerdb-minio:9000
+      PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_REGION: ""
+      AWS_ENDPOINT: ""
+
+  peerdb-flow-snapshot-worker:
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.18
+    environment: *peerdb-flow-environment
+
+  peerdb-flow-worker:
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.18
+    environment: *peerdb-flow-environment
+
+  peerdb:
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18
+    stop_signal: SIGINT
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_FLOW_SERVER_ADDRESS: grpc://peerdb-flow-api:8112
+      RUST_LOG: info
+      RUST_BACKTRACE: "1"
+
   databasus:
     image: databasus/databasus:v3.32.1
     volumes:

@@ -254,13 +254,20 @@ jobs:
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
           docker pull "postgres:18-alpine"
+          docker pull "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18"
+          docker pull "ghcr.io/peerdb-io/flow-api:stable-v0.36.18"
+          docker pull "ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.18"
+          docker pull "ghcr.io/peerdb-io/flow-worker:stable-v0.36.18"
+          docker pull "temporalio/auto-setup:1.29"
+          docker pull "temporalio/admin-tools:1.29"
+          docker pull "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 
       - name: Validate host bind mount paths
         run: |
           docker run --rm \
             --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
             postgres:18-alpine sh -euc '
-              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis; do
+              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
                 if [ ! -d "$path" ]; then
                   echo "::error::Required host bind mount path is missing: $path"
                   exit 1
@@ -455,6 +462,40 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Wait for PeerDB
+        run: |
+          for attempt in $(seq 1 36); do
+            peerdb_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=peerdb --port=9900 --username=peerdb --dbname=peerdb --no-align --tuples-only --quiet \
+              --command \"SELECT 1;\"" 2>&1 || true)
+            peerdb_state="$(printf '%s\n' "$peerdb_output" | tail -n 1 | tr -d '[:space:]')"
+            if [ "$peerdb_state" = "1" ]; then
+              echo "PeerDB is reachable."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::PeerDB did not become reachable within 180s"
+              printf '%s\n' "$peerdb_output"
+              exit 1
+            fi
+            echo "PeerDB readiness attempt ${attempt}/36: retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Configure ClickHouse CDC
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$INFISICAL_ENV_FILE" \
+            --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
 
       - name: Plan materialized view sync
         id: view_sync_plan

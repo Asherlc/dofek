@@ -5,13 +5,18 @@ keeps a native `MergeTree` scalar copy of the raw stream and backfills it from
 Postgres by real Timescale chunk ranges. We do not use ClickHouse
 `MaterializedPostgreSQL` for this hypertable because the hypertable root does
 not contain the physical rows; the data live in Timescale chunk tables.
+PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication, with its
+first mirror landing in `peerdb.metric_stream` for validation before analytics
+switch to that source.
 
 ```text
 Postgres/Timescale fitness.metric_stream
-        |
+        |                         |
         | chunk-range native backfill
-        v
+        |                         | PeerDB CDC mirror
+        v                         v
 ClickHouse postgres_fitness.metric_stream
+ClickHouse peerdb.metric_stream (validation target)
         |
         | refreshable materialized view
         v
@@ -62,6 +67,9 @@ ClickHouse migrations create and update the databases and read models:
 
 - `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` scalar copy
   of the raw metric stream.
+- `peerdb.metric_stream`: the PeerDB CDC target for ongoing changes. It is not
+  the active analytics source until the initial snapshot has been verified
+  against Postgres and the native backfill table.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.
@@ -76,9 +84,15 @@ backfill checkpoint table before rebuilding the raw table. If the migration
 container fails before recording the migration, the next retry starts from a
 clean raw table instead of trusting stale chunk checkpoints.
 
-Postgres still runs with `wal_level=logical`, `max_replication_slots`, and
-`max_wal_senders` enabled for future CDC tooling. ClickHouse's built-in
-`MaterializedPostgreSQL` engine is not the CDC path for `metric_stream`.
+Postgres runs with `wal_level=logical`, `max_replication_slots`, and
+`max_wal_senders` enabled for PeerDB. The deploy workflow runs
+`src/db/setup-clickhouse-cdc.ts` after `docker stack deploy`; that command
+creates the PeerDB Postgres peer, ClickHouse peer, and
+`dofek_metric_stream_cdc` mirror if they do not already exist. The mirror uses a
+dedicated publication name, excludes `device_id`, `source_type`, and `vector`,
+and enables soft deletes so delete events are represented in ClickHouse.
+ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
+`metric_stream`.
 
 API startup only verifies that the migrated ClickHouse tables exist. It must not
 create or rewrite analytical schema, because production runs multiple web

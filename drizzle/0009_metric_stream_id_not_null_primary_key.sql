@@ -14,7 +14,7 @@ DECLARE
   current_chunk_index integer := 1;
   current_chunk_regclass regclass;
   previous_replication_role text;
-  should_compress_after boolean;
+  should_recompress boolean;
   chunk_has_missing_ids boolean;
   updated_count integer;
 BEGIN
@@ -46,13 +46,13 @@ BEGIN
     format('%I.%I', chunk_schema, chunk_name)::regclass AS chunk_regclass,
     range_start::timestamptz AS range_start,
     range_end::timestamptz AS range_end,
-    (range_end < now() - INTERVAL '7 days') AS should_compress_after
+    is_compressed AS should_recompress
   FROM timescaledb_information.chunks
   WHERE hypertable_schema = 'fitness'
     AND hypertable_name = 'metric_stream';
 
   IF NOT EXISTS (SELECT 1 FROM pg_temp.metric_stream_backfill_chunks) THEN
-    INSERT INTO pg_temp.metric_stream_backfill_chunks (chunk_index, chunk_regclass, range_start, range_end, should_compress_after)
+    INSERT INTO pg_temp.metric_stream_backfill_chunks (chunk_index, chunk_regclass, range_start, range_end, should_recompress)
     VALUES (1, NULL, NULL, NULL, false);
   END IF;
 
@@ -62,8 +62,8 @@ BEGIN
   WHILE current_chunk_index <= chunk_count LOOP
     SELECT
       metric_stream_backfill_chunks.chunk_regclass,
-      metric_stream_backfill_chunks.should_compress_after
-    INTO current_chunk_regclass, should_compress_after
+      metric_stream_backfill_chunks.should_recompress
+    INTO current_chunk_regclass, should_recompress
     FROM pg_temp.metric_stream_backfill_chunks
     WHERE metric_stream_backfill_chunks.chunk_index = current_chunk_index;
 
@@ -137,7 +137,7 @@ BEGIN
       EXIT WHEN updated_count = 0;
     END LOOP;
 
-    IF current_chunk_regclass IS NOT NULL AND should_compress_after THEN
+    IF current_chunk_regclass IS NOT NULL AND should_recompress THEN
       PERFORM compress_chunk(current_chunk_regclass, if_not_compressed => true);
       COMMIT;
     END IF;
@@ -177,6 +177,10 @@ $$;
 ALTER TABLE fitness.metric_stream
 ALTER COLUMN id SET NOT NULL;
 --> statement-breakpoint
+-- squawk-ignore constraint-missing-not-valid
+-- squawk-ignore adding-serial-primary-key-field
+-- Timescale hypertables reject the recommended CREATE INDEX CONCURRENTLY and
+-- PRIMARY KEY USING INDEX alternatives, so use the supported direct form.
 DO $$
 BEGIN
   IF NOT EXISTS (

@@ -1,10 +1,12 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
+
+// cspell:ignore conrelid contype pgcrypto pkey relnamespace segmentby
 
 describe("metric_stream replica identity migration", () => {
   let connectionString: string;
@@ -47,6 +49,7 @@ describe("metric_stream replica identity migration", () => {
 
   it("adds replica identity first, then backfills metric stream IDs and adds the primary key", async () => {
     const client = new Client({ connectionString });
+    let tmpDir: string | undefined;
     await client.connect();
     try {
       await client.query("DROP SCHEMA IF EXISTS drizzle CASCADE");
@@ -67,7 +70,7 @@ describe("metric_stream replica identity migration", () => {
         )
       `);
       await client.query(
-        "SELECT create_hypertable('fitness.metric_stream', 'recorded_at', if_not_exists => TRUE)",
+        "SELECT create_hypertable('fitness.metric_stream', 'recorded_at', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE)",
       );
       await client.query(`
         ALTER TABLE fitness.metric_stream
@@ -87,7 +90,7 @@ describe("metric_stream replica identity migration", () => {
           ('2026-01-03T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 220)
       `);
 
-      const tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-replica-identity-"));
+      tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-replica-identity-"));
       const migrationContent = readFileSync(
         join(import.meta.dirname, "../../drizzle/0007_metric_stream_primary_key.sql"),
         "utf-8",
@@ -147,16 +150,22 @@ describe("metric_stream replica identity migration", () => {
         FROM timescaledb_information.chunks
         WHERE hypertable_schema = 'fitness'
           AND hypertable_name = 'metric_stream'
+        ORDER BY range_start
+        LIMIT 1
       `);
 
-      const compressedChunkResult = await client.query<{ compressed_chunk_count: string }>(`
-        SELECT count(*) AS compressed_chunk_count
+      const chunkStateResult = await client.query<{
+        chunk_count: string;
+        compressed_chunk_count: string;
+      }>(`
+        SELECT
+          count(*) AS chunk_count,
+          count(*) FILTER (WHERE is_compressed) AS compressed_chunk_count
         FROM timescaledb_information.chunks
         WHERE hypertable_schema = 'fitness'
           AND hypertable_name = 'metric_stream'
-          AND is_compressed
       `);
-      expect(compressedChunkResult.rows).toEqual([{ compressed_chunk_count: "1" }]);
+      expect(chunkStateResult.rows).toEqual([{ chunk_count: "4", compressed_chunk_count: "1" }]);
 
       const primaryKeyMigrationContent = readFileSync(
         join(import.meta.dirname, "../../drizzle/0009_metric_stream_id_not_null_primary_key.sql"),
@@ -174,6 +183,21 @@ describe("metric_stream replica identity migration", () => {
         "SELECT count(*) AS missing_id_count FROM fitness.metric_stream WHERE id IS NULL",
       );
       expect(backfilledResult.rows).toEqual([{ missing_id_count: "0" }]);
+
+      const finalChunkStateResult = await client.query<{
+        chunk_count: string;
+        compressed_chunk_count: string;
+      }>(`
+        SELECT
+          count(*) AS chunk_count,
+          count(*) FILTER (WHERE is_compressed) AS compressed_chunk_count
+        FROM timescaledb_information.chunks
+        WHERE hypertable_schema = 'fitness'
+          AND hypertable_name = 'metric_stream'
+      `);
+      expect(finalChunkStateResult.rows).toEqual([
+        { chunk_count: "4", compressed_chunk_count: "1" },
+      ]);
 
       const nonNullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
         SELECT is_nullable
@@ -201,6 +225,9 @@ describe("metric_stream replica identity migration", () => {
         { constraint_name: "metric_stream_pkey", columns: "id,recorded_at" },
       ]);
     } finally {
+      if (tmpDir) {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
       await client.end();
     }
   }, 120_000);

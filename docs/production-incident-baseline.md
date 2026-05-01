@@ -2077,3 +2077,41 @@ deploys and finishes. This fixes the historical backfill/read-only problem, but
 it is still a batch copy path rather than a long-running WAL CDC service; a
 future PeerDB/ClickPipes-style CDC pipeline is still the better steady-state
 answer for continuous Timescale chunk changes.
+
+## 2026-05-01: PeerDB CDC Setup Added for Metric Stream
+
+### Symptoms
+
+The ClickHouse metric stream read path had a native chunk backfill, but no
+long-running CDC service for new Postgres/Timescale `fitness.metric_stream`
+changes.
+
+### Evidence
+
+ClickHouse and PeerDB documentation point to PeerDB/ClickPipes for Postgres CDC
+into ClickHouse. The Timescale-specific guidance calls out that hypertable
+changes are chunk-level changes, so a robust CDC path must understand Timescale
+chunks instead of treating the hypertable root as the only published relation.
+
+### Root Cause
+
+The earlier ClickHouse `MaterializedPostgreSQL` approach did not handle the
+Timescale hypertable/chunk model correctly, and the native ClickHouse backfill
+only covered historical batch copy.
+
+### Fix or Mitigation
+
+Added internal PeerDB services to the swarm and a one-shot TypeScript setup
+command that creates the PeerDB Postgres peer, ClickHouse peer, and
+`dofek_metric_stream_cdc` mirror. The mirror writes into
+`peerdb.metric_stream`, excludes unused non-scalar columns, and uses soft
+deletes. The production analytics read path intentionally stays on
+`postgres_fitness.metric_stream` until the PeerDB initial snapshot is verified.
+
+### Remaining Risk
+
+PeerDB must deploy successfully and complete its initial snapshot before
+analytics can switch to `peerdb.metric_stream`. The next operational step is to
+compare row counts and recent-row freshness between Postgres,
+`postgres_fitness.metric_stream`, and `peerdb.metric_stream`, then cut
+`analytics.deduped_sensor` over in a separate migration.
