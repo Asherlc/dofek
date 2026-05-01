@@ -11,16 +11,14 @@ interface MigrationCountRow {
   migration_count: number | string;
 }
 
-interface MetricStreamBackfillBoundsRow {
-  min_recorded_at: string | null;
-  upper_bound: string | null;
+interface MetricStreamBackfillChunkRow {
+  lower_bound: string;
+  upper_bound: string;
 }
 
 interface MetricStreamBackfillChunkCountRow {
   chunk_count: number | string;
 }
-
-const METRIC_STREAM_BACKFILL_CHUNK_MS = 6 * 60 * 60 * 1000;
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -145,15 +143,13 @@ async function backfillMaterializedMetricStream(
   postgresConnectionString: string,
 ): Promise<void> {
   await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
-  const bounds = await fetchMetricStreamBackfillBounds(postgresConnectionString);
-  if (!bounds.min_recorded_at || !bounds.upper_bound) {
+  const chunks = await fetchMetricStreamBackfillChunks(postgresConnectionString);
+  if (chunks.length === 0) {
     return;
   }
 
   const postgresMetricStreamSource =
     buildPostgresMetricStreamTableFunction(postgresConnectionString);
-  const upperBound = parsePostgresTimestamp(bounds.upper_bound, "metric_stream upper bound");
-  let chunkStart = parsePostgresTimestamp(bounds.min_recorded_at, "metric_stream lower bound");
   await client.command({
     query: `CREATE TABLE IF NOT EXISTS analytics.metric_stream_backfill_chunks (
   lower_bound DateTime64(6, 'UTC'),
@@ -164,12 +160,10 @@ ENGINE = MergeTree
 ORDER BY (lower_bound, upper_bound)`,
   });
 
-  while (chunkStart.getTime() < upperBound.getTime()) {
-    const chunkEnd = new Date(
-      Math.min(chunkStart.getTime() + METRIC_STREAM_BACKFILL_CHUNK_MS, upperBound.getTime()),
-    );
+  for (const chunk of chunks) {
+    const chunkStart = parsePostgresTimestamp(chunk.lower_bound, "metric_stream chunk lower bound");
+    const chunkEnd = parsePostgresTimestamp(chunk.upper_bound, "metric_stream chunk upper bound");
     if (await isMetricStreamBackfillChunkComplete(client, chunkStart, chunkEnd)) {
-      chunkStart = chunkEnd;
       continue;
     }
     await client.command({
@@ -182,7 +176,6 @@ ORDER BY (lower_bound, upper_bound)`,
       query: `INSERT INTO analytics.metric_stream_backfill_chunks (lower_bound, upper_bound)
 VALUES (${clickHouseDateTimeLiteral(chunkStart)}, ${clickHouseDateTimeLiteral(chunkEnd)})`,
     });
-    chunkStart = chunkEnd;
   }
 }
 
@@ -205,28 +198,24 @@ WHERE lower_bound = ${clickHouseDateTimeLiteral(chunkStart)}
   return Number(rows[0]?.chunk_count ?? 0) > 0;
 }
 
-async function fetchMetricStreamBackfillBounds(
+async function fetchMetricStreamBackfillChunks(
   postgresConnectionString: string,
-): Promise<MetricStreamBackfillBoundsRow> {
+): Promise<MetricStreamBackfillChunkRow[]> {
   const postgresClient = new Client({ connectionString: postgresConnectionString });
   try {
     await postgresClient.connect();
-    const result = await postgresClient.query<MetricStreamBackfillBoundsRow>(`
+    const result = await postgresClient.query<MetricStreamBackfillChunkRow>(`
       SELECT
-        (
-          SELECT recorded_at::text
-          FROM fitness.metric_stream
-          ORDER BY recorded_at ASC
-          LIMIT 1
-        ) AS min_recorded_at,
-        (
-          SELECT greatest(clock_timestamp(), recorded_at + interval '1 second')::text
-          FROM fitness.metric_stream
-          ORDER BY recorded_at DESC
-          LIMIT 1
-        ) AS upper_bound
+        range_start::text AS lower_bound,
+        range_end::text AS upper_bound
+      FROM timescaledb_information.chunks
+      WHERE hypertable_schema = 'fitness'
+        AND hypertable_name = 'metric_stream'
+        AND range_start IS NOT NULL
+        AND range_end IS NOT NULL
+      ORDER BY range_start ASC
     `);
-    return result.rows[0] ?? { min_recorded_at: null, upper_bound: null };
+    return result.rows;
   } finally {
     await postgresClient.end();
   }

@@ -42,7 +42,7 @@ describe("runClickHouseMigrations", () => {
     pgClientMocks.connect.mockReset().mockResolvedValue(undefined);
     pgClientMocks.end.mockReset().mockResolvedValue(undefined);
     pgClientMocks.query.mockReset().mockResolvedValue({
-      rows: [{ min_recorded_at: null, upper_bound: null }],
+      rows: [],
     });
   });
 
@@ -101,11 +101,15 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("backfills materialized metric stream in bounded recorded_at chunks", async () => {
+  it("backfills materialized metric stream in Timescale chunk ranges", async () => {
     pgClientMocks.query.mockResolvedValue({
       rows: [
         {
-          min_recorded_at: "2026-04-22 00:00:00+00",
+          lower_bound: "2026-04-22 00:00:00+00",
+          upper_bound: "2026-04-22 06:00:00+00",
+        },
+        {
+          lower_bound: "2026-04-22 06:00:00+00",
           upper_bound: "2026-04-22 12:00:00+00",
         },
       ],
