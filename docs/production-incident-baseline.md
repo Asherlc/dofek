@@ -1502,3 +1502,617 @@ Validated with:
 If a future Cypress job hangs after specs appear to finish, inspect host-side
 plugin imports for long-lived clients or timers before changing timeouts or
 adding explicit process exits.
+
+## 2026-04-30: Web deploy failed on missing ClickHouse bind-mount path
+
+### Impact
+
+The `Deploy Web` workflow for commit `7af8b2f972c09cc998efe62eaced0e8817f85dd7`
+failed for both production and staging before stack deployment. The app rollout
+did not proceed.
+
+### Evidence That Mattered
+
+Terraform ran first and reported no infrastructure changes:
+
+```text
+No changes. Your infrastructure matches the configuration.
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+```
+
+Both deploy-stack jobs then failed in `Validate host bind mount paths`:
+
+```text
+Required host bind mount path is missing: /mnt/dofek-data/clickhouse
+Process completed with exit code 1.
+```
+
+The ClickHouse rollout commit added `/mnt/dofek-data/clickhouse` to the
+Terraform `mkdir -p` command, but did not bump the
+`terraform_data.*data_volume_mount_alias` replacement triggers in the same
+commit.
+
+### Root Cause
+
+The ClickHouse host bind-mount directory was added to the Terraform
+remote-exec provisioner without replacing the existing `terraform_data`
+resources. Terraform provisioners only rerun on resource creation/replacement,
+so Terraform considered the resources current and did not create the new
+directory on either host.
+
+### Fix or Mitigation
+
+Bumped the production and staging data-volume mount-alias trigger strings so
+the next Terraform apply replaces those `terraform_data` resources and reruns
+the existing provisioners that create `/mnt/dofek-data/clickhouse`.
+
+The rerun then exposed a second missing prerequisite: `CLICKHOUSE_PASSWORD` was
+absent from both Infisical environments, so `docker stack config` failed while
+interpolating ClickHouse environment variables. Added `CLICKHOUSE_PASSWORD` to
+both `prod` and `staging` in Infisical.
+
+The next rerun reached the migration step and showed that the workflow encoded
+`CLICKHOUSE_PASSWORD` from the runner process environment instead of the
+rendered Infisical dotenv file. Updated the migration step to run that encoding
+through the existing dotenv command runner.
+
+A later rerun reached the migration container and then appeared stuck. Production
+Postgres showed one migration session holding advisory lock `728370291` while
+running:
+
+```sql
+UPDATE fitness.metric_stream
+SET id = gen_random_uuid()
+WHERE id IS NULL;
+```
+
+The table was a compressed Timescale hypertable with 195 chunks, 189 compressed
+chunks, and about 37 GB of chunk data. Later workflow retries were not applying
+migrations; they were blocked on the same advisory lock. Because the workflow
+wrapped `docker run` with the runner-side `timeout` while using remote Docker
+over SSH, each timeout killed the local Docker client but left the remote
+migration container running.
+
+Updated the migration step to run one named migration container with explicit
+cleanup of that remote container on failure or timeout. The first cleanup fix
+still depended on the runner-side `timeout docker run` regaining control over
+SSH, which did not happen reliably. The workflow now also runs BusyBox
+`timeout` inside the remote container, so the migration process exits from the
+server side even if the runner-side Docker client hangs. The longer timeout is
+intentionally scoped to migrations because this release contains a one-time
+37 GB compressed-hypertable backfill; the named-container cleanup prevents
+future runner-side timeouts from leaking remote migration processes.
+
+The next retry showed that even with the server-side timeout, a long attached
+`docker run` over SSH can fail with:
+
+```text
+client_loop: send disconnect: Broken pipe
+error waiting for container
+```
+
+Updated the migration step again to start the migration container detached,
+then poll `docker inspect` with short SSH calls and collect `docker logs` after
+the container exits. This keeps the release job from depending on one long-lived
+SSH stream while the database is doing a multi-minute table rewrite.
+
+Staging also failed after Postgres migrations and materialized-view sync because
+ClickHouse exceeded the service's 1 GB memory limit while applying the
+ClickHouse migrations:
+
+```text
+(total) memory limit exceeded ... current RSS: 966.99 MiB, maximum: 921.60 MiB
+```
+
+Raised the ClickHouse service memory limit to 2 GB so the ClickHouse migration
+has enough memory to create the Postgres bridge and analytics read models.
+Because migrations run before the normal `docker stack deploy`, the workflow
+also applies that ClickHouse memory limit with `docker service update` before
+running migrations, then waits for ClickHouse to become reachable again. The
+stack file remains the desired-state source of truth; the pre-migration service
+update makes the needed resource limit effective before the migration that
+requires it.
+
+Production then showed the heavy Postgres statement disappear from
+`pg_stat_activity` while the migration Node process stayed alive with no active
+Postgres or ClickHouse query and an external HTTPS connection from the
+instrumented entrypoint. Updated the deploy migration command to run
+`src/db/run-migrate.ts` directly with Node's TypeScript support, without the
+OpenTelemetry instrumentation imports used by the long-running app entrypoint.
+The deploy step still captures container logs, but the one-shot migration no
+longer depends on telemetry export shutdown behavior to finish the release.
+
+That did not resolve the production migration. A direct non-instrumented Node
+run still lost the active backend after the `UPDATE fitness.metric_stream ...`
+statement, and a follow-up count showed `187,684,929` rows still had `id IS
+NULL`. The workflow-only retry strategy is therefore blocked: production needs
+an explicit decision on how to complete `0007_metric_stream_primary_key.sql`
+without relying on the current Node migration runner to perform the 37 GB
+compressed-hypertable rewrite in one statement.
+
+### Remaining Risk
+
+This fixes the missed ClickHouse provisioning run, the missing ClickHouse
+secret, the migration-step dotenv mismatch, the remote migration-container leak,
+the long-lived SSH session failure mode, and the ClickHouse memory ceiling seen
+on staging. Production deployment remains unresolved because
+`0007_metric_stream_primary_key.sql` cannot currently complete the
+`metric_stream` UUID backfill through the Node migration runner. Future changes
+to the `/mnt/dofek-data` directory list still require a corresponding trigger
+bump in the same commit. Future stack-level environment variables must be added
+to Infisical before the workflow that references them is merged or deployed, and
+workflow steps must read Infisical-only secrets from the rendered dotenv file
+rather than from the runner environment. Large compressed hypertable backfills
+should be called out in deploy planning so the migration timeout is intentional
+rather than discovered during release.
+
+## 2026-04-30: Metric Stream Primary Key Backfill Split Into Chunk Batches
+
+### Symptoms
+
+Production deploy remained blocked in the schema migration step after the
+earlier ClickHouse bind-mount and migration-runner fixes. The pending migration
+was still `0007_metric_stream_primary_key.sql`.
+
+### User Impact
+
+Production could not advance to the new stack image because migrations run
+before `docker stack deploy`. Staging had already moved past this point, but
+production remained on the previous release.
+
+### Evidence
+
+Production catalog checks showed `fitness.metric_stream` still had no primary
+key, and `187,684,929` rows still had `id IS NULL`. The failed migration path
+was the single full-history statement:
+
+```sql
+UPDATE fitness.metric_stream
+SET id = gen_random_uuid()
+WHERE id IS NULL;
+```
+
+The table was a compressed Timescale hypertable, so this one statement attempted
+to rewrite the historical compressed workload as one unbounded operation.
+
+### Root Cause
+
+`0007_metric_stream_primary_key.sql` used a single full-table UUID backfill for
+a large compressed hypertable. The migration runner executed each migration
+statement separately, but the backfill itself was still one unbounded statement,
+so production could not complete the migration reliably.
+
+### Fix or Mitigation
+
+Replaced the full-table backfill statement in `0007_metric_stream_primary_key.sql`
+with a migration-runner marker that performs the `metric_stream.id` backfill in
+bounded batches of `100,000` rows per Timescale chunk time range. Each batch is
+its own Postgres query, so progress commits incrementally before the migration
+adds the composite primary key `(id, recorded_at)` and switches replica identity
+to that key.
+
+### Remaining Risk
+
+The production rerun still has to build the primary-key index after the ID
+backfill completes, and that operation may take time on the 187M-row hypertable.
+If that becomes the next blocker, investigate it separately rather than adding
+generic deploy retries.
+
+### Follow-up Evidence
+
+The first production rerun with the bounded backfill image built and pushed both
+`sha-d68d1a7` images, passed Terraform and image pulls, then failed immediately
+in the migration container with:
+
+```text
+error: transparent decompression only supports tableoid system column
+```
+
+That error came from using `ctid` to identify a limited set of rows inside
+compressed Timescale chunks. Timescale transparent decompression does not expose
+`ctid`; only `tableoid` is available as a system column in that path.
+
+### Follow-up Fix
+
+Changed the metric_stream ID backfill again to avoid system columns entirely.
+The runner now updates `metric_stream.id` by one-hour `recorded_at` windows
+within each Timescale chunk time range:
+
+```sql
+UPDATE fitness.metric_stream AS metric_stream
+SET id = gen_random_uuid()
+WHERE metric_stream.id IS NULL
+  AND metric_stream.recorded_at >= $1
+  AND metric_stream.recorded_at < $2;
+```
+
+This preserves bounded progress without relying on unsupported compressed-chunk
+system columns.
+
+### Second Follow-up Evidence
+
+The production rerun with one-hour windows was correct but still too
+under-batched for the deploy window. Production had `195` Timescale chunks for
+`fitness.metric_stream`, which meant up to `32,760` hourly update statements
+before the migration could add the primary key. After roughly twenty minutes the
+container had only completed a small subset of chunks, so the run was cancelled
+before the workflow timeout killed it.
+
+### Second Follow-up Fix
+
+Changed the marker handler to issue one bounded update per Timescale chunk range
+instead of one update per hour inside each chunk. The statement still filters by
+`id IS NULL` and `recorded_at >= $1 AND recorded_at < $2`, so already completed
+chunks from prior attempts remain committed and the migration is still
+resumable.
+
+### Third Follow-up Evidence
+
+The first chunk-range production rerun got past the already-backfilled chunks
+quickly, then failed on the next compressed chunk with:
+
+```text
+error: tuple decompression limit exceeded by operation
+```
+
+That showed a full chunk-range update can exceed TimescaleDB's per-DML
+decompression limit on chunks that still contain too many `id IS NULL` rows.
+
+### Third Follow-up Fix
+
+Kept the chunk-range update as the fast path for already-complete and smaller
+chunks, but added a targeted fallback: when a chunk-range update hits the
+Timescale tuple decompression limit, the migration retries that same chunk in
+one-hour `recorded_at` windows. This keeps the deployment from spending hourly
+queries on every already-finished chunk while keeping each DML statement below
+the decompression cap for large remaining chunks.
+
+### Fourth Follow-up Evidence
+
+The hybrid fallback worked, but production progress was still too slow for a
+deploy migration. The first large remaining chunk completed through hourly
+fallback with `187,218` rows, while the original production null-ID count was
+about `187.7M` rows. That made the backfill operationally too large for
+per-hour DML in the deploy timeout window.
+
+### Fourth Follow-up Fix
+
+Kept the backfill chunk-bounded and resumable, but set
+`timescaledb.max_tuples_decompressed_per_dml_transaction = 0` for the migration
+session before the chunk updates. This removes the Timescale per-DML
+decompression cap for this controlled migration session without changing the
+database-wide setting.
+
+### Final Follow-up Evidence
+
+The controlled chunk update avoided the decompression limit but was still not a
+deploy-time migration. A remaining chunk with `163,506` null-ID rows took about
+fourteen minutes, while the historic table still had about `187M` rows requiring
+IDs. Production also had exact duplicate metric rows, so there was no safe
+natural-key primary key shortcut for `fitness.metric_stream`.
+
+### Final Fix
+
+Stopped trying to backfill historic `metric_stream.id` values and add the
+primary key during deploy. Migration `0007_metric_stream_primary_key.sql` now
+only adds the nullable `id` column, gives future rows a `gen_random_uuid()`
+default, and leaves the table on `REPLICA IDENTITY FULL`. ClickHouse migration
+`0003_disable_materialized_metric_stream` drops any previous
+`postgres_fitness` MaterializedPostgreSQL database and recreates
+`postgres_fitness.metric_stream` as an empty local MergeTree placeholder so
+analytics schema creation can complete while raw metric replication remains
+disabled.
+
+### Remaining Risk
+
+ClickHouse activity stream and summary read models remain schema-present but do
+not receive raw historic metric samples through `postgres_fitness.metric_stream`.
+The real fix still requires an offline maintenance job to backfill stable row
+IDs, add the Timescale-compatible primary key, and then re-enable raw
+ClickHouse replication.
+
+### Stack Deploy Follow-up Evidence
+
+After the migration cleanup deployed, the `Run migrations` step succeeded, but
+`docker stack deploy` rolled back `dofek_worker`:
+
+```text
+service rollback paused: update paused due to failure or early termination of task
+```
+
+Worker logs showed the first fatal app line:
+
+```text
+[migrate] Error: ClickHouse URL is malformed. Expected format: http[s]://[username:password@]hostname:port[/database][?param1=value1&param2=value2]
+```
+
+The migration container already URL-encoded `CLICKHOUSE_PASSWORD` before
+constructing `CLICKHOUSE_URL`; the normal app services interpolated the raw
+password into `deploy/stack.yml`, so reserved URL characters in the password
+made the app `CLICKHOUSE_URL` invalid.
+
+### Stack Deploy Follow-up Fix
+
+The deploy workflow now exports `CLICKHOUSE_PASSWORD_ENCODED` once after the
+Infisical dotenv file is available. `deploy/stack.yml` uses that encoded value
+for `web` and `worker` `CLICKHOUSE_URL` interpolation, while the ClickHouse
+service still receives the raw `CLICKHOUSE_PASSWORD`.
+
+### Stack Rollout Recovery Evidence
+
+After the encoded password fix, production migrations succeeded and `dofek_web`
+updated to `sha-0d4aa69`, but the GitHub Actions `docker stack deploy
+--detach=false` process remained stuck. Live Swarm state showed `dofek_worker`
+had rolled back to the older `sha-7af8b2f` service spec, where
+`CLICKHOUSE_URL` still contained the raw password. That rollback target
+crash-looped with the same malformed ClickHouse URL error, leaving the worker at
+`0/1` while the deploy step waited indefinitely.
+
+### Stack Rollout Recovery Fix
+
+Recovered `dofek_worker` to the committed `sha-0d4aa69` image with the same
+URL-encoded `CLICKHOUSE_URL` already present on the healthy `dofek_web` service.
+After recovery, Swarm reported `dofek_web` `2/2`, `dofek_worker` `1/1`, and
+`dofek_training-export-worker` `1/1`; `/healthz` returned `{"status":"ok"}`.
+The deploy workflow now wraps `docker stack deploy --detach=false` in a
+20-minute timeout so a future wedged rollout hard-fails with an explicit error
+instead of leaving the job running indefinitely.
+
+## 2026-05-01: Web Deploy Retry Reported Success After Worker Rollback
+
+### Symptoms
+
+A manual retry of the web deploy workflow completed with a successful GitHub
+Actions conclusion, but live Swarm state showed `dofek_worker` had rolled back
+while `dofek_web` updated to the newly built image digest for the same
+`sha-d062350` tag.
+
+### User Impact
+
+The public web health check stayed healthy, and a worker task remained running
+after rollback. The deploy result was still misleading because one required app
+service did not finish the rollout cleanly.
+
+### Evidence
+
+`dofek_worker` update status was `rollback_completed`. Worker logs showed the
+first fatal line during startup:
+
+```text
+[migrate] Error: connect ECONNREFUSED 10.0.1.8:8123
+```
+
+The same deploy run showed ClickHouse being restarted shortly before app
+service rollout because the workflow unconditionally ran:
+
+```text
+docker service update --limit-memory 2G dofek_clickhouse
+```
+
+### Root Cause
+
+The deploy workflow restarted ClickHouse on every run even when the desired 2G
+memory limit was already set, creating an avoidable ClickHouse availability
+blip before app service rollout. `docker stack deploy --detach=false` then
+returned success even though `dofek_worker` rolled back.
+
+### Fix
+
+Changed the deploy workflow to inspect the current ClickHouse memory limit and
+only run `docker service update --limit-memory 2G` when it differs. Added a
+post-stack-deploy check that inspects required app services and hard-fails if
+any required service reports a rollback or paused update state.
+
+### Remaining Risk
+
+The worker's startup path still depends on ClickHouse being reachable while it
+runs migrations. Future deploys should now avoid the self-inflicted ClickHouse
+restart and should fail loudly if a required service rolls back anyway.
+
+## 2026-05-01: Metric Stream Primary Key Backfill Remains Unfit for Deploy
+
+### Symptoms
+
+Attempts to complete `fitness.metric_stream` ID backfill, `SET NOT NULL`, and
+primary-key migration in the production deploy path repeatedly failed or had to
+be stopped before completion.
+
+### Evidence
+
+The deploy migration path hit three distinct blockers:
+
+- `transparent decompression only supports tableoid system column`
+- `tuple decompression limit exceeded by operation`
+- `Migration exceeded 3300s`
+
+A follow-up manual prod run installed the committed chunked backfill procedure
+and started `CALL fitness.backfill_metric_stream_ids(50000);`. After about
+eleven minutes it was still inside the first chunk update, producing repeated
+WAL checkpoints every roughly 18-23 seconds. The active query was cancelled,
+the only old decompressed chunk was recompressed, and production returned to
+`190` compressed chunks / `5` uncompressed chunks with no active backfill or
+materialized-view refresh sessions.
+
+Later testing against physical chunk
+`_timescaledb_internal._hyper_1_118_chunk` showed that the row rewrite itself
+was not the only bottleneck. With normal trigger execution, a 50k-row ID-only
+update took about 63 seconds and cancellation showed time inside
+`analytics.mark_activity_rollup_dirty_from_metric_stream_update()`. With
+session-local trigger execution suppressed via `session_replication_role =
+replica`, the same 50k-row update took about 2.2 seconds and the remaining
+198,250 rows in that test chunk updated in about 6.1 seconds.
+
+### Root Cause
+
+The historic `metric_stream` table is too large for an in-deploy UUID rewrite
+when the work fires metric-change triggers for every ID-only update. Updating
+existing rows rewrites wide historical tuples and indexes, generates WAL, and
+cannot complete inside the GitHub Actions migration watchdog when each row also
+marks activity rollups dirty. Compressed chunks also make row-by-row targeting
+and transparent decompression more constrained than a regular Postgres table.
+
+### Fix or Mitigation
+
+The backfill was cancelled before another deploy timeout. The old decompressed
+chunk from the cancelled attempt was recompressed. The migration was updated to
+run the ID-only rewrite with session-local trigger execution disabled, then
+restore normal trigger behavior before `SET NOT NULL` and primary-key DDL.
+
+The final production run completed on 2026-05-01. The manual migration applied
+`drizzle/0009_metric_stream_id_not_null_primary_key.sql`, backfilled all NULL
+IDs, set `fitness.metric_stream.id` to `NOT NULL`, and added the
+Timescale-compatible primary key on `(id, recorded_at)`. A normal web-stack
+deploy then ran successfully from `Asherlc/metric-stream-id` at `sha-e1b2f55`
+and recorded migration `0009_metric_stream_id_not_null_primary_key.sql` in
+`drizzle.__drizzle_migrations`.
+
+### Remaining Risk
+
+`metric_stream` now has the required identity for ClickHouse work. The migration
+left a small number of recently touched chunks uncompressed and increased disk
+usage to roughly 57% on `/mnt/dofek-data`; routine compression, autovacuum, and
+future maintenance should be monitored but no active backfill remained running.
+Replica identity stayed `FULL`, matching the existing migration and tests.
+
+## 2026-05-01: ClickHouse Metric Stream Snapshot Missed Hypertable Rows
+
+### Symptoms
+
+ClickHouse replication setup for `postgres_fitness.metric_stream` deployed, but
+the ClickHouse table stayed empty while production Postgres still had
+`fitness.metric_stream` rows. The first backfill deploy attempt then had to be
+cancelled during migration execution.
+
+### Evidence
+
+ClickHouse logs showed `MaterializedPostgreSQL` created `metric_stream` and
+started replication. Direct ClickHouse reads through the `postgresql(...)` table
+function returned source rows from Postgres, and a one-day source count returned
+3,259,688 rows, but `postgres_fitness.metric_stream` had `0` rows. The first
+backfill migration attempted to derive global `recorded_at` bounds from the
+hypertable and remained active in Postgres during the deploy. Timescale metadata
+showed the table has `195` physical chunks spanning `1989-12-28` through
+`2104-02-14`, making a continuous 6-hour backfill range unfit for deploy.
+Follow-up investigation showed `ONLY fitness.metric_stream` had no rows while
+`fitness.metric_stream` had rows through the hypertable abstraction, and the
+ClickHouse-created publication `health_ch_publication` contained only
+`fitness.metric_stream`. None of the `195`
+`_timescaledb_internal._hyper_*_chunk` child tables were in the publication.
+
+### Root Cause
+
+The ClickHouse `MaterializedPostgreSQL` initial snapshot and logical
+replication target the published Postgres relation, `fitness.metric_stream`.
+In TimescaleDB, the hypertable root relation is effectively an empty routing
+table; the data live in `_timescaledb_internal` chunk tables. Because
+`MaterializedPostgreSQL` created a publication for only the hypertable root, not
+the chunks, the initial snapshot copied no historical rows and live chunk writes
+were not discoverable by the CDC stream. The first manual backfill design also
+treated the hypertable as one continuous time range instead of iterating the
+actual Timescale chunks.
+
+### Fix or Mitigation
+
+Cancelled the bad deploy run and cancelled the active Postgres bounds query.
+Changed `0005_backfill_materialized_metric_stream` to fetch chunk ranges from
+`timescaledb_information.chunks`, backfill each real chunk into
+`postgres_fitness.metric_stream`, and record completed ranges in
+`analytics.metric_stream_backfill_chunks` so retries can resume.
+
+### Remaining Risk
+
+The chunked backfill still rewrites a large volume into ClickHouse and should be
+monitored until `analytics.schema_migrations` includes
+`0005_backfill_materialized_metric_stream` and `postgres_fitness.metric_stream`
+has nonzero rows. Future read-model migrations should prefer ClickHouse-native
+tables/materialized views for large time-series aggregates instead of Postgres
+materialized views or unbounded hypertable scans.
+
+## 2026-05-01: ClickHouse Metric Stream Backfill Target Was Read-Only
+
+### Symptoms
+
+The follow-up production deploy run for the chunk-based ClickHouse backfill
+failed during the `Run migrations` step before `docker stack deploy`.
+
+### Evidence
+
+GitHub Actions run `25232097814` failed from commit
+`4f932fce9fc1df245bf927a95371781ad3374dad`. The first fatal migration log line
+was:
+
+```text
+error: [migrate] Error: Method write is not supported by storage MaterializedPostgreSQL.
+```
+
+After the failure, ClickHouse still showed `0` rows in
+`postgres_fitness.metric_stream`, no completed
+`analytics.metric_stream_backfill_chunks`, and no
+`0005_backfill_materialized_metric_stream` row in
+`analytics.schema_migrations`.
+
+### Root Cause
+
+The backfill migration attempted to insert historical rows into
+`postgres_fitness.metric_stream`, but that table is owned by the
+`MaterializedPostgreSQL` database engine. The engine exposes a replicated
+read-only table in ClickHouse, so it cannot be used as the destination for a
+manual historical backfill.
+
+### Fix or Mitigation
+
+The code fix replaces the `MaterializedPostgreSQL` target with a
+ClickHouse-native `postgres_fitness.metric_stream` `MergeTree` table and adds
+ClickHouse migration `0006_backfill_native_metric_stream`. That migration drops
+the broken read-only database, recreates the raw scalar table and analytics
+views, backfills by real Timescale chunk ranges through the `postgresql(...)`
+table function, records completed ranges in
+`analytics.metric_stream_backfill_chunks`, and refreshes the ClickHouse
+read-model views after the backfill.
+
+### Remaining Risk
+
+`analytics.deduped_sensor` remains empty until the native-table migration
+deploys and finishes. This fixes the historical backfill/read-only problem, but
+it is still a batch copy path rather than a long-running WAL CDC service; a
+future PeerDB/ClickPipes-style CDC pipeline is still the better steady-state
+answer for continuous Timescale chunk changes.
+
+## 2026-05-01: PeerDB CDC Setup Added for Metric Stream
+
+### Symptoms
+
+The ClickHouse metric stream read path had a native chunk backfill, but no
+long-running CDC service for new Postgres/Timescale `fitness.metric_stream`
+changes.
+
+### Evidence
+
+ClickHouse and PeerDB documentation point to PeerDB/ClickPipes for Postgres CDC
+into ClickHouse. The Timescale-specific guidance calls out that hypertable
+changes are chunk-level changes, so a robust CDC path must understand Timescale
+chunks instead of treating the hypertable root as the only published relation.
+
+### Root Cause
+
+The earlier ClickHouse `MaterializedPostgreSQL` approach did not handle the
+Timescale hypertable/chunk model correctly, and the native ClickHouse backfill
+only covered historical batch copy.
+
+### Fix or Mitigation
+
+Added internal PeerDB services to the swarm and a one-shot setup command that
+applies the declarative `src/db/peerdb/metric-stream-cdc.sql` definition for
+the PeerDB Postgres peer, ClickHouse peer, and `dofek_metric_stream_cdc`
+mirror. The mirror writes into `peerdb.metric_stream`, excludes unused
+non-scalar columns, and uses soft deletes. The production analytics read path
+intentionally stays on `postgres_fitness.metric_stream` until the PeerDB
+initial snapshot is verified.
+
+### Remaining Risk
+
+PeerDB must deploy successfully and complete its initial snapshot before
+analytics can switch to `peerdb.metric_stream`. The next operational step is to
+compare row counts and recent-row freshness between Postgres,
+`postgres_fitness.metric_stream`, and `peerdb.metric_stream`, then cut
+`analytics.deduped_sensor` over in a separate migration.

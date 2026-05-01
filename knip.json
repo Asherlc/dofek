@@ -4,6 +4,7 @@
       "entry": [
         "src/index.ts",
         "src/server.ts",
+        "src/db/setup-clickhouse-cdc.ts",
         "src/jobs/worker.ts",
         "vitest.config.mutation.ts"
       ],

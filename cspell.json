@@ -27,6 +27,7 @@
     "Wreturn",
     "timescale",
     "timescaledb",
+    "peerdb",
     "ClickHouse",
     "CLICKHOUSE",
     "clickhouse",

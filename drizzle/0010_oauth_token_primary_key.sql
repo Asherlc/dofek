@@ -1,3 +1,8 @@
+ALTER TABLE fitness.oauth_token
+  ALTER COLUMN user_id SET NOT NULL;
+
+--> statement-breakpoint
+
 DO $$
 BEGIN
   IF NOT EXISTS (

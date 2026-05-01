@@ -1,16 +1,22 @@
 # ClickHouse Metric Stream Projection
 
-`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse uses
-native Postgres replication to keep a local copy of the raw stream and then
-maintains stored `analytics.deduped_sensor` and `analytics.activity_summary`
-refreshable materialized views for activity stream, zone, and summary reads.
+`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
+keeps a native `MergeTree` scalar copy of the raw stream and backfills it from
+Postgres by real Timescale chunk ranges. We do not use ClickHouse
+`MaterializedPostgreSQL` for this hypertable because the hypertable root does
+not contain the physical rows; the data live in Timescale chunk tables.
+PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication, with its
+first mirror landing in `peerdb.metric_stream` for validation before analytics
+switch to that source.
 
 ```text
 Postgres/Timescale fitness.metric_stream
-        |
-        | ClickHouse MaterializedPostgreSQL
-        v
+        |                         |
+        | chunk-range native backfill
+        |                         | PeerDB CDC mirror
+        v                         v
 ClickHouse postgres_fitness.metric_stream
+ClickHouse peerdb.metric_stream (validation target)
         |
         | refreshable materialized view
         v
@@ -25,7 +31,7 @@ Activity stream, zone, and summary reads
 ```
 
 Runtime API queries must read `analytics.deduped_sensor` or
-`analytics.activity_summary`, not the raw metric stream. The raw replicated table
+`analytics.activity_summary`, not the raw metric stream. The raw ClickHouse table
 exists only as the source for ClickHouse refresh jobs. Derived rows are never
 synced back to Postgres.
 
@@ -57,20 +63,37 @@ ClickHouse migrations run from the normal one-shot `migrate` container when
 ClickHouse read models or old custom sync tables, belongs there so API startup
 does not repeatedly delete analytical state.
 
-ClickHouse migrations create and update the bridge databases and read models:
+ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness`: a `MaterializedPostgreSQL` database that replicates
-  `fitness.metric_stream`.
+- `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` scalar copy
+  of the raw metric stream.
+- `peerdb.metric_stream`: the PeerDB CDC target for ongoing changes. It is not
+  the active analytics source until the initial snapshot has been verified
+  against Postgres and the native backfill table.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
-  minute from the replicated raw rows and activity membership.
+  minute from the copied raw rows and activity membership.
 - `analytics.activity_summary`: a refreshable materialized view refreshed from
   `analytics.deduped_sensor`.
 
-Postgres must run with `wal_level=logical`, `max_replication_slots`, and
-`max_wal_senders` enabled so ClickHouse can subscribe to changes.
+The native-table backfill is resumable within a successful migration attempt,
+but migration `0006_backfill_native_metric_stream` intentionally drops the
+backfill checkpoint table before rebuilding the raw table. If the migration
+container fails before recording the migration, the next retry starts from a
+clean raw table instead of trusting stale chunk checkpoints.
+
+Postgres runs with `wal_level=logical`, `max_replication_slots`, and
+`max_wal_senders` enabled for PeerDB. The deploy workflow runs
+`src/db/setup-clickhouse-cdc.ts` after `docker stack deploy`; that command
+loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment
+connection values, and applies the declarative PeerDB peer and mirror
+definition. The mirror uses a dedicated publication name, excludes `device_id`,
+`source_type`, and `vector`, and enables soft deletes so delete events are
+represented in ClickHouse.
+ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
+`metric_stream`.
 
 API startup only verifies that the migrated ClickHouse tables exist. It must not
 create or rewrite analytical schema, because production runs multiple web

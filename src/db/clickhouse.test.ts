@@ -20,17 +20,18 @@ describe("parsePostgresConnectionForClickHouse", () => {
 });
 
 describe("buildClickHouseBootstrapStatements", () => {
-  it("creates native Postgres bridges and a ClickHouse deduped sensor view", () => {
+  it("creates native metric stream source and ClickHouse read models", () => {
     const sql = buildClickHouseBootstrapStatements("postgres://health:secret@db:5432/health").join(
       "\n",
     );
 
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
-    expect(sql).toContain(
-      "ENGINE = MaterializedPostgreSQL('db:5432', 'health', 'health', 'secret')",
-    );
-    expect(sql).toContain("materialized_postgresql_tables_list = 'metric_stream'");
+    expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
+    expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).toContain(
       "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
     );
@@ -114,5 +115,28 @@ describe("waitForClickHouseTable", () => {
     await expect(
       waitForClickHouseTable({ command: vi.fn().mockResolvedValue(undefined) }, "analytics", "foo"),
     ).rejects.toThrow("ClickHouse table verification requires a query-capable client");
+  });
+
+  it("waits for ClickHouse tables that appear after startup", async () => {
+    vi.useFakeTimers();
+    try {
+      let queryCount = 0;
+      const query = vi.fn().mockImplementation(() => ({
+        json: vi.fn().mockResolvedValue([{ table_count: queryCount++ >= 45 ? 1 : 0 }]),
+      }));
+
+      const result = waitForClickHouseTable(
+        { command: vi.fn().mockResolvedValue(undefined), query },
+        "postgres_fitness",
+        "metric_stream",
+      );
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      await expect(result).resolves.toBeUndefined();
+      expect(query).toHaveBeenCalledTimes(46);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

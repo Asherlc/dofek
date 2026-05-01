@@ -1,4 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const pgClientMocks = vi.hoisted(() => ({
+  Client: vi.fn(),
+  connect: vi.fn(),
+  end: vi.fn(),
+  query: vi.fn(),
+}));
+
+vi.mock("pg", () => ({
+  Client: pgClientMocks.Client,
+}));
+
 import {
   buildClickHouseMigrationStatements,
   runClickHouseMigrations,
@@ -6,25 +18,44 @@ import {
 
 describe("buildClickHouseMigrationStatements", () => {
   it("keeps destructive cleanup and read-model creation in migration statements", () => {
-    const sql = buildClickHouseMigrationStatements("postgres://health:secret@db:5432/health").join(
+    const sql = buildClickHouseMigrationStatements("postgres://health:fixture@db:5432/health").join(
       "\n",
     );
 
     expect(sql).toContain("DROP TABLE IF EXISTS fitness.metric_stream");
     expect(sql).toContain("DROP TABLE IF EXISTS fitness.deduped_sensor");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.deduped_sensor");
+    expect(sql).toContain("DROP DATABASE IF EXISTS postgres_fitness SYNC");
+    expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(2);
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(3);
+    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
+    expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).toContain(
-      "ENGINE = MaterializedPostgreSQL('db:5432', 'health', 'health', 'secret')",
-    );
-    expect(sql).toContain(
-      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
+      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'fixture', 'clickhouse')",
     );
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    expect(
+      sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor/g),
+    ).toHaveLength(3);
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(
+      sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary/g),
+    ).toHaveLength(3);
   });
 });
 
 describe("runClickHouseMigrations", () => {
+  beforeEach(() => {
+    pgClientMocks.Client.mockReset().mockImplementation(() => pgClientMocks);
+    pgClientMocks.connect.mockReset().mockResolvedValue(undefined);
+    pgClientMocks.end.mockReset().mockResolvedValue(undefined);
+    pgClientMocks.query.mockReset().mockResolvedValue({
+      rows: [],
+    });
+  });
+
   it("runs pending ClickHouse migrations once and records them", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
@@ -36,9 +67,9 @@ describe("runClickHouseMigrations", () => {
     }));
     const client = { command, query };
 
-    const count = await runClickHouseMigrations(client, "postgres://health:secret@db:5432/health");
+    const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(2);
+    expect(count).toBe(6);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -53,6 +84,21 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
+        query: "DROP DATABASE IF EXISTS postgres_fitness SYNC",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("ENGINE = MaterializedPostgreSQL"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
         query: expect.stringContaining(
           "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
         ),
@@ -63,6 +109,223 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("INSERT INTO analytics.schema_migrations"),
       }),
     );
+    const systemTableQueries = query.mock.calls.filter(([options]) =>
+      String(options.query).includes("system.tables"),
+    );
+    expect(systemTableQueries).toHaveLength(9);
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
+      ),
+      clickhouse_settings: {
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary",
+      ),
+      clickhouse_settings: {
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
+  });
+
+  it("fails when the ClickHouse client cannot query migration state", async () => {
+    await expect(
+      runClickHouseMigrations(
+        { command: vi.fn().mockResolvedValue(undefined) },
+        "postgres://health:fixture@db:5432/health",
+      ),
+    ).rejects.toThrow("ClickHouse migrations require a query-capable client");
+  });
+
+  it("backfills native metric stream in Timescale chunk ranges", async () => {
+    pgClientMocks.query.mockResolvedValue({
+      rows: [
+        {
+          lower_bound: "2026-04-22 00:00:00+00",
+          upper_bound: "2026-04-22 06:00:00+00",
+        },
+        {
+          lower_bound: "2026-04-22 06:00:00+00",
+          upper_bound: "2026-04-22 12:00:00+00",
+        },
+      ],
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("0006_backfill_native_metric_stream")
+              ? [{ migration_count: 0 }]
+              : queryText.includes("metric_stream_backfill_chunks")
+                ? [{ chunk_count: 0 }]
+                : [{ migration_count: 1 }],
+        ),
+    }));
+    const client = { command, query };
+
+    const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
+
+    expect(count).toBe(1);
+    expect(pgClientMocks.Client).toHaveBeenCalledWith({
+      connectionString: "postgres://health:fixture@db:5432/health",
+    });
+    expect(pgClientMocks.connect).toHaveBeenCalledTimes(1);
+    expect(pgClientMocks.end).toHaveBeenCalledTimes(1);
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS analytics.metric_stream_backfill_chunks",
+        ),
+      }),
+    );
+    const backfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+    expect(backfillStatements).toHaveLength(2);
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[1]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[1]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 12:00:00.000', 6, 'UTC')",
+    );
+    const completedChunkStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) =>
+        queryText.includes("INSERT INTO analytics.metric_stream_backfill_chunks"),
+      );
+    expect(completedChunkStatements).toHaveLength(2);
+    expect(completedChunkStatements[0]).toContain(
+      "VALUES (toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC'))",
+    );
+    expect(completedChunkStatements[1]).toContain(
+      "VALUES (toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 12:00:00.000', 6, 'UTC'))",
+    );
+  });
+
+  it("skips native metric stream chunks already marked complete", async () => {
+    pgClientMocks.query.mockResolvedValue({
+      rows: [
+        {
+          lower_bound: "2026-04-22 00:00:00+00",
+          upper_bound: "2026-04-22 06:00:00+00",
+        },
+        {
+          lower_bound: "2026-04-22 06:00:00+00",
+          upper_bound: "2026-04-22 12:00:00+00",
+        },
+      ],
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi.fn().mockResolvedValue(
+        queryText.includes("system.tables")
+          ? [{ table_count: 1 }]
+          : queryText.includes("0006_backfill_native_metric_stream")
+            ? [{ migration_count: 0 }]
+            : queryText.includes("metric_stream_backfill_chunks")
+              ? [
+                  {
+                    chunk_count: queryText.includes("2026-04-22 00:00:00.000") ? 1 : 0,
+                  },
+                ]
+              : [{ migration_count: 1 }],
+      ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    const backfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC')",
+    );
+  });
+
+  it("does not create backfill tracking when Timescale has no metric stream chunks", async () => {
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("0006_backfill_native_metric_stream")
+              ? [{ migration_count: 0 }]
+              : [{ migration_count: 1 }],
+        ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS analytics.metric_stream_backfill_chunks",
+        ),
+      }),
+    );
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+  });
+
+  it("rejects invalid Timescale metric stream chunk bounds", async () => {
+    pgClientMocks.query.mockResolvedValue({
+      rows: [
+        {
+          lower_bound: "not-a-timestamp",
+          upper_bound: "2026-04-22 06:00:00+00",
+        },
+      ],
+    });
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("0006_backfill_native_metric_stream")
+              ? [{ migration_count: 0 }]
+              : [{ migration_count: 1 }],
+        ),
+    }));
+
+    await expect(
+      runClickHouseMigrations(
+        { command: vi.fn().mockResolvedValue(undefined), query },
+        "postgres://health:fixture@db:5432/health",
+      ),
+    ).rejects.toThrow("Invalid metric_stream chunk lower bound: not-a-timestamp");
+    expect(pgClientMocks.end).toHaveBeenCalledTimes(1);
   });
 
   it("skips already-applied ClickHouse migrations", async () => {
@@ -72,7 +335,7 @@ describe("runClickHouseMigrations", () => {
     });
     const client = { command, query };
 
-    const count = await runClickHouseMigrations(client, "postgres://health:secret@db:5432/health");
+    const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
     expect(count).toBe(0);
     expect(command).not.toHaveBeenCalledWith(

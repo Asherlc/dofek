@@ -174,6 +174,9 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
+ALTER TABLE fitness.metric_stream
+ALTER COLUMN id SET NOT NULL;
+--> statement-breakpoint
 -- squawk-ignore constraint-missing-not-valid
 -- squawk-ignore adding-serial-primary-key-field
 -- Timescale hypertables reject the recommended CREATE INDEX CONCURRENTLY and

@@ -25,6 +25,8 @@ interface TableCountRow {
   table_count: number | string;
 }
 
+const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
+
 interface ClickHousePostgresConnection {
   hostAndPort: string;
   database: string;
@@ -66,18 +68,42 @@ export function parsePostgresConnectionForClickHouse(
 }
 
 export function buildClickHouseBootstrapStatements(postgresConnectionString: string): string[] {
+  return buildClickHouseBootstrapStatementsForNativeMetricStream(postgresConnectionString);
+}
+
+export function buildClickHousePlaceholderBootstrapStatements(
+  postgresConnectionString: string,
+): string[] {
+  return buildClickHouseBootstrapStatementsForNativeMetricStream(postgresConnectionString);
+}
+
+function buildClickHouseBootstrapStatementsForNativeMetricStream(
+  postgresConnectionString: string,
+): string[] {
   const postgres = parsePostgresConnectionForClickHouse(postgresConnectionString);
   const hostAndPort = clickHouseStringLiteral(postgres.hostAndPort);
   const database = clickHouseStringLiteral(postgres.database);
   const user = clickHouseStringLiteral(postgres.user);
   const password = clickHouseStringLiteral(postgres.password);
+  const metricStreamStatements = [
+    "CREATE DATABASE IF NOT EXISTS postgres_fitness",
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream (
+  id UUID,
+  activity_id Nullable(UUID),
+  user_id UUID,
+  recorded_at DateTime64(6, 'UTC'),
+  channel String,
+  provider_id String,
+  scalar Nullable(Float32)
+)
+ENGINE = MergeTree
+ORDER BY (user_id, activity_id, channel, recorded_at, id)
+SETTINGS allow_nullable_key = 1`,
+  ];
 
   return [
     "CREATE DATABASE IF NOT EXISTS analytics",
-    `CREATE DATABASE IF NOT EXISTS postgres_fitness
-ENGINE = MaterializedPostgreSQL(${hostAndPort}, ${database}, ${user}, ${password})
-SETTINGS materialized_postgresql_schema = 'fitness',
-         materialized_postgresql_tables_list = 'metric_stream'`,
+    ...metricStreamStatements,
     `CREATE DATABASE IF NOT EXISTS postgres_fitness_live
 ENGINE = PostgreSQL(${hostAndPort}, ${database}, ${user}, ${password}, 'clickhouse')`,
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor
@@ -477,7 +503,7 @@ export async function waitForClickHouseTable(
     throw new Error("ClickHouse table verification requires a query-capable client");
   }
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < CLICKHOUSE_TABLE_WAIT_ATTEMPTS; attempt += 1) {
     const result = await client.query<TableCountRow>({
       query: `SELECT count() AS table_count FROM system.tables WHERE database = ${clickHouseStringLiteral(
         database,

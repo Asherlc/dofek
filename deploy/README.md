@@ -9,7 +9,8 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - **Compute**: Hetzner Cloud `cax11` ARM64 servers running Ubuntu 24.04. Production uses `dofek`; staging uses `dofek-staging`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
-  - **ClickHouse**: Runs in the swarm as the stored deduped sensor read model for heavy activity stream reads, backed by native Postgres replication. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw scalar `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. Its first `metric_stream` mirror writes to `peerdb.metric_stream`; production analytics keep reading the migrated native copy until that initial snapshot is verified.
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
@@ -47,7 +48,8 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
-- PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, and logical replication settings for ClickHouse CDC.
+- PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, and logical replication settings needed by ClickHouse change-data capture.
+- PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 
@@ -125,6 +127,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
       The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
       - Must include `CREDENTIAL_ENCRYPTION_KEY_BASE64` (base64-encoded 32-byte key).
+      - Must include `CLICKHOUSE_PASSWORD` for the ClickHouse service. The deploy workflow URL-encodes it into `CLICKHOUSE_PASSWORD_ENCODED` for app `CLICKHOUSE_URL` interpolation.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
@@ -137,9 +140,10 @@ CI (main) -> build dofek + dofek-ml (same tag)
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing.
+   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false dofek` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
-   10. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
+   10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, and creates the Postgres peer, ClickHouse peer, and `dofek_metric_stream_cdc` mirror if they do not already exist.
+   11. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
       - a canonical `drizzle/_views/*.sql` hash changed
       - a stored dependency fingerprint for a materialized view changed
       - an applied migration was marked with `-- requires_materialized_view_refresh` and has not yet been acknowledged by a successful sync
