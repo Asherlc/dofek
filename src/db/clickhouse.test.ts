@@ -115,4 +115,27 @@ describe("waitForClickHouseTable", () => {
       waitForClickHouseTable({ command: vi.fn().mockResolvedValue(undefined) }, "analytics", "foo"),
     ).rejects.toThrow("ClickHouse table verification requires a query-capable client");
   });
+
+  it("waits for MaterializedPostgreSQL tables that appear after the initial snapshot starts", async () => {
+    vi.useFakeTimers();
+    try {
+      let queryCount = 0;
+      const query = vi.fn().mockImplementation(() => ({
+        json: vi.fn().mockResolvedValue([{ table_count: queryCount++ >= 45 ? 1 : 0 }]),
+      }));
+
+      const result = waitForClickHouseTable(
+        { command: vi.fn().mockResolvedValue(undefined), query },
+        "postgres_fitness",
+        "metric_stream",
+      );
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      await expect(result).resolves.toBeUndefined();
+      expect(query).toHaveBeenCalledTimes(46);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

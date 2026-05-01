@@ -25,6 +25,8 @@ interface TableCountRow {
   table_count: number | string;
 }
 
+const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
+
 interface ClickHousePostgresConnection {
   hostAndPort: string;
   database: string;
@@ -515,7 +517,7 @@ export async function waitForClickHouseTable(
     throw new Error("ClickHouse table verification requires a query-capable client");
   }
 
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < CLICKHOUSE_TABLE_WAIT_ATTEMPTS; attempt += 1) {
     const result = await client.query<TableCountRow>({
       query: `SELECT count() AS table_count FROM system.tables WHERE database = ${clickHouseStringLiteral(
         database,
