@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -49,6 +49,7 @@ describe("metric_stream replica identity migration", () => {
 
   it("adds replica identity first, then backfills metric stream IDs and adds the primary key", async () => {
     const client = new Client({ connectionString });
+    let tmpDir: string | undefined;
     await client.connect();
     try {
       await client.query("DROP SCHEMA IF EXISTS drizzle CASCADE");
@@ -89,7 +90,7 @@ describe("metric_stream replica identity migration", () => {
           ('2026-01-03T00:00:00Z', gen_random_uuid(), 'garmin', 'api', 'power', 220)
       `);
 
-      const tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-replica-identity-"));
+      tmpDir = mkdtempSync(join(tmpdir(), "metric-stream-replica-identity-"));
       const migrationContent = readFileSync(
         join(import.meta.dirname, "../../drizzle/0007_metric_stream_primary_key.sql"),
         "utf-8",
@@ -224,6 +225,9 @@ describe("metric_stream replica identity migration", () => {
         { constraint_name: "metric_stream_pkey", columns: "id,recorded_at" },
       ]);
     } finally {
+      if (tmpDir) {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
       await client.end();
     }
   }, 120_000);

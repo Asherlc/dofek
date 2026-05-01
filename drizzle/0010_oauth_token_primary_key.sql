@@ -9,5 +9,5 @@ BEGIN
     ALTER TABLE fitness.oauth_token
       ADD CONSTRAINT oauth_token_pkey PRIMARY KEY USING INDEX oauth_token_user_provider_uidx;
   END IF;
-END
+END;
 $$;
