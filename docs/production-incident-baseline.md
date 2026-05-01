@@ -2061,14 +2061,19 @@ manual historical backfill.
 
 ### Fix or Mitigation
 
-No code fix has been deployed yet. The next migration needs to keep the
-`MaterializedPostgreSQL` table read-only and write historical rows into a
-ClickHouse-native table, or replace the replication source strategy entirely.
+The code fix replaces the `MaterializedPostgreSQL` target with a
+ClickHouse-native `postgres_fitness.metric_stream` `MergeTree` table and adds
+ClickHouse migration `0006_backfill_native_metric_stream`. That migration drops
+the broken read-only database, recreates the raw scalar table and analytics
+views, backfills by real Timescale chunk ranges through the `postgresql(...)`
+table function, records completed ranges in
+`analytics.metric_stream_backfill_chunks`, and refreshes the ClickHouse
+read-model views after the backfill.
 
 ### Remaining Risk
 
-`analytics.deduped_sensor` remains empty because its raw ClickHouse metric
-stream source is empty. Any strategy that keeps `MaterializedPostgreSQL` must
-also handle Timescale chunk publications and prove that chunk inserts map back
-into `postgres_fitness.metric_stream`; otherwise the canonical ClickHouse source
-needs to move to a ClickHouse-native ingestion path.
+`analytics.deduped_sensor` remains empty until the native-table migration
+deploys and finishes. This fixes the historical backfill/read-only problem, but
+it is still a batch copy path rather than a long-running WAL CDC service; a
+future PeerDB/ClickPipes-style CDC pipeline is still the better steady-state
+answer for continuous Timescale chunk changes.

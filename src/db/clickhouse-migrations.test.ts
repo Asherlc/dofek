@@ -27,8 +27,8 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("DROP DATABASE IF EXISTS postgres_fitness SYNC");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
     expect(sql).toContain("ENGINE = MergeTree");
-    expect(sql).toContain("ENGINE = MaterializedPostgreSQL");
-    expect(sql).toContain("materialized_postgresql_tables_list = 'metric_stream'");
+    expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
+    expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).toContain(
       "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
     );
@@ -59,7 +59,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:secret@db:5432/health");
 
-    expect(count).toBe(5);
+    expect(count).toBe(6);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -82,7 +82,7 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
       }),
     );
-    expect(command).toHaveBeenCalledWith(
+    expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining("ENGINE = MaterializedPostgreSQL"),
       }),
@@ -101,7 +101,7 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("backfills materialized metric stream in Timescale chunk ranges", async () => {
+  it("backfills native metric stream in Timescale chunk ranges", async () => {
     pgClientMocks.query.mockResolvedValue({
       rows: [
         {
@@ -121,7 +121,7 @@ describe("runClickHouseMigrations", () => {
         .mockResolvedValue(
           queryText.includes("system.tables")
             ? [{ table_count: 1 }]
-            : queryText.includes("0005_backfill_materialized_metric_stream")
+            : queryText.includes("0006_backfill_native_metric_stream")
               ? [{ migration_count: 0 }]
               : queryText.includes("metric_stream_backfill_chunks")
                 ? [{ chunk_count: 0 }]

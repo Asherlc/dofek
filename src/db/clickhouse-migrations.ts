@@ -80,7 +80,11 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     },
     {
       id: "0005_backfill_materialized_metric_stream",
-      run: backfillMaterializedMetricStream,
+      statements: [],
+    },
+    {
+      id: "0006_backfill_native_metric_stream",
+      run: replaceNativeMetricStreamAndBackfill,
     },
   ];
 }
@@ -138,7 +142,32 @@ ORDER BY id`,
   return appliedCount;
 }
 
-async function backfillMaterializedMetricStream(
+async function replaceNativeMetricStreamAndBackfill(
+  client: ClickHouseCommandClient,
+  postgresConnectionString: string,
+): Promise<void> {
+  const resetStatements = [
+    "DROP VIEW IF EXISTS analytics.activity_summary",
+    "DROP TABLE IF EXISTS analytics.activity_summary",
+    "DROP VIEW IF EXISTS analytics.deduped_sensor",
+    "DROP TABLE IF EXISTS analytics.deduped_sensor",
+    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+    "DROP DATABASE IF EXISTS postgres_fitness SYNC",
+    ...buildClickHouseBootstrapStatements(postgresConnectionString),
+  ];
+
+  for (const statement of resetStatements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  await backfillNativeMetricStream(client, postgresConnectionString);
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+}
+
+async function backfillNativeMetricStream(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
 ): Promise<void> {
@@ -168,9 +197,6 @@ ORDER BY (lower_bound, upper_bound)`,
     }
     await client.command({
       query: buildMetricStreamBackfillStatement(postgresMetricStreamSource, chunkStart, chunkEnd),
-      clickhouse_settings: {
-        allow_experimental_database_materialized_postgresql: 1,
-      },
     });
     await client.command({
       query: `INSERT INTO analytics.metric_stream_backfill_chunks (lower_bound, upper_bound)
@@ -249,24 +275,18 @@ function buildMetricStreamBackfillStatement(
   recorded_at,
   user_id,
   provider_id,
-  device_id,
-  source_type,
   channel,
   activity_id,
   scalar,
-  vector,
   id
 )
 SELECT
   metric_stream.recorded_at,
   metric_stream.user_id,
   metric_stream.provider_id,
-  metric_stream.device_id,
-  metric_stream.source_type,
   metric_stream.channel,
   metric_stream.activity_id,
   metric_stream.scalar,
-  metric_stream.vector,
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
 WHERE metric_stream.recorded_at >= ${lowerBound}
@@ -292,7 +312,6 @@ async function runClickHouseMigrationStatement(
   await client.command({
     query: statement,
     clickhouse_settings: {
-      allow_experimental_database_materialized_postgresql: 1,
       allow_experimental_refreshable_materialized_view: 1,
     },
   });

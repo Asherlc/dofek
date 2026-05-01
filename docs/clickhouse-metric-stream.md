@@ -1,15 +1,15 @@
 # ClickHouse Metric Stream Projection
 
-`fitness.metric_stream` remains canonical in Postgres/Timescale. After
-`drizzle/0009_metric_stream_id_not_null_primary_key.sql` backfilled stable row
-IDs and added the Timescale-compatible `(id, recorded_at)` primary key,
-ClickHouse migration `0004_reenable_materialized_metric_stream` re-enabled raw
-`metric_stream` replication through a `MaterializedPostgreSQL` source.
+`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
+keeps a native `MergeTree` scalar copy of the raw stream and backfills it from
+Postgres by real Timescale chunk ranges. We do not use ClickHouse
+`MaterializedPostgreSQL` for this hypertable because the hypertable root does
+not contain the physical rows; the data live in Timescale chunk tables.
 
 ```text
 Postgres/Timescale fitness.metric_stream
         |
-        | raw MaterializedPostgreSQL replication
+        | chunk-range native backfill
         v
 ClickHouse postgres_fitness.metric_stream
         |
@@ -60,19 +60,25 @@ does not repeatedly delete analytical state.
 
 ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness.metric_stream`: a `MaterializedPostgreSQL` replica of the
-  raw metric stream.
+- `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` scalar copy
+  of the raw metric stream.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
-  minute from the replicated raw rows and activity membership.
+  minute from the copied raw rows and activity membership.
 - `analytics.activity_summary`: a refreshable materialized view refreshed from
   `analytics.deduped_sensor`.
 
+The native-table backfill is resumable within a successful migration attempt,
+but migration `0006_backfill_native_metric_stream` intentionally drops the
+backfill checkpoint table before rebuilding the raw table. If the migration
+container fails before recording the migration, the next retry starts from a
+clean raw table instead of trusting stale chunk checkpoints.
+
 Postgres still runs with `wal_level=logical`, `max_replication_slots`, and
-`max_wal_senders` enabled so ClickHouse can subscribe to raw metric stream
-changes.
+`max_wal_senders` enabled for future CDC tooling. ClickHouse's built-in
+`MaterializedPostgreSQL` engine is not the CDC path for `metric_stream`.
 
 API startup only verifies that the migrated ClickHouse tables exist. It must not
 create or rewrite analytical schema, because production runs multiple web

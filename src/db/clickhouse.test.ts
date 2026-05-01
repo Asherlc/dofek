@@ -20,7 +20,7 @@ describe("parsePostgresConnectionForClickHouse", () => {
 });
 
 describe("buildClickHouseBootstrapStatements", () => {
-  it("creates replicated metric stream source and ClickHouse read models", () => {
+  it("creates native metric stream source and ClickHouse read models", () => {
     const sql = buildClickHouseBootstrapStatements("postgres://health:secret@db:5432/health").join(
       "\n",
     );
@@ -28,9 +28,10 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
-    expect(sql).not.toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
-    expect(sql).toContain("ENGINE = MaterializedPostgreSQL");
-    expect(sql).toContain("materialized_postgresql_tables_list = 'metric_stream'");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
+    expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).toContain(
       "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
     );
@@ -116,7 +117,7 @@ describe("waitForClickHouseTable", () => {
     ).rejects.toThrow("ClickHouse table verification requires a query-capable client");
   });
 
-  it("waits for MaterializedPostgreSQL tables that appear after the initial snapshot starts", async () => {
+  it("waits for ClickHouse tables that appear after startup", async () => {
     vi.useFakeTimers();
     try {
       let queryCount = 0;
