@@ -2017,3 +2017,48 @@ monitored until `analytics.schema_migrations` includes
 has nonzero rows. Future read-model migrations should prefer ClickHouse-native
 tables/materialized views for large time-series aggregates instead of Postgres
 materialized views or unbounded hypertable scans.
+
+## 2026-05-01: ClickHouse Metric Stream Backfill Target Was Read-Only
+
+### Symptoms
+
+The follow-up production deploy run for the chunk-based ClickHouse backfill
+failed during the `Run migrations` step before `docker stack deploy`.
+
+### Evidence
+
+GitHub Actions run `25232097814` failed from commit
+`4f932fce9fc1df245bf927a95371781ad3374dad`. The first fatal migration log line
+was:
+
+```text
+error: [migrate] Error: Method write is not supported by storage MaterializedPostgreSQL.
+```
+
+After the failure, ClickHouse still showed `0` rows in
+`postgres_fitness.metric_stream`, no completed
+`analytics.metric_stream_backfill_chunks`, and no
+`0005_backfill_materialized_metric_stream` row in
+`analytics.schema_migrations`.
+
+### Root Cause
+
+The backfill migration attempted to insert historical rows into
+`postgres_fitness.metric_stream`, but that table is owned by the
+`MaterializedPostgreSQL` database engine. The engine exposes a replicated
+read-only table in ClickHouse, so it cannot be used as the destination for a
+manual historical backfill.
+
+### Fix or Mitigation
+
+No code fix has been deployed yet. The next migration needs to keep the
+`MaterializedPostgreSQL` table read-only and write historical rows into a
+ClickHouse-native table, or replace the replication source strategy entirely.
+
+### Remaining Risk
+
+`analytics.deduped_sensor` remains empty because its raw ClickHouse metric
+stream source is empty. Any strategy that keeps `MaterializedPostgreSQL` must
+also prove that it receives new `metric_stream` inserts from the Timescale
+hypertable; otherwise the canonical ClickHouse source needs to move to a
+ClickHouse-native ingestion path.
