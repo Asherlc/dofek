@@ -87,10 +87,11 @@ clean raw table instead of trusting stale chunk checkpoints.
 Postgres runs with `wal_level=logical`, `max_replication_slots`, and
 `max_wal_senders` enabled for PeerDB. The deploy workflow runs
 `src/db/setup-clickhouse-cdc.ts` after `docker stack deploy`; that command
-creates the PeerDB Postgres peer, ClickHouse peer, and
-`dofek_metric_stream_cdc` mirror if they do not already exist. The mirror uses a
-dedicated publication name, excludes `device_id`, `source_type`, and `vector`,
-and enables soft deletes so delete events are represented in ClickHouse.
+loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment
+connection values, and applies the declarative PeerDB peer and mirror
+definition. The mirror uses a dedicated publication name, excludes `device_id`,
+`source_type`, and `vector`, and enables soft deletes so delete events are
+represented in ClickHouse.
 ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
 `metric_stream`.
 

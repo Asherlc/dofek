@@ -2101,12 +2101,13 @@ only covered historical batch copy.
 
 ### Fix or Mitigation
 
-Added internal PeerDB services to the swarm and a one-shot TypeScript setup
-command that creates the PeerDB Postgres peer, ClickHouse peer, and
-`dofek_metric_stream_cdc` mirror. The mirror writes into
-`peerdb.metric_stream`, excludes unused non-scalar columns, and uses soft
-deletes. The production analytics read path intentionally stays on
-`postgres_fitness.metric_stream` until the PeerDB initial snapshot is verified.
+Added internal PeerDB services to the swarm and a one-shot setup command that
+applies the declarative `src/db/peerdb/metric-stream-cdc.sql` definition for
+the PeerDB Postgres peer, ClickHouse peer, and `dofek_metric_stream_cdc`
+mirror. The mirror writes into `peerdb.metric_stream`, excludes unused
+non-scalar columns, and uses soft deletes. The production analytics read path
+intentionally stays on `postgres_fitness.metric_stream` until the PeerDB
+initial snapshot is verified.
 
 ### Remaining Risk
 
