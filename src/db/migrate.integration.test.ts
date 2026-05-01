@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
+// cspell:ignore pkey relname relnamespace relreplident nspname
+
 describe("runMigrations", () => {
   let ctx: TestContext;
 
@@ -94,32 +96,66 @@ describe("runMigrations", () => {
     expect(count).toBe(1);
   });
 
-  it("gives metric_stream a replica-safe primary key", async () => {
+  it("gives metric_stream full replica identity and a Timescale-compatible primary key", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
-      // cspell:ignore attname relreplident indrelid relnamespace attrelid attnum indkey nspname relname indisprimary
-      const result = await client.query<{
-        column_name: string;
+      const replicaIdentityResult = await client.query<{
         replica_identity: string;
       }>(
-        `SELECT attribute.attname AS column_name, class.relreplident AS replica_identity
-         FROM pg_index index
-         JOIN pg_class class ON class.oid = index.indrelid
+        `SELECT class.relreplident AS replica_identity
+         FROM pg_class class
          JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
-         JOIN pg_attribute attribute
-           ON attribute.attrelid = index.indrelid
-          AND attribute.attnum = ANY(index.indkey)
          WHERE namespace.nspname = 'fitness'
-           AND class.relname = 'metric_stream'
-           AND index.indisprimary
-         ORDER BY array_position(index.indkey, attribute.attnum)`,
+           AND class.relname = 'metric_stream'`,
       );
+      expect(replicaIdentityResult.rows).toEqual([{ replica_identity: "f" }]);
 
-      expect(result.rows).toEqual([
-        { column_name: "id", replica_identity: "i" },
-        { column_name: "recorded_at", replica_identity: "i" },
-      ]);
+      const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND column_name = 'id'
+      `);
+      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+
+      const primaryKeyResult = await client.query<{ columns: string }>(`
+        SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND constraint_name = 'metric_stream_pkey'
+        GROUP BY constraint_name
+      `);
+      expect(primaryKeyResult.rows).toEqual([{ columns: "id,recorded_at" }]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("gives oauth_token its schema-declared composite primary key", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'oauth_token'
+          AND column_name = 'user_id'
+      `);
+      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+
+      const primaryKeyResult = await client.query<{ columns: string }>(`
+        SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'fitness'
+          AND table_name = 'oauth_token'
+          AND constraint_name = 'oauth_token_pkey'
+        GROUP BY constraint_name
+      `);
+      expect(primaryKeyResult.rows).toEqual([{ columns: "user_id,provider_id" }]);
     } finally {
       await client.end();
     }
