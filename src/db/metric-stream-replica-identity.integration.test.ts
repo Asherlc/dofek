@@ -142,6 +142,22 @@ describe("metric_stream replica identity migration", () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
       );
 
+      await client.query(`
+        SELECT compress_chunk(format('%I.%I', chunk_schema, chunk_name)::regclass, if_not_compressed => true)
+        FROM timescaledb_information.chunks
+        WHERE hypertable_schema = 'fitness'
+          AND hypertable_name = 'metric_stream'
+      `);
+
+      const compressedChunkResult = await client.query<{ compressed_chunk_count: string }>(`
+        SELECT count(*) AS compressed_chunk_count
+        FROM timescaledb_information.chunks
+        WHERE hypertable_schema = 'fitness'
+          AND hypertable_name = 'metric_stream'
+          AND is_compressed
+      `);
+      expect(compressedChunkResult.rows).toEqual([{ compressed_chunk_count: "1" }]);
+
       const primaryKeyMigrationContent = readFileSync(
         join(import.meta.dirname, "../../drizzle/0009_metric_stream_id_not_null_primary_key.sql"),
         "utf-8",
