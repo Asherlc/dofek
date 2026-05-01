@@ -6,6 +6,8 @@ import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
 
+// cspell:ignore conrelid contype pgcrypto pkey relnamespace segmentby
+
 describe("metric_stream replica identity migration", () => {
   let connectionString: string;
   let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
@@ -67,7 +69,7 @@ describe("metric_stream replica identity migration", () => {
         )
       `);
       await client.query(
-        "SELECT create_hypertable('fitness.metric_stream', 'recorded_at', if_not_exists => TRUE)",
+        "SELECT create_hypertable('fitness.metric_stream', 'recorded_at', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE)",
       );
       await client.query(`
         ALTER TABLE fitness.metric_stream
@@ -147,16 +149,22 @@ describe("metric_stream replica identity migration", () => {
         FROM timescaledb_information.chunks
         WHERE hypertable_schema = 'fitness'
           AND hypertable_name = 'metric_stream'
+        ORDER BY range_start
+        LIMIT 1
       `);
 
-      const compressedChunkResult = await client.query<{ compressed_chunk_count: string }>(`
-        SELECT count(*) AS compressed_chunk_count
+      const chunkStateResult = await client.query<{
+        chunk_count: string;
+        compressed_chunk_count: string;
+      }>(`
+        SELECT
+          count(*) AS chunk_count,
+          count(*) FILTER (WHERE is_compressed) AS compressed_chunk_count
         FROM timescaledb_information.chunks
         WHERE hypertable_schema = 'fitness'
           AND hypertable_name = 'metric_stream'
-          AND is_compressed
       `);
-      expect(compressedChunkResult.rows).toEqual([{ compressed_chunk_count: "1" }]);
+      expect(chunkStateResult.rows).toEqual([{ chunk_count: "4", compressed_chunk_count: "1" }]);
 
       const primaryKeyMigrationContent = readFileSync(
         join(import.meta.dirname, "../../drizzle/0009_metric_stream_id_not_null_primary_key.sql"),
@@ -174,6 +182,21 @@ describe("metric_stream replica identity migration", () => {
         "SELECT count(*) AS missing_id_count FROM fitness.metric_stream WHERE id IS NULL",
       );
       expect(backfilledResult.rows).toEqual([{ missing_id_count: "0" }]);
+
+      const finalChunkStateResult = await client.query<{
+        chunk_count: string;
+        compressed_chunk_count: string;
+      }>(`
+        SELECT
+          count(*) AS chunk_count,
+          count(*) FILTER (WHERE is_compressed) AS compressed_chunk_count
+        FROM timescaledb_information.chunks
+        WHERE hypertable_schema = 'fitness'
+          AND hypertable_name = 'metric_stream'
+      `);
+      expect(finalChunkStateResult.rows).toEqual([
+        { chunk_count: "4", compressed_chunk_count: "1" },
+      ]);
 
       const nonNullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
         SELECT is_nullable
