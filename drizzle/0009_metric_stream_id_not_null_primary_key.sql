@@ -13,8 +13,6 @@ DECLARE
   chunk_count integer;
   current_chunk_index integer := 1;
   current_chunk_regclass regclass;
-  chunk_start timestamptz;
-  chunk_end timestamptz;
   should_compress_after boolean;
   updated_count integer;
 BEGIN
@@ -49,12 +47,35 @@ BEGIN
   WHILE current_chunk_index <= chunk_count LOOP
     SELECT
       metric_stream_backfill_chunks.chunk_regclass,
-      metric_stream_backfill_chunks.range_start,
-      metric_stream_backfill_chunks.range_end,
       metric_stream_backfill_chunks.should_compress_after
-    INTO current_chunk_regclass, chunk_start, chunk_end, should_compress_after
+    INTO current_chunk_regclass, should_compress_after
     FROM pg_temp.metric_stream_backfill_chunks
     WHERE metric_stream_backfill_chunks.chunk_index = current_chunk_index;
+
+    IF current_chunk_regclass IS NULL THEN
+      LOOP
+        WITH target_rows AS (
+          SELECT tableoid, ctid
+          FROM fitness.metric_stream
+          WHERE id IS NULL
+          LIMIT batch_size
+        )
+        UPDATE fitness.metric_stream AS metric_stream
+        SET id = gen_random_uuid()
+        FROM target_rows
+        WHERE metric_stream.tableoid = target_rows.tableoid
+          AND metric_stream.ctid = target_rows.ctid;
+
+        GET DIAGNOSTICS updated_count = ROW_COUNT;
+        RAISE NOTICE 'metric_stream id backfill table fallback chunk %/% updated % rows', current_chunk_index, chunk_count, updated_count;
+        COMMIT;
+
+        EXIT WHEN updated_count = 0;
+      END LOOP;
+
+      current_chunk_index := current_chunk_index + 1;
+      CONTINUE;
+    END IF;
 
     IF current_chunk_regclass IS NOT NULL THEN
       PERFORM decompress_chunk(current_chunk_regclass, if_compressed => true);
@@ -62,33 +83,21 @@ BEGIN
     END IF;
 
     LOOP
-      IF chunk_start IS NULL OR chunk_end IS NULL THEN
-        WITH target_rows AS (
-          SELECT tableoid, ctid
-          FROM fitness.metric_stream
-          WHERE id IS NULL
-          LIMIT batch_size
-        )
-        UPDATE fitness.metric_stream AS metric_stream
-        SET id = gen_random_uuid()
-        FROM target_rows
-        WHERE metric_stream.tableoid = target_rows.tableoid
-          AND metric_stream.ctid = target_rows.ctid;
-      ELSE
-        WITH target_rows AS (
-          SELECT tableoid, ctid
-          FROM fitness.metric_stream
-          WHERE id IS NULL
-            AND recorded_at >= chunk_start
-            AND recorded_at < chunk_end
-          LIMIT batch_size
-        )
-        UPDATE fitness.metric_stream AS metric_stream
-        SET id = gen_random_uuid()
-        FROM target_rows
-        WHERE metric_stream.tableoid = target_rows.tableoid
-          AND metric_stream.ctid = target_rows.ctid;
-      END IF;
+      EXECUTE format(
+        'WITH target_rows AS (
+           SELECT ctid
+           FROM %s
+           WHERE id IS NULL
+           LIMIT $1
+         )
+         UPDATE %s AS metric_stream
+         SET id = gen_random_uuid()
+         FROM target_rows
+         WHERE metric_stream.ctid = target_rows.ctid',
+        current_chunk_regclass,
+        current_chunk_regclass
+      )
+      USING batch_size;
 
       GET DIAGNOSTICS updated_count = ROW_COUNT;
       RAISE NOTICE 'metric_stream id backfill chunk %/% updated % rows', current_chunk_index, chunk_count, updated_count;

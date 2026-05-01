@@ -1950,9 +1950,9 @@ production.
 
 ### Remaining Risk
 
-Do not deploy the current backfill-and-primary-key migration as-is. If
-`metric_stream` is being retired, remove the remaining refresh/read paths and
-drop or archive the table through an explicit cleanup migration instead. If the
-table must remain, treat the ID rewrite as offline maintenance outside the
-normal web deploy workflow and design it with separate WAL, timeout, and disk
-headroom controls.
+Do not deploy the previous parent-hypertable backfill as-is. `metric_stream`
+must stay because ClickHouse replication is blocked on a stable primary key or
+replica identity index. Complete the ID rewrite with physical chunk-targeted
+maintenance, keep materialized-view refreshes such as `fitness.deduped_sensor`
+out of the maintenance window, and then add the Timescale-compatible
+`(id, recorded_at)` identity.
