@@ -1973,3 +1973,47 @@ left a small number of recently touched chunks uncompressed and increased disk
 usage to roughly 57% on `/mnt/dofek-data`; routine compression, autovacuum, and
 future maintenance should be monitored but no active backfill remained running.
 Replica identity stayed `FULL`, matching the existing migration and tests.
+
+## 2026-05-01: ClickHouse Metric Stream Snapshot Missed Hypertable Rows
+
+### Symptoms
+
+ClickHouse replication setup for `postgres_fitness.metric_stream` deployed, but
+the ClickHouse table stayed empty while production Postgres still had
+`fitness.metric_stream` rows. The first backfill deploy attempt then had to be
+cancelled during migration execution.
+
+### Evidence
+
+ClickHouse logs showed `MaterializedPostgreSQL` created `metric_stream` and
+started replication. Direct ClickHouse reads through the `postgresql(...)` table
+function returned source rows from Postgres, and a one-day source count returned
+3,259,688 rows, but `postgres_fitness.metric_stream` had `0` rows. The first
+backfill migration attempted to derive global `recorded_at` bounds from the
+hypertable and remained active in Postgres during the deploy. Timescale metadata
+showed the table has `195` physical chunks spanning `1989-12-28` through
+`2104-02-14`, making a continuous 6-hour backfill range unfit for deploy.
+
+### Root Cause
+
+The ClickHouse `MaterializedPostgreSQL` initial snapshot did not materialize
+existing Timescale hypertable chunk rows for `metric_stream`. The first manual
+backfill design also treated the hypertable as one continuous time range instead
+of iterating the actual Timescale chunks.
+
+### Fix or Mitigation
+
+Cancelled the bad deploy run and cancelled the active Postgres bounds query.
+Changed `0005_backfill_materialized_metric_stream` to fetch chunk ranges from
+`timescaledb_information.chunks`, backfill each real chunk into
+`postgres_fitness.metric_stream`, and record completed ranges in
+`analytics.metric_stream_backfill_chunks` so retries can resume.
+
+### Remaining Risk
+
+The chunked backfill still rewrites a large volume into ClickHouse and should be
+monitored until `analytics.schema_migrations` includes
+`0005_backfill_materialized_metric_stream` and `postgres_fitness.metric_stream`
+has nonzero rows. Future read-model migrations should prefer ClickHouse-native
+tables/materialized views for large time-series aggregates instead of Postgres
+materialized views or unbounded hypertable scans.
