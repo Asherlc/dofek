@@ -330,9 +330,18 @@ jobs:
             sleep 5
           done
 
-      - name: Apply ClickHouse resource limits
+      - name: Ensure ClickHouse resource limits
         run: |
-          docker service update --limit-memory 2G "${STACK_NAME}_clickhouse"
+          desired_limit_bytes=2147483648
+          current_limit_bytes="$(
+            docker service inspect "${STACK_NAME}_clickhouse" \
+              --format '{{.Spec.TaskTemplate.Resources.Limits.MemoryBytes}}'
+          )"
+          if [ "$current_limit_bytes" = "$desired_limit_bytes" ]; then
+            echo "ClickHouse memory limit is already 2G."
+          else
+            docker service update --limit-memory 2G "${STACK_NAME}_clickhouse"
+          fi
 
       - name: Wait for ClickHouse after resource update
         run: |
@@ -426,6 +435,26 @@ jobs:
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
+
+          for service in web worker training-export-worker; do
+            service_name="${STACK_NAME}_${service}"
+            update_state="$(
+              docker service inspect "$service_name" \
+                --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
+            )"
+            image="$(
+              docker service inspect "$service_name" \
+                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+            )"
+            echo "${service_name} image=${image} update_state=${update_state:-none}"
+            case "$update_state" in
+              rollback_*|paused)
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} did not finish deployment cleanly; update_state=${update_state}"
+                exit 1
+                ;;
+            esac
+          done
 
       - name: Plan materialized view sync
         id: view_sync_plan

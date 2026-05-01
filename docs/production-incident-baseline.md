@@ -1857,3 +1857,54 @@ After recovery, Swarm reported `dofek_web` `2/2`, `dofek_worker` `1/1`, and
 The deploy workflow now wraps `docker stack deploy --detach=false` in a
 20-minute timeout so a future wedged rollout hard-fails with an explicit error
 instead of leaving the job running indefinitely.
+
+## 2026-05-01: Web Deploy Retry Reported Success After Worker Rollback
+
+### Symptoms
+
+A manual retry of the web deploy workflow completed with a successful GitHub
+Actions conclusion, but live Swarm state showed `dofek_worker` had rolled back
+while `dofek_web` updated to the newly built image digest for the same
+`sha-d062350` tag.
+
+### User Impact
+
+The public web health check stayed healthy, and a worker task remained running
+after rollback. The deploy result was still misleading because one required app
+service did not finish the rollout cleanly.
+
+### Evidence
+
+`dofek_worker` update status was `rollback_completed`. Worker logs showed the
+first fatal line during startup:
+
+```text
+[migrate] Error: connect ECONNREFUSED 10.0.1.8:8123
+```
+
+The same deploy run showed ClickHouse being restarted shortly before app
+service rollout because the workflow unconditionally ran:
+
+```text
+docker service update --limit-memory 2G dofek_clickhouse
+```
+
+### Root Cause
+
+The deploy workflow restarted ClickHouse on every run even when the desired 2G
+memory limit was already set, creating an avoidable ClickHouse availability
+blip before app service rollout. `docker stack deploy --detach=false` then
+returned success even though `dofek_worker` rolled back.
+
+### Fix
+
+Changed the deploy workflow to inspect the current ClickHouse memory limit and
+only run `docker service update --limit-memory 2G` when it differs. Added a
+post-stack-deploy check that inspects required app services and hard-fails if
+any required service reports a rollback or paused update state.
+
+### Remaining Risk
+
+The worker's startup path still depends on ClickHouse being reachable while it
+runs migrations. Future deploys should now avoid the self-inflicted ClickHouse
+restart and should fail loudly if a required service rolls back anyway.
