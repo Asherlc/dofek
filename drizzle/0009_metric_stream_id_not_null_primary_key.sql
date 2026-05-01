@@ -15,6 +15,7 @@ DECLARE
   current_chunk_regclass regclass;
   previous_replication_role text;
   should_compress_after boolean;
+  chunk_has_missing_ids boolean;
   updated_count integer;
 BEGIN
   IF batch_size < 1 THEN
@@ -24,6 +25,17 @@ BEGIN
   PERFORM set_config('lock_timeout', '5s', false);
   PERFORM set_config('statement_timeout', '0', false);
   PERFORM set_config('timescaledb.max_tuples_decompressed_per_dml_transaction', '0', false);
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM fitness.metric_stream
+    WHERE id IS NULL
+    LIMIT 1
+  ) THEN
+    RAISE NOTICE 'metric_stream id backfill skipped: no NULL ids remain';
+    RETURN;
+  END IF;
+
   previous_replication_role := current_setting('session_replication_role');
   PERFORM set_config('session_replication_role', 'replica', false);
 
@@ -80,6 +92,22 @@ BEGIN
       CONTINUE;
     END IF;
 
+    EXECUTE format(
+      'SELECT EXISTS (
+         SELECT 1
+         FROM %s
+         WHERE id IS NULL
+       )',
+      current_chunk_regclass
+    )
+    INTO chunk_has_missing_ids;
+
+    IF NOT chunk_has_missing_ids THEN
+      RAISE NOTICE 'metric_stream id backfill chunk %/% skipped: no NULL ids', current_chunk_index, chunk_count;
+      current_chunk_index := current_chunk_index + 1;
+      CONTINUE;
+    END IF;
+
     IF current_chunk_regclass IS NOT NULL THEN
       PERFORM decompress_chunk(current_chunk_regclass, if_compressed => true);
       COMMIT;
@@ -121,7 +149,7 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CALL fitness.backfill_metric_stream_ids(50000);
+CALL fitness.backfill_metric_stream_ids(500000);
 --> statement-breakpoint
 DROP PROCEDURE fitness.backfill_metric_stream_ids(integer);
 --> statement-breakpoint
