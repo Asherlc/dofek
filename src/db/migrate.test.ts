@@ -120,6 +120,26 @@ describe("runMigrations", () => {
     expect(executedQueries()).toContain("CREATE TABLE b (id INT)");
   });
 
+  it("executes migration statements without custom marker hooks", async () => {
+    const { runMigrations } = await import("./migrate.ts");
+
+    mockReaddirSync.mockReturnValue(["0007_metric_stream_replica_identity.sql"]);
+    mockReadFileSync.mockReturnValue(
+      "SELECT 1--> statement-breakpoint\n-- dofek:backfill-metric-stream-id",
+    );
+
+    await runMigrations("postgres://localhost/test", "/tmp/migrations");
+
+    expect(executedQueries()).toContain("SELECT 1");
+    expect(executedQueries()).toContain("-- dofek:backfill-metric-stream-id");
+    expect(executedQueries().some((query) => query.includes("UPDATE fitness.metric_stream"))).toBe(
+      false,
+    );
+    expect(
+      executedQueries().some((query) => query.includes("timescaledb_information.chunks")),
+    ).toBe(false);
+  });
+
   it("returns 0 when no pending migrations exist", async () => {
     const { runMigrations } = await import("./migrate.ts");
 
