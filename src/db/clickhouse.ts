@@ -66,16 +66,41 @@ export function parsePostgresConnectionForClickHouse(
 }
 
 export function buildClickHouseBootstrapStatements(postgresConnectionString: string): string[] {
+  return buildClickHouseBootstrapStatementsForMetricStreamSource(
+    postgresConnectionString,
+    "materialized-postgresql",
+  );
+}
+
+export function buildClickHousePlaceholderBootstrapStatements(
+  postgresConnectionString: string,
+): string[] {
+  return buildClickHouseBootstrapStatementsForMetricStreamSource(
+    postgresConnectionString,
+    "placeholder",
+  );
+}
+
+function buildClickHouseBootstrapStatementsForMetricStreamSource(
+  postgresConnectionString: string,
+  metricStreamSource: "materialized-postgresql" | "placeholder",
+): string[] {
   const postgres = parsePostgresConnectionForClickHouse(postgresConnectionString);
   const hostAndPort = clickHouseStringLiteral(postgres.hostAndPort);
   const database = clickHouseStringLiteral(postgres.database);
   const user = clickHouseStringLiteral(postgres.user);
   const password = clickHouseStringLiteral(postgres.password);
-
-  return [
-    "CREATE DATABASE IF NOT EXISTS analytics",
-    "CREATE DATABASE IF NOT EXISTS postgres_fitness",
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream (
+  const metricStreamStatements =
+    metricStreamSource === "materialized-postgresql"
+      ? [
+          `CREATE DATABASE IF NOT EXISTS postgres_fitness
+ENGINE = MaterializedPostgreSQL(${hostAndPort}, ${database}, ${user}, ${password})
+SETTINGS materialized_postgresql_schema = 'fitness',
+         materialized_postgresql_tables_list = 'metric_stream'`,
+        ]
+      : [
+          "CREATE DATABASE IF NOT EXISTS postgres_fitness",
+          `CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream (
   activity_id Nullable(UUID),
   user_id UUID,
   recorded_at DateTime64(6, 'UTC'),
@@ -86,6 +111,11 @@ export function buildClickHouseBootstrapStatements(postgresConnectionString: str
 ENGINE = MergeTree
 ORDER BY (user_id, activity_id, channel, recorded_at)
 SETTINGS allow_nullable_key = 1`,
+        ];
+
+  return [
+    "CREATE DATABASE IF NOT EXISTS analytics",
+    ...metricStreamStatements,
     `CREATE DATABASE IF NOT EXISTS postgres_fitness_live
 ENGINE = PostgreSQL(${hostAndPort}, ${database}, ${user}, ${password}, 'clickhouse')`,
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor

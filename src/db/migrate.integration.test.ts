@@ -131,4 +131,31 @@ describe("runMigrations", () => {
       await client.end();
     }
   });
+
+  it("gives oauth_token its schema-declared composite primary key", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'oauth_token'
+          AND column_name = 'user_id'
+      `);
+      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+
+      const primaryKeyResult = await client.query<{ columns: string }>(`
+        SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
+        FROM information_schema.key_column_usage
+        WHERE table_schema = 'fitness'
+          AND table_name = 'oauth_token'
+          AND constraint_name = 'oauth_token_pkey'
+        GROUP BY constraint_name
+      `);
+      expect(primaryKeyResult.rows).toEqual([{ columns: "user_id,provider_id" }]);
+    } finally {
+      await client.end();
+    }
+  });
 });

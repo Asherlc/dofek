@@ -1,21 +1,17 @@
 # ClickHouse Metric Stream Projection
 
-`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
-currently uses an empty local `postgres_fitness.metric_stream` placeholder while
-the raw metric stream replication path is disabled. Migration
-`drizzle/0009_metric_stream_id_not_null_primary_key.sql` backfills stable row
-IDs and adds the Timescale-compatible `(id, recorded_at)` primary key. The stored
-`analytics.deduped_sensor` and `analytics.activity_summary` refreshable
-materialized views remain in place so the schema is stable, but raw metric rows
-are not replicated into ClickHouse until a separate change re-enables the
-MaterializedPostgreSQL source.
+`fitness.metric_stream` remains canonical in Postgres/Timescale. After
+`drizzle/0009_metric_stream_id_not_null_primary_key.sql` backfilled stable row
+IDs and added the Timescale-compatible `(id, recorded_at)` primary key,
+ClickHouse migration `0004_reenable_materialized_metric_stream` re-enabled raw
+`metric_stream` replication through a `MaterializedPostgreSQL` source.
 
 ```text
 Postgres/Timescale fitness.metric_stream
         |
-        | raw MaterializedPostgreSQL replication still disabled
+        | raw MaterializedPostgreSQL replication
         v
-ClickHouse postgres_fitness.metric_stream placeholder
+ClickHouse postgres_fitness.metric_stream
         |
         | refreshable materialized view
         v
@@ -64,10 +60,8 @@ does not repeatedly delete analytical state.
 
 ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness.metric_stream`: an empty local MergeTree placeholder for the
-  raw metric stream. This intentionally does not use `MaterializedPostgreSQL`
-  until the replication path is explicitly re-enabled after the Postgres primary
-  key migration has landed.
+- `postgres_fitness.metric_stream`: a `MaterializedPostgreSQL` replica of the
+  raw metric stream.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.
@@ -77,8 +71,8 @@ ClickHouse migrations create and update the databases and read models:
   `analytics.deduped_sensor`.
 
 Postgres still runs with `wal_level=logical`, `max_replication_slots`, and
-`max_wal_senders` enabled so ClickHouse can subscribe to changes once the raw
-metric stream replication path is re-enabled.
+`max_wal_senders` enabled so ClickHouse can subscribe to raw metric stream
+changes.
 
 API startup only verifies that the migrated ClickHouse tables exist. It must not
 create or rewrite analytical schema, because production runs multiple web

@@ -1,5 +1,6 @@
 import {
   buildClickHouseBootstrapStatements,
+  buildClickHousePlaceholderBootstrapStatements,
   type ClickHouseCommandClient,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
@@ -36,6 +37,17 @@ function clickHouseMigrations(postgresConnectionString: string) {
     },
     {
       id: "0003_disable_materialized_metric_stream",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        "DROP VIEW IF EXISTS analytics.deduped_sensor",
+        "DROP TABLE IF EXISTS analytics.deduped_sensor",
+        "DROP DATABASE IF EXISTS postgres_fitness SYNC",
+        ...buildClickHousePlaceholderBootstrapStatements(postgresConnectionString),
+      ],
+    },
+    {
+      id: "0004_reenable_materialized_metric_stream",
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         "DROP TABLE IF EXISTS analytics.activity_summary",
