@@ -1,7 +1,7 @@
 import { Client } from "pg";
+import { z } from "zod";
 import {
   buildClickHouseBootstrapStatements,
-  buildClickHousePlaceholderBootstrapStatements,
   type ClickHouseCommandClient,
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
@@ -15,6 +15,11 @@ interface MetricStreamBackfillChunkRow {
   lower_bound: string;
   upper_bound: string;
 }
+
+const metricStreamBackfillChunkRowSchema = z.object({
+  lower_bound: z.string(),
+  upper_bound: z.string(),
+});
 
 interface MetricStreamBackfillChunkCountRow {
   chunk_count: number | string;
@@ -55,17 +60,6 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     {
       id: "0002_clickhouse_postgres_bridge_and_activity_read_models",
       statements: buildClickHouseBootstrapStatements(postgresConnectionString),
-    },
-    {
-      id: "0003_disable_materialized_metric_stream",
-      statements: [
-        "DROP VIEW IF EXISTS analytics.activity_summary",
-        "DROP TABLE IF EXISTS analytics.activity_summary",
-        "DROP VIEW IF EXISTS analytics.deduped_sensor",
-        "DROP TABLE IF EXISTS analytics.deduped_sensor",
-        "DROP DATABASE IF EXISTS postgres_fitness SYNC",
-        ...buildClickHousePlaceholderBootstrapStatements(postgresConnectionString),
-      ],
     },
     {
       id: "0004_reenable_materialized_metric_stream",
@@ -232,8 +226,8 @@ async function fetchMetricStreamBackfillChunks(
     await postgresClient.connect();
     const result = await postgresClient.query<MetricStreamBackfillChunkRow>(`
       SELECT
-        range_start::text AS lower_bound,
-        range_end::text AS upper_bound
+        to_char(range_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS lower_bound,
+        to_char(range_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS upper_bound
       FROM timescaledb_information.chunks
       WHERE hypertable_schema = 'fitness'
         AND hypertable_name = 'metric_stream'
@@ -241,7 +235,7 @@ async function fetchMetricStreamBackfillChunks(
         AND range_end IS NOT NULL
       ORDER BY range_start ASC
     `);
-    return result.rows;
+    return result.rows.map((row) => metricStreamBackfillChunkRowSchema.parse(row));
   } finally {
     await postgresClient.end();
   }

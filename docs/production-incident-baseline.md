@@ -57,7 +57,7 @@ Two separate root causes blocked CI:
   made the dashboard assertion verify the rendered section rather than a brittle
   canvas selector.
 
-### Remaining Risk
+### Remaining Risk (native backfill and CDC transition)
 
 Any future date-sensitive E2E seeds that use UTC string slicing can still drift
  around local-midnight boundaries, and any new cached server query path added to

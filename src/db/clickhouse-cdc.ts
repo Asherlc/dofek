@@ -33,7 +33,7 @@ interface RuntimeConfig {
 }
 
 function peerDbStringLiteral(value: string): string {
-  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function requireEnv(name: string): string {
@@ -62,10 +62,28 @@ function parseClickHouseUrl(urlString: string): URL {
   return url;
 }
 
+function requireUrlComponent(value: string, component: string, envName: string): string {
+  if (!value) {
+    throw new Error(`${envName} must include ${component} for PeerDB setup`);
+  }
+  return value;
+}
+
 function buildRuntimeConfig(): RuntimeConfig {
   const databaseUrl = new URL(requireEnv("DATABASE_URL"));
   const clickHouseUrl = parseClickHouseUrl(requireEnv("CLICKHOUSE_URL"));
   const postgresCredential = requireEnv("POSTGRES_PASSWORD");
+  const postgresDatabase = requireUrlComponent(
+    databaseUrl.pathname.replace(/^\//, ""),
+    "database name",
+    "DATABASE_URL",
+  );
+  const postgresUser = decodeURIComponent(
+    requireUrlComponent(databaseUrl.username, "username", "DATABASE_URL"),
+  );
+  const postgresPassword = decodeURIComponent(
+    requireUrlComponent(databaseUrl.password, "password", "DATABASE_URL"),
+  );
 
   return {
     peerDbUrl: buildDefaultPeerDbUrl(postgresCredential),
@@ -76,11 +94,11 @@ function buildRuntimeConfig(): RuntimeConfig {
       clickHouseHost: "clickhouse",
       clickHousePort: 9000,
       clickHouseUser: decodeURIComponent(clickHouseUrl.username),
-      postgresCredential: decodeURIComponent(databaseUrl.password),
-      postgresDatabase: databaseUrl.pathname.replace(/^\//, ""),
+      postgresCredential: postgresPassword,
+      postgresDatabase,
       postgresHost: databaseUrl.hostname,
       postgresPort: Number(databaseUrl.port || 5432),
-      postgresUser: decodeURIComponent(databaseUrl.username),
+      postgresUser,
     },
   };
 }
@@ -95,7 +113,7 @@ function buildTemplateReplacements(values: PeerDbSqlTemplateValues): Record<stri
     POSTGRES_CREDENTIAL: peerDbStringLiteral(values.postgresCredential),
     POSTGRES_DATABASE: peerDbStringLiteral(values.postgresDatabase),
     POSTGRES_HOST: peerDbStringLiteral(values.postgresHost),
-    POSTGRES_PORT: peerDbStringLiteral(String(values.postgresPort)),
+    POSTGRES_PORT: String(values.postgresPort),
     POSTGRES_USER: peerDbStringLiteral(values.postgresUser),
   };
 }
