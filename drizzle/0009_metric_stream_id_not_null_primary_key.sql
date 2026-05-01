@@ -23,6 +23,7 @@ BEGIN
 
   PERFORM set_config('lock_timeout', '5s', false);
   PERFORM set_config('statement_timeout', '0', false);
+  PERFORM set_config('timescaledb.max_tuples_decompressed_per_dml_transaction', '0', false);
 
   DROP TABLE IF EXISTS pg_temp.metric_stream_backfill_chunks;
   CREATE TEMPORARY TABLE pg_temp.metric_stream_backfill_chunks ON COMMIT PRESERVE ROWS AS
@@ -109,6 +110,8 @@ DROP PROCEDURE fitness.backfill_metric_stream_ids(integer);
 RESET lock_timeout;
 --> statement-breakpoint
 RESET statement_timeout;
+--> statement-breakpoint
+RESET timescaledb.max_tuples_decompressed_per_dml_transaction;
 --> statement-breakpoint
 DO $$
 BEGIN
