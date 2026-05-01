@@ -1,4 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const pgClientMocks = vi.hoisted(() => ({
+  connect: vi.fn(),
+  end: vi.fn(),
+  query: vi.fn(),
+}));
+
+vi.mock("pg", () => ({
+  Client: vi.fn(() => pgClientMocks),
+}));
+
 import {
   buildClickHouseMigrationStatements,
   runClickHouseMigrations,
@@ -27,6 +38,14 @@ describe("buildClickHouseMigrationStatements", () => {
 });
 
 describe("runClickHouseMigrations", () => {
+  beforeEach(() => {
+    pgClientMocks.connect.mockReset().mockResolvedValue(undefined);
+    pgClientMocks.end.mockReset().mockResolvedValue(undefined);
+    pgClientMocks.query.mockReset().mockResolvedValue({
+      rows: [{ min_recorded_at: null, upper_bound: null }],
+    });
+  });
+
   it("runs pending ClickHouse migrations once and records them", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
@@ -40,7 +59,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:secret@db:5432/health");
 
-    expect(count).toBe(4);
+    expect(count).toBe(5);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -79,6 +98,64 @@ describe("runClickHouseMigrations", () => {
       expect.objectContaining({
         query: expect.stringContaining("INSERT INTO analytics.schema_migrations"),
       }),
+    );
+  });
+
+  it("backfills materialized metric stream in bounded recorded_at chunks", async () => {
+    pgClientMocks.query.mockResolvedValue({
+      rows: [
+        {
+          min_recorded_at: "2026-04-22 00:00:00+00",
+          upper_bound: "2026-04-22 12:00:00+00",
+        },
+      ],
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("0005_backfill_materialized_metric_stream")
+              ? [{ migration_count: 0 }]
+              : queryText.includes("metric_stream_backfill_chunks")
+                ? [{ chunk_count: 0 }]
+                : [{ migration_count: 1 }],
+        ),
+    }));
+    const client = { command, query };
+
+    const count = await runClickHouseMigrations(client, "postgres://health:secret@db:5432/health");
+
+    expect(count).toBe(1);
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining(
+          "CREATE TABLE IF NOT EXISTS analytics.metric_stream_backfill_chunks",
+        ),
+      }),
+    );
+    const backfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+    expect(backfillStatements).toHaveLength(2);
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[1]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 06:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[1]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 12:00:00.000', 6, 'UTC')",
     );
   });
 
