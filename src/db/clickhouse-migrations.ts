@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import {
   buildClickHouseBootstrapStatements,
   type ClickHouseCommandClient,
@@ -24,6 +25,16 @@ const metricStreamBackfillChunkRowSchema = z.object({
 interface MetricStreamBackfillChunkCountRow {
   chunk_count: number | string;
 }
+
+interface ClickHouseDatabaseEngineRow {
+  engine: string;
+}
+
+const clickHouseDatabaseEngineRowSchema = z.object({
+  engine: z.string(),
+});
+
+const METRIC_STREAM_BACKFILL_WINDOW_MS = 60 * 60 * 1000;
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -145,12 +156,21 @@ async function replaceNativeMetricStreamAndBackfill(
     "DROP TABLE IF EXISTS analytics.activity_summary",
     "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
-    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
-    "DROP DATABASE IF EXISTS postgres_fitness SYNC",
-    ...buildClickHouseBootstrapStatements(postgresConnectionString),
   ];
 
   for (const statement of resetStatements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  if (await shouldReplacePostgresFitnessDatabase(client)) {
+    await runClickHouseMigrationStatement(
+      client,
+      "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+    );
+    await runClickHouseMigrationStatement(client, "DROP DATABASE IF EXISTS postgres_fitness SYNC");
+  }
+
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -159,6 +179,24 @@ async function replaceNativeMetricStreamAndBackfill(
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+}
+
+async function shouldReplacePostgresFitnessDatabase(
+  client: ClickHouseCommandClient,
+): Promise<boolean> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
+  const result = await client.query<ClickHouseDatabaseEngineRow>({
+    query: "SELECT engine FROM system.databases WHERE name = 'postgres_fitness'",
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  if (!rows[0]) {
+    return false;
+  }
+  const row = clickHouseDatabaseEngineRowSchema.parse(rows[0]);
+  return row.engine !== "Atomic" && row.engine !== "Ordinary";
 }
 
 async function backfillNativeMetricStream(
@@ -186,17 +224,59 @@ ORDER BY (lower_bound, upper_bound)`,
   for (const chunk of chunks) {
     const chunkStart = parsePostgresTimestamp(chunk.lower_bound, "metric_stream chunk lower bound");
     const chunkEnd = parsePostgresTimestamp(chunk.upper_bound, "metric_stream chunk upper bound");
-    if (await isMetricStreamBackfillChunkComplete(client, chunkStart, chunkEnd)) {
-      continue;
+    const backfillWindows = splitMetricStreamBackfillRange(chunkStart, chunkEnd);
+    for (const backfillWindow of backfillWindows) {
+      if (
+        await isMetricStreamBackfillChunkComplete(
+          client,
+          backfillWindow.lowerBound,
+          backfillWindow.upperBound,
+        )
+      ) {
+        continue;
+      }
+      logger.info(
+        `[clickhouse-migrations] Backfilling metric_stream ${backfillWindow.lowerBound.toISOString()}..${backfillWindow.upperBound.toISOString()}`,
+      );
+      await client.command({
+        query: buildMetricStreamBackfillStatement(
+          postgresMetricStreamSource,
+          backfillWindow.lowerBound,
+          backfillWindow.upperBound,
+        ),
+      });
+      await client.command({
+        query: `INSERT INTO analytics.metric_stream_backfill_chunks (lower_bound, upper_bound)
+VALUES (${clickHouseDateTimeLiteral(backfillWindow.lowerBound)}, ${clickHouseDateTimeLiteral(backfillWindow.upperBound)})`,
+      });
     }
-    await client.command({
-      query: buildMetricStreamBackfillStatement(postgresMetricStreamSource, chunkStart, chunkEnd),
-    });
-    await client.command({
-      query: `INSERT INTO analytics.metric_stream_backfill_chunks (lower_bound, upper_bound)
-VALUES (${clickHouseDateTimeLiteral(chunkStart)}, ${clickHouseDateTimeLiteral(chunkEnd)})`,
-    });
   }
+}
+
+interface MetricStreamBackfillWindow {
+  lowerBound: Date;
+  upperBound: Date;
+}
+
+function splitMetricStreamBackfillRange(
+  lowerBound: Date,
+  upperBound: Date,
+): MetricStreamBackfillWindow[] {
+  const upperBoundTime = upperBound.getTime();
+  const windows: MetricStreamBackfillWindow[] = [];
+  let windowLowerBoundTime = lowerBound.getTime();
+  while (windowLowerBoundTime < upperBoundTime) {
+    const windowUpperBoundTime = Math.min(
+      windowLowerBoundTime + METRIC_STREAM_BACKFILL_WINDOW_MS,
+      upperBoundTime,
+    );
+    windows.push({
+      lowerBound: new Date(windowLowerBoundTime),
+      upperBound: new Date(windowUpperBoundTime),
+    });
+    windowLowerBoundTime = windowUpperBoundTime;
+  }
+  return windows;
 }
 
 async function isMetricStreamBackfillChunkComplete(
