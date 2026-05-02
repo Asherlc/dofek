@@ -375,18 +375,19 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
       values = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
     }
 
-    const zoneRows = [1, 2, 3, 4, 5].map((zone) => ({
-      zone,
-      seconds: values.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr)).length,
-    }));
-
-    if (primaryValues.length > 0 && zoneRows.every((row) => row.seconds === 0)) {
-      const fallbackValues = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
-      const fallbackRows = [1, 2, 3, 4, 5].map((zone) => ({
+    const calculateZoneRows = (zoneValues: number[]) =>
+      [1, 2, 3, 4, 5].map((zone) => ({
         zone,
-        seconds: fallbackValues.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr))
-          .length,
+        seconds: zoneValues.filter((value) =>
+          valueInHeartRateZone(value, zone, maxHr, restingHr),
+        ).length,
       }));
+
+    const zoneRows = calculateZoneRows(values);
+
+    if (zoneRows.every((row) => row.seconds === 0)) {
+      const fallbackValues = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
+      const fallbackRows = calculateZoneRows(fallbackValues);
       if (fallbackRows.some((row) => row.seconds > 0)) {
         return fallbackRows;
       }
