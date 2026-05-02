@@ -84,6 +84,46 @@ describe("ClickHouseActivitySensorStore", () => {
     );
   });
 
+  it("derives VO2 max estimates from ClickHouse deduped samples", async () => {
+    const { store, query } = makeStore([
+      {
+        activity_id: window.activityId,
+        activity_date: "2026-04-28",
+        method: "cycling_power",
+        vo2max: 50,
+      },
+    ]);
+
+    const rows = await store.getVo2MaxEstimates("2026-04-28", 90, window.userId, "UTC");
+
+    expect(rows).toEqual([
+      {
+        activity_id: window.activityId,
+        activity_date: "2026-04-28",
+        method: "cycling_power",
+        vo2max: 50,
+      },
+    ]);
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "JSONEachRow",
+        query_params: expect.objectContaining({
+          endDate: "2026-04-28",
+          days: 90,
+          userId: window.userId,
+          timezone: "UTC",
+        }),
+      }),
+    );
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("analytics.deduped_sensor");
+    expect(queryText).toContain("postgres_fitness_live.v_activity");
+    expect(queryText).toContain("postgres_fitness_live.v_body_measurement");
+    expect(queryText).toContain("postgres_fitness_live.derived_resting_heart_rate");
+    expect(queryText).not.toContain("fitness.derived_vo2max_estimates");
+    expect(queryText).not.toContain("fitness.metric_stream");
+  });
+
   it("counts power zones from the same bounded source selection", async () => {
     const { store, query } = makeStore([{ zone: 1, seconds: 5 }]);
 

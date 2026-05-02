@@ -39,14 +39,13 @@ describe("Predictions router (integration)", () => {
     // Insert 120 days of daily metrics (HRV, resting HR)
     for (let i = 120; i >= 0; i--) {
       const hrv = 50 + Math.sin(i * 0.3) * 10 + (i % 7) * 0.5;
-      const rhr = 55 - Math.cos(i * 0.3) * 5;
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, provider_id, user_id, resting_hr, hrv
+              date, provider_id, user_id, hrv
             ) VALUES (
               CURRENT_DATE - ${i}::int,
               'test_provider', ${TEST_USER_ID},
-              ${Math.round(rhr)}, ${Math.round(hrv * 10) / 10}
+              ${Math.round(hrv * 10) / 10}
             )`,
       );
     }
@@ -70,8 +69,17 @@ describe("Predictions router (integration)", () => {
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours',
               (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
               ${Math.round(duration)}, ${deep}, ${rem}, ${light},
-              ${awake}, ${Math.round(efficiency * 10) / 10}, 'sleep'
-            )`,
+	              ${awake}, ${Math.round(efficiency * 10) / 10}, 'sleep'
+	            )`,
+      );
+      const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
+      const restingHeartRateValues = Array.from({ length: 30 }, (_, sampleIndex) => {
+        return `((CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '1 hour' + ${sampleIndex} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${restingHeartRate}, NULL)`;
+      });
+      await testCtx.db.execute(
+        sql.raw(`INSERT INTO fitness.metric_stream (
+          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
+        ) VALUES ${restingHeartRateValues.join(",\n")}`),
       );
     }
 
@@ -160,6 +168,7 @@ describe("Predictions router (integration)", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.derived_resting_heart_rate`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {

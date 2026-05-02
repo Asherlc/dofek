@@ -359,9 +359,7 @@ table fitness.daily_metrics {
   date date [not null]
   provider_id text [not null]
   user_id uuid [not null]
-  resting_hr integer
   hrv real
-  vo2max real
   spo2_avg real
   respiratory_rate_avg real
   steps integer

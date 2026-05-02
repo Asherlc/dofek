@@ -1,5 +1,7 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type {
   ActivitySensorStore,
   ActivitySensorWindow,
@@ -39,6 +41,16 @@ interface ZoneRow {
 }
 
 const CURVE_DURATIONS_SECONDS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200];
+const OUTDOOR_VO2_MAX_ACTIVITY_TYPES = ["running", "trail_running", "walking", "hiking"] as const;
+
+const vo2MaxEstimateRowSchema = z.object({
+  activity_id: z.string(),
+  activity_date: dateStringSchema,
+  method: z.string(),
+  vo2max: z.coerce.number(),
+});
+
+type Vo2MaxEstimateRow = z.infer<typeof vo2MaxEstimateRowSchema>;
 
 export function createPostgresTestActivitySensorStore(db: ExecutableDatabase): ActivitySensorStore {
   return new PostgresTestActivitySensorStore(db);
@@ -122,6 +134,183 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
         power: sample.scalar,
         interval_s: sample.interval_s,
       }));
+  }
+
+  async getVo2MaxEstimates(
+    endDate: string,
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<Vo2MaxEstimateRow[]> {
+    return executeWithSchema(
+      this.#db,
+      vo2MaxEstimateRowSchema,
+      sql`WITH activities AS (
+            SELECT
+              activity.id,
+              activity.started_at,
+              activity.activity_type,
+              (activity.started_at AT TIME ZONE ${timezone})::date AS activity_date
+            FROM fitness.v_activity activity
+            WHERE activity.user_id = ${userId}::uuid
+              AND (activity.started_at AT TIME ZONE ${timezone})::date > (${endDate}::date - ${days}::int)
+              AND (activity.started_at AT TIME ZONE ${timezone})::date <= ${endDate}::date
+              AND activity.activity_type IN (${sql.join(
+                ENDURANCE_ACTIVITY_TYPES.map((activityType) => sql`${activityType}`),
+                sql`, `,
+              )})
+          ),
+          latest_weight AS (
+            SELECT body.weight_kg
+            FROM fitness.v_body_measurement body
+            WHERE body.user_id = ${userId}::uuid
+              AND body.weight_kg IS NOT NULL
+            ORDER BY body.recorded_at DESC
+            LIMIT 1
+          ),
+          power_samples AS (
+            SELECT
+              sensor.activity_id,
+              activities.activity_date,
+              sensor.recorded_at,
+              sensor.scalar AS power,
+              ROW_NUMBER() OVER (
+                PARTITION BY sensor.activity_id
+                ORDER BY sensor.recorded_at
+              ) AS row_number,
+              SUM(sensor.scalar) OVER (
+                PARTITION BY sensor.activity_id
+                ORDER BY sensor.recorded_at
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+              ) AS cumulative_sum
+            FROM fitness.deduped_sensor sensor
+            JOIN activities ON activities.id = sensor.activity_id
+            WHERE sensor.user_id = ${userId}::uuid
+              AND sensor.channel = 'power'
+              AND sensor.scalar > 0
+          ),
+          power_sample_rate AS (
+            SELECT
+              activity_id,
+              GREATEST(
+                ROUND(EXTRACT(EPOCH FROM (MAX(recorded_at) - MIN(recorded_at))) / NULLIF(COUNT(*) - 1, 0))::int,
+                1
+              ) AS interval_s
+            FROM power_samples
+            GROUP BY activity_id
+            HAVING COUNT(*) >= 240
+          ),
+          power_windows AS (
+            SELECT
+              power_samples.activity_id,
+              power_samples.activity_date,
+              (
+                power_samples.cumulative_sum - COALESCE(previous_sample.cumulative_sum, 0)
+              ) / sample_windows.window_samples::float AS five_minute_power_watts
+            FROM power_samples
+            JOIN (
+              SELECT
+                activity_id,
+                GREATEST(1, ROUND(300.0 / interval_s)::int) AS window_samples
+              FROM power_sample_rate
+            ) sample_windows
+              ON sample_windows.activity_id = power_samples.activity_id
+            LEFT JOIN power_samples previous_sample
+              ON previous_sample.activity_id = power_samples.activity_id
+             AND previous_sample.row_number = power_samples.row_number - sample_windows.window_samples
+            WHERE power_samples.row_number >= sample_windows.window_samples
+          ),
+          cycling_estimates AS (
+            SELECT
+              power_windows.activity_id::text AS activity_id,
+              power_windows.activity_date::text AS activity_date,
+              'cycling_power' AS method,
+              ((MAX(power_windows.five_minute_power_watts) / MAX(latest_weight.weight_kg)) * 10.8 + 7)::real AS vo2max
+            FROM power_windows
+            CROSS JOIN latest_weight
+            GROUP BY power_windows.activity_id, power_windows.activity_date
+            HAVING MAX(power_windows.five_minute_power_watts) BETWEEN 50 AND 700
+              AND ((MAX(power_windows.five_minute_power_watts) / MAX(latest_weight.weight_kg)) * 10.8 + 7) > 0
+          ),
+          acsm_segments AS (
+            SELECT
+              sensor.activity_id,
+              activities.activity_date,
+              FLOOR(EXTRACT(EPOCH FROM (sensor.recorded_at - activities.started_at)) / 300)::int AS segment_index,
+              AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'speed') * 60 AS speed_meters_per_minute,
+              AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'heart_rate') AS average_heart_rate,
+              (
+                MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'altitude')
+                - MIN(sensor.scalar) FILTER (WHERE sensor.channel = 'altitude')
+              ) / NULLIF(AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'speed') * 300, 0) AS grade_fraction
+            FROM fitness.deduped_sensor sensor
+            JOIN activities ON activities.id = sensor.activity_id
+            WHERE sensor.user_id = ${userId}::uuid
+              AND activities.activity_type IN (${sql.join(
+                OUTDOOR_VO2_MAX_ACTIVITY_TYPES.map((activityType) => sql`${activityType}`),
+                sql`, `,
+              )})
+              AND sensor.channel IN ('speed', 'heart_rate', 'altitude')
+              AND sensor.scalar IS NOT NULL
+            GROUP BY sensor.activity_id, activities.started_at, activities.activity_date, segment_index
+            HAVING COUNT(*) FILTER (WHERE sensor.channel = 'speed') >= 60
+              AND COUNT(*) FILTER (WHERE sensor.channel = 'heart_rate') >= 60
+              AND COUNT(*) FILTER (WHERE sensor.channel = 'altitude') >= 2
+          ),
+          acsm_estimates AS (
+            SELECT
+              acsm_segments.activity_id::text AS activity_id,
+              acsm_segments.activity_date::text AS activity_date,
+              'submaximal_acsm' AS method,
+              (
+                CASE
+                  WHEN acsm_segments.speed_meters_per_minute >= 134
+                    THEN 0.2 * acsm_segments.speed_meters_per_minute
+                      + 0.9 * acsm_segments.speed_meters_per_minute * acsm_segments.grade_fraction
+                      + 3.5
+                  ELSE 0.1 * acsm_segments.speed_meters_per_minute
+                    + 1.8 * acsm_segments.speed_meters_per_minute * acsm_segments.grade_fraction
+                    + 3.5
+                END
+              ) / NULLIF(
+                (acsm_segments.average_heart_rate - resting.resting_hr)
+                  / (user_profile.max_hr - resting.resting_hr),
+                0
+              ) AS vo2max
+            FROM acsm_segments
+            JOIN fitness.user_profile user_profile
+              ON user_profile.id = ${userId}::uuid
+            JOIN LATERAL (
+              SELECT drhr.resting_hr
+              FROM fitness.derived_resting_heart_rate drhr
+              WHERE drhr.user_id = ${userId}::uuid
+                AND drhr.date <= acsm_segments.activity_date
+                AND drhr.resting_hr IS NOT NULL
+              ORDER BY drhr.date DESC
+              LIMIT 1
+            ) resting ON true
+            WHERE user_profile.max_hr IS NOT NULL
+              AND user_profile.max_hr > resting.resting_hr
+              AND acsm_segments.speed_meters_per_minute BETWEEN 40 AND 450
+              AND acsm_segments.grade_fraction BETWEEN -0.15 AND 0.15
+              AND (
+                (acsm_segments.average_heart_rate - resting.resting_hr)
+                  / (user_profile.max_hr - resting.resting_hr)
+              ) >= 0.6
+              AND (
+                (acsm_segments.average_heart_rate - resting.resting_hr)
+                  / (user_profile.max_hr - resting.resting_hr)
+              ) < 1
+          )
+          SELECT activity_id, activity_date, method, vo2max
+          FROM cycling_estimates
+          WHERE vo2max BETWEEN 1 AND 100
+          UNION ALL
+          SELECT activity_id, activity_date, method, vo2max
+          FROM acsm_estimates
+          WHERE vo2max BETWEEN 1 AND 100
+          ORDER BY activity_date, activity_id, method`,
+    );
   }
 
   async getHeartRateCurveRows(

@@ -256,7 +256,6 @@ describe("FitbitProvider.sync() (integration)", () => {
     const firstDaily = dailyRows[0];
     if (!firstDaily) throw new Error("expected daily metrics");
     expect(firstDaily.steps).toBe(10432);
-    expect(firstDaily.restingHr).toBe(58);
     expect(firstDaily.exerciseMinutes).toBe(70); // 25 + 45
     expect(firstDaily.flightsClimbed).toBe(12);
 

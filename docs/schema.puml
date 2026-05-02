@@ -146,9 +146,7 @@ entity "daily_metrics" {
   date : date
   provider_id : text <<FK>>
   user_id : uuid <<FK>>
-  resting_hr : integer
   hrv : real
-  vo2max : real
   spo2_avg : real
   respiratory_rate_avg : real
   steps : integer

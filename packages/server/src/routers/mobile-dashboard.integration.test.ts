@@ -38,10 +38,10 @@ describe("mobile-dashboard router integration", () => {
       const dateStr = date.toISOString().slice(0, 10);
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
-              date, user_id, provider_id, resting_hr, hrv, respiratory_rate_avg
+              date, user_id, provider_id, hrv, respiratory_rate_avg
             ) VALUES (
               ${dateStr}, ${TEST_USER_ID}, 'test_provider',
-              ${60 + i}, ${42 + i * 0.5}, ${14 + i * 0.1}
+              ${42 + i * 0.5}, ${14 + i * 0.1}
             )
             ON CONFLICT DO NOTHING`,
       );

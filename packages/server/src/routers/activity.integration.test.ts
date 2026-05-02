@@ -4,7 +4,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helper.ts";
+import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helpers.ts";
 
 describe("Activity router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
