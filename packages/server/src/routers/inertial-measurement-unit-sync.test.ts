@@ -173,12 +173,13 @@ describe("inertialMeasurementUnitSyncRouter", () => {
     });
 
     it("batches large sample arrays into multiple INSERT statements", async () => {
+      const startTimestamp = new Date("2026-03-25T10:00:00.020Z");
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
       const samples = Array.from({ length: 7500 }, (_, index) =>
         makeSample({
-          timestamp: `2026-03-25T10:00:${String(Math.floor(index / 50)).padStart(2, "0")}.${String((index % 50) * 20).padStart(3, "0")}Z`,
+          timestamp: new Date(startTimestamp.getTime() + index * 20).toISOString(),
         }),
       );
 

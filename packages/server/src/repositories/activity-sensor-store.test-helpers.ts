@@ -378,15 +378,17 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     const calculateZoneRows = (zoneValues: number[]) =>
       [1, 2, 3, 4, 5].map((zone) => ({
         zone,
-        seconds: zoneValues.filter((value) =>
-          valueInHeartRateZone(value, zone, maxHr, restingHr),
-        ).length,
+        seconds: zoneValues.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr))
+          .length,
       }));
 
     const zoneRows = calculateZoneRows(values);
 
     if (zoneRows.every((row) => row.seconds === 0)) {
-      const fallbackValues = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
+      const fallbackValues = await this.#activityChannelValuesFromMetricStream(
+        window,
+        "heart_rate",
+      );
       const fallbackRows = calculateZoneRows(fallbackValues);
       if (fallbackRows.some((row) => row.seconds > 0)) {
         return fallbackRows;
@@ -421,9 +423,10 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     window: ActivitySensorWindow,
     channel: string,
   ): Promise<number[]> {
-    const activityIds = window.memberActivityIds.length === 0
-      ? [window.activityId]
-      : [window.activityId, ...window.memberActivityIds];
+    const activityIds =
+      window.memberActivityIds.length === 0
+        ? [window.activityId]
+        : [window.activityId, ...window.memberActivityIds];
 
     const deduplicatedActivityIds = [...new Set(activityIds)];
     const activityIdClauses = deduplicatedActivityIds.map(
