@@ -20,6 +20,7 @@ const mockSentryClose = vi.mocked(close);
 const mockSentryCapture = vi.mocked(captureException);
 
 const TRACKED_ENV_VARS = [
+  "DATABASE_URL",
   "CLICKHOUSE_HOST",
   "CLICKHOUSE_HTTP_PORT",
   "CLICKHOUSE_PASSWORD",
@@ -33,10 +34,12 @@ const TRACKED_ENV_VARS = [
   "POSTGRES_PORT",
   "POSTGRES_USER",
   "SENTRY_DSN",
+  "SENTRY_DSN_unencrypted",
 ] as const;
 
 describe("run-clickhouse-cdc", () => {
   const originalValues: Record<(typeof TRACKED_ENV_VARS)[number], string | undefined> = {
+    DATABASE_URL: undefined,
     CLICKHOUSE_HOST: undefined,
     CLICKHOUSE_HTTP_PORT: undefined,
     CLICKHOUSE_PASSWORD: undefined,
@@ -50,6 +53,7 @@ describe("run-clickhouse-cdc", () => {
     POSTGRES_PORT: undefined,
     POSTGRES_USER: undefined,
     SENTRY_DSN: undefined,
+    SENTRY_DSN_unencrypted: undefined,
   };
 
   const restoreProcess = () => {
@@ -90,6 +94,8 @@ describe("run-clickhouse-cdc", () => {
     process.env.CLICKHOUSE_PASSWORD = "clickhouse-password";
     process.env.CLICKHOUSE_HOST = "127.0.0.1";
     process.env.CLICKHOUSE_HTTP_PORT = "8128";
+    process.env.DATABASE_URL = "postgres://user:postgres-password@localhost:5439/health";
+    process.env.CLICKHOUSE_URL = "http://default:clickhouse-password@127.0.0.1:8128";
     process.env.SENTRY_DSN = "dsn-local";
 
     await expect(main()).resolves.toBeUndefined();
@@ -106,10 +112,14 @@ describe("run-clickhouse-cdc", () => {
     expect(process.env.PEERDB_CDC_HOST).toBe("127.0.0.1");
     expect(process.env.PEERDB_CDC_PORT).toBe("9900");
     expect(mockSentryClose).toHaveBeenCalledWith(2_000);
+    expect(process.exit).toHaveBeenCalledWith(0);
   });
 
   it("captures and exits 1 when setup fails", async () => {
     process.env.POSTGRES_PASSWORD = "postgres-placeholder";
+    process.env.CLICKHOUSE_PASSWORD = "clickhouse-password";
+    process.env.DATABASE_URL = "postgres://user:postgres-placeholder@localhost:5432/health";
+    process.env.CLICKHOUSE_URL = "http://default:clickhouse-password@127.0.0.1:8123";
     process.env.SENTRY_DSN = "dsn-local";
     mockSetupClickHouseCdcFromEnv.mockRejectedValue(new Error("boom"));
 
@@ -122,5 +132,6 @@ describe("run-clickhouse-cdc", () => {
       dsn: "dsn-local",
       skipOpenTelemetrySetup: true,
     });
+    expect(process.exit).toHaveBeenCalledWith(1);
   });
 });

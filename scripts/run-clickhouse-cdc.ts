@@ -1,23 +1,27 @@
 import * as Sentry from "@sentry/node";
 import { setupClickHouseCdcFromEnv } from "../src/db/clickhouse-cdc.ts";
 
+function requireEnvironmentVariable(environmentVariableName: string): string {
+  const value = process.env[environmentVariableName];
+  if (!value) {
+    throw new Error(`${environmentVariableName} is required`);
+  }
+
+  return value;
+}
+
 function applyLocalDefaults(): void {
-  const localPostgresHost = process.env.POSTGRES_HOST ?? "127.0.0.1";
-  const localPostgresPort = process.env.POSTGRES_PORT ?? "5435";
-  const localPostgresUser = process.env.POSTGRES_USER ?? "health";
-  const localPostgresPassword = process.env.POSTGRES_PASSWORD ?? "health";
-  const localPostgresDatabase = process.env.POSTGRES_DB ?? "health";
-  const localClickHousePassword = process.env.CLICKHOUSE_PASSWORD ?? "health";
-  const localClickHouseHost = process.env.CLICKHOUSE_HOST ?? "127.0.0.1";
-  const localClickHousePort =
-    process.env.CLICKHOUSE_HTTP_PORT ?? process.env.CLICKHOUSE_PORT ?? "8123";
+  const localPostgresPassword = requireEnvironmentVariable("POSTGRES_PASSWORD");
+  const localClickHousePassword = requireEnvironmentVariable("CLICKHOUSE_PASSWORD");
+  const localDatabaseUrl = requireEnvironmentVariable("DATABASE_URL");
+  const localClickHouseUrl = requireEnvironmentVariable("CLICKHOUSE_URL");
 
   process.env.POSTGRES_PASSWORD = localPostgresPassword;
+  process.env.CLICKHOUSE_PASSWORD = localClickHousePassword;
+  process.env.DATABASE_URL = localDatabaseUrl;
+  process.env.CLICKHOUSE_URL = localClickHouseUrl;
   process.env.PEERDB_CDC_HOST = process.env.PEERDB_CDC_HOST ?? "127.0.0.1";
   process.env.PEERDB_CDC_PORT = process.env.PEERDB_CDC_PORT ?? "9900";
-
-  process.env.DATABASE_URL ??= `postgres://${localPostgresUser}:${encodeURIComponent(localPostgresPassword)}@${localPostgresHost}:${localPostgresPort}/${localPostgresDatabase}`;
-  process.env.CLICKHOUSE_URL ??= `http://default:${encodeURIComponent(localClickHousePassword)}@${localClickHouseHost}:${localClickHousePort}`;
 }
 
 export async function main(): Promise<void> {
