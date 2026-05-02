@@ -2572,7 +2572,9 @@ deploy migration runner.
 ### Fix or Mitigation
 
 Global post-sync maintenance no longer runs `refreshDedupViews()` or
-`updateUserMaxHr()`. Heavy Postgres materialized-view refreshes remain explicit
+`updateUserMaxHr()`. While rolling out the fix, active old-worker refreshes were
+cancelled with `pg_cancel_backend()` after they restarted the same high-risk
+refresh path. Heavy Postgres materialized-view refreshes remain explicit
 maintenance-window work through the Materialized View Maintenance workflow and
 `docs/materialized-view-maintenance-runbook.md`.
 
@@ -2582,3 +2584,41 @@ Legacy Postgres materialized views can still be stale until planned maintenance
 runs. Runtime paths should continue moving sensor-derived reads to ClickHouse
 `analytics.*` projections so production does not depend on refreshing
 full-history Postgres views after normal provider syncs.
+
+## 2026-05-02: PeerDB Mirror Missing Source Publication
+
+### Symptoms
+
+Deploy workflow run `25246366257` for image
+`ghcr.io/asherlc/dofek:sha-afd9297` successfully built images, ran migrations,
+deployed the Swarm stack, and then failed in `Configure ClickHouse CDC`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate source connector dofek_postgres: provided source tables invalidated: publication does not exist: peerdb_metric_stream_publication\""
+```
+
+### Root Cause
+
+The PeerDB mirror template requested
+`publication_name = 'peerdb_metric_stream_publication'`, but the CDC setup only
+created PeerDB peers and the mirror. It never ensured the named publication
+existed on the source Postgres database before asking PeerDB to validate the
+mirror.
+
+### Fix or Mitigation
+
+The CDC setup now connects to source Postgres and idempotently creates
+`peerdb_metric_stream_publication` for `fitness.metric_stream`, or adds
+`fitness.metric_stream` when the publication exists without that table, before
+submitting the PeerDB mirror DDL.
+
+### Remaining Risk
+
+The setup assumes the configured Postgres user can manage publications for
+`fitness.metric_stream`. If production credentials lose that permission, deploys
+should fail loudly at the publication bootstrap step before PeerDB mirror
+validation.

@@ -6,6 +6,10 @@ interface PeerDbClient {
   query(queryText: string): Promise<unknown>;
 }
 
+interface SourcePostgresClient {
+  query(queryText: string): Promise<unknown>;
+}
+
 export interface PeerDbSqlTemplateValues {
   clickHouseDatabase: string;
   clickHouseCredential: string;
@@ -21,6 +25,7 @@ export interface PeerDbSqlTemplateValues {
 
 interface SetupClickHouseCdcOptions {
   peerDbClient: PeerDbClient;
+  sourcePostgresClient: SourcePostgresClient;
   clickHouseClient: ClickHouseCommandClient;
   templateSql: string;
   templateValues: PeerDbSqlTemplateValues;
@@ -169,8 +174,33 @@ function splitPeerDbSqlStatements(sql: string): string[] {
   return statements;
 }
 
+async function ensureMetricStreamPublication(client: SourcePostgresClient): Promise<void> {
+  await client.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_publication
+        WHERE pubname = 'peerdb_metric_stream_publication'
+      ) THEN
+        CREATE PUBLICATION peerdb_metric_stream_publication FOR TABLE fitness.metric_stream;
+      ELSIF NOT EXISTS (
+        SELECT 1
+        FROM pg_publication_tables
+        WHERE pubname = 'peerdb_metric_stream_publication'
+          AND schemaname = 'fitness'
+          AND tablename = 'metric_stream'
+      ) THEN
+        ALTER PUBLICATION peerdb_metric_stream_publication ADD TABLE fitness.metric_stream;
+      END IF;
+    END
+    $$;
+  `);
+}
+
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
+  await ensureMetricStreamPublication(options.sourcePostgresClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);
@@ -180,19 +210,23 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
 export async function setupClickHouseCdcFromEnv(): Promise<void> {
   const config = buildRuntimeConfig();
   const peerDbClient = new Client({ connectionString: config.peerDbUrl });
+  const sourcePostgresClient = new Client({ connectionString: requireEnv("DATABASE_URL") });
   const clickHouseClient = createClickHouseClientFromEnv();
   const templateSql = await readFile(config.templatePath, "utf8");
 
   try {
     await peerDbClient.connect();
+    await sourcePostgresClient.connect();
     await setupClickHouseCdc({
       peerDbClient,
+      sourcePostgresClient,
       clickHouseClient,
       templateSql,
       templateValues: config.templateValues,
     });
   } finally {
     await peerDbClient.end();
+    await sourcePostgresClient.end();
     await clickHouseClient.close?.();
   }
 }
