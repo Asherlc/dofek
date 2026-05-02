@@ -44,6 +44,13 @@ docker compose up -d db clickhouse redis
 pnpm migrate
 ```
 
+To run the CDC path locally (not part of the default compose profile):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.peerdb.yml up -d
+pnpm clickhouse-cdc
+```
+
 Use these local URLs:
 
 - `DATABASE_URL=postgres://health:health@localhost:5435/health`

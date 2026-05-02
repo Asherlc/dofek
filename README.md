@@ -115,6 +115,10 @@ The server imports shared code from the root package via `dofek` workspace depen
 
 ```bash
 docker compose up -d db clickhouse redis   # required for integration tests, projections, and local workers
+# Optional local CDC stack (required for real-time Postgres -> ClickHouse metric_stream replication)
+docker compose -f docker-compose.yml -f docker-compose.peerdb.yml up -d
+pnpm clickhouse-cdc                   # configure PeerDB CDC mirror for peerdb.metric_stream
+
 pnpm test                       # run tests
 pnpm test:watch                 # run tests in watch mode
 pnpm dev                        # run sync runner in dev mode
