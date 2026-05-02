@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helper.ts";
+import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helpers.ts";
 
 /**
  * Integration tests that verify every tRPC query endpoint executes valid SQL.

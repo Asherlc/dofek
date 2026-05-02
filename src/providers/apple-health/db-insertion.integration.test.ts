@@ -6,10 +6,15 @@ import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
   insertWithDuplicateDiag,
+  upsertDailyMetricsBatch,
+  upsertHealthEventBatch,
+  upsertMetricStreamBatch,
   upsertSleepBatch,
   upsertWorkoutBatch,
 } from "./db-insertion.ts";
+import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
+import { healthRecord } from "./test-helpers.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const PROVIDER_ID = "apple_health";
@@ -154,6 +159,125 @@ describe("db-insertion deduplication (integration)", () => {
 
       expect(result).toHaveLength(1);
       expect(Number(result[0]?.weightKg)).toBe(81); // last duplicate wins
+    });
+  });
+
+  describe("upsertMetricStreamBatch", () => {
+    it("routes supported quantity records into metric_stream channels", async () => {
+      const recordedAt = new Date("2025-09-01T08:00:00Z");
+      const records: HealthRecord[] = [
+        healthRecord("HKQuantityTypeIdentifierHeartRate", 62.4, recordedAt, "count/min"),
+        healthRecord("HKQuantityTypeIdentifierOxygenSaturation", 0.97, recordedAt, "%"),
+        healthRecord("HKQuantityTypeIdentifierRespiratoryRate", 14.2, recordedAt, "count/min"),
+        healthRecord("HKQuantityTypeIdentifierBloodGlucose", 91, recordedAt, "mg/dL"),
+        healthRecord(
+          "HKQuantityTypeIdentifierEnvironmentalAudioExposure",
+          55,
+          recordedAt,
+          "dBASPL",
+        ),
+        healthRecord(
+          "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+          33.7,
+          recordedAt,
+          "degC",
+        ),
+        healthRecord("HKQuantityTypeIdentifierElectrodermalActivity", 0.42, recordedAt, "uS"),
+        healthRecord("HKQuantityTypeIdentifierStepCount", 123, recordedAt, "count"),
+      ];
+
+      const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records);
+
+      expect(count).toBe(7);
+
+      const rows = await ctx.db
+        .select({
+          channel: schema.metricStream.channel,
+          scalar: schema.metricStream.scalar,
+          deviceId: schema.metricStream.deviceId,
+        })
+        .from(schema.metricStream)
+        .where(sql`${schema.metricStream.recordedAt} = ${recordedAt.toISOString()}::timestamptz`);
+
+      expect(rows).toHaveLength(7);
+      expect(rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ channel: "heart_rate", scalar: 62 }),
+          expect.objectContaining({ channel: "spo2", scalar: 0.97 }),
+          expect.objectContaining({ channel: "respiratory_rate", scalar: 14.2 }),
+          expect.objectContaining({ channel: "blood_glucose", scalar: 91 }),
+          expect.objectContaining({ channel: "audio_exposure", scalar: 55 }),
+          expect.objectContaining({ channel: "skin_temperature", scalar: 33.7 }),
+          expect.objectContaining({ channel: "electrodermal_activity", scalar: 0.42 }),
+        ]),
+      );
+      expect(rows.every((row) => row.deviceId === "Apple Watch")).toBe(true);
+    });
+  });
+
+  describe("upsertDailyMetricsBatch", () => {
+    it("keeps additive daily metrics separated by source", async () => {
+      const date = new Date("2025-09-02T10:00:00Z");
+      const records: HealthRecord[] = [
+        healthRecord("HKQuantityTypeIdentifierStepCount", 1000, date, "count", "Apple Watch"),
+        healthRecord(
+          "HKQuantityTypeIdentifierStepCount",
+          2000,
+          new Date("2025-09-02T11:00:00Z"),
+          "count",
+          "Apple Watch",
+        ),
+        healthRecord("HKQuantityTypeIdentifierStepCount", 5000, date, "count", "iPhone"),
+      ];
+
+      const count = await upsertDailyMetricsBatch(ctx.db, PROVIDER_ID, records);
+
+      expect(count).toBe(2);
+
+      const rows = await ctx.db
+        .select({
+          sourceName: schema.dailyMetrics.sourceName,
+          steps: schema.dailyMetrics.steps,
+        })
+        .from(schema.dailyMetrics)
+        .where(eq(schema.dailyMetrics.date, "2025-09-02"))
+        .orderBy(schema.dailyMetrics.sourceName);
+
+      expect(rows).toEqual([
+        { sourceName: "Apple Watch", steps: 3000 },
+        { sourceName: "iPhone", steps: 5000 },
+      ]);
+    });
+
+    it("ignores provider VO2 max and resting heart rate summaries", async () => {
+      const date = new Date("2025-09-03T06:00:00Z");
+      const records: HealthRecord[] = [
+        healthRecord("HKQuantityTypeIdentifierRestingHeartRate", 52, date, "count/min"),
+        healthRecord("HKQuantityTypeIdentifierVO2Max", 48.5, date, "mL/min/kg"),
+      ];
+
+      const dailyCount = await upsertDailyMetricsBatch(ctx.db, PROVIDER_ID, records);
+      const eventCount = await upsertHealthEventBatch(ctx.db, PROVIDER_ID, records);
+
+      expect(dailyCount).toBe(0);
+      expect(eventCount).toBe(0);
+
+      const dailyRows = await ctx.db
+        .select()
+        .from(schema.dailyMetrics)
+        .where(eq(schema.dailyMetrics.date, "2025-09-03"));
+      expect(dailyRows).toHaveLength(0);
+
+      const eventRows = await ctx.db
+        .select({
+          type: schema.healthEvent.type,
+          value: schema.healthEvent.value,
+        })
+        .from(schema.healthEvent)
+        .where(sql`${schema.healthEvent.startDate} = ${date.toISOString()}::timestamptz`)
+        .orderBy(schema.healthEvent.type);
+
+      expect(eventRows).toHaveLength(0);
     });
   });
 

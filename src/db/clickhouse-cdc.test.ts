@@ -110,7 +110,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
 
     expect(clickHouseCommands).toEqual(["CREATE DATABASE IF NOT EXISTS peerdb"]);
-    expect(peerDbQueries).toEqual(["host = 'db', password = 'pa\\'ss\\\\word'"]);
+    expect(peerDbQueries).toEqual(["host = 'db', password = 'pa''ss\\word'"]);
   });
 
   it("fails when the PeerDB SQL template references an unknown placeholder", async () => {
@@ -208,10 +208,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
     const peerDbQuery = String(peerDbClientMocks.query.mock.calls[0]?.[0]);
     expect(peerDbQuery).toContain("host = 'postgres.example'");
-    expect(peerDbQuery).toContain("port = '6543'");
-    expect(peerDbQuery).toContain("password = 'pg\\'credential'");
+    expect(peerDbQuery).toContain("port = 6543");
+    expect(peerDbQuery).toContain("password = 'pg''credential'");
     expect(peerDbQuery).toContain("host = 'clickhouse'");
-    expect(peerDbQuery).toContain("password = 'click\\\\credential'");
+    expect(peerDbQuery).toContain("password = 'click\\credential'");
     expect(peerDbQuery).not.toContain("{{");
     expect(peerDbClientMocks.end).toHaveBeenCalledTimes(1);
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
@@ -253,6 +253,39 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
     await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
       "CLICKHOUSE_URL must include a password for PeerDB setup",
+    );
+    expect(peerDbClientMocks.Client).not.toHaveBeenCalled();
+  });
+
+  it("requires database URL credentials and database name for PeerDB setup", async () => {
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "fixture",
+      "clickhouse.example:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+
+    process.env.DATABASE_URL = "postgres://postgres.example:6543/fitness";
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "DATABASE_URL must include username for PeerDB setup",
+    );
+
+    process.env.DATABASE_URL = "postgres://health@postgres.example:6543/fitness";
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "DATABASE_URL must include password for PeerDB setup",
+    );
+
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "fixture",
+      "postgres.example:6543",
+      "",
+    );
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "DATABASE_URL must include database name for PeerDB setup",
     );
     expect(peerDbClientMocks.Client).not.toHaveBeenCalled();
   });

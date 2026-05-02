@@ -237,9 +237,7 @@ export async function processDailyMetrics(
 
     // Point-in-time fields: overwrite with aggregated day values (HRV is day-averaged upstream)
     const pointFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
-      { column: "resting_hr", key: "restingHr" },
       { column: "hrv", key: "hrv" },
-      { column: "vo2max", key: "vo2max" },
       { column: "walking_speed", key: "walkingSpeed" },
       { column: "walking_step_length", key: "walkingStepLength" },
       { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },

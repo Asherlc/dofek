@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import { logger } from "../logger.ts";
 import { setupClickHouseCdcFromEnv } from "./clickhouse-cdc.ts";
 
@@ -15,6 +16,7 @@ if (isDirectRun) {
     .then(() => process.exit(0))
     .catch((error) => {
       logger.error(`[clickhouse-cdc] ${error}`);
+      captureException(error);
       process.exit(1);
     });
 }

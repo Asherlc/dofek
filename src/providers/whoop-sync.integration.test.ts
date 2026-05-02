@@ -259,7 +259,6 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const day = rows.find((r) => r.date === "2026-03-01");
     if (!day) throw new Error("expected day 2026-03-01");
-    expect(day.restingHr).toBe(52);
     expect(day.hrv).toBeCloseTo(65.5);
     expect(day.spo2Avg).toBeCloseTo(97.2);
     expect(day.skinTempC).toBeCloseTo(33.7);
@@ -298,7 +297,6 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const day = rows.find((r) => r.date === "2026-03-01");
     if (!day) throw new Error("expected day 2026-03-01");
-    expect(day.restingHr).toBe(57);
     expect(day.hrv).toBeCloseTo(77.1, 0);
     expect(day.spo2Avg).toBeCloseTo(96.5);
     expect(day.skinTempC).toBeCloseTo(34.2);

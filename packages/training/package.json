@@ -10,6 +10,7 @@
     "./endurance-types": "./src/endurance-types.ts",
     "./power-analysis": "./src/power-analysis.ts",
     "./pmc": "./src/pmc.ts",
+    "./derived-cardio": "./src/derived-cardio.ts",
     "./grade-adjusted-pace": "./src/grade-adjusted-pace.ts",
     "./muscle-groups": "./src/muscle-groups.ts"
   },

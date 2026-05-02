@@ -52,9 +52,7 @@ interface BodyMeasurementViewRow extends Record<string, unknown> {
 
 interface DailyMetricsViewRow extends Record<string, unknown> {
   date: string;
-  resting_hr: number | null;
   hrv: number | string | null;
-  vo2max: number | string | null;
   spo2_avg: number | string | null;
   respiratory_rate_avg: number | string | null;
   skin_temp_c: number | string | null;
@@ -380,7 +378,6 @@ describe("Deduplication materialized views", () => {
       {
         date: "2026-03-01",
         providerId: "whoop",
-        restingHr: 52,
         hrv: 65.5,
         spo2Avg: 97.2,
         skinTempC: 33.7,
@@ -390,7 +387,6 @@ describe("Deduplication materialized views", () => {
       {
         date: "2026-03-01",
         providerId: "apple_health",
-        restingHr: 54, // slightly different
         hrv: 62.0,
         steps: 8421,
         activeEnergyKcal: 450,
@@ -407,8 +403,7 @@ describe("Deduplication materialized views", () => {
     expect(rows.length).toBe(1);
     const day = rows[0];
     expect(day).toBeDefined();
-    // WHOOP wins for restingHr/hrv/spo2 (priority 30 < 90)
-    expect(day?.resting_hr).toBe(52);
+    // WHOOP wins for recovery metrics (priority 30 < 90)
     expect(Number(day?.hrv)).toBeCloseTo(65.5);
     expect(Number(day?.spo2_avg)).toBeCloseTo(97.2);
     expect(Number(day?.skin_temp_c)).toBeCloseTo(33.7);
@@ -540,7 +535,6 @@ describe("Deduplication materialized views", () => {
         {
           date: "2026-03-15",
           providerId: "whoop",
-          restingHr: 52,
           hrv: 65.5,
           spo2Avg: 97.2,
           skinTempC: 33.7,
@@ -551,7 +545,6 @@ describe("Deduplication materialized views", () => {
         {
           date: "2026-03-15",
           providerId: "apple_health",
-          restingHr: 54,
           hrv: 62.0,
           spo2Avg: 96.8,
           skinTempC: null,
@@ -570,8 +563,7 @@ describe("Deduplication materialized views", () => {
       expect(rows.length).toBe(1);
       const day = rows[0];
       expect(day).toBeDefined();
-      // Recovery metrics: WHOOP should win (better 24/7 HR/HRV monitoring)
-      expect(day?.resting_hr).toBe(52);
+      // Recovery metrics: WHOOP should win (better 24/7 monitoring)
       expect(Number(day?.hrv)).toBeCloseTo(65.5);
       expect(Number(day?.spo2_avg)).toBeCloseTo(97.2);
       expect(Number(day?.skin_temp_c)).toBeCloseTo(33.7);

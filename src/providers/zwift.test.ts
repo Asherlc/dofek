@@ -49,13 +49,13 @@ const { MockZwiftClient } = vi.hoisted(() => {
     static signIn = vi.fn().mockImplementation(async () => MockZwiftClient.signInResult);
     static refreshToken = vi.fn().mockImplementation(async () => MockZwiftClient.refreshResult);
 
-    getActivities = vi.fn().mockImplementation(async () => {
+    getActivities = vi.fn().mockImplementation(async (offset = 0) => {
       if (!/^\d+$/.test(this.athleteId)) {
         throw new Error(
           `Zwift API error (404): RESTEASY003210: Could not find resource for full path: https://us-or-rly101.zwift.com/api/profiles/${this.athleteId}/activities`,
         );
       }
-      return MockZwiftClient.activities;
+      return offset === 0 ? MockZwiftClient.activities : [];
     });
     getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
@@ -368,19 +368,11 @@ describe("ZwiftProvider.sync() — token resolution", () => {
 
 describe("ZwiftProvider.sync() — activity sync", () => {
   it("syncs activities and metric streams", async () => {
-    MockZwiftClient.activities = [
-      {
-        id: 123,
-        name: "Watopia Ride",
-        startDate: "2026-03-15T18:00:00Z",
-        endDate: "2026-03-15T19:00:00Z",
-      },
-    ];
+    MockZwiftClient.activities = [sampleActivity];
     MockZwiftClient.activityDetail = {
-      fitnessData: { fullDataUrl: "https://zwift.com/fitness/123" },
+      fitnessData: { fullDataUrl: "https://zwift.com/fitness/123456789" },
     };
-    MockZwiftClient.fitnessData = { data: "something" };
-    MockZwiftClient.powerCurve = { zFtp: 250, vo2Max: 55 };
+    MockZwiftClient.fitnessData = sampleFitnessData;
 
     const db = makeMockDb({
       tokens: {
@@ -394,7 +386,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     const provider = new ZwiftProvider();
     const result = await provider.sync(db, new Date("2026-01-01"));
     expect(result.provider).toBe("zwift");
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    expect(result.recordsSynced).toBe(1);
   });
 
   it("handles stream fetch error gracefully (non-fatal)", async () => {

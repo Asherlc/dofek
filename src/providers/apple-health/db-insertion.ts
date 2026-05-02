@@ -86,9 +86,7 @@ export const BODY_MEASUREMENT_TYPES = new Set([
 // Records that map to daily_metrics (one value per day)
 // Additive types get summed; point-in-time types keep latest value
 export const DAILY_METRIC_TYPES = new Set([
-  "HKQuantityTypeIdentifierRestingHeartRate",
   "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
-  "HKQuantityTypeIdentifierVO2Max",
   "HKQuantityTypeIdentifierStepCount",
   "HKQuantityTypeIdentifierActiveEnergyBurned",
   "HKQuantityTypeIdentifierBasalEnergyBurned",
@@ -106,6 +104,12 @@ export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierPushCount",
   "HKQuantityTypeIdentifierDistanceWheelchair",
   "HKQuantityTypeIdentifierUVExposure",
+]);
+
+// Provider-computed summaries that are derived from raw streams server-side.
+export const IGNORED_PROVIDER_DERIVED_TYPES = new Set([
+  "HKQuantityTypeIdentifierRestingHeartRate",
+  "HKQuantityTypeIdentifierVO2Max",
 ]);
 
 // Additive daily metrics (summed across all records in a day)
@@ -149,6 +153,7 @@ export const ALL_ROUTED_TYPES = new Set([
   ...Object.keys(METRIC_STREAM_TYPES),
   ...BODY_MEASUREMENT_TYPES,
   ...DAILY_METRIC_TYPES,
+  ...IGNORED_PROVIDER_DERIVED_TYPES,
   ...Object.keys(NUTRITION_TYPES),
   "HKCategoryTypeIdentifierSleepAnalysis", // handled separately in SAX parser
 ]);
@@ -369,14 +374,8 @@ export async function upsertDailyMetricsBatch(
 
     for (const [type, value] of metrics) {
       switch (type) {
-        case "HKQuantityTypeIdentifierRestingHeartRate":
-          row.restingHr = Math.round(value);
-          break;
         case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
           row.hrv = value;
-          break;
-        case "HKQuantityTypeIdentifierVO2Max":
-          row.vo2max = value;
           break;
         case "HKQuantityTypeIdentifierStepCount":
           row.steps = Math.round(value);
@@ -455,9 +454,7 @@ export async function upsertDailyMetricsBatch(
             ],
             set: {
               // Point-in-time metrics: prefer new value, fall back to existing
-              restingHr: sql`coalesce(excluded.resting_hr, ${dailyMetrics.restingHr})`,
               hrv: sql`coalesce(excluded.hrv, ${dailyMetrics.hrv})`,
-              vo2max: sql`coalesce(excluded.vo2max, ${dailyMetrics.vo2max})`,
               spo2Avg: sql`coalesce(excluded.spo2_avg, ${dailyMetrics.spo2Avg})`,
               respiratoryRateAvg: sql`coalesce(excluded.respiratory_rate_avg, ${dailyMetrics.respiratoryRateAvg})`,
               walkingSpeed: sql`coalesce(excluded.walking_speed, ${dailyMetrics.walkingSpeed})`,

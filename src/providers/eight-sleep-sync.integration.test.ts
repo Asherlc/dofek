@@ -185,7 +185,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     const daily1 = dailyRows.find((r) => r.date === "2026-03-01");
     if (!daily1) throw new Error("expected daily metrics for 2026-03-01");
-    expect(daily1.restingHr).toBe(58);
     expect(daily1.hrv).toBeCloseTo(45);
     expect(daily1.respiratoryRateAvg).toBeCloseTo(15.5);
 
