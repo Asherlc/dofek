@@ -2468,9 +2468,19 @@ Temporal started.
 
 ### Fix or Mitigation
 
-The healthcheck now uses the Swarm service DNS name,
-`tctl --address peerdb-temporal:7233`, matching the address used by PeerDB flow
-services.
+The initial fix changed the healthcheck to the Swarm service DNS name,
+`tctl --address peerdb-temporal:7233`, but deploy run `25244198471` showed that
+the Temporal container itself could not resolve that service name from Docker's
+embedded DNS:
+
+```text
+Failed to create SDK client {"error": "failed reaching server: last connection error: connection error: desc = \"transport: Error while dialing: dial tcp: lookup peerdb-temporal on 127.0.0.11:53: no such host\""}
+```
+
+A direct check inside the running container confirmed that
+`tctl --address "$(hostname -i | awk '{print $1}'):7233" workflow list`
+succeeds. The healthcheck now computes the container task IP at runtime and
+connects to Temporal on that address.
 
 ### Remaining Risk
 
