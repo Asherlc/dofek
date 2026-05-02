@@ -2161,3 +2161,53 @@ backfill windows and continue from the first missing window.
 Very dense one-hour windows can still take longer than expected, but future
 failures will now identify the exact window being copied and retries will not
 discard completed native backfill progress.
+
+## 2026-05-01: Manual CloudBeaver Deploy Reused Pre-Fix Migration Image
+
+### Symptoms
+
+Manual production deploy run `25239905048` from branch
+`Asherlc/setup-dbeaver` failed in job `74013763788` during the `Run migrations`
+step. The deployment stopped before `docker stack deploy`, so the CloudBeaver
+stack change did not release.
+
+### Evidence
+
+The run checked out commit `fabd4d7`, resolved `INPUT_TAG=latest`, and ran
+`ghcr.io/asherlc/dofek:latest` for migrations. The first fatal line was:
+
+```text
+Migration failed (exit code 1).
+```
+
+The migration output ended with:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+Postgres migrations and Postgres materialized-view sync had already completed,
+which puts the failure in the ClickHouse migration path.
+
+### Root Cause
+
+The manual deploy reused the same pre-fix ClickHouse metric-stream backfill
+behavior described above: a large `INSERT INTO ... SELECT FROM postgresql(...)`
+operation exceeded the ClickHouse client's request timeout. The branch was
+based on `1b5da985`, while `main` later added the bounded backfill-window fix in
+`03798a36`.
+
+### Fix or Mitigation
+
+No new code change was required for this specific run. Deploy a `dofek` image
+built from `03798a36` or newer, or replay the CloudBeaver stack changes on top
+of current `main`, so the migration container uses the bounded ClickHouse
+backfill implementation.
+
+### Remaining Risk
+
+The `Asherlc/setup-dbeaver` branch itself still points at `fabd4d7`, so another
+manual deploy from that branch with `image_tag=latest` can repeat the same
+failure if `latest` has not been advanced to a fixed image. Avoid production
+deploys from stale feature branches unless the image tag is pinned to a known
+fixed commit.
