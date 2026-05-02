@@ -129,11 +129,52 @@ function renderPeerDbSqlTemplate(templateSql: string, values: PeerDbSqlTemplateV
   });
 }
 
+function splitPeerDbSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let currentStatement = "";
+  let inSingleQuotedString = false;
+
+  for (let characterIndex = 0; characterIndex < sql.length; characterIndex += 1) {
+    const character = sql[characterIndex];
+    const nextCharacter = sql[characterIndex + 1];
+
+    if (character === "'") {
+      currentStatement += character;
+      if (inSingleQuotedString && nextCharacter === "'") {
+        currentStatement += nextCharacter;
+        characterIndex += 1;
+      } else {
+        inSingleQuotedString = !inSingleQuotedString;
+      }
+      continue;
+    }
+
+    if (character === ";" && !inSingleQuotedString) {
+      const statement = currentStatement.trim();
+      if (statement) {
+        statements.push(statement);
+      }
+      currentStatement = "";
+      continue;
+    }
+
+    currentStatement += character;
+  }
+
+  const finalStatement = currentStatement.trim();
+  if (finalStatement) {
+    statements.push(finalStatement);
+  }
+
+  return statements;
+}
+
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
-  await options.peerDbClient.query(
-    renderPeerDbSqlTemplate(options.templateSql, options.templateValues),
-  );
+  const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
+  for (const statement of splitPeerDbSqlStatements(renderedSql)) {
+    await options.peerDbClient.query(statement);
+  }
 }
 
 export async function setupClickHouseCdcFromEnv(): Promise<void> {

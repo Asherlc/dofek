@@ -2487,3 +2487,43 @@ connects to Temporal on that address.
 This keeps the existing `tctl` healthcheck behavior. Temporal logs warn that
 `tctl` enters end of support on 2025-09-30, so a future Temporal maintenance
 pass should migrate the healthcheck to the supported Temporal CLI.
+
+## 2026-05-02: PeerDB CDC Multi-Statement Setup Rejected
+
+### Symptoms
+
+After the replayed `Asherlc/setup-dbeaver` stack converged on image
+`ghcr.io/asherlc/dofek:sha-be6b6e0`, deploy workflow run `25245047541` failed in
+the post-stack `Configure ClickHouse CDC` step.
+
+### Evidence
+
+The first fatal setup log line was:
+
+```text
+[clickhouse-cdc] error: unsupported sql: CREATE PEER IF NOT EXISTS dofek_postgres FROM POSTGRES WITH ...
+```
+
+The same error payload showed PeerDB had parsed three statements from the single
+query payload: `CreatePeer` for Postgres, `CreatePeer` for ClickHouse, and
+`CreateMirror` for `dofek_metric_stream_cdc`.
+
+### Root Cause
+
+The setup script rendered `src/db/peerdb/metric-stream-cdc.sql` and sent all
+three semicolon-delimited PeerDB DDL statements through one `pg` query. PeerDB's
+SQL endpoint parses those statements but rejects the combined multi-statement
+payload as unsupported.
+
+### Fix or Mitigation
+
+The setup script now renders the template once, splits it into individual
+statements while preserving semicolons inside single-quoted literals, and sends
+each PeerDB DDL statement as its own query.
+
+### Remaining Risk
+
+The splitter is intentionally small and covers the checked-in PeerDB template
+shape plus single-quoted runtime values. If future PeerDB templates introduce
+comments, dollar-quoted strings, or procedural SQL, replace the splitter with a
+real SQL parser or move to a PeerDB-supported declarative API.
