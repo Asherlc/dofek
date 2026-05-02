@@ -2348,3 +2348,49 @@ the persistent host path.
 If this service later contains real catalog data and needs a PostgreSQL major
 upgrade, perform a catalog backup and `pg_upgrade` flow rather than changing the
 mount path or image tag alone.
+
+## 2026-05-01: Temporal Visibility Bootstrap Interrupted
+
+### Symptoms
+
+Production deploy run `25242863616` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-7906e92`.
+Migrations succeeded, but `docker stack deploy --detach=false` did not converge
+because `dofek_peerdb-temporal` repeatedly exited. Downstream PeerDB flow
+services also exited while Temporal was unavailable.
+
+### Evidence
+
+The first fatal Temporal log line was:
+
+```text
+Unable to update SQL schema. {"error": "error executing statement: pq: index \"by_type_start_time\" does not exist"}
+```
+
+The catalog database had `temporal_visibility.schema_version.curr_version =
+1.1`, while `executions_visibility.search_attributes` and several `v1.2`
+advanced-visibility indexes already existed. The old `v1.0`/`v1.1` indexes that
+Temporal `v1.2` expects to drop were gone.
+
+### Root Cause
+
+An earlier deploy attempt interrupted Temporal's first `temporal_visibility`
+`v1.2` schema update after it had added columns and dropped legacy indexes, but
+before the Temporal schema version table advanced from `1.1`. On restart,
+Temporal retried the `v1.2` SQL from the beginning and failed at the first
+non-idempotent `DROP INDEX`.
+
+### Fix or Mitigation
+
+The deploy workflow now performs a narrowly scoped preflight repair before
+`docker stack deploy`: if `temporal_visibility` is exactly in this partial
+`1.1`/`v1.2` bootstrap state, it recreates the legacy indexes that Temporal's
+official migration expects to drop. Temporal can then rerun its own migration
+and advance the schema normally.
+
+### Remaining Risk
+
+This repair only covers the observed interrupted `v1.2` visibility bootstrap
+state. Future Temporal upgrade failures should still be diagnosed from the first
+fatal Temporal log line and the catalog `schema_version` tables before adding
+any new repair path.

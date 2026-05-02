@@ -436,6 +436,60 @@ jobs:
             exit 1
           fi
 
+      - name: Repair Temporal visibility schema bootstrap
+        run: |
+          if ! docker service inspect "${STACK_NAME}_peerdb-catalog" >/dev/null 2>&1; then
+            echo "PeerDB catalog service does not exist yet; skipping Temporal visibility repair."
+            exit 0
+          fi
+
+          if ! docker service ps "${STACK_NAME}_peerdb-catalog" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
+            echo "PeerDB catalog service is not running yet; skipping Temporal visibility repair."
+            exit 0
+          fi
+
+          database_exists="$(
+            timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=peerdb-catalog --username=postgres --dbname=postgres --no-align --tuples-only --quiet \
+              --command \"SELECT 1 FROM pg_database WHERE datname = 'temporal_visibility';\"" 2>/dev/null || true
+          )"
+          if [ "$(printf '%s\n' "$database_exists" | tail -n 1 | tr -d '[:space:]')" != "1" ]; then
+            echo "Temporal visibility database does not exist; skipping repair."
+            exit 0
+          fi
+
+          bootstrap_state="$(
+            timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=peerdb-catalog --username=postgres --dbname=temporal_visibility --no-align --tuples-only --quiet \
+              --command \"SELECT curr_version || '|' || EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'executions_visibility' AND column_name = 'search_attributes') || '|' || EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'executions_visibility' AND indexname = 'by_type_start_time') FROM schema_version WHERE version_partition = 0;\"" 2>/dev/null || true
+          )"
+          bootstrap_state="$(printf '%s\n' "$bootstrap_state" | tail -n 1 | tr -d '[:space:]')"
+          if [ "$bootstrap_state" != "1.1|t|f" ]; then
+            echo "Temporal visibility repair not needed; state=${bootstrap_state:-unknown}."
+            exit 0
+          fi
+
+          echo "Repairing interrupted Temporal visibility v1.2 bootstrap by restoring legacy indexes."
+          timeout 60s docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$INFISICAL_ENV_FILE" \
+            postgres:18-alpine sh -euc \
+            'PGPASSWORD="$POSTGRES_PASSWORD" \
+            psql --host=peerdb-catalog --username=postgres --dbname=temporal_visibility --set=ON_ERROR_STOP=1 --command "
+              CREATE INDEX IF NOT EXISTS by_type_start_time ON executions_visibility (namespace_id, workflow_type_name, status, start_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_workflow_id_start_time ON executions_visibility (namespace_id, workflow_id, status, start_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_status_by_start_time ON executions_visibility (namespace_id, status, start_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_type_close_time ON executions_visibility (namespace_id, workflow_type_name, status, close_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_workflow_id_close_time ON executions_visibility (namespace_id, workflow_id, status, close_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_status_by_close_time ON executions_visibility (namespace_id, status, close_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_close_time_by_status ON executions_visibility (namespace_id, close_time DESC, run_id, status);
+            "'
+
       - name: Deploy stack
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
