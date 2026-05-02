@@ -1,4 +1,4 @@
-import { Client } from "pg";
+import { Client, escapeIdentifier } from "pg";
 import { z } from "zod";
 import { logger } from "../logger.ts";
 import {
@@ -13,13 +13,28 @@ interface MigrationCountRow {
 }
 
 interface MetricStreamBackfillChunkRow {
+  lower_bound: string | null;
+  upper_bound: string | null;
+}
+
+interface MetricStreamBackfillChunkRange {
   lower_bound: string;
   upper_bound: string;
 }
 
+interface TimescaleChunkRow {
+  chunk_schema: string;
+  chunk_name: string;
+}
+
 const metricStreamBackfillChunkRowSchema = z.object({
-  lower_bound: z.string(),
-  upper_bound: z.string(),
+  lower_bound: z.string().nullable(),
+  upper_bound: z.string().nullable(),
+});
+
+const timescaleChunkRowSchema = z.object({
+  chunk_schema: z.string(),
+  chunk_name: z.string(),
 });
 
 interface MetricStreamBackfillChunkCountRow {
@@ -300,22 +315,40 @@ WHERE lower_bound = ${clickHouseDateTimeLiteral(chunkStart)}
 
 async function fetchMetricStreamBackfillChunks(
   postgresConnectionString: string,
-): Promise<MetricStreamBackfillChunkRow[]> {
+): Promise<MetricStreamBackfillChunkRange[]> {
   const postgresClient = new Client({ connectionString: postgresConnectionString });
   try {
     await postgresClient.connect();
-    const result = await postgresClient.query<MetricStreamBackfillChunkRow>(`
+    const chunksResult = await postgresClient.query<TimescaleChunkRow>(`
       SELECT
-        to_char(range_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS lower_bound,
-        to_char(range_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS upper_bound
+        chunk_schema,
+        chunk_name
       FROM timescaledb_information.chunks
       WHERE hypertable_schema = 'fitness'
         AND hypertable_name = 'metric_stream'
-        AND range_start IS NOT NULL
-        AND range_end IS NOT NULL
       ORDER BY range_start ASC
     `);
-    return result.rows.map((row) => metricStreamBackfillChunkRowSchema.parse(row));
+    const chunks = chunksResult.rows.map((row) => timescaleChunkRowSchema.parse(row));
+    const chunkBounds: MetricStreamBackfillChunkRange[] = [];
+    for (const chunk of chunks) {
+      const chunkTable = `${escapeIdentifier(chunk.chunk_schema)}.${escapeIdentifier(
+        chunk.chunk_name,
+      )}`;
+      const chunkBoundsResult = await postgresClient.query<MetricStreamBackfillChunkRow>(`
+        SELECT
+          to_char(min(recorded_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS lower_bound,
+          to_char((max(recorded_at) + interval '1 microsecond') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS upper_bound
+        FROM ${chunkTable}
+      `);
+      const bounds = metricStreamBackfillChunkRowSchema.parse(chunkBoundsResult.rows[0]);
+      if (bounds.lower_bound && bounds.upper_bound) {
+        chunkBounds.push({
+          lower_bound: bounds.lower_bound,
+          upper_bound: bounds.upper_bound,
+        });
+      }
+    }
+    return chunkBounds;
   } finally {
     await postgresClient.end();
   }

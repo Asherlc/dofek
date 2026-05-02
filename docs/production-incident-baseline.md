@@ -2211,3 +2211,45 @@ manual deploy from that branch with `image_tag=latest` can repeat the same
 failure if `latest` has not been advanced to a fixed image. Avoid production
 deploys from stale feature branches unless the image tag is pinned to a known
 fixed commit.
+
+## 2026-05-01: ClickHouse Backfill Retried Too Many Empty Chunk Windows
+
+### Symptoms
+
+After replaying `Asherlc/setup-dbeaver` onto current `main`, production deploy
+run `25240719766` used image `ghcr.io/asherlc/dofek:sha-bcfe4eb` and progressed
+past the original full-chunk timeout. The `Run migrations` step still spent
+most of its time in `0006_backfill_native_metric_stream`, logging one-hour
+windows such as:
+
+```text
+[clickhouse-migrations] Backfilling metric_stream 2014-10-05T13:00:00.000Z..2014-10-05T14:00:00.000Z
+```
+
+### Evidence
+
+The workflow migration step has a `3300s` timeout. Production
+`timescaledb_information.chunks` reported 195 `fitness.metric_stream` chunks
+with an estimated 32,760 one-hour chunk-range windows, including chunk bounds
+from `1989-12-28 00:00:00+00` through `2104-02-14 00:00:00+00`. ClickHouse
+progress showed only 7,421 completed backfill windows roughly 25 minutes after
+the migration started.
+
+### Root Cause
+
+The bounded backfill fix split raw Timescale chunk ranges into one-hour
+ClickHouse inserts. Some production chunk ranges are far wider than the rows
+they contain, so the migration still performs thousands of empty or unnecessary
+ClickHouse inserts before reaching real data.
+
+### Fix or Mitigation
+
+Backfill discovery now reads each Timescale chunk table's actual
+`min(recorded_at)` and `max(recorded_at) + 1 microsecond` and skips chunks with
+no rows. The one-hour window split remains, but it only covers occupied time
+ranges.
+
+### Remaining Risk
+
+Very dense occupied chunks can still require many one-hour windows, but sparse
+or over-wide Timescale chunks no longer dominate deploy time.
