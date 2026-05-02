@@ -98,6 +98,9 @@ describe("run-migrate main()", () => {
 
     await main();
 
+    expect(mockCreateClickHouseClientFromEnv).toHaveBeenCalledWith(process.env, {
+      requestTimeoutMs: 3_300_000,
+    });
     expect(mockRunClickHouseMigrations).toHaveBeenCalledWith(
       clickHouseClient,
       "postgres://test:test@localhost:5432/test",

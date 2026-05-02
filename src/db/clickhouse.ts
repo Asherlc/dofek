@@ -21,6 +21,10 @@ export interface ClickHouseClient extends ClickHouseCommandClient {
   }): Promise<{ json(): Promise<TRow[]> }>;
 }
 
+interface ClickHouseClientOptions {
+  requestTimeoutMs?: number;
+}
+
 interface TableCountRow {
   table_count: number | string;
 }
@@ -463,12 +467,16 @@ LEFT JOIN distance_per_activity
 
 export function createClickHouseClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  options: ClickHouseClientOptions = {},
 ): ClickHouseClient {
   const url = env.CLICKHOUSE_URL;
   if (!url) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
-  return createClient({ url });
+  if (options.requestTimeoutMs === undefined) {
+    return createClient({ url });
+  }
+  return createClient({ url, request_timeout: options.requestTimeoutMs });
 }
 
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {

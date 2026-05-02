@@ -2152,3 +2152,42 @@ The exact failing browser request after an authenticated login was not captured
 because the agent session did not have the user's Authentik browser cookies.
 Further debugging needs either the browser network entry from the logged-in
 session or a deliberate local-only Netdata configuration change.
+
+## 2026-05-01: Deploy Blocked by ClickHouse Backfill Timeout
+
+### Symptoms
+
+The web stack deploy failed in the `Run migrations` step before
+`docker stack deploy` ran. The first fatal log line was
+`error: [migrate] Error: Timeout error.`
+
+### Evidence
+
+Postgres migrations completed with zero pending migrations and materialized view
+sync reported `synced=0 skipped=7 refreshed=0`. ClickHouse
+`analytics.schema_migrations` had migrations `0001` through `0005` applied, but
+`0006_backfill_native_metric_stream` was missing. The ClickHouse partial
+backfill table had 42 completed chunks, while `@clickhouse/client` defaults
+`request_timeout` to 30000 ms.
+
+### Root Cause
+
+The pending native metric stream backfill is a long-running production
+ClickHouse migration, but the migration runner used the default 30 second
+ClickHouse HTTP request timeout. The client cancelled an expected long-running
+backfill request before the deploy workflow's migration timeout could govern the
+operation.
+
+### Fix or Mitigation
+
+Configured the migration runner to create its ClickHouse client with a
+3,300,000 ms request timeout, matching the workflow's migration timeout. This is
+scoped to migrations so the web server's normal ClickHouse requests keep the
+default timeout.
+
+### Remaining Risk
+
+`0006_backfill_native_metric_stream` still has to complete during a deploy. If
+the backfill exceeds the workflow-level timeout, the next fix should split the
+backfill into smaller durable migration phases rather than increasing the
+timeout again.
