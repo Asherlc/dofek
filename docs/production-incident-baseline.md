@@ -2117,50 +2117,60 @@ compare row counts and recent-row freshness between Postgres,
 `postgres_fitness.metric_stream`, and `peerdb.metric_stream`, then cut
 `analytics.deduped_sensor` over in a separate migration.
 
-## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
+## 2026-05-01: Production Deploy Blocked by ClickHouse Backfill Timeout
 
 ### Symptoms
 
-Production deploy run `25237109231` failed in job `74005587158` during the
-`Run migrations` step. The migration container exited with code 1 before
-`docker stack deploy` ran, so the new web stack image was not released.
+Production deploy workflow `25239905048` failed in the `Run migrations` step
+before the stack deploy step, so the CloudBeaver service was not released.
+
+### User Impact
+
+The existing production web stack kept running on the previous image, but the
+new CloudBeaver production service was unavailable.
 
 ### Evidence
 
-The first fatal job line was `Migration failed (exit code 1).` The last
-migration log line was:
+The first fatal workflow log line was:
 
 ```text
 error: [migrate] Error: Timeout error.
 ```
 
-Immediately before the error, Postgres migrations had applied 0 new files and
-materialized view sync had completed with `synced=0 skipped=7 refreshed=0`.
-The next code path is `runClickHouseMigrations()`.
+The migration log showed Postgres migrations and materialized view sync
+completed, then ClickHouse migration `0006_backfill_native_metric_stream`
+failed before recording its row in `analytics.schema_migrations`. Production
+ClickHouse had only `42` completed rows in
+`analytics.metric_stream_backfill_chunks`, while production Timescale had `195`
+`fitness.metric_stream` chunks. The next uncompleted Timescale chunk,
+`2021-04-29 00:00:00+00` to `2021-05-06 00:00:00+00`, contained about
+`4,014,020` rows.
 
 ### Root Cause
 
-ClickHouse migration `0006_backfill_native_metric_stream` copied each full
-Timescale chunk with one `INSERT INTO ... SELECT FROM postgresql(...)` command.
-Production chunks were large enough for a ClickHouse HTTP command to exceed the
-client's default 30 second request timeout. Because the migration also dropped
-`postgres_fitness` and the backfill progress table on every retry, a retry
-would restart the native backfill instead of continuing from completed ranges.
+ClickHouse migration `0006_backfill_native_metric_stream` backfilled one full
+Timescale chunk per ClickHouse insert. Some production weekly chunks are too
+large for the ClickHouse HTTP client request timeout, so the migration timed out
+while copying historical `metric_stream` rows.
 
 ### Fix or Mitigation
 
-The migration now splits Timescale chunk ranges into one-hour ClickHouse
-backfill windows and records those bounded windows in
-`analytics.metric_stream_backfill_chunks`. It only drops `postgres_fitness` and
-the progress table when `postgres_fitness` is still backed by a non-native
-database engine; retries against an already-native database preserve completed
-backfill windows and continue from the first missing window.
+The migration now splits Timescale chunk ranges into six-hour backfill ranges
+before checking and recording `analytics.metric_stream_backfill_chunks`. This
+keeps each ClickHouse insert bounded while preserving resumability through the
+existing range-completion table. The rerun path also treats older broader
+completion ranges as covering new subranges and uses an anti-join on existing
+ClickHouse `metric_stream` IDs so a timed-out-but-successful insert is not
+duplicated.
 
 ### Remaining Risk
 
 Very dense one-hour windows can still take longer than expected, but future
 failures will now identify the exact window being copied and retries will not
-discard completed native backfill progress.
+discard completed native backfill progress. The production backfill still needs
+to finish before migration `0006` is marked applied; verify completion by
+confirming `0006_backfill_native_metric_stream` exists in
+`analytics.schema_migrations`.
 
 ## 2026-05-01: Manual CloudBeaver Deploy Reused Pre-Fix Migration Image
 
@@ -2237,7 +2247,7 @@ the migration started.
 
 ### Root Cause
 
-The bounded backfill fix split raw Timescale chunk ranges into one-hour
+The bounded backfill fix split raw Timescale chunk ranges into six-hour
 ClickHouse inserts. Some production chunk ranges are far wider than the rows
 they contain, so the migration still performs thousands of empty or unnecessary
 ClickHouse inserts before reaching real data.
@@ -2246,10 +2256,10 @@ ClickHouse inserts before reaching real data.
 
 Backfill discovery now reads each Timescale chunk table's actual
 `min(recorded_at)` and `max(recorded_at) + 1 microsecond` and skips chunks with
-no rows. The one-hour window split remains, but it only covers occupied time
+no rows. The six-hour window split remains, but it only covers occupied time
 ranges.
 
 ### Remaining Risk
 
-Very dense occupied chunks can still require many one-hour windows, but sparse
+Very dense occupied chunks can still require many six-hour windows, but sparse
 or over-wide Timescale chunks no longer dominate deploy time.
