@@ -180,7 +180,10 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     maxHr: number,
     restingHr: number,
   ): Promise<ZoneRow[]> {
-    const values = await this.#activityChannelValues(window, "heart_rate");
+    let values = await this.#activityChannelValues(window, "heart_rate");
+    if (values.length === 0) {
+      values = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
+    }
     return [1, 2, 3, 4, 5].map((zone) => ({
       zone,
       seconds: values.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr)).length,
@@ -201,6 +204,29 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
           FROM fitness.deduped_sensor
           WHERE user_id = ${window.userId}::uuid
             AND activity_id = ${window.activityId}::uuid
+            AND channel = ${channel}
+            AND scalar IS NOT NULL
+          ORDER BY recorded_at`,
+    );
+    return rows.map((row) => row.scalar);
+  }
+
+  async #activityChannelValuesFromMetricStream(
+    window: ActivitySensorWindow,
+    channel: string,
+  ): Promise<number[]> {
+    if (window.memberActivityIds.length === 0) {
+      return [];
+    }
+
+    const activityIds = window.memberActivityIds.map(
+      (memberActivityId) => sql`${memberActivityId}::uuid`,
+    );
+    const rows = await this.#db.execute<{ scalar: number }>(
+      sql`SELECT scalar::real AS scalar
+          FROM fitness.metric_stream
+          WHERE user_id = ${window.userId}::uuid
+            AND activity_id IN (${sql.join(activityIds, sql`, `)})
             AND channel = ${channel}
             AND scalar IS NOT NULL
           ORDER BY recorded_at`,
