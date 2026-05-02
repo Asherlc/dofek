@@ -2191,3 +2191,39 @@ default timeout.
 the backfill exceeds the workflow-level timeout, the next fix should split the
 backfill into smaller durable migration phases rather than increasing the
 timeout again.
+
+## 2026-05-01: Netdata Deploy Blocked by Daily Metrics View Drift
+
+### Symptoms
+
+The Netdata local-only stack change could not reach `docker stack deploy`.
+The web stack deploy failed in the `Run migrations` step before any Swarm
+service update ran.
+
+### Evidence
+
+Deploy run `25241378904` used image tag `sha-31b9fa9` and exited from the
+migration container after Postgres migrations completed with zero pending
+migrations. The first fatal log line was:
+`[views] fitness.v_daily_metrics view definition changed; manual materialized-view maintenance required`.
+The migration runner then failed with
+`Materialized view maintenance required: fitness.v_daily_metrics (view definition changed)`.
+
+### Root Cause
+
+The production `fitness.v_daily_metrics` materialized view definition differs
+from the canonical `drizzle/_views` definition. Normal deploy migration sync
+intentionally refuses to drop and rebuild existing changed materialized views
+because that is heavy production database maintenance.
+
+### Fix or Mitigation
+
+Run the Materialized View Maintenance workflow for
+`fitness.v_daily_metrics`, verify the planner reports no required maintenance,
+then rerun the Netdata stack deploy.
+
+### Remaining Risk
+
+Rebuilding `fitness.v_daily_metrics` is production database maintenance. It
+should only run after the quiet-database preflight passes and no other
+full-history maintenance is active.
