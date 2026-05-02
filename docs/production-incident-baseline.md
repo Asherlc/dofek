@@ -2527,3 +2527,58 @@ The splitter is intentionally small and covers the checked-in PeerDB template
 shape plus single-quoted runtime values. If future PeerDB templates introduce
 comments, dollar-quoted strings, or procedural SQL, replace the splitter with a
 real SQL parser or move to a PeerDB-supported declarative API.
+
+## 2026-05-02: Post-Sync Materialized-View Refresh OOM During Deploy
+
+### Symptoms
+
+Deploy workflow run `25245248845` for image
+`ghcr.io/asherlc/dofek:sha-328c6e1` stalled in the `Run migrations` step while
+production Postgres temporarily returned `FATAL: the database system is in
+recovery mode`.
+
+### Evidence
+
+`pg_stat_activity` showed a long-running refresh:
+
+```text
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+Worker logs identified the source as automatic post-sync maintenance:
+
+```text
+[mv-refresh] source=sync.post_sync view=fitness.deduped_sensor
+```
+
+Postgres then logged the first fatal line:
+
+```text
+client backend (PID 180914) was terminated by signal 9: Killed
+DETAIL: Failed process was running: REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+The host had limited free memory and swap pressure during the incident. The
+database recovered automatically and later reported `pg_is_in_recovery() = f`.
+
+### Root Cause
+
+Normal worker post-sync jobs were still launching full Postgres materialized
+view refreshes, including the high-risk `fitness.deduped_sensor` view that scans
+metric stream history. That refresh exceeded available host memory and the
+backend was OOM-killed, forcing Postgres crash recovery and interrupting the
+deploy migration runner.
+
+### Fix or Mitigation
+
+Global post-sync maintenance no longer runs `refreshDedupViews()` or
+`updateUserMaxHr()`. Heavy Postgres materialized-view refreshes remain explicit
+maintenance-window work through the Materialized View Maintenance workflow and
+`docs/materialized-view-maintenance-runbook.md`.
+
+### Remaining Risk
+
+Legacy Postgres materialized views can still be stale until planned maintenance
+runs. Runtime paths should continue moving sensor-derived reads to ClickHouse
+`analytics.*` projections so production does not depend on refreshing
+full-history Postgres views after normal provider syncs.

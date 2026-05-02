@@ -31,22 +31,6 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
       Sentry.captureException(err, { tags: { postSyncStep: "syncProviderPriorities" } });
     }
 
-    try {
-      const { refreshDedupViews } = await import("../db/dedup.ts");
-      await refreshDedupViews(db);
-    } catch (err) {
-      logger.error(`[post-sync] Failed to refresh views: ${err}`);
-      Sentry.captureException(err, { tags: { postSyncStep: "refreshDedupViews" } });
-    }
-
-    try {
-      const { updateUserMaxHr } = await import("../db/dedup.ts");
-      await updateUserMaxHr(db);
-    } catch (err) {
-      logger.error(`[post-sync] Failed to update max HR: ${err}`);
-      Sentry.captureException(err, { tags: { postSyncStep: "updateMaxHr" } });
-    }
-
     logger.info("[post-sync] Global post-sync maintenance complete");
     return;
   }
