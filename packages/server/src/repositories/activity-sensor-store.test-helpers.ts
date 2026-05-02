@@ -404,18 +404,19 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     window: ActivitySensorWindow,
     channel: string,
   ): Promise<number[]> {
-    if (window.memberActivityIds.length === 0) {
-      return [];
-    }
+    const activityIds = window.memberActivityIds.length === 0
+      ? [window.activityId]
+      : [window.activityId, ...window.memberActivityIds];
 
-    const activityIds = window.memberActivityIds.map(
+    const deduplicatedActivityIds = [...new Set(activityIds)];
+    const activityIdClauses = deduplicatedActivityIds.map(
       (memberActivityId) => sql`${memberActivityId}::uuid`,
     );
     const rows = await this.#db.execute<{ scalar: number }>(
       sql`SELECT MAX(scalar)::real AS scalar
           FROM fitness.metric_stream
-          WHERE user_id = ${window.userId}::uuid
-            AND activity_id IN (${sql.join(activityIds, sql`, `)})
+            WHERE user_id = ${window.userId}::uuid
+            AND activity_id IN (${sql.join(activityIdClauses, sql`, `)})
             AND channel = ${channel}
             AND scalar IS NOT NULL
           GROUP BY activity_id, recorded_at
