@@ -64,10 +64,13 @@ describe("createClickHouseClientFromEnv", () => {
     }).toThrow("CLICKHOUSE_URL environment variable is required");
   });
 
-  it("returns a client without custom timeout when requestTimeoutMs is undefined", () => {
+  it("returns a client with default 120s timeout when requestTimeoutMs is undefined", () => {
     createClickHouseClientFromEnv({ CLICKHOUSE_URL: "http://clickhouse:8123" });
 
-    expect(createClientMock).toHaveBeenCalledWith({ url: "http://clickhouse:8123" });
+    expect(createClientMock).toHaveBeenCalledWith({
+      url: "http://clickhouse:8123",
+      request_timeout: 120_000,
+    });
   });
 
   it("passes request timeout when requestTimeoutMs is defined", () => {
