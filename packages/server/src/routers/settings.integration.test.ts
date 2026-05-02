@@ -1,9 +1,10 @@
-import { TEST_USER_ID } from "dofek/db/schema";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+
+const SETTINGS_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f1";
 
 describe("Settings router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -13,8 +14,18 @@ describe("Settings router", () => {
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name)
+          VALUES (${SETTINGS_TEST_USER_ID}, 'Settings Test User')
+          ON CONFLICT (id) DO NOTHING`,
+    );
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+          VALUES (${SETTINGS_TEST_USER_ID}, 'existing_account')
+          ON CONFLICT (user_id) DO NOTHING`,
+    );
 
-    const session = await createSession(testCtx.db, TEST_USER_ID);
+    const session = await createSession(testCtx.db, SETTINGS_TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
     const app = createApp(testCtx.db);
@@ -137,7 +148,7 @@ describe("Settings router", () => {
     it("wipes provider and user-scoped data for the current user", async () => {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES ('settings-wipe-provider', 'Settings Wipe Provider', ${TEST_USER_ID})
+            VALUES ('settings-wipe-provider', 'Settings Wipe Provider', ${SETTINGS_TEST_USER_ID})
             ON CONFLICT DO NOTHING`,
       );
       await Promise.all([
@@ -146,7 +157,7 @@ describe("Settings router", () => {
               VALUES (
                 '22222222-2222-2222-2222-222222222222',
                 'settings-wipe-provider',
-                ${TEST_USER_ID},
+                ${SETTINGS_TEST_USER_ID},
                 'running',
                 '2024-01-15T10:00:00Z',
                 'Delete Me'
@@ -157,7 +168,7 @@ describe("Settings router", () => {
           sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
               VALUES (
                 '2024-01-15T10:00:00Z',
-                ${TEST_USER_ID},
+                ${SETTINGS_TEST_USER_ID},
                 'settings-wipe-provider',
                 NULL,
                 'api',
@@ -169,30 +180,30 @@ describe("Settings router", () => {
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
-              VALUES ('settings-wipe-provider', ${TEST_USER_ID}, 'activities', 'success')`,
+              VALUES ('settings-wipe-provider', ${SETTINGS_TEST_USER_ID}, 'activities', 'success')`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.oauth_token (user_id, provider_id, access_token, expires_at)
-              VALUES (${TEST_USER_ID}, 'settings-wipe-provider', 'token-to-delete', '2099-01-01T00:00:00Z')
+              VALUES (${SETTINGS_TEST_USER_ID}, 'settings-wipe-provider', 'token-to-delete', '2099-01-01T00:00:00Z')
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.life_events (user_id, label, started_at)
-              VALUES (${TEST_USER_ID}, 'Delete event', '2024-01-15')`,
+              VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sport_settings (user_id, sport, effective_from, ftp)
-              VALUES (${TEST_USER_ID}, 'running', '2024-01-15', 260)
+              VALUES (${SETTINGS_TEST_USER_ID}, 'running', '2024-01-15', 260)
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.supplement (user_id, name)
-              VALUES (${TEST_USER_ID}, 'Delete supplement')
+              VALUES (${SETTINGS_TEST_USER_ID}, 'Delete supplement')
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.user_settings (user_id, key, value)
-              VALUES (${TEST_USER_ID}, 'deleteMe', 'true'::jsonb)
+              VALUES (${SETTINGS_TEST_USER_ID}, 'deleteMe', 'true'::jsonb)
               ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
         ),
       ]);
@@ -211,28 +222,28 @@ describe("Settings router", () => {
         userSettingsAfter,
       ] = await Promise.all([
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.metric_stream WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.metric_stream WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.oauth_token WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.oauth_token WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.sport_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${TEST_USER_ID}`,
+          sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
       ]);
 

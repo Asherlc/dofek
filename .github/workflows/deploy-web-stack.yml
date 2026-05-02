@@ -60,6 +60,11 @@ on:
         required: false
         type: string
         default: ""
+      cloudbeaver_host_rule:
+        description: "Traefik Host() rule for CloudBeaver"
+        required: false
+        type: string
+        default: ""
       pgadmin_host_rule:
         description: "Traefik Host() rule for pgAdmin"
         required: false
@@ -160,6 +165,7 @@ jobs:
           PORTAINER_HOST_RULE_INPUT: ${{ inputs.portainer_host_rule }}
           NETDATA_HOST_RULE_INPUT: ${{ inputs.netdata_host_rule }}
           DATABASUS_HOST_RULE_INPUT: ${{ inputs.databasus_host_rule }}
+          CLOUDBEAVER_HOST_RULE_INPUT: ${{ inputs.cloudbeaver_host_rule }}
           PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
         run: |
           {
@@ -188,6 +194,7 @@ jobs:
           write_multiline_env PORTAINER_HOST_RULE "$PORTAINER_HOST_RULE_INPUT"
           write_multiline_env NETDATA_HOST_RULE "$NETDATA_HOST_RULE_INPUT"
           write_multiline_env DATABASUS_HOST_RULE "$DATABASUS_HOST_RULE_INPUT"
+          write_multiline_env CLOUDBEAVER_HOST_RULE "$CLOUDBEAVER_HOST_RULE_INPUT"
           write_multiline_env PGADMIN_HOST_RULE "$PGADMIN_HOST_RULE_INPUT"
 
       - name: Create dotenv command runner
@@ -261,13 +268,14 @@ jobs:
           docker pull "temporalio/auto-setup:1.29"
           docker pull "temporalio/admin-tools:1.29"
           docker pull "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+          docker pull "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
 
       - name: Validate host bind mount paths
         run: |
           docker run --rm \
             --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
             postgres:18-alpine sh -euc '
-              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
                 if [ ! -d "$path" ]; then
                   echo "::error::Required host bind mount path is missing: $path"
                   exit 1
@@ -427,6 +435,60 @@ jobs:
             echo "::error::Migration failed"
             exit 1
           fi
+
+      - name: Repair Temporal visibility schema bootstrap
+        run: |
+          if ! docker service inspect "${STACK_NAME}_peerdb-catalog" >/dev/null 2>&1; then
+            echo "PeerDB catalog service does not exist yet; skipping Temporal visibility repair."
+            exit 0
+          fi
+
+          if ! docker service ps "${STACK_NAME}_peerdb-catalog" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
+            echo "PeerDB catalog service is not running yet; skipping Temporal visibility repair."
+            exit 0
+          fi
+
+          database_exists="$(
+            timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=peerdb-catalog --username=postgres --dbname=postgres --no-align --tuples-only --quiet \
+              --command \"SELECT 1 FROM pg_database WHERE datname = 'temporal_visibility';\"" 2>/dev/null || true
+          )"
+          if [ "$(printf '%s\n' "$database_exists" | tail -n 1 | tr -d '[:space:]')" != "1" ]; then
+            echo "Temporal visibility database does not exist; skipping repair."
+            exit 0
+          fi
+
+          bootstrap_state="$(
+            timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=peerdb-catalog --username=postgres --dbname=temporal_visibility --no-align --tuples-only --quiet \
+              --command \"SELECT curr_version || '|' || EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'executions_visibility' AND column_name = 'search_attributes') || '|' || EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'executions_visibility' AND indexname = 'by_type_start_time') FROM schema_version WHERE version_partition = 0;\"" 2>/dev/null || true
+          )"
+          bootstrap_state="$(printf '%s\n' "$bootstrap_state" | tail -n 1 | tr -d '[:space:]')"
+          if [ "$bootstrap_state" != "1.1|true|false" ]; then
+            echo "Temporal visibility repair not needed; state=${bootstrap_state:-unknown}."
+            exit 0
+          fi
+
+          echo "Repairing interrupted Temporal visibility v1.2 bootstrap by restoring legacy indexes."
+          timeout 60s docker run --rm --network "${STACK_NAME}_default" \
+            --env-file "$INFISICAL_ENV_FILE" \
+            postgres:18-alpine sh -euc \
+            'PGPASSWORD="$POSTGRES_PASSWORD" \
+            psql --host=peerdb-catalog --username=postgres --dbname=temporal_visibility --set=ON_ERROR_STOP=1 --command "
+              CREATE INDEX IF NOT EXISTS by_type_start_time ON executions_visibility (namespace_id, workflow_type_name, status, start_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_workflow_id_start_time ON executions_visibility (namespace_id, workflow_id, status, start_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_status_by_start_time ON executions_visibility (namespace_id, status, start_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_type_close_time ON executions_visibility (namespace_id, workflow_type_name, status, close_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_workflow_id_close_time ON executions_visibility (namespace_id, workflow_id, status, close_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_status_by_close_time ON executions_visibility (namespace_id, status, close_time DESC, run_id);
+              CREATE INDEX IF NOT EXISTS by_close_time_by_status ON executions_visibility (namespace_id, close_time DESC, run_id, status);
+            "'
 
       - name: Deploy stack
         env:

@@ -442,14 +442,22 @@ export class ActivityRepository extends BaseRepository {
       heartRateZoneParamsRowSchema,
       sql`SELECT
             up.max_hr,
-            COALESCE(rhr.resting_hr, 60) AS resting_hr
+          CASE
+            WHEN rhr.resting_hr > 0
+              AND rhr.resting_hr < up.max_hr
+            THEN rhr.resting_hr
+            WHEN up.resting_hr > 0
+              AND up.resting_hr < up.max_hr
+            THEN up.resting_hr
+            ELSE LEAST(60, up.max_hr - 1)
+          END AS resting_hr
           FROM fitness.user_profile up
           LEFT JOIN ${restingHeartRateLateral(
             sql`up.id`,
             sql`(${window.startedAt}::timestamptz AT TIME ZONE ${this.timezone})::date`,
           )}
           WHERE up.id = ${this.userId}
-            AND up.max_hr IS NOT NULL`,
+            AND up.max_hr > 1`,
     );
     return rows[0] ?? null;
   }
