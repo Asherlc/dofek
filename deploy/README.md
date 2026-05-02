@@ -15,6 +15,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
+  - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
   - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
 - **Networking**:
   - **Firewall**: `hcloud_firewall` allows SSH (port 22) from restricted IPs and HTTP/HTTPS (80/443) from everywhere.
@@ -43,7 +44,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
-- Single file defining all services: `web`, `worker`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redis`, `collector`, `ota`, `databasus`, `pgadmin`, `portainer`, `netdata`.
+- Single file defining all services: `web`, `worker`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
 - Traefik consumes both the swarm provider and a bind-mounted dynamic-config directory at `/opt/dofek/traefik-dynamic` so review-app workspaces can add exact PR host routes without modifying the stack for every PR.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
@@ -285,4 +286,5 @@ If management subdomains return `404 page not found`, use:
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)
 - **Netdata**: `https://netdata.dofek.asherlc.com` (Protected by Authentik)
 - **Databasus**: `https://databasus.dofek.asherlc.com` (DB management + backups)
+- **CloudBeaver**: `https://cloudbeaver.dofek.asherlc.com` (Postgres + ClickHouse UI)
 - **pgAdmin**: `https://pgadmin.dofek.asherlc.com` (Postgres UI)

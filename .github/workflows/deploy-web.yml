@@ -80,6 +80,7 @@ jobs:
       portainer_host_rule: 'Host(`staging-portainer.dofek.asherlc.com`)'
       netdata_host_rule: 'Host(`staging-netdata.dofek.asherlc.com`)'
       databasus_host_rule: 'Host(`staging-databasus.dofek.asherlc.com`)'
+      cloudbeaver_host_rule: 'Host(`staging-cloudbeaver.dofek.asherlc.com`)'
       pgadmin_host_rule: 'Host(`staging-pgadmin.dofek.asherlc.com`)'
       refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
     secrets: inherit

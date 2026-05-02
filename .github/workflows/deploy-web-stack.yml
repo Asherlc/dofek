@@ -60,6 +60,11 @@ on:
         required: false
         type: string
         default: ""
+      cloudbeaver_host_rule:
+        description: "Traefik Host() rule for CloudBeaver"
+        required: false
+        type: string
+        default: ""
       pgadmin_host_rule:
         description: "Traefik Host() rule for pgAdmin"
         required: false
@@ -160,6 +165,7 @@ jobs:
           PORTAINER_HOST_RULE_INPUT: ${{ inputs.portainer_host_rule }}
           NETDATA_HOST_RULE_INPUT: ${{ inputs.netdata_host_rule }}
           DATABASUS_HOST_RULE_INPUT: ${{ inputs.databasus_host_rule }}
+          CLOUDBEAVER_HOST_RULE_INPUT: ${{ inputs.cloudbeaver_host_rule }}
           PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
         run: |
           {
@@ -188,6 +194,7 @@ jobs:
           write_multiline_env PORTAINER_HOST_RULE "$PORTAINER_HOST_RULE_INPUT"
           write_multiline_env NETDATA_HOST_RULE "$NETDATA_HOST_RULE_INPUT"
           write_multiline_env DATABASUS_HOST_RULE "$DATABASUS_HOST_RULE_INPUT"
+          write_multiline_env CLOUDBEAVER_HOST_RULE "$CLOUDBEAVER_HOST_RULE_INPUT"
           write_multiline_env PGADMIN_HOST_RULE "$PGADMIN_HOST_RULE_INPUT"
 
       - name: Create dotenv command runner
@@ -261,13 +268,14 @@ jobs:
           docker pull "temporalio/auto-setup:1.29"
           docker pull "temporalio/admin-tools:1.29"
           docker pull "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+          docker pull "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
 
       - name: Validate host bind mount paths
         run: |
           docker run --rm \
             --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
             postgres:18-alpine sh -euc '
-              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
                 if [ ! -d "$path" ]; then
                   echo "::error::Required host bind mount path is missing: $path"
                   exit 1

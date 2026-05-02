@@ -123,6 +123,15 @@ resource "cloudflare_dns_record" "databasus_dofek_asherlc" {
   ttl     = 1
 }
 
+resource "cloudflare_dns_record" "cloudbeaver_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "cloudbeaver.dofek.asherlc.com"
+  content = hcloud_server.dofek.ipv4_address
+  proxied = false
+  ttl     = 1
+}
+
 resource "cloudflare_dns_record" "pgadmin_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
@@ -172,6 +181,15 @@ resource "cloudflare_dns_record" "staging_databasus_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
   name    = "staging-databasus.dofek.asherlc.com"
+  content = hcloud_server.dofek_staging.ipv4_address
+  proxied = false
+  ttl     = 1
+}
+
+resource "cloudflare_dns_record" "staging_cloudbeaver_dofek_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "staging-cloudbeaver.dofek.asherlc.com"
   content = hcloud_server.dofek_staging.ipv4_address
   proxied = false
   ttl     = 1

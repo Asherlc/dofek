@@ -128,7 +128,7 @@ resource "terraform_data" "data_volume_mount_alias" {
   count = var.data_volume_size_gb > 0 ? 1 : 0
 
   triggers_replace = [
-    "volume-mount-alias-v6",
+    "volume-mount-alias-v7",
     hcloud_volume.dofek_data[0].id,
   ]
 
@@ -145,7 +145,7 @@ resource "terraform_data" "data_volume_mount_alias" {
       "target=/mnt/HC_Volume_${hcloud_volume.dofek_data[0].id}",
       "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
       "ln -sfn \"$target\" /mnt/dofek-data",
-      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio",
+      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio",
       "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek_databasus_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/databasus -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/databasus/; fi",
       "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek_redis_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/redis -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/redis/; fi",
     ]
@@ -156,7 +156,7 @@ resource "terraform_data" "staging_data_volume_mount_alias" {
   count = var.staging_data_volume_size_gb > 0 ? 1 : 0
 
   triggers_replace = [
-    "volume-mount-alias-v4",
+    "volume-mount-alias-v5",
     hcloud_volume.dofek_staging_data[0].id,
   ]
 
@@ -173,7 +173,7 @@ resource "terraform_data" "staging_data_volume_mount_alias" {
       "target=/mnt/HC_Volume_${hcloud_volume.dofek_staging_data[0].id}",
       "if [ ! -d \"$target\" ]; then echo \"Expected mounted volume path missing: $target\" >&2; exit 1; fi",
       "ln -sfn \"$target\" /mnt/dofek-data",
-      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio",
+      "mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio",
       "source_path=$(docker volume inspect -f '{{ .Mountpoint }}' dofek-staging_redis_data 2>/dev/null || true); if [ -n \"$source_path\" ] && [ -d \"$source_path\" ] && [ -z \"$(find /mnt/dofek-data/redis -mindepth 1 -print -quit)\" ] && [ -n \"$(find \"$source_path\" -mindepth 1 -print -quit)\" ]; then cp -a \"$source_path\"/. /mnt/dofek-data/redis/; fi",
     ]
   }
@@ -228,6 +228,64 @@ resource "terraform_data" "staging_otel_config_sync" {
       "docker service ls --format '{{.Name}}' | grep -qx dofek-staging_collector && docker service update --force dofek-staging_collector || true",
     ]
   }
+}
+
+# Sync CloudBeaver preconfigured database connections to the persistent
+# workspace used by the CloudBeaver service.
+resource "terraform_data" "cloudbeaver_datasources_sync" {
+  count = var.data_volume_size_gb > 0 ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/cloudbeaver-data-sources.json"),
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /mnt/dofek-data/cloudbeaver/GlobalConfiguration/.dbeaver",
+    ]
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/cloudbeaver-data-sources.json"
+    destination = "/mnt/dofek-data/cloudbeaver/GlobalConfiguration/.dbeaver/data-sources.json"
+  }
+
+  depends_on = [terraform_data.data_volume_mount_alias]
+}
+
+resource "terraform_data" "staging_cloudbeaver_datasources_sync" {
+  count = var.staging_data_volume_size_gb > 0 ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/cloudbeaver-data-sources.json"),
+  ]
+
+  connection {
+    type        = "ssh"
+    host        = hcloud_server.dofek_staging.ipv4_address
+    user        = "root"
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p /mnt/dofek-data/cloudbeaver/GlobalConfiguration/.dbeaver",
+    ]
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/cloudbeaver-data-sources.json"
+    destination = "/mnt/dofek-data/cloudbeaver/GlobalConfiguration/.dbeaver/data-sources.json"
+  }
+
+  depends_on = [terraform_data.staging_data_volume_mount_alias]
 }
 
 # Apply Redis kernel configuration to existing servers
