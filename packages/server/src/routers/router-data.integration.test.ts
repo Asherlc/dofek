@@ -1333,9 +1333,11 @@ describe("Router data coverage", () => {
 
     it("hrZones returns 5-zone distribution", async () => {
       if (activityIds.length === 0) return;
+      const highestHeartRateActivityId = activityIds[activityIds.length - 1];
+      if (!highestHeartRateActivityId) return;
       const result = await query<
         { zone: number; label: string; minPct: number; maxPct: number; seconds: number }[]
-      >("activity.hrZones", { id: activityIds[0] });
+      >("activity.hrZones", { id: highestHeartRateActivityId });
 
       expect(result).toHaveLength(5);
       expect(result[0]?.zone).toBe(1);

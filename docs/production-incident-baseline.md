@@ -2263,3 +2263,46 @@ ranges.
 
 Very dense occupied chunks can still require many six-hour windows, but sparse
 or over-wide Timescale chunks no longer dominate deploy time.
+
+## 2026-05-01: ClickHouse Refresh Wait Exceeded Client Timeout
+
+### Symptoms
+
+Production deploy run `25241533098` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-3b904b4` and
+passed image pulls, host-path validation, Postgres readiness, ClickHouse
+readiness, and Postgres migrations. It failed in the `Run migrations` step
+before `docker stack deploy`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+The migration log showed Postgres migrations and materialized-view sync had
+completed. ClickHouse `system.query_log` showed the failing operation:
+`SYSTEM WAIT VIEW analytics.deduped_sensor` started at
+`2026-05-02 02:43:34 UTC`, finished successfully at `2026-05-02 02:44:08 UTC`,
+and took `33415ms`.
+
+### Root Cause
+
+The ClickHouse refresh wait was legitimate work and completed successfully on
+the server, but the Node ClickHouse client default request timeout is `30000ms`.
+The client aborted the request about three seconds before ClickHouse returned
+success.
+
+### Fix or Mitigation
+
+The production ClickHouse client now uses a `120000ms` request timeout. This is
+long enough for the observed refresh wait while remaining much shorter than the
+workflow migration timeout, so a genuinely stuck migration still fails loudly.
+
+### Remaining Risk
+
+Future data growth can make refresh waits exceed two minutes. If that happens,
+the fix should first inspect `system.query_log` for the exact refresh query and
+optimize the read model or migration shape before increasing timeouts again.

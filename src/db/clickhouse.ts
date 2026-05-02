@@ -26,6 +26,7 @@ interface TableCountRow {
 }
 
 const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
+const CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS = 120_000;
 
 interface ClickHousePostgresConnection {
   hostAndPort: string;
@@ -462,7 +463,7 @@ export function createClickHouseClientFromEnv(
   if (!url) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
-  return createClient({ url });
+  return createClient({ url, request_timeout: CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS });
 }
 
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {
