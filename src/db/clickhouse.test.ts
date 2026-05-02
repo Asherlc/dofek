@@ -1,12 +1,25 @@
+import { createClient } from "@clickhouse/client";
 import { describe, expect, it, vi } from "vitest";
+
+const createClientMock = vi.mocked(createClient);
+
+vi.mock("@clickhouse/client", () => ({
+  createClient: vi.fn(),
+}));
+
 import {
   bootstrapClickHouseFromEnv,
   buildClickHouseBootstrapStatements,
+  createClickHouseClientFromEnv,
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
 
 describe("parsePostgresConnectionForClickHouse", () => {
+  beforeEach(() => {
+    createClientMock.mockReset();
+  });
+
   it("rewrites local Postgres hosts to a host reachable from the ClickHouse container", () => {
     expect(
       parsePostgresConnectionForClickHouse("postgres://health:secret@localhost:5435/health"),
@@ -15,6 +28,57 @@ describe("parsePostgresConnectionForClickHouse", () => {
       database: "health",
       user: "health",
       password: "secret",
+    });
+  });
+
+  it("throws when the DATABASE_URL does not include a database name", () => {
+    expect(() => {
+      parsePostgresConnectionForClickHouse("postgres://health:secret@db:5432/");
+    }).toThrow("DATABASE_URL must include a database name for ClickHouse Postgres replication");
+  });
+
+  it.each([
+    ["127.0.0.1", "host.docker.internal:5432"],
+    ["::1", "host.docker.internal:5432"],
+  ])("rewrites %s to host.docker.internal", (hostname, expectedHostAndPort) => {
+    const bracketedHostname = hostname === "::1" ? `[${hostname}]` : hostname;
+    expect(
+      parsePostgresConnectionForClickHouse(
+        `postgres://health:secret@${bracketedHostname}:5432/health`,
+      ).hostAndPort,
+    ).toBe(expectedHostAndPort);
+  });
+
+  it("preserves database names with embedded slashes after the leading slash", () => {
+    expect(
+      parsePostgresConnectionForClickHouse("postgres://health:secret@localhost:5432/health/test")
+        .database,
+    ).toBe("health/test");
+  });
+});
+
+describe("createClickHouseClientFromEnv", () => {
+  it("throws when CLICKHOUSE_URL is missing", () => {
+    expect(() => {
+      createClickHouseClientFromEnv({}, {});
+    }).toThrow("CLICKHOUSE_URL environment variable is required");
+  });
+
+  it("returns a client without custom timeout when requestTimeoutMs is undefined", () => {
+    createClickHouseClientFromEnv({ CLICKHOUSE_URL: "http://clickhouse:8123" });
+
+    expect(createClientMock).toHaveBeenCalledWith({ url: "http://clickhouse:8123" });
+  });
+
+  it("passes request timeout when requestTimeoutMs is defined", () => {
+    createClickHouseClientFromEnv(
+      { CLICKHOUSE_URL: "http://clickhouse:8123" },
+      { requestTimeoutMs: 1_000 },
+    );
+
+    expect(createClientMock).toHaveBeenCalledWith({
+      url: "http://clickhouse:8123",
+      request_timeout: 1_000,
     });
   });
 });
@@ -135,6 +199,40 @@ describe("waitForClickHouseTable", () => {
 
       await expect(result).resolves.toBeUndefined();
       expect(query).toHaveBeenCalledTimes(46);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("throws a timeout error when the table never appears", async () => {
+    vi.useFakeTimers();
+    try {
+      let queryCount = 0;
+      let capturedError: unknown;
+      const query = vi.fn().mockImplementation(() => {
+        queryCount += 1;
+        return {
+          json: vi.fn().mockResolvedValue([{ table_count: queryCount > 180 ? 1 : 0 }]),
+        };
+      });
+
+      const result = waitForClickHouseTable(
+        { command: vi.fn().mockResolvedValue(undefined), query },
+        "postgres_fitness",
+        "metric_stream",
+      ).catch((error) => {
+        capturedError = error;
+      });
+
+      await vi.advanceTimersByTimeAsync(181_000);
+      await Promise.resolve();
+      await result;
+
+      expect(capturedError).toBeInstanceOf(Error);
+      expect(String(capturedError)).toContain(
+        "Timed out waiting for ClickHouse table postgres_fitness.metric_stream",
+      );
+      expect(queryCount).toBe(180);
     } finally {
       vi.useRealTimers();
     }

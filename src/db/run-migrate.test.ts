@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./migrate.ts", () => ({ runMigrations: vi.fn() }));
@@ -30,6 +32,7 @@ const mockLogger = vi.mocked(logger);
 describe("run-migrate main()", () => {
   const originalUrl = process.env.DATABASE_URL;
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
+  const originalArguments = [...process.argv];
   const clickHouseClient: {
     command: ReturnType<typeof vi.fn>;
     query: ReturnType<typeof vi.fn>;
@@ -66,6 +69,7 @@ describe("run-migrate main()", () => {
     } else {
       delete process.env.CLICKHOUSE_URL;
     }
+    process.argv = originalArguments;
   });
 
   it("throws when DATABASE_URL is missing", async () => {
@@ -147,5 +151,26 @@ describe("run-migrate main()", () => {
     mockRunMigrations.mockRejectedValue(new Error("connection refused"));
 
     await expect(main()).rejects.toThrow("connection refused");
+  });
+
+  it("reports direct-run failures to nonzero exit code", async () => {
+    process.argv = ["node", "run-migrate.ts"];
+    const runMigrateScript = fileURLToPath(new URL("./run-migrate.ts", import.meta.url));
+
+    const result = spawnSync("pnpm", ["tsx", runMigrateScript], {
+      env: {
+        ...process.env,
+        NODE_ENV: "test",
+        DATABASE_URL: "",
+        CLICKHOUSE_URL: "",
+        REDIS_URL: "redis://localhost:6379",
+      },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    expect(result.status).toBe(1);
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    expect(String(output)).toContain("[migrate] Error:");
   });
 });

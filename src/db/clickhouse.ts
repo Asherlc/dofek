@@ -43,10 +43,15 @@ function clickHouseStringLiteral(value: string): string {
 }
 
 function normalizePostgresHostForClickHouse(hostname: string): string {
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+  const normalizedHostname = hostname === "[::1]" ? "::1" : hostname;
+  if (
+    normalizedHostname === "localhost" ||
+    normalizedHostname === "127.0.0.1" ||
+    normalizedHostname === "::1"
+  ) {
     return "host.docker.internal";
   }
-  return hostname;
+  return normalizedHostname;
 }
 
 export function parsePostgresConnectionForClickHouse(
