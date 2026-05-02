@@ -3,6 +3,7 @@ import { z } from "zod";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
+import { rejectFutureSamples } from "./sample-validation.ts";
 
 const PROVIDER_ID = "whoop_ble";
 const INSERT_BATCH_SIZE = 2000;
@@ -101,12 +102,15 @@ export const whoopBleSyncRouter = router({
   pushRealtimeData: protectedProcedure
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db, ctx.userId);
-
       if (input.samples.length === 0) {
+        await ensureProvider(ctx.db, ctx.userId);
         logger.info("WHOOP BLE realtime push with 0 samples", { userId: ctx.userId });
         return { inserted: 0 };
       }
+
+      const now = new Date();
+      rejectFutureSamples(input.samples, now, "WHOOP BLE");
+      await ensureProvider(ctx.db, ctx.userId);
 
       const firstTimestamp = input.samples[0]?.timestamp;
       const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
@@ -124,7 +128,7 @@ export const whoopBleSyncRouter = router({
         sampleCount: inserted,
         firstTimestamp,
         lastTimestamp,
-        serverTime: new Date().toISOString(),
+        serverTime: now.toISOString(),
       });
 
       return { inserted };

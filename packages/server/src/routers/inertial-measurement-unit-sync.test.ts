@@ -135,13 +135,51 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       ).rejects.toThrow();
     });
 
+    it("rejects samples more than five minutes in the future", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-25T10:00:00.000Z"));
+
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      try {
+        await expect(
+          caller.pushSamples({
+            deviceId: "WHOOP Strap",
+            deviceType: "whoop",
+            samples: [makeSample({ timestamp: "2026-03-25T10:06:00.001Z" })],
+          }),
+        ).rejects.toThrow("IMU sample timestamp is too far in the future");
+
+        expect(execute).toHaveBeenCalledTimes(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("rejects malformed sample timestamps", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await expect(
+        caller.pushSamples({
+          deviceId: "WHOOP Strap",
+          deviceType: "whoop",
+          samples: [makeSample({ timestamp: "not-a-timestamp" })],
+        }),
+      ).rejects.toThrow("IMU sample timestamp is invalid");
+
+      expect(execute).toHaveBeenCalledTimes(0);
+    });
+
     it("batches large sample arrays into multiple INSERT statements", async () => {
+      const startTimestamp = new Date("2026-03-25T10:00:00.020Z");
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
       const samples = Array.from({ length: 7500 }, (_, index) =>
         makeSample({
-          timestamp: `2026-03-25T10:00:${String(Math.floor(index / 50)).padStart(2, "0")}.${String((index % 50) * 20).padStart(3, "0")}Z`,
+          timestamp: new Date(startTimestamp.getTime() + index * 20).toISOString(),
         }),
       );
 

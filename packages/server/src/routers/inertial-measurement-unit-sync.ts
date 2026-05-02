@@ -3,6 +3,7 @@ import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
+import { rejectFutureSamples } from "./sample-validation.ts";
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
@@ -83,9 +84,8 @@ async function insertBatch(
 
 export const inertialMeasurementUnitSyncRouter = router({
   pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
-    await ensureProvider(ctx.db, ctx.userId);
-
     if (input.samples.length === 0) {
+      await ensureProvider(ctx.db, ctx.userId);
       logger.info("IMU push with 0 samples", {
         userId: ctx.userId,
         deviceId: input.deviceId,
@@ -94,10 +94,14 @@ export const inertialMeasurementUnitSyncRouter = router({
       return { inserted: 0 };
     }
 
+    const now = new Date();
+    rejectFutureSamples(input.samples, now, "IMU");
+    await ensureProvider(ctx.db, ctx.userId);
+
     // Log timestamp range to detect stale/future data
     const firstTimestamp = input.samples[0]?.timestamp;
     const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
-    const nowIso = new Date().toISOString();
+    const nowIso = now.toISOString();
 
     const inserted = await insertBatch(
       ctx.db,

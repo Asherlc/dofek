@@ -7,6 +7,66 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-02: metric_stream Storage Pressure from Oversized Chunk and Duplicate Indexes
+
+### Impact
+
+Production entered a planned maintenance window while `web`, `worker`, and
+`training-export-worker` were scaled down to compress the largest
+`fitness.metric_stream` chunk and remove obsolete indexes. The app was restored
+after maintenance and `/healthz` returned OK.
+
+### What Happened
+
+The production data volume was 64% used, with Postgres accounting for roughly
+49GB. `fitness.metric_stream` dominated logical database size at about 35GB,
+including about 18GB of indexes. The largest closed Timescale chunk,
+`_hyper_1_186_chunk`, covered 2026-04-23 through 2026-04-30 and was still
+uncompressed at about 28GB because production had a 7-day chunk interval and
+the compression policy only acts on chunks older than 7 days.
+
+### Evidence That Mattered
+
+- Data volume before maintenance: `99G` total, `60G` used, `35G` available.
+- `fitness.metric_stream`: about `35GB` total, `16GB` heap, `18GB` indexes.
+- Largest chunk: `_hyper_1_186_chunk`, uncompressed, about `28GB`, about
+  `51.6M` rows.
+- Online compression failed with:
+  `ERROR: canceling statement due to lock timeout`.
+- Active blockers included recurring materialized-view refreshes for
+  `fitness.deduped_sensor`, `fitness.activity_summary`, and
+  `fitness.provider_stats`.
+- Future-dated chunks were tiny, but present: `apple_motion` / `api` / `imu`
+  rows from `WHOOP Strap` plus one `whoop_ble` / `ble` / `orientation` row.
+
+### Root Cause
+
+`metric_stream` storage pressure came from a one-week active chunk that
+accumulated tens of millions of high-frequency sensor rows before compression
+could apply, plus non-primary-key indexes that were no longer needed for the
+current read model.
+
+### Fix Or Mitigation
+
+- Verified a fresh Databasus backup existed before the window.
+- Set the `metric_stream` chunk interval to `1 day`.
+- Scaled down app services, canceled active materialized-view refresh work, and
+  compressed `_hyper_1_186_chunk`.
+- Dropped `metric_stream_provider_time_idx` and the obsolete recorded-at index
+  during the maintenance window.
+- Added migration `0011_metric_stream_storage_controls.sql` to enforce the
+  one-day chunk interval and index removals for future environments.
+- Added server-side guards that reject IMU and WHOOP BLE realtime samples more
+  than five minutes in the future before inserting into `metric_stream`.
+
+### Remaining Risk
+
+The current open chunk can still grow until it closes, but future chunks should
+be one day wide. The tiny existing future-dated rows were not deleted during
+this maintenance window; remove them only after an explicit data-retention /
+cleanup decision. The timestamp guard must be deployed before it protects live
+ingest traffic.
+
 ## 2026-04-29: PR 1075 CI Blocked by ClickHouse Bootstrap and Web E2E Drift
 
 ### Impact
