@@ -142,16 +142,34 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
+      try {
+        await expect(
+          caller.pushSamples({
+            deviceId: "WHOOP Strap",
+            deviceType: "whoop",
+            samples: [makeSample({ timestamp: "2026-03-25T10:06:00.001Z" })],
+          }),
+        ).rejects.toThrow("IMU sample timestamp is too far in the future");
+
+        expect(execute).toHaveBeenCalledTimes(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("rejects malformed sample timestamps", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
       await expect(
         caller.pushSamples({
           deviceId: "WHOOP Strap",
           deviceType: "whoop",
-          samples: [makeSample({ timestamp: "2026-03-25T10:06:00.001Z" })],
+          samples: [makeSample({ timestamp: "not-a-timestamp" })],
         }),
-      ).rejects.toThrow("IMU sample timestamp is too far in the future");
+      ).rejects.toThrow("IMU sample timestamp is invalid");
 
       expect(execute).toHaveBeenCalledTimes(0);
-      vi.useRealTimers();
     });
 
     it("batches large sample arrays into multiple INSERT statements", async () => {

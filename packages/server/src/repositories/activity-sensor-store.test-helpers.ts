@@ -412,12 +412,13 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
       (memberActivityId) => sql`${memberActivityId}::uuid`,
     );
     const rows = await this.#db.execute<{ scalar: number }>(
-      sql`SELECT scalar::real AS scalar
+      sql`SELECT MAX(scalar)::real AS scalar
           FROM fitness.metric_stream
           WHERE user_id = ${window.userId}::uuid
             AND activity_id IN (${sql.join(activityIds, sql`, `)})
             AND channel = ${channel}
             AND scalar IS NOT NULL
+          GROUP BY activity_id, recorded_at
           ORDER BY recorded_at`,
     );
     return rows.map((row) => row.scalar);

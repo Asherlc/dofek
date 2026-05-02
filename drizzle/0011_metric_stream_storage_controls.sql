@@ -1,6 +1,6 @@
-SELECT public.set_chunk_time_interval('fitness.metric_stream', INTERVAL '1 day');
---> statement-breakpoint
 SET lock_timeout = '10s';
+--> statement-breakpoint
+SELECT public.set_chunk_time_interval('fitness.metric_stream', INTERVAL '1 day');
 --> statement-breakpoint
 DROP INDEX CONCURRENTLY IF EXISTS fitness.metric_stream_provider_time_idx;
 --> statement-breakpoint

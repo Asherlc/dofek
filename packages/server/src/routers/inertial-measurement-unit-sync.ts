@@ -1,13 +1,12 @@
-import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
+import { rejectFutureSamples } from "./sample-validation.ts";
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
-const MAX_FUTURE_SAMPLE_SKEW_MS = 5 * 60 * 1000;
 
 // ── Zod schemas ──
 
@@ -38,21 +37,6 @@ async function ensureProvider(db: Database, userId: string) {
         VALUES (${PROVIDER_ID}, 'Apple Motion', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
-}
-
-function rejectFutureSamples(samples: InertialMeasurementUnitSample[], now: Date) {
-  const futureLimitMs = now.getTime() + MAX_FUTURE_SAMPLE_SKEW_MS;
-  const futureSample = samples.find((sample) => {
-    const sampleTimeMs = Date.parse(sample.timestamp);
-    return Number.isFinite(sampleTimeMs) && sampleTimeMs > futureLimitMs;
-  });
-
-  if (!futureSample) return;
-
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `IMU sample timestamp is too far in the future: ${futureSample.timestamp}`,
-  });
 }
 
 /**
@@ -111,7 +95,7 @@ export const inertialMeasurementUnitSyncRouter = router({
     }
 
     const now = new Date();
-    rejectFutureSamples(input.samples, now);
+    rejectFutureSamples(input.samples, now, "IMU");
     await ensureProvider(ctx.db, ctx.userId);
 
     // Log timestamp range to detect stale/future data
