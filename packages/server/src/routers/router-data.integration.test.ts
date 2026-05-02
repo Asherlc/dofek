@@ -1334,7 +1334,9 @@ describe("Router data coverage", () => {
     it("hrZones returns 5-zone distribution", async () => {
       if (activityIds.length === 0) return;
       const highestHeartRateActivityId = activityIds[activityIds.length - 1];
-      if (!highestHeartRateActivityId) return;
+      if (!highestHeartRateActivityId) {
+        throw new Error("Missing seeded activity ID for activity.hrZones test");
+      }
       const result = await query<
         { zone: number; label: string; minPct: number; maxPct: number; seconds: number }[]
       >("activity.hrZones", { id: highestHeartRateActivityId });

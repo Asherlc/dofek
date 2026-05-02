@@ -53,9 +53,9 @@
   },
   "connection-types": {
     "prod": {
-      "name": "Production",
+      "name": "Primary",
       "color": "255,0,0",
-      "description": "Production database",
+      "description": "Primary connection database",
       "auto-commit": false,
       "confirm-execute": true,
       "confirm-data-change": true,

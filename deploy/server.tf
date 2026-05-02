@@ -237,6 +237,7 @@ resource "terraform_data" "cloudbeaver_datasources_sync" {
 
   triggers_replace = [
     filesha256("${path.module}/cloudbeaver-data-sources.json"),
+    hcloud_volume.dofek_data[0].id,
   ]
 
   connection {
@@ -265,6 +266,7 @@ resource "terraform_data" "staging_cloudbeaver_datasources_sync" {
 
   triggers_replace = [
     filesha256("${path.module}/cloudbeaver-data-sources.json"),
+    hcloud_volume.dofek_staging_data[0].id,
   ]
 
   connection {
