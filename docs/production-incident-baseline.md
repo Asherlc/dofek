@@ -57,7 +57,7 @@ Two separate root causes blocked CI:
   made the dashboard assertion verify the rendered section rather than a brittle
   canvas selector.
 
-### Remaining Risk
+### Remaining Risk (native backfill and CDC transition)
 
 Any future date-sensitive E2E seeds that use UTC string slicing can still drift
  around local-midnight boundaries, and any new cached server query path added to
@@ -2116,3 +2116,48 @@ analytics can switch to `peerdb.metric_stream`. The next operational step is to
 compare row counts and recent-row freshness between Postgres,
 `postgres_fitness.metric_stream`, and `peerdb.metric_stream`, then cut
 `analytics.deduped_sensor` over in a separate migration.
+
+## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
+
+### Symptoms
+
+Production deploy run `25237109231` failed in job `74005587158` during the
+`Run migrations` step. The migration container exited with code 1 before
+`docker stack deploy` ran, so the new web stack image was not released.
+
+### Evidence
+
+The first fatal job line was `Migration failed (exit code 1).` The last
+migration log line was:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+Immediately before the error, Postgres migrations had applied 0 new files and
+materialized view sync had completed with `synced=0 skipped=7 refreshed=0`.
+The next code path is `runClickHouseMigrations()`.
+
+### Root Cause
+
+ClickHouse migration `0006_backfill_native_metric_stream` copied each full
+Timescale chunk with one `INSERT INTO ... SELECT FROM postgresql(...)` command.
+Production chunks were large enough for a ClickHouse HTTP command to exceed the
+client's default 30 second request timeout. Because the migration also dropped
+`postgres_fitness` and the backfill progress table on every retry, a retry
+would restart the native backfill instead of continuing from completed ranges.
+
+### Fix or Mitigation
+
+The migration now splits Timescale chunk ranges into one-hour ClickHouse
+backfill windows and records those bounded windows in
+`analytics.metric_stream_backfill_chunks`. It only drops `postgres_fitness` and
+the progress table when `postgres_fitness` is still backed by a non-native
+database engine; retries against an already-native database preserve completed
+backfill windows and continue from the first missing window.
+
+### Remaining Risk
+
+Very dense one-hour windows can still take longer than expected, but future
+failures will now identify the exact window being copied and retries will not
+discard completed native backfill progress.

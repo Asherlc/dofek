@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Add PeerDB CDC Setup Logic
+## Task 1: Add PeerDB CDC Setup Logic
 
 **Files:**
 - Create: `src/db/clickhouse-cdc.ts`
@@ -31,7 +31,7 @@
 
 - [ ] Add a direct-run entrypoint in `src/db/setup-clickhouse-cdc.ts`.
 
-### Task 2: Add PeerDB Services To Swarm
+## Task 2: Add PeerDB Services To Swarm
 
 **Files:**
 - Modify: `deploy/stack.yml`
@@ -59,7 +59,7 @@
   - Wait for PeerDB SQL on `peerdb:9900`.
   - Run `src/db/setup-clickhouse-cdc.ts` in a one-shot app container on the swarm network.
 
-### Task 3: Verify And Document
+## Task 3: Verify And Document
 
 **Files:**
 - Modify: `docs/clickhouse-metric-stream.md`
