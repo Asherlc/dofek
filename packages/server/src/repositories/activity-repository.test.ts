@@ -456,7 +456,7 @@ describe("ActivityRepository", () => {
       );
     });
 
-    it("falls back to a default resting HR when params are invalid", async () => {
+    it("queries a default resting HR when params are invalid", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
       execute
         .mockResolvedValueOnce([
@@ -468,10 +468,13 @@ describe("ActivityRepository", () => {
             member_activity_ids: ["activity-id"],
           },
         ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 220 }]);
+        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]);
 
       await repo.getHrZones("activity-id");
 
+      const sqlObject = execute.mock.calls[1]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("ELSE 60");
       expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
         {
           activityId: "activity-id",
