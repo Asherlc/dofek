@@ -548,6 +548,33 @@ jobs:
             sleep 5
           done
 
+      - name: Ensure PeerDB Temporal search attributes
+        run: |
+          temporal_args=(
+            --address peerdb-temporal:7233
+            --namespace default
+            --color never
+          )
+
+          search_attributes="$(
+            timeout 30s docker run --rm --network "${STACK_NAME}_default" \
+              --entrypoint temporal \
+              temporalio/admin-tools:1.29 \
+              "${temporal_args[@]}" operator search-attribute list
+          )"
+
+          if printf '%s\n' "$search_attributes" | grep -qw "MirrorName"; then
+            echo "Temporal search attribute MirrorName already exists."
+            exit 0
+          fi
+
+          timeout 30s docker run --rm --network "${STACK_NAME}_default" \
+            --entrypoint temporal \
+            temporalio/admin-tools:1.29 \
+            "${temporal_args[@]}" operator search-attribute create \
+              --name MirrorName \
+              --type Text
+
       - name: Configure ClickHouse CDC
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}

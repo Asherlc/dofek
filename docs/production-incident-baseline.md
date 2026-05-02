@@ -2622,3 +2622,43 @@ The setup assumes the configured Postgres user can manage publications for
 `fitness.metric_stream`. If production credentials lose that permission, deploys
 should fail loudly at the publication bootstrap step before PeerDB mirror
 validation.
+
+## 2026-05-02: PeerDB Temporal Missing MirrorName Search Attribute
+
+### Symptoms
+
+Deploy workflow run `25246698008` for image
+`ghcr.io/asherlc/dofek:sha-354a2ef` successfully built images, ran migrations,
+deployed the Swarm stack, and then failed in `Configure ClickHouse CDC`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"unable to start PeerFlow workflow: Namespace default has no mapping defined for search attribute MirrorName\""
+```
+
+`temporal operator search-attribute list --namespace default` did not include
+`MirrorName`. PeerDB's Go package defines `MirrorName` as a Temporal string
+search attribute (`temporal.NewSearchAttributeKeyString("MirrorName")`).
+
+### Root Cause
+
+The PeerDB Temporal cluster was bootstrapped without PeerDB's custom
+`MirrorName` search attribute. PeerDB can create peers and validate source
+publications without it, but workflow startup fails when PeerDB attaches the
+missing search attribute to the mirror workflow.
+
+### Fix or Mitigation
+
+The deploy workflow now idempotently checks Temporal namespace `default` and
+creates `MirrorName` as a `Text` search attribute with the Temporal CLI before
+running the ClickHouse CDC setup command.
+
+### Remaining Risk
+
+The workflow registers the PeerDB search attribute that current PeerDB
+`stable-v0.36.18` requires. Future PeerDB upgrades may add more Temporal search
+attributes; handle those as explicit deploy prerequisites rather than letting
+mirror creation fail after stack rollout.
