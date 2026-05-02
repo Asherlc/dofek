@@ -470,7 +470,7 @@ jobs:
               --command \"SELECT curr_version || '|' || EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'executions_visibility' AND column_name = 'search_attributes') || '|' || EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'executions_visibility' AND indexname = 'by_type_start_time') FROM schema_version WHERE version_partition = 0;\"" 2>/dev/null || true
           )"
           bootstrap_state="$(printf '%s\n' "$bootstrap_state" | tail -n 1 | tr -d '[:space:]')"
-          if [ "$bootstrap_state" != "1.1|t|f" ]; then
+          if [ "$bootstrap_state" != "1.1|true|false" ]; then
             echo "Temporal visibility repair not needed; state=${bootstrap_state:-unknown}."
             exit 0
           fi

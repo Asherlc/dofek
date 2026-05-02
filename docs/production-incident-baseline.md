@@ -2386,7 +2386,9 @@ The deploy workflow now performs a narrowly scoped preflight repair before
 `docker stack deploy`: if `temporal_visibility` is exactly in this partial
 `1.1`/`v1.2` bootstrap state, it recreates the legacy indexes that Temporal's
 official migration expects to drop. Temporal can then rerun its own migration
-and advance the schema normally.
+and advance the schema normally. The preflight compares the Postgres state as
+`1.1|true|false`, because concatenated Postgres booleans render as
+`true`/`false`, not `t`/`f`.
 
 ### Remaining Risk
 
