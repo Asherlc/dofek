@@ -2306,3 +2306,45 @@ workflow migration timeout, so a genuinely stuck migration still fails loudly.
 Future data growth can make refresh waits exceed two minutes. If that happens,
 the fix should first inspect `system.query_log` for the exact refresh query and
 optimize the read model or migration shape before increasing timeouts again.
+
+## 2026-05-01: PeerDB Catalog PostgreSQL 18 Mount Layout
+
+### Symptoms
+
+Production deploy run `25242177373` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-d727d3a`.
+Migrations succeeded, but the `Deploy stack` step did not converge because
+`dofek_peerdb-catalog` repeatedly exited and downstream Temporal/PeerDB
+services waited for the catalog host.
+
+### Evidence
+
+The first fatal catalog log line was:
+
+```text
+Error: in 18+, these Docker images are configured to store database data in a format which is compatible with "pg_ctlcluster"
+```
+
+The same log reported PostgreSQL data under `/var/lib/postgresql/data` as an
+unused mount/volume. On the host, `/mnt/dofek-data/peerdb-catalog` existed but
+contained no `PG_VERSION`, confirming this was a mount-layout bootstrap failure
+rather than an incompatible existing catalog database.
+
+### Root Cause
+
+`peerdb-catalog` used `postgres:18-alpine` while bind-mounting
+`/mnt/dofek-data/peerdb-catalog` to `/var/lib/postgresql/data`. PostgreSQL 18
+Docker images use a versioned data directory under `/var/lib/postgresql`, so
+mounting the old data path makes the entrypoint fail before initialization.
+
+### Fix or Mitigation
+
+The `peerdb-catalog` bind mount now targets `/var/lib/postgresql`, allowing the
+PostgreSQL 18 image to initialize and manage its versioned data directory under
+the persistent host path.
+
+### Remaining Risk
+
+If this service later contains real catalog data and needs a PostgreSQL major
+upgrade, perform a catalog backup and `pg_upgrade` flow rather than changing the
+mount path or image tag alone.

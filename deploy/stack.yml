@@ -187,7 +187,7 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_INITDB_ARGS: --locale=C.UTF-8
     volumes:
-      - /mnt/dofek-data/peerdb-catalog:/var/lib/postgresql/data
+      - /mnt/dofek-data/peerdb-catalog:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 10s
