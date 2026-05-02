@@ -18,8 +18,8 @@ interface MetricStreamBackfillChunkRow {
 }
 
 const metricStreamBackfillChunkRowSchema = z.object({
-  lower_bound: z.string(),
-  upper_bound: z.string(),
+  lower_bound: z.string().datetime({ offset: true }),
+  upper_bound: z.string().datetime({ offset: true }),
 });
 
 interface MetricStreamBackfillChunkCountRow {

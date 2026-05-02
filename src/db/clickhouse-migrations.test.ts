@@ -148,12 +148,12 @@ describe("runClickHouseMigrations", () => {
     pgClientMocks.query.mockResolvedValue({
       rows: [
         {
-          lower_bound: "2026-04-22 00:00:00+00",
-          upper_bound: "2026-04-22 01:00:00+00",
+          lower_bound: "2026-04-22T00:00:00.000000Z",
+          upper_bound: "2026-04-22T01:00:00.000000Z",
         },
         {
-          lower_bound: "2026-04-22 01:00:00+00",
-          upper_bound: "2026-04-22 02:00:00+00",
+          lower_bound: "2026-04-22T01:00:00.000000Z",
+          upper_bound: "2026-04-22T02:00:00.000000Z",
         },
       ],
     });
@@ -336,12 +336,12 @@ describe("runClickHouseMigrations", () => {
     pgClientMocks.query.mockResolvedValue({
       rows: [
         {
-          lower_bound: "2026-04-22 00:00:00+00",
-          upper_bound: "2026-04-22 01:00:00+00",
+          lower_bound: "2026-04-22T00:00:00.000000Z",
+          upper_bound: "2026-04-22T01:00:00.000000Z",
         },
         {
-          lower_bound: "2026-04-22 01:00:00+00",
-          upper_bound: "2026-04-22 02:00:00+00",
+          lower_bound: "2026-04-22T01:00:00.000000Z",
+          upper_bound: "2026-04-22T02:00:00.000000Z",
         },
       ],
     });
@@ -420,7 +420,7 @@ describe("runClickHouseMigrations", () => {
       rows: [
         {
           lower_bound: "not-a-timestamp",
-          upper_bound: "2026-04-22 06:00:00+00",
+          upper_bound: "2026-04-22T06:00:00.000000Z",
         },
       ],
     });
@@ -443,7 +443,7 @@ describe("runClickHouseMigrations", () => {
         { command: vi.fn().mockResolvedValue(undefined), query },
         "postgres://health:fixture@db:5432/health",
       ),
-    ).rejects.toThrow("Invalid metric_stream chunk lower bound: not-a-timestamp");
+    ).rejects.toThrow(/Invalid datetime/);
     expect(pgClientMocks.end).toHaveBeenCalledTimes(1);
   });
 
