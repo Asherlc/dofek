@@ -449,7 +449,7 @@ export class ActivityRepository extends BaseRepository {
             WHEN up.resting_hr > 0
               AND up.resting_hr < up.max_hr
             THEN up.resting_hr
-            ELSE 60
+            ELSE LEAST(60, up.max_hr - 1)
           END AS resting_hr
           FROM fitness.user_profile up
           LEFT JOIN ${restingHeartRateLateral(
@@ -457,7 +457,7 @@ export class ActivityRepository extends BaseRepository {
             sql`(${window.startedAt}::timestamptz AT TIME ZONE ${this.timezone})::date`,
           )}
           WHERE up.id = ${this.userId}
-            AND up.max_hr IS NOT NULL`,
+            AND up.max_hr > 1`,
     );
     return rows[0] ?? null;
   }

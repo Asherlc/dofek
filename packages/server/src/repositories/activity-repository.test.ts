@@ -468,13 +468,13 @@ describe("ActivityRepository", () => {
             member_activity_ids: ["activity-id"],
           },
         ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]);
+        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 220 }]);
 
       await repo.getHrZones("activity-id");
 
       const sqlObject = execute.mock.calls[1]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("ELSE 60");
+      expect(compiledQuery.sql).toContain("ELSE LEAST(60, up.max_hr - 1)");
       expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
         {
           activityId: "activity-id",
