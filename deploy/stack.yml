@@ -203,7 +203,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_SEEDS: peerdb-catalog
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     healthcheck:
       test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "workflow", "list"]
       interval: 10s

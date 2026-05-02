@@ -2396,3 +2396,43 @@ This repair only covers the observed interrupted `v1.2` visibility bootstrap
 state. Future Temporal upgrade failures should still be diagnosed from the first
 fatal Temporal log line and the catalog `schema_version` tables before adding
 any new repair path.
+
+## 2026-05-01: Temporal Dynamic Config Path
+
+### Symptoms
+
+Production deploy run `25243281625` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-d6445e3`.
+Migrations and the Temporal visibility bootstrap repair succeeded, but
+`docker stack deploy --detach=false` did not converge because
+`dofek_peerdb-temporal` repeatedly exited.
+
+### Evidence
+
+The first fatal Temporal log line was:
+
+```text
+Unable to create dynamic config client. Error: unable to validate dynamic config: dynamic config: config/dynamicconfig/development-sql.yaml: stat config/dynamicconfig/development-sql.yaml: no such file or directory
+```
+
+Read-only image inspection on the production host showed
+`temporalio/auto-setup:1.29` contains `config/dynamicconfig/docker.yaml`, and
+its config template defaults `DYNAMIC_CONFIG_FILE_PATH` to
+`/etc/temporal/config/dynamicconfig/docker.yaml`. The deployed service spec
+overrode that default with the missing `config/dynamicconfig/development-sql.yaml`.
+
+### Root Cause
+
+`deploy/stack.yml` carried a stale Temporal dynamic-config override that points
+at a file not present in the `temporalio/auto-setup:1.29` image.
+
+### Fix or Mitigation
+
+The stale `DYNAMIC_CONFIG_FILE_PATH` override was removed so Temporal uses the
+dynamic config path shipped by the image.
+
+### Remaining Risk
+
+Temporal image upgrades can change bundled config paths. If Temporal exits
+before startup after an image bump, inspect the image's config template and file
+tree before adding or overriding dynamic-config paths.
