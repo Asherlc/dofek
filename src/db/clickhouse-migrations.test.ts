@@ -342,6 +342,8 @@ describe("runClickHouseMigrations", () => {
         .mockResolvedValue(
           queryText.includes("system.tables")
             ? [{ table_count: 1 }]
+            : queryText.includes("system.databases")
+              ? [{ engine: "Atomic" }]
             : queryText.includes("0006_backfill_native_metric_stream")
               ? [{ migration_count: 0 }]
               : queryText.includes("metric_stream_backfill_chunks")
