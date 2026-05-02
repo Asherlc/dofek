@@ -2117,47 +2117,363 @@ compare row counts and recent-row freshness between Postgres,
 `postgres_fitness.metric_stream`, and `peerdb.metric_stream`, then cut
 `analytics.deduped_sensor` over in a separate migration.
 
-## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
+## 2026-05-01: Production Deploy Blocked by ClickHouse Backfill Timeout
 
 ### Symptoms
 
-Production deploy run `25237109231` failed in job `74005587158` during the
-`Run migrations` step. The migration container exited with code 1 before
-`docker stack deploy` ran, so the new web stack image was not released.
+Production deploy workflow `25239905048` failed in the `Run migrations` step
+before the stack deploy step, so the CloudBeaver service was not released.
+
+### User Impact
+
+The existing production web stack kept running on the previous image, but the
+new CloudBeaver production service was unavailable.
 
 ### Evidence
 
-The first fatal job line was `Migration failed (exit code 1).` The last
-migration log line was:
+The first fatal workflow log line was:
 
 ```text
 error: [migrate] Error: Timeout error.
 ```
 
-Immediately before the error, Postgres migrations had applied 0 new files and
-materialized view sync had completed with `synced=0 skipped=7 refreshed=0`.
-The next code path is `runClickHouseMigrations()`.
+The migration log showed Postgres migrations and materialized view sync
+completed, then ClickHouse migration `0006_backfill_native_metric_stream`
+failed before recording its row in `analytics.schema_migrations`. Production
+ClickHouse had only `42` completed rows in
+`analytics.metric_stream_backfill_chunks`, while production Timescale had `195`
+`fitness.metric_stream` chunks. The next uncompleted Timescale chunk,
+`2021-04-29 00:00:00+00` to `2021-05-06 00:00:00+00`, contained about
+`4,014,020` rows.
 
 ### Root Cause
 
-ClickHouse migration `0006_backfill_native_metric_stream` copied each full
-Timescale chunk with one `INSERT INTO ... SELECT FROM postgresql(...)` command.
-Production chunks were large enough for a ClickHouse HTTP command to exceed the
-client's default 30 second request timeout. Because the migration also dropped
-`postgres_fitness` and the backfill progress table on every retry, a retry
-would restart the native backfill instead of continuing from completed ranges.
+ClickHouse migration `0006_backfill_native_metric_stream` backfilled one full
+Timescale chunk per ClickHouse insert. Some production weekly chunks are too
+large for the ClickHouse HTTP client request timeout, so the migration timed out
+while copying historical `metric_stream` rows.
 
 ### Fix or Mitigation
 
-The migration now splits Timescale chunk ranges into one-hour ClickHouse
-backfill windows and records those bounded windows in
-`analytics.metric_stream_backfill_chunks`. It only drops `postgres_fitness` and
-the progress table when `postgres_fitness` is still backed by a non-native
-database engine; retries against an already-native database preserve completed
-backfill windows and continue from the first missing window.
+The migration now splits Timescale chunk ranges into six-hour backfill ranges
+before checking and recording `analytics.metric_stream_backfill_chunks`. This
+keeps each ClickHouse insert bounded while preserving resumability through the
+existing range-completion table. The rerun path also treats older broader
+completion ranges as covering new subranges and uses an anti-join on existing
+ClickHouse `metric_stream` IDs so a timed-out-but-successful insert is not
+duplicated.
 
 ### Remaining Risk
 
 Very dense one-hour windows can still take longer than expected, but future
 failures will now identify the exact window being copied and retries will not
-discard completed native backfill progress.
+discard completed native backfill progress. The production backfill still needs
+to finish before migration `0006` is marked applied; verify completion by
+confirming `0006_backfill_native_metric_stream` exists in
+`analytics.schema_migrations`.
+
+## 2026-05-01: Manual CloudBeaver Deploy Reused Pre-Fix Migration Image
+
+### Symptoms
+
+Manual production deploy run `25239905048` from branch
+`Asherlc/setup-dbeaver` failed in job `74013763788` during the `Run migrations`
+step. The deployment stopped before `docker stack deploy`, so the CloudBeaver
+stack change did not release.
+
+### Evidence
+
+The run checked out commit `fabd4d7`, resolved `INPUT_TAG=latest`, and ran
+`ghcr.io/asherlc/dofek:latest` for migrations. The first fatal line was:
+
+```text
+Migration failed (exit code 1).
+```
+
+The migration output ended with:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+Postgres migrations and Postgres materialized-view sync had already completed,
+which puts the failure in the ClickHouse migration path.
+
+### Root Cause
+
+The manual deploy reused the same pre-fix ClickHouse metric-stream backfill
+behavior described above: a large `INSERT INTO ... SELECT FROM postgresql(...)`
+operation exceeded the ClickHouse client's request timeout. The branch was
+based on `1b5da985`, while `main` later added the bounded backfill-window fix in
+`03798a36`.
+
+### Fix or Mitigation
+
+No new code change was required for this specific run. Deploy a `dofek` image
+built from `03798a36` or newer, or replay the CloudBeaver stack changes on top
+of current `main`, so the migration container uses the bounded ClickHouse
+backfill implementation.
+
+### Remaining Risk
+
+The `Asherlc/setup-dbeaver` branch itself still points at `fabd4d7`, so another
+manual deploy from that branch with `image_tag=latest` can repeat the same
+failure if `latest` has not been advanced to a fixed image. Avoid production
+deploys from stale feature branches unless the image tag is pinned to a known
+fixed commit.
+
+## 2026-05-01: ClickHouse Backfill Retried Too Many Empty Chunk Windows
+
+### Symptoms
+
+After replaying `Asherlc/setup-dbeaver` onto current `main`, production deploy
+run `25240719766` used image `ghcr.io/asherlc/dofek:sha-bcfe4eb` and progressed
+past the original full-chunk timeout. The `Run migrations` step still spent
+most of its time in `0006_backfill_native_metric_stream`, logging one-hour
+windows such as:
+
+```text
+[clickhouse-migrations] Backfilling metric_stream 2014-10-05T13:00:00.000Z..2014-10-05T14:00:00.000Z
+```
+
+### Evidence
+
+The workflow migration step has a `3300s` timeout. Production
+`timescaledb_information.chunks` reported 195 `fitness.metric_stream` chunks
+with an estimated 32,760 one-hour chunk-range windows, including chunk bounds
+from `1989-12-28 00:00:00+00` through `2104-02-14 00:00:00+00`. ClickHouse
+progress showed only 7,421 completed backfill windows roughly 25 minutes after
+the migration started.
+
+### Root Cause
+
+The bounded backfill fix split raw Timescale chunk ranges into six-hour
+ClickHouse inserts. Some production chunk ranges are far wider than the rows
+they contain, so the migration still performs thousands of empty or unnecessary
+ClickHouse inserts before reaching real data.
+
+### Fix or Mitigation
+
+Backfill discovery now reads each Timescale chunk table's actual
+`min(recorded_at)` and `max(recorded_at) + 1 microsecond` and skips chunks with
+no rows. The six-hour window split remains, but it only covers occupied time
+ranges.
+
+### Remaining Risk
+
+Very dense occupied chunks can still require many six-hour windows, but sparse
+or over-wide Timescale chunks no longer dominate deploy time.
+
+## 2026-05-01: ClickHouse Refresh Wait Exceeded Client Timeout
+
+### Symptoms
+
+Production deploy run `25241533098` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-3b904b4` and
+passed image pulls, host-path validation, Postgres readiness, ClickHouse
+readiness, and Postgres migrations. It failed in the `Run migrations` step
+before `docker stack deploy`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+The migration log showed Postgres migrations and materialized-view sync had
+completed. ClickHouse `system.query_log` showed the failing operation:
+`SYSTEM WAIT VIEW analytics.deduped_sensor` started at
+`2026-05-02 02:43:34 UTC`, finished successfully at `2026-05-02 02:44:08 UTC`,
+and took `33415ms`.
+
+### Root Cause
+
+The ClickHouse refresh wait was legitimate work and completed successfully on
+the server, but the Node ClickHouse client default request timeout is `30000ms`.
+The client aborted the request about three seconds before ClickHouse returned
+success.
+
+### Fix or Mitigation
+
+The production ClickHouse client now uses a `120000ms` request timeout. This is
+long enough for the observed refresh wait while remaining much shorter than the
+workflow migration timeout, so a genuinely stuck migration still fails loudly.
+
+### Remaining Risk
+
+Future data growth can make refresh waits exceed two minutes. If that happens,
+the fix should first inspect `system.query_log` for the exact refresh query and
+optimize the read model or migration shape before increasing timeouts again.
+
+## 2026-05-01: PeerDB Catalog PostgreSQL 18 Mount Layout
+
+### Symptoms
+
+Production deploy run `25242177373` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-d727d3a`.
+Migrations succeeded, but the `Deploy stack` step did not converge because
+`dofek_peerdb-catalog` repeatedly exited and downstream Temporal/PeerDB
+services waited for the catalog host.
+
+### Evidence
+
+The first fatal catalog log line was:
+
+```text
+Error: in 18+, these Docker images are configured to store database data in a format which is compatible with "pg_ctlcluster"
+```
+
+The same log reported PostgreSQL data under `/var/lib/postgresql/data` as an
+unused mount/volume. On the host, `/mnt/dofek-data/peerdb-catalog` existed but
+contained no `PG_VERSION`, confirming this was a mount-layout bootstrap failure
+rather than an incompatible existing catalog database.
+
+### Root Cause
+
+`peerdb-catalog` used `postgres:18-alpine` while bind-mounting
+`/mnt/dofek-data/peerdb-catalog` to `/var/lib/postgresql/data`. PostgreSQL 18
+Docker images use a versioned data directory under `/var/lib/postgresql`, so
+mounting the old data path makes the entrypoint fail before initialization.
+
+### Fix or Mitigation
+
+The `peerdb-catalog` bind mount now targets `/var/lib/postgresql`, allowing the
+PostgreSQL 18 image to initialize and manage its versioned data directory under
+the persistent host path.
+
+### Remaining Risk
+
+If this service later contains real catalog data and needs a PostgreSQL major
+upgrade, perform a catalog backup and `pg_upgrade` flow rather than changing the
+mount path or image tag alone.
+
+## 2026-05-01: Temporal Visibility Bootstrap Interrupted
+
+### Symptoms
+
+Production deploy run `25242863616` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-7906e92`.
+Migrations succeeded, but `docker stack deploy --detach=false` did not converge
+because `dofek_peerdb-temporal` repeatedly exited. Downstream PeerDB flow
+services also exited while Temporal was unavailable.
+
+### Evidence
+
+The first fatal Temporal log line was:
+
+```text
+Unable to update SQL schema. {"error": "error executing statement: pq: index \"by_type_start_time\" does not exist"}
+```
+
+The catalog database had `temporal_visibility.schema_version.curr_version =
+1.1`, while `executions_visibility.search_attributes` and several `v1.2`
+advanced-visibility indexes already existed. The old `v1.0`/`v1.1` indexes that
+Temporal `v1.2` expects to drop were gone.
+
+### Root Cause
+
+An earlier deploy attempt interrupted Temporal's first `temporal_visibility`
+`v1.2` schema update after it had added columns and dropped legacy indexes, but
+before the Temporal schema version table advanced from `1.1`. On restart,
+Temporal retried the `v1.2` SQL from the beginning and failed at the first
+non-idempotent `DROP INDEX`.
+
+### Fix or Mitigation
+
+The deploy workflow now performs a narrowly scoped preflight repair before
+`docker stack deploy`: if `temporal_visibility` is exactly in this partial
+`1.1`/`v1.2` bootstrap state, it recreates the legacy indexes that Temporal's
+official migration expects to drop. Temporal can then rerun its own migration
+and advance the schema normally. The preflight compares the Postgres state as
+`1.1|true|false`, because concatenated Postgres booleans render as
+`true`/`false`, not `t`/`f`.
+
+### Remaining Risk
+
+This repair only covers the observed interrupted `v1.2` visibility bootstrap
+state. Future Temporal upgrade failures should still be diagnosed from the first
+fatal Temporal log line and the catalog `schema_version` tables before adding
+any new repair path.
+
+## 2026-05-01: Temporal Dynamic Config Path
+
+### Symptoms
+
+Production deploy run `25243281625` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-d6445e3`.
+Migrations and the Temporal visibility bootstrap repair succeeded, but
+`docker stack deploy --detach=false` did not converge because
+`dofek_peerdb-temporal` repeatedly exited.
+
+### Evidence
+
+The first fatal Temporal log line was:
+
+```text
+Unable to create dynamic config client. Error: unable to validate dynamic config: dynamic config: config/dynamicconfig/development-sql.yaml: stat config/dynamicconfig/development-sql.yaml: no such file or directory
+```
+
+Read-only image inspection on the production host showed
+`temporalio/auto-setup:1.29` contains `config/dynamicconfig/docker.yaml`, and
+its config template defaults `DYNAMIC_CONFIG_FILE_PATH` to
+`/etc/temporal/config/dynamicconfig/docker.yaml`. The deployed service spec
+overrode that default with the missing `config/dynamicconfig/development-sql.yaml`.
+
+### Root Cause
+
+`deploy/stack.yml` carried a stale Temporal dynamic-config override that points
+at a file not present in the `temporalio/auto-setup:1.29` image.
+
+### Fix or Mitigation
+
+The stale `DYNAMIC_CONFIG_FILE_PATH` override was removed so Temporal uses the
+dynamic config path shipped by the image.
+
+### Remaining Risk
+
+Temporal image upgrades can change bundled config paths. If Temporal exits
+before startup after an image bump, inspect the image's config template and file
+tree before adding or overriding dynamic-config paths.
+
+## 2026-05-02: Temporal Healthcheck Loopback Address
+
+### Symptoms
+
+Production deploy run `25243680947` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-a548e1a`.
+The app services updated, but `docker stack deploy --detach=false` did not
+converge because `dofek_peerdb-temporal` stayed unhealthy. PeerDB flow services
+continued to restart with `unable to create Temporal client`.
+
+### Evidence
+
+The Temporal container was running, but Docker healthcheck logs showed:
+
+```text
+Failed to create SDK client {"error": "failed reaching server: last connection error: connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:7233: connect: connection refused\""}
+```
+
+Temporal startup logs showed the service address was set to the container task
+IP, and membership eventually reported `frontend` reachable on that task IP
+rather than loopback.
+
+### Root Cause
+
+The `peerdb-temporal` healthcheck used `tctl --address 127.0.0.1:7233`, but the
+Temporal 1.29 auto-setup container does not accept frontend connections on
+loopback in this deployment. Swarm marked the service unhealthy even after
+Temporal started.
+
+### Fix or Mitigation
+
+The healthcheck now uses the Swarm service DNS name,
+`tctl --address peerdb-temporal:7233`, matching the address used by PeerDB flow
+services.
+
+### Remaining Risk
+
+This keeps the existing `tctl` healthcheck behavior. Temporal logs warn that
+`tctl` enters end of support on 2025-09-30, so a future Temporal maintenance
+pass should migrate the healthcheck to the supported Temporal CLI.

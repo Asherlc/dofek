@@ -1176,7 +1176,11 @@ describe("Router coverage", () => {
         "activity.list",
         { days: 90 },
       );
-      const activityWithHr = list.items.find((item) => item.avg_hr != null);
+      const activityWithHr = list.items
+        .filter((item) => item.avg_hr != null)
+        .sort((leftActivity, rightActivity) => {
+          return (rightActivity.avg_hr ?? 0) - (leftActivity.avg_hr ?? 0);
+        })[0];
       const activityId = activityWithHr?.id;
       expect(activityId).toBeTruthy();
       expect(list.items.length).toBeGreaterThan(0);
