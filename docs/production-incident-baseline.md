@@ -2436,3 +2436,44 @@ dynamic config path shipped by the image.
 Temporal image upgrades can change bundled config paths. If Temporal exits
 before startup after an image bump, inspect the image's config template and file
 tree before adding or overriding dynamic-config paths.
+
+## 2026-05-02: Temporal Healthcheck Loopback Address
+
+### Symptoms
+
+Production deploy run `25243680947` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-a548e1a`.
+The app services updated, but `docker stack deploy --detach=false` did not
+converge because `dofek_peerdb-temporal` stayed unhealthy. PeerDB flow services
+continued to restart with `unable to create Temporal client`.
+
+### Evidence
+
+The Temporal container was running, but Docker healthcheck logs showed:
+
+```text
+Failed to create SDK client {"error": "failed reaching server: last connection error: connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:7233: connect: connection refused\""}
+```
+
+Temporal startup logs showed the service address was set to the container task
+IP, and membership eventually reported `frontend` reachable on that task IP
+rather than loopback.
+
+### Root Cause
+
+The `peerdb-temporal` healthcheck used `tctl --address 127.0.0.1:7233`, but the
+Temporal 1.29 auto-setup container does not accept frontend connections on
+loopback in this deployment. Swarm marked the service unhealthy even after
+Temporal started.
+
+### Fix or Mitigation
+
+The healthcheck now uses the Swarm service DNS name,
+`tctl --address peerdb-temporal:7233`, matching the address used by PeerDB flow
+services.
+
+### Remaining Risk
+
+This keeps the existing `tctl` healthcheck behavior. Temporal logs warn that
+`tctl` enters end of support on 2025-09-30, so a future Temporal maintenance
+pass should migrate the healthcheck to the supported Temporal CLI.

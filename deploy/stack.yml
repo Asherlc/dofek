@@ -204,7 +204,7 @@ services:
       POSTGRES_PWD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_SEEDS: peerdb-catalog
     healthcheck:
-      test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "workflow", "list"]
+      test: ["CMD", "tctl", "--address", "peerdb-temporal:7233", "workflow", "list"]
       interval: 10s
       timeout: 10s
       retries: 12
