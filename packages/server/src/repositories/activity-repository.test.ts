@@ -468,7 +468,7 @@ describe("ActivityRepository", () => {
             member_activity_ids: ["activity-id"],
           },
         ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 220 }]);
+        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]);
 
       await repo.getHrZones("activity-id");
 
