@@ -2600,12 +2600,197 @@ Temporal started.
 
 ### Fix or Mitigation
 
-The healthcheck now uses the Swarm service DNS name,
-`tctl --address peerdb-temporal:7233`, matching the address used by PeerDB flow
-services.
+The initial fix changed the healthcheck to the Swarm service DNS name,
+`tctl --address peerdb-temporal:7233`, but deploy run `25244198471` showed that
+the Temporal container itself could not resolve that service name from Docker's
+embedded DNS:
+
+```text
+Failed to create SDK client {"error": "failed reaching server: last connection error: connection error: desc = \"transport: Error while dialing: dial tcp: lookup peerdb-temporal on 127.0.0.11:53: no such host\""}
+```
+
+A direct check inside the running container confirmed that
+`tctl --address "$(hostname -i | awk '{print $1}'):7233" workflow list`
+succeeds. The healthcheck now computes the container task IP at runtime and
+connects to Temporal on that address.
 
 ### Remaining Risk
 
 This keeps the existing `tctl` healthcheck behavior. Temporal logs warn that
 `tctl` enters end of support on 2025-09-30, so a future Temporal maintenance
 pass should migrate the healthcheck to the supported Temporal CLI.
+
+## 2026-05-02: PeerDB CDC Multi-Statement Setup Rejected
+
+### Symptoms
+
+After the replayed `Asherlc/setup-dbeaver` stack converged on image
+`ghcr.io/asherlc/dofek:sha-be6b6e0`, deploy workflow run `25245047541` failed in
+the post-stack `Configure ClickHouse CDC` step.
+
+### Evidence
+
+The first fatal setup log line was:
+
+```text
+[clickhouse-cdc] error: unsupported sql: CREATE PEER IF NOT EXISTS dofek_postgres FROM POSTGRES WITH ...
+```
+
+The same error payload showed PeerDB had parsed three statements from the single
+query payload: `CreatePeer` for Postgres, `CreatePeer` for ClickHouse, and
+`CreateMirror` for `dofek_metric_stream_cdc`.
+
+### Root Cause
+
+The setup script rendered `src/db/peerdb/metric-stream-cdc.sql` and sent all
+three semicolon-delimited PeerDB DDL statements through one `pg` query. PeerDB's
+SQL endpoint parses those statements but rejects the combined multi-statement
+payload as unsupported.
+
+### Fix or Mitigation
+
+The setup script now renders the template once, splits it into individual
+statements while preserving semicolons inside single-quoted literals, and sends
+each PeerDB DDL statement as its own query.
+
+### Remaining Risk
+
+The splitter is intentionally small and covers the checked-in PeerDB template
+shape plus single-quoted runtime values. If future PeerDB templates introduce
+comments, dollar-quoted strings, or procedural SQL, replace the splitter with a
+real SQL parser or move to a PeerDB-supported declarative API.
+
+## 2026-05-02: Post-Sync Materialized-View Refresh OOM During Deploy
+
+### Symptoms
+
+Deploy workflow run `25245248845` for image
+`ghcr.io/asherlc/dofek:sha-328c6e1` stalled in the `Run migrations` step while
+production Postgres temporarily returned `FATAL: the database system is in
+recovery mode`.
+
+### Evidence
+
+`pg_stat_activity` showed a long-running refresh:
+
+```text
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+Worker logs identified the source as automatic post-sync maintenance:
+
+```text
+[mv-refresh] source=sync.post_sync view=fitness.deduped_sensor
+```
+
+Postgres then logged the first fatal line:
+
+```text
+client backend (PID 180914) was terminated by signal 9: Killed
+DETAIL: Failed process was running: REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+The host had limited free memory and swap pressure during the incident. The
+database recovered automatically and later reported `pg_is_in_recovery() = f`.
+
+### Root Cause
+
+Normal worker post-sync jobs were still launching full Postgres materialized
+view refreshes, including the high-risk `fitness.deduped_sensor` view that scans
+metric stream history. That refresh exceeded available host memory and the
+backend was OOM-killed, forcing Postgres crash recovery and interrupting the
+deploy migration runner.
+
+### Fix or Mitigation
+
+Global post-sync maintenance no longer runs `refreshDedupViews()` or
+`updateUserMaxHr()`. While rolling out the fix, active old-worker refreshes were
+cancelled with `pg_cancel_backend()` after they restarted the same high-risk
+refresh path. Heavy Postgres materialized-view refreshes remain explicit
+maintenance-window work through the Materialized View Maintenance workflow and
+`docs/materialized-view-maintenance-runbook.md`.
+
+### Remaining Risk
+
+Legacy Postgres materialized views can still be stale until planned maintenance
+runs. Runtime paths should continue moving sensor-derived reads to ClickHouse
+`analytics.*` projections so production does not depend on refreshing
+full-history Postgres views after normal provider syncs.
+
+## 2026-05-02: PeerDB Mirror Missing Source Publication
+
+### Symptoms
+
+Deploy workflow run `25246366257` for image
+`ghcr.io/asherlc/dofek:sha-afd9297` successfully built images, ran migrations,
+deployed the Swarm stack, and then failed in `Configure ClickHouse CDC`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate source connector dofek_postgres: provided source tables invalidated: publication does not exist: peerdb_metric_stream_publication\""
+```
+
+### Root Cause
+
+The PeerDB mirror template requested
+`publication_name = 'peerdb_metric_stream_publication'`, but the CDC setup only
+created PeerDB peers and the mirror. It never ensured the named publication
+existed on the source Postgres database before asking PeerDB to validate the
+mirror.
+
+### Fix or Mitigation
+
+The CDC setup now connects to source Postgres and idempotently creates
+`peerdb_metric_stream_publication` for `fitness.metric_stream`, or adds
+`fitness.metric_stream` when the publication exists without that table, before
+submitting the PeerDB mirror DDL.
+
+### Remaining Risk
+
+The setup assumes the configured Postgres user can manage publications for
+`fitness.metric_stream`. If production credentials lose that permission, deploys
+should fail loudly at the publication bootstrap step before PeerDB mirror
+validation.
+
+## 2026-05-02: PeerDB Temporal Missing MirrorName Search Attribute
+
+### Symptoms
+
+Deploy workflow run `25246698008` for image
+`ghcr.io/asherlc/dofek:sha-354a2ef` successfully built images, ran migrations,
+deployed the Swarm stack, and then failed in `Configure ClickHouse CDC`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"unable to start PeerFlow workflow: Namespace default has no mapping defined for search attribute MirrorName\""
+```
+
+`temporal operator search-attribute list --namespace default` did not include
+`MirrorName`. PeerDB's Go package defines `MirrorName` as a Temporal string
+search attribute (`temporal.NewSearchAttributeKeyString("MirrorName")`).
+
+### Root Cause
+
+The PeerDB Temporal cluster was bootstrapped without PeerDB's custom
+`MirrorName` search attribute. PeerDB can create peers and validate source
+publications without it, but workflow startup fails when PeerDB attaches the
+missing search attribute to the mirror workflow.
+
+### Fix or Mitigation
+
+The deploy workflow now idempotently checks Temporal namespace `default` and
+creates `MirrorName` as a `Text` search attribute with the Temporal CLI before
+running the ClickHouse CDC setup command.
+
+### Remaining Risk
+
+The workflow registers the PeerDB search attribute that current PeerDB
+`stable-v0.36.18` requires. Future PeerDB upgrades may add more Temporal search
+attributes; handle those as explicit deploy prerequisites rather than letting
+mirror creation fail after stack rollout.
