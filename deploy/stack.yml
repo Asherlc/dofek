@@ -421,6 +421,8 @@ services:
   netdata:
     image: netdata/netdata:v2.5
     pid: host
+    environment:
+      NETDATA_DISABLE_CLOUD: "1"
     cap_add:
       - SYS_PTRACE
       - SYS_ADMIN

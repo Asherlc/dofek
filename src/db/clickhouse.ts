@@ -21,6 +21,10 @@ export interface ClickHouseClient extends ClickHouseCommandClient {
   }): Promise<{ json(): Promise<TRow[]> }>;
 }
 
+interface ClickHouseClientOptions {
+  requestTimeoutMs?: number;
+}
+
 interface TableCountRow {
   table_count: number | string;
 }
@@ -40,10 +44,15 @@ function clickHouseStringLiteral(value: string): string {
 }
 
 function normalizePostgresHostForClickHouse(hostname: string): string {
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+  const normalizedHostname = hostname === "[::1]" ? "::1" : hostname;
+  if (
+    normalizedHostname === "localhost" ||
+    normalizedHostname === "127.0.0.1" ||
+    normalizedHostname === "::1"
+  ) {
     return "host.docker.internal";
   }
-  return hostname;
+  return normalizedHostname;
 }
 
 export function parsePostgresConnectionForClickHouse(
@@ -458,12 +467,16 @@ LEFT JOIN distance_per_activity
 
 export function createClickHouseClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  options: ClickHouseClientOptions = {},
 ): ClickHouseClient {
   const url = env.CLICKHOUSE_URL;
   if (!url) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
-  return createClient({ url, request_timeout: CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS });
+  return createClient({
+    url,
+    request_timeout: options.requestTimeoutMs ?? CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS,
+  });
 }
 
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {
