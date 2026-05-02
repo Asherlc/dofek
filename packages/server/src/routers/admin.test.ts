@@ -1,3 +1,4 @@
+import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -560,18 +561,9 @@ describe("adminRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
-      expect(result.refreshed).toEqual([
-        "fitness.v_activity",
-        "fitness.v_sleep",
-        "fitness.v_body_measurement",
-        "fitness.v_daily_metrics",
-        "fitness.deduped_sensor",
-        "fitness.activity_summary",
-        "fitness.provider_stats",
-      ]);
+      expect(result.refreshed).toEqual([...ALL_MATERIALIZED_VIEWS]);
       expect(result.failed).toEqual([]);
-      // 7 views × REFRESH MATERIALIZED VIEW CONCURRENTLY
-      expect(execute).toHaveBeenCalledTimes(7);
+      expect(execute).toHaveBeenCalledTimes(ALL_MATERIALIZED_VIEWS.length);
     });
 
     it("falls back to non-concurrent refresh on error", async () => {
@@ -582,10 +574,9 @@ describe("adminRouter", () => {
         .mockResolvedValue([]); // remaining views
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(7);
+      expect(result.refreshed).toHaveLength(ALL_MATERIALIZED_VIEWS.length);
       expect(result.failed).toHaveLength(0);
-      // 1 failed concurrent + 1 fallback + 6 remaining = 8
-      expect(execute).toHaveBeenCalledTimes(8);
+      expect(execute).toHaveBeenCalledTimes(ALL_MATERIALIZED_VIEWS.length + 1);
     });
 
     it("reports failed views without aborting the rest", async () => {
@@ -595,11 +586,10 @@ describe("adminRouter", () => {
       execute.mockResolvedValueOnce([]); // v_sleep concurrent OK
       execute.mockRejectedValueOnce(new Error("does not exist")); // v_body concurrent fail
       execute.mockRejectedValueOnce(new Error("does not exist")); // v_body fallback fail
-      // remaining 3 views succeed
       execute.mockResolvedValue([]);
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(6);
+      expect(result.refreshed).toHaveLength(ALL_MATERIALIZED_VIEWS.length - 1);
       expect(result.failed).toEqual([
         {
           view: "fitness.v_body_measurement",

@@ -75,12 +75,6 @@ export function buildClickHouseBootstrapStatements(postgresConnectionString: str
   return buildClickHouseBootstrapStatementsForNativeMetricStream(postgresConnectionString);
 }
 
-export function buildClickHousePlaceholderBootstrapStatements(
-  postgresConnectionString: string,
-): string[] {
-  return buildClickHouseBootstrapStatementsForNativeMetricStream(postgresConnectionString);
-}
-
 function buildClickHouseBootstrapStatementsForNativeMetricStream(
   postgresConnectionString: string,
 ): string[] {

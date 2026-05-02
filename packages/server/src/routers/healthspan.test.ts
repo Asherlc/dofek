@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
   return {
     router: trpc.router,
@@ -365,6 +366,21 @@ describe("scoreLeanMassPct", () => {
 
 const createCaller = createTestCallerFactory(healthspanRouter);
 
+function makeSensorStore(overrides: Partial<ActivitySensorStore>): ActivitySensorStore {
+  return {
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    ...overrides,
+  };
+}
+
 describe("healthspanRouter", () => {
   describe("score", () => {
     it("returns null score when no data", async () => {
@@ -440,6 +456,58 @@ describe("healthspanRouter", () => {
       expect(metricsWithData).toHaveLength(9);
       const totalScore = metricsWithData.reduce((sum, m) => sum + m.score, 0);
       expect(result.healthspanScore).toBe(Math.round(totalScore / metricsWithData.length));
+    });
+
+    it("uses sensor-store VO2 max estimates for the current value and weekly history", async () => {
+      const rows = [
+        {
+          avg_sleep_min: 480,
+          bedtime_stddev_min: 20,
+          avg_resting_hr: 55,
+          avg_steps: 10000,
+          latest_vo2max: null,
+          weekly_aerobic_min: 200,
+          weekly_high_intensity_min: 80,
+          sessions_per_week: 3,
+          weight_kg: 75,
+          body_fat_pct: 15,
+          weekly_history: [
+            { week_start: "2026-03-09", avg_rhr: 55, avg_steps: 10000, avg_vo2max: null },
+          ],
+        },
+      ];
+      const getVo2MaxEstimates = vi.fn().mockResolvedValue([
+        {
+          activity_id: "activity-1",
+          activity_date: "2026-03-10",
+          method: "cycling_power",
+          vo2max: 40,
+        },
+        {
+          activity_id: "activity-2",
+          activity_date: "2026-03-11",
+          method: "submaximal_acsm",
+          vo2max: 50,
+        },
+      ]);
+      const execute = vi.fn().mockResolvedValue(rows);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore({ getVo2MaxEstimates }),
+      });
+
+      const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
+
+      const vo2 = result.metrics.find((metric) => metric.name === "VO2 Max");
+      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(queryJson).not.toContain("derived_vo2max_estimates");
+      expect(vo2?.value).toBe(45);
+      expect(getVo2MaxEstimates).toHaveBeenCalledWith("2026-03-15", 84, "user-1", "UTC");
+      expect(result.history[0]?.score).toBe(
+        Math.round((scoreRestingHr(55) + scoreSteps(10000) + scoreVo2Max(45)) / 3),
+      );
     });
 
     it("returns null score when all metrics are null", async () => {

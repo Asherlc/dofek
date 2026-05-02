@@ -51,9 +51,9 @@ describe("DAILY_METRIC_TYPES catalog", () => {
 
   it("includes all original daily_metrics columns", () => {
     const ids = DAILY_METRIC_TYPES.map((type) => type.id);
-    expect(ids).toContain("resting_hr");
+    expect(ids).not.toContain("resting_hr");
     expect(ids).toContain("hrv");
-    expect(ids).toContain("vo2max");
+    expect(ids).not.toContain("vo2max");
     expect(ids).toContain("spo2_avg");
     expect(ids).toContain("steps");
     expect(ids).toContain("active_energy_kcal");
@@ -82,10 +82,10 @@ describe("DAILY_METRIC_TYPES catalog", () => {
 
 describe("getDailyMetricTypeById", () => {
   it("returns the type for a valid id", () => {
-    const result = getDailyMetricTypeById("resting_hr");
+    const result = getDailyMetricTypeById("hrv");
     expect(result).not.toBeNull();
-    expect(result?.displayName).toBe("Resting Heart Rate");
-    expect(result?.unit).toBe("bpm");
+    expect(result?.displayName).toBe("Heart Rate Variability");
+    expect(result?.unit).toBe("ms");
   });
 
   it("returns null for unknown id", () => {
@@ -108,7 +108,6 @@ describe("legacyFieldsToDailyMetrics", () => {
       hrv: 42.5,
     });
     expect(result).toEqual({
-      resting_hr: 58,
       steps: 8200,
       hrv: 42.5,
     });
@@ -121,6 +120,6 @@ describe("legacyFieldsToDailyMetrics", () => {
       sourceName: "Apple Watch",
       resilienceLevel: "solid",
     });
-    expect(result).toEqual({ resting_hr: 58 });
+    expect(result).toEqual({});
   });
 });

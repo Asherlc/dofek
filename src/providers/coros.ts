@@ -442,18 +442,24 @@ export class CorosProvider implements WebhookProvider {
             const dateStr = `${raw.date.slice(0, 4)}-${raw.date.slice(4, 6)}-${raw.date.slice(6, 8)}`;
             try {
               // Daily metrics
-              if (raw.steps || raw.restingHr || raw.hrv) {
+              const hasDailyMetrics =
+                raw.steps !== undefined ||
+                raw.hrv !== undefined ||
+                raw.spo2Avg !== undefined ||
+                raw.calories !== undefined ||
+                raw.distance !== undefined;
+
+              if (hasDailyMetrics) {
                 await db
                   .insert(dailyMetrics)
                   .values({
                     date: dateStr,
                     providerId: this.id,
                     steps: raw.steps,
-                    restingHr: raw.restingHr,
                     hrv: raw.hrv,
                     spo2Avg: raw.spo2Avg,
                     activeEnergyKcal: raw.calories,
-                    distanceKm: raw.distance ? raw.distance / 1000 : undefined,
+                    distanceKm: raw.distance !== undefined ? raw.distance / 1000 : undefined,
                   })
                   .onConflictDoUpdate({
                     target: [
@@ -464,11 +470,10 @@ export class CorosProvider implements WebhookProvider {
                     ],
                     set: {
                       steps: raw.steps,
-                      restingHr: raw.restingHr,
                       hrv: raw.hrv,
                       spo2Avg: raw.spo2Avg,
                       activeEnergyKcal: raw.calories,
-                      distanceKm: raw.distance ? raw.distance / 1000 : undefined,
+                      distanceKm: raw.distance !== undefined ? raw.distance / 1000 : undefined,
                     },
                   });
                 count++;

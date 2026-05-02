@@ -566,6 +566,8 @@ describe("GarminProvider.sync()", () => {
       .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
       .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
 
+    expect(sensorRows).toHaveLength(9);
+    expect(sensorRows.every((row) => row?.scalar != null)).toBe(true);
     expect(sensorRows.length).toBeGreaterThan(0);
     expect(sensorRows).toContainEqual(
       expect.objectContaining({ channel: "heart_rate", scalar: 150 }),
@@ -729,9 +731,6 @@ describe("GarminProvider.sync()", () => {
     mocks.client.getHrvSummary.mockResolvedValue({});
     mocks.parseHrvSummary.mockReturnValue({ lastNightAvg: 45, lastNight: 42 });
 
-    mocks.client.getTrainingStatus.mockResolvedValue({});
-    mocks.parseTrainingStatus.mockReturnValue({ vo2MaxRunning: 55, vo2MaxCycling: 52 });
-
     const result = await syncProvider(provider, db, new Date());
 
     expect(result.recordsSynced).toBe(1);
@@ -743,13 +742,14 @@ describe("GarminProvider.sync()", () => {
     expect(dailyCall[0].distanceKm).toBe(8.5);
     expect(dailyCall[0].activeEnergyKcal).toBe(500);
     expect(dailyCall[0].basalEnergyKcal).toBe(1800);
-    expect(dailyCall[0].restingHr).toBe(55);
+    expect(Object.hasOwn(dailyCall[0], "restingHr")).toBe(false);
     expect(dailyCall[0].spo2Avg).toBe(97);
     expect(dailyCall[0].respiratoryRateAvg).toBe(15);
     expect(dailyCall[0].flightsClimbed).toBe(12);
     expect(dailyCall[0].exerciseMinutes).toBe(45);
     expect(dailyCall[0].hrv).toBe(45);
-    expect(dailyCall[0].vo2max).toBe(55);
+    expect(Object.hasOwn(dailyCall[0], "vo2max")).toBe(false);
+    expect(mocks.client.getTrainingStatus).not.toHaveBeenCalled();
 
     // Verify the onConflictDoUpdate set clause has the same values
     const conflictCall = db.onConflictDoUpdate.mock.calls.find(
@@ -759,13 +759,13 @@ describe("GarminProvider.sync()", () => {
     expect(conflictCall?.[0].set.distanceKm).toBe(8.5);
     expect(conflictCall?.[0].set.activeEnergyKcal).toBe(500);
     expect(conflictCall?.[0].set.basalEnergyKcal).toBe(1800);
-    expect(conflictCall?.[0].set.restingHr).toBe(55);
+    expect(Object.hasOwn(conflictCall?.[0].set ?? {}, "restingHr")).toBe(false);
     expect(conflictCall?.[0].set.spo2Avg).toBe(97);
     expect(conflictCall?.[0].set.respiratoryRateAvg).toBe(15);
     expect(conflictCall?.[0].set.flightsClimbed).toBe(12);
     expect(conflictCall?.[0].set.exerciseMinutes).toBe(45);
     expect(conflictCall?.[0].set.hrv).toBe(45);
-    expect(conflictCall?.[0].set.vo2max).toBe(55);
+    expect(Object.hasOwn(conflictCall?.[0].set ?? {}, "vo2max")).toBe(false);
     // Verify target includes the expected conflict columns
     expect(conflictCall?.[0].target).toBeDefined();
     expect(conflictCall?.[0].target.length).toBe(4);
@@ -780,7 +780,7 @@ describe("GarminProvider.sync()", () => {
     expect(result.recordsSynced).toBe(0);
   });
 
-  it("handles HRV and training status fetch failures gracefully", async () => {
+  it("handles HRV fetch failures gracefully", async () => {
     mocks.client.getDailySummary.mockResolvedValue({ privacyProtected: false });
     mocks.parseConnectDailySummary.mockReturnValue({
       date: "2026-03-01",
@@ -792,10 +792,6 @@ describe("GarminProvider.sync()", () => {
     mocks.client.getHrvSummary.mockRejectedValue(
       new GarminApiError("No content available (204)", 204),
     );
-    mocks.client.getTrainingStatus.mockRejectedValue(
-      new GarminApiError("No content available (204)", 204),
-    );
-
     const result = await syncProvider(provider, db, new Date());
 
     expect(result.recordsSynced).toBe(1);
@@ -803,7 +799,7 @@ describe("GarminProvider.sync()", () => {
     const dailyCall = db.values.mock.calls.find((call) => call[0]?.steps === 5000);
     if (!dailyCall) throw new Error("expected daily metrics insert");
     expect(dailyCall[0].hrv).toBeUndefined();
-    expect(dailyCall[0].vo2max).toBeUndefined();
+    expect(Object.hasOwn(dailyCall[0], "vo2max")).toBe(false);
   });
 
   it("syncs stress time-series", async () => {
@@ -989,6 +985,56 @@ describe("GarminProvider.sync()", () => {
     expect(mocks.client.getSleepData).not.toHaveBeenCalled();
     expect(mocks.client.getDailySummary).toHaveBeenCalledWith("2026-04-27");
     expect(checkpointStore.clear).toHaveBeenCalledOnce();
+  });
+
+  it("resumes an in-progress date phase and advances checkpoints by date then phase", async () => {
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue({ phase: "sleep", nextDate: "2026-04-27" }),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await syncProvider(provider, db, new Date("2026-04-25T00:00:00.000Z"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+      checkpoint: checkpointStore,
+    });
+
+    expect(mocks.client.getActivities).not.toHaveBeenCalled();
+    expect(mocks.client.getSleepData).not.toHaveBeenCalledWith("2026-04-25");
+    expect(mocks.client.getSleepData).not.toHaveBeenCalledWith("2026-04-26");
+    expect(mocks.client.getSleepData).toHaveBeenCalledWith("2026-04-27");
+    expect(checkpointStore.save).toHaveBeenCalledWith({
+      phase: "sleep",
+      nextDate: "2026-04-28",
+    });
+    expect(checkpointStore.save).toHaveBeenCalledWith({
+      phase: "daily_metrics",
+      nextDate: "2026-04-27",
+    });
+    expect(checkpointStore.save).toHaveBeenCalledWith({
+      phase: "stress",
+      nextDate: "2026-04-25",
+    });
+    expect(checkpointStore.save).toHaveBeenCalledWith({ phase: "complete" });
+
+    const savedCheckpoints = checkpointStore.save.mock.calls.map(([checkpoint]) => checkpoint);
+    const sleepAdvanceIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "sleep" && checkpoint.nextDate === "2026-04-28",
+    );
+    const dailyMetricsPhaseIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "daily_metrics" && checkpoint.nextDate === "2026-04-27",
+    );
+    const stressPhaseIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "stress" && checkpoint.nextDate === "2026-04-25",
+    );
+    const completeIndex = savedCheckpoints.findIndex(
+      (checkpoint) => checkpoint.phase === "complete",
+    );
+    expect(sleepAdvanceIndex).toBeGreaterThanOrEqual(0);
+    expect(sleepAdvanceIndex).toBeLessThan(dailyMetricsPhaseIndex);
+    expect(dailyMetricsPhaseIndex).toBeLessThan(stressPhaseIndex);
+    expect(stressPhaseIndex).toBeLessThan(completeIndex);
+    expect(checkpointStore.clear).toHaveBeenCalledTimes(1);
   });
 
   it("does not call captureException for 204 (no data) errors", async () => {

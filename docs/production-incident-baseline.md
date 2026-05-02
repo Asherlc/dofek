@@ -57,7 +57,7 @@ Two separate root causes blocked CI:
   made the dashboard assertion verify the rendered section rather than a brittle
   canvas selector.
 
-### Remaining Risk
+### Remaining Risk (native backfill and CDC transition)
 
 Any future date-sensitive E2E seeds that use UTC string slicing can still drift
  around local-midnight boundaries, and any new cached server query path added to
@@ -2153,44 +2153,50 @@ because the agent session did not have the user's Authentik browser cookies.
 Further debugging needs either the browser network entry from the logged-in
 session or a deliberate local-only Netdata configuration change.
 
-## 2026-05-01: Deploy Blocked by ClickHouse Backfill Timeout
+## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
 
 ### Symptoms
 
-The web stack deploy failed in the `Run migrations` step before
-`docker stack deploy` ran. The first fatal log line was
-`error: [migrate] Error: Timeout error.`
+Production deploy run `25237109231` failed in job `74005587158` during the
+`Run migrations` step. The migration container exited with code 1 before
+`docker stack deploy` ran, so the new web stack image was not released.
 
 ### Evidence
 
-Postgres migrations completed with zero pending migrations and materialized view
-sync reported `synced=0 skipped=7 refreshed=0`. ClickHouse
-`analytics.schema_migrations` had migrations `0001` through `0005` applied, but
-`0006_backfill_native_metric_stream` was missing. The ClickHouse partial
-backfill table had 42 completed chunks, while `@clickhouse/client` defaults
-`request_timeout` to 30000 ms.
+The first fatal job line was `Migration failed (exit code 1).` The last
+migration log line was:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+Immediately before the error, Postgres migrations had applied 0 new files and
+materialized view sync had completed with `synced=0 skipped=7 refreshed=0`.
+The next code path is `runClickHouseMigrations()`.
 
 ### Root Cause
 
-The pending native metric stream backfill is a long-running production
-ClickHouse migration, but the migration runner used the default 30 second
-ClickHouse HTTP request timeout. The client cancelled an expected long-running
-backfill request before the deploy workflow's migration timeout could govern the
-operation.
+ClickHouse migration `0006_backfill_native_metric_stream` copied each full
+Timescale chunk with one `INSERT INTO ... SELECT FROM postgresql(...)` command.
+Production chunks were large enough for a ClickHouse HTTP command to exceed the
+client's default 30 second request timeout. Because the migration also dropped
+`postgres_fitness` and the backfill progress table on every retry, a retry
+would restart the native backfill instead of continuing from completed ranges.
 
 ### Fix or Mitigation
 
-Configured the migration runner to create its ClickHouse client with a
-3,300,000 ms request timeout, matching the workflow's migration timeout. This is
-scoped to migrations so the web server's normal ClickHouse requests keep the
-default timeout.
+The migration now splits Timescale chunk ranges into one-hour ClickHouse
+backfill windows and records those bounded windows in
+`analytics.metric_stream_backfill_chunks`. It only drops `postgres_fitness` and
+the progress table when `postgres_fitness` is still backed by a non-native
+database engine; retries against an already-native database preserve completed
+backfill windows and continue from the first missing window.
 
 ### Remaining Risk
 
-`0006_backfill_native_metric_stream` still has to complete during a deploy. If
-the backfill exceeds the workflow-level timeout, the next fix should split the
-backfill into smaller durable migration phases rather than increasing the
-timeout again.
+Very dense one-hour windows can still take longer than expected, but future
+failures will now identify the exact window being copied and retries will not
+discard completed native backfill progress.
 
 ## 2026-05-01: Netdata Deploy Blocked by Daily Metrics View Drift
 

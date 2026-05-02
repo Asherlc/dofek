@@ -208,7 +208,6 @@ describe("CorosProvider.sync() (integration)", () => {
     const march5 = rows.find((r) => r.date === "2026-03-05");
     if (!march5) throw new Error("expected daily metrics for 2026-03-05");
     expect(march5.steps).toBe(10000);
-    expect(march5.restingHr).toBe(52);
     expect(march5.hrv).toBe(45);
   });
 

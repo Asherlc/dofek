@@ -14,9 +14,7 @@ import { logger } from "../logger.ts";
 const dailyMetricsViewRowSchema = z.object({
   date: dateStringSchema,
   user_id: z.string(),
-  resting_hr: z.number().nullable(),
   hrv: z.number().nullable(),
-  vo2max: z.number().nullable(),
   spo2_avg: z.number().nullable(),
   respiratory_rate_avg: z.number().nullable(),
   skin_temp_c: z.number().nullable(),
@@ -36,7 +34,6 @@ export type DailyMetricsViewRow = z.infer<typeof dailyMetricsViewRowSchema>;
 const hrvBaselineRowSchema = z.object({
   date: dateStringSchema,
   hrv: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
   mean_60d: z.coerce.number().nullable(),
   sd_60d: z.coerce.number().nullable(),
   mean_7d: z.coerce.number().nullable(),
@@ -45,17 +42,14 @@ const hrvBaselineRowSchema = z.object({
 export type HrvBaselineRow = z.infer<typeof hrvBaselineRowSchema>;
 
 const trendsRowSchema = z.object({
-  avg_resting_hr: z.coerce.number().nullable(),
   avg_hrv: z.coerce.number().nullable(),
   avg_spo2: z.coerce.number().nullable(),
   avg_steps: z.coerce.number().nullable(),
   avg_active_energy: z.coerce.number().nullable(),
   avg_skin_temp: z.coerce.number().nullable(),
-  stddev_resting_hr: z.coerce.number().nullable(),
   stddev_hrv: z.coerce.number().nullable(),
   stddev_spo2: z.coerce.number().nullable(),
   stddev_skin_temp: z.coerce.number().nullable(),
-  latest_resting_hr: z.coerce.number().nullable(),
   latest_hrv: z.coerce.number().nullable(),
   latest_spo2: z.coerce.number().nullable(),
   latest_steps: z.coerce.number().nullable(),
@@ -91,9 +85,9 @@ function daysBetween(dateA: string, dateB: string): number {
  *
  * Limited to Apple Health activity metrics — these arrive via HealthKit push
  * (async from server-side syncs) and are most susceptible to the timing gap
- * where the view was refreshed before the push arrived. Recovery metrics
- * (resting_hr, hrv) come from server-side provider syncs that refresh the
- * view themselves, so they don't need this check.
+ * where the view was refreshed before the push arrived. HRV comes from
+ * server-side provider syncs that refresh the view themselves, so it doesn't
+ * need this check.
  */
 const KEY_METRICS = ["steps", "active_energy_kcal"] as const;
 type KeyMetric = (typeof KEY_METRICS)[number];
@@ -190,7 +184,7 @@ export class DailyMetricsRepository extends BaseRepository {
     const warmupDays = days + 60;
     const rows = await this.query(
       hrvBaselineRowSchema,
-      sql`SELECT date, hrv, resting_hr,
+      sql`SELECT date, hrv,
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS mean_60d,
             STDDEV(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS sd_60d,
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS mean_7d
@@ -304,13 +298,11 @@ export class DailyMetricsRepository extends BaseRepository {
             ),
             stats AS (
               SELECT
-                AVG(resting_hr) AS avg_resting_hr,
                 AVG(hrv) AS avg_hrv,
                 AVG(spo2_avg) AS avg_spo2,
                 AVG(steps) AS avg_steps,
                 AVG(active_energy_kcal) AS avg_active_energy,
                 AVG(skin_temp_c) AS avg_skin_temp,
-                STDDEV(resting_hr) AS stddev_resting_hr,
                 STDDEV(hrv) AS stddev_hrv,
                 STDDEV(spo2_avg) AS stddev_spo2,
                 STDDEV(skin_temp_c) AS stddev_skin_temp
@@ -318,7 +310,6 @@ export class DailyMetricsRepository extends BaseRepository {
             ),
             latest AS (
               SELECT
-                (ARRAY_AGG(resting_hr ORDER BY date DESC) FILTER (WHERE resting_hr IS NOT NULL))[1] AS resting_hr,
                 (ARRAY_AGG(hrv ORDER BY date DESC) FILTER (WHERE hrv IS NOT NULL))[1] AS hrv,
                 (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
                 (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
@@ -331,7 +322,6 @@ export class DailyMetricsRepository extends BaseRepository {
             )
             SELECT
               stats.*,
-              latest.resting_hr AS latest_resting_hr,
               latest.hrv AS latest_hrv,
               latest.spo2_avg AS latest_spo2,
               latest.steps AS latest_steps,
@@ -345,7 +335,7 @@ export class DailyMetricsRepository extends BaseRepository {
 
     const rows = await trendsQuery();
     let result = rows[0] ?? null;
-    if (result && result.latest_date === null && result.avg_resting_hr === null) {
+    if (result && result.latest_date === null && result.avg_hrv === null) {
       // View returned all nulls — check if base table has data (stale view)
       const refreshed = await this.#refreshIfStale(days, endDate);
       if (!refreshed) return result;

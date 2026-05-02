@@ -22,6 +22,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { ALL_MATERIALIZED_VIEWS } from "../src/db/materialized-views.ts";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
@@ -125,16 +126,8 @@ async function seedData() {
 // ---------------------------------------------------------------------------
 
 async function refreshViews() {
-  const viewNames = [
-    "v_sleep",
-    "v_daily_metrics",
-    "v_body_measurement",
-    "v_activity",
-    "deduped_sensor",
-    "activity_summary",
-  ];
-  for (const viewName of viewNames) {
-    await sql.unsafe(`REFRESH MATERIALIZED VIEW fitness.${viewName}`);
+  for (const viewName of ALL_MATERIALIZED_VIEWS) {
+    await sql.unsafe(`REFRESH MATERIALIZED VIEW ${viewName}`);
   }
   console.log("Views refreshed");
 }

@@ -57,18 +57,21 @@ export const stressRouter = router({
         rawRowSchema,
         sql`WITH metrics AS (
               SELECT
-                date,
-                hrv,
-                resting_hr,
-                AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
-                STDDEV_POP(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd_60d,
-                AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
-                STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
-              FROM fitness.v_daily_metrics
-              WHERE user_id = ${ctx.userId}
-                AND date > ${dateWindowStart(input.endDate, queryDays)}
-                ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
-              ORDER BY date ASC
+                dm.date,
+                dm.hrv,
+                drhr.resting_hr,
+                AVG(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
+                STDDEV_POP(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_sd_60d,
+                AVG(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
+                STDDEV_POP(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
+              FROM fitness.v_daily_metrics dm
+              LEFT JOIN fitness.derived_resting_heart_rate drhr
+                ON drhr.user_id = dm.user_id
+               AND drhr.date = dm.date
+              WHERE dm.user_id = ${ctx.userId}
+                AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
+                ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
+              ORDER BY dm.date ASC
             ),
             sleep_eff AS (
               SELECT DISTINCT ON (local_date)

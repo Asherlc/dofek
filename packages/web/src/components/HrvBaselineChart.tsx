@@ -1,11 +1,9 @@
-import { activityMetricColors } from "@dofek/scoring/colors";
 import { chartColors, dofekAxis, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface HrvBaselineRow {
   date: string;
   hrv: number | null;
-  resting_hr: number | null;
   mean_60d: number | null;
   sd_60d: number | null;
   mean_7d: number | null;
@@ -17,7 +15,6 @@ interface HrvBaselineChartProps {
 }
 
 const COLOR_HRV = chartColors.green;
-const COLOR_RESTING_HR = activityMetricColors.heartRate;
 
 export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
   // Upper band: mean + SD (capped, used as the visible top)
@@ -37,9 +34,6 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
 
   // Daily HRV values
   const dailyHrvData = data.filter((d) => d.hrv != null).map((d) => [d.date, d.hrv]);
-
-  // Resting HR
-  const restingHrData = data.filter((d) => d.resting_hr != null).map((d) => [d.date, d.resting_hr]);
 
   const option = {
     grid: { top: 30, right: 60, bottom: 30, left: 50 },
@@ -70,23 +64,14 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       data: [
         { name: "Heart Rate Variability", icon: "circle" },
         { name: "7d Avg", icon: "roundRect" },
-        { name: "Resting Heart Rate", icon: "roundRect" },
       ],
     },
     xAxis: dofekAxis.time(),
-    yAxis: [
-      dofekAxis.value({
-        name: "Heart Rate Variability (ms)",
-        min: "dataMin",
-        position: "left",
-      }),
-      dofekAxis.value({
-        name: "Resting Heart Rate (bpm)",
-        min: "dataMin",
-        position: "right",
-        showSplitLine: false,
-      }),
-    ],
+    yAxis: dofekAxis.value({
+      name: "Heart Rate Variability (ms)",
+      min: "dataMin",
+      position: "left",
+    }),
     series: [
       // Lower band (invisible base for the stacked area)
       {
@@ -142,18 +127,6 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         itemStyle: { color: COLOR_HRV },
         yAxisIndex: 0,
         z: 4,
-      },
-      // Resting HR on second y-axis
-      {
-        name: "Resting Heart Rate",
-        type: "line",
-        data: restingHrData,
-        smooth: true,
-        symbol: "none",
-        lineStyle: { width: 2, color: COLOR_RESTING_HR },
-        itemStyle: { color: COLOR_RESTING_HR },
-        yAxisIndex: 1,
-        z: 2,
       },
     ],
   };

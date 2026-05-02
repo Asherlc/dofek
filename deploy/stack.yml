@@ -221,16 +221,23 @@ services:
   peerdb-minio:
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     environment:
-      MINIO_ROOT_USER: _peerdb_minioadmin
-      MINIO_ROOT_PASSWORD: _peerdb_minioadmin
+      MINIO_ROOT_USER: peerdb
+      MINIO_ROOT_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
     volumes:
       - /mnt/dofek-data/peerdb-minio:/data
     entrypoint: >
       /bin/sh -euc "
       minio server /data --console-address=:36987 &
-      sleep 2;
-      mc alias set peerdb-minio http://peerdb-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      attempts=0;
+      until mc alias set peerdb-minio http://peerdb-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        attempts=$$((attempts + 1));
+        if [ $$attempts -ge 30 ]; then
+          echo peerdb-minio did not become ready in time >&2;
+          exit 1;
+        fi;
+        sleep 1;
+      done;
       mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
       wait
       "
@@ -248,8 +255,8 @@ services:
       TEMPORAL_CLIENT_KEY: ""
       PEERDB_TEMPORAL_NAMESPACE: default
       PEERDB_ALLOWED_TARGETS: ""
-      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: _peerdb_minioadmin
-      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: _peerdb_minioadmin
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: peerdb
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_REGION: us-east-1
       PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ENDPOINT_URL_S3: http://peerdb-minio:9000
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket

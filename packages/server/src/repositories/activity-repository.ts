@@ -5,7 +5,7 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
 import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
-import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 
 // ---------------------------------------------------------------------------
@@ -122,6 +122,13 @@ const normalizedPowerSampleSchema = z.object({
   interval_s: z.coerce.number(),
 });
 
+const vo2MaxEstimateSchema = z.object({
+  activity_id: z.string(),
+  activity_date: dateStringSchema,
+  method: z.string(),
+  vo2max: z.coerce.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Domain models
 // ---------------------------------------------------------------------------
@@ -159,6 +166,12 @@ export interface ActivitySensorStore {
     userId: string,
     timezone: string,
   ): Promise<z.infer<typeof normalizedPowerSampleSchema>[]>;
+  getVo2MaxEstimates(
+    endDate: string,
+    days: number,
+    userId: string,
+    timezone: string,
+  ): Promise<z.infer<typeof vo2MaxEstimateSchema>[]>;
   getHeartRateCurveRows(
     days: number,
     userId: string,

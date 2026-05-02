@@ -170,16 +170,13 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     const march14 = dailyRows.find((r) => r.date === "2026-03-14");
     if (!march14) throw new Error("expected daily metrics for 2026-03-14");
-    expect(march14.restingHr).toBe(52);
     expect(march14.hrv).toBeCloseTo(45.5);
     expect(march14.steps).toBe(8500);
-    expect(march14.vo2max).toBeCloseTo(48.2);
     expect(march14.exerciseMinutes).toBe(65);
     expect(march14.skinTempC).toBeCloseTo(36.7);
 
     const march15 = dailyRows.find((r) => r.date === "2026-03-15");
     if (!march15) throw new Error("expected daily metrics for 2026-03-15");
-    expect(march15.restingHr).toBe(55);
     expect(march15.steps).toBe(12000);
 
     // Verify sleep session — only March 14 has sleep data

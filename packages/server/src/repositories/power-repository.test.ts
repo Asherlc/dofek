@@ -17,6 +17,7 @@ function makeAnalyticsStore() {
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn(),
     getNormalizedPowerSamples: vi.fn(),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
   } satisfies ConstructorParameters<typeof PowerRepository>[2];
@@ -30,6 +31,7 @@ function makeAnalyticsStoreFromDb(db: ReturnType<typeof makeDb>) {
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn(() => db.execute()),
     getNormalizedPowerSamples: vi.fn(() => db.execute()),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
   } satisfies ConstructorParameters<typeof PowerRepository>[2];
