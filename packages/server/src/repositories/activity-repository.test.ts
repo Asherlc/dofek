@@ -455,6 +455,35 @@ describe("ActivityRepository", () => {
         55,
       );
     });
+
+    it("falls back to a default resting HR when params are invalid", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
+      execute
+        .mockResolvedValueOnce([
+          {
+            id: "activity-id",
+            user_id: "user-1",
+            started_at: "2024-01-15T10:00:00.000Z",
+            ended_at: "2024-01-15T11:00:00.000Z",
+            member_activity_ids: ["activity-id"],
+          },
+        ])
+        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 220 }]);
+
+      await repo.getHrZones("activity-id");
+
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
+        {
+          activityId: "activity-id",
+          userId: "user-1",
+          startedAt: "2024-01-15T10:00:00.000Z",
+          endedAt: "2024-01-15T11:00:00.000Z",
+          memberActivityIds: ["activity-id"],
+        },
+        190,
+        60,
+      );
+    });
   });
 
   describe("getPowerZones", () => {
