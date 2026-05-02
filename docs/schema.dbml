@@ -758,7 +758,6 @@ table fitness.metric_stream {
     (activity_id, channel, recorded_at) [name: 'metric_stream_activity_channel_time_idx']
     (id, recorded_at) [pk]
     (user_id, channel, recorded_at) [name: 'metric_stream_user_channel_time_idx']
-    (provider_id, recorded_at) [name: 'metric_stream_provider_time_idx']
   }
 }
 

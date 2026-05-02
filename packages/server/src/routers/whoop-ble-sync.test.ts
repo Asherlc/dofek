@@ -391,6 +391,32 @@ describe("whoopBleSyncRouter", () => {
       ).rejects.toThrow();
     });
 
+    it("rejects samples more than five minutes in the future", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
+
+      const trpcCaller = caller(ctx);
+
+      await expect(
+        trpcCaller.pushRealtimeData({
+          deviceId: "WHOOP Strap",
+          samples: [
+            {
+              timestamp: "2026-03-30T12:06:00.001Z",
+              rrIntervalMs: 812,
+              quaternionW: 1.0,
+              quaternionX: 0.0,
+              quaternionY: 0.0,
+              quaternionZ: 0.0,
+            },
+          ],
+        }),
+      ).rejects.toThrow("WHOOP BLE sample timestamp is too far in the future");
+
+      expect(mockDb.execute).toHaveBeenCalledTimes(0);
+      vi.useRealTimers();
+    });
+
     it("handles batch splitting for large sample arrays", async () => {
       const trpcCaller = caller(ctx);
       // Create 2500 samples (exceeds INSERT_BATCH_SIZE of 2000)

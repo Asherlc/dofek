@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
@@ -6,6 +7,7 @@ import { protectedProcedure, router } from "../trpc.ts";
 
 const PROVIDER_ID = "whoop_ble";
 const INSERT_BATCH_SIZE = 2000;
+const MAX_FUTURE_SAMPLE_SKEW_MS = 5 * 60 * 1000;
 
 // ── Zod schemas ──
 
@@ -40,6 +42,21 @@ async function ensureProvider(database: Database, userId: string) {
         VALUES (${PROVIDER_ID}, 'WHOOP BLE', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
+}
+
+function rejectFutureSamples(samples: WhoopBleRealtimeDataSample[], now: Date) {
+  const futureLimitMs = now.getTime() + MAX_FUTURE_SAMPLE_SKEW_MS;
+  const futureSample = samples.find((sample) => {
+    const sampleTimeMs = Date.parse(sample.timestamp);
+    return Number.isFinite(sampleTimeMs) && sampleTimeMs > futureLimitMs;
+  });
+
+  if (!futureSample) return;
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `WHOOP BLE sample timestamp is too far in the future: ${futureSample.timestamp}`,
+  });
 }
 
 /** Insert WHOOP BLE realtime samples into metric_stream. */
@@ -101,12 +118,15 @@ export const whoopBleSyncRouter = router({
   pushRealtimeData: protectedProcedure
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db, ctx.userId);
-
       if (input.samples.length === 0) {
+        await ensureProvider(ctx.db, ctx.userId);
         logger.info("WHOOP BLE realtime push with 0 samples", { userId: ctx.userId });
         return { inserted: 0 };
       }
+
+      const now = new Date();
+      rejectFutureSamples(input.samples, now);
+      await ensureProvider(ctx.db, ctx.userId);
 
       const firstTimestamp = input.samples[0]?.timestamp;
       const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
@@ -124,7 +144,7 @@ export const whoopBleSyncRouter = router({
         sampleCount: inserted,
         firstTimestamp,
         lastTimestamp,
-        serverTime: new Date().toISOString(),
+        serverTime: now.toISOString(),
       });
 
       return { inserted };
