@@ -230,7 +230,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries).toHaveLength(5);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
     expect(peerDbQueries[1]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse");
-    expect(peerDbQueries[2]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[2]).toContain(
+      "CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness",
+    );
     expect(peerDbQueries[3]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
     expect(peerDbQueries[4]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
     expect(peerDbQueries[1]).toContain("database = 'peerdb'");
