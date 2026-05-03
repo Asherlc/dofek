@@ -5,18 +5,20 @@ keeps a native `MergeTree` scalar copy of the raw stream and backfills it from
 Postgres by real Timescale chunk ranges. We do not use ClickHouse
 `MaterializedPostgreSQL` for this hypertable because the hypertable root does
 not contain the physical rows; the data live in Timescale chunk tables.
-PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication, with its
-first mirror landing in `peerdb.metric_stream` for validation before analytics
-switch to that source.
+PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication. It now
+writes to two targets: `peerdb.metric_stream` for validation and
+`postgres_fitness.metric_stream` for the active analytics source.
 
 ```text
 Postgres/Timescale fitness.metric_stream
         |                         |
-        | chunk-range native backfill
-        |                         | PeerDB CDC mirror
-        v                         v
+        | chunk-range native backfill | peerdb peer
+        |                         |
+        |                         |  PeerDB CDC mirrors
+        |                         |                |
+        |                         |                +--> peerdb.metric_stream (validation target)
+        v                         +----------------+
 ClickHouse postgres_fitness.metric_stream
-ClickHouse peerdb.metric_stream (validation target)
         |
         | refreshable materialized view
         v
@@ -73,10 +75,9 @@ does not repeatedly delete analytical state.
 ClickHouse migrations create and update the databases and read models:
 
 - `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` scalar copy
-  of the raw metric stream.
-- `peerdb.metric_stream`: the PeerDB CDC target for ongoing changes. It is not
-  the active analytics source until the initial snapshot has been verified
-  against Postgres and the native backfill table.
+  of the raw metric stream and the active PeerDB CDC sink for analytics
+  refreshers.
+- `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.
