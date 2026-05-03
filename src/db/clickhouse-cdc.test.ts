@@ -227,10 +227,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(peerDbQueries).toHaveLength(3);
+    expect(peerDbQueries).toHaveLength(5);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
     expect(peerDbQueries[1]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse");
-    expect(peerDbQueries[2]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
+    expect(peerDbQueries[2]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse_metric_stream");
+    expect(peerDbQueries[3]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
+    expect(peerDbQueries[4]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
   });
@@ -313,13 +315,15 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
       String(queryText),
     );
-    expect(peerDbQueries).toHaveLength(4);
+    expect(peerDbQueries).toHaveLength(6);
     expect(peerDbQueries[0]).toContain("peerdb_metric_stream_publication");
     expect(peerDbQueries[1]).toContain("host = 'postgres.example'");
     expect(peerDbQueries[1]).toContain("port = 6543");
     expect(peerDbQueries[1]).toContain("password = 'pg''credential'");
     expect(peerDbQueries[2]).toContain("host = 'clickhouse.example'");
     expect(peerDbQueries[2]).toContain("password = 'click\\credential'");
+    expect(peerDbQueries[3]).toContain("host = 'clickhouse.example'");
+    expect(peerDbQueries[3]).toContain("password = 'click\\credential'");
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(peerDbClientMocks.end).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
@@ -349,10 +353,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
     const peerDbQueryPostgres = String(peerDbQueries[1]);
     const peerDbQueryClickhouse = String(peerDbQueries[2]);
+    const peerDbQueryClickhouseAnalytics = String(peerDbQueries[3]);
     expect(peerDbQueryPostgres).toContain("host = 'db'");
     expect(peerDbQueryPostgres).toContain("port = 5432");
     expect(peerDbQueryClickhouse).toContain("host = 'clickhouse'");
     expect(peerDbQueryClickhouse).toContain("port = 9000");
+    expect(peerDbQueryClickhouseAnalytics).toContain("host = 'clickhouse'");
+    expect(peerDbQueryClickhouseAnalytics).toContain("port = 9000");
   });
 
   it("allows overriding template hosts and ports", async () => {
@@ -383,10 +390,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
     const peerDbQueryPostgres = String(peerDbQueries[1]);
     const peerDbQueryClickhouse = String(peerDbQueries[2]);
+    const peerDbQueryClickhouseAnalytics = String(peerDbQueries[3]);
     expect(peerDbQueryPostgres).toContain("host = 'postgres.internal'");
     expect(peerDbQueryPostgres).toContain("port = 6545");
     expect(peerDbQueryClickhouse).toContain("host = 'clickhouse.internal'");
     expect(peerDbQueryClickhouse).toContain("port = 9010");
+    expect(peerDbQueryClickhouseAnalytics).toContain("host = 'clickhouse.internal'");
+    expect(peerDbQueryClickhouseAnalytics).toContain("port = 9010");
   });
 
   it("rejects malformed template override ports", async () => {
