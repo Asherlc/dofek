@@ -97,17 +97,29 @@ export async function setupTestDatabase(): Promise<TestContext> {
     const parsedViews = viewFiles.map((file) => {
       const content = readFileSync(join(viewsDir, file), "utf-8");
       const match = content.match(
-        /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
+        /CREATE\s+(?:MATERIALIZED\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
       );
       return { content, viewName: match?.[1] };
     });
 
-    // Drop managed views in reverse order (dependents first)
+    // Drop managed views in reverse order (dependents first).
+    // Views may be plain or materialized, so try both drop variants.
     for (const { viewName } of [...parsedViews].reverse()) {
       if (!viewName) continue;
-      await migrationClient.query(
-        `DROP MATERIALIZED VIEW IF EXISTS ${escapeIdentifier("fitness")}.${escapeIdentifier(viewName)} CASCADE`,
-      );
+      try {
+        await migrationClient.query(
+          `DROP VIEW IF EXISTS ${escapeIdentifier("fitness")}.${escapeIdentifier(viewName)} CASCADE`,
+        );
+      } catch {
+        // Not a plain view
+      }
+      try {
+        await migrationClient.query(
+          `DROP MATERIALIZED VIEW IF EXISTS ${escapeIdentifier("fitness")}.${escapeIdentifier(viewName)} CASCADE`,
+        );
+      } catch {
+        // Not a materialized view or already dropped
+      }
     }
 
     // Create in filename order (01_v_activity before 02_activity_summary)

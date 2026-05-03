@@ -69,23 +69,13 @@ describe("PmcRepository", () => {
       });
     });
 
-    it("refreshes stale views and retries when activity_summary is empty but base data exists", async () => {
-      const activityRow = makeActivityRow();
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([]) // 1st: activities query (stale view, empty)
-        .mockResolvedValueOnce([{ count: 5 }]) // 2nd: base activity count (has data → stale!)
-        .mockResolvedValueOnce(undefined) // 3rd: refresh v_activity
-        .mockResolvedValueOnce(undefined) // 4th: refresh deduped_sensor
-        .mockResolvedValueOnce(undefined) // 5th: refresh activity_summary
-        .mockResolvedValueOnce([activityRow]) // 6th: retry activities query
-        .mockResolvedValueOnce([]); // 7th: NP query
-      const db = { execute };
+    it("returns empty when view is empty (plain views have no refresh)", async () => {
+      const db = makeDb([], []);
       const repo = new PmcRepository(db, "user-1", "UTC");
       const result = await repo.getChart(180);
 
-      expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model).toBeDefined();
+      expect(result.data.length).toBe(0);
+      expect(result.model.type).toBe("generic");
     });
 
     it("returns empty result when global max HR is null", async () => {
@@ -364,9 +354,7 @@ describe("PmcRepository", () => {
       const repo = new PmcRepository(db, "user-1", "UTC");
       // With days=30, should still call execute (Math.max(30, 365)=365, queryDays=365+42=407)
       await repo.getChart(30);
-      // 1st execute = activities query (returns empty)
-      // 2nd execute = base activity count check from queryWithViewRefresh
-      expect(db.execute).toHaveBeenCalledTimes(2);
+      expect(db.execute).toHaveBeenCalledTimes(1);
     });
 
     it("returns generic model with exact field values when no globalMaxHr", async () => {

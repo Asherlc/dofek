@@ -64,63 +64,15 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
   }
 
   /**
-   * Run a query that depends on materialized views with stale-view self-healing.
-   *
-   * If the query returns no rows but the base `fitness.activity` table has data
-   * in the same time window, the views are stale. Refreshes them and retries.
-   *
-   * @param baseCountSql Optional custom SQL to check for base data. When the
-   *   materialized view query filters more narrowly than "all activities" (e.g.,
-   *   only activities with HR data), pass a matching base count query to avoid
-   *   false-positive stale-view refreshes. Must return `{ count: number }`.
+   * No-op for plain views - they update automatically.
+   * Formerly handled stale materialized view refresh.
    */
   protected async queryWithViewRefresh<TResult>(
     queryFn: () => Promise<TResult[]>,
-    days: number,
-    label: string,
-    baseCountSql?: SQL,
+    _days: number,
+    _label: string,
+    _baseCountSql?: SQL,
   ): Promise<TResult[]> {
-    const result = await queryFn();
-    if (result.length > 0) return result;
-
-    const today = new Date().toLocaleDateString("en-CA");
-    const baseCount = baseCountSql
-      ? ((await this.query(z.object({ count: z.coerce.number() }), baseCountSql))[0]?.count ?? 0)
-      : await this.#baseActivityCount(today, days);
-    if (baseCount === 0) return result;
-
-    Sentry.captureMessage(`Stale activity materialized views detected (${label})`, {
-      level: "warning",
-      tags: { userId: this.userId },
-      extra: { baseCount },
-    });
-    try {
-      await this.#refreshActivityViews();
-      return queryFn();
-    } catch (refreshError) {
-      Sentry.captureException(refreshError, {
-        tags: { userId: this.userId, context: "staleViewRefresh" },
-      });
-      return result;
-    }
-  }
-
-  async #baseActivityCount(endDate: string, days: number): Promise<number> {
-    const rows = await this.query(
-      z.object({ count: z.coerce.number() }),
-      sql`SELECT count(*)::int AS count FROM fitness.activity
-          WHERE user_id = ${this.userId}
-            AND started_at > ${timestampWindowStart(endDate, days)}`,
-    );
-    return rows[0]?.count ?? 0;
-  }
-
-  async #refreshActivityViews(): Promise<void> {
-    for (const view of ACTIVITY_VIEWS) {
-      await refreshMaterializedView(this.db, view, {
-        source: "server.activity_view_self_heal",
-        fallbackToBlocking: false,
-      });
-    }
+    return queryFn();
   }
 }

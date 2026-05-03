@@ -142,19 +142,9 @@ describe("BaseRepository", () => {
     await expect(repo.runQuery(schema, sql`SELECT 'bad'`)).rejects.toThrow();
   });
 
-  it("refreshes stale activity views, logs warning context, and retries the query", async () => {
+  it("returns query result without refresh (plain views have no refresh)", async () => {
     const repo = new TestRepository(mockDb, "user-1");
-    const queryFn = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 1 }]);
-
-    mockDb.execute.mockResolvedValueOnce([{ count: "2" }]);
-    vi.mocked(refreshMaterializedView).mockResolvedValue({
-      durationMs: 10,
-      fallbackUsed: false,
-      mode: "concurrent",
-    });
+    const queryFn = vi.fn().mockResolvedValue([{ id: 1 }]);
 
     const result = await repo.runQueryWithViewRefresh(
       queryFn,
@@ -164,28 +154,12 @@ describe("BaseRepository", () => {
     );
 
     expect(result).toEqual([{ id: 1 }]);
-    expect(queryFn).toHaveBeenCalledTimes(2);
-    expect(Sentry.captureMessage).toHaveBeenCalledWith(
-      "Stale activity materialized views detected (activityList)",
-      {
-        level: "warning",
-        tags: { userId: "user-1" },
-        extra: { baseCount: 2 },
-      },
-    );
-    expect(refreshMaterializedView).toHaveBeenNthCalledWith(1, mockDb, "fitness.v_activity", {
-      source: "server.activity_view_self_heal",
-      fallbackToBlocking: false,
-    });
+    expect(queryFn).toHaveBeenCalledTimes(1);
   });
 
-  it("captures refresh failures with user context and returns the original empty result", async () => {
+  it("returns empty result without refresh (plain views have no refresh)", async () => {
     const repo = new TestRepository(mockDb, "user-1");
-    const queryFn = vi.fn().mockResolvedValueOnce([]);
-    const refreshError = new Error("refresh failed");
-
-    mockDb.execute.mockResolvedValueOnce([{ count: "1" }]);
-    vi.mocked(refreshMaterializedView).mockRejectedValue(refreshError);
+    const queryFn = vi.fn().mockResolvedValue([]);
 
     const result = await repo.runQueryWithViewRefresh(
       queryFn,
@@ -196,8 +170,5 @@ describe("BaseRepository", () => {
 
     expect(result).toEqual([]);
     expect(queryFn).toHaveBeenCalledTimes(1);
-    expect(Sentry.captureException).toHaveBeenCalledWith(refreshError, {
-      tags: { userId: "user-1", context: "staleViewRefresh" },
-    });
   });
 });

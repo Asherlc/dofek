@@ -82,14 +82,24 @@ async function recreateMaterializedViews() {
 
     const parsed = viewFiles.map((fileName) => {
       const content = readFileSync(join(viewsDir, fileName), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+      const match = content.match(/CREATE\s+(?:MATERIALIZED\s+)?VIEW\s+fitness\.(\w+)/i);
       return { content, viewName: match?.[1] };
     });
 
-    // Drop in reverse order (dependents first)
+    // Drop in reverse order (dependents first).
+    // Views may be plain views or materialized views; try both drop variants (ignore errors).
     for (const { viewName } of [...parsed].reverse()) {
       if (!viewName) continue;
-      await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
+      try {
+        await sql.unsafe(`DROP VIEW IF EXISTS fitness."${viewName}" CASCADE`);
+      } catch {
+        // Not a plain view, try materialized below
+      }
+      try {
+        await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness."${viewName}" CASCADE`);
+      } catch {
+        // Already dropped or doesn't exist
+      }
     }
 
     // Create in filename order
@@ -99,7 +109,9 @@ async function recreateMaterializedViews() {
         .map((statement) => statement.trim())
         .filter(Boolean);
       for (const statement of statements) {
-        await sql.unsafe(statement);
+        // Plain views may already exist from migrations; use CREATE OR REPLACE where appropriate.
+        const normalized = statement.replace(/^CREATE(\s+)VIEW/i, "CREATE$1OR REPLACE VIEW");
+        await sql.unsafe(normalized);
       }
     }
     console.log(`Views: ${viewFiles.length} recreated`);

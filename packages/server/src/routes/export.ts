@@ -224,12 +224,12 @@ export function createExportRouter({
       res.status(403).json({ error: "Forbidden" });
       return;
     }
-    if (new Date(exportRow.expires_at).getTime() <= Date.now()) {
-      res.status(400).json({ error: "Export has expired" });
-      return;
-    }
     if (exportRow.status !== "completed") {
       res.status(400).json({ error: "Export is not ready yet" });
+      return;
+    }
+    if (new Date(exportRow.expires_at).getTime() <= Date.now()) {
+      res.status(400).json({ error: "Export has expired" });
       return;
     }
     if (!exportRow.object_key) {

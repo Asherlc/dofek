@@ -222,33 +222,11 @@ describe("activityRouter", () => {
       });
       const result = await caller.list({ days: 30 });
       expect(result).toEqual({ items: [], totalCount: 0 });
-      // Should check base table when view returns empty
-      expect(execute).toHaveBeenCalledTimes(2); // list query + base table check
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("refreshes stale views and retries when view is empty but base table has data", async () => {
-      const activityRow = {
-        id: "a1",
-        started_at: "2024-01-01 10:00:00+00",
-        ended_at: "2024-01-01 11:00:00+00",
-        activity_type: "cycling",
-        name: "Morning Ride",
-        provider_id: "wahoo",
-        source_providers: ["wahoo"],
-        avg_hr: 150,
-        max_hr: 180,
-        avg_power: 200,
-        distance_meters: 30000,
-        total_count: 1,
-      };
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([]) // 1. list from v_activity: empty
-        .mockResolvedValueOnce([{ count: 1 }]) // 2. base table count: has data
-        .mockResolvedValueOnce([]) // 3. REFRESH v_activity
-        .mockResolvedValueOnce([]) // 4. REFRESH deduped_sensor
-        .mockResolvedValueOnce([]) // 5. REFRESH activity_summary
-        .mockResolvedValueOnce([activityRow]); // 6. retry list
+    it("returns empty when view is empty (plain views have no refresh)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
         sensorStore: makeSensorStoreStub(),
@@ -256,16 +234,12 @@ describe("activityRouter", () => {
         timezone: "UTC",
       });
       const result = await caller.list({ days: 30, limit: 20, offset: 0 });
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0]).toMatchObject({ id: "a1" });
-      expect(execute).toHaveBeenCalledTimes(6);
+      expect(result.items).toHaveLength(0);
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("returns empty when both view and base table are empty (genuinely no data)", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([]) // 1. list from v_activity: empty
-        .mockResolvedValueOnce([{ count: 0 }]); // 2. base table count: no data
+    it("returns empty when view is empty (no data)", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
         sensorStore: makeSensorStoreStub(),
@@ -274,7 +248,7 @@ describe("activityRouter", () => {
       });
       const result = await caller.list({ days: 30 });
       expect(result).toEqual({ items: [], totalCount: 0 });
-      expect(execute).toHaveBeenCalledTimes(2); // no refresh or retry
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("skips stale view check on non-first pages", async () => {
@@ -329,8 +303,7 @@ describe("activityRouter", () => {
         timezone: "UTC",
       });
       await caller.list({ days: 30 });
-      // list query + base table count (stale view check)
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(1);
     });
   });
 

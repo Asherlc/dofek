@@ -164,11 +164,10 @@ describe("ActivityRepository", () => {
       expect(result.items[0]).toHaveProperty("id", "abc-123");
     });
 
-    it("checks base table for staleness when first page is empty", async () => {
+    it("does not check base table for staleness (plain views have no refresh)", async () => {
       const { repo, execute } = makeRepositoryWithSensorStore([]);
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
-      // list query + base table count check (self-healing staleness detection)
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("skips staleness check on non-first pages", async () => {

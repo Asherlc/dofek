@@ -1,9 +1,139 @@
 -- Replace the expensive materialized Postgres view with a plain view.
 -- Behavior is preserved while removing refresh cost and concurrent materialized-view locks.
 
+-- Drop the materialized view with CASCADE since activity_summary depends on it.
+-- Recreate activity_summary from the canonical _views/ definition after the drop.
 DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor CASCADE;
 DROP INDEX IF EXISTS fitness.deduped_sensor_pk;
 DROP INDEX IF EXISTS fitness.deduped_sensor_activity_time_idx;
+
+--> statement-breakpoint
+
+-- Recreate activity_summary from its canonical definition (it was dropped by CASCADE above).
+-- The definition is maintained in drizzle/_views/06_activity_summary.sql.
+CREATE VIEW fitness.activity_summary AS
+WITH altitude_deltas AS (
+  SELECT
+    activity_id,
+    scalar AS altitude,
+    LAG(scalar) OVER (PARTITION BY activity_id ORDER BY recorded_at) AS prev_altitude
+  FROM fitness.deduped_sensor
+  WHERE channel = 'altitude'
+),
+elevation_per_activity AS (
+  SELECT
+    activity_id,
+    SUM(CASE WHEN altitude - prev_altitude > 0 THEN altitude - prev_altitude ELSE 0 END)::REAL AS elevation_gain_m,
+    SUM(CASE WHEN altitude - prev_altitude < 0 THEN ABS(altitude - prev_altitude) ELSE 0 END)::REAL AS elevation_loss_m
+  FROM altitude_deltas
+  WHERE prev_altitude IS NOT NULL
+  GROUP BY activity_id
+),
+gps_points AS (
+  SELECT
+    lat_s.activity_id,
+    lat_s.recorded_at,
+    lat_s.scalar AS lat,
+    lng_s.scalar AS lng
+  FROM fitness.deduped_sensor lat_s
+  JOIN fitness.deduped_sensor lng_s
+    ON lat_s.activity_id = lng_s.activity_id
+    AND lat_s.recorded_at = lng_s.recorded_at
+    AND lng_s.channel = 'lng'
+  WHERE lat_s.channel = 'lat'
+),
+gps_deltas AS (
+  SELECT
+    activity_id,
+    lat, lng,
+    LAG(lat) OVER (PARTITION BY activity_id ORDER BY recorded_at) AS prev_lat,
+    LAG(lng) OVER (PARTITION BY activity_id ORDER BY recorded_at) AS prev_lng
+  FROM gps_points
+),
+distance_per_activity AS (
+  SELECT
+    activity_id,
+    SUM(
+      (6371000 * acos(
+        LEAST(1.0,
+          sin(radians(lat)) * sin(radians(prev_lat)) +
+          cos(radians(lat)) * cos(radians(prev_lat)) *
+          cos(radians(lng) - radians(prev_lng))
+        )
+      ))::NUMERIC
+    ) AS distance_m
+  FROM gps_deltas
+  WHERE prev_lat IS NOT NULL
+  GROUP BY activity_id
+),
+hr_zones AS (
+  SELECT
+    activity_id,
+    MAX(CASE WHEN scalar BETWEEN 0 AND 113 THEN 1 ELSE 0 END) AS zone1_s,
+    MAX(CASE WHEN scalar BETWEEN 114 AND 135 THEN 1 ELSE 0 END) AS zone2_s,
+    MAX(CASE WHEN scalar BETWEEN 136 AND 156 THEN 1 ELSE 0 END) AS zone3_s,
+    MAX(CASE WHEN scalar BETWEEN 157 AND 171 THEN 1 ELSE 0 END) AS zone4_s,
+    MAX(CASE WHEN scalar >= 172 THEN 1 ELSE 0 END) AS zone5_s
+  FROM fitness.deduped_sensor
+  WHERE channel = 'heart_rate'
+  GROUP BY activity_id
+),
+power_zones AS (
+  SELECT
+    activity_id,
+    MAX(CASE WHEN scalar BETWEEN 0 AND 143 THEN 1 ELSE 0 END) AS zone1_w,
+    MAX(CASE WHEN scalar BETWEEN 144 AND 208 THEN 1 ELSE 0 END) AS zone2_w,
+    MAX(CASE WHEN scalar BETWEEN 209 AND 278 THEN 1 ELSE 0 END) AS zone3_w,
+    MAX(CASE WHEN scalar BETWEEN 279 AND 333 THEN 1 ELSE 0 END) AS zone4_w,
+    MAX(CASE WHEN scalar >= 334 THEN 1 ELSE 0 END) AS zone5_w
+  FROM fitness.deduped_sensor
+  WHERE channel = 'power'
+  GROUP BY activity_id
+)
+SELECT
+  a.id AS activity_id,
+  a.user_id,
+  a.started_at,
+  a.ended_at,
+  a.provider_id,
+  a.source_name,
+  a.type,
+  a.primary_type,
+  a.distance_m,
+  a.moving_time_s,
+  a.elapsed_time_s,
+  a.avg_heart_rate,
+  a.max_heart_rate,
+  a.avg_power,
+  a.avg_cadence,
+  a.avg_speed,
+  a.calories_kcal,
+  a.avg_vertical_oscillation,
+  a.avg_vertical_ratio,
+  a.avg_ground_contact_time,
+  a.avg_heart_rate_variability,
+  a.avg_step_length,
+  COALESCE(elevation_gain_m, 0) AS elevation_gain_m,
+  COALESCE(elevation_loss_m, 0) AS elevation_loss_m,
+  COALESCE(distance_m, a.distance_m) AS computed_distance_m,
+  COALESCE(zone1_s, 0) AS has_zone1_hr,
+  COALESCE(zone2_s, 0) AS has_zone2_hr,
+  COALESCE(zone3_s, 0) AS has_zone3_hr,
+  COALESCE(zone4_s, 0) AS has_zone4_hr,
+  COALESCE(zone5_s, 0) AS has_zone5_hr,
+  COALESCE(zone1_w, 0) AS has_zone1_power,
+  COALESCE(zone2_w, 0) AS has_zone2_power,
+  COALESCE(zone3_w, 0) AS has_zone3_power,
+  COALESCE(zone4_w, 0) AS has_zone4_power,
+  COALESCE(zone5_w, 0) AS has_zone5_power
+FROM fitness.v_activity a
+LEFT JOIN elevation_per_activity e ON e.activity_id = a.id
+LEFT JOIN distance_per_activity d ON d.activity_id = a.id
+LEFT JOIN hr_zones hr ON hr.activity_id = a.id
+LEFT JOIN power_zones pz ON pz.activity_id = a.id
+ORDER BY a.started_at DESC;
+
+--> statement-breakpoint
 
 CREATE VIEW fitness.deduped_sensor AS
 
