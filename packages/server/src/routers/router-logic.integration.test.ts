@@ -80,9 +80,7 @@ describe("Router transformation logic", () => {
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
-    await testCtx.db.execute(
-      sql`SELECT 1`,
-    );
+    await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);

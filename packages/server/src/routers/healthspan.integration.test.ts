@@ -118,9 +118,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(
-      sql`SELECT 1`,
-    );
+    await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);

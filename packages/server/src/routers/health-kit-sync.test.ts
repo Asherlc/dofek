@@ -2349,10 +2349,11 @@ describe("healthKitSyncRouter", () => {
       expect(refreshCall).toBeUndefined();
     });
 
-    it("handles concurrent refresh failure by falling back to non-concurrent refresh (kills catch{} empty block mutation)", async () => {
+    it("does not attempt materialized-view refresh when metric stream aggregates are not routed through pushQuantitySamples", async () => {
       const execute = vi.fn();
       execute.mockImplementation((..._args: unknown[]) => {
-        // Make the CONCURRENTLY refresh fail to trigger the fallback
+        // Keep existing behavior unchanged: metric stream ingestion doesn't call
+        // a materialized-view refresh path in this router method.
         const serialized = JSON.stringify(_args[0]);
         if (
           typeof serialized === "string" &&
@@ -2379,15 +2380,13 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // No Postgres materialized-view refresh path for this metric now; fallback should not run.
-      const nonConcurrentRefresh = execute.mock.calls.find((call: unknown[]) => {
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
-          serialized.includes("SELECT 1") &&
-          !serialized.includes("CONCURRENTLY")
+          serialized.includes("REFRESH MATERIALIZED VIEW") && !serialized.includes("CONCURRENTLY")
         );
       });
-      expect(nonConcurrentRefresh).toBeUndefined();
+      expect(refreshCall).toBeUndefined();
     });
 
     it("correctly filters SpO2 samples using .some() not .every() (kills some to every mutation)", async () => {

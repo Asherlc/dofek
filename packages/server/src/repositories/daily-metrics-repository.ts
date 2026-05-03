@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";

@@ -1,6 +1,5 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import type { Database } from "dofek/db";
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
