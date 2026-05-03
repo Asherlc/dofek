@@ -39,6 +39,51 @@ the `MirrorName` creation path during Temporal bootstrap on this run.
 If Temporal startup remains significantly delayed under load, the 120-second limit
 may still be insufficient and should be raised with corresponding deploy-time
 observability.
+## 2026-05-03: metric_stream CDC fed validation table only
+
+### Impact
+
+Fresh rows from ongoing `fitness.metric_stream` writes were mirrored only to
+`peerdb.metric_stream`, while runtime analytics reads and dedupe logic still
+query `postgres_fitness.metric_stream`. Users could observe stale
+activity-derived metric views despite CDC still running.
+
+### What Happened
+
+The CDC SQL template previously defined one mirror target, and it was the
+`peerdb.metric_stream` validation table. The analytics pipeline reads from
+`postgres_fitness.metric_stream` and refreshes materialized views from that
+table.
+
+### Evidence That Mattered
+
+- CDC template before change only had a single mirror to `dofek_clickhouse`.
+- ClickHouse analytics/materialized views read `postgres_fitness.metric_stream`.
+- Fresh rows were mirrored into the validation target but not into the analytics
+  sink used at query time.
+
+### Root Cause
+
+CDC sink and analytics read source diverged: CDC only updated the validation
+table while query paths depended on the separate analytics-native metric table.
+
+### Fix Or Mitigation
+
+- Added `dofek_clickhouse_postgres_fitness` peer that connects to the
+  `postgres_fitness` ClickHouse database.
+- Added `dofek_metric_stream_analytics` mirror with the same publication as the
+  existing CDC mirror and `do_initial_copy = false`.
+- Updated CDC tests and docs to reflect dual-target CDC mirroring.
+- PeerDB uses per-mirror replication slots; both mirrors reuse
+  `peerdb_metric_stream_publication`, so Postgres serves WAL from the same
+  publication into two slots. This adds incremental WAL-read overhead to keep
+  both validation and analytics mirrors current.
+
+### Remaining Risk
+
+No runtime workaround was added. Fresh CDC rows still require successful
+materialized-view refreshes in ClickHouse to become visible in activity summary
+queries.
 
 ## 2026-05-02: metric_stream Storage Pressure from Oversized Chunk and Duplicate Indexes
 
