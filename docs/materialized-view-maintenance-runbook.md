@@ -9,6 +9,8 @@ for explicit maintenance windows, not normal deploys.
 
 - Do not drop and recreate existing production materialized views during normal
   deploy or app startup.
+- Do not refresh high-risk Postgres materialized views from normal post-sync
+  worker jobs. Treat refreshes as explicit maintenance-window work.
 - Do not run materialized-view refresh while Timescale compression backfill,
   chunk migration, or other full-history database maintenance is active.
 - Prefer `REFRESH MATERIALIZED VIEW CONCURRENTLY` for every populated canonical

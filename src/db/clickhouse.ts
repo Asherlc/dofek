@@ -30,6 +30,7 @@ interface TableCountRow {
 }
 
 const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
+const CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS = 120_000;
 
 interface ClickHousePostgresConnection {
   hostAndPort: string;
@@ -43,10 +44,15 @@ function clickHouseStringLiteral(value: string): string {
 }
 
 function normalizePostgresHostForClickHouse(hostname: string): string {
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+  const normalizedHostname = hostname === "[::1]" ? "::1" : hostname;
+  if (
+    normalizedHostname === "localhost" ||
+    normalizedHostname === "127.0.0.1" ||
+    normalizedHostname === "::1"
+  ) {
     return "host.docker.internal";
   }
-  return hostname;
+  return normalizedHostname;
 }
 
 export function parsePostgresConnectionForClickHouse(
@@ -467,10 +473,10 @@ export function createClickHouseClientFromEnv(
   if (!url) {
     throw new Error("CLICKHOUSE_URL environment variable is required");
   }
-  if (options.requestTimeoutMs === undefined) {
-    return createClient({ url });
-  }
-  return createClient({ url, request_timeout: options.requestTimeoutMs });
+  return createClient({
+    url,
+    request_timeout: options.requestTimeoutMs ?? CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS,
+  });
 }
 
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {

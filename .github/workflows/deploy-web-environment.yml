@@ -71,6 +71,11 @@ on:
         required: false
         type: string
         default: ""
+      cloudbeaver_host_rule:
+        description: "Traefik Host() rule for CloudBeaver"
+        required: false
+        type: string
+        default: ""
       pgadmin_host_rule:
         description: "Traefik Host() rule for pgAdmin"
         required: false
@@ -162,6 +167,7 @@ jobs:
       portainer_host_rule: ${{ inputs.portainer_host_rule }}
       netdata_host_rule: ${{ inputs.netdata_host_rule }}
       databasus_host_rule: ${{ inputs.databasus_host_rule }}
+      cloudbeaver_host_rule: ${{ inputs.cloudbeaver_host_rule }}
       pgadmin_host_rule: ${{ inputs.pgadmin_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
       refresh_materialized_views: ${{ inputs.refresh_materialized_views }}

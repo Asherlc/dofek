@@ -423,6 +423,8 @@
     "matviews",
     "matviewname",
     "schemaname",
+    "pubname",
+    "tablename",
     "rxnorm",
     "snomed",
     "electrodermal",

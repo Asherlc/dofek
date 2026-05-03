@@ -41,6 +41,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
   const originalPostgresPassword = process.env.POSTGRES_PASSWORD;
+  const originalPeerDbHost = process.env.PEERDB_CDC_HOST;
+  const originalPeerDbPort = process.env.PEERDB_CDC_PORT;
+  const originalTemplatePostgresHost = process.env.PEERDB_CDC_POSTGRES_HOST;
+  const originalTemplatePostgresPort = process.env.PEERDB_CDC_POSTGRES_PORT;
+  const originalTemplateClickhouseHost = process.env.PEERDB_CDC_CLICKHOUSE_HOST;
+  const originalTemplateClickhousePort = process.env.PEERDB_CDC_CLICKHOUSE_PORT;
   const originalTemplatePath = process.env.PEERDB_CDC_SQL_TEMPLATE_PATH;
 
   beforeEach(() => {
@@ -53,6 +59,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
     clickHouseClientMocks.createClickHouseClientFromEnv
       .mockReset()
       .mockReturnValue(clickHouseClientMocks);
+    delete process.env.PEERDB_CDC_HOST;
+    delete process.env.PEERDB_CDC_PORT;
+    delete process.env.PEERDB_CDC_POSTGRES_HOST;
+    delete process.env.PEERDB_CDC_POSTGRES_PORT;
+    delete process.env.PEERDB_CDC_CLICKHOUSE_HOST;
+    delete process.env.PEERDB_CDC_CLICKHOUSE_PORT;
     delete process.env.PEERDB_CDC_SQL_TEMPLATE_PATH;
   });
 
@@ -72,6 +84,36 @@ describe("PeerDB ClickHouse CDC setup", () => {
     } else {
       process.env.POSTGRES_PASSWORD = originalPostgresPassword;
     }
+    if (originalPeerDbHost === undefined) {
+      delete process.env.PEERDB_CDC_HOST;
+    } else {
+      process.env.PEERDB_CDC_HOST = originalPeerDbHost;
+    }
+    if (originalPeerDbPort === undefined) {
+      delete process.env.PEERDB_CDC_PORT;
+    } else {
+      process.env.PEERDB_CDC_PORT = originalPeerDbPort;
+    }
+    if (originalTemplatePostgresHost === undefined) {
+      delete process.env.PEERDB_CDC_POSTGRES_HOST;
+    } else {
+      process.env.PEERDB_CDC_POSTGRES_HOST = originalTemplatePostgresHost;
+    }
+    if (originalTemplatePostgresPort === undefined) {
+      delete process.env.PEERDB_CDC_POSTGRES_PORT;
+    } else {
+      process.env.PEERDB_CDC_POSTGRES_PORT = originalTemplatePostgresPort;
+    }
+    if (originalTemplateClickhouseHost === undefined) {
+      delete process.env.PEERDB_CDC_CLICKHOUSE_HOST;
+    } else {
+      process.env.PEERDB_CDC_CLICKHOUSE_HOST = originalTemplateClickhouseHost;
+    }
+    if (originalTemplateClickhousePort === undefined) {
+      delete process.env.PEERDB_CDC_CLICKHOUSE_PORT;
+    } else {
+      process.env.PEERDB_CDC_CLICKHOUSE_PORT = originalTemplateClickhousePort;
+    }
     if (originalTemplatePath === undefined) {
       delete process.env.PEERDB_CDC_SQL_TEMPLATE_PATH;
     } else {
@@ -81,12 +123,18 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
   it("executes a declarative PeerDB SQL template with escaped runtime values", async () => {
     const peerDbQueries: string[] = [];
+    const sourcePostgresQueries: string[] = [];
     const clickHouseCommands: string[] = [];
 
     await setupClickHouseCdc({
       peerDbClient: {
         async query(queryText) {
           peerDbQueries.push(queryText);
+        },
+      },
+      sourcePostgresClient: {
+        async query(queryText) {
+          sourcePostgresQueries.push(queryText);
         },
       },
       clickHouseClient: {
@@ -110,6 +158,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
 
     expect(clickHouseCommands).toEqual(["CREATE DATABASE IF NOT EXISTS peerdb"]);
+    expect(sourcePostgresQueries).toHaveLength(1);
+    expect(sourcePostgresQueries[0]).toContain("CREATE PUBLICATION");
+    expect(sourcePostgresQueries[0]).toContain("ALTER PUBLICATION");
     expect(peerDbQueries).toEqual(["host = 'db', password = 'pa''ss\\word'"]);
   });
 
@@ -117,6 +168,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     await expect(
       setupClickHouseCdc({
         peerDbClient: {
+          async query() {},
+        },
+        sourcePostgresClient: {
           async query() {},
         },
         clickHouseClient: {
@@ -141,12 +195,18 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
   it("renders the checked-in metric stream CDC template", async () => {
     const peerDbQueries: string[] = [];
+    const sourcePostgresQueries: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
     await setupClickHouseCdc({
       peerDbClient: {
         async query(queryText) {
           peerDbQueries.push(queryText);
+        },
+      },
+      sourcePostgresClient: {
+        async query(queryText) {
+          sourcePostgresQueries.push(queryText);
         },
       },
       clickHouseClient: {
@@ -167,10 +227,54 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
+    expect(peerDbQueries).toHaveLength(5);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
-    expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse");
-    expect(peerDbQueries[0]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
-    expect(peerDbQueries[0]).not.toContain("{{");
+    expect(peerDbQueries[1]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse");
+    expect(peerDbQueries[2]).toContain(
+      "CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness",
+    );
+    expect(peerDbQueries[3]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
+    expect(peerDbQueries[4]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
+    expect(peerDbQueries[1]).toContain("database = 'peerdb'");
+    expect(peerDbQueries[2]).toContain("database = 'postgres_fitness'");
+    expect(peerDbQueries[3]).toContain("TO dofek_clickhouse");
+    expect(peerDbQueries[3]).toContain("dofek_metric_stream_cdc");
+    expect(peerDbQueries[4]).toContain("TO dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries.join("\n")).not.toContain("{{");
+    expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
+  });
+
+  it("splits statements without splitting semicolons inside string literals", async () => {
+    const peerDbQueries: string[] = [];
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          peerDbQueries.push(queryText);
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: {
+        async command() {},
+      },
+      templateSql: "first {{POSTGRES_CREDENTIAL}}; second;",
+      templateValues: {
+        clickHouseDatabase: "peerdb",
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "semi;quote'",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries).toEqual(["first 'semi;quote'''", "second"]);
   });
 
   it("configures PeerDB CDC from environment values and closes clients", async () => {
@@ -201,20 +305,236 @@ describe("PeerDB ClickHouse CDC setup", () => {
         "/peerdb",
       ),
     });
+    expect(peerDbClientMocks.Client).toHaveBeenCalledWith({
+      connectionString: credentialedUrl(
+        "postgres",
+        "health",
+        "pg'credential",
+        "postgres.example:6543",
+        "/fitness",
+      ),
+    });
     expect(clickHouseClientMocks.createClickHouseClientFromEnv).toHaveBeenCalled();
-    expect(peerDbClientMocks.connect).toHaveBeenCalledTimes(1);
+    expect(peerDbClientMocks.connect).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
       query: "CREATE DATABASE IF NOT EXISTS peerdb",
     });
-    const peerDbQuery = String(peerDbClientMocks.query.mock.calls[0]?.[0]);
-    expect(peerDbQuery).toContain("host = 'postgres.example'");
-    expect(peerDbQuery).toContain("port = 6543");
-    expect(peerDbQuery).toContain("password = 'pg''credential'");
-    expect(peerDbQuery).toContain("host = 'clickhouse'");
-    expect(peerDbQuery).toContain("password = 'click\\credential'");
-    expect(peerDbQuery).not.toContain("{{");
-    expect(peerDbClientMocks.end).toHaveBeenCalledTimes(1);
+    const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
+      String(queryText),
+    );
+    expect(peerDbQueries).toHaveLength(6);
+    expect(peerDbQueries[0]).toContain("peerdb_metric_stream_publication");
+    expect(peerDbQueries[1]).toContain("host = 'postgres.example'");
+    expect(peerDbQueries[1]).toContain("port = 6543");
+    expect(peerDbQueries[1]).toContain("password = 'pg''credential'");
+    expect(peerDbQueries[2]).toContain("database = 'peerdb'");
+    expect(peerDbQueries[2]).toContain("host = 'clickhouse.example'");
+    expect(peerDbQueries[2]).toContain("password = 'click\\credential'");
+    expect(peerDbQueries[3]).toContain("database = 'postgres_fitness'");
+    expect(peerDbQueries[3]).toContain("host = 'clickhouse.example'");
+    expect(peerDbQueries[3]).toContain("password = 'click\\credential'");
+    expect(peerDbQueries[4]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
+    expect(peerDbQueries[5]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
+    expect(peerDbQueries[5]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries.join("\n")).not.toContain("{{");
+    expect(peerDbClientMocks.end).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps localhost source hosts to Docker compose service names", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "localhost:6543",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "localhost:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+
+    await setupClickHouseCdcFromEnv();
+
+    const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
+      String(queryText),
+    );
+    const peerDbQueryPostgres = String(peerDbQueries[1]);
+    const peerDbQueryClickhouse = String(peerDbQueries[2]);
+    const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[3]);
+    expect(peerDbQueryPostgres).toContain("host = 'db'");
+    expect(peerDbQueryPostgres).toContain("port = 5432");
+    expect(peerDbQueryClickhouse).toContain("host = 'clickhouse'");
+    expect(peerDbQueryClickhouse).toContain("port = 9000");
+    expect(peerDbQueryClickhouse).toContain("database = 'peerdb'");
+    expect(peerDbQueryClickhousePostgresFitness).toContain("host = 'clickhouse'");
+    expect(peerDbQueryClickhousePostgresFitness).toContain("port = 9000");
+    expect(peerDbQueryClickhousePostgresFitness).toContain("database = 'postgres_fitness'");
+  });
+
+  it("allows overriding template hosts and ports", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "localhost:6543",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "localhost:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    process.env.PEERDB_CDC_POSTGRES_HOST = "postgres.internal";
+    process.env.PEERDB_CDC_POSTGRES_PORT = "6545";
+    process.env.PEERDB_CDC_CLICKHOUSE_HOST = "clickhouse.internal";
+    process.env.PEERDB_CDC_CLICKHOUSE_PORT = "9010";
+
+    await setupClickHouseCdcFromEnv();
+
+    const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
+      String(queryText),
+    );
+    const peerDbQueryPostgres = String(peerDbQueries[1]);
+    const peerDbQueryClickhouse = String(peerDbQueries[2]);
+    const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[3]);
+    expect(peerDbQueryPostgres).toContain("host = 'postgres.internal'");
+    expect(peerDbQueryPostgres).toContain("port = 6545");
+    expect(peerDbQueryClickhouse).toContain("host = 'clickhouse.internal'");
+    expect(peerDbQueryClickhouse).toContain("port = 9010");
+    expect(peerDbQueryClickhousePostgresFitness).toContain("host = 'clickhouse.internal'");
+    expect(peerDbQueryClickhousePostgresFitness).toContain("port = 9010");
+  });
+
+  it("rejects malformed template override ports", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "localhost:5435",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "localhost:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    process.env.PEERDB_CDC_POSTGRES_PORT = "5432abc";
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PEERDB_CDC_POSTGRES_PORT must be a valid TCP port",
+    );
+  });
+
+  it("rejects malformed PeerDB override port", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "localhost:5435",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "localhost:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    process.env.PEERDB_CDC_PORT = "9,900";
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PEERDB_CDC_PORT must be a valid TCP port",
+    );
+  });
+
+  it("rejects blank PeerDB host override", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "localhost:5435",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "localhost:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    process.env.PEERDB_CDC_HOST = "  ";
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PEERDB_CDC_HOST must be a non-empty host",
+    );
+  });
+
+  it("rejects blank template host override", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "postgres.example:6543",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "localhost:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    process.env.PEERDB_CDC_POSTGRES_HOST = "\t";
+
+    await expect(setupClickHouseCdcFromEnv()).rejects.toThrow(
+      "PEERDB_CDC_POSTGRES_HOST must be a non-empty host",
+    );
+  });
+
+  it("allows overriding the PeerDB target host and port", async () => {
+    process.env.DATABASE_URL = credentialedUrl(
+      "postgres",
+      "health",
+      "pg'credential",
+      "postgres.example:6543",
+      "/fitness",
+    );
+    process.env.CLICKHOUSE_URL = credentialedUrl(
+      "http",
+      "analytics",
+      "click\\credential",
+      "clickhouse.example:8123",
+      "",
+    );
+    process.env.POSTGRES_PASSWORD = "peerdb fixture";
+    process.env.PEERDB_CDC_HOST = "127.0.0.1";
+    process.env.PEERDB_CDC_PORT = "9902";
+
+    await setupClickHouseCdcFromEnv();
+
+    expect(peerDbClientMocks.Client).toHaveBeenCalledWith({
+      connectionString: credentialedUrl(
+        "postgres",
+        "peerdb",
+        "peerdb fixture",
+        "127.0.0.1:9902",
+        "/peerdb",
+      ),
+    });
   });
 
   it("fails loudly when required environment values are missing", async () => {

@@ -1,0 +1,65 @@
+{
+  "folders": {
+    "Dofek": {}
+  },
+  "connections": {
+    "postgres-jdbc-dofek-production": {
+      "provider": "postgresql",
+      "driver": "postgres-jdbc",
+      "name": "Dofek Postgres",
+      "description": "Dofek TimescaleDB/Postgres on the internal swarm network",
+      "save-password": false,
+      "show-system-objects": false,
+      "read-only": true,
+      "folder": "Dofek",
+      "configuration": {
+        "user": "health",
+        "host": "db",
+        "port": "5432",
+        "database": "health",
+        "url": "jdbc:postgresql://db:5432/health",
+        "configurationType": "MANUAL",
+        "type": "prod",
+        "provider-properties": {
+          "@dbeaver-show-non-default-db@": "false",
+          "@dbeaver-show-template-db@": "false",
+          "@dbeaver-show-unavailable-db@": "false",
+          "show-database-statistics": "false"
+        },
+        "auth-model": "native"
+      }
+    },
+    "clickhouse-com-dofek-production": {
+      "provider": "clickhouse",
+      "driver": "com_clickhouse",
+      "name": "Dofek ClickHouse",
+      "description": "Dofek ClickHouse analytics store on the internal swarm network",
+      "save-password": false,
+      "show-system-objects": false,
+      "read-only": true,
+      "folder": "Dofek",
+      "configuration": {
+        "user": "default",
+        "host": "clickhouse",
+        "port": "8123",
+        "database": "fitness",
+        "url": "jdbc:clickhouse://clickhouse:8123/fitness",
+        "configurationType": "MANUAL",
+        "type": "prod",
+        "provider-properties": {},
+        "auth-model": "native"
+      }
+    }
+  },
+  "connection-types": {
+    "prod": {
+      "name": "Primary",
+      "color": "255,0,0",
+      "description": "Primary connection database",
+      "auto-commit": false,
+      "confirm-execute": true,
+      "confirm-data-change": true,
+      "auto-close-transactions": false
+    }
+  }
+}

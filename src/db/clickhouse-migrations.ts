@@ -1,6 +1,5 @@
-import { Client } from "pg";
+import { Client, escapeIdentifier } from "pg";
 import { z } from "zod";
-import { logger } from "../logger.ts";
 import {
   buildClickHouseBootstrapStatements,
   type ClickHouseCommandClient,
@@ -13,19 +12,37 @@ interface MigrationCountRow {
 }
 
 interface MetricStreamBackfillChunkRow {
+  lower_bound: string | null;
+  upper_bound: string | null;
+}
+
+interface MetricStreamBackfillChunkRange {
   lower_bound: string;
   upper_bound: string;
 }
+interface MetricStreamBackfillRange {
+  lowerBound: Date;
+  upperBound: Date;
+}
+
+interface TimescaleChunkRow {
+  chunk_schema: string;
+  chunk_name: string;
+}
 
 const metricStreamBackfillChunkRowSchema = z.object({
-  lower_bound: z.string(),
-  upper_bound: z.string(),
+  lower_bound: z.string().nullable(),
+  upper_bound: z.string().nullable(),
+});
+
+const timescaleChunkRowSchema = z.object({
+  chunk_schema: z.string(),
+  chunk_name: z.string(),
 });
 
 interface MetricStreamBackfillChunkCountRow {
   chunk_count: number | string;
 }
-
 interface ClickHouseDatabaseEngineRow {
   engine: string;
 }
@@ -34,7 +51,7 @@ const clickHouseDatabaseEngineRowSchema = z.object({
   engine: z.string(),
 });
 
-const METRIC_STREAM_BACKFILL_WINDOW_MS = 60 * 60 * 1000;
+const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 6 * 60 * 60 * 1_000;
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -204,8 +221,9 @@ async function backfillNativeMetricStream(
   postgresConnectionString: string,
 ): Promise<void> {
   await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
-  const chunks = await fetchMetricStreamBackfillChunks(postgresConnectionString);
-  if (chunks.length === 0) {
+  const timescaleChunks = await fetchMetricStreamBackfillChunks(postgresConnectionString);
+  const backfillRanges = timescaleChunks.flatMap(splitMetricStreamBackfillChunk);
+  if (backfillRanges.length === 0) {
     return;
   }
 
@@ -221,62 +239,52 @@ ENGINE = MergeTree
 ORDER BY (lower_bound, upper_bound)`,
   });
 
-  for (const chunk of chunks) {
-    const chunkStart = parsePostgresTimestamp(chunk.lower_bound, "metric_stream chunk lower bound");
-    const chunkEnd = parsePostgresTimestamp(chunk.upper_bound, "metric_stream chunk upper bound");
-    const backfillWindows = splitMetricStreamBackfillRange(chunkStart, chunkEnd);
-    for (const backfillWindow of backfillWindows) {
-      if (
-        await isMetricStreamBackfillChunkComplete(
-          client,
-          backfillWindow.lowerBound,
-          backfillWindow.upperBound,
-        )
-      ) {
-        continue;
-      }
-      logger.info(
-        `[clickhouse-migrations] Backfilling metric_stream ${backfillWindow.lowerBound.toISOString()}..${backfillWindow.upperBound.toISOString()}`,
-      );
-      await client.command({
-        query: buildMetricStreamBackfillStatement(
-          postgresMetricStreamSource,
-          backfillWindow.lowerBound,
-          backfillWindow.upperBound,
-        ),
-      });
-      await client.command({
-        query: `INSERT INTO analytics.metric_stream_backfill_chunks (lower_bound, upper_bound)
-VALUES (${clickHouseDateTimeLiteral(backfillWindow.lowerBound)}, ${clickHouseDateTimeLiteral(backfillWindow.upperBound)})`,
-      });
+  for (const backfillRange of backfillRanges) {
+    if (
+      await isMetricStreamBackfillChunkComplete(
+        client,
+        backfillRange.lowerBound,
+        backfillRange.upperBound,
+      )
+    ) {
+      continue;
     }
-  }
-}
-
-interface MetricStreamBackfillWindow {
-  lowerBound: Date;
-  upperBound: Date;
-}
-
-function splitMetricStreamBackfillRange(
-  lowerBound: Date,
-  upperBound: Date,
-): MetricStreamBackfillWindow[] {
-  const upperBoundTime = upperBound.getTime();
-  const windows: MetricStreamBackfillWindow[] = [];
-  let windowLowerBoundTime = lowerBound.getTime();
-  while (windowLowerBoundTime < upperBoundTime) {
-    const windowUpperBoundTime = Math.min(
-      windowLowerBoundTime + METRIC_STREAM_BACKFILL_WINDOW_MS,
-      upperBoundTime,
-    );
-    windows.push({
-      lowerBound: new Date(windowLowerBoundTime),
-      upperBound: new Date(windowUpperBoundTime),
+    await client.command({
+      query: buildMetricStreamBackfillStatement(
+        postgresMetricStreamSource,
+        backfillRange.lowerBound,
+        backfillRange.upperBound,
+      ),
     });
-    windowLowerBoundTime = windowUpperBoundTime;
+    await client.command({
+      query: `INSERT INTO analytics.metric_stream_backfill_chunks (lower_bound, upper_bound)
+VALUES (${clickHouseDateTimeLiteral(backfillRange.lowerBound)}, ${clickHouseDateTimeLiteral(backfillRange.upperBound)})`,
+    });
   }
-  return windows;
+}
+
+function splitMetricStreamBackfillChunk(
+  chunk: MetricStreamBackfillChunkRange,
+): MetricStreamBackfillRange[] {
+  const chunkStart = parsePostgresTimestamp(chunk.lower_bound, "metric_stream chunk lower bound");
+  const chunkEnd = parsePostgresTimestamp(chunk.upper_bound, "metric_stream chunk upper bound");
+  const ranges: MetricStreamBackfillRange[] = [];
+
+  for (
+    let rangeStart = chunkStart;
+    rangeStart < chunkEnd;
+    rangeStart = new Date(rangeStart.getTime() + METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS)
+  ) {
+    const nextRangeEnd = new Date(
+      Math.min(
+        rangeStart.getTime() + METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS,
+        chunkEnd.getTime(),
+      ),
+    );
+    ranges.push({ lowerBound: rangeStart, upperBound: nextRangeEnd });
+  }
+
+  return ranges;
 }
 
 async function isMetricStreamBackfillChunkComplete(
@@ -290,8 +298,8 @@ async function isMetricStreamBackfillChunkComplete(
   const result = await client.query<MetricStreamBackfillChunkCountRow>({
     query: `SELECT count() AS chunk_count
 FROM analytics.metric_stream_backfill_chunks
-WHERE lower_bound = ${clickHouseDateTimeLiteral(chunkStart)}
-  AND upper_bound = ${clickHouseDateTimeLiteral(chunkEnd)}`,
+WHERE lower_bound <= ${clickHouseDateTimeLiteral(chunkStart)}
+  AND upper_bound >= ${clickHouseDateTimeLiteral(chunkEnd)}`,
     format: "JSONEachRow",
   });
   const rows = await result.json();
@@ -300,22 +308,40 @@ WHERE lower_bound = ${clickHouseDateTimeLiteral(chunkStart)}
 
 async function fetchMetricStreamBackfillChunks(
   postgresConnectionString: string,
-): Promise<MetricStreamBackfillChunkRow[]> {
+): Promise<MetricStreamBackfillChunkRange[]> {
   const postgresClient = new Client({ connectionString: postgresConnectionString });
   try {
     await postgresClient.connect();
-    const result = await postgresClient.query<MetricStreamBackfillChunkRow>(`
+    const chunksResult = await postgresClient.query<TimescaleChunkRow>(`
       SELECT
-        to_char(range_start AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS lower_bound,
-        to_char(range_end AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS upper_bound
+        chunk_schema,
+        chunk_name
       FROM timescaledb_information.chunks
       WHERE hypertable_schema = 'fitness'
         AND hypertable_name = 'metric_stream'
-        AND range_start IS NOT NULL
-        AND range_end IS NOT NULL
       ORDER BY range_start ASC
     `);
-    return result.rows.map((row) => metricStreamBackfillChunkRowSchema.parse(row));
+    const chunks = chunksResult.rows.map((row) => timescaleChunkRowSchema.parse(row));
+    const chunkBounds: MetricStreamBackfillChunkRange[] = [];
+    for (const chunk of chunks) {
+      const chunkTable = `${escapeIdentifier(chunk.chunk_schema)}.${escapeIdentifier(
+        chunk.chunk_name,
+      )}`;
+      const chunkBoundsResult = await postgresClient.query<MetricStreamBackfillChunkRow>(`
+        SELECT
+          to_char(min(recorded_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS lower_bound,
+          to_char((max(recorded_at) + interval '1 microsecond') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS upper_bound
+        FROM ${chunkTable}
+      `);
+      const bounds = metricStreamBackfillChunkRowSchema.parse(chunkBoundsResult.rows[0]);
+      if (bounds.lower_bound && bounds.upper_bound) {
+        chunkBounds.push({
+          lower_bound: bounds.lower_bound,
+          upper_bound: bounds.upper_bound,
+        });
+      }
+    }
+    return chunkBounds;
   } finally {
     await postgresClient.end();
   }
@@ -363,8 +389,16 @@ SELECT
   metric_stream.scalar,
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
+LEFT JOIN (
+  SELECT id
+  FROM postgres_fitness.metric_stream
+  WHERE recorded_at >= ${lowerBound}
+    AND recorded_at < ${upperBound}
+) AS existing_metric_stream
+  ON existing_metric_stream.id = metric_stream.id
 WHERE metric_stream.recorded_at >= ${lowerBound}
-  AND metric_stream.recorded_at < ${upperBound}`;
+  AND metric_stream.recorded_at < ${upperBound}
+  AND existing_metric_stream.id IS NULL`;
 }
 
 function clickHouseDateTimeLiteral(value: Date): string {

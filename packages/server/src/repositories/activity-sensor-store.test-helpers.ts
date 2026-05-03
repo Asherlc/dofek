@@ -369,11 +369,33 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     maxHr: number,
     restingHr: number,
   ): Promise<ZoneRow[]> {
-    const values = await this.#activityChannelValues(window, "heart_rate");
-    return [1, 2, 3, 4, 5].map((zone) => ({
-      zone,
-      seconds: values.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr)).length,
-    }));
+    const primaryValues = await this.#activityChannelValues(window, "heart_rate");
+    let values = primaryValues;
+    if (values.length === 0) {
+      values = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
+    }
+
+    const calculateZoneRows = (zoneValues: number[]) =>
+      [1, 2, 3, 4, 5].map((zone) => ({
+        zone,
+        seconds: zoneValues.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr))
+          .length,
+      }));
+
+    const zoneRows = calculateZoneRows(values);
+
+    if (zoneRows.every((row) => row.seconds === 0)) {
+      const fallbackValues = await this.#activityChannelValuesFromMetricStream(
+        window,
+        "heart_rate",
+      );
+      const fallbackRows = calculateZoneRows(fallbackValues);
+      if (fallbackRows.some((row) => row.seconds > 0)) {
+        return fallbackRows;
+      }
+    }
+
+    return zoneRows;
   }
 
   async getPowerZoneSeconds(window: ActivitySensorWindow, ftp: number): Promise<ZoneRow[]> {
@@ -392,6 +414,32 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
             AND activity_id = ${window.activityId}::uuid
             AND channel = ${channel}
             AND scalar IS NOT NULL
+          ORDER BY recorded_at`,
+    );
+    return rows.map((row) => row.scalar);
+  }
+
+  async #activityChannelValuesFromMetricStream(
+    window: ActivitySensorWindow,
+    channel: string,
+  ): Promise<number[]> {
+    const activityIds =
+      window.memberActivityIds.length === 0
+        ? [window.activityId]
+        : [window.activityId, ...window.memberActivityIds];
+
+    const deduplicatedActivityIds = [...new Set(activityIds)];
+    const activityIdClauses = deduplicatedActivityIds.map(
+      (memberActivityId) => sql`${memberActivityId}::uuid`,
+    );
+    const rows = await this.#db.execute<{ scalar: number }>(
+      sql`SELECT MAX(scalar)::real AS scalar
+          FROM fitness.metric_stream
+            WHERE user_id = ${window.userId}::uuid
+            AND activity_id IN (${sql.join(activityIdClauses, sql`, `)})
+            AND channel = ${channel}
+            AND scalar IS NOT NULL
+          GROUP BY activity_id, recorded_at
           ORDER BY recorded_at`,
     );
     return rows.map((row) => row.scalar);

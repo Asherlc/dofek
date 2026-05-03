@@ -7,6 +7,144 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-03: Deploy Staging failed while creating Temporal search attribute
+
+### Impact
+
+Staging deployment `25265996048` failed during `Deploy Web Stack` while waiting to
+create the `MirrorName` Temporal search attribute, so that release did not reach a
+ready staging state.
+
+### Evidence That Mattered
+
+- First fatal line in the step log:
+  `##[error]Process completed with exit code 124.`
+- Failure occurred during `Ensure PeerDB Temporal search attributes` right after:
+  `temporal operator search-attribute create --name MirrorName --type Text`.
+
+### Root Cause
+
+The 30-second timeout around `temporalio/admin-tools` CLI calls was too short for
+the `MirrorName` creation path during Temporal bootstrap on this run.
+
+### Fix or Mitigation
+
+- Increased the timeout for the Temporal search-attribute `list` and `create`
+  commands from `30s` to `120s` in
+  `.github/workflows/deploy-web-stack.yml`.
+- Re-ran deploy workflow `25266273887`; it completed successfully.
+
+### Remaining Risk
+
+If Temporal startup remains significantly delayed under load, the 120-second limit
+may still be insufficient and should be raised with corresponding deploy-time
+observability.
+## 2026-05-03: metric_stream CDC fed validation table only
+
+### Impact
+
+Fresh rows from ongoing `fitness.metric_stream` writes were mirrored only to
+`peerdb.metric_stream`, while runtime analytics reads and dedupe logic still
+query `postgres_fitness.metric_stream`. Users could observe stale
+activity-derived metric views despite CDC still running.
+
+### What Happened
+
+The CDC SQL template previously defined one mirror target, and it was the
+`peerdb.metric_stream` validation table. The analytics pipeline reads from
+`postgres_fitness.metric_stream` and refreshes materialized views from that
+table.
+
+### Evidence That Mattered
+
+- CDC template before change only had a single mirror to `dofek_clickhouse`.
+- ClickHouse analytics/materialized views read `postgres_fitness.metric_stream`.
+- Fresh rows were mirrored into the validation target but not into the analytics
+  sink used at query time.
+
+### Root Cause
+
+CDC sink and analytics read source diverged: CDC only updated the validation
+table while query paths depended on the separate analytics-native metric table.
+
+### Fix Or Mitigation
+
+- Added `dofek_clickhouse_postgres_fitness` peer that connects to the
+  `postgres_fitness` ClickHouse database.
+- Added `dofek_metric_stream_analytics` mirror with the same publication as the
+  existing CDC mirror and `do_initial_copy = false`.
+- Updated CDC tests and docs to reflect dual-target CDC mirroring.
+- PeerDB uses per-mirror replication slots; both mirrors reuse
+  `peerdb_metric_stream_publication`, so Postgres serves WAL from the same
+  publication into two slots. This adds incremental WAL-read overhead to keep
+  both validation and analytics mirrors current.
+
+### Remaining Risk
+
+No runtime workaround was added. Fresh CDC rows still require successful
+materialized-view refreshes in ClickHouse to become visible in activity summary
+queries.
+
+## 2026-05-02: metric_stream Storage Pressure from Oversized Chunk and Duplicate Indexes
+
+### Impact
+
+Production entered a planned maintenance window while `web`, `worker`, and
+`training-export-worker` were scaled down to compress the largest
+`fitness.metric_stream` chunk and remove obsolete indexes. The app was restored
+after maintenance and `/healthz` returned OK.
+
+### What Happened
+
+The production data volume was 64% used, with Postgres accounting for roughly
+49GB. `fitness.metric_stream` dominated logical database size at about 35GB,
+including about 18GB of indexes. The largest closed Timescale chunk,
+`_hyper_1_186_chunk`, covered 2026-04-23 through 2026-04-30 and was still
+uncompressed at about 28GB because production had a 7-day chunk interval and
+the compression policy only acts on chunks older than 7 days.
+
+### Evidence That Mattered
+
+- Data volume before maintenance: `99G` total, `60G` used, `35G` available.
+- `fitness.metric_stream`: about `35GB` total, `16GB` heap, `18GB` indexes.
+- Largest chunk: `_hyper_1_186_chunk`, uncompressed, about `28GB`, about
+  `51.6M` rows.
+- Online compression failed with:
+  `ERROR: canceling statement due to lock timeout`.
+- Active blockers included recurring materialized-view refreshes for
+  `fitness.deduped_sensor`, `fitness.activity_summary`, and
+  `fitness.provider_stats`.
+- Future-dated chunks were tiny, but present: `apple_motion` / `api` / `imu`
+  rows from `WHOOP Strap` plus one `whoop_ble` / `ble` / `orientation` row.
+
+### Root Cause
+
+`metric_stream` storage pressure came from a one-week active chunk that
+accumulated tens of millions of high-frequency sensor rows before compression
+could apply, plus non-primary-key indexes that were no longer needed for the
+current read model.
+
+### Fix Or Mitigation
+
+- Verified a fresh Databasus backup existed before the window.
+- Set the `metric_stream` chunk interval to `1 day`.
+- Scaled down app services, canceled active materialized-view refresh work, and
+  compressed `_hyper_1_186_chunk`.
+- Dropped `metric_stream_provider_time_idx` and the obsolete recorded-at index
+  during the maintenance window.
+- Added migration `0011_metric_stream_storage_controls.sql` to enforce the
+  one-day chunk interval and index removals for future environments.
+- Added server-side guards that reject IMU and WHOOP BLE realtime samples more
+  than five minutes in the future before inserting into `metric_stream`.
+
+### Remaining Risk
+
+The current open chunk can still grow until it closes, but future chunks should
+be one day wide. The tiny existing future-dated rows were not deleted during
+this maintenance window; remove them only after an explicit data-retention /
+cleanup decision. The timestamp guard must be deployed before it protects live
+ingest traffic.
+
 ## 2026-04-29: PR 1075 CI Blocked by ClickHouse Bootstrap and Web E2E Drift
 
 ### Impact
@@ -2118,6 +2256,42 @@ compare row counts and recent-row freshness between Postgres,
 `analytics.deduped_sensor` over in a separate migration.
 
 ## 2026-05-01: Netdata Local UI NetworkError Triage
+ 
+### Symptoms
+ 
+The Netdata dashboard at `https://netdata.dofek.asherlc.com/` showed a browser
+`NetworkError when attempting to fetch resource` during local UI use or agent
+connection attempts.
+ 
+### Evidence
+ 
+Directly inside the Netdata container, `http://127.0.0.1:19999/` returned the
+Netdata HTML with HTTP 200 and `/api/v3/info` reported the agent as available.
+Unauthenticated requests to the public hostname returned HTTP 302 redirects to
+Authentik. The agent's ACLK state showed `Claimed: No` and `Online: No`.
+ 
+### Root Cause
+ 
+The Netdata agent process is running, but the public UI is Authentik-protected
+and the agent is not claimed to Netdata Cloud. Browser-side fetches that cross
+the Authentik or Netdata Cloud boundary can surface as a generic network error.
+ 
+### Fix or Mitigation
+ 
+Configured the Netdata Swarm service with `NETDATA_DISABLE_CLOUD=1` so the
+deployment is local-only and does not try to use the browser claim flow through
+Authentik. For future Netdata Cloud monitoring, remove that local-only setting
+and configure the Swarm service with Netdata claim environment variables from
+Infisical instead.
+ 
+### Remaining Risk
+ 
+The exact failing browser request after an authenticated login was not captured
+because the agent session did not have the user's Authentik browser cookies.
+Further debugging needs either the browser network entry from the logged-in
+session or a deliberate local-only Netdata configuration change.
+ 
+## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
 
 ### Symptoms
 
@@ -2153,50 +2327,60 @@ because the agent session did not have the user's Authentik browser cookies.
 Further debugging needs either the browser network entry from the logged-in
 session or a deliberate local-only Netdata configuration change.
 
-## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
+## 2026-05-01: Production Deploy Blocked by ClickHouse Backfill Timeout
 
 ### Symptoms
 
-Production deploy run `25237109231` failed in job `74005587158` during the
-`Run migrations` step. The migration container exited with code 1 before
-`docker stack deploy` ran, so the new web stack image was not released.
+Production deploy workflow `25239905048` failed in the `Run migrations` step
+before the stack deploy step, so the CloudBeaver service was not released.
+
+### User Impact
+
+The existing production web stack kept running on the previous image, but the
+new CloudBeaver production service was unavailable.
 
 ### Evidence
 
-The first fatal job line was `Migration failed (exit code 1).` The last
-migration log line was:
+The first fatal workflow log line was:
 
 ```text
 error: [migrate] Error: Timeout error.
 ```
 
-Immediately before the error, Postgres migrations had applied 0 new files and
-materialized view sync had completed with `synced=0 skipped=7 refreshed=0`.
-The next code path is `runClickHouseMigrations()`.
+The migration log showed Postgres migrations and materialized view sync
+completed, then ClickHouse migration `0006_backfill_native_metric_stream`
+failed before recording its row in `analytics.schema_migrations`. Production
+ClickHouse had only `42` completed rows in
+`analytics.metric_stream_backfill_chunks`, while production Timescale had `195`
+`fitness.metric_stream` chunks. The next uncompleted Timescale chunk,
+`2021-04-29 00:00:00+00` to `2021-05-06 00:00:00+00`, contained about
+`4,014,020` rows.
 
 ### Root Cause
 
-ClickHouse migration `0006_backfill_native_metric_stream` copied each full
-Timescale chunk with one `INSERT INTO ... SELECT FROM postgresql(...)` command.
-Production chunks were large enough for a ClickHouse HTTP command to exceed the
-client's default 30 second request timeout. Because the migration also dropped
-`postgres_fitness` and the backfill progress table on every retry, a retry
-would restart the native backfill instead of continuing from completed ranges.
+ClickHouse migration `0006_backfill_native_metric_stream` backfilled one full
+Timescale chunk per ClickHouse insert. Some production weekly chunks are too
+large for the ClickHouse HTTP client request timeout, so the migration timed out
+while copying historical `metric_stream` rows.
 
 ### Fix or Mitigation
 
-The migration now splits Timescale chunk ranges into one-hour ClickHouse
-backfill windows and records those bounded windows in
-`analytics.metric_stream_backfill_chunks`. It only drops `postgres_fitness` and
-the progress table when `postgres_fitness` is still backed by a non-native
-database engine; retries against an already-native database preserve completed
-backfill windows and continue from the first missing window.
+The migration now splits Timescale chunk ranges into six-hour backfill ranges
+before checking and recording `analytics.metric_stream_backfill_chunks`. This
+keeps each ClickHouse insert bounded while preserving resumability through the
+existing range-completion table. The rerun path also treats older broader
+completion ranges as covering new subranges and uses an anti-join on existing
+ClickHouse `metric_stream` IDs so a timed-out-but-successful insert is not
+duplicated.
 
 ### Remaining Risk
 
 Very dense one-hour windows can still take longer than expected, but future
 failures will now identify the exact window being copied and retries will not
-discard completed native backfill progress.
+discard completed native backfill progress. The production backfill still needs
+to finish before migration `0006` is marked applied; verify completion by
+confirming `0006_backfill_native_metric_stream` exists in
+`analytics.schema_migrations`.
 
 ## 2026-05-01: Netdata Deploy Blocked by Daily Metrics View Drift
 
@@ -2233,3 +2417,494 @@ then rerun the Netdata stack deploy.
 Rebuilding `fitness.v_daily_metrics` is production database maintenance. It
 should only run after the quiet-database preflight passes and no other
 full-history maintenance is active.
+
+## 2026-05-01: Manual CloudBeaver Deploy Reused Pre-Fix Migration Image
+
+### Symptoms
+
+Manual production deploy run `25239905048` from branch
+`Asherlc/setup-dbeaver` failed in job `74013763788` during the `Run migrations`
+step. The deployment stopped before `docker stack deploy`, so the CloudBeaver
+stack change did not release.
+
+### Evidence
+
+The run checked out commit `fabd4d7`, resolved `INPUT_TAG=latest`, and ran
+`ghcr.io/asherlc/dofek:latest` for migrations. The first fatal line was:
+
+```text
+Migration failed (exit code 1).
+```
+
+The migration output ended with:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+Postgres migrations and Postgres materialized-view sync had already completed,
+which puts the failure in the ClickHouse migration path.
+
+### Root Cause
+
+The manual deploy reused the same pre-fix ClickHouse metric-stream backfill
+behavior described above: a large `INSERT INTO ... SELECT FROM postgresql(...)`
+operation exceeded the ClickHouse client's request timeout. The branch was
+based on `1b5da985`, while `main` later added the bounded backfill-window fix in
+`03798a36`.
+
+### Fix or Mitigation
+
+No new code change was required for this specific run. Deploy a `dofek` image
+built from `03798a36` or newer, or replay the CloudBeaver stack changes on top
+of current `main`, so the migration container uses the bounded ClickHouse
+backfill implementation.
+
+### Remaining Risk
+
+The `Asherlc/setup-dbeaver` branch itself still points at `fabd4d7`, so another
+manual deploy from that branch with `image_tag=latest` can repeat the same
+failure if `latest` has not been advanced to a fixed image. Avoid production
+deploys from stale feature branches unless the image tag is pinned to a known
+fixed commit.
+
+## 2026-05-01: ClickHouse Backfill Retried Too Many Empty Chunk Windows
+
+### Symptoms
+
+After replaying `Asherlc/setup-dbeaver` onto current `main`, production deploy
+run `25240719766` used image `ghcr.io/asherlc/dofek:sha-bcfe4eb` and progressed
+past the original full-chunk timeout. The `Run migrations` step still spent
+most of its time in `0006_backfill_native_metric_stream`, logging one-hour
+windows such as:
+
+```text
+[clickhouse-migrations] Backfilling metric_stream 2014-10-05T13:00:00.000Z..2014-10-05T14:00:00.000Z
+```
+
+### Evidence
+
+The workflow migration step has a `3300s` timeout. Production
+`timescaledb_information.chunks` reported 195 `fitness.metric_stream` chunks
+with an estimated 32,760 one-hour chunk-range windows, including chunk bounds
+from `1989-12-28 00:00:00+00` through `2104-02-14 00:00:00+00`. ClickHouse
+progress showed only 7,421 completed backfill windows roughly 25 minutes after
+the migration started.
+
+### Root Cause
+
+The bounded backfill fix split raw Timescale chunk ranges into six-hour
+ClickHouse inserts. Some production chunk ranges are far wider than the rows
+they contain, so the migration still performs thousands of empty or unnecessary
+ClickHouse inserts before reaching real data.
+
+### Fix or Mitigation
+
+Backfill discovery now reads each Timescale chunk table's actual
+`min(recorded_at)` and `max(recorded_at) + 1 microsecond` and skips chunks with
+no rows. The six-hour window split remains, but it only covers occupied time
+ranges.
+
+### Remaining Risk
+
+Very dense occupied chunks can still require many six-hour windows, but sparse
+or over-wide Timescale chunks no longer dominate deploy time.
+
+## 2026-05-01: ClickHouse Refresh Wait Exceeded Client Timeout
+
+### Symptoms
+
+Production deploy run `25241533098` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-3b904b4` and
+passed image pulls, host-path validation, Postgres readiness, ClickHouse
+readiness, and Postgres migrations. It failed in the `Run migrations` step
+before `docker stack deploy`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+error: [migrate] Error: Timeout error.
+```
+
+The migration log showed Postgres migrations and materialized-view sync had
+completed. ClickHouse `system.query_log` showed the failing operation:
+`SYSTEM WAIT VIEW analytics.deduped_sensor` started at
+`2026-05-02 02:43:34 UTC`, finished successfully at `2026-05-02 02:44:08 UTC`,
+and took `33415ms`.
+
+### Root Cause
+
+The ClickHouse refresh wait was legitimate work and completed successfully on
+the server, but the Node ClickHouse client default request timeout is `30000ms`.
+The client aborted the request about three seconds before ClickHouse returned
+success.
+
+### Fix or Mitigation
+
+The production ClickHouse client now uses a `120000ms` request timeout. This is
+long enough for the observed refresh wait while remaining much shorter than the
+workflow migration timeout, so a genuinely stuck migration still fails loudly.
+
+### Remaining Risk
+
+Future data growth can make refresh waits exceed two minutes. If that happens,
+the fix should first inspect `system.query_log` for the exact refresh query and
+optimize the read model or migration shape before increasing timeouts again.
+
+## 2026-05-01: PeerDB Catalog PostgreSQL 18 Mount Layout
+
+### Symptoms
+
+Production deploy run `25242177373` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-d727d3a`.
+Migrations succeeded, but the `Deploy stack` step did not converge because
+`dofek_peerdb-catalog` repeatedly exited and downstream Temporal/PeerDB
+services waited for the catalog host.
+
+### Evidence
+
+The first fatal catalog log line was:
+
+```text
+Error: in 18+, these Docker images are configured to store database data in a format which is compatible with "pg_ctlcluster"
+```
+
+The same log reported PostgreSQL data under `/var/lib/postgresql/data` as an
+unused mount/volume. On the host, `/mnt/dofek-data/peerdb-catalog` existed but
+contained no `PG_VERSION`, confirming this was a mount-layout bootstrap failure
+rather than an incompatible existing catalog database.
+
+### Root Cause
+
+`peerdb-catalog` used `postgres:18-alpine` while bind-mounting
+`/mnt/dofek-data/peerdb-catalog` to `/var/lib/postgresql/data`. PostgreSQL 18
+Docker images use a versioned data directory under `/var/lib/postgresql`, so
+mounting the old data path makes the entrypoint fail before initialization.
+
+### Fix or Mitigation
+
+The `peerdb-catalog` bind mount now targets `/var/lib/postgresql`, allowing the
+PostgreSQL 18 image to initialize and manage its versioned data directory under
+the persistent host path.
+
+### Remaining Risk
+
+If this service later contains real catalog data and needs a PostgreSQL major
+upgrade, perform a catalog backup and `pg_upgrade` flow rather than changing the
+mount path or image tag alone.
+
+## 2026-05-01: Temporal Visibility Bootstrap Interrupted
+
+### Symptoms
+
+Production deploy run `25242863616` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-7906e92`.
+Migrations succeeded, but `docker stack deploy --detach=false` did not converge
+because `dofek_peerdb-temporal` repeatedly exited. Downstream PeerDB flow
+services also exited while Temporal was unavailable.
+
+### Evidence
+
+The first fatal Temporal log line was:
+
+```text
+Unable to update SQL schema. {"error": "error executing statement: pq: index \"by_type_start_time\" does not exist"}
+```
+
+The catalog database had `temporal_visibility.schema_version.curr_version =
+1.1`, while `executions_visibility.search_attributes` and several `v1.2`
+advanced-visibility indexes already existed. The old `v1.0`/`v1.1` indexes that
+Temporal `v1.2` expects to drop were gone.
+
+### Root Cause
+
+An earlier deploy attempt interrupted Temporal's first `temporal_visibility`
+`v1.2` schema update after it had added columns and dropped legacy indexes, but
+before the Temporal schema version table advanced from `1.1`. On restart,
+Temporal retried the `v1.2` SQL from the beginning and failed at the first
+non-idempotent `DROP INDEX`.
+
+### Fix or Mitigation
+
+The deploy workflow now performs a narrowly scoped preflight repair before
+`docker stack deploy`: if `temporal_visibility` is exactly in this partial
+`1.1`/`v1.2` bootstrap state, it recreates the legacy indexes that Temporal's
+official migration expects to drop. Temporal can then rerun its own migration
+and advance the schema normally. The preflight compares the Postgres state as
+`1.1|true|false`, because concatenated Postgres booleans render as
+`true`/`false`, not `t`/`f`.
+
+### Remaining Risk
+
+This repair only covers the observed interrupted `v1.2` visibility bootstrap
+state. Future Temporal upgrade failures should still be diagnosed from the first
+fatal Temporal log line and the catalog `schema_version` tables before adding
+any new repair path.
+
+## 2026-05-01: Temporal Dynamic Config Path
+
+### Symptoms
+
+Production deploy run `25243281625` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-d6445e3`.
+Migrations and the Temporal visibility bootstrap repair succeeded, but
+`docker stack deploy --detach=false` did not converge because
+`dofek_peerdb-temporal` repeatedly exited.
+
+### Evidence
+
+The first fatal Temporal log line was:
+
+```text
+Unable to create dynamic config client. Error: unable to validate dynamic config: dynamic config: config/dynamicconfig/development-sql.yaml: stat config/dynamicconfig/development-sql.yaml: no such file or directory
+```
+
+Read-only image inspection on the production host showed
+`temporalio/auto-setup:1.29` contains `config/dynamicconfig/docker.yaml`, and
+its config template defaults `DYNAMIC_CONFIG_FILE_PATH` to
+`/etc/temporal/config/dynamicconfig/docker.yaml`. The deployed service spec
+overrode that default with the missing `config/dynamicconfig/development-sql.yaml`.
+
+### Root Cause
+
+`deploy/stack.yml` carried a stale Temporal dynamic-config override that points
+at a file not present in the `temporalio/auto-setup:1.29` image.
+
+### Fix or Mitigation
+
+The stale `DYNAMIC_CONFIG_FILE_PATH` override was removed so Temporal uses the
+dynamic config path shipped by the image.
+
+### Remaining Risk
+
+Temporal image upgrades can change bundled config paths. If Temporal exits
+before startup after an image bump, inspect the image's config template and file
+tree before adding or overriding dynamic-config paths.
+
+## 2026-05-02: Temporal Healthcheck Loopback Address
+
+### Symptoms
+
+Production deploy run `25243680947` from replayed branch
+`Asherlc/setup-dbeaver` used image `ghcr.io/asherlc/dofek:sha-a548e1a`.
+The app services updated, but `docker stack deploy --detach=false` did not
+converge because `dofek_peerdb-temporal` stayed unhealthy. PeerDB flow services
+continued to restart with `unable to create Temporal client`.
+
+### Evidence
+
+The Temporal container was running, but Docker healthcheck logs showed:
+
+```text
+Failed to create SDK client {"error": "failed reaching server: last connection error: connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:7233: connect: connection refused\""}
+```
+
+Temporal startup logs showed the service address was set to the container task
+IP, and membership eventually reported `frontend` reachable on that task IP
+rather than loopback.
+
+### Root Cause
+
+The `peerdb-temporal` healthcheck used `tctl --address 127.0.0.1:7233`, but the
+Temporal 1.29 auto-setup container does not accept frontend connections on
+loopback in this deployment. Swarm marked the service unhealthy even after
+Temporal started.
+
+### Fix or Mitigation
+
+The initial fix changed the healthcheck to the Swarm service DNS name,
+`tctl --address peerdb-temporal:7233`, but deploy run `25244198471` showed that
+the Temporal container itself could not resolve that service name from Docker's
+embedded DNS:
+
+```text
+Failed to create SDK client {"error": "failed reaching server: last connection error: connection error: desc = \"transport: Error while dialing: dial tcp: lookup peerdb-temporal on 127.0.0.11:53: no such host\""}
+```
+
+A direct check inside the running container confirmed that
+`tctl --address "$(hostname -i | awk '{print $1}'):7233" workflow list`
+succeeds. The healthcheck now computes the container task IP at runtime and
+connects to Temporal on that address.
+
+### Remaining Risk
+
+This keeps the existing `tctl` healthcheck behavior. Temporal logs warn that
+`tctl` enters end of support on 2025-09-30, so a future Temporal maintenance
+pass should migrate the healthcheck to the supported Temporal CLI.
+
+## 2026-05-02: PeerDB CDC Multi-Statement Setup Rejected
+
+### Symptoms
+
+After the replayed `Asherlc/setup-dbeaver` stack converged on image
+`ghcr.io/asherlc/dofek:sha-be6b6e0`, deploy workflow run `25245047541` failed in
+the post-stack `Configure ClickHouse CDC` step.
+
+### Evidence
+
+The first fatal setup log line was:
+
+```text
+[clickhouse-cdc] error: unsupported sql: CREATE PEER IF NOT EXISTS dofek_postgres FROM POSTGRES WITH ...
+```
+
+The same error payload showed PeerDB had parsed three statements from the single
+query payload: `CreatePeer` for Postgres, `CreatePeer` for ClickHouse, and
+`CreateMirror` for `dofek_metric_stream_cdc`.
+
+### Root Cause
+
+The setup script rendered `src/db/peerdb/metric-stream-cdc.sql` and sent all
+three semicolon-delimited PeerDB DDL statements through one `pg` query. PeerDB's
+SQL endpoint parses those statements but rejects the combined multi-statement
+payload as unsupported.
+
+### Fix or Mitigation
+
+The setup script now renders the template once, splits it into individual
+statements while preserving semicolons inside single-quoted literals, and sends
+each PeerDB DDL statement as its own query.
+
+### Remaining Risk
+
+The splitter is intentionally small and covers the checked-in PeerDB template
+shape plus single-quoted runtime values. If future PeerDB templates introduce
+comments, dollar-quoted strings, or procedural SQL, replace the splitter with a
+real SQL parser or move to a PeerDB-supported declarative API.
+
+## 2026-05-02: Post-Sync Materialized-View Refresh OOM During Deploy
+
+### Symptoms
+
+Deploy workflow run `25245248845` for image
+`ghcr.io/asherlc/dofek:sha-328c6e1` stalled in the `Run migrations` step while
+production Postgres temporarily returned `FATAL: the database system is in
+recovery mode`.
+
+### Evidence
+
+`pg_stat_activity` showed a long-running refresh:
+
+```text
+REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+Worker logs identified the source as automatic post-sync maintenance:
+
+```text
+[mv-refresh] source=sync.post_sync view=fitness.deduped_sensor
+```
+
+Postgres then logged the first fatal line:
+
+```text
+client backend (PID 180914) was terminated by signal 9: Killed
+DETAIL: Failed process was running: REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor
+```
+
+The host had limited free memory and swap pressure during the incident. The
+database recovered automatically and later reported `pg_is_in_recovery() = f`.
+
+### Root Cause
+
+Normal worker post-sync jobs were still launching full Postgres materialized
+view refreshes, including the high-risk `fitness.deduped_sensor` view that scans
+metric stream history. That refresh exceeded available host memory and the
+backend was OOM-killed, forcing Postgres crash recovery and interrupting the
+deploy migration runner.
+
+### Fix or Mitigation
+
+Global post-sync maintenance no longer runs `refreshDedupViews()` or
+`updateUserMaxHr()`. While rolling out the fix, active old-worker refreshes were
+cancelled with `pg_cancel_backend()` after they restarted the same high-risk
+refresh path. Heavy Postgres materialized-view refreshes remain explicit
+maintenance-window work through the Materialized View Maintenance workflow and
+`docs/materialized-view-maintenance-runbook.md`.
+
+### Remaining Risk
+
+Legacy Postgres materialized views can still be stale until planned maintenance
+runs. Runtime paths should continue moving sensor-derived reads to ClickHouse
+`analytics.*` projections so production does not depend on refreshing
+full-history Postgres views after normal provider syncs.
+
+## 2026-05-02: PeerDB Mirror Missing Source Publication
+
+### Symptoms
+
+Deploy workflow run `25246366257` for image
+`ghcr.io/asherlc/dofek:sha-afd9297` successfully built images, ran migrations,
+deployed the Swarm stack, and then failed in `Configure ClickHouse CDC`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate source connector dofek_postgres: provided source tables invalidated: publication does not exist: peerdb_metric_stream_publication\""
+```
+
+### Root Cause
+
+The PeerDB mirror template requested
+`publication_name = 'peerdb_metric_stream_publication'`, but the CDC setup only
+created PeerDB peers and the mirror. It never ensured the named publication
+existed on the source Postgres database before asking PeerDB to validate the
+mirror.
+
+### Fix or Mitigation
+
+The CDC setup now connects to source Postgres and idempotently creates
+`peerdb_metric_stream_publication` for `fitness.metric_stream`, or adds
+`fitness.metric_stream` when the publication exists without that table, before
+submitting the PeerDB mirror DDL.
+
+### Remaining Risk
+
+The setup assumes the configured Postgres user can manage publications for
+`fitness.metric_stream`. If production credentials lose that permission, deploys
+should fail loudly at the publication bootstrap step before PeerDB mirror
+validation.
+
+## 2026-05-02: PeerDB Temporal Missing MirrorName Search Attribute
+
+### Symptoms
+
+Deploy workflow run `25246698008` for image
+`ghcr.io/asherlc/dofek:sha-354a2ef` successfully built images, ran migrations,
+deployed the Swarm stack, and then failed in `Configure ClickHouse CDC`.
+
+### Evidence
+
+The first fatal log line was:
+
+```text
+[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"unable to start PeerFlow workflow: Namespace default has no mapping defined for search attribute MirrorName\""
+```
+
+`temporal operator search-attribute list --namespace default` did not include
+`MirrorName`. PeerDB's Go package defines `MirrorName` as a Temporal string
+search attribute (`temporal.NewSearchAttributeKeyString("MirrorName")`).
+
+### Root Cause
+
+The PeerDB Temporal cluster was bootstrapped without PeerDB's custom
+`MirrorName` search attribute. PeerDB can create peers and validate source
+publications without it, but workflow startup fails when PeerDB attaches the
+missing search attribute to the mirror workflow.
+
+### Fix or Mitigation
+
+The deploy workflow now idempotently checks Temporal namespace `default` and
+creates `MirrorName` as a `Text` search attribute with the Temporal CLI before
+running the ClickHouse CDC setup command.
+
+### Remaining Risk
+
+The workflow registers the PeerDB search attribute that current PeerDB
+`stable-v0.36.18` requires. Future PeerDB upgrades may add more Temporal search
+attributes; handle those as explicit deploy prerequisites rather than letting
+mirror creation fail after stack rollout.

@@ -9,6 +9,7 @@ const pgClientMocks = vi.hoisted(() => ({
 
 vi.mock("pg", () => ({
   Client: pgClientMocks.Client,
+  escapeIdentifier: (value: string) => `"${value.replaceAll('"', '""')}"`,
 }));
 
 import {
@@ -144,18 +145,35 @@ describe("runClickHouseMigrations", () => {
     ).rejects.toThrow("ClickHouse migrations require a query-capable client");
   });
 
-  it("backfills native metric stream in Timescale chunk ranges", async () => {
-    pgClientMocks.query.mockResolvedValue({
-      rows: [
-        {
-          lower_bound: "2026-04-22 00:00:00+00",
-          upper_bound: "2026-04-22 01:00:00+00",
-        },
-        {
-          lower_bound: "2026-04-22 01:00:00+00",
-          upper_bound: "2026-04-22 02:00:00+00",
-        },
-      ],
+  it("backfills native metric stream in occupied Timescale chunk ranges", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_2_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          queryText.includes("_hyper_1_1_chunk")
+            ? {
+                lower_bound: "2026-04-22 00:00:00+00",
+                upper_bound: "2026-04-22 01:00:00.000001+00",
+              }
+            : {
+                lower_bound: "2026-04-22 01:00:00+00",
+                upper_bound: "2026-04-22 02:00:00.000001+00",
+              },
+        ],
+      });
     });
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
@@ -183,7 +201,9 @@ describe("runClickHouseMigrations", () => {
     });
     expect(pgClientMocks.connect).toHaveBeenCalledTimes(1);
     expect(pgClientMocks.end).toHaveBeenCalledTimes(1);
-    expect(String(pgClientMocks.query.mock.calls[0]?.[0])).toContain("to_char");
+    expect(String(pgClientMocks.query.mock.calls[0]?.[0])).toContain(
+      "timescaledb_information.chunks",
+    );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
@@ -226,14 +246,35 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("splits large Timescale metric stream chunks into bounded backfill windows", async () => {
-    pgClientMocks.query.mockResolvedValue({
-      rows: [
-        {
-          lower_bound: "2026-04-22T00:00:00.000000Z",
-          upper_bound: "2026-04-22T02:30:00.000000Z",
-        },
-      ],
+  it("skips Timescale metric stream chunks with no rows", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_empty_chunk",
+            },
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_populated_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          queryText.includes("_hyper_1_empty_chunk")
+            ? {
+                lower_bound: null,
+                upper_bound: null,
+              }
+            : {
+                lower_bound: "2026-04-22 03:15:00+00",
+                upper_bound: "2026-04-22 03:45:00.000001+00",
+              },
+        ],
+      });
     });
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
@@ -257,17 +298,63 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(3);
+    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 03:15:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 03:45:00.000', 6, 'UTC')",
+    );
+  });
+
+  it("splits large Timescale metric stream chunks into bounded backfill windows", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "2026-04-22T00:00:00.000000Z",
+            upper_bound: "2026-04-22T02:30:00.000000Z",
+          },
+        ],
+      });
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("system.databases")
+              ? [{ engine: "Atomic" }]
+              : queryText.includes("0006_backfill_native_metric_stream")
+                ? [{ migration_count: 0 }]
+                : queryText.includes("metric_stream_backfill_chunks")
+                  ? [{ chunk_count: 0 }]
+                  : [{ migration_count: 1 }],
+        ),
+    }));
+
+    await runClickHouseMigrations({ command, query }, "postgres://health:fixture@db:5432/health");
+
+    const backfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+    expect(backfillStatements).toHaveLength(1);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
-    );
-    expect(backfillStatements[2]).toContain(
-      "metric_stream.recorded_at >= toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC')",
-    );
-    expect(backfillStatements[2]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:30:00.000', 6, 'UTC')",
     );
   });
@@ -332,18 +419,95 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
+  it("splits long native metric stream chunks into six-hour backfill ranges", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "2021-04-29 00:00:00+00",
+            upper_bound: "2021-04-30 00:00:00+00",
+          },
+        ],
+      });
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("system.databases")
+              ? [{ engine: "Atomic" }]
+              : queryText.includes("0006_backfill_native_metric_stream")
+                ? [{ migration_count: 0 }]
+                : queryText.includes("metric_stream_backfill_chunks")
+                  ? [{ chunk_count: 0 }]
+                  : [{ migration_count: 1 }],
+        ),
+    }));
+
+    await runClickHouseMigrations({ command, query }, "postgres://health:fixture@db:5432/health");
+
+    const backfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+    expect(backfillStatements).toHaveLength(4);
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2021-04-29 00:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2021-04-29 06:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[3]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2021-04-29 18:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[3]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2021-04-30 00:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[0]).toContain("LEFT JOIN (");
+    expect(backfillStatements[0]).toContain("existing_metric_stream.id IS NULL");
+  });
+
   it("skips native metric stream chunks already marked complete", async () => {
-    pgClientMocks.query.mockResolvedValue({
-      rows: [
-        {
-          lower_bound: "2026-04-22 00:00:00+00",
-          upper_bound: "2026-04-22 01:00:00+00",
-        },
-        {
-          lower_bound: "2026-04-22 01:00:00+00",
-          upper_bound: "2026-04-22 02:00:00+00",
-        },
-      ],
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_2_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          queryText.includes("_hyper_1_1_chunk")
+            ? {
+                lower_bound: "2026-04-22 00:00:00+00",
+                upper_bound: "2026-04-22 01:00:00+00",
+              }
+            : {
+                lower_bound: "2026-04-22 01:00:00+00",
+                upper_bound: "2026-04-22 02:00:00+00",
+              },
+        ],
+      });
     });
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
@@ -377,6 +541,11 @@ describe("runClickHouseMigrations", () => {
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
+    const completionQueries = query.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("analytics.metric_stream_backfill_chunks"));
+    expect(completionQueries[0]).toContain("lower_bound <=");
+    expect(completionQueries[0]).toContain("upper_bound >=");
   });
 
   it("does not create backfill tracking when Timescale has no metric stream chunks", async () => {
@@ -416,13 +585,25 @@ describe("runClickHouseMigrations", () => {
   });
 
   it("rejects invalid Timescale metric stream chunk bounds", async () => {
-    pgClientMocks.query.mockResolvedValue({
-      rows: [
-        {
-          lower_bound: "not-a-timestamp",
-          upper_bound: "2026-04-22 06:00:00+00",
-        },
-      ],
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "not-a-timestamp",
+            upper_bound: "2026-04-22 06:00:00+00",
+          },
+        ],
+      });
     });
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
       json: vi

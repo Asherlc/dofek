@@ -588,7 +588,6 @@ export const metricStream = fitness.table(
     ),
     primaryKey({ columns: [table.id, table.recordedAt] }),
     index("metric_stream_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
-    index("metric_stream_provider_time_idx").on(table.providerId, table.recordedAt),
   ],
 );
 
