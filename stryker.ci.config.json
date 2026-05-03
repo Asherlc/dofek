@@ -43,7 +43,8 @@
     "dist/**",
     ".codex/**",
     ".claude/**",
-    ".context/**"
+    ".context/**",
+    ".gemini/**"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
