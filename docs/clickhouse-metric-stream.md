@@ -12,11 +12,13 @@ writes to two targets: `peerdb.metric_stream` for validation and
 ```text
 Postgres/Timescale fitness.metric_stream
         |                         |
-        | chunk-range native backfill | PeerDB CDC mirror
-        |                         |                v
-        v                         v
+        | chunk-range native backfill | peerdb peer
+        |                         |
+        |                         |  PeerDB CDC mirrors
+        |                         |                |
+        |                         |                +--> peerdb.metric_stream (validation target)
+        v                         +----------------+
 ClickHouse postgres_fitness.metric_stream
-ClickHouse peerdb.metric_stream
         |
         | refreshable materialized view
         v
@@ -73,10 +75,9 @@ does not repeatedly delete analytical state.
 ClickHouse migrations create and update the databases and read models:
 
 - `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` scalar copy
-  of the raw metric stream.
-- `peerdb.metric_stream`: the PeerDB CDC validation target.
-- `postgres_fitness.metric_stream`: the active PeerDB CDC sink for analytics
+  of the raw metric stream and the active PeerDB CDC sink for analytics
   refreshers.
+- `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
   the Postgres `clickhouse` schema:
   `clickhouse.v_activity` and `clickhouse.v_activity_members`.

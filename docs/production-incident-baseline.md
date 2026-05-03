@@ -37,10 +37,15 @@ table while query paths depended on the separate analytics-native metric table.
 
 ### Fix Or Mitigation
 
-- Added `dofek_clickhouse_metric_stream` peer to target `postgres_fitness`.
+- Added `dofek_clickhouse_postgres_fitness` peer that connects to the
+  `postgres_fitness` ClickHouse database.
 - Added `dofek_metric_stream_analytics` mirror with the same publication as the
   existing CDC mirror and `do_initial_copy = false`.
 - Updated CDC tests and docs to reflect dual-target CDC mirroring.
+- PeerDB uses per-mirror replication slots; both mirrors reuse
+  `peerdb_metric_stream_publication`, so Postgres serves WAL from the same
+  publication into two slots. This adds incremental WAL-read overhead to keep
+  both validation and analytics mirrors current.
 
 ### Remaining Risk
 

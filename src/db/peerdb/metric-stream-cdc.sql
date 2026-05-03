@@ -17,7 +17,7 @@ CREATE PEER IF NOT EXISTS dofek_clickhouse FROM CLICKHOUSE WITH
   disable_tls = true
 );
 
-CREATE PEER IF NOT EXISTS dofek_clickhouse_metric_stream FROM CLICKHOUSE WITH
+CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness FROM CLICKHOUSE WITH
 (
   host = {{CLICKHOUSE_HOST}},
   port = {{CLICKHOUSE_PORT}},
@@ -27,6 +27,9 @@ CREATE PEER IF NOT EXISTS dofek_clickhouse_metric_stream FROM CLICKHOUSE WITH
   disable_tls = true
 );
 
+-- validation and analytics mirrors keep only scalar fields needed by ClickHouse models.
+-- device_id, source_type, and vector are not queried by analytics transforms and
+-- are excluded to reduce replicated payload size.
 CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc
 FROM dofek_postgres TO dofek_clickhouse
 WITH TABLE MAPPING
@@ -46,7 +49,7 @@ WITH (
 );
 
 CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics
-FROM dofek_postgres TO dofek_clickhouse_metric_stream
+FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
 WITH TABLE MAPPING
 (
   {
