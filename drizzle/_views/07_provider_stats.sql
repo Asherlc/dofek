@@ -2,7 +2,7 @@
 -- This precomputes per-provider record counts so sync.providerStats can do a
 -- fast user-scoped lookup instead of scanning many tables on demand.
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS
+CREATE VIEW fitness.provider_stats AS
 WITH providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM fitness.oauth_token
@@ -103,5 +103,3 @@ LEFT JOIN (
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx
-ON fitness.provider_stats (user_id, provider_id);

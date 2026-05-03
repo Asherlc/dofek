@@ -158,26 +158,6 @@ export const healthKitSyncRouter = router({
         errors.push(`Health events: ${message}`);
       }
 
-      // Refresh materialized views so the dashboard picks up new data immediately
-      if (needsDailyMetricsRefresh) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_daily_metrics", {
-            source: "server.healthkit_push_quantity",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_daily_metrics: ${error}`);
-        }
-      }
-      if (bodyMeasurements.length > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_body_measurement", {
-            source: "server.healthkit_push_quantity",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_body_measurement: ${error}`);
-        }
-      }
-
       // Invalidate cached data so queries pick up the newly ingested data
       if (inserted > 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
@@ -217,9 +197,6 @@ export const healthKitSyncRouter = router({
       if (inserted > 0) {
         try {
           await refreshMaterializedView(ctx.db, "fitness.v_activity", {
-            source: "server.healthkit_push_workouts",
-          });
-          await refreshMaterializedView(ctx.db, "fitness.activity_summary", {
             source: "server.healthkit_push_workouts",
           });
         } catch (error) {

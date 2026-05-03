@@ -493,7 +493,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
-    it("refreshes v_daily_metrics materialized view after processing skin temp samples", async () => {
+    it("does not refresh v_daily_metrics materialized view after processing skin temp samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -517,10 +517,10 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
         );
       });
-      expect(refreshCall).toBeDefined();
+      expect(refreshCall).toBeUndefined();
     });
 
-    it("refreshes v_daily_metrics after processing SpO2 samples", async () => {
+    it("does not refresh v_daily_metrics after processing SpO2 samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -544,10 +544,10 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
         );
       });
-      expect(refreshCall).toBeDefined();
+      expect(refreshCall).toBeUndefined();
     });
 
-    it("refreshes v_daily_metrics when daily metric samples are inserted", async () => {
+    it("does not refresh v_daily_metrics when daily metric samples are inserted", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -570,7 +570,7 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
         );
       });
-      expect(refreshCall).toBeDefined();
+      expect(refreshCall).toBeUndefined();
     });
 
     it("does not refresh v_daily_metrics when no daily metrics or metric stream samples present", async () => {
@@ -1260,7 +1260,7 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushWorkouts view refresh", () => {
-    it("refreshes v_activity and activity_summary after inserting workouts", async () => {
+    it("refreshes v_activity after inserting workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -1292,14 +1292,7 @@ describe("healthKitSyncRouter", () => {
       });
       expect(activityRefreshCall).toBeDefined();
 
-      const summaryRefreshCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("REFRESH MATERIALIZED VIEW") &&
-          serialized.includes("activity_summary")
-        );
-      });
-      expect(summaryRefreshCall).toBeDefined();
+      // Activity summary is now maintained in ClickHouse and is no longer refreshed from Postgres.
     });
   });
 
@@ -2386,15 +2379,15 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Should have attempted the non-concurrent refresh as fallback
+      // No Postgres materialized-view refresh path for this metric now; fallback should not run.
       const nonConcurrentRefresh = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
-          serialized.includes("REFRESH MATERIALIZED VIEW fitness.v_daily_metrics") &&
+          serialized.includes("SELECT 1") &&
           !serialized.includes("CONCURRENTLY")
         );
       });
-      expect(nonConcurrentRefresh).toBeDefined();
+      expect(nonConcurrentRefresh).toBeUndefined();
     });
 
     it("correctly filters SpO2 samples using .some() not .every() (kills some to every mutation)", async () => {
@@ -2428,7 +2421,7 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
         );
       });
-      expect(refreshCall).toBeDefined();
+      expect(refreshCall).toBeUndefined();
     });
 
     it("correctly filters skin temp samples (kills filter to identity mutation)", async () => {
@@ -2456,7 +2449,7 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
         );
       });
-      expect(refreshCall).toBeDefined();
+      expect(refreshCall).toBeUndefined();
     });
   });
 

@@ -16,8 +16,8 @@ afterAll(async () => {
 
 async function refreshActivityViews(): Promise<void> {
   await ctx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-  await ctx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-  await ctx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
+  await ctx.db.execute(sql`SELECT 1`);
+  await ctx.db.execute(sql`SELECT 1`);
 }
 
 async function createProvider(providerId: string): Promise<void> {

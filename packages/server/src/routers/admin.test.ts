@@ -581,19 +581,18 @@ describe("adminRouter", () => {
 
     it("reports failed views without aborting the rest", async () => {
       const execute = vi.fn().mockResolvedValue([]);
-      // Make the 3rd view (v_body_measurement) fail both concurrent and fallback
+      // Make v_sleep fail both concurrent and fallback
       execute.mockResolvedValueOnce([]); // v_activity concurrent OK
-      execute.mockResolvedValueOnce([]); // v_sleep concurrent OK
-      execute.mockRejectedValueOnce(new Error("does not exist")); // v_body concurrent fail
-      execute.mockRejectedValueOnce(new Error("does not exist")); // v_body fallback fail
+      execute.mockRejectedValueOnce(new Error("does not exist")); // v_sleep concurrent fail
+      execute.mockRejectedValueOnce(new Error("does not exist")); // v_sleep fallback fail
       execute.mockResolvedValue([]);
       const caller = makeCaller(execute);
       const result = await caller.refreshViews();
       expect(result.refreshed).toHaveLength(ALL_MATERIALIZED_VIEWS.length - 1);
       expect(result.failed).toEqual([
         {
-          view: "fitness.v_body_measurement",
-          error: "Failed to refresh fitness.v_body_measurement (both CONCURRENT and blocking)",
+          view: "fitness.v_sleep",
+          error: "Failed to refresh fitness.v_sleep (both CONCURRENT and blocking)",
         },
       ]);
     });

@@ -1,15 +1,11 @@
--- Canonical definition of the fitness.deduped_sensor materialized view.
--- This view depends on fitness.v_activity — it must be created after 01_v_activity.sql.
---
--- Centralizes the best-source dedup logic: for each (canonical_activity, channel),
--- picks the provider_id with the most samples. This ensures BLE data (50Hz) is
--- preferred over API data (1Hz) automatically, and cross-provider data (e.g.
--- Apple Watch HR for a Peloton ride) is included.
---
--- Downstream consumers (activity_summary, getStream, getHrZones) read from this
--- view instead of reimplementing best-source selection independently.
+-- Replace the expensive materialized Postgres view with a plain view.
+-- Behavior is preserved while removing refresh cost and concurrent materialized-view locks.
 
-CREATE MATERIALIZED VIEW fitness.deduped_sensor AS
+DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor CASCADE;
+DROP INDEX IF EXISTS fitness.deduped_sensor_pk;
+DROP INDEX IF EXISTS fitness.deduped_sensor_activity_time_idx;
+
+CREATE VIEW fitness.deduped_sensor AS
 
 -- Step 0: Flatten v_activity to get canonical_id -> member_id mapping
 WITH canonical_activities AS (
@@ -141,13 +137,3 @@ SELECT
   asmp.channel,
   asmp.scalar
 FROM ambient_samples asmp;
-
---> statement-breakpoint
-
-CREATE UNIQUE INDEX IF NOT EXISTS deduped_sensor_pk
-  ON fitness.deduped_sensor (activity_id, channel, recorded_at);
-
---> statement-breakpoint
-
-CREATE INDEX IF NOT EXISTS deduped_sensor_activity_time_idx
-  ON fitness.deduped_sensor (activity_id, recorded_at);

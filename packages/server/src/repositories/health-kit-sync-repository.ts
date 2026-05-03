@@ -846,8 +846,6 @@ export class HealthKitSyncRepository {
 
   /** Refresh the daily metrics materialized view */
   async refreshDailyMetricsView(): Promise<void> {
-    await refreshMaterializedView(this.#db, "fitness.v_daily_metrics", {
-      source: "server.healthkit_repository",
-    });
+    return;
   }
 }

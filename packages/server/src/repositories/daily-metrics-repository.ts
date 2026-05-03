@@ -1,11 +1,9 @@
 import * as Sentry from "@sentry/node";
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
-import { logger } from "../logger.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -240,36 +238,14 @@ export class DailyMetricsRepository extends BaseRepository {
     return rows.length > 0;
   }
 
-  /** Try to refresh the materialized view. Returns true on success, false on failure. */
-  async #tryRefreshView(reason = "stale view"): Promise<boolean> {
-    Sentry.captureMessage("Stale daily metrics materialized view detected", {
-      level: "warning",
-      tags: { userId: this.userId },
-      extra: { reason },
-    });
-    logger.warn(`[daily-metrics] View stale for user ${this.userId} (${reason}), refreshing`);
-
-    try {
-      const refreshResult = await refreshMaterializedView(this.db, "fitness.v_daily_metrics", {
-        source: "server.daily_metrics_stale_view",
-      });
-      if (refreshResult.fallbackUsed) {
-        logger.warn(
-          `[daily-metrics] Fallback to blocking refresh for user ${this.userId} (${reason})`,
-        );
-      }
-    } catch (refreshError) {
-      Sentry.captureException(refreshError, {
-        tags: { userId: this.userId, context: "staleDailyMetricsRefresh" },
-      });
-      return false;
-    }
-    return true;
+  /** No-op now that v_daily_metrics is no longer materialized. */
+  async #tryRefreshView(_reason = "stale view"): Promise<boolean> {
+    return false;
   }
 
   /**
-   * Check if the base table has data in the window and refresh the view if stale.
-   * Returns true if a refresh was performed, false otherwise.
+   * Check if the base table has data in the view window.
+   * Returns false because the plain view updates automatically.
    */
   async #refreshIfStale(days: number, endDate: string): Promise<boolean> {
     const baseRows = await this.query(
@@ -282,7 +258,7 @@ export class DailyMetricsRepository extends BaseRepository {
     );
     if (baseRows.length === 0) return false;
 
-    return this.#tryRefreshView("view empty but base table has data");
+    return false;
   }
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */

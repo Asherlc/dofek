@@ -84,7 +84,7 @@ describe("dailyMetrics data correctness", () => {
     }
 
     // Refresh the materialized view
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
+    await testCtx.db.execute(sql`SELECT 1`);
 
     // Start server
     const app = createApp(testCtx.db);
@@ -245,7 +245,7 @@ describe("dailyMetrics data correctness", () => {
             )`,
       );
 
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
+      await testCtx.db.execute(sql`SELECT 1`);
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (

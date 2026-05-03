@@ -1,6 +1,6 @@
--- Canonical definition of the fitness.v_daily_metrics materialized view.
+-- Canonical definition of the fitness.v_daily_metrics view.
 
-CREATE MATERIALIZED VIEW fitness.v_daily_metrics AS
+CREATE VIEW fitness.v_daily_metrics AS
 WITH ranked AS (
   SELECT
     d.*,
@@ -37,5 +37,3 @@ FROM fitness.daily_metrics dm
 GROUP BY dm.date, dm.user_id;
 
 --> statement-breakpoint
-
-CREATE UNIQUE INDEX IF NOT EXISTS v_daily_metrics_date_idx ON fitness.v_daily_metrics (date, user_id);
