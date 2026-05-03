@@ -2256,6 +2256,42 @@ compare row counts and recent-row freshness between Postgres,
 `analytics.deduped_sensor` over in a separate migration.
 
 ## 2026-05-01: Netdata Local UI NetworkError Triage
+ 
+### Symptoms
+ 
+The Netdata dashboard at `https://netdata.dofek.asherlc.com/` showed a browser
+`NetworkError when attempting to fetch resource` during local UI use or agent
+connection attempts.
+ 
+### Evidence
+ 
+Directly inside the Netdata container, `http://127.0.0.1:19999/` returned the
+Netdata HTML with HTTP 200 and `/api/v3/info` reported the agent as available.
+Unauthenticated requests to the public hostname returned HTTP 302 redirects to
+Authentik. The agent's ACLK state showed `Claimed: No` and `Online: No`.
+ 
+### Root Cause
+ 
+The Netdata agent process is running, but the public UI is Authentik-protected
+and the agent is not claimed to Netdata Cloud. Browser-side fetches that cross
+the Authentik or Netdata Cloud boundary can surface as a generic network error.
+ 
+### Fix or Mitigation
+ 
+Configured the Netdata Swarm service with `NETDATA_DISABLE_CLOUD=1` so the
+deployment is local-only and does not try to use the browser claim flow through
+Authentik. For future Netdata Cloud monitoring, remove that local-only setting
+and configure the Swarm service with Netdata claim environment variables from
+Infisical instead.
+ 
+### Remaining Risk
+ 
+The exact failing browser request after an authenticated login was not captured
+because the agent session did not have the user's Authentik browser cookies.
+Further debugging needs either the browser network entry from the logged-in
+session or a deliberate local-only Netdata configuration change.
+ 
+## 2026-05-01: Production Deploy Migration Timed Out During Metric Stream Backfill
 
 ### Symptoms
 

@@ -23,6 +23,7 @@ describe("setup-clickhouse-cdc main()", () => {
   beforeEach(() => {
     mockSetupClickHouseCdcFromEnv.mockReset().mockResolvedValue(undefined);
     mockLogger.info.mockReset();
+    mockLogger.error.mockReset();
   });
 
   it("configures PeerDB CDC and logs success", async () => {
@@ -32,5 +33,11 @@ describe("setup-clickhouse-cdc main()", () => {
     expect(mockLogger.info).toHaveBeenCalledWith(
       "[clickhouse-cdc] PeerDB metric_stream CDC mirror is configured",
     );
+  });
+
+  it("propagates errors from setupClickHouseCdcFromEnv", async () => {
+    mockSetupClickHouseCdcFromEnv.mockRejectedValue(new Error("setup failed"));
+
+    await expect(main()).rejects.toThrow("setup failed");
   });
 });
