@@ -557,7 +557,7 @@ jobs:
           )
 
           search_attributes="$(
-            timeout 30s docker run --rm --network "${STACK_NAME}_default" \
+            timeout 120s docker run --rm --network "${STACK_NAME}_default" \
               --entrypoint temporal \
               temporalio/admin-tools:1.29 \
               "${temporal_args[@]}" operator search-attribute list
@@ -568,7 +568,7 @@ jobs:
             exit 0
           fi
 
-          timeout 30s docker run --rm --network "${STACK_NAME}_default" \
+          timeout 120s docker run --rm --network "${STACK_NAME}_default" \
             --entrypoint temporal \
             temporalio/admin-tools:1.29 \
             "${temporal_args[@]}" operator search-attribute create \

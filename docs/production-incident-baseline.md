@@ -7,6 +7,38 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-03: Deploy Staging failed while creating Temporal search attribute
+
+### Impact
+
+Staging deployment `25265996048` failed during `Deploy Web Stack` while waiting to
+create the `MirrorName` Temporal search attribute, so that release did not reach a
+ready staging state.
+
+### Evidence That Mattered
+
+- First fatal line in the step log:
+  `##[error]Process completed with exit code 124.`
+- Failure occurred during `Ensure PeerDB Temporal search attributes` right after:
+  `temporal operator search-attribute create --name MirrorName --type Text`.
+
+### Root Cause
+
+The 30-second timeout around `temporalio/admin-tools` CLI calls was too short for
+the `MirrorName` creation path during Temporal bootstrap on this run.
+
+### Fix or Mitigation
+
+- Increased the timeout for the Temporal search-attribute `list` and `create`
+  commands from `30s` to `120s` in
+  `.github/workflows/deploy-web-stack.yml`.
+- Re-ran deploy workflow `25266273887`; it completed successfully.
+
+### Remaining Risk
+
+If Temporal startup remains significantly delayed under load, the 120-second limit
+may still be insufficient and should be raised with corresponding deploy-time
+observability.
 ## 2026-05-03: metric_stream CDC fed validation table only
 
 ### Impact
