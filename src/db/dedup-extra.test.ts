@@ -23,7 +23,11 @@ vi.mock("./sync-views.ts", () => ({
 
 const mockExecute = vi.fn().mockResolvedValue(undefined);
 
-const expectedRefreshedViews = ["fitness.v_activity", "fitness.v_sleep", "fitness.v_body_measurement"];
+const expectedRefreshedViews = [
+  "fitness.v_activity",
+  "fitness.v_sleep",
+  "fitness.v_body_measurement",
+];
 
 function createMockDb() {
   return {

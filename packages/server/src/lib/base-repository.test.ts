@@ -1,5 +1,3 @@
-import * as Sentry from "@sentry/node";
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";

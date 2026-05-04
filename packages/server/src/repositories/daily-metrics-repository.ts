@@ -1,4 +1,4 @@
-import { type SQL, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
@@ -60,46 +60,8 @@ const trendsRowSchema = z.object({
 export type TrendsRow = z.infer<typeof trendsRowSchema>;
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Number of calendar days between two YYYY-MM-DD date strings. */
-function daysBetween(dateA: string, dateB: string): number {
-  const msPerDay = 86_400_000;
-  const timestampA = new Date(`${dateA}T00:00:00Z`).getTime();
-  const timestampB = new Date(`${dateB}T00:00:00Z`).getTime();
-  return Math.abs(Math.round((timestampB - timestampA) / msPerDay));
-}
-
-// ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
-
-/**
- * Key metric columns to check for column-level staleness.
- * If ALL values for any of these are null in the view result but non-null
- * in the base table, the view is stale and needs a refresh.
- *
- * Limited to Apple Health activity metrics — these arrive via HealthKit push
- * (async from server-side syncs) and are most susceptible to the timing gap
- * where the view was refreshed before the push arrived. HRV comes from
- * server-side provider syncs that refresh the view themselves, so it doesn't
- * need this check.
- */
-const KEY_METRICS = ["steps", "active_energy_kcal"] as const;
-type KeyMetric = (typeof KEY_METRICS)[number];
-
-const KEY_METRIC_TREND_FIELDS = {
-  steps: { avg: "avg_steps", latest: "latest_steps", latestDate: "latest_steps_date" },
-  active_energy_kcal: {
-    avg: "avg_active_energy",
-    latest: "latest_active_energy",
-    latestDate: "latest_active_energy_date",
-  },
-} satisfies Record<
-  KeyMetric,
-  { avg: keyof TrendsRow; latest: keyof TrendsRow; latestDate: keyof TrendsRow }
->;
 
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {

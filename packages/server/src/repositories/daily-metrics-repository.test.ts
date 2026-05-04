@@ -318,7 +318,7 @@ describe("DailyMetricsRepository", () => {
       // With plain views, there's no concept of a "stale view" since
       // the view always shows current data from the base table.
       const allNullRow = makeAllNullTrendsRow();
-      const { repo, execute } = makeRepository([allNullRow]);
+      const { repo } = makeRepository([allNullRow]);
       await repo.getTrends(30, "2025-03-15");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
