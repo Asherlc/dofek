@@ -2,8 +2,6 @@
 -- Behavior is preserved while removing refresh cost and concurrent materialized-view locks.
 
 -- Drop the materialized view with CASCADE since activity_summary depends on it.
--- Recreate activity_summary from the canonical _views/ definition after the drop.
--- Indexes are dropped automatically by CASCADE.
 DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor CASCADE;
 
 --> statement-breakpoint
@@ -41,8 +39,6 @@ linked_best_source AS (
 ),
 
 -- Step 2: Compute fallback end bound per canonical activity.
--- For open-ended activities (ended_at IS NULL), fallback is capped at the last
--- linked sample timestamp to avoid an unbounded ambient window.
 linked_sample_bounds AS (
   SELECT am.canonical_id, MAX(ms.recorded_at) AS last_linked_sample_at
   FROM fitness.metric_stream ms
