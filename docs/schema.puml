@@ -451,8 +451,8 @@ entity "menstrual_period" {
 }
 
 entity "metric_stream" {
-  * id : uuid <<PK>>
-  * recorded_at : timestamp <<PK>>
+  id : uuid
+  recorded_at : timestamp
   user_id : uuid <<FK>>
   provider_id : text <<FK>>
   device_id : text
