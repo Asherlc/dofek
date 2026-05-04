@@ -126,6 +126,7 @@ export class DailyMetricsRepository extends BaseRepository {
             WHERE user_id = ${this.userId}
               AND date > ${dateWindowStart(endDate, days)}
               AND date <= ${dateWindowEnd(endDate)}
+              ${this.dateAccessPredicate(sql`date`)}
           ),
           stats AS (
             SELECT
@@ -161,7 +162,8 @@ export class DailyMetricsRepository extends BaseRepository {
             latest.date AS latest_date,
             latest.steps_date AS latest_steps_date,
             latest.active_energy_kcal_date AS latest_active_energy_date
-          FROM stats LEFT JOIN latest ON true`,
+          FROM stats LEFT JOIN latest ON true
+          WHERE EXISTS (SELECT 1 FROM current)`,
     );
     return rows[0] ?? null;
   }
