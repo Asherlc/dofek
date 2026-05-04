@@ -1,6 +1,6 @@
 -- Canonical definition of the fitness.v_body_measurement view.
 
-CREATE VIEW fitness.v_body_measurement AS
+CREATE MATERIALIZED VIEW fitness.v_body_measurement AS
 WITH RECURSIVE ranked AS (
   SELECT
     b.*,
@@ -67,6 +67,14 @@ SELECT
   (SELECT array_agg(DISTINCT r.provider_id ORDER BY r.provider_id) FROM final_groups fg JOIN ranked r ON r.id = fg.measurement_id WHERE fg.group_id = b.group_id) AS source_providers
 FROM best b
 ORDER BY b.recorded_at DESC;
+
+--> statement-breakpoint
+
+CREATE UNIQUE INDEX IF NOT EXISTS v_body_measurement_id_idx ON fitness.v_body_measurement (id);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS v_body_measurement_time_idx ON fitness.v_body_measurement (recorded_at DESC);
 
 --> statement-breakpoint
 

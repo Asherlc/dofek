@@ -40,15 +40,7 @@ function makeDb(
 ) {
   // loadPersonalizedParams is mocked at module level (returns null),
   // so it never calls db.execute. Only executeWithSchema calls remain.
-  //
-  // When activityRows is empty, queryWithViewRefresh checks base activity
-  // count (extra call returning [{count: 0}]) before giving up.
-  // When activityRows is non-empty, it skips the base check and proceeds
-  // to the NP query.
   const execute = vi.fn().mockResolvedValueOnce(activityRows);
-  if (activityRows.length === 0) {
-    execute.mockResolvedValueOnce([{ count: 0 }]); // base activity count
-  }
   execute.mockResolvedValueOnce(npRows); // NP query
   return { execute };
 }

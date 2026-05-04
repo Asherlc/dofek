@@ -174,42 +174,19 @@ describe("DailyMetricsRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("returns data with null steps when view has null steps (plain view shows current data)", async () => {
-      // With plain views, the view always shows current data from the base table.
-      // If steps are null in the view, they're null in the base table too.
-      const rowWithoutSteps = makeDailyMetricsRow({
-        date: "2025-03-15",
-        steps: null,
-        active_energy_kcal: null,
-      });
-      const { repo, execute } = makeRepository([rowWithoutSteps]);
+    it.each([
+      { steps: null, active_energy_kcal: null, expectedSteps: null },
+      { steps: 8500, active_energy_kcal: 420, expectedSteps: 8500 },
+    ])("returns list rows preserving step nullability", async ({
+      steps,
+      active_energy_kcal,
+      expectedSteps,
+    }) => {
+      const row = makeDailyMetricsRow({ date: "2025-03-15", steps, active_energy_kcal });
+      const { repo, execute } = makeRepository([row]);
       const result = await repo.list(30, "2025-03-15");
       expect(result).toHaveLength(1);
-      expect(result[0]?.steps).toBeNull();
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-
-    it("does not check missing metrics when key metrics have data in view", async () => {
-      // Steps are present in view — no column-level staleness check needed
-      const rowWithSteps = makeDailyMetricsRow({ date: "2025-03-15", steps: 8500 });
-      const { repo, execute } = makeRepository([rowWithSteps]);
-      const result = await repo.list(30, "2025-03-15");
-      expect(result).toHaveLength(1);
-      // Only one query — no base table check for missing metrics
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-
-    it("returns rows with null steps when view has null steps", async () => {
-      // With plain views, if the view has null steps, that's the current data
-      const rowNoSteps = makeDailyMetricsRow({
-        date: "2025-03-15",
-        steps: null,
-        active_energy_kcal: null,
-      });
-      const { repo, execute } = makeRepository([rowNoSteps]);
-      const result = await repo.list(30, "2025-03-15");
-      expect(result).toHaveLength(1);
-      expect(result[0]?.steps).toBeNull();
+      expect(result[0]?.steps).toBe(expectedSteps);
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
@@ -332,6 +309,7 @@ describe("DailyMetricsRepository", () => {
     it("returns all-null trends when view returns all nulls", async () => {
       const { repo } = makeRepository([makeAllNullTrendsRow()]);
       const result = await repo.getTrends(30, "2025-03-15");
+      expect(result).not.toBeNull();
       expect(result?.avg_hrv).toBeNull();
       expect(result?.latest_date).toBeNull();
     });
@@ -411,14 +389,6 @@ describe("DailyMetricsRepository", () => {
       expect(sqlText).toContain("latest");
       expect(sqlText).toContain("ARRAY_AGG");
       expect(execute).toHaveBeenCalledTimes(1);
-    });
-
-    it("handles all-null trends row", async () => {
-      const { repo } = makeRepository([makeAllNullTrendsRow()]);
-      const result = await repo.getTrends(30, "2025-03-15");
-      expect(result).not.toBeNull();
-      expect(result?.avg_hrv).toBeNull();
-      expect(result?.latest_date).toBeNull();
     });
   });
 });

@@ -53,10 +53,8 @@ export class PmcRepository extends BaseRepository {
     // QUERY 1: activities with HR data.
     // Use COALESCE to fall back to the highest observed HR across all activities
     // when user_profile.max_hr hasn't been populated yet.
-    // Wrapped in queryWithViewRefresh so stale materialized views are detected
-    // and refreshed automatically — without this, the chart silently shows empty.
-    // Custom base count SQL checks for activities with HR sensor data specifically,
-    // avoiding false-positive refreshes for users who have activities but no HR data.
+    // Wrapped in queryWithViewRefresh for historical consistency; since we switched
+    // to plain views, results are now returned directly without any refresh logic.
     const activityRows = await this.queryWithViewRefresh(
       () =>
         this.query(

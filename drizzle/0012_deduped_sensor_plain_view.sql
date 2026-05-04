@@ -142,6 +142,8 @@ FROM ambient_samples asmp;
 
 -- Now recreate activity_summary (it depends on deduped_sensor which now exists).
 CREATE VIEW fitness.activity_summary AS
+
+-- Step 1: Elevation gain/loss from altitude channel (window function on ordered data)
 WITH altitude_deltas AS (
   SELECT
     activity_id,
@@ -159,6 +161,8 @@ elevation_per_activity AS (
   WHERE prev_altitude IS NOT NULL
   GROUP BY activity_id
 ),
+
+-- Step 2: GPS distance from lat/lng channels (need to join lat+lng by timestamp)
 gps_points AS (
   SELECT
     lat_s.activity_id,
@@ -184,81 +188,105 @@ distance_per_activity AS (
   SELECT
     activity_id,
     SUM(
-      (6371000 * acos(
-        LEAST(1.0,
-          sin(radians(lat)) * sin(radians(prev_lat)) +
-          cos(radians(lat)) * cos(radians(prev_lat)) *
-          cos(radians(lng) - radians(prev_lng))
-        )
-      ))::NUMERIC
-    ) AS distance_m
+      2 * 6371000 * ASIN(SQRT(
+        POWER(SIN(RADIANS(lat - prev_lat) / 2), 2) +
+        COS(RADIANS(prev_lat)) * COS(RADIANS(lat)) *
+        POWER(SIN(RADIANS(lng - prev_lng) / 2), 2)
+      ))
+    )::REAL AS total_distance
   FROM gps_deltas
   WHERE prev_lat IS NOT NULL
   GROUP BY activity_id
 ),
-hr_zones AS (
+
+-- Step 3: Per-activity, per-channel aggregates (pivoted from narrow to wide)
+channel_aggs AS (
   SELECT
     activity_id,
-    MAX(CASE WHEN scalar BETWEEN 0 AND 113 THEN 1 ELSE 0 END) AS zone1_s,
-    MAX(CASE WHEN scalar BETWEEN 114 AND 135 THEN 1 ELSE 0 END) AS zone2_s,
-    MAX(CASE WHEN scalar BETWEEN 136 AND 156 THEN 1 ELSE 0 END) AS zone3_s,
-    MAX(CASE WHEN scalar BETWEEN 157 AND 171 THEN 1 ELSE 0 END) AS zone4_s,
-    MAX(CASE WHEN scalar >= 172 THEN 1 ELSE 0 END) AS zone5_s
+    user_id,
+    -- Heart rate
+    AVG(scalar) FILTER (WHERE channel = 'heart_rate')::REAL           AS avg_hr,
+    MAX(scalar) FILTER (WHERE channel = 'heart_rate')::SMALLINT       AS max_hr,
+    MIN(scalar) FILTER (WHERE channel = 'heart_rate')::SMALLINT       AS min_hr,
+    -- Power
+    AVG(scalar) FILTER (WHERE channel = 'power' AND scalar > 0)::REAL    AS avg_power,
+    MAX(scalar) FILTER (WHERE channel = 'power' AND scalar > 0)::SMALLINT AS max_power,
+    -- Speed
+    AVG(scalar) FILTER (WHERE channel = 'speed')::REAL                AS avg_speed_raw,
+    MAX(scalar) FILTER (WHERE channel = 'speed')::REAL                AS max_speed_raw,
+    -- Cadence
+    AVG(scalar) FILTER (WHERE channel = 'cadence' AND scalar > 0)::REAL AS avg_cadence,
+    -- Altitude
+    MAX(scalar) FILTER (WHERE channel = 'altitude')::REAL             AS max_altitude,
+    MIN(scalar) FILTER (WHERE channel = 'altitude')::REAL             AS min_altitude,
+    -- Pedal dynamics
+    AVG(scalar) FILTER (WHERE channel = 'left_right_balance')::REAL         AS avg_left_balance,
+    AVG(scalar) FILTER (WHERE channel = 'left_torque_effectiveness')::REAL  AS avg_left_torque_eff,
+    AVG(scalar) FILTER (WHERE channel = 'right_torque_effectiveness')::REAL AS avg_right_torque_eff,
+    AVG(scalar) FILTER (WHERE channel = 'left_pedal_smoothness')::REAL      AS avg_left_pedal_smooth,
+    AVG(scalar) FILTER (WHERE channel = 'right_pedal_smoothness')::REAL     AS avg_right_pedal_smooth,
+    -- Running dynamics
+    AVG(scalar) FILTER (WHERE channel = 'stance_time')::REAL          AS avg_stance_time,
+    AVG(scalar) FILTER (WHERE channel = 'vertical_oscillation')::REAL AS avg_vertical_osc,
+    AVG(scalar) FILTER (WHERE channel = 'ground_contact_time')::REAL  AS avg_ground_contact_time,
+    AVG(scalar) FILTER (WHERE channel = 'stride_length')::REAL        AS avg_stride_length,
+    -- Counts
+    COUNT(*)::INT                                                      AS sample_count,
+    COUNT(*) FILTER (WHERE channel = 'heart_rate')::INT               AS hr_sample_count,
+    COUNT(*) FILTER (WHERE channel = 'power' AND scalar > 0)::INT     AS power_sample_count,
+    -- Duration
+    MIN(recorded_at)                AS first_sample_at,
+    MAX(recorded_at)                AS last_sample_at
   FROM fitness.deduped_sensor
-  WHERE channel = 'heart_rate'
-  GROUP BY activity_id
-),
-power_zones AS (
-  SELECT
-    activity_id,
-    MAX(CASE WHEN scalar BETWEEN 0 AND 143 THEN 1 ELSE 0 END) AS zone1_w,
-    MAX(CASE WHEN scalar BETWEEN 144 AND 208 THEN 1 ELSE 0 END) AS zone2_w,
-    MAX(CASE WHEN scalar BETWEEN 209 AND 278 THEN 1 ELSE 0 END) AS zone3_w,
-    MAX(CASE WHEN scalar BETWEEN 279 AND 333 THEN 1 ELSE 0 END) AS zone4_w,
-    MAX(CASE WHEN scalar >= 334 THEN 1 ELSE 0 END) AS zone5_w
-  FROM fitness.deduped_sensor
-  WHERE channel = 'power'
-  GROUP BY activity_id
+  GROUP BY activity_id, user_id
 )
+
 SELECT
-  a.id AS activity_id,
-  a.user_id,
+  ca.activity_id,
+  ca.user_id,
+  a.activity_type,
   a.started_at,
   a.ended_at,
-  a.provider_id,
-  a.source_name,
-  a.activity_type AS type,
-  a.primary_type,
-  a.distance_m,
-  a.moving_time_s,
-  a.elapsed_time_s,
-  a.avg_heart_rate,
-  a.max_heart_rate,
-  a.avg_power,
-  a.avg_cadence,
-  a.avg_speed,
-  a.calories_kcal,
-  a.avg_vertical_oscillation,
-  a.avg_vertical_ratio,
-  a.avg_ground_contact_time,
-  a.avg_heart_rate_variability,
-  a.avg_step_length,
-  COALESCE(elevation_gain_m, 0) AS elevation_gain_m,
-  COALESCE(elevation_loss_m, 0) AS elevation_loss_m,
-  COALESCE(distance_m, a.distance_m) AS computed_distance_m,
-  COALESCE(zone1_s, 0) AS has_zone1_hr,
-  COALESCE(zone2_s, 0) AS has_zone2_hr,
-  COALESCE(zone3_s, 0) AS has_zone3_hr,
-  COALESCE(zone4_s, 0) AS has_zone4_hr,
-  COALESCE(zone5_s, 0) AS has_zone5_hr,
-  COALESCE(zone1_w, 0) AS has_zone1_power,
-  COALESCE(zone2_w, 0) AS has_zone2_power,
-  COALESCE(zone3_w, 0) AS has_zone3_power,
-  COALESCE(zone4_w, 0) AS has_zone4_power,
-  COALESCE(zone5_w, 0) AS has_zone5_power
-FROM fitness.v_activity a
-LEFT JOIN elevation_per_activity e ON e.activity_id = a.id
-LEFT JOIN distance_per_activity d ON d.activity_id = a.id
-LEFT JOIN hr_zones hr ON hr.activity_id = a.id
-LEFT JOIN power_zones pz ON pz.activity_id = a.id
-ORDER BY a.started_at DESC;
+  a.name,
+  -- Heart rate
+  ca.avg_hr,
+  ca.max_hr,
+  ca.min_hr,
+  -- Power
+  ca.avg_power,
+  ca.max_power,
+  -- Speed / Distance / Cadence — null for indoor rides
+  CASE WHEN a.activity_type IN ('indoor_cycling', 'virtual_cycling') THEN NULL
+       ELSE ca.avg_speed_raw END                AS avg_speed,
+  CASE WHEN a.activity_type IN ('indoor_cycling', 'virtual_cycling') THEN NULL
+       ELSE ca.max_speed_raw END                AS max_speed,
+  ca.avg_cadence,
+  CASE WHEN a.activity_type IN ('indoor_cycling', 'virtual_cycling') THEN 0::REAL
+       ELSE COALESCE(d.total_distance, 0)::REAL END AS total_distance,
+  -- Elevation
+  ca.max_altitude,
+  ca.min_altitude,
+  COALESCE(e.elevation_gain_m, 0)::REAL AS elevation_gain_m,
+  COALESCE(e.elevation_loss_m, 0)::REAL AS elevation_loss_m,
+  -- Pedal dynamics
+  ca.avg_left_balance,
+  ca.avg_left_torque_eff,
+  ca.avg_right_torque_eff,
+  ca.avg_left_pedal_smooth,
+  ca.avg_right_pedal_smooth,
+  -- Running dynamics
+  ca.avg_stance_time,
+  ca.avg_vertical_osc,
+  ca.avg_ground_contact_time,
+  ca.avg_stride_length,
+  -- Counts
+  ca.sample_count,
+  ca.hr_sample_count,
+  ca.power_sample_count,
+  -- Duration
+  ca.first_sample_at,
+  ca.last_sample_at
+FROM channel_aggs ca
+JOIN fitness.v_activity a ON a.id = ca.activity_id
+LEFT JOIN elevation_per_activity e ON e.activity_id = ca.activity_id
+LEFT JOIN distance_per_activity d ON d.activity_id = ca.activity_id;

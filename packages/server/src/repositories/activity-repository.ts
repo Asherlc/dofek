@@ -244,7 +244,7 @@ export class ActivityRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  /** Paginated activity list with summary metrics. Self-heals stale views on the first page. */
+  /** Paginated activity list with summary metrics. Wrapped in queryWithViewRefresh for historical consistency. */
   async list(
     input: ListInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {

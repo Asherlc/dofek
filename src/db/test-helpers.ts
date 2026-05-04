@@ -99,7 +99,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
       const match = content.match(
         /CREATE\s+(?:MATERIALIZED\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
       );
-      return { content, viewName: match?.[1] };
+      return { content, viewName: match?.[1], file };
     });
 
     // Drop managed views in reverse order (dependents first).

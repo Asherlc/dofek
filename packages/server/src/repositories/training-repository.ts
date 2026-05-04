@@ -135,7 +135,7 @@ export interface NextWorkoutData {
 // ---------------------------------------------------------------------------
 
 export class TrainingRepository extends BaseRepository {
-  /** Weekly training volume grouped by activity type. */
+  /** Weekly training volume grouped by activity type. Wrapped in queryWithViewRefresh for historical consistency. */
   async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
     return this.queryWithViewRefresh(
       () =>
@@ -197,7 +197,7 @@ export class TrainingRepository extends BaseRepository {
     return { maxHr, weeks: rows };
   }
 
-  /** Per-activity summary with HR and power stats. */
+  /** Per-activity summary with HR and power stats. Wrapped in queryWithViewRefresh for historical consistency. */
   async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
     return this.queryWithViewRefresh(
       () =>
