@@ -1,5 +1,7 @@
-import type { Database } from "@dofek/db";
 import * as Sentry from "@sentry/node";
+import type { Database } from "dofek/db";
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
+import { ACTIVITY_VIEWS } from "dofek/db/materialized-views";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -114,7 +116,11 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
   }
 
   async #refreshActivityViews(): Promise<void> {
-    // Views are now plain views, no refresh needed
-    return;
+    for (const viewName of ACTIVITY_VIEWS) {
+      await refreshMaterializedView(this.db, viewName, {
+        source: "server.activity_view_self_heal",
+        fallbackToBlocking: false,
+      });
+    }
   }
 }

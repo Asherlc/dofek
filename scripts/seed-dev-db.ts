@@ -45,6 +45,10 @@ interface CountRow {
   count: number;
 }
 
+interface RelationKindRow {
+  relation_kind: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
 // ---------------------------------------------------------------------------
@@ -73,7 +77,34 @@ async function applyMigrations() {
   console.log(`Migrations: ${applied} files applied`);
 }
 
+async function runMigrationFile(fileName: string) {
+  const content = readFileSync(resolve(drizzleDir, fileName), "utf-8");
+  const statements = content
+    .split("--> statement-breakpoint")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+  for (const statement of statements) {
+    await sql.unsafe(statement);
+  }
+}
+
+async function ensureDedupedSensorView() {
+  const [row] = await sql.unsafe<RelationKindRow[]>(`
+    SELECT relation_class.relkind::text AS relation_kind
+    FROM pg_class AS relation_class
+    JOIN pg_namespace AS relation_namespace
+      ON relation_namespace.oid = relation_class.relnamespace
+    WHERE relation_namespace.nspname = 'fitness'
+      AND relation_class.relname = 'deduped_sensor'
+  `);
+
+  if (row?.relation_kind === "v") return;
+  await runMigrationFile("0012_deduped_sensor_plain_view.sql");
+}
+
 async function recreateMaterializedViews() {
+  await ensureDedupedSensorView();
+
   const viewsDir = join(drizzleDir, "_views");
   if (existsSync(viewsDir)) {
     const viewFiles = readdirSync(viewsDir)

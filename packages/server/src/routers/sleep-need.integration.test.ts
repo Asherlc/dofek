@@ -50,7 +50,7 @@ describe("sleep-need router integration", () => {
     );
 
     // Refresh v_sleep so the view picks up the inserted row and computes efficiency
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -139,7 +139,7 @@ describe("sleep-need router integration", () => {
     );
 
     // Refresh v_sleep to re-run dedup
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await queryCache.invalidateAll();
 
     const today = new Date().toISOString().slice(0, 10);
@@ -237,7 +237,7 @@ describe("sleep data consistency: multiple sessions per date", () => {
       );
     }
 
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -373,7 +373,7 @@ describe("after-midnight sleep attribution", () => {
       );
     }
 
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {

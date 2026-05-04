@@ -1,7 +1,47 @@
 -- Replace the expensive materialized Postgres view with a plain view.
 -- Behavior is preserved while removing refresh cost and concurrent materialized-view locks.
 
-DROP VIEW IF EXISTS fitness.deduped_sensor CASCADE;
+DROP TABLE IF EXISTS pg_temp.dofek_migration_view_definitions;
+
+CREATE TEMP TABLE pg_temp.dofek_migration_view_definitions (
+  view_name text PRIMARY KEY,
+  relation_kind "char" NOT NULL,
+  view_definition text NOT NULL
+);
+
+DO $$
+DECLARE
+  dependent_kind "char";
+  dependent_definition text;
+BEGIN
+  SELECT view_class.relkind, pg_get_viewdef(view_class.oid, true)
+  INTO dependent_kind, dependent_definition
+  FROM pg_class AS view_class
+  JOIN pg_namespace AS view_namespace ON view_namespace.oid = view_class.relnamespace
+  WHERE view_namespace.nspname = 'fitness'
+    AND view_class.relname = 'activity_summary'
+    AND view_class.relkind IN ('m', 'v');
+
+  IF dependent_definition IS NOT NULL THEN
+    INSERT INTO pg_temp.dofek_migration_view_definitions (
+      view_name,
+      relation_kind,
+      view_definition
+    )
+    VALUES ('fitness.activity_summary', dependent_kind, dependent_definition);
+
+    IF dependent_kind = 'm' THEN
+      EXECUTE 'DROP MATERIALIZED VIEW fitness.activity_summary';
+    ELSE
+      EXECUTE 'DROP VIEW fitness.activity_summary';
+    END IF;
+  END IF;
+END
+$$;
+
+DROP TABLE IF EXISTS pg_temp.dofek_migration_view_definitions;
+
+DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor;
 DROP INDEX IF EXISTS fitness.deduped_sensor_pk;
 DROP INDEX IF EXISTS fitness.deduped_sensor_activity_time_idx;
 
@@ -137,3 +177,23 @@ SELECT
   asmp.channel,
   asmp.scalar
 FROM ambient_samples asmp;
+
+DO $$
+DECLARE
+  dependent_kind "char";
+  dependent_definition text;
+BEGIN
+  SELECT relation_kind, view_definition
+  INTO dependent_kind, dependent_definition
+  FROM pg_temp.dofek_migration_view_definitions
+  WHERE view_name = 'fitness.activity_summary';
+
+  IF dependent_definition IS NOT NULL THEN
+    IF dependent_kind = 'm' THEN
+      EXECUTE format('CREATE MATERIALIZED VIEW fitness.activity_summary AS %s', dependent_definition);
+    ELSE
+      EXECUTE format('CREATE VIEW fitness.activity_summary AS %s', dependent_definition);
+    END IF;
+  END IF;
+END
+$$;

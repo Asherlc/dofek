@@ -1,4 +1,4 @@
-import { type SQL, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
@@ -60,103 +60,22 @@ const trendsRowSchema = z.object({
 export type TrendsRow = z.infer<typeof trendsRowSchema>;
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Number of calendar days between two YYYY-MM-DD date strings. */
-function daysBetween(dateA: string, dateB: string): number {
-  const msPerDay = 86_400_000;
-  const timestampA = new Date(`${dateA}T00:00:00Z`).getTime();
-  const timestampB = new Date(`${dateB}T00:00:00Z`).getTime();
-  return Math.abs(Math.round((timestampB - timestampA) / msPerDay));
-}
-
-// ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
-
-/**
- * Key metric columns to check for column-level staleness.
- * If ALL values for any of these are null in the view result but non-null
- * in the base table, the view is stale and needs a refresh.
- *
- * Limited to Apple Health activity metrics — these arrive via HealthKit push
- * (async from server-side syncs) and are most susceptible to the timing gap
- * where the view was refreshed before the push arrived. HRV comes from
- * server-side provider syncs that refresh the view themselves, so it doesn't
- * need this check.
- */
-const KEY_METRICS = ["steps", "active_energy_kcal"] as const;
-type KeyMetric = (typeof KEY_METRICS)[number];
-
-const KEY_METRIC_TREND_FIELDS = {
-  steps: { avg: "avg_steps", latest: "latest_steps", latestDate: "latest_steps_date" },
-  active_energy_kcal: {
-    avg: "avg_active_energy",
-    latest: "latest_active_energy",
-    latestDate: "latest_active_energy_date",
-  },
-} satisfies Record<
-  KeyMetric,
-  { avg: keyof TrendsRow; latest: keyof TrendsRow; latestDate: keyof TrendsRow }
->;
 
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {
   /** Daily metrics within the given date window, ordered by date ascending. */
   async list(days: number, endDate: string): Promise<DailyMetricsViewRow[]> {
-    const listQuery = () =>
-      this.query(
-        dailyMetricsViewRowSchema,
-        sql`SELECT * FROM fitness.v_daily_metrics
-            WHERE user_id = ${this.userId}
-              AND date > ${dateWindowStart(endDate, days)}
-              AND date <= ${dateWindowEnd(endDate)}
-              ${this.dateAccessPredicate(sql`date`)}
-            ORDER BY date ASC`,
-      );
-
-    const result = await listQuery();
-
-    // View returned empty — check if base table has data (stale view)
-    if (result.length === 0) {
-      const refreshed = await this.#refreshIfStale(days, endDate);
-      if (!refreshed) return result;
-      return listQuery();
-    }
-
-    // View has data — check if it's stale (base table has newer rows).
-    // Only check when the view's latest date is >1 day behind endDate to avoid
-    // an extra query on every request when data is fresh.
-    const latestViewDate = result[result.length - 1]?.date;
-    if (
-      latestViewDate != null &&
-      latestViewDate < endDate &&
-      daysBetween(latestViewDate, endDate) > 1 &&
-      (await this.#baseTableHasNewerData(latestViewDate, endDate))
-    ) {
-      const refreshed = await this.#tryRefreshView("newer data in base table");
-      if (refreshed) return listQuery();
-    }
-
-    // Recent-date staleness: older rows have data, but the latest visible row
-    // is missing activity metrics that exist in the base table for that date.
-    const latestRow = result[result.length - 1];
-    if (latestRow && (await this.#latestRowMissingMetrics(latestRow, endDate))) {
-      const refreshed = await this.#tryRefreshView(
-        "latest row missing metrics present in base table",
-      );
-      if (refreshed) return listQuery();
-    }
-
-    // Window-level staleness: all values for a key metric are null in the
-    // view, but the base table has non-null values somewhere in the window.
-    if (await this.#windowMissingMetrics(result, days, endDate)) {
-      const refreshed = await this.#tryRefreshView("view missing metrics present in base table");
-      if (refreshed) return listQuery();
-    }
-
-    return result;
+    return this.query(
+      dailyMetricsViewRowSchema,
+      sql`SELECT * FROM fitness.v_daily_metrics
+          WHERE user_id = ${this.userId}
+            AND date > ${dateWindowStart(endDate, days)}
+            AND date <= ${dateWindowEnd(endDate)}
+            ${this.dateAccessPredicate(sql`date`)}
+          ORDER BY date ASC`,
+    );
   }
 
   /** Most recent single daily metrics row, or null if none exist. */
@@ -198,235 +117,52 @@ export class DailyMetricsRepository extends BaseRepository {
     return rows.filter((row) => row.date >= cutoffStr);
   }
 
-  async #windowMissingMetrics(
-    result: DailyMetricsViewRow[],
-    days: number,
-    endDate: string,
-  ): Promise<boolean> {
-    const missingColumns = KEY_METRICS.filter((column) =>
-      result.every((row) => row[column] == null),
-    );
-    if (missingColumns.length === 0) return false;
-    return this.#baseTableHasMetricData(
-      missingColumns,
-      dateWindowStart(endDate, days),
-      endDate,
-      false,
-    );
-  }
-
-  async #latestRowMissingMetrics(
-    latestRow: DailyMetricsViewRow,
-    endDate: string,
-  ): Promise<boolean> {
-    const missingColumns = KEY_METRICS.filter((column) => latestRow[column] == null);
-    if (missingColumns.length === 0) return false;
-    return this.#baseTableHasMetricData(missingColumns, latestRow.date, endDate, true);
-  }
-
-  /** Check if the base table has rows newer than what the materialized view returned. */
-  async #baseTableHasNewerData(latestViewDate: string, endDate: string): Promise<boolean> {
-    const rows = await this.query(
-      z.object({ exists: z.coerce.number() }),
-      sql`SELECT 1 AS exists FROM fitness.daily_metrics
-          WHERE user_id = ${this.userId}
-            AND date > ${latestViewDate}::date
-            AND date <= ${dateWindowEnd(endDate)}
-          LIMIT 1`,
-    );
-    return rows.length > 0;
-  }
-
-  /** No-op now that v_daily_metrics is no longer materialized. */
-  async #tryRefreshView(_reason = "stale view"): Promise<boolean> {
-    return false;
-  }
-
-  /**
-   * Check if the base table has data in the view window.
-   * Returns false because the plain view updates automatically.
-   */
-  async #refreshIfStale(days: number, endDate: string): Promise<boolean> {
-    const baseRows = await this.query(
-      z.object({ exists: z.coerce.number() }),
-      sql`SELECT 1 AS exists FROM fitness.daily_metrics
-          WHERE user_id = ${this.userId}
-            AND date > ${dateWindowStart(endDate, days)}
-            AND date <= ${dateWindowEnd(endDate)}
-          LIMIT 1`,
-    );
-    if (baseRows.length === 0) return false;
-
-    return false;
-  }
-
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
   async getTrends(days: number, endDate: string): Promise<TrendsRow | null> {
-    const trendsQuery = () =>
-      this.query(
-        trendsRowSchema,
-        sql`WITH current AS (
-              SELECT * FROM fitness.v_daily_metrics
-              WHERE user_id = ${this.userId}
-                AND date > ${dateWindowStart(endDate, days)}
-                AND date <= ${dateWindowEnd(endDate)}
-            ),
-            stats AS (
-              SELECT
-                AVG(hrv) AS avg_hrv,
-                AVG(spo2_avg) AS avg_spo2,
-                AVG(steps) AS avg_steps,
-                AVG(active_energy_kcal) AS avg_active_energy,
-                AVG(skin_temp_c) AS avg_skin_temp,
-                STDDEV(hrv) AS stddev_hrv,
-                STDDEV(spo2_avg) AS stddev_spo2,
-                STDDEV(skin_temp_c) AS stddev_skin_temp
-              FROM current
-            ),
-            latest AS (
-              SELECT
-                (ARRAY_AGG(hrv ORDER BY date DESC) FILTER (WHERE hrv IS NOT NULL))[1] AS hrv,
-                (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
-                (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
-                (ARRAY_AGG(active_energy_kcal ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal,
-                (ARRAY_AGG(skin_temp_c ORDER BY date DESC) FILTER (WHERE skin_temp_c IS NOT NULL))[1] AS skin_temp_c,
-                (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps_date,
-                (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal_date,
-                MAX(date) AS date
-              FROM current
-            )
-            SELECT
-              stats.*,
-              latest.hrv AS latest_hrv,
-              latest.spo2_avg AS latest_spo2,
-              latest.steps AS latest_steps,
-              latest.active_energy_kcal AS latest_active_energy,
-              latest.skin_temp_c AS latest_skin_temp,
-              latest.date AS latest_date,
-              latest.steps_date AS latest_steps_date,
-              latest.active_energy_kcal_date AS latest_active_energy_date
-            FROM stats LEFT JOIN latest ON true`,
-      );
-
-    const rows = await trendsQuery();
-    let result = rows[0] ?? null;
-    if (result && result.latest_date === null && result.avg_hrv === null) {
-      // View returned all nulls — check if base table has data (stale view)
-      const refreshed = await this.#refreshIfStale(days, endDate);
-      if (!refreshed) return result;
-      const retryRows = await trendsQuery();
-      result = retryRows[0] ?? null;
-    }
-
-    if (
-      result &&
-      result.latest_date != null &&
-      (await this.#latestTrendsMissingMetrics(result, endDate))
-    ) {
-      const refreshed = await this.#tryRefreshView(
-        "latest trends missing metrics present in base table",
-      );
-      if (refreshed) {
-        const retryRows = await trendsQuery();
-        result = retryRows[0] ?? null;
-      }
-    }
-
-    if (
-      result &&
-      result.latest_date != null &&
-      (await this.#latestTrendsOutdatedMetrics(result, endDate))
-    ) {
-      const refreshed = await this.#tryRefreshView(
-        "latest trends outdated vs base table metric dates",
-      );
-      if (refreshed) {
-        const retryRows = await trendsQuery();
-        result = retryRows[0] ?? null;
-      }
-    }
-
-    if (result && (await this.#windowTrendsMissingMetrics(result, days, endDate))) {
-      const refreshed = await this.#tryRefreshView(
-        "trend metrics missing in view but present in base table",
-      );
-      if (refreshed) {
-        const retryRows = await trendsQuery();
-        result = retryRows[0] ?? null;
-      }
-    }
-
-    return result;
-  }
-
-  async #latestTrendsMissingMetrics(result: TrendsRow, endDate: string): Promise<boolean> {
-    const missingColumns = KEY_METRICS.filter(
-      (column) => result[KEY_METRIC_TREND_FIELDS[column].latest] == null,
-    );
-    if (missingColumns.length === 0 || result.latest_date == null) return false;
-    return this.#baseTableHasMetricData(missingColumns, result.latest_date, endDate, true);
-  }
-
-  async #windowTrendsMissingMetrics(
-    result: TrendsRow,
-    days: number,
-    endDate: string,
-  ): Promise<boolean> {
-    const missingColumns = KEY_METRICS.filter(
-      (column) => result[KEY_METRIC_TREND_FIELDS[column].avg] == null,
-    );
-    if (missingColumns.length === 0) return false;
-    return this.#baseTableHasMetricData(
-      missingColumns,
-      dateWindowStart(endDate, days),
-      endDate,
-      false,
-    );
-  }
-
-  async #latestTrendsOutdatedMetrics(result: TrendsRow, endDate: string): Promise<boolean> {
-    const staleColumns: KeyMetric[] = [];
-    for (const column of KEY_METRICS) {
-      const fields = KEY_METRIC_TREND_FIELDS[column];
-      const metricValue = result[fields.latest];
-      const metricDate = result[fields.latestDate];
-      if (metricValue == null || metricDate == null) continue;
-      if (metricDate >= endDate) continue;
-      staleColumns.push(column);
-    }
-    if (staleColumns.length === 0) return false;
-
-    for (const column of staleColumns) {
-      const fields = KEY_METRIC_TREND_FIELDS[column];
-      const metricDate = result[fields.latestDate];
-      if (typeof metricDate !== "string") continue;
-      const hasNewer = await this.#baseTableHasMetricData([column], metricDate, endDate, false);
-      if (hasNewer) return true;
-    }
-
-    return false;
-  }
-
-  async #baseTableHasMetricData(
-    columns: readonly KeyMetric[],
-    startDate: SQL | string,
-    endDate: string,
-    includeStartDate: boolean,
-  ): Promise<boolean> {
-    const conditions = columns.map((column) => sql`${sql.identifier(column)} IS NOT NULL`);
-    const startDateSql = typeof startDate === "string" ? sql`${startDate}::date` : startDate;
-    const startCondition = includeStartDate
-      ? sql`date >= ${startDateSql}`
-      : sql`date > ${startDateSql}`;
     const rows = await this.query(
-      z.object({ exists: z.coerce.number() }),
-      sql`SELECT 1 AS exists FROM fitness.daily_metrics
-          WHERE user_id = ${this.userId}
-            AND ${startCondition}
-            AND date <= ${dateWindowEnd(endDate)}
-            AND (${sql.join(conditions, sql` OR `)})
-          LIMIT 1`,
+      trendsRowSchema,
+      sql`WITH current AS (
+            SELECT * FROM fitness.v_daily_metrics
+            WHERE user_id = ${this.userId}
+              AND date > ${dateWindowStart(endDate, days)}
+              AND date <= ${dateWindowEnd(endDate)}
+          ),
+          stats AS (
+            SELECT
+              AVG(hrv) AS avg_hrv,
+              AVG(spo2_avg) AS avg_spo2,
+              AVG(steps) AS avg_steps,
+              AVG(active_energy_kcal) AS avg_active_energy,
+              AVG(skin_temp_c) AS avg_skin_temp,
+              STDDEV(hrv) AS stddev_hrv,
+              STDDEV(spo2_avg) AS stddev_spo2,
+              STDDEV(skin_temp_c) AS stddev_skin_temp
+            FROM current
+          ),
+          latest AS (
+            SELECT
+              (ARRAY_AGG(hrv ORDER BY date DESC) FILTER (WHERE hrv IS NOT NULL))[1] AS hrv,
+              (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
+              (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
+              (ARRAY_AGG(active_energy_kcal ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal,
+              (ARRAY_AGG(skin_temp_c ORDER BY date DESC) FILTER (WHERE skin_temp_c IS NOT NULL))[1] AS skin_temp_c,
+              (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps_date,
+              (ARRAY_AGG(date ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal_date,
+              MAX(date) AS date
+            FROM current
+          )
+          SELECT
+            stats.*,
+            latest.hrv AS latest_hrv,
+            latest.spo2_avg AS latest_spo2,
+            latest.steps AS latest_steps,
+            latest.active_energy_kcal AS latest_active_energy,
+            latest.skin_temp_c AS latest_skin_temp,
+            latest.date AS latest_date,
+            latest.steps_date AS latest_steps_date,
+            latest.active_energy_kcal_date AS latest_active_energy_date
+          FROM stats LEFT JOIN latest ON true`,
     );
-    return rows.length > 0;
+    return rows[0] ?? null;
   }
 }

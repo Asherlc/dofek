@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/node";
+import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { queryCache } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
@@ -38,6 +40,21 @@ async function ensureProvider(db: Database, userId: string) {
         VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
+}
+
+async function refreshIngestView(
+  db: Database,
+  viewName: "fitness.v_activity" | "fitness.v_sleep",
+  source: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await refreshMaterializedView(db, viewName, { source });
+  } catch (error) {
+    Sentry.captureException(error, {
+      tags: { userId, context: "healthKitMaterializedViewRefresh", viewName, source },
+    });
+  }
 }
 
 /** Route a sample to its destination category */
@@ -181,6 +198,12 @@ export const healthKitSyncRouter = router({
 
       // Refresh activity views so dashboard picks up new workouts immediately
       if (inserted > 0) {
+        await refreshIngestView(
+          ctx.db,
+          "fitness.v_activity",
+          "apple_health.workout_sync",
+          ctx.userId,
+        );
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 
@@ -218,6 +241,7 @@ export const healthKitSyncRouter = router({
 
       // Refresh v_sleep so sleep queries pick up new data immediately
       if (inserted > 0) {
+        await refreshIngestView(ctx.db, "fitness.v_sleep", "apple_health.sleep_sync", ctx.userId);
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 

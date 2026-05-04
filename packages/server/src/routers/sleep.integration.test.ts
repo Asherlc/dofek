@@ -48,7 +48,7 @@ describe("sleep router integration", () => {
     );
 
     // Refresh materialized view so v_sleep picks up the inserted row
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -176,7 +176,7 @@ describe("sleep router integration", () => {
             (${sessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours')`,
     );
 
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const stages =
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
@@ -250,7 +250,7 @@ describe("sleep router integration", () => {
           )`,
     );
 
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const stages =
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
@@ -323,7 +323,7 @@ describe("sleep router integration", () => {
           )`,
     );
 
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const stages =
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
