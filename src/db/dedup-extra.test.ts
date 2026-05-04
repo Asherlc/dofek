@@ -23,7 +23,7 @@ vi.mock("./sync-views.ts", () => ({
 
 const mockExecute = vi.fn().mockResolvedValue(undefined);
 
-const expectedRefreshedViews = ["fitness.v_activity", "fitness.v_sleep"];
+const expectedRefreshedViews = ["fitness.v_activity", "fitness.v_sleep", "fitness.v_body_measurement"];
 
 function createMockDb() {
   return {
@@ -68,6 +68,7 @@ describe("refreshDedupViews", () => {
     expect(mockExecute.mock.calls.map((call) => String(call[0]))).toEqual([
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity"),
       expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep"),
+      expect.stringContaining("REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_body_measurement"),
     ]);
   });
 

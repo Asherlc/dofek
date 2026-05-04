@@ -1,7 +1,4 @@
-import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
-import { ACTIVITY_VIEWS } from "dofek/db/materialized-views";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
