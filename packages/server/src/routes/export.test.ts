@@ -277,7 +277,7 @@ describe("createExportRouter", () => {
           user_id: exportUserId,
           status: "processing",
           object_key: null,
-          expires_at: "2026-05-03T12:00:00.000Z",
+          expires_at: "2999-05-03T12:00:00.000Z",
         },
       ]);
 
