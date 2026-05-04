@@ -39,8 +39,6 @@ BEGIN
 END
 $$;
 
-DROP TABLE IF EXISTS pg_temp.dofek_migration_view_definitions;
-
 DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor;
 DROP INDEX IF EXISTS fitness.deduped_sensor_pk;
 DROP INDEX IF EXISTS fitness.deduped_sensor_activity_time_idx;
@@ -197,3 +195,5 @@ BEGIN
   END IF;
 END
 $$;
+
+DROP TABLE IF EXISTS pg_temp.dofek_migration_view_definitions;

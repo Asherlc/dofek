@@ -38,6 +38,7 @@ export default defineConfig({
           env: sharedTestEnv,
         },
       },
+      "packages/mobile/vitest.config.ts",
       {
         test: {
           ...sharedTestConfig,
