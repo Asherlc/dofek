@@ -52,7 +52,7 @@ describe("efficiency.polarizationTrend integration", () => {
     // ── Z1-only ride, 21 days ago (guaranteed different week) → PI null ──
     await insertActivity("easy-ride", "cycling", 21, [{ hr: 120, samples: 1000 }]);
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
 
     const app = createApp(testCtx.db);

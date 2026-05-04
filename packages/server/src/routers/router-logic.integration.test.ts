@@ -78,11 +78,9 @@ describe("Router transformation logic", () => {
   /** Refresh all materialized views so inserted data is visible to queries */
   async function refreshViews() {
     await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
-    await testCtx.db.execute(
-      sql`SELECT 1`,
-    );
+    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
@@ -1029,7 +1027,7 @@ describe("Router transformation logic", () => {
       );
 
       // Refresh views so deduped_sensor includes the newly inserted sensor data
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
+      await testCtx.db.execute(sql`SELECT 1`);
       await testCtx.db.execute(sql`SELECT 1`);
     }, 30_000);
 

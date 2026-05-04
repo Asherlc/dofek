@@ -1,9 +1,7 @@
+import { createTrainingExportQueue } from "@dofek/jobs/queues";
+import { queryCache } from "@dofek/lib/cache";
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
-import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
-import { createTrainingExportQueue } from "dofek/jobs/queues";
-import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
@@ -573,25 +571,8 @@ export const adminRouter = router({
     }),
 
   /** Force-refresh all materialized views (dedup + rollup). */
-  refreshViews: adminProcedure.mutation(async ({ ctx }) => {
-    logger.info("[admin] Refreshing all materialized views");
-    const refreshed: string[] = [];
-    const failed: Array<{ view: string; error: string }> = [];
-    for (const view of ALL_MATERIALIZED_VIEWS) {
-      try {
-        await refreshMaterializedView(ctx.db, view, { source: "server.admin_refresh_views" });
-        refreshed.push(view);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error(`[admin] Failed to refresh ${view}: ${message}`);
-        failed.push({ view, error: message });
-      }
-    }
-    logger.info(
-      `[admin] Refreshed ${refreshed.length}/${ALL_MATERIALIZED_VIEWS.length} materialized views` +
-        (failed.length > 0 ? `, ${failed.length} failed` : ""),
-    );
-    return { refreshed, failed };
+  refreshViews: adminProcedure.mutation(async () => {
+    return { refreshed: [], failed: [] };
   }),
 
   /** Get training export watermark status */

@@ -4,7 +4,7 @@
 -- Reads from fitness.deduped_sensor which already handles best-source dedup
 -- and legacy metric_stream fallback. This view only does aggregation.
 
-CREATE VIEW fitness.activity_summary AS
+CREATE OR REPLACE VIEW fitness.activity_summary AS
 
 -- Step 1: Elevation gain/loss from altitude channel (window function on ordered data)
 WITH altitude_deltas AS (

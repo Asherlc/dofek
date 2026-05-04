@@ -47,8 +47,6 @@ describe("Dashboard – Daily Steps chart", () => {
       providerId: E2E_PROVIDER_ID,
       rows,
     });
-
-    cy.task("refreshDailyMetricsView");
   });
 
   afterEach(() => {

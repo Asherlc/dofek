@@ -63,11 +63,6 @@ export default defineConfig({
           return null;
         },
 
-        async refreshDailyMetricsView() {
-          await sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`;
-          return null;
-        },
-
         async runQuery({ query }) {
           return sql.unsafe(query);
         },

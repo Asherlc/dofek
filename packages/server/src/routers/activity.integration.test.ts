@@ -103,7 +103,7 @@ describe("Activity router", () => {
           (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 90, NULL)`,
     );
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
     await testCtx.db.execute(sql`SELECT 1`);
 

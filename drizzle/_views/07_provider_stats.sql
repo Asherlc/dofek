@@ -2,7 +2,7 @@
 -- This precomputes per-provider record counts so sync.providerStats can do a
 -- fast user-scoped lookup instead of scanning many tables on demand.
 
-CREATE VIEW fitness.provider_stats AS
+CREATE OR REPLACE VIEW fitness.provider_stats AS
 WITH providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM fitness.oauth_token

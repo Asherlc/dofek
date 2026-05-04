@@ -1425,25 +1425,6 @@ describe("HealthKitSyncRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
   });
-
-  describe("refreshDailyMetricsView", () => {
-    it("is currently a no-op because the view is now non-materialized", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.refreshDailyMetricsView();
-      expect(execute).not.toHaveBeenCalled();
-    });
-
-    it("remains a no-op when execution would have failed", async () => {
-      const execute = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("concurrent refresh not possible"))
-        .mockResolvedValueOnce([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.refreshDailyMetricsView();
-      expect(execute).not.toHaveBeenCalled();
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------

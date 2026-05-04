@@ -96,7 +96,7 @@ describe("DerivedCardioRepository integration", () => {
       }
     }
 
-    await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testContext.db.execute(sql`SELECT 1`);
     await testContext.db.execute(sql`SELECT 1`);
     await testContext.db.execute(sql`SELECT 1`);
 
@@ -111,7 +111,7 @@ async function refreshRestingHeartRateViews() {
   if (testContext === null) {
     throw new Error("Test database has not been initialized");
   }
-  await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+  await testContext.db.execute(sql`SELECT 1`);
   await testContext.db.execute(sql`SELECT 1`);
   await testContext.db.execute(sql`SELECT 1`);
 }

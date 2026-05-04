@@ -2382,10 +2382,7 @@ describe("healthKitSyncRouter", () => {
       // No Postgres materialized-view refresh path for this metric now; fallback should not run.
       const nonConcurrentRefresh = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("SELECT 1") &&
-          !serialized.includes("CONCURRENTLY")
-        );
+        return serialized.includes("SELECT 1") && !serialized.includes("CONCURRENTLY");
       });
       expect(nonConcurrentRefresh).toBeUndefined();
     });

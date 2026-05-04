@@ -4,10 +4,7 @@
  * rather than maintaining a separate copy.
  */
 
-export const DEDUP_VIEWS = [
-  "fitness.v_activity",
-  "fitness.v_sleep",
-];
+export const DEDUP_VIEWS = ["fitness.v_activity", "fitness.v_sleep"];
 
 export const ROLLUP_VIEWS = [] as const;
 

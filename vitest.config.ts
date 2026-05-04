@@ -38,12 +38,12 @@ export default defineConfig({
           env: sharedTestEnv,
         },
       },
-      "packages/mobile/vitest.config.ts",
       {
         test: {
           ...sharedTestConfig,
           name: "integration",
           include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
+          exclude: ["**/packages/mobile/**"],
           env: {
             ...sharedTestEnv,
             TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",

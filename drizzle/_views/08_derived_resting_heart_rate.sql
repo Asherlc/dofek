@@ -1,7 +1,7 @@
 -- Canonical definition of the fitness.derived_resting_heart_rate materialized view.
 -- Derived from raw sleep-window heart-rate samples.
 
-CREATE VIEW fitness.derived_resting_heart_rate AS
+CREATE OR REPLACE VIEW fitness.derived_resting_heart_rate AS
 WITH sleep_windows AS (
   SELECT
     user_id,

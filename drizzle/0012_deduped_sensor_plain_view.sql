@@ -1,7 +1,7 @@
 -- Replace the expensive materialized Postgres view with a plain view.
 -- Behavior is preserved while removing refresh cost and concurrent materialized-view locks.
 
-DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor CASCADE;
+DROP VIEW IF EXISTS fitness.deduped_sensor CASCADE;
 DROP INDEX IF EXISTS fitness.deduped_sensor_pk;
 DROP INDEX IF EXISTS fitness.deduped_sensor_activity_time_idx;
 

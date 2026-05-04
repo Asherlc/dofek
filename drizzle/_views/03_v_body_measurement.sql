@@ -1,6 +1,6 @@
 -- Canonical definition of the fitness.v_body_measurement view.
 
-CREATE VIEW fitness.v_body_measurement AS
+CREATE OR REPLACE VIEW fitness.v_body_measurement AS
 WITH RECURSIVE ranked AS (
   SELECT
     b.*,

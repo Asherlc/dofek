@@ -152,9 +152,9 @@ describe("refreshMaterializedViewForMaintenance", () => {
   it("fails before preflight when the maintenance lock is already held", async () => {
     const client = createClient(new Map([["pg_try_advisory_lock", [{ locked: false }]]]));
 
-    await expect(
-      refreshMaterializedViewForMaintenance(client, "fitness.v_sleep"),
-    ).rejects.toThrow("materialized view maintenance lock is already held");
+    await expect(refreshMaterializedViewForMaintenance(client, "fitness.v_sleep")).rejects.toThrow(
+      "materialized view maintenance lock is already held",
+    );
 
     expect(executedQueries(client)).toEqual(["SELECT pg_try_advisory_lock($1) AS locked"]);
   });
@@ -342,10 +342,10 @@ describe("cancelInProgressMaterializedViewRefreshesForMaintenance", () => {
       "fitness.v_sleep",
     );
 
-    expect(client.query).toHaveBeenCalledWith(
-      expect.stringContaining("pg_cancel_backend"),
-      ["fitness.v_sleep", '"fitness"."v_sleep"'],
-    );
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
+      "fitness.v_sleep",
+      '"fitness"."v_sleep"',
+    ]);
     expect(result).toEqual({
       viewName: "fitness.v_sleep",
       warnings: ["canceled 1 in-progress refresh for fitness.v_sleep"],

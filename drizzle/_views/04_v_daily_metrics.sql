@@ -1,6 +1,6 @@
 -- Canonical definition of the fitness.v_daily_metrics view.
 
-CREATE VIEW fitness.v_daily_metrics AS
+CREATE OR REPLACE VIEW fitness.v_daily_metrics AS
 WITH ranked AS (
   SELECT
     d.*,
