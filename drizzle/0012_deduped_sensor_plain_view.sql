@@ -227,7 +227,7 @@ SELECT
   a.ended_at,
   a.provider_id,
   a.source_name,
-  a.type,
+  a.activity_type AS type,
   a.primary_type,
   a.distance_m,
   a.moving_time_s,
