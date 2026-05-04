@@ -3,9 +3,8 @@
 
 -- Drop the materialized view with CASCADE since activity_summary depends on it.
 -- Recreate activity_summary from the canonical _views/ definition after the drop.
+-- Indexes are dropped automatically by CASCADE.
 DROP MATERIALIZED VIEW IF EXISTS fitness.deduped_sensor CASCADE;
-DROP INDEX IF EXISTS fitness.deduped_sensor_pk;
-DROP INDEX IF EXISTS fitness.deduped_sensor_activity_time_idx;
 
 --> statement-breakpoint
 
