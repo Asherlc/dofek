@@ -76,10 +76,8 @@ describe("PmcRepository", () => {
         .mockResolvedValueOnce([]) // 1st: activities query (stale view, empty)
         .mockResolvedValueOnce([{ count: 5 }]) // 2nd: base activity count (has data → stale!)
         .mockResolvedValueOnce(undefined) // 3rd: refresh v_activity
-        .mockResolvedValueOnce(undefined) // 4th: refresh deduped_sensor
-        .mockResolvedValueOnce(undefined) // 5th: refresh activity_summary
-        .mockResolvedValueOnce([activityRow]) // 6th: retry activities query
-        .mockResolvedValueOnce([]); // 7th: NP query
+        .mockResolvedValueOnce([activityRow]) // 4th: retry activities query
+        .mockResolvedValueOnce([]); // 5th: NP query
       const db = { execute };
       const repo = new PmcRepository(db, "user-1", "UTC");
       const result = await repo.getChart(180);
