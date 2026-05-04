@@ -1,5 +1,6 @@
 import type { Database } from "dofek/db";
 import { type SQL, sql } from "drizzle-orm";
+import type * as z from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
