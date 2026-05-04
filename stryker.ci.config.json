@@ -43,7 +43,10 @@
     "dist/**",
     ".codex/**",
     ".claude/**",
-    ".context/**"
+    ".context/**",
+    ".gemini/**",
+    "**/node_modules/**",
+    "**/.venv/**"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
