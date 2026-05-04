@@ -45,6 +45,7 @@
     ".claude/**",
     ".context/**",
     ".gemini/**",
+    ".worktrees/**",
     "**/node_modules/**",
     "**/.venv/**"
   ],
