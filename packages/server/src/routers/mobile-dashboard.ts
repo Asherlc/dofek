@@ -388,7 +388,7 @@ export const mobileDashboardRouter = router({
       };
 
       // 5. Next Workout
-      const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz);
+      const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz, sensorStore);
       const workoutData = await trainingRepo.getNextWorkoutData(endDate);
       const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
 

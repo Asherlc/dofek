@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
-  acwrCte,
   bodyWeightDedupCte,
   heartRateZoneColumns,
   restingHeartRateLateral,
@@ -64,35 +63,6 @@ describe("bodyWeightDedupCte", () => {
     const result = bodyWeightDedupCte("user-1", "UTC", "2026-03-23", 90);
     const chunks = JSON.stringify(result.queryChunks);
     expect(chunks).toContain("weight_deduped");
-  });
-});
-
-describe("acwrCte", () => {
-  it("returns a SQL object with queryChunks", () => {
-    const result = acwrCte("user-1", "UTC", "2026-03-23", 30);
-    expect(result.queryChunks).toBeDefined();
-  });
-
-  it("embeds userId in query chunks", () => {
-    const result = acwrCte("user-1", "UTC", "2026-03-23", 30);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("user-1");
-  });
-
-  it("includes all five CTE names", () => {
-    const result = acwrCte("user-1", "UTC", "2026-03-23", 30);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("acwr_date_series");
-    expect(chunks).toContain("acwr_per_activity");
-    expect(chunks).toContain("acwr_activity_load");
-    expect(chunks).toContain("acwr_daily");
-    expect(chunks).toContain("acwr_with_windows");
-  });
-
-  it("produces different SQL for different day values", () => {
-    const fragmentA = acwrCte("user-1", "UTC", "2026-03-23", 7);
-    const fragmentB = acwrCte("user-1", "UTC", "2026-03-23", 28);
-    expect(fragmentA).not.toEqual(fragmentB);
   });
 });
 
