@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { refreshDedupViews } from "./dedup.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "./provider-priority.ts";
-import { activity, bodyMeasurement, dailyMetrics, sleepSession, TEST_USER_ID } from "./schema.ts";
+import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "./schema.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
 
