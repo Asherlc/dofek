@@ -458,33 +458,40 @@ describe("Router data coverage", () => {
   // Efficiency — aerobic decoupling and polarization trend
   // ══════════════════════════════════════════════════════════════
   describe("efficiency", () => {
-    it("aerobicDecoupling returns first/second half ratios with sufficient samples", async () => {
-      const result = await query<
-        {
-          date: string;
-          activityType: string;
-          name: string;
-          firstHalfRatio: number;
-          secondHalfRatio: number;
-          decouplingPct: number;
-          totalSamples: number;
-        }[]
-      >("efficiency.aerobicDecoupling", { days: 90 });
+    it(
+      "aerobicDecoupling returns first/second half ratios with sufficient samples",
+      async () => {
+        const result = await query<
+          {
+            date: string;
+            activityType: string;
+            name: string;
+            firstHalfRatio: number;
+            secondHalfRatio: number;
+            decouplingPct: number;
+            totalSamples: number;
+          }[]
+        >("efficiency.aerobicDecoupling", { days: 90 });
 
-      // We inserted 70-min activities with power + HR, so some should qualify (>= 600 samples)
-      // Note: with 1-min interval, 70 samples is only 70, not 600. The test data may not hit
-      // the 600-sample threshold unless there are enough activities or we adjust.
-      // Even if empty, the SQL should execute successfully.
-      expect(Array.isArray(result)).toBe(true);
+        // We inserted 70-min activities with power + HR, so some should qualify (>= 600 samples)
+        // Note: with 1-min interval, 70 samples is only 70, not 600. The test data may not hit
+        // the 600-sample threshold unless there are enough activities or we adjust.
+        // Even if empty, the SQL should execute successfully.
+        expect(Array.isArray(result)).toBe(true);
 
-      for (const row of result) {
-        expect(row.date).toBeTruthy();
-        expect(typeof row.firstHalfRatio).toBe("number");
-        expect(typeof row.secondHalfRatio).toBe("number");
-        expect(typeof row.decouplingPct).toBe("number");
-        expect(row.totalSamples).toBeGreaterThanOrEqual(600);
-      }
-    });
+        for (const row of result) {
+          expect(row.date).toBeTruthy();
+          expect(typeof row.firstHalfRatio).toBe("number");
+          expect(typeof row.secondHalfRatio).toBe("number");
+          expect(typeof row.decouplingPct).toBe("number");
+          expect(row.totalSamples).toBeGreaterThanOrEqual(600);
+        }
+      },
+      // The decoupling query traverses v_activity → deduped_sensor (now plain view) →
+      // activity_summary (now plain view), which recomputes the dedup CTE on every read.
+      // 30s default isn't enough under Stryker's parallel mutant load.
+      120_000,
+    );
 
     it("polarizationTrend returns weekly zone distribution", async () => {
       const result = await query<{
