@@ -45,10 +45,6 @@ interface CountRow {
   count: number;
 }
 
-interface RelationKindRow {
-  relation_kind: string | null;
-}
-
 // ---------------------------------------------------------------------------
 // Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
 // ---------------------------------------------------------------------------
@@ -88,53 +84,46 @@ async function runMigrationFile(fileName: string) {
   }
 }
 
-async function ensureDedupedSensorView() {
-  const [row] = await sql.unsafe<RelationKindRow[]>(`
-    SELECT relation_class.relkind::text AS relation_kind
-    FROM pg_class AS relation_class
-    JOIN pg_namespace AS relation_namespace
-      ON relation_namespace.oid = relation_class.relnamespace
-    WHERE relation_namespace.nspname = 'fitness'
-      AND relation_class.relname = 'deduped_sensor'
-  `);
-
-  if (row?.relation_kind === "v") return;
-  await runMigrationFile("0012_deduped_sensor_plain_view.sql");
-}
-
 async function recreateMaterializedViews() {
-  await ensureDedupedSensorView();
-
   const viewsDir = join(drizzleDir, "_views");
-  if (existsSync(viewsDir)) {
-    const viewFiles = readdirSync(viewsDir)
-      .filter((fileName) => fileName.endsWith(".sql"))
-      .sort();
+  if (!existsSync(viewsDir)) return;
 
-    const parsed = viewFiles.map((fileName) => {
-      const content = readFileSync(join(viewsDir, fileName), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-      return { content, viewName: match?.[1] };
-    });
+  const viewFiles = readdirSync(viewsDir)
+    .filter((fileName) => fileName.endsWith(".sql"))
+    .sort();
 
-    // Drop in reverse order (dependents first)
-    for (const { viewName } of [...parsed].reverse()) {
-      if (!viewName) continue;
-      await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
-    }
+  const parsed = viewFiles.map((fileName) => {
+    const content = readFileSync(join(viewsDir, fileName), "utf-8");
+    const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+    return { fileName, content, viewName: match?.[1] };
+  });
 
-    // Create in filename order
-    for (const { content } of parsed) {
-      const statements = content
-        .split("--> statement-breakpoint")
-        .map((statement) => statement.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        await sql.unsafe(statement);
-      }
-    }
-    console.log(`Views: ${viewFiles.length} recreated`);
+  // Drop matviews in reverse order. CASCADE removes plain-view dependents
+  // (deduped_sensor, activity_summary, etc.) which we recreate below.
+  for (const { viewName } of [...parsed].reverse()) {
+    if (!viewName) continue;
+    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
   }
+
+  // Recreate views in filename order. After v_activity + v_sleep are recreated
+  // but before activity_summary (which depends on deduped_sensor), re-run
+  // migration 0012 to recreate the deduped_sensor plain view that CASCADE
+  // dropped above.
+  let dedupedSensorRecreated = false;
+  for (const { fileName, content } of parsed) {
+    if (!dedupedSensorRecreated && fileName > "02_") {
+      await runMigrationFile("0012_deduped_sensor_plain_view.sql");
+      dedupedSensorRecreated = true;
+    }
+    const statements = content
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    for (const statement of statements) {
+      await sql.unsafe(statement);
+    }
+  }
+  console.log(`Views: ${viewFiles.length} recreated`);
 }
 
 // ---------------------------------------------------------------------------
