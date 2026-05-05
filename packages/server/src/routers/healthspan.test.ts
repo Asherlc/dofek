@@ -368,6 +368,7 @@ const createCaller = createTestCallerFactory(healthspanRouter);
 
 function makeSensorStore(overrides: Partial<ActivitySensorStore>): ActivitySensorStore {
   return {
+    query: vi.fn().mockResolvedValue([]),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn().mockResolvedValue([]),
     getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),

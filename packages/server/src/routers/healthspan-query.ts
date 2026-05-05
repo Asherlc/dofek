@@ -33,6 +33,95 @@ export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
 type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
 
 /**
+ * Compute total aerobic and high-intensity minutes from analytics.deduped_sensor.
+ * Joins user_profile and derived_resting_heart_rate via the postgres_fitness_live FDW.
+ */
+async function fetchHrZoneTime(
+  ctx: AuthenticatedContext,
+  endDate: string,
+  totalDays: number,
+): Promise<{ aerobic_minutes: number; high_intensity_minutes: number }> {
+  const sensorStore = ctx.sensorStore;
+  if (!sensorStore) return { aerobic_minutes: 0, high_intensity_minutes: 0 };
+
+  const windowStart = new Date(endDate);
+  windowStart.setUTCDate(windowStart.getUTCDate() - totalDays);
+  const windowStartIso = windowStart.toISOString();
+
+  const rows = await sensorStore.query(
+    z.object({
+      aerobic_minutes: z.coerce.number(),
+      high_intensity_minutes: z.coerce.number(),
+    }),
+    `WITH activity_metadata AS (
+      SELECT
+        asum.activity_id AS activity_id,
+        asum.started_at AS started_at,
+        asum.ended_at AS ended_at,
+        dateDiff('second', asum.started_at, asum.ended_at) / 60.0 AS duration_minutes,
+        up.max_hr AS max_hr,
+        up.ftp AS ftp,
+        coalesce(drhr.resting_hr, up.resting_hr) AS resting_hr
+      FROM analytics.activity_summary AS asum
+      INNER JOIN postgres_fitness_live.user_profile AS up
+        ON up.id = asum.user_id
+      LEFT JOIN postgres_fitness_live.derived_resting_heart_rate AS drhr
+        ON drhr.user_id = asum.user_id
+       AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > toDateTime({windowStart:String})
+        AND asum.ended_at IS NOT NULL
+        AND (up.max_hr IS NOT NULL OR up.ftp IS NOT NULL)
+    ),
+    sensor_counts AS (
+      SELECT
+        am.activity_id AS activity_id,
+        am.duration_minutes AS duration_minutes,
+        am.max_hr AS max_hr,
+        am.ftp AS ftp,
+        am.resting_hr AS resting_hr,
+        countIf(ds.channel = 'heart_rate') AS hr_sample_count,
+        countIf(ds.channel = 'power') AS power_sample_count,
+        countIf(ds.channel = 'heart_rate'
+          AND am.resting_hr IS NOT NULL
+          AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * 0.8) AS aerobic_count,
+        countIf(ds.channel = 'heart_rate'
+          AND am.resting_hr IS NOT NULL
+          AND ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * 0.8) AS hr_hi_count,
+        countIf(ds.channel = 'power'
+          AND am.ftp IS NOT NULL
+          AND ds.scalar >= am.ftp * {powerThreshold:Float64}) AS power_hi_count
+      FROM activity_metadata AS am
+      LEFT JOIN analytics.deduped_sensor AS ds
+        ON ds.activity_id = am.activity_id
+       AND ds.channel IN ('heart_rate', 'power')
+      GROUP BY am.activity_id, am.duration_minutes, am.max_hr, am.ftp, am.resting_hr
+    )
+    SELECT
+      sum(if(max_hr IS NOT NULL AND resting_hr IS NOT NULL AND hr_sample_count > 0,
+        toFloat64(aerobic_count) / toFloat64(hr_sample_count) * duration_minutes,
+        0)) AS aerobic_minutes,
+      sum(greatest(
+        if(max_hr IS NOT NULL AND resting_hr IS NOT NULL AND hr_sample_count > 0,
+          toFloat64(hr_hi_count) / toFloat64(hr_sample_count) * duration_minutes,
+          0),
+        if(ftp IS NOT NULL AND power_sample_count > 0,
+          toFloat64(power_hi_count) / toFloat64(power_sample_count) * duration_minutes,
+          0)
+      )) AS high_intensity_minutes
+    FROM sensor_counts`,
+    {
+      userId: ctx.userId,
+      timezone: ctx.timezone,
+      windowStart: windowStartIso,
+      powerThreshold: ZONE_BOUNDARIES_FTP[2],
+    },
+  );
+
+  return rows[0] ?? { aerobic_minutes: 0, high_intensity_minutes: 0 };
+}
+
+/**
  * Fetch the raw aggregates and weekly history needed to compute a Healthspan score.
  *
  * Returns a single row with all nine metric inputs plus a JSON-aggregated
@@ -45,6 +134,11 @@ export async function fetchHealthspanRawData(
   endDate: string,
   totalDays: number,
 ): Promise<HealthspanRawRow | null> {
+  const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays);
+  const weeklyDivisor = Math.max(totalDays / 7, 1);
+  const weeklyAerobicMin = hrZoneTime.aerobic_minutes / weeklyDivisor;
+  const weeklyHighIntensityMin = hrZoneTime.high_intensity_minutes / weeklyDivisor;
+
   const rows = await executeWithSchema(
     ctx.db,
     rawRowSchema,
@@ -52,11 +146,6 @@ export async function fetchHealthspanRawData(
           SELECT
             ${sleepNightDate(ctx.timezone)} AS date,
             duration_minutes,
-            -- Normalize bedtime to a continuous scale to avoid midnight wraparound.
-            -- Raw minutes-of-day (0-1439) cause huge stddev when bedtimes straddle midnight
-            -- (e.g. 11 PM = 1380 and 1 AM = 60 appear 1320 min apart instead of 120 min).
-            -- Adding 1440 to any time before noon (< 720 min) places all typical sleep
-            -- start times in a continuous 1200-2160 range (8 PM to 12 PM next day).
             CASE
               WHEN EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
                    + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) < 720
@@ -92,62 +181,6 @@ export async function fetchHealthspanRawData(
              WHERE user_id = ${ctx.userId}
                AND date > ${dateWindowStart(endDate, totalDays)}) AS avg_steps,
             NULL::real AS latest_vo2max
-        ),
-        hr_zone_time AS (
-          SELECT
-            COALESCE(SUM(
-              CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
-                   AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
-              THEN
-                cnt.aerobic_count::real / asum.hr_sample_count::real
-                * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-              ELSE 0 END
-            ), 0) AS aerobic_minutes,
-            COALESCE(SUM(GREATEST(
-              CASE WHEN up3.max_hr IS NOT NULL AND rhr2.resting_hr IS NOT NULL
-                    AND asum.hr_sample_count > 0 AND asum.ended_at IS NOT NULL
-                THEN
-                  cnt.hr_hi_count::real / asum.hr_sample_count::real
-                  * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                ELSE 0 END,
-              CASE WHEN up3.ftp IS NOT NULL
-                    AND asum.power_sample_count > 0 AND asum.ended_at IS NOT NULL
-                THEN
-                  cnt.power_hi_count::real / asum.power_sample_count::real
-                  * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                ELSE 0 END
-            )), 0) AS high_intensity_minutes
-          FROM fitness.activity_summary asum
-          JOIN fitness.user_profile up3 ON up3.id = asum.user_id
-          LEFT JOIN LATERAL (
-            SELECT drhr.resting_hr
-            FROM fitness.derived_resting_heart_rate drhr
-            WHERE drhr.user_id = asum.user_id
-              AND drhr.date <= (asum.started_at AT TIME ZONE ${ctx.timezone})::date
-            ORDER BY drhr.date DESC LIMIT 1
-          ) rhr2 ON true
-          JOIN LATERAL (
-            SELECT
-              COUNT(*) FILTER (
-                WHERE ms2.channel = 'heart_rate'
-                  AND ms2.scalar < rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8
-              ) AS aerobic_count,
-              COUNT(*) FILTER (
-                WHERE ms2.channel = 'heart_rate'
-                  AND ms2.scalar >= rhr2.resting_hr + (up3.max_hr - rhr2.resting_hr) * 0.8
-              ) AS hr_hi_count,
-              COUNT(*) FILTER (
-                WHERE ms2.channel = 'power'
-                  AND ms2.scalar >= up3.ftp * ${ZONE_BOUNDARIES_FTP[2]}::numeric
-              ) AS power_hi_count
-            FROM fitness.metric_stream ms2
-            WHERE ms2.activity_id = asum.activity_id
-              AND ms2.channel IN ('heart_rate', 'power')
-          ) cnt ON true
-          WHERE asum.user_id = ${ctx.userId}
-            AND asum.started_at > ${timestampWindowStart(endDate, totalDays)}
-            AND (asum.hr_sample_count > 0 OR asum.power_sample_count > 0)
-            AND (up3.max_hr IS NOT NULL OR up3.ftp IS NOT NULL)
         ),
         strength_freq AS (
           SELECT NULLIF(COUNT(*), 0)::real / GREATEST(${totalDays}::real / 7, 1) AS sessions_per_week
@@ -204,8 +237,8 @@ export async function fetchHealthspanRawData(
           ma.avg_resting_hr,
           ma.avg_steps,
           ma.latest_vo2max,
-          hz.aerobic_minutes / GREATEST(${totalDays}::real / 7, 1) AS weekly_aerobic_min,
-          hz.high_intensity_minutes / GREATEST(${totalDays}::real / 7, 1) AS weekly_high_intensity_min,
+          ${weeklyAerobicMin}::real AS weekly_aerobic_min,
+          ${weeklyHighIntensityMin}::real AS weekly_high_intensity_min,
           sf.sessions_per_week,
           bl.weight_kg,
           bl.body_fat_pct,
@@ -217,7 +250,6 @@ export async function fetchHealthspanRawData(
           ) ORDER BY wm.week_start ASC) FROM weekly_metrics wm) AS weekly_history
         FROM sleep_agg sa
         CROSS JOIN metrics_agg ma
-        CROSS JOIN hr_zone_time hz
         CROSS JOIN strength_freq sf
         LEFT JOIN body_latest bl ON true`,
   );
