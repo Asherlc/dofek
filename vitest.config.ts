@@ -43,11 +43,6 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "integration",
-          // Plain views (deduped_sensor, activity_summary, etc.) recompute the
-          // dedup CTE on every read, so analytics queries that traverse them
-          // can exceed the 30s default — especially under Stryker's parallel
-          // mutant load. Give integration tests more headroom.
-          testTimeout: 120_000,
           include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
           exclude: ["**/packages/mobile/**"],
           env: {
