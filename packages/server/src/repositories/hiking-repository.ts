@@ -3,6 +3,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -220,39 +221,45 @@ export class HikingRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** Grade-adjusted pace for walking/hiking/trail running activities. */
   async getGradeAdjustedPaces(days: number): Promise<HikingActivity[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       gradeRowSchema,
-      sql`SELECT
-            a.id AS activity_id,
-            (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS date,
-            a.name AS activity_name,
-            a.activity_type,
-            ROUND(asum.total_distance::numeric, 1) AS distance_m,
-            ROUND(EXTRACT(EPOCH FROM (a.ended_at - a.started_at))::numeric, 1) AS duration_seconds,
-            ROUND(asum.elevation_gain_m::numeric, 1) AS elevation_gain_m,
-            ROUND(asum.elevation_loss_m::numeric, 1) AS elevation_loss_m,
-            CASE WHEN asum.total_distance > 0
-              THEN ROUND(((asum.elevation_gain_m - asum.elevation_loss_m) / asum.total_distance * 100)::numeric, 4)
-              ELSE 0
-            END AS avg_grade
-          FROM fitness.v_activity a
-          JOIN fitness.activity_summary asum ON asum.activity_id = a.id
-          WHERE a.user_id = ${this.#userId}
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND a.activity_type IN ('walking', 'hiking', 'trail_running')
-            AND asum.total_distance > 0
-            AND EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) > 0
-          ORDER BY a.started_at`,
+      `SELECT
+        toString(activity_id) AS activity_id,
+        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+        name AS activity_name,
+        activity_type,
+        round(total_distance, 1) AS distance_m,
+        toFloat64(dateDiff('second', started_at, ended_at)) AS duration_seconds,
+        round(elevation_gain_m, 1) AS elevation_gain_m,
+        round(elevation_loss_m, 1) AS elevation_loss_m,
+        if(total_distance > 0,
+           round((elevation_gain_m - elevation_loss_m) / total_distance * 100, 4),
+           0) AS avg_grade
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        AND activity_type IN ('walking', 'hiking', 'trail_running')
+        AND total_distance > 0
+        AND ended_at IS NOT NULL
+        AND dateDiff('second', started_at, ended_at) > 0
+      ORDER BY started_at`,
+      { userId: this.#userId, timezone: this.#timezone, days },
     );
 
     return rows.map(
@@ -273,21 +280,20 @@ export class HikingRepository {
 
   /** Weekly cumulative elevation gain from hiking and walking activities. */
   async getElevationProfile(days: number): Promise<ElevationWeek[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       elevationRowSchema,
-      sql`SELECT
-            date_trunc('week', (a.started_at AT TIME ZONE ${this.#timezone})::date)::date::text AS week,
-            ROUND(SUM(asum.elevation_gain_m)::numeric, 1) AS elevation_gain_m,
-            COUNT(*)::int AS activity_count,
-            ROUND(SUM(asum.total_distance / 1000.0)::numeric, 2) AS total_distance_km
-          FROM fitness.v_activity a
-          JOIN fitness.activity_summary asum ON asum.activity_id = a.id
-          WHERE a.user_id = ${this.#userId}
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND a.activity_type IN ('walking', 'hiking')
-          GROUP BY 1
-          ORDER BY week`,
+      `SELECT
+        toString(toMonday(toDate(toTimeZone(started_at, {timezone:String})))) AS week,
+        round(sum(elevation_gain_m), 1) AS elevation_gain_m,
+        toInt32(count()) AS activity_count,
+        round(sum(total_distance / 1000.0), 2) AS total_distance_km
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        AND activity_type IN ('walking', 'hiking')
+      GROUP BY week
+      ORDER BY week`,
+      { userId: this.#userId, timezone: this.#timezone, days },
     );
 
     return rows.map(
@@ -339,43 +345,42 @@ export class HikingRepository {
 
   /** Named routes (trails, walks) that have been repeated 2+ times. */
   async getRepeatedRoutes(days: number): Promise<RepeatedRoute[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       comparisonRowSchema,
-      sql`WITH activity_data AS (
-            SELECT
-              a.name AS activity_name,
-              (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-              ROUND((EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0)::numeric, 1) AS duration_minutes,
-              CASE WHEN asum.total_distance > 0
-                THEN ROUND(((EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0) / (asum.total_distance / 1000.0))::numeric, 2)
-                ELSE 0
-              END AS average_pace_min_per_km,
-              ROUND(asum.avg_hr::numeric, 1) AS avg_heart_rate,
-              ROUND(asum.elevation_gain_m::numeric, 1) AS elevation_gain_m
-            FROM fitness.v_activity a
-            JOIN fitness.activity_summary asum ON asum.activity_id = a.id
-            WHERE a.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND a.activity_type IN ('walking', 'hiking', 'trail_running')
-              AND a.name IS NOT NULL
-          ),
-          repeated_names AS (
-            SELECT activity_name
-            FROM activity_data
-            GROUP BY activity_name
-            HAVING COUNT(*) >= 2
-          )
-          SELECT
-            d.activity_name,
-            d.date::text,
-            d.duration_minutes,
-            d.average_pace_min_per_km,
-            d.avg_heart_rate,
-            d.elevation_gain_m
-          FROM activity_data d
-          JOIN repeated_names rn ON rn.activity_name = d.activity_name
-          ORDER BY d.activity_name, d.date`,
+      `WITH activity_data AS (
+        SELECT
+          name AS activity_name,
+          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+          round(dateDiff('second', started_at, ended_at) / 60.0, 1) AS duration_minutes,
+          if(total_distance > 0,
+             round((dateDiff('second', started_at, ended_at) / 60.0) / (total_distance / 1000.0), 2),
+             0) AS average_pace_min_per_km,
+          round(avg_hr, 1) AS avg_heart_rate,
+          round(elevation_gain_m, 1) AS elevation_gain_m
+        FROM analytics.activity_summary
+        WHERE user_id = {userId:UUID}
+          AND started_at > now() - INTERVAL {days:Int32} DAY
+          AND activity_type IN ('walking', 'hiking', 'trail_running')
+          AND name IS NOT NULL
+          AND ended_at IS NOT NULL
+      ),
+      repeated_names AS (
+        SELECT activity_name
+        FROM activity_data
+        GROUP BY activity_name
+        HAVING count() >= 2
+      )
+      SELECT
+        d.activity_name AS activity_name,
+        d.date AS date,
+        d.duration_minutes AS duration_minutes,
+        d.average_pace_min_per_km AS average_pace_min_per_km,
+        d.avg_heart_rate AS avg_heart_rate,
+        d.elevation_gain_m AS elevation_gain_m
+      FROM activity_data d
+      INNER JOIN repeated_names rn ON rn.activity_name = d.activity_name
+      ORDER BY d.activity_name, d.date`,
+      { userId: this.#userId, timezone: this.#timezone, days },
     );
 
     const grouped = new Map<string, RouteInstance[]>();

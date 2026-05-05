@@ -181,8 +181,21 @@ describe("HikingRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
-    const repo = new HikingRepository(db, "user-1", "UTC");
-    return { repo, execute };
+    const sensorQuery = vi.fn().mockResolvedValue(rows);
+    const sensorStore = {
+      query: sensorQuery,
+      getActivitySummaries: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+    };
+    const repo = new HikingRepository(db, "user-1", "UTC", sensorStore);
+    return { repo, execute: sensorQuery, dbExecute: execute };
   }
 
   describe("getGradeAdjustedPaces", () => {

@@ -1,7 +1,22 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { RouteInstance } from "../repositories/hiking-repository.ts";
 import { HikingRepository } from "../repositories/hiking-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 // ---------------------------------------------------------------------------
 // API-facing types (consumed by web/mobile via dofek-server/types)
@@ -51,7 +66,8 @@ export const hikingRouter = router({
   gradeAdjustedPace: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.gradeAdjustedPace");
+      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const activities = await repo.getGradeAdjustedPaces(input.days);
       return activities.map((activity) => activity.toDetail());
     }),
@@ -59,7 +75,8 @@ export const hikingRouter = router({
   elevationProfile: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.elevationProfile");
+      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const weeks = await repo.getElevationProfile(input.days);
       return weeks.map((week) => week.toDetail());
     }),
@@ -67,7 +84,8 @@ export const hikingRouter = router({
   walkingBiomechanics: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.walkingBiomechanics");
+      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const snapshots = await repo.getWalkingBiomechanics(input.days);
       return snapshots.map((snapshot) => snapshot.toDetail());
     }),
@@ -75,7 +93,8 @@ export const hikingRouter = router({
   activityComparison: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
-      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.activityComparison");
+      const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const routes = await repo.getRepeatedRoutes(input.days);
       return routes.map((route) => route.toDetail());
     }),
