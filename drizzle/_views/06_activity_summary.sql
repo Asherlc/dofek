@@ -161,5 +161,8 @@ LEFT JOIN distance_per_activity d ON d.activity_id = ca.activity_id;
 
 --> statement-breakpoint
 
+CREATE UNIQUE INDEX IF NOT EXISTS activity_summary_pk
+  ON fitness.activity_summary (activity_id);
+
 
 --> statement-breakpoint

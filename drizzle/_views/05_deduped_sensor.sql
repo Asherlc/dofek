@@ -139,3 +139,13 @@ SELECT
   asmp.channel,
   asmp.scalar
 FROM ambient_samples asmp;
+
+--> statement-breakpoint
+
+CREATE UNIQUE INDEX IF NOT EXISTS deduped_sensor_pk
+  ON fitness.deduped_sensor (activity_id, channel, recorded_at);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS deduped_sensor_activity_time_idx
+  ON fitness.deduped_sensor (activity_id, recorded_at);
