@@ -162,8 +162,7 @@ export class DailyMetricsRepository extends BaseRepository {
             latest.date AS latest_date,
             latest.steps_date AS latest_steps_date,
             latest.active_energy_kcal_date AS latest_active_energy_date
-          FROM stats LEFT JOIN latest ON true
-          WHERE EXISTS (SELECT 1 FROM current)`,
+          FROM stats LEFT JOIN latest ON true`,
     );
     return rows[0] ?? null;
   }
