@@ -13,6 +13,7 @@ vi.mock("../trpc.ts", async () => {
       db: unknown;
       userId: string | null;
       timezone?: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -22,6 +23,27 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+function makeSensorStore(
+  dailyLoads: Array<{ metric_date: string; daily_load: number }> = [],
+  yesterdayLoad = 0,
+) {
+  const query = vi.fn();
+  query.mockResolvedValueOnce(dailyLoads);
+  query.mockResolvedValueOnce([{ load: yesterdayLoad }]);
+  return {
+    query,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  } as unknown as import("../repositories/activity-repository.ts").ActivitySensorStore;
+}
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -107,6 +129,7 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore(),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
@@ -144,8 +167,8 @@ describe("mobileDashboard.dashboard", () => {
   it("computes daily strain from rolling acute load when today is a rest day", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([
-      metricRow({ date: "2026-03-28", daily_load: 0 }),
-      metricRow({ date: "2026-03-27", daily_load: 350 }),
+      metricRow({ date: "2026-03-28" }),
+      metricRow({ date: "2026-03-27" }),
     ]);
     execute.mockResolvedValueOnce([]);
     execute.mockResolvedValueOnce([]);
@@ -154,6 +177,10 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore([
+        { metric_date: "2026-03-28", daily_load: 0 },
+        { metric_date: "2026-03-27", daily_load: 350 },
+      ]),
     });
     const result = await caller.dashboard({ endDate: "2026-03-28" });
 
@@ -164,11 +191,12 @@ describe("mobileDashboard.dashboard", () => {
   it("computes strain windows, rounded workload ratio, and latest metric date", async () => {
     const execute = vi.fn();
     const rows = Array.from({ length: 29 }, (_, index) =>
-      metricRow({
-        date: dateDaysBefore("2026-03-28", index),
-        daily_load: index < 28 ? 10 : 1000,
-      }),
+      metricRow({ date: dateDaysBefore("2026-03-28", index) }),
     );
+    const dailyLoads = Array.from({ length: 29 }, (_, index) => ({
+      metric_date: dateDaysBefore("2026-03-28", index),
+      daily_load: index < 28 ? 10 : 1000,
+    }));
     execute.mockResolvedValueOnce(rows);
     execute.mockResolvedValueOnce([]);
     execute.mockResolvedValueOnce([]);
@@ -177,6 +205,7 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore(dailyLoads),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
@@ -190,7 +219,7 @@ describe("mobileDashboard.dashboard", () => {
 
   it("builds sleep need from high-HRV nights and recent sleep debt", async () => {
     const execute = vi.fn();
-    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28", daily_load: 0 })]);
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
     execute.mockResolvedValueOnce([
       {
         date: "2026-03-28",
@@ -216,6 +245,7 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore([], 50),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
@@ -263,6 +293,7 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore(),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
