@@ -55,7 +55,13 @@ export function splitSqlStatements(sqlContent: string): string[] {
 }
 
 function normalizeComparableSql(sqlContent: string): string {
-  return sqlContent.replace(/\s+/g, " ").replace(/;\s*$/, "").trim();
+  // Strip `--` line comments so canonical files with explanatory comments
+  // (`-- Step 1: ...`) match pg_get_viewdef output, which never contains them.
+  return sqlContent
+    .replace(/--[^\n]*\n?/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/;\s*$/, "")
+    .trim();
 }
 
 function extractViewDefinitionBody(sqlContent: string): string | null {
