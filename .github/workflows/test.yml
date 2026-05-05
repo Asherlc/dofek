@@ -500,10 +500,10 @@ jobs:
             readiness="$(
               docker compose -f docker-compose.e2e.yml exec -T db \
                 psql -U health -d health -tA \
-                  -c "SELECT CASE WHEN COUNT(*) = 6 AND BOOL_AND(ispopulated) THEN 'ready' ELSE 'waiting' END
+                  -c "SELECT CASE WHEN COUNT(*) = 2 AND BOOL_AND(ispopulated) THEN 'ready' ELSE 'waiting' END
                       FROM pg_matviews
                       WHERE schemaname = 'fitness'
-                        AND matviewname IN ('activity_summary', 'deduped_sensor', 'v_activity', 'v_body_measurement', 'v_daily_metrics', 'v_sleep');"
+                        AND matviewname IN ('v_activity', 'v_sleep');"
             )"
 
             if [ "$readiness" = "ready" ]; then
@@ -518,7 +518,7 @@ jobs:
                   -c "SELECT schemaname, matviewname, ispopulated
                       FROM pg_matviews
                       WHERE schemaname = 'fitness'
-                        AND matviewname IN ('activity_summary', 'deduped_sensor', 'v_activity', 'v_body_measurement', 'v_daily_metrics', 'v_sleep')
+                        AND matviewname IN ('v_activity', 'v_sleep')
                       ORDER BY matviewname;"
               exit 1
             fi
