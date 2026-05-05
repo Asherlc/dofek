@@ -63,12 +63,72 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     this.#db = db;
   }
 
-  async query(): Promise<never[]> {
-    // The Postgres-backed test store cannot execute ClickHouse SQL. Tests
-    // that exercise arbitrary CH SQL must mock ActivitySensorStore at the
-    // unit/integration boundary instead. Returning [] here keeps shallow
-    // callers from requiring a ClickHouse test service.
+  async query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params: Record<string, unknown> = {},
+  ): Promise<z.infer<TSchema>[]> {
+    if (isPolarizationTrendQuery(query)) {
+      return this.#queryPolarizationTrend(schema, params);
+    }
+
+    // The Postgres-backed test store cannot execute arbitrary ClickHouse SQL.
+    // Tests that need CH-specific SQL behavior should mock ActivitySensorStore
+    // at the unit/integration boundary. Returning [] keeps shallow router
+    // coverage tests from requiring a ClickHouse test service.
     return [];
+  }
+
+  async #queryPolarizationTrend<TSchema extends z.ZodType>(
+    schema: TSchema,
+    params: Record<string, unknown>,
+  ): Promise<z.infer<TSchema>[]> {
+    const userId = requiredStringParam(params, "userId");
+    const timezone = requiredStringParam(params, "timezone");
+    const days = requiredNumberParam(params, "days");
+    const zoneOneMaximum = requiredNumberParam(params, "p1");
+    const zoneTwoMaximum = requiredNumberParam(params, "p2");
+    const enduranceTypes = requiredStringArrayParam(params, "enduranceTypes");
+
+    const rows = await this.#db.execute<Record<string, unknown>>(
+      sql`WITH activity_meta AS (
+            SELECT
+              activity.id AS id,
+              (activity.started_at AT TIME ZONE ${timezone})::date AS activity_date,
+              user_profile.max_hr AS max_hr
+            FROM fitness.v_activity activity
+            INNER JOIN fitness.user_profile user_profile
+              ON user_profile.id = activity.user_id
+            WHERE activity.user_id = ${userId}::uuid
+              AND activity.activity_type IN (${sql.join(
+                enduranceTypes.map((activityType) => sql`${activityType}`),
+                sql`, `,
+              )})
+              AND activity.started_at > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'
+              AND user_profile.max_hr IS NOT NULL
+          )
+          SELECT
+            MAX(activity_meta.max_hr)::real AS max_hr,
+            to_char(date_trunc('week', activity_meta.activity_date::timestamp)::date, 'YYYY-MM-DD') AS week,
+            COUNT(*) FILTER (
+              WHERE sensor.scalar < activity_meta.max_hr * ${zoneOneMaximum}
+            )::int AS z1_seconds,
+            COUNT(*) FILTER (
+              WHERE sensor.scalar >= activity_meta.max_hr * ${zoneOneMaximum}
+                AND sensor.scalar < activity_meta.max_hr * ${zoneTwoMaximum}
+            )::int AS z2_seconds,
+            COUNT(*) FILTER (
+              WHERE sensor.scalar >= activity_meta.max_hr * ${zoneTwoMaximum}
+            )::int AS z3_seconds
+          FROM fitness.metric_stream sensor
+          INNER JOIN activity_meta ON activity_meta.id = sensor.activity_id
+          WHERE sensor.channel = 'heart_rate'
+            AND sensor.scalar IS NOT NULL
+          GROUP BY date_trunc('week', activity_meta.activity_date::timestamp)::date
+          ORDER BY week`,
+    );
+
+    return rows.map((row) => schema.parse(row));
   }
 
   async getActivitySummaries(activityIds: string[]): Promise<SummaryRow[]> {
@@ -514,6 +574,38 @@ function sampleIntervalSeconds(samples: SampleRow[]): number {
   const lastTimestamp = Date.parse(samples[samples.length - 1]?.recorded_at ?? "");
   const durationSeconds = Math.max(1, Math.round((lastTimestamp - firstTimestamp) / 1000));
   return Math.max(1, Math.round(durationSeconds / (samples.length - 1)));
+}
+
+function isPolarizationTrendQuery(query: string): boolean {
+  return (
+    query.includes("countIf(ds.scalar < am.max_hr") &&
+    query.includes("analytics.deduped_sensor") &&
+    query.includes("analytics.activity_summary")
+  );
+}
+
+function requiredStringParam(params: Record<string, unknown>, key: string): string {
+  const value = params[key];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Expected string query param: ${key}`);
+  }
+  return value;
+}
+
+function requiredNumberParam(params: Record<string, unknown>, key: string): number {
+  const value = params[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Expected number query param: ${key}`);
+  }
+  return value;
+}
+
+function requiredStringArrayParam(params: Record<string, unknown>, key: string): string[] {
+  const value = params[key];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`Expected string array query param: ${key}`);
+  }
+  return value;
 }
 
 function bestMovingAverage(values: number[], windowSize: number): number {
