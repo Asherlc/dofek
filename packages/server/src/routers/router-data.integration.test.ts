@@ -484,7 +484,7 @@ describe("Router data coverage", () => {
         expect(typeof row.decouplingPct).toBe("number");
         expect(row.totalSamples).toBeGreaterThanOrEqual(600);
       }
-    }, 90_000);
+    });
 
     it("polarizationTrend returns weekly zone distribution", async () => {
       const result = await query<{
@@ -1427,7 +1427,7 @@ describe("Router data coverage", () => {
         expect(result.maxHr).toBe(190);
         expect(Array.isArray(result.weeks)).toBe(true);
       }
-    }, 90_000);
+    });
   });
 
   // ── Recovery with data (covers rollingAvgDuration non-null branch) ──

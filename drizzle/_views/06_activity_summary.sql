@@ -1,10 +1,15 @@
--- Canonical definition of the fitness.activity_summary view.
--- This view reads from fitness.deduped_sensor, which is maintained as a normal view.
---
--- Reads from fitness.deduped_sensor which already handles best-source dedup
--- and legacy metric_stream fallback. This view only does aggregation.
+-- Canonical definition of the fitness.activity_summary materialized view.
+-- This sits in the dedup graph rooted at fitness.v_activity, joined to
+-- fitness.deduped_sensor (also materialized) — the analytics queries that
+-- consume it (efficiency.aerobicDecoupling, etc.) self-join sensor rows on
+-- recorded_at, which would re-evaluate the entire dedup CTE chain twice per
+-- query if this stayed as a plain view. Keep it materialized.
 
-CREATE OR REPLACE VIEW fitness.activity_summary AS
+DROP VIEW IF EXISTS fitness.activity_summary;
+
+--> statement-breakpoint
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.activity_summary AS
 
 -- Step 1: Elevation gain/loss from altitude channel (window function on ordered data)
 WITH altitude_deltas AS (

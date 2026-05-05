@@ -1,5 +1,9 @@
--- Move selected view definitions to non-materialized PostgreSQL views.
--- Keep existing plain-view definitions for environments where migration already ran.
+-- Convert simple aggregation matviews to plain views.
+-- fitness.deduped_sensor and fitness.activity_summary stay as materialized
+-- views: they sit in the dedup graph rooted at v_activity (recursive CTE) and
+-- are joined to themselves by analytics queries, which is too expensive to
+-- recompute on every read. v_activity / v_sleep / deduped_sensor /
+-- activity_summary are the canonical "expensive" matviews kept for performance.
 
 DO $$
 DECLARE
@@ -25,17 +29,6 @@ BEGIN
     INTO view_definition;
     EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS fitness.v_daily_metrics';
     EXECUTE format('CREATE VIEW fitness.v_daily_metrics AS %s', view_definition);
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM pg_matviews
-    WHERE schemaname = 'fitness' AND matviewname = 'activity_summary'
-  ) THEN
-    SELECT pg_get_viewdef(('fitness.activity_summary')::regclass, true)
-    INTO view_definition;
-    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS fitness.activity_summary';
-    EXECUTE format('CREATE VIEW fitness.activity_summary AS %s', view_definition);
   END IF;
 
   IF EXISTS (
