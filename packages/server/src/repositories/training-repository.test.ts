@@ -8,8 +8,13 @@ import { TrainingRepository } from "./training-repository.ts";
 describe("TrainingRepository", () => {
   // biome-ignore lint/suspicious/noExplicitAny: test mock helper
   function makeSensorStore(rows: unknown[]): any {
+    // Mirror ClickHouseActivitySensorStore.query: parse each row through the
+    // supplied Zod schema so timestampStringSchema and friends actually run.
+    const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+      return rows.map((row) => schema.parse(row));
+    });
     return {
-      query: vi.fn().mockResolvedValue(rows),
+      query,
       getActivitySummaries: vi.fn().mockResolvedValue([]),
       getStream: vi.fn().mockResolvedValue([]),
       getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -134,16 +139,17 @@ describe("TrainingRepository", () => {
       expect(result[0]?.distance_meters).toBeNull();
     });
 
-    it("returns ISO timestamp strings from ClickHouse", async () => {
-      // CH returns timestamps as strings via JSONEachRow; the repository
-      // forwards them to the Zod schema which accepts ISO strings.
+    it("normalizes ISO timestamp strings from CH formatDateTime to canonical ISO 8601", async () => {
+      // The SQL uses formatDateTime(..., '%Y-%m-%dT%H:%i:%SZ') so CH always
+      // returns timestamps as "2024-01-15T14:00:00Z". timestampStringSchema
+      // re-parses and emits canonical ISO with milliseconds.
       const { repo } = makeRepository([
         {
           id: "act-2",
           activity_type: "cycling",
           name: "Afternoon Ride",
-          started_at: "2024-01-15 14:00:00",
-          ended_at: "2024-01-15 15:30:00",
+          started_at: "2024-01-15T14:00:00Z",
+          ended_at: "2024-01-15T15:30:00Z",
           avg_hr: 152,
           max_hr: 180,
           avg_power: 230,
@@ -156,8 +162,8 @@ describe("TrainingRepository", () => {
       ]);
       const result = await repo.getActivityStats(90);
       expect(result).toHaveLength(1);
-      expect(typeof result[0]?.started_at).toBe("string");
-      expect(typeof result[0]?.ended_at).toBe("string");
+      expect(result[0]?.started_at).toBe("2024-01-15T14:00:00.000Z");
+      expect(result[0]?.ended_at).toBe("2024-01-15T15:30:00.000Z");
     });
   });
 
