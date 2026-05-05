@@ -99,10 +99,12 @@ export async function setupTestDatabase(): Promise<TestContext> {
       const match = content.match(
         /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
       );
-      return { content, viewName: match?.[1] };
+      return { fileName: file, content, viewName: match?.[1] };
     });
 
-    // Drop managed views in reverse order (dependents first)
+    // Drop managed matviews in reverse order. CASCADE removes plain-view
+    // dependents (fitness.deduped_sensor, fitness.activity_summary) which are
+    // recreated below by re-running migration 0012.
     for (const { viewName } of [...parsedViews].reverse()) {
       if (!viewName) continue;
       await migrationClient.query(
@@ -110,8 +112,25 @@ export async function setupTestDatabase(): Promise<TestContext> {
       );
     }
 
-    // Create in filename order (01_v_activity before 02_activity_summary)
-    for (const { content } of parsedViews) {
+    // Recreate views in filename order. After v_activity + v_sleep are
+    // recreated but before activity_summary (which depends on deduped_sensor),
+    // re-run migration 0012 to recreate the deduped_sensor plain view.
+    let dedupedSensorRecreated = false;
+    for (const { fileName, content } of parsedViews) {
+      if (!dedupedSensorRecreated && fileName > "02_") {
+        const migrationContent = readFileSync(
+          resolve(drizzleDir, "0012_deduped_sensor_plain_view.sql"),
+          "utf-8",
+        );
+        const migrationStatements = migrationContent
+          .split("--> statement-breakpoint")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        for (const statement of migrationStatements) {
+          await migrationClient.query(statement);
+        }
+        dedupedSensorRecreated = true;
+      }
       const statements = content
         .split("--> statement-breakpoint")
         .map((s) => s.trim())
