@@ -4,6 +4,19 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../db/typed-sql.ts";
 import { logger } from "../logger.ts";
+
+/**
+ * Subset of ActivitySensorStore that refit needs. Defined as a structural
+ * type here to avoid pulling the server package into src/personalization.
+ * Compatible with ActivitySensorStore.query (which accepts a Zod schema).
+ */
+export interface RefitSensorStore {
+  query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    sql: string,
+    params?: Record<string, unknown>,
+  ): Promise<z.infer<TSchema>[]>;
+}
 import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
 import { fitExponentialMovingAverage } from "./fit-ewma.ts";
 import type { ReadinessWeightsInput } from "./fit-readiness-weights.ts";
@@ -21,15 +34,22 @@ import { savePersonalizedParams } from "./storage.ts";
  * Refit all personalized parameters for a user from their historical data.
  * Each fitter runs independently — one failure doesn't block others.
  * Saves the result to user_settings and returns it.
+ *
+ * Activity-load fitters (EWMA, TRIMP) read from analytics.activity_summary
+ * via `sensorStore`. Other fitters read PG directly via `db`.
  */
-export async function refitAllParams(db: Database, userId: string): Promise<PersonalizedParams> {
+export async function refitAllParams(
+  db: Database,
+  userId: string,
+  sensorStore: RefitSensorStore,
+): Promise<PersonalizedParams> {
   const [ewmaResult, readinessResult, sleepResult, stressResult, trimpResult] =
     await Promise.allSettled([
-      fitEwmaFromDb(db, userId),
+      fitEwmaFromDb(sensorStore, userId),
       fitReadinessFromDb(db, userId),
       fitSleepFromDb(db, userId),
       fitStressFromDb(db, userId),
-      fitTrimpFromDb(db, userId),
+      fitTrimpFromDb(sensorStore, userId),
     ]);
 
   const params: PersonalizedParams = {
@@ -78,49 +98,48 @@ export function parseExponentialMovingAverageRows(
   return data;
 }
 
-async function fitEwmaFromDb(db: Database, userId: string) {
-  const rows = await db.execute(
-    sql`WITH daily_load AS (
-          SELECT
-            asum.started_at::date AS date,
-            SUM(
-              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-              * asum.avg_hr / NULLIF(asum.max_hr, 0)
-            ) AS daily_load
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${userId}
-            AND asum.started_at > NOW() - INTERVAL '365 days'
-            AND asum.ended_at IS NOT NULL
-            AND asum.avg_hr IS NOT NULL
-          GROUP BY asum.started_at::date
-        ),
-        daily_perf AS (
-          SELECT
-            asum.started_at::date AS date,
-            AVG(
-              CASE
-                WHEN asum.avg_power > 0 THEN asum.avg_power
-                ELSE asum.avg_hr
-              END
-            ) AS avg_performance
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${userId}
-            AND asum.started_at > NOW() - INTERVAL '365 days'
-            AND asum.ended_at IS NOT NULL
-          GROUP BY asum.started_at::date
-        )
-        SELECT
-          ds.date::text AS date,
-          COALESCE(dl.daily_load, 0) AS daily_load,
-          COALESCE(dp.avg_performance, 0) AS avg_performance
-        FROM generate_series(
-          CURRENT_DATE - 365,
-          CURRENT_DATE,
-          '1 day'::interval
-        ) AS ds(date)
-        LEFT JOIN daily_load dl ON dl.date = ds.date
-        LEFT JOIN daily_perf dp ON dp.date = ds.date
-        ORDER BY ds.date ASC`,
+async function fitEwmaFromDb(sensorStore: RefitSensorStore, userId: string) {
+  // Reads from analytics.activity_summary (CH); the dropped Postgres
+  // matview is no longer available.
+  const rows = await sensorStore.query(
+    exponentialMovingAverageRowSchema,
+    `WITH daily_load AS (
+      SELECT
+        toDate(asum.started_at) AS date,
+        sum(
+          dateDiff('second', asum.started_at, asum.ended_at) / 60.0
+          * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0)
+        ) AS daily_load
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > now() - INTERVAL 365 DAY
+        AND asum.ended_at IS NOT NULL
+        AND asum.avg_hr IS NOT NULL
+      GROUP BY toDate(asum.started_at)
+    ),
+    daily_perf AS (
+      SELECT
+        toDate(asum.started_at) AS date,
+        avg(if(asum.avg_power > 0, asum.avg_power, asum.avg_hr)) AS avg_performance
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > now() - INTERVAL 365 DAY
+        AND asum.ended_at IS NOT NULL
+      GROUP BY toDate(asum.started_at)
+    ),
+    date_series AS (
+      SELECT today() - 365 + INTERVAL number DAY AS date
+      FROM numbers(366)
+    )
+    SELECT
+      toString(ds.date) AS date,
+      coalesce(dl.daily_load, 0) AS daily_load,
+      coalesce(dp.avg_performance, 0) AS avg_performance
+    FROM date_series ds
+    LEFT JOIN daily_load dl ON dl.date = ds.date
+    LEFT JOIN daily_perf dp ON dp.date = ds.date
+    ORDER BY ds.date ASC`,
+    { userId },
   );
 
   return fitExponentialMovingAverage(parseExponentialMovingAverageRows(rows));
@@ -384,47 +403,59 @@ export function parseTrainingImpulseRows(rows: Record<string, unknown>[]): Train
   return data;
 }
 
-async function fitTrimpFromDb(db: Database, userId: string) {
-  const rows = await db.execute(
-    sql`WITH rolling_power AS (
-          SELECT
-            ms.activity_id,
-            AVG(ms.scalar) OVER (
-              PARTITION BY ms.activity_id
-              ORDER BY ms.recorded_at
-              RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
-            ) AS rolling_30s_power
-          FROM fitness.metric_stream ms
-          JOIN fitness.v_activity a ON a.id = ms.activity_id
-          WHERE a.user_id = ${userId}
-            AND a.started_at > NOW() - INTERVAL '365 days'
-            AND ms.channel = 'power'
-            AND ms.scalar > 0
-        ),
-        np_data AS (
-          SELECT
-            activity_id,
-            ROUND(POWER(AVG(POWER(rolling_30s_power, 4)), 0.25)::numeric, 1) AS np
-          FROM rolling_power
-          GROUP BY activity_id
-          HAVING COUNT(*) >= 60
-        )
-        SELECT
-          EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60 AS duration_min,
-          asum.avg_hr,
-          GREATEST(asum.max_hr, up.max_hr) AS max_hr,
-          COALESCE(up.resting_hr, 60) AS resting_hr,
-          POWER(n.np / NULLIF(
-            (SELECT MAX(n2.np) * 0.95 FROM np_data n2
-             JOIN fitness.activity_summary a2 ON a2.activity_id = n2.activity_id
-             WHERE EXTRACT(EPOCH FROM (a2.ended_at - a2.started_at)) / 60 >= 20),
-          0), 2) * (EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 3600.0) * 100 AS power_tss
-        FROM fitness.activity_summary asum
-        JOIN fitness.user_profile up ON up.id = asum.user_id
-        JOIN np_data n ON n.activity_id = asum.activity_id
-        WHERE asum.user_id = ${userId}
-          AND asum.hr_sample_count > 0
-          AND asum.avg_hr > 0`,
+async function fitTrimpFromDb(sensorStore: RefitSensorStore, userId: string) {
+  // Reads NP from analytics.deduped_sensor and TRIMP inputs from
+  // analytics.activity_summary (joining user_profile via the
+  // postgres_fitness_live FDW for max_hr / resting_hr).
+  const rows = await sensorStore.query(
+    trainingImpulseActivityRowSchema,
+    `WITH rolling_power AS (
+      SELECT
+        ds.activity_id AS activity_id,
+        avg(ds.scalar) OVER (
+          PARTITION BY ds.activity_id
+          ORDER BY ds.recorded_at
+          RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
+        ) AS rolling_30s_power
+      FROM analytics.deduped_sensor ds
+      INNER JOIN postgres_fitness_live.v_activity a ON a.id = ds.activity_id
+      WHERE a.user_id = {userId:UUID}
+        AND a.started_at > now() - INTERVAL 365 DAY
+        AND ds.channel = 'power'
+        AND ds.scalar > 0
+    ),
+    np_data AS (
+      SELECT
+        activity_id,
+        round(pow(avg(pow(rolling_30s_power, 4)), 0.25), 1) AS np
+      FROM rolling_power
+      GROUP BY activity_id
+      HAVING count() >= 60
+    ),
+    np_long_activities AS (
+      SELECT n.np AS np
+      FROM np_data n
+      INNER JOIN analytics.activity_summary a2 ON a2.activity_id = n.activity_id
+      WHERE dateDiff('second', a2.started_at, a2.ended_at) / 60 >= 20
+    ),
+    ftp_estimate AS (
+      SELECT max(np) * 0.95 AS ftp FROM np_long_activities
+    )
+    SELECT
+      dateDiff('second', asum.started_at, asum.ended_at) / 60 AS duration_min,
+      asum.avg_hr AS avg_hr,
+      greatest(asum.max_hr, up.max_hr) AS max_hr,
+      coalesce(up.resting_hr, 60) AS resting_hr,
+      pow(n.np / nullIf((SELECT ftp FROM ftp_estimate), 0), 2)
+        * (dateDiff('second', asum.started_at, asum.ended_at) / 3600.0)
+        * 100 AS power_tss
+    FROM analytics.activity_summary asum
+    INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
+    INNER JOIN np_data n ON n.activity_id = asum.activity_id
+    WHERE asum.user_id = {userId:UUID}
+      AND asum.hr_sample_count > 0
+      AND asum.avg_hr > 0`,
+    { userId },
   );
 
   return fitTrainingImpulseConstants(parseTrainingImpulseRows(rows));

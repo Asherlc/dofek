@@ -43,6 +43,9 @@ function makeUserRefitJob(userId: string): PostSyncJob {
 
 // All DB calls are mocked via vi.mock above, so an empty object satisfies the contract at runtime.
 const fakeDb: Parameters<typeof processPostSyncJob>[1] = Object.create(null);
+const fakeSensorStore: Parameters<typeof processPostSyncJob>[2] = {
+  query: async () => [],
+};
 
 describe("processPostSyncJob", () => {
   beforeEach(() => {
@@ -50,7 +53,7 @@ describe("processPostSyncJob", () => {
   });
 
   it("runs only global maintenance operations for a global maintenance job", async () => {
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, fakeSensorStore);
 
     expect(mockLoadProviderPriorityConfig).toHaveBeenCalled();
     expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
@@ -58,7 +61,7 @@ describe("processPostSyncJob", () => {
   });
 
   it("does not run materialized-view refreshes during post-sync maintenance", async () => {
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, fakeSensorStore);
 
     expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
     expect(mockRefreshDedupViews).not.toHaveBeenCalled();
@@ -67,9 +70,9 @@ describe("processPostSyncJob", () => {
   });
 
   it("runs only per-user refit for a user refit job", async () => {
-    await processPostSyncJob(makeUserRefitJob("user-1"), fakeDb);
+    await processPostSyncJob(makeUserRefitJob("user-1"), fakeDb, fakeSensorStore);
 
-    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1");
+    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
     expect(mockLoadProviderPriorityConfig).not.toHaveBeenCalled();
     expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
     expect(mockRefreshDedupViews).not.toHaveBeenCalled();
@@ -79,7 +82,7 @@ describe("processPostSyncJob", () => {
   it("continues when syncProviderPriorities fails", async () => {
     mockSyncProviderPriorities.mockRejectedValueOnce(new Error("priorities failed"));
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, fakeSensorStore);
 
     expect(mockRefreshDedupViews).not.toHaveBeenCalled();
     expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
@@ -90,7 +93,7 @@ describe("processPostSyncJob", () => {
     mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
 
     // Should not throw
-    await processPostSyncJob(makeUserRefitJob("user-5"), fakeDb);
+    await processPostSyncJob(makeUserRefitJob("user-5"), fakeDb, fakeSensorStore);
 
     expect(mockRefreshDedupViews).not.toHaveBeenCalled();
     expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
@@ -100,7 +103,7 @@ describe("processPostSyncJob", () => {
   it("skips syncProviderPriorities when config is null", async () => {
     mockLoadProviderPriorityConfig.mockReturnValueOnce(null);
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, fakeSensorStore);
 
     expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
   });
@@ -109,7 +112,7 @@ describe("processPostSyncJob", () => {
     const prioritiesError = new Error("priorities failed");
     mockSyncProviderPriorities.mockRejectedValueOnce(prioritiesError);
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb);
+    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, fakeSensorStore);
 
     expect(mockCaptureException).toHaveBeenCalledWith(prioritiesError, {
       tags: { postSyncStep: "syncProviderPriorities" },
@@ -120,7 +123,7 @@ describe("processPostSyncJob", () => {
     const refitError = new Error("refit failed");
     mockRefitAllParams.mockRejectedValueOnce(refitError);
 
-    await processPostSyncJob(makeUserRefitJob("user-10"), fakeDb);
+    await processPostSyncJob(makeUserRefitJob("user-10"), fakeDb, fakeSensorStore);
 
     expect(mockCaptureException).toHaveBeenCalledWith(refitError, {
       tags: { postSyncStep: "refitParams" },

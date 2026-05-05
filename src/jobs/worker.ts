@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { Worker } from "bullmq";
+import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processExportJob } from "./process-export-job.ts";
@@ -33,6 +35,16 @@ const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 const db = createDatabaseFromEnv();
 const connection = getRedisConnection();
+
+// Lazy-init the CH-backed refit sensor store. Created when the post-sync worker
+// first needs it (avoids forcing every worker to depend on CLICKHOUSE_URL).
+let refitSensorStore: ReturnType<typeof createRefitSensorStore> | null = null;
+function getRefitSensorStore() {
+  if (refitSensorStore) return refitSensorStore;
+  const clickHouseClient = createClickHouseClientFromEnv();
+  refitSensorStore = createRefitSensorStore(clickHouseClient);
+  return refitSensorStore;
+}
 
 // ── Per-provider sync workers ──
 
@@ -87,7 +99,7 @@ const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
 );
 const postSyncWorker = new Worker<PostSyncJobData>(
   POST_SYNC_QUEUE,
-  (job) => jobContext.run(job, () => processPostSyncJob(job, db)),
+  (job) => jobContext.run(job, () => processPostSyncJob(job, db, getRefitSensorStore())),
   { connection, concurrency: 1 },
 );
 // Training export jobs are processed by the standalone Python BullMQ worker
