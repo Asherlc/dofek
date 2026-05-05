@@ -1,8 +1,10 @@
+import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+
+const ENDURANCE_TYPES = [...ENDURANCE_ACTIVITY_TYPES] as string[];
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -265,50 +267,65 @@ export class CyclingAdvancedRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
   async getRampRate(days: number): Promise<RampRateResultData> {
-    const dailyLoads = await executeWithSchema(
-      this.#db,
+    const dailyLoads = await this.#sensorStore.query(
       dailyLoadSchema,
-      sql`SELECT
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS day,
-            SUM(
-              CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
-                -- Bannister TRIMP normalized to hrTSS (matches PMC router)
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val))
-                * 0.64 * exp(1.92 * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val)))
-                / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
-                * 100
-              ELSE 0 END
-            ) AS trimp
-          FROM fitness.activity_summary asum
-          JOIN fitness.user_profile up ON up.id = asum.user_id
-          CROSS JOIN LATERAL (
-            SELECT COALESCE(up.resting_hr, (
-              SELECT drhr.resting_hr FROM fitness.derived_resting_heart_rate drhr
-              WHERE drhr.user_id = up.id
-                AND drhr.date <= (asum.started_at AT TIME ZONE ${this.#timezone})::date
-                AND drhr.resting_hr IS NOT NULL
-              ORDER BY drhr.date DESC LIMIT 1
-            ), 60)::float AS val
-          ) rhr
-          WHERE up.id = ${this.#userId}
-            AND up.max_hr IS NOT NULL
-            AND asum.started_at > NOW() - (${days} + 42)::int * INTERVAL '1 day'
-            AND ${enduranceTypeFilter("asum")}
-            AND asum.ended_at IS NOT NULL
-            AND asum.avg_hr IS NOT NULL
-            AND asum.avg_hr > 0
-          GROUP BY 1
-          ORDER BY day`,
+      `WITH activity_meta AS (
+        SELECT
+          asum.activity_id AS id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
+          asum.avg_hr AS avg_hr,
+          toDate(toTimeZone(asum.started_at, {timezone:String})) AS day,
+          up.max_hr AS max_hr,
+          coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
+        FROM analytics.activity_summary asum
+        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
+        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+          ON drhr.user_id = asum.user_id
+         AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
+        WHERE asum.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND asum.started_at > now() - INTERVAL ({days:Int32} + 42) DAY
+          AND asum.ended_at IS NOT NULL
+          AND asum.avg_hr IS NOT NULL
+          AND asum.avg_hr > 0
+          AND up.max_hr IS NOT NULL
+      )
+      SELECT
+        toString(day) AS day,
+        sum(if(max_hr > resting_hr_val AND avg_hr > resting_hr_val,
+          dateDiff('second', started_at, ended_at) / 60.0
+          * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val))
+          * 0.64 * exp(1.92 * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val)))
+          / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
+          * 100,
+          0)) AS trimp
+      FROM activity_meta
+      GROUP BY day
+      ORDER BY day`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
     );
 
     if (dailyLoads.length === 0)
@@ -405,57 +422,67 @@ export class CyclingAdvancedRepository {
 
   /** Training monotony: weekly monotony (mean daily load / stdev) and strain. */
   async getTrainingMonotony(days: number): Promise<TrainingMonotonyWeekModel[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       monotonyRowSchema,
-      sql`WITH daily_loads AS (
-            SELECT
-              (asum.started_at AT TIME ZONE ${this.#timezone})::date AS day,
-              SUM(
-                CASE WHEN up.max_hr > rhr.val AND asum.avg_hr > rhr.val THEN
-                  -- Bannister TRIMP normalized to hrTSS (matches PMC router)
-                  EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                  * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val))
-                  * 0.64 * exp(1.92 * ((asum.avg_hr - rhr.val)::float / (up.max_hr - rhr.val)))
-                  / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
-                  * 100
-                ELSE 0 END
-              ) AS trimp
-            FROM fitness.activity_summary asum
-            JOIN fitness.user_profile up ON up.id = asum.user_id
-            CROSS JOIN LATERAL (
-              SELECT COALESCE(up.resting_hr, (
-                SELECT drhr.resting_hr FROM fitness.derived_resting_heart_rate drhr
-                WHERE drhr.user_id = up.id
-                ORDER BY drhr.date DESC LIMIT 1
-              ), 60)::float AS val
-            ) rhr
-            WHERE up.id = ${this.#userId}
-              AND up.max_hr IS NOT NULL
-              AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("asum")}
-              AND asum.ended_at IS NOT NULL
-              AND asum.avg_hr IS NOT NULL
-              AND asum.avg_hr > 0
-            GROUP BY 1
-          ),
-          weekly_stats AS (
-            SELECT
-              date_trunc('week', day)::date AS week,
-              AVG(trimp) AS mean_load,
-              STDDEV_POP(trimp) AS stdev_load,
-              SUM(trimp) AS weekly_load
-            FROM daily_loads
-            GROUP BY date_trunc('week', day)
-            HAVING STDDEV_POP(trimp) > 0
-          )
-          SELECT
-            week,
-            ROUND((mean_load / stdev_load)::numeric, 2) AS monotony,
-            ROUND((weekly_load * (mean_load / stdev_load))::numeric, 1) AS strain,
-            ROUND(weekly_load::numeric, 1) AS weekly_load
-          FROM weekly_stats
-          ORDER BY week`,
+      `WITH activity_meta AS (
+        SELECT
+          asum.activity_id AS id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
+          asum.avg_hr AS avg_hr,
+          toDate(toTimeZone(asum.started_at, {timezone:String})) AS day,
+          up.max_hr AS max_hr,
+          coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
+        FROM analytics.activity_summary asum
+        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
+        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+          ON drhr.user_id = asum.user_id
+         AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
+        WHERE asum.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          AND asum.ended_at IS NOT NULL
+          AND asum.avg_hr IS NOT NULL
+          AND asum.avg_hr > 0
+          AND up.max_hr IS NOT NULL
+      ),
+      daily_loads AS (
+        SELECT
+          day,
+          sum(if(max_hr > resting_hr_val AND avg_hr > resting_hr_val,
+            dateDiff('second', started_at, ended_at) / 60.0
+            * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val))
+            * 0.64 * exp(1.92 * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val)))
+            / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
+            * 100,
+            0)) AS trimp
+        FROM activity_meta
+        GROUP BY day
+      ),
+      weekly_stats AS (
+        SELECT
+          toMonday(day) AS week,
+          avg(trimp) AS mean_load,
+          stddevPop(trimp) AS stdev_load,
+          sum(trimp) AS weekly_load
+        FROM daily_loads
+        GROUP BY toMonday(day)
+        HAVING stddevPop(trimp) > 0
+      )
+      SELECT
+        toString(week) AS week,
+        round(mean_load / stdev_load, 2) AS monotony,
+        round(weekly_load * (mean_load / stdev_load), 1) AS strain,
+        round(weekly_load, 1) AS weekly_load
+      FROM weekly_stats
+      ORDER BY week`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
     );
 
     return rows.map(
@@ -471,44 +498,50 @@ export class CyclingAdvancedRepository {
 
   /** Estimate FTP as 95% of best 20-minute average power. */
   async getEstimatedFtp(days: number): Promise<number | null> {
-    const ftpResult = await executeWithSchema(
-      this.#db,
+    const ftpResult = await this.#sensorStore.query(
       ftpSchema,
-      sql`WITH activity_power AS (
-            SELECT
-              ds.activity_id,
-              ds.recorded_at,
-              ROW_NUMBER() OVER (
-                PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-              ) AS rn,
-              SUM(COALESCE(ds.scalar, 0)) OVER (
-                PARTITION BY ds.activity_id ORDER BY ds.recorded_at
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-              ) AS cumsum
-            FROM fitness.deduped_sensor ds
-            JOIN fitness.v_activity a ON a.id = ds.activity_id
-            WHERE ds.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND ds.channel = 'power'
-          ),
-          sample_rate AS (
-            SELECT activity_id,
-                   GREATEST(ROUND(
-                     EXTRACT(EPOCH FROM MAX(recorded_at) - MIN(recorded_at))::numeric
-                     / NULLIF(COUNT(*) - 1, 0)
-                   )::int, 1) AS interval_s
-            FROM activity_power
-            GROUP BY activity_id
-            HAVING COUNT(*) > 1
-          )
-          SELECT ROUND((MAX((ap.cumsum - prev.cumsum)::numeric / ROUND(1200.0 / sr.interval_s)) * 0.95)::numeric, 1) AS ftp
-          FROM activity_power ap
-          JOIN sample_rate sr ON sr.activity_id = ap.activity_id
-          JOIN activity_power prev
-            ON prev.activity_id = ap.activity_id
-            AND prev.rn = ap.rn - ROUND(1200.0 / sr.interval_s)::int
-          WHERE ap.rn >= ROUND(1200.0 / sr.interval_s)::int`,
+      `WITH activity_power AS (
+        SELECT
+          ds.activity_id AS activity_id,
+          ds.recorded_at AS recorded_at,
+          row_number() OVER (
+            PARTITION BY ds.activity_id ORDER BY ds.recorded_at
+          ) AS rn,
+          sum(coalesce(ds.scalar, 0)) OVER (
+            PARTITION BY ds.activity_id ORDER BY ds.recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+          ) AS cumsum
+        FROM analytics.deduped_sensor ds
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = ds.activity_id
+        WHERE ds.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND a.started_at > now() - INTERVAL {days:Int32} DAY
+          AND ds.channel = 'power'
+      ),
+      sample_rate AS (
+        SELECT
+          activity_id,
+          greatest(toInt32(round(
+            dateDiff('second', min(recorded_at), max(recorded_at))
+            / nullIf(count() - 1, 0)
+          )), 1) AS interval_s
+        FROM activity_power
+        GROUP BY activity_id
+        HAVING count() > 1
+      )
+      SELECT
+        round(max(toFloat64(ap.cumsum - prev.cumsum) / round(1200.0 / sr.interval_s)) * 0.95, 1) AS ftp
+      FROM activity_power ap
+      INNER JOIN sample_rate sr ON sr.activity_id = ap.activity_id
+      INNER JOIN activity_power prev
+        ON prev.activity_id = ap.activity_id
+       AND prev.rn = ap.rn - toInt32(round(1200.0 / sr.interval_s))
+      WHERE ap.rn >= toInt32(round(1200.0 / sr.interval_s))`,
+      {
+        userId: this.#userId,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
     );
     return ftpResult[0]?.ftp ?? null;
   }
@@ -522,44 +555,52 @@ export class CyclingAdvancedRepository {
     const ftp = await this.getEstimatedFtp(days);
     if (!ftp) return { models: [], totalCount: 0 };
 
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       variabilityRowSchema,
-      sql`WITH rolling AS (
-            SELECT
-              ds.activity_id,
-              AVG(ds.scalar) OVER (
-                PARTITION BY ds.activity_id
-                ORDER BY ds.recorded_at
-                RANGE BETWEEN INTERVAL '29 seconds' PRECEDING AND CURRENT ROW
-              ) AS rolling_30s_power
-            FROM fitness.deduped_sensor ds
-            JOIN fitness.v_activity a ON a.id = ds.activity_id
-            WHERE ds.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND ds.channel = 'power'
-              AND ds.scalar > 0
-          ),
-          grouped AS (
-            SELECT
-              a.id AS activity_id,
-              (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-              a.name,
-              a.started_at,
-              ROUND(POWER(AVG(POWER(r.rolling_30s_power, 4)), 0.25)::numeric, 1) AS np,
-              ROUND(AVG(r.rolling_30s_power)::numeric, 1) AS avg_power
-            FROM rolling r
-            JOIN fitness.v_activity a ON a.id = r.activity_id
-            GROUP BY a.id, a.started_at, a.name
-            HAVING COUNT(*) >= 60
-          )
-          SELECT activity_id, date, name, np, avg_power,
-                 COUNT(*) OVER()::int AS total_count
-          FROM grouped
-          ORDER BY started_at DESC
-          LIMIT ${limit}
-          OFFSET ${offset}`,
+      `WITH rolling AS (
+        SELECT
+          ds.activity_id AS activity_id,
+          avg(ds.scalar) OVER (
+            PARTITION BY ds.activity_id
+            ORDER BY ds.recorded_at
+            RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
+          ) AS rolling_30s_power
+        FROM analytics.deduped_sensor ds
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = ds.activity_id
+        WHERE ds.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND a.started_at > now() - INTERVAL {days:Int32} DAY
+          AND ds.channel = 'power'
+          AND ds.scalar > 0
+      ),
+      grouped AS (
+        SELECT
+          toString(a.id) AS activity_id,
+          toString(toDate(toTimeZone(a.started_at, {timezone:String}))) AS date,
+          a.name AS name,
+          a.started_at AS started_at,
+          round(pow(avg(pow(r.rolling_30s_power, 4)), 0.25), 1) AS np,
+          round(avg(r.rolling_30s_power), 1) AS avg_power
+        FROM rolling r
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = r.activity_id
+        GROUP BY a.id, a.started_at, a.name
+        HAVING count() >= 60
+      )
+      SELECT
+        activity_id, date, name, np, avg_power,
+        toInt32(count() OVER ()) AS total_count
+      FROM grouped
+      ORDER BY started_at DESC
+      LIMIT {limit:Int32}
+      OFFSET {offset:Int32}`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+        limit,
+        offset,
+      },
     );
 
     const totalCount = rows[0]?.total_count ?? 0;
@@ -582,81 +623,90 @@ export class CyclingAdvancedRepository {
     };
   }
 
-  /** Vertical ascent rate (VAM) for climbing segments.
-   *  Use nearby grade samples when an activity has grade data; otherwise fall back to altitude gain. */
+  /** Vertical ascent rate (VAM) for climbing segments. Uses grade samples when
+   *  available, falling back to altitude-only diffs otherwise. */
   async getVerticalAscentRates(days: number): Promise<VerticalAscentModel[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       vamRowSchema,
-      sql`WITH altitude_points AS (
-            SELECT
-              alt.activity_id,
-              alt.scalar AS altitude,
-              alt.recorded_at,
-              LAG(alt.scalar) OVER (
-                PARTITION BY alt.activity_id ORDER BY alt.recorded_at
-              ) AS prev_altitude,
-              LAG(alt.recorded_at) OVER (
-                PARTITION BY alt.activity_id ORDER BY alt.recorded_at
-              ) AS prev_recorded_at
-            FROM fitness.deduped_sensor alt
-            JOIN fitness.v_activity a ON a.id = alt.activity_id
-            WHERE a.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND alt.channel = 'altitude'
-          ),
-          grade_activities AS (
-            SELECT DISTINCT grd.activity_id
-            FROM fitness.deduped_sensor grd
-            JOIN fitness.v_activity a ON a.id = grd.activity_id
-            WHERE a.user_id = ${this.#userId}
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              AND ${enduranceTypeFilter("a")}
-              AND grd.channel = 'grade'
-          ),
-          climbing_segments AS (
-            SELECT
-              ap.activity_id,
-              ap.recorded_at,
-              ap.altitude,
-              ap.prev_altitude,
-              ap.prev_recorded_at,
-              nearest_grade.grade,
-              ga.activity_id IS NOT NULL AS has_grade_samples
-            FROM altitude_points ap
-            LEFT JOIN grade_activities ga ON ga.activity_id = ap.activity_id
-            LEFT JOIN LATERAL (
-              SELECT grd.scalar AS grade
-              FROM fitness.deduped_sensor grd
-              WHERE grd.activity_id = ap.activity_id
-                AND grd.channel = 'grade'
-                AND grd.recorded_at BETWEEN
-                  ap.recorded_at - INTERVAL '5 seconds' AND ap.recorded_at + INTERVAL '5 seconds'
-              ORDER BY
-                ABS(EXTRACT(EPOCH FROM (grd.recorded_at - ap.recorded_at))),
-                grd.recorded_at
-              LIMIT 1
-            ) nearest_grade ON true
-          )
-          SELECT
-            (a.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-            a.name,
-            ROUND(SUM(
-              cs.altitude - cs.prev_altitude
-            )::numeric, 1) AS elevation_gain,
-            SUM(
-              EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))
-            )::int AS climbing_seconds
-          FROM climbing_segments cs
-          JOIN fitness.v_activity a ON a.id = cs.activity_id
-          WHERE cs.prev_altitude IS NOT NULL
-            AND cs.prev_recorded_at IS NOT NULL
-            AND cs.altitude > cs.prev_altitude
-            AND (NOT cs.has_grade_samples OR cs.grade > 3)
-          GROUP BY a.id, a.started_at, a.name
-          HAVING SUM(EXTRACT(EPOCH FROM (cs.recorded_at - cs.prev_recorded_at))) > 60
-          ORDER BY a.started_at`,
+      `WITH altitude_points AS (
+        SELECT
+          alt.activity_id AS activity_id,
+          alt.scalar AS altitude,
+          alt.recorded_at AS recorded_at,
+          lagInFrame(alt.scalar) OVER (
+            PARTITION BY alt.activity_id ORDER BY alt.recorded_at
+          ) AS prev_altitude,
+          lagInFrame(alt.recorded_at) OVER (
+            PARTITION BY alt.activity_id ORDER BY alt.recorded_at
+          ) AS prev_recorded_at
+        FROM analytics.deduped_sensor alt
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = alt.activity_id
+        WHERE a.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND a.started_at > now() - INTERVAL {days:Int32} DAY
+          AND alt.channel = 'altitude'
+      ),
+      grade_activities AS (
+        SELECT DISTINCT grd.activity_id AS activity_id
+        FROM analytics.deduped_sensor grd
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = grd.activity_id
+        WHERE a.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND a.started_at > now() - INTERVAL {days:Int32} DAY
+          AND grd.channel = 'grade'
+      ),
+      grade_points AS (
+        SELECT
+          grd.activity_id AS activity_id,
+          grd.recorded_at AS recorded_at,
+          grd.scalar AS grade
+        FROM analytics.deduped_sensor grd
+        INNER JOIN postgres_fitness_live.v_activity a ON a.id = grd.activity_id
+        WHERE a.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND a.started_at > now() - INTERVAL {days:Int32} DAY
+          AND grd.channel = 'grade'
+      ),
+      climbing_segments AS (
+        SELECT
+          ap.activity_id AS activity_id,
+          ap.recorded_at AS recorded_at,
+          ap.altitude AS altitude,
+          ap.prev_altitude AS prev_altitude,
+          ap.prev_recorded_at AS prev_recorded_at,
+          (
+            SELECT gp.grade FROM grade_points gp
+            WHERE gp.activity_id = ap.activity_id
+              AND gp.recorded_at BETWEEN ap.recorded_at - INTERVAL 5 SECOND
+                                     AND ap.recorded_at + INTERVAL 5 SECOND
+            ORDER BY abs(dateDiff('second', gp.recorded_at, ap.recorded_at)) ASC,
+                     gp.recorded_at ASC
+            LIMIT 1
+          ) AS grade,
+          ga.activity_id IS NOT NULL AS has_grade_samples
+        FROM altitude_points ap
+        LEFT JOIN grade_activities ga ON ga.activity_id = ap.activity_id
+      )
+      SELECT
+        toString(toDate(toTimeZone(a.started_at, {timezone:String}))) AS date,
+        a.name AS name,
+        round(sum(cs.altitude - cs.prev_altitude), 1) AS elevation_gain,
+        toInt32(sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at))) AS climbing_seconds
+      FROM climbing_segments cs
+      INNER JOIN postgres_fitness_live.v_activity a ON a.id = cs.activity_id
+      WHERE cs.prev_altitude IS NOT NULL
+        AND cs.prev_recorded_at IS NOT NULL
+        AND cs.altitude > cs.prev_altitude
+        AND (NOT cs.has_grade_samples OR cs.grade > 3)
+      GROUP BY a.id, a.started_at, a.name
+      HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60
+      ORDER BY a.started_at`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
     );
 
     return rows.map(
@@ -672,25 +722,27 @@ export class CyclingAdvancedRepository {
 
   /** Pedal dynamics: left/right balance, torque effectiveness, pedal smoothness. */
   async getPedalDynamics(days: number): Promise<PedalDynamicsModel[]> {
-    const rows = await executeWithSchema(
-      this.#db,
+    const rows = await this.#sensorStore.query(
       pedalRowSchema,
-      sql`SELECT
-            (asum.started_at AT TIME ZONE ${this.#timezone})::date AS date,
-            asum.name,
-            ROUND(asum.avg_left_balance::numeric, 1) AS avg_balance,
-            ROUND(
-              ((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2)::numeric, 1
-            ) AS avg_torque_effectiveness,
-            ROUND(
-              ((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2)::numeric, 1
-            ) AS avg_pedal_smoothness
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${this.#userId}
-            AND asum.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ${enduranceTypeFilter("asum")}
-            AND asum.avg_left_balance IS NOT NULL
-          ORDER BY asum.started_at`,
+      `SELECT
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        asum.name AS name,
+        round(asum.avg_left_balance, 1) AS avg_balance,
+        round((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2, 1) AS avg_torque_effectiveness,
+        round((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2, 1) AS avg_pedal_smoothness
+      FROM analytics.activity_summary asum
+      INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
+      WHERE asum.user_id = {userId:UUID}
+        AND has({enduranceTypes:Array(String)}, a.activity_type)
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.avg_left_balance IS NOT NULL
+      ORDER BY asum.started_at`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
     );
 
     return rows.map(

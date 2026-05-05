@@ -200,11 +200,42 @@ describe("PedalDynamicsModel", () => {
 // ---------------------------------------------------------------------------
 
 describe("CyclingAdvancedRepository", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: test mock helper
+  function makeSensorStore(rows: unknown[]): any {
+    // Mirror ClickHouseActivitySensorStore.query: parse rows through the
+    // supplied Zod schema so coerce/transform validators actually run.
+    const query = vi
+      .fn()
+      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+        return rows.map((row) => schema.parse(row));
+      });
+    return {
+      query,
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    };
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const db = { execute };
-    const repo = new CyclingAdvancedRepository(db, "user-1", "UTC");
-    return { repo, execute };
+    // After the CH migration every cycling-advanced query routes through
+    // sensorStore. The PG db stays for completeness but is unused by the
+    // migrated methods.
+    const execute = vi.fn();
+    const sensorStore = makeSensorStore(rows);
+    const repo = new CyclingAdvancedRepository(
+      { execute },
+      "user-1",
+      "UTC",
+      sensorStore,
+    );
+    return { repo, execute, sensorStore };
   }
 
   describe("getRampRate", () => {
@@ -216,10 +247,10 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.recommendation).toBe("No data");
     });
 
-    it("passes days parameter to query", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("issues exactly one CH query for the daily-load aggregation", async () => {
+      const { repo, sensorStore } = makeRepository([]);
       await repo.getRampRate(30);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -264,21 +295,33 @@ describe("CyclingAdvancedRepository", () => {
     });
 
     it("returns ActivityVariabilityModel instances when data exists", async () => {
-      const execute = vi
+      // First sensorStore.query call → FTP estimate; second → variability rows.
+      const sensorStore = makeSensorStore([]);
+      sensorStore.query = vi
         .fn()
-        .mockResolvedValueOnce([{ ftp: 250 }])
-        .mockResolvedValueOnce([
-          {
-            activity_id: "ride-2",
-            date: "2024-03-15",
-            name: "Morning Ride",
-            np: 220,
-            avg_power: 200,
-            total_count: 1,
-          },
-        ]);
-      const db = { execute };
-      const repo = new CyclingAdvancedRepository(db, "user-1", "UTC");
+        .mockImplementationOnce(
+          async (schema: { parse: (row: unknown) => unknown }) =>
+            [{ ftp: 250 }].map((row) => schema.parse(row)),
+        )
+        .mockImplementationOnce(
+          async (schema: { parse: (row: unknown) => unknown }) =>
+            [
+              {
+                activity_id: "ride-2",
+                date: "2024-03-15",
+                name: "Morning Ride",
+                np: 220,
+                avg_power: 200,
+                total_count: 1,
+              },
+            ].map((row) => schema.parse(row)),
+        );
+      const repo = new CyclingAdvancedRepository(
+        { execute: vi.fn() },
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
       const result = await repo.getActivityVariability(90, 20, 0);
       expect(result.models).toHaveLength(1);
       expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
@@ -309,10 +352,10 @@ describe("CyclingAdvancedRepository", () => {
     });
 
     it("does not require grade channel data — altitude-only providers return results", async () => {
-      // Regression test: the original query used INNER JOIN on the grade channel,
-      // which returned empty for providers that don't emit grade (Garmin, Wahoo, etc.).
-      // The query now uses altitude deltas alone to detect climbing.
-      const { repo, execute } = makeRepository([
+      // Regression test: the original query INNER-JOINed the grade channel,
+      // which returned empty for providers that don't emit grade (Garmin, Wahoo).
+      // The CH query LEFT-JOINs grade activities, so altitude-only providers still match.
+      const { repo, sensorStore } = makeRepository([
         {
           date: "2024-04-01",
           name: "Garmin Ride",
@@ -323,8 +366,8 @@ describe("CyclingAdvancedRepository", () => {
       const result = await repo.getVerticalAscentRates(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.toDetail().activityName).toBe("Garmin Ride");
-      // Verify only a single execute call was made (no separate grade channel query)
-      expect(execute).toHaveBeenCalledTimes(1);
+      // Single CH query.
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
   });
 

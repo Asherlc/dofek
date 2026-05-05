@@ -1,6 +1,21 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CyclingAdvancedRepository } from "../repositories/cycling-advanced-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 export interface RampRateWeek {
   week: string;
@@ -59,7 +74,8 @@ export const cyclingAdvancedRouter = router({
   rampRate: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
+      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const result = await repo.getRampRate(input.days);
       return {
         weeks: result.weeks.map((week) => week.toDetail()),
@@ -71,7 +87,8 @@ export const cyclingAdvancedRouter = router({
   trainingMonotony: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
+      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const models = await repo.getTrainingMonotony(input.days);
       return models.map((model) => model.toDetail());
     }),
@@ -85,7 +102,8 @@ export const cyclingAdvancedRouter = router({
       }),
     )
     .query(async ({ ctx, input }): Promise<ActivityVariabilityResult> => {
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
+      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const { models, totalCount } = await repo.getActivityVariability(
         input.days,
         input.limit,
@@ -100,7 +118,8 @@ export const cyclingAdvancedRouter = router({
   verticalAscentRate: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
+      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const models = await repo.getVerticalAscentRates(input.days);
       return models.map((model) => model.toDetail());
     }),
@@ -108,7 +127,8 @@ export const cyclingAdvancedRouter = router({
   pedalDynamics: cachedProtectedQuery(CacheTTL.LONG)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
-      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
+      const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const models = await repo.getPedalDynamics(input.days);
       return models.map((model) => model.toDetail());
     }),
