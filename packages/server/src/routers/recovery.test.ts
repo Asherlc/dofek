@@ -9,6 +9,7 @@ vi.mock("../trpc.ts", async () => {
       userId: string | null;
       timezone?: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -18,6 +19,29 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+function makeSensorStore(rows: unknown[] | unknown[][] = []) {
+  const queryMock =
+    Array.isArray(rows) && rows.length > 0 && Array.isArray(rows[0])
+      ? (() => {
+          const fn = vi.fn();
+          for (const batch of rows as unknown[][]) fn.mockResolvedValueOnce(batch);
+          return fn;
+        })()
+      : vi.fn().mockResolvedValue(rows);
+  return {
+    query: queryMock,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  } as unknown as import("../repositories/activity-repository.ts").ActivitySensorStore;
+}
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -302,8 +326,9 @@ describe("recoveryRouter.hrvVariability", () => {
 describe("recoveryRouter.workloadRatio", () => {
   it("returns empty timeSeries and zero strain when no data", async () => {
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.workloadRatio({});
 
@@ -324,21 +349,18 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
     expect(result.timeSeries).toHaveLength(1);
     const row = result.timeSeries[0];
     expect(row?.date).toBe("2026-03-01");
-    // dailyLoad rounds to 1 decimal: 125.678 -> 125.7
     expect(row?.dailyLoad).toBe(125.7);
-    // acuteLoad rounds to 1 decimal: 500.345 -> 500.3
     expect(row?.acuteLoad).toBeCloseTo(500.3, 1);
-    // chronicLoad rounds to 1 decimal: 400.123 -> 400.1
     expect(row?.chronicLoad).toBe(400.1);
-    // workloadRatio rounds to 2 decimal: 1.25
     expect(row?.workloadRatio).toBe(1.25);
   });
 
@@ -354,8 +376,9 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
@@ -374,8 +397,9 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
@@ -394,8 +418,9 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
@@ -403,13 +428,14 @@ describe("recoveryRouter.workloadRatio", () => {
   });
 
   it("uses default days of 90", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore,
     });
     await caller.workloadRatio({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 
   it("displayedStrain and displayedDate reflect latest rolling strain", async () => {
@@ -431,8 +457,9 @@ describe("recoveryRouter.workloadRatio", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn() },
       userId: "user-1",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.workloadRatio({});
 
@@ -1153,20 +1180,31 @@ describe("recoveryRouter.readinessScore", () => {
 // ── strainTarget ────────────────────────────────────────────────
 
 describe("recoveryRouter.strainTarget", () => {
-  it("returns default values when no metric rows exist", async () => {
+  // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
+  // CH mock: loads (now in analytics.activity_summary).
+  function setup({
+    readinessRows = [] as unknown[],
+    sleepRows,
+    loads = [] as unknown[],
+  }: {
+    readinessRows?: unknown[];
+    sleepRows?: unknown[];
+    loads?: unknown[];
+  }) {
     const executeMock = vi.fn();
-    // First call: readinessRows (empty)
-    executeMock.mockResolvedValueOnce([]);
-    // Second call: loads
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
+    executeMock.mockResolvedValueOnce(readinessRows);
+    if (sleepRows !== undefined) executeMock.mockResolvedValueOnce(sleepRows);
+    return createCaller({
       db: { execute: executeMock },
       userId: "user-1",
+      sensorStore: makeSensorStore(loads),
     });
+  }
+
+  it("returns default values when no metric rows exist", async () => {
+    const caller = setup({});
     const result = await caller.strainTarget({});
 
-    // With no metrics, readinessScore defaults to 50 (Maintain zone)
     expect(result.zone).toBe("Maintain");
     expect(result.targetStrain).toBeGreaterThanOrEqual(10);
     expect(result.targetStrain).toBeLessThanOrEqual(14);
@@ -1176,25 +1214,17 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("computes readiness from daily metrics and returns strain target", async () => {
-    const executeMock = vi.fn();
-    // First call: readinessRows
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 60,
-        spo2_avg: 98,
-        respiratory_rate_avg: 14,
-      },
-    ]);
-    // Second call: loads
-    executeMock.mockResolvedValueOnce([]);
-    // Third call: sleep efficiency (from strainTarget inner query)
-    executeMock.mockResolvedValueOnce([{ efficiency_pct: 90 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: 60,
+          spo2_avg: 98,
+          respiratory_rate_avg: 14,
+        },
+      ],
+      sleepRows: [{ efficiency_pct: 90 }],
     });
     const result = await caller.strainTarget({});
 
@@ -1206,18 +1236,11 @@ describe("recoveryRouter.strainTarget", () => {
 
   it("computes current strain from recent acute load", async () => {
     const today = "2026-03-23";
-    const executeMock = vi.fn();
-    // First call: readinessRows
-    executeMock.mockResolvedValueOnce([]);
-    // Second call: loads (recent load with no load today)
-    executeMock.mockResolvedValueOnce([
-      { date: "2026-03-22", daily_load: 100 },
-      { date: today, daily_load: 0 },
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: "2026-03-22", daily_load: 100 },
+        { date: today, daily_load: 0 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
@@ -1226,36 +1249,18 @@ describe("recoveryRouter.strainTarget", () => {
 
   it("computes progressPercent as ratio of current to target", async () => {
     const today = "2026-03-23";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 50 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: today, daily_load: 50 }] });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.progressPercent).toBeGreaterThan(0);
-    // progressPercent = round(currentStrain / targetStrain * 100)
     const expectedPercent = Math.round((result.currentStrain / result.targetStrain) * 100);
     expect(result.progressPercent).toBe(expectedPercent);
   });
 
   it("returns 0 progressPercent when targetStrain is 0", async () => {
-    // This edge case is unlikely but the code handles it
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({});
     const result = await caller.strainTarget({});
 
-    // Default readiness = 50, target > 0 so this won't be 0
-    // But we verify the formula: if target > 0 then progress = round(current/target*100)
     if (result.targetStrain > 0) {
       expect(result.progressPercent).toBe(
         Math.round((result.currentStrain / result.targetStrain) * 100),
@@ -1266,23 +1271,17 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("uses readiness metrics with null sleep efficiency", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 80,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    // Sleep rows empty -> efficiency = null -> sleepScore = 62
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: 80,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
@@ -1290,46 +1289,35 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("handles null resting_hr in readiness metrics", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: null,
-        hrv: 60,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: null,
+          hrv: 60,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
-    // Should not crash; null resting_hr defaults to score 62
     expect(typeof result.targetStrain).toBe("number");
   });
 
   it("handles null hrv in readiness metrics", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: null,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: null,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
@@ -1340,37 +1328,21 @@ describe("recoveryRouter.strainTarget", () => {
     const today = "2026-03-23";
     const yesterday = "2026-03-22";
     const twoDaysAgo = "2026-03-21";
-
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([
-      { date: twoDaysAgo, daily_load: 100 },
-      { date: yesterday, daily_load: 150 },
-      { date: today, daily_load: 80 },
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: twoDaysAgo, daily_load: 100 },
+        { date: yesterday, daily_load: 150 },
+        { date: today, daily_load: 80 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // All three days are within the 7-day acute window
-    // acuteLoad = (100 + 150 + 80) / 7
-    // chronicLoad = (100 + 150 + 80) / 28
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("rounds currentStrain to 1 decimal place", async () => {
     const today = "2026-03-23";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 75.3 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: today, daily_load: 75.3 }] });
     const result = await caller.strainTarget({ endDate: today });
 
     const decimals = result.currentStrain.toString().split(".")[1];
@@ -1378,79 +1350,53 @@ describe("recoveryRouter.strainTarget", () => {
   });
 
   it("clamps hrvScore to 0-100 range in strainTarget readiness components", async () => {
-    const executeMock = vi.fn();
-    // HRV of 150 → Math.round(150) = 150 → clamped to 100
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 150,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: 150,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
-    // With high HRV score (100) and moderate other scores, should still
-    // produce a valid zone
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("clamps restingHrScore using 120 - resting_hr formula", async () => {
-    const executeMock = vi.fn();
-    // resting_hr = 55 → 120 - 55 = 65, clamped to [0, 100] → 65
-    executeMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: null,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      readinessRows: [
+        {
+          date: "2026-03-22",
+          resting_hr: 55,
+          hrv: null,
+          spo2_avg: null,
+          respiratory_rate_avg: null,
+        },
+      ],
+      sleepRows: [],
     });
     const result = await caller.strainTarget({});
 
-    // Should complete without error and return valid zone
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("does not include loads from days outside the acute window", async () => {
-    // Load from 10 days ago (outside 7-day acute window)
     const today = "2026-03-23";
     const tenDaysAgo = "2026-03-13";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: tenDaysAgo, daily_load: 500 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: tenDaysAgo, daily_load: 500 }] });
     const result = await caller.strainTarget({ endDate: today });
 
-    // tenDaysAgo is outside the 7-day acute window,
-    // but inside the 28-day chronic window.
     expect(result.currentStrain).toBe(0);
   });
 
   it("uses sleep efficiency for sleepScore in strainTarget when available", async () => {
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([
+    const readinessRows = [
       {
         date: "2026-03-22",
         resting_hr: 55,
@@ -1458,51 +1404,19 @@ describe("recoveryRouter.strainTarget", () => {
         spo2_avg: null,
         respiratory_rate_avg: null,
       },
-    ]);
-    executeMock.mockResolvedValueOnce([]);
-    // High sleep efficiency
-    executeMock.mockResolvedValueOnce([{ efficiency_pct: 95 }]);
-
-    const callerHigh = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    ];
+    const callerHigh = setup({ readinessRows, sleepRows: [{ efficiency_pct: 95 }] });
     const resultHigh = await callerHigh.strainTarget({});
 
-    const executeMock2 = vi.fn();
-    executeMock2.mockResolvedValueOnce([
-      {
-        date: "2026-03-22",
-        resting_hr: 55,
-        hrv: 60,
-        spo2_avg: null,
-        respiratory_rate_avg: null,
-      },
-    ]);
-    executeMock2.mockResolvedValueOnce([]);
-    // Low sleep efficiency
-    executeMock2.mockResolvedValueOnce([{ efficiency_pct: 40 }]);
-
-    const callerLow = createCaller({
-      db: { execute: executeMock2 },
-      userId: "user-1",
-    });
+    const callerLow = setup({ readinessRows, sleepRows: [{ efficiency_pct: 40 }] });
     const resultLow = await callerLow.strainTarget({});
 
-    // Higher sleep efficiency → higher readiness → higher or equal target strain
     expect(resultHigh.targetStrain).toBeGreaterThanOrEqual(resultLow.targetStrain);
   });
 
   it("computes progressPercent as 0 when targetStrain is 0", async () => {
     const today = new Date().toISOString().split("T")[0] ?? "";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness metrics
-    executeMock.mockResolvedValueOnce([]); // no loads
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({});
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.progressPercent).toBe(0);
@@ -1510,104 +1424,64 @@ describe("recoveryRouter.strainTarget", () => {
 
   it("averages acute load over 7-day window", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // 7 days of loads, all within acute window
     const loads = Array.from({ length: 7 }, (_, index) => {
       const date = new Date("2026-03-22");
       date.setDate(date.getDate() + index);
       return { date: date.toISOString().split("T")[0], daily_load: 100 };
     });
-    executeMock.mockResolvedValueOnce(loads);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads });
     const result = await caller.strainTarget({ endDate: today });
 
-    // With readiness default 50 and chronic/acute both ~100, should get a reasonable target
     expect(result.targetStrain).toBeGreaterThan(0);
   });
 
   it("separates acute from chronic loads by day window", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // Only loads in chronic window (8-27 days ago), none in acute (0-6 days)
     const loads = Array.from({ length: 20 }, (_, index) => {
       const date = new Date("2026-03-01");
       date.setDate(date.getDate() + index);
       return { date: date.toISOString().split("T")[0], daily_load: 200 };
     });
-    executeMock.mockResolvedValueOnce(loads);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads });
     const result = await caller.strainTarget({ endDate: today });
 
-    // Acute load is zero, chronic load is moderate.
     expect(result.targetStrain).toBeGreaterThan(0);
     expect(result.currentStrain).toBe(0);
   });
 
   it("excludes loads at exactly 7 days ago from acute window", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // Load at exactly 7 days ago (boundary — should be excluded from acute)
-    // and load at 6 days ago (should be included in acute)
-    executeMock.mockResolvedValueOnce([
-      { date: "2026-03-21", daily_load: 1000 }, // 7 days ago — chronic only
-      { date: "2026-03-22", daily_load: 70 }, // 6 days ago — both acute + chronic
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: "2026-03-21", daily_load: 1000 },
+        { date: "2026-03-22", daily_load: 70 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    // If mutation changes < to <=, the 1000 load enters acute and target changes dramatically
-    // With correct logic: acute ≈ 70/7 = 10, chronic ≈ 1070/28 ≈ 38.2
     expect(result.targetStrain).toBeGreaterThan(0);
     expect(result.currentStrain).toBeGreaterThan(0);
   });
 
   it("progressPercent reflects currentStrain relative to targetStrain", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]); // no readiness
-    // Load on today + recent history
-    executeMock.mockResolvedValueOnce([
-      { date: today, daily_load: 100 },
-      { date: "2026-03-27", daily_load: 100 },
-      { date: "2026-03-26", daily_load: 100 },
-    ]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
+    const caller = setup({
+      loads: [
+        { date: today, daily_load: 100 },
+        { date: "2026-03-27", daily_load: 100 },
+        { date: "2026-03-26", daily_load: 100 },
+      ],
     });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.currentStrain).toBeGreaterThan(0);
     expect(result.progressPercent).toBeGreaterThan(0);
-    expect(result.progressPercent).toBeLessThanOrEqual(200); // sanity
+    expect(result.progressPercent).toBeLessThanOrEqual(200);
   });
 
   it("computes currentStrain from acute load when today has load", async () => {
     const today = "2026-03-28";
-    const executeMock = vi.fn();
-    executeMock.mockResolvedValueOnce([]);
-    executeMock.mockResolvedValueOnce([{ date: today, daily_load: 150 }]);
-
-    const caller = createCaller({
-      db: { execute: executeMock },
-      userId: "user-1",
-    });
+    const caller = setup({ loads: [{ date: today, daily_load: 150 }] });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.currentStrain).toBeGreaterThan(0);
@@ -1866,8 +1740,16 @@ describe("recoveryRouter.hrvVariability - mutation killers", () => {
 // ── Mutation-killing tests for workloadRatio ───────────────────
 
 describe("recoveryRouter.workloadRatio - mutation killers", () => {
+  function callerWith(rows: unknown[]) {
+    return createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+  }
+
   it("dailyLoad rounds to 1 decimal (not 2)", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 125.678,
@@ -1875,17 +1757,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: null,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.dailyLoad).toBe(125.7);
   });
 
   it("acuteLoad rounds to 1 decimal", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 100,
@@ -1893,17 +1770,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: null,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.acuteLoad).toBeCloseTo(500.3, 1);
   });
 
   it("chronicLoad rounds to 1 decimal", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 100,
@@ -1911,17 +1783,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400.789,
         workload_ratio: null,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.chronicLoad).toBe(400.8);
   });
 
   it("workloadRatio rounds to 2 decimals", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 100,
@@ -1929,17 +1796,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: 1.2567,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.workloadRatio).toBe(1.26);
   });
 
   it("date is passed through to each timeSeries entry", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-15",
         daily_load: 50,
@@ -1947,17 +1809,12 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 300,
         workload_ratio: 0.67,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.date).toBe("2026-03-15");
   });
 
   it("strain is derived from rounded acuteLoad", async () => {
-    const rows = [
+    const result = await callerWith([
       {
         date: "2026-03-01",
         daily_load: 0,
@@ -1965,31 +1822,18 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         chronic_load: 400,
         workload_ratio: 1.25,
       },
-    ];
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    ]).workloadRatio({});
     expect(result.timeSeries[0]?.strain).toBeTypeOf("number");
     expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
   });
 
   it("displayedStrain defaults to 0 when timeSeries is empty", async () => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    const result = await callerWith([]).workloadRatio({});
     expect(result.displayedStrain).toBe(0);
   });
 
   it("displayedDate defaults to null when timeSeries is empty", async () => {
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-    });
-    const result = await caller.workloadRatio({});
+    const result = await callerWith([]).workloadRatio({});
     expect(result.displayedDate).toBeNull();
   });
 });

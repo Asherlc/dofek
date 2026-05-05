@@ -7,6 +7,7 @@ import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency"
 import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
+import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -20,7 +21,21 @@ import {
 } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 export type { ReadinessComponents, ReadinessWeights };
 
@@ -226,71 +241,70 @@ export const recoveryRouter = router({
   workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.workloadRatio");
       const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
-        date: dateStringSchema,
+        date: z.string(),
         daily_load: z.coerce.number(),
         acute_load: z.coerce.number(),
         chronic_load: z.coerce.number(),
         workload_ratio: z.coerce.number().nullable(),
       });
-      const rows = await executeWithSchema(
-        ctx.db,
+      const rows = await sensorStore.query(
         workloadRowSchema,
-        sql`WITH date_series AS (
-              SELECT generate_series(
-                ${dateWindowStart(input.endDate, queryDays)},
-                ${dateWindowEnd(input.endDate)},
-                '1 day'::interval
-              )::date AS date
-            ),
-            per_activity AS (
-              SELECT
-                (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                  * asum.avg_hr
-                  / NULLIF(asum.max_hr, 0) AS load
-              FROM fitness.activity_summary asum
-              WHERE asum.user_id = ${ctx.userId}
-                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, queryDays)}
-                AND asum.ended_at IS NOT NULL
-                AND asum.avg_hr IS NOT NULL
-                ${timestampAccessPredicate(ctx.accessWindow, sql`asum.started_at`)}
-            ),
-            activity_load AS (
-              SELECT date, SUM(load) AS daily_load
-              FROM per_activity
-              GROUP BY date
-            ),
-            daily AS (
-              SELECT
-                ds.date,
-                COALESCE(al.daily_load, 0) AS daily_load
-              FROM date_series ds
-              LEFT JOIN activity_load al ON al.date = ds.date
-            ),
-            with_windows AS (
-              SELECT
-                date,
-                daily_load,
-                SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load,
-                AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_load_avg,
-                COUNT(*) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
-              FROM daily
-            )
-            SELECT
-              date::text AS date,
-              daily_load,
-              acute_load,
-              chronic_load_avg * 7 AS chronic_load,
-              CASE
-                WHEN chronic_load_avg > 0 AND chronic_count = 28
-                THEN acute_load / (chronic_load_avg * 7)
-                ELSE NULL
-              END AS workload_ratio
-            FROM with_windows
-            WHERE date > ${dateWindowStart(input.endDate, input.days)}
-            ORDER BY date ASC`,
+        `WITH per_activity AS (
+          SELECT
+            toDate(toTimeZone(started_at, {timezone:String})) AS date,
+            dateDiff('second', started_at, ended_at) / 60.0
+              * avg_hr
+              / nullIf(toFloat64(max_hr), 0) AS load
+          FROM analytics.activity_summary
+          WHERE user_id = {userId:UUID}
+            AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND ended_at IS NOT NULL
+            AND avg_hr IS NOT NULL
+        ),
+        activity_load AS (
+          SELECT date, sum(load) AS daily_load
+          FROM per_activity
+          GROUP BY date
+        ),
+        date_series AS (
+          SELECT toDate({windowStart:String}) + INTERVAL number DAY AS date
+          FROM numbers(toUInt64({totalDays:Int32}) + 1)
+        ),
+        daily AS (
+          SELECT ds.date AS date, coalesce(al.daily_load, 0) AS daily_load
+          FROM date_series ds
+          LEFT JOIN activity_load al ON al.date = ds.date
+        ),
+        with_windows AS (
+          SELECT
+            date,
+            daily_load,
+            sum(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load,
+            avg(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_load_avg,
+            count() OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
+          FROM daily
+        )
+        SELECT
+          toString(date) AS date,
+          daily_load,
+          acute_load,
+          chronic_load_avg * 7 AS chronic_load,
+          if(chronic_load_avg > 0 AND chronic_count = 28,
+             acute_load / (chronic_load_avg * 7),
+             NULL) AS workload_ratio
+        FROM with_windows
+        WHERE date > toDate({outputWindowStart:String})
+        ORDER BY date ASC`,
+        {
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          windowStart: dateWindowStart(input.endDate, queryDays),
+          totalDays: queryDays,
+          outputWindowStart: dateWindowStart(input.endDate, input.days),
+        },
       );
 
       const timeSeries = rows.map((row) => {
@@ -620,28 +634,28 @@ export const recoveryRouter = router({
         `,
       );
 
-      // Get daily loads for ACWR
-      const loads = await executeWithSchema(
-        ctx.db,
+      // Get daily loads for ACWR (from ClickHouse analytics.activity_summary)
+      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
+      const loads = await sensorStore.query(
         z.object({
-          date: dateStringSchema,
+          date: z.string(),
           daily_load: z.coerce.number(),
         }),
-        sql`
-          SELECT
-            asum.started_at::date::text AS date,
-            SUM(
-              asum.avg_hr * EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0 / 100.0
-            ) AS daily_load
-          FROM fitness.activity_summary asum
-          WHERE asum.user_id = ${ctx.userId}
-            AND asum.started_at::date >= ${dateWindowStart(input.endDate, input.days)}
-            AND asum.ended_at IS NOT NULL
-            AND asum.avg_hr IS NOT NULL
-            ${timestampAccessPredicate(ctx.accessWindow, sql`asum.started_at`)}
-          GROUP BY asum.started_at::date
-          ORDER BY date ASC
-        `,
+        `SELECT
+          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+          sum(avg_hr * dateDiff('second', started_at, ended_at) / 60.0 / 100.0) AS daily_load
+        FROM analytics.activity_summary
+        WHERE user_id = {userId:UUID}
+          AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
+          AND ended_at IS NOT NULL
+          AND avg_hr IS NOT NULL
+        GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
+        ORDER BY date ASC`,
+        {
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          windowStart: dateWindowStart(input.endDate, input.days),
+        },
       );
 
       // Compute readiness if we have metrics
