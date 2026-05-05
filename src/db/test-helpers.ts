@@ -104,8 +104,8 @@ export async function setupTestDatabase(): Promise<TestContext> {
     });
 
     // Drop managed matviews in reverse order (dependents first). CASCADE is
-    // used because matviews like activity_summary depend on deduped_sensor,
-    // and both get recreated below in dependency order.
+    // used so dependencies are removed before canonical definitions are
+    // recreated below.
     for (const { viewName } of [...parsedViews].reverse()) {
       if (!viewName) continue;
       await migrationClient.query(
@@ -113,8 +113,8 @@ export async function setupTestDatabase(): Promise<TestContext> {
       );
     }
 
-    // Recreate in filename order — 01_v_activity before 02_v_sleep before
-    // 06_activity_summary (which joins deduped_sensor created by 0012).
+    // Recreate in filename order so base matviews exist before plain views
+    // that read from them.
     for (const { content } of parsedViews) {
       const statements = content
         .split("--> statement-breakpoint")

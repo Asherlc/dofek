@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helpers.ts";
 
 /**
  * Integration tests that INSERT data and verify JS transformation logic
@@ -32,7 +33,7 @@ describe("Router transformation logic", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

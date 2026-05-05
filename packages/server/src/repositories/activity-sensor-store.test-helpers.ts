@@ -65,10 +65,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
 
   async query(): Promise<never[]> {
     // The Postgres-backed test store cannot execute ClickHouse SQL. Tests
-    // that exercise CH-backed analytics paths (former fitness.deduped_sensor /
-    // fitness.activity_summary consumers) must mock ActivitySensorStore at
-    // the unit/integration boundary instead. Returning [] here keeps any
-    // shallow callers from blowing up on type checks during the migration.
+    // that exercise arbitrary CH SQL must mock ActivitySensorStore at the
+    // unit/integration boundary instead. Returning [] here keeps shallow
+    // callers from requiring a ClickHouse test service.
     return [];
   }
 
@@ -79,23 +78,33 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
 
     return this.#db.execute<SummaryRow>(
       sql`SELECT
-            activity_id::text AS activity_id,
-            avg_hr,
-            max_hr,
-            avg_power,
-            max_power,
-            avg_speed,
-            max_speed,
-            avg_cadence,
-            total_distance,
-            elevation_gain_m,
-            elevation_loss_m,
-            sample_count
-          FROM fitness.activity_summary
-          WHERE activity_id IN (${sql.join(
+            activity.id::text AS activity_id,
+            AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'heart_rate')::real AS avg_hr,
+            MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'heart_rate')::real AS max_hr,
+            AVG(sensor.scalar) FILTER (
+              WHERE sensor.channel = 'power' AND sensor.scalar > 0
+            )::real AS avg_power,
+            MAX(sensor.scalar) FILTER (
+              WHERE sensor.channel = 'power' AND sensor.scalar > 0
+            )::real AS max_power,
+            AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'speed')::real AS avg_speed,
+            MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'speed')::real AS max_speed,
+            AVG(sensor.scalar) FILTER (
+              WHERE sensor.channel = 'cadence' AND sensor.scalar > 0
+            )::real AS avg_cadence,
+            MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'distance')::real AS total_distance,
+            NULL::real AS elevation_gain_m,
+            NULL::real AS elevation_loss_m,
+            COUNT(sensor.scalar)::int AS sample_count
+          FROM fitness.v_activity activity
+          LEFT JOIN fitness.metric_stream sensor
+            ON sensor.activity_id = activity.id
+           AND sensor.scalar IS NOT NULL
+          WHERE activity.id IN (${sql.join(
             activityIds.map((activityId) => sql`${activityId}::uuid`),
             sql`, `,
-          )})`,
+          )})
+          GROUP BY activity.id`,
     );
   }
 
@@ -192,7 +201,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
                 ORDER BY sensor.recorded_at
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
               ) AS cumulative_sum
-            FROM fitness.deduped_sensor sensor
+            FROM fitness.metric_stream sensor
             JOIN activities ON activities.id = sensor.activity_id
             WHERE sensor.user_id = ${userId}::uuid
               AND sensor.channel = 'power'
@@ -252,7 +261,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
                 MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'altitude')
                 - MIN(sensor.scalar) FILTER (WHERE sensor.channel = 'altitude')
               ) / NULLIF(AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'speed') * 300, 0) AS grade_fraction
-            FROM fitness.deduped_sensor sensor
+            FROM fitness.metric_stream sensor
             JOIN activities ON activities.id = sensor.activity_id
             WHERE sensor.user_id = ${userId}::uuid
               AND activities.activity_type IN (${sql.join(
@@ -361,7 +370,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
             MAX(scalar) FILTER (WHERE channel = 'altitude')::real AS altitude,
             MAX(scalar) FILTER (WHERE channel = 'lat')::real AS lat,
             MAX(scalar) FILTER (WHERE channel = 'lng')::real AS lng
-          FROM fitness.deduped_sensor
+          FROM fitness.metric_stream
           WHERE user_id = ${window.userId}::uuid
             AND activity_id = ${window.activityId}::uuid
             AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
@@ -401,7 +410,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   async #activityChannelValues(window: ActivitySensorWindow, channel: string): Promise<number[]> {
     const rows = await this.#db.execute<{ scalar: number }>(
       sql`SELECT scalar::real AS scalar
-          FROM fitness.deduped_sensor
+          FROM fitness.metric_stream
           WHERE user_id = ${window.userId}::uuid
             AND activity_id = ${window.activityId}::uuid
             AND channel = ${channel}
@@ -425,7 +434,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
             activity.name AS activity_name,
             sensor.recorded_at::text AS recorded_at,
             sensor.scalar::real AS scalar
-          FROM fitness.deduped_sensor sensor
+          FROM fitness.metric_stream sensor
           JOIN fitness.v_activity activity ON activity.id = sensor.activity_id
           WHERE sensor.user_id = ${userId}::uuid
             AND sensor.channel = ${channel}

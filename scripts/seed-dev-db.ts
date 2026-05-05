@@ -87,10 +87,8 @@ async function recreateMaterializedViews() {
     return { fileName, content, viewName: match?.[1] };
   });
 
-  // Drop matviews in reverse order. CASCADE removes other matview dependents
-  // (deduped_sensor depends on v_activity, activity_summary depends on
-  // deduped_sensor) which the recreate loop below recreates in dependency
-  // order from the canonical _views/*.sql definitions.
+  // Drop matviews in reverse order. CASCADE removes dependents, and the
+  // recreate loop below restores the canonical _views/*.sql definitions.
   for (const { viewName } of [...parsed].reverse()) {
     if (!viewName) continue;
     await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);

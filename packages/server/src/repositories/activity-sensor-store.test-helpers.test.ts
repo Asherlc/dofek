@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createPostgresTestActivitySensorStore } from "./activity-sensor-store.test-helpers.ts";
 
 describe("PostgresTestActivitySensorStore", () => {
-  it("uses only deduped sensor values for heart-rate zones", async () => {
+  it("uses metric stream sensor values for heart-rate zones", async () => {
     const execute = vi.fn().mockResolvedValueOnce([{ scalar: 110 }, { scalar: 140 }]);
     const store = createPostgresTestActivitySensorStore({ execute });
 
