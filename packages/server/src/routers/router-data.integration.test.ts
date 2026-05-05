@@ -484,7 +484,7 @@ describe("Router data coverage", () => {
         expect(typeof row.decouplingPct).toBe("number");
         expect(row.totalSamples).toBeGreaterThanOrEqual(600);
       }
-    }, 120_000);
+    });
 
     it("polarizationTrend returns weekly zone distribution", async () => {
       const result = await query<{
