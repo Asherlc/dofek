@@ -1,4 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import type { z } from "zod";
 import type {
   ActivitySensorStore,
   ActivitySensorWindow,
@@ -119,6 +120,20 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
 
   constructor(client: ClickHouseQueryClient) {
     this.#client = client;
+  }
+
+  async query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params: Record<string, unknown> = {},
+  ): Promise<z.infer<TSchema>[]> {
+    const result = await this.#client.query<Record<string, unknown>>({
+      query,
+      format: "JSONEachRow",
+      query_params: params,
+    });
+    const rows = await result.json();
+    return rows.map((row) => schema.parse(row));
   }
 
   async getActivitySummaries(activityIds: string[]): Promise<ActivitySummaryReadModelRow[]> {

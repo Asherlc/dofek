@@ -63,6 +63,15 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     this.#db = db;
   }
 
+  async query(): Promise<never[]> {
+    // The Postgres-backed test store cannot execute ClickHouse SQL. Tests
+    // that exercise CH-backed analytics paths (former fitness.deduped_sensor /
+    // fitness.activity_summary consumers) must mock ActivitySensorStore at
+    // the unit/integration boundary instead. Returning [] here keeps any
+    // shallow callers from blowing up on type checks during the migration.
+    return [];
+  }
+
   async getActivitySummaries(activityIds: string[]): Promise<SummaryRow[]> {
     if (activityIds.length === 0) {
       return [];

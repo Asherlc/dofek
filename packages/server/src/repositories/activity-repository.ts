@@ -153,6 +153,17 @@ export interface ActivitySensorWindow {
 }
 
 export interface ActivitySensorStore {
+  /**
+   * Run a raw ClickHouse query against the analytics database and parse rows
+   * with the supplied Zod schema. Used by repositories that previously joined
+   * fitness.deduped_sensor / fitness.activity_summary and now read from
+   * analytics.deduped_sensor / analytics.activity_summary.
+   */
+  query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params?: Record<string, unknown>,
+  ): Promise<z.infer<TSchema>[]>;
   getActivitySummaries(
     activityIds: string[],
   ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;

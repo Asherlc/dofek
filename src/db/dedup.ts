@@ -97,9 +97,13 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
 }
 
 /**
- * Update user_profile.max_hr from the highest observed heart rate across all activities.
- * Reads from activity_summary (which derives from deduped_sensor → metric_stream).
- * Called after syncs that touch activity data.
+ * Update user_profile.max_hr from the highest observed heart rate across all
+ * activities. Reads heart_rate samples directly from fitness.metric_stream;
+ * we used to read fitness.activity_summary, but that matview has been dropped
+ * in favour of analytics.activity_summary (ClickHouse, via PeerDB CDC).
+ * The raw-sample max is equivalent to the dedup-winning max because we're
+ * just taking the global maximum and providers don't disagree about the
+ * actual peak value, only about how to dedup duplicates.
  */
 export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
   await db.execute(sql`
@@ -107,9 +111,11 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
     SET max_hr = sub.observed_max_hr,
         updated_at = NOW()
     FROM (
-      SELECT user_id, MAX(max_hr)::SMALLINT AS observed_max_hr
-      FROM fitness.activity_summary
-      WHERE max_hr IS NOT NULL
+      SELECT user_id, MAX(scalar)::SMALLINT AS observed_max_hr
+      FROM fitness.metric_stream
+      WHERE channel = 'heart_rate'
+        AND scalar IS NOT NULL
+        AND scalar > 0
       GROUP BY user_id
     ) sub
     WHERE up.id = sub.user_id
