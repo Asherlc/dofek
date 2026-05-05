@@ -6,6 +6,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import type { NextWorkoutRecommendation } from "../repositories/training-repository.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 import type { SleepNeedResult } from "./sleep-need.ts";
 
 /**
@@ -64,7 +65,8 @@ describe("mobile-dashboard router integration", () => {
     // Refresh materialized views so dashboard queries pick up the data
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

@@ -5,7 +5,10 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { makeMockSensorStore } from "./test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration test for healthspan zone time calculation.
@@ -119,10 +122,8 @@ describe("healthspan zone time with variable-interval HR data", () => {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
 
-    const app = createApp(
-      testCtx.db,
-      makeMockSensorStore([{ aerobic_minutes: 30, high_intensity_minutes: 10 }]),
-    );
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -317,6 +318,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
       ) VALUES ${sensorValues.join(",\n")}`),
     );
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await syncClickHouseTestActivitySensorStore(testCtx);
 
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dateWindowStart } from "../lib/date-window.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
@@ -151,7 +151,7 @@ export class WeeklyReportRepository {
   /** Fetch weekly performance report with strain zones, sleep performance, and vitals. */
   async getReport(weeks: number, endDate: string): Promise<WeeklyReportResult> {
     const totalDays = weeks * 7 + 28; // extra for chronic baseline
-    const windowStart = dateWindowStart(endDate, totalDays);
+    const windowStart = dateWindowStartString(endDate, totalDays);
 
     const rows = await this.#sensorStore.query(
       weeklyReportRowSchema,

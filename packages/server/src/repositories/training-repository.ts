@@ -5,7 +5,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import {
+  dateWindowStartString,
+  timestampWindowStart,
+  timestampWindowStartString,
+} from "../lib/date-window.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { vitalsBaselineCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -392,7 +396,7 @@ export class TrainingRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        windowStart: dateWindowStart(endDate, 28),
+        windowStart: dateWindowStartString(endDate, 28),
       },
     );
   }
@@ -478,7 +482,7 @@ export class TrainingRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        windowStart: timestampWindowStart(endDate, 14),
+        windowStart: timestampWindowStartString(endDate, 14),
         enduranceTypes: ENDURANCE_TYPES,
         b1: ZONE_BOUNDARIES_HRR[0],
         b2: ZONE_BOUNDARIES_HRR[1],
@@ -526,8 +530,8 @@ export class TrainingRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        windowStart: timestampWindowStart(endDate, 21),
-        sevenDayStart: dateWindowStart(endDate, 7),
+        windowStart: timestampWindowStartString(endDate, 21),
+        sevenDayStart: dateWindowStartString(endDate, 7),
         enduranceTypes: ENDURANCE_TYPES,
         hiitThreshold: ZONE_BOUNDARIES_HRR[2],
       },

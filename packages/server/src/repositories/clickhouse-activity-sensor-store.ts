@@ -156,7 +156,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           elevation_loss_m,
           sample_count
         FROM analytics.activity_summary
-        WHERE activity_id IN {activityIds:Array(UUID)}
+        WHERE toString(activity_id) IN {activityIds:Array(String)}
       `,
       format: "JSONEachRow",
       query_params: { activityIds },
@@ -341,8 +341,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             ON sample_windows.activity_id = power_samples.activity_id
           LEFT JOIN power_samples AS previous_sample
             ON previous_sample.activity_id = power_samples.activity_id
-           AND previous_sample.row_number = power_samples.row_number - sample_windows.window_samples
-          WHERE power_samples.row_number >= sample_windows.window_samples
+           AND toInt64(previous_sample.row_number) = toInt64(power_samples.row_number) - toInt64(sample_windows.window_samples)
+          WHERE toInt64(power_samples.row_number) >= toInt64(sample_windows.window_samples)
         ),
         cycling_estimates AS (
           SELECT
@@ -503,8 +503,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             ON sample_rate.activity_id = activity_samples.activity_id
           LEFT JOIN activity_samples AS previous_sample
             ON previous_sample.activity_id = activity_samples.activity_id
-           AND previous_sample.row_number = activity_samples.row_number - window_samples
-          WHERE activity_samples.row_number >= window_samples
+           AND toInt64(previous_sample.row_number) = toInt64(activity_samples.row_number) - toInt64(window_samples)
+          WHERE toInt64(activity_samples.row_number) >= toInt64(window_samples)
         )
         SELECT
           duration_seconds,
@@ -587,8 +587,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             ON sample_rate.activity_id = activity_samples.activity_id
           LEFT JOIN activity_samples AS previous_sample
             ON previous_sample.activity_id = activity_samples.activity_id
-           AND previous_sample.row_number = activity_samples.row_number - window_samples
-          WHERE activity_samples.row_number >= window_samples
+           AND toInt64(previous_sample.row_number) = toInt64(activity_samples.row_number) - toInt64(window_samples)
+          WHERE toInt64(activity_samples.row_number) >= toInt64(window_samples)
         ),
         best_per_duration AS (
           SELECT

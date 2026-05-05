@@ -268,9 +268,9 @@ export class PredictionsRepository {
     const activityRows = await this.#sensorStore.query(
       activitySummaryRowSchema,
       `SELECT
-        toString(activity_id) AS activity_id,
+        toString(activity_summary.activity_id) AS activity_id,
         activity_type,
-        toString(started_at) AS started_at,
+        toString(activity_summary.started_at) AS started_at,
         avg_hr,
         avg_power,
         avg_speed,
@@ -278,11 +278,11 @@ export class PredictionsRepository {
         elevation_gain_m,
         avg_cadence,
         dateDiff('second', first_sample_at, last_sample_at) / 60 AS duration_min
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > today() - INTERVAL {days:Int32} DAY
+      FROM analytics.activity_summary AS activity_summary
+      WHERE activity_summary.user_id = {userId:UUID}
+        AND activity_summary.started_at > now() - INTERVAL {days:Int32} DAY
         AND avg_power IS NOT NULL
-      ORDER BY started_at ASC`,
+      ORDER BY activity_summary.started_at ASC`,
       { userId: this.#userId, days },
     );
 

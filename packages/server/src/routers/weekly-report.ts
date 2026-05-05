@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
+import { dateWindowStartString, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -73,7 +73,7 @@ export const weeklyReportRouter = router({
     .query(async ({ ctx, input }): Promise<WeeklyReportResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "weeklyReport.report");
       const totalDays = input.weeks * 7 + 28; // extra for chronic baseline
-      const windowStart = dateWindowStart(input.endDate, totalDays);
+      const windowStart = dateWindowStartString(input.endDate, totalDays);
 
       const weeklyReportRowSchema = z.object({
         week_start: dateStringSchema,

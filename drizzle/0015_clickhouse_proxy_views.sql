@@ -159,7 +159,7 @@ ORDER BY b.recorded_at DESC;
 --> statement-breakpoint
 
 CREATE OR REPLACE VIEW clickhouse.v_body_measurement AS
-SELECT id, user_id, recorded_at, weight_kg, body_fat_pct, source_providers
+SELECT id, user_id, recorded_at, weight_kg, body_fat_pct
 FROM fitness.v_body_measurement;
 
 --> statement-breakpoint
@@ -167,7 +167,7 @@ FROM fitness.v_body_measurement;
 CREATE OR REPLACE VIEW clickhouse.v_sleep AS
 SELECT id, user_id, started_at, ended_at, duration_minutes, deep_minutes,
        rem_minutes, light_minutes, awake_minutes, efficiency_pct, is_nap,
-       sleep_type, source_providers
+       sleep_type
 FROM fitness.v_sleep;
 
 --> statement-breakpoint
@@ -219,7 +219,7 @@ SELECT user_id, date, hrv, spo2_avg, respiratory_rate_avg, skin_temp_c,
        steps, active_energy_kcal, basal_energy_kcal, distance_km,
        flights_climbed, exercise_minutes, stand_hours, walking_speed,
        walking_step_length, walking_double_support_pct, walking_asymmetry_pct,
-       walking_steadiness, source_providers
+       walking_steadiness
 FROM fitness.v_daily_metrics;
 
 --> statement-breakpoint

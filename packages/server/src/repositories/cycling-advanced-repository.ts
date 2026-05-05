@@ -533,8 +533,8 @@ export class CyclingAdvancedRepository {
       INNER JOIN sample_rate sr ON sr.activity_id = ap.activity_id
       INNER JOIN activity_power prev
         ON prev.activity_id = ap.activity_id
-       AND prev.rn = ap.rn - toInt32(round(1200.0 / sr.interval_s))
-      WHERE ap.rn >= toInt32(round(1200.0 / sr.interval_s))`,
+       AND toInt64(prev.rn) = toInt64(ap.rn) - toInt64(round(1200.0 / sr.interval_s))
+      WHERE toInt64(ap.rn) >= toInt64(round(1200.0 / sr.interval_s))`,
       {
         userId: this.#userId,
         days,
@@ -560,7 +560,7 @@ export class CyclingAdvancedRepository {
           ds.activity_id AS activity_id,
           avg(ds.scalar) OVER (
             PARTITION BY ds.activity_id
-            ORDER BY ds.recorded_at
+            ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
@@ -672,18 +672,21 @@ export class CyclingAdvancedRepository {
           ap.altitude AS altitude,
           ap.prev_altitude AS prev_altitude,
           ap.prev_recorded_at AS prev_recorded_at,
-          (
-            SELECT gp.grade FROM grade_points gp
-            WHERE gp.activity_id = ap.activity_id
-              AND gp.recorded_at BETWEEN ap.recorded_at - INTERVAL 5 SECOND
-                                     AND ap.recorded_at + INTERVAL 5 SECOND
-            ORDER BY abs(dateDiff('second', gp.recorded_at, ap.recorded_at)) ASC,
-                     gp.recorded_at ASC
-            LIMIT 1
-          ) AS grade,
-          ga.activity_id IS NOT NULL AS has_grade_samples
+          gp.grade AS grade,
+          ga.activity_id IS NOT NULL AS has_grade_samples,
+          row_number() OVER (
+            PARTITION BY ap.activity_id, ap.recorded_at
+            ORDER BY
+              if(gp.recorded_at IS NULL, 1, 0) ASC,
+              abs(dateDiff('second', gp.recorded_at, ap.recorded_at)) ASC,
+              gp.recorded_at ASC
+          ) AS grade_rank
         FROM altitude_points ap
         LEFT JOIN grade_activities ga ON ga.activity_id = ap.activity_id
+        LEFT JOIN grade_points gp
+          ON gp.activity_id = ap.activity_id
+         AND gp.recorded_at BETWEEN ap.recorded_at - INTERVAL 5 SECOND
+                                AND ap.recorded_at + INTERVAL 5 SECOND
       )
       SELECT
         toString(toDate(toTimeZone(a.started_at, {timezone:String}))) AS date,
@@ -695,6 +698,7 @@ export class CyclingAdvancedRepository {
       WHERE cs.prev_altitude IS NOT NULL
         AND cs.prev_recorded_at IS NOT NULL
         AND cs.altitude > cs.prev_altitude
+        AND cs.grade_rank = 1
         AND (NOT cs.has_grade_samples OR cs.grade > 3)
       GROUP BY a.id, a.started_at, a.name
       HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60

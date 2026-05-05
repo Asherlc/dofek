@@ -16,6 +16,7 @@ import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitl
 import {
   dateWindowEnd,
   dateWindowStart,
+  dateWindowStartString,
   endDateSchema,
   timestampWindowStart,
 } from "../lib/date-window.ts";
@@ -288,22 +289,22 @@ export const recoveryRouter = router({
           FROM daily
         )
         SELECT
-          toString(date) AS date,
-          daily_load,
-          acute_load,
-          chronic_load_avg * 7 AS chronic_load,
-          if(chronic_load_avg > 0 AND chronic_count = 28,
-             acute_load / (chronic_load_avg * 7),
+          toString(with_windows.date) AS date,
+          with_windows.daily_load AS daily_load,
+          with_windows.acute_load AS acute_load,
+          with_windows.chronic_load_avg * 7 AS chronic_load,
+          if(with_windows.chronic_load_avg > 0 AND with_windows.chronic_count = 28,
+             with_windows.acute_load / (with_windows.chronic_load_avg * 7),
              NULL) AS workload_ratio
         FROM with_windows
-        WHERE date > toDate({outputWindowStart:String})
+        WHERE with_windows.date > toDate({outputWindowStart:String})
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
           timezone: ctx.timezone,
-          windowStart: dateWindowStart(input.endDate, queryDays),
+          windowStart: dateWindowStartString(input.endDate, queryDays),
           totalDays: queryDays,
-          outputWindowStart: dateWindowStart(input.endDate, input.days),
+          outputWindowStart: dateWindowStartString(input.endDate, input.days),
         },
       );
 
@@ -654,7 +655,7 @@ export const recoveryRouter = router({
         {
           userId: ctx.userId,
           timezone: ctx.timezone,
-          windowStart: dateWindowStart(input.endDate, input.days),
+          windowStart: dateWindowStartString(input.endDate, input.days),
         },
       );
 

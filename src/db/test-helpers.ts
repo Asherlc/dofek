@@ -11,6 +11,7 @@ export type TestDatabase = ReturnType<typeof createDatabase>;
 export interface TestContext {
   db: TestDatabase;
   connectionString: string;
+  addCleanup: (cleanup: () => Promise<void>) => void;
   cleanup: () => Promise<void>;
 }
 
@@ -24,6 +25,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
   let container: Awaited<ReturnType<GenericContainer["start"]>> | null = null;
   let adminUrl: string | null = null;
   let dbName: string | null = null;
+  const cleanupTasks: Array<() => Promise<void>> = [];
 
   if (process.env.TEST_DATABASE_URL) {
     // CI: create an isolated database per test file on the shared Postgres instance
@@ -126,6 +128,18 @@ export async function setupTestDatabase(): Promise<TestContext> {
     }
   }
 
+  for (const file of ["0008_clickhouse_activity_views.sql", "0015_clickhouse_proxy_views.sql"]) {
+    const content = readFileSync(resolve(drizzleDir, file), "utf-8");
+    const statements = content
+      .split("--> statement-breakpoint")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    for (const statement of statements) {
+      await migrationClient.query(statement);
+    }
+  }
+
   // Seed the canonical integration-test user.
   // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
   await migrationClient.query(
@@ -150,7 +164,13 @@ export async function setupTestDatabase(): Promise<TestContext> {
   return {
     db,
     connectionString,
+    addCleanup: (cleanup) => {
+      cleanupTasks.push(cleanup);
+    },
     cleanup: async () => {
+      for (const cleanupTask of [...cleanupTasks].reverse()) {
+        await cleanupTask();
+      }
       await db.$client.end();
       if (container) {
         await container.stop();

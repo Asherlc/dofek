@@ -40,6 +40,12 @@ export function dateWindowStart(endDate: string, days: number): SQL {
   return sql`${endDate}::date - ${days}::int`;
 }
 
+export function dateWindowStartString(endDate: string, days: number): string {
+  const windowStart = new Date(`${endDate}T00:00:00Z`);
+  windowStart.setUTCDate(windowStart.getUTCDate() - days);
+  return windowStart.toISOString().slice(0, 10);
+}
+
 /**
  * Build the SQL upper bound for a date window (the endDate itself as a date).
  * Replaces `CURRENT_DATE` with the client-provided anchor.
@@ -61,4 +67,8 @@ export function dateWindowEnd(endDate: string): SQL {
  */
 export function timestampWindowStart(endDate: string, days: number): SQL {
   return sql`(${endDate}::date - ${days}::int)::timestamp`;
+}
+
+export function timestampWindowStartString(endDate: string, days: number): string {
+  return `${dateWindowStartString(endDate, days)} 00:00:00`;
 }

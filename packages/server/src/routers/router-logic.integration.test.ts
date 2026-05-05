@@ -4,7 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests that INSERT data and verify JS transformation logic
@@ -33,7 +36,8 @@ describe("Router transformation logic", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -1024,6 +1028,7 @@ describe("Router transformation logic", () => {
 
       // Refresh views so v_activity includes the newly inserted activity data
       await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
+      await syncClickHouseTestActivitySensorStore(testCtx);
     }, 30_000);
 
     it("detects intervals from intensity changes", async () => {

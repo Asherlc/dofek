@@ -369,8 +369,24 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.3.3.20-alpine
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: health
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+          --health-cmd "clickhouse-client --password health --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      CLICKHOUSE_URL: http://default:health@localhost:8123
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -713,8 +729,24 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.3.3.20-alpine
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: health
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+          --health-cmd "clickhouse-client --password health --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      CLICKHOUSE_URL: http://default:health@localhost:8123
       REDIS_URL: redis://localhost:6379
     strategy:
       fail-fast: false

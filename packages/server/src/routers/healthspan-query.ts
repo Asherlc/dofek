@@ -46,7 +46,10 @@ async function fetchHrZoneTime(
 
   const windowStart = new Date(endDate);
   windowStart.setUTCDate(windowStart.getUTCDate() - totalDays);
-  const windowStartIso = windowStart.toISOString();
+  const windowStartTimestamp = windowStart
+    .toISOString()
+    .replace("T", " ")
+    .replace(/\.\d{3}Z$/, "");
 
   const rows = await sensorStore.query(
     z.object({
@@ -113,7 +116,7 @@ async function fetchHrZoneTime(
     {
       userId: ctx.userId,
       timezone: ctx.timezone,
-      windowStart: windowStartIso,
+      windowStart: windowStartTimestamp,
       powerThreshold: ZONE_BOUNDARIES_FTP[2],
     },
   );
