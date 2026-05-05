@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./materialized-view-maintenance.ts", () => ({
   MATERIALIZED_VIEW_REFRESH_INVENTORY: [
     {
-      concurrentRefreshIndex: "v_daily_metrics_date_idx",
-      notes: "Daily metric priority view.",
+      concurrentRefreshIndex: "v_sleep_id_idx",
+      notes: "Sleep de-duplication view; recursive overlap logic can be CPU-heavy.",
       refreshRisk: "medium",
-      viewName: "fitness.v_daily_metrics",
+      viewName: "fitness.v_sleep",
     },
   ],
   cancelInProgressMaterializedViewRefreshesForMaintenance: vi.fn(),
@@ -92,7 +92,7 @@ describe("run-materialized-view-maintenance main()", () => {
 
     expect(mockClientConstructor).not.toHaveBeenCalled();
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
-      "fitness.v_daily_metrics\tmedium\tv_daily_metrics_date_idx\tDaily metric priority view.\n",
+      "fitness.v_sleep\tmedium\tv_sleep_id_idx\tSleep de-duplication view; recursive overlap logic can be CPU-heavy.\n",
     );
   });
 
@@ -170,13 +170,13 @@ describe("run-materialized-view-maintenance main()", () => {
   });
 
   it("runs a blocking maintenance refresh command", async () => {
-    process.argv.push("refresh", "fitness.v_daily_metrics");
+    process.argv.push("refresh", "fitness.v_sleep");
     mockRefreshMaterializedViewForMaintenance.mockResolvedValue({
       durationMs: 12,
       finishedAt: new Date("2026-04-26T12:01:00.000Z"),
       mode: "concurrent",
       startedAt: new Date("2026-04-26T12:00:00.000Z"),
-      viewName: "fitness.v_daily_metrics",
+      viewName: "fitness.v_sleep",
       warnings: ["1 long-running maintenance-like query is active"],
     });
 
@@ -184,13 +184,13 @@ describe("run-materialized-view-maintenance main()", () => {
 
     expect(mockRefreshMaterializedViewForMaintenance).toHaveBeenCalledWith(
       expect.objectContaining({ connect: expect.any(Function) }),
-      "fitness.v_daily_metrics",
+      "fitness.v_sleep",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
       "warning=1 long-running maintenance-like query is active\n",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
-      "refreshed=fitness.v_daily_metrics mode=concurrent duration_ms=12\n",
+      "refreshed=fitness.v_sleep mode=concurrent duration_ms=12\n",
     );
   });
 
@@ -253,13 +253,13 @@ describe("run-materialized-view-maintenance main()", () => {
   });
 
   it("runs a blocking materialized view rebuild command", async () => {
-    process.argv.push("rebuild", "fitness.v_daily_metrics");
+    process.argv.push("rebuild", "fitness.v_sleep");
     mockRebuildMaterializedViewForMaintenance.mockResolvedValue({
       durationMs: 35,
       finishedAt: new Date("2026-04-26T12:01:00.000Z"),
       mode: "rebuild",
       startedAt: new Date("2026-04-26T12:00:00.000Z"),
-      viewName: "fitness.v_daily_metrics",
+      viewName: "fitness.v_sleep",
       warnings: ["1 long-running maintenance-like query is active"],
     });
 
@@ -267,33 +267,33 @@ describe("run-materialized-view-maintenance main()", () => {
 
     expect(mockRebuildMaterializedViewForMaintenance).toHaveBeenCalledWith(
       expect.objectContaining({ connect: expect.any(Function) }),
-      "fitness.v_daily_metrics",
+      "fitness.v_sleep",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
       "warning=1 long-running maintenance-like query is active\n",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
-      "rebuilt=fitness.v_daily_metrics mode=rebuild duration_ms=35\n",
+      "rebuilt=fitness.v_sleep mode=rebuild duration_ms=35\n",
     );
   });
 
   it("runs a target refresh cancellation command", async () => {
-    process.argv.push("cancel-refreshes", "fitness.v_daily_metrics");
+    process.argv.push("cancel-refreshes", "fitness.v_sleep");
     mockCancelInProgressMaterializedViewRefreshesForMaintenance.mockResolvedValue({
-      viewName: "fitness.v_daily_metrics",
-      warnings: ["canceled 1 in-progress refresh for fitness.v_daily_metrics"],
+      viewName: "fitness.v_sleep",
+      warnings: ["canceled 1 in-progress refresh for fitness.v_sleep"],
     });
 
     await main();
 
     expect(mockCancelInProgressMaterializedViewRefreshesForMaintenance).toHaveBeenCalledWith(
       expect.objectContaining({ connect: expect.any(Function) }),
-      "fitness.v_daily_metrics",
+      "fitness.v_sleep",
     );
     expect(stdoutWriteSpy).toHaveBeenCalledWith(
-      "warning=canceled 1 in-progress refresh for fitness.v_daily_metrics\n",
+      "warning=canceled 1 in-progress refresh for fitness.v_sleep\n",
     );
-    expect(stdoutWriteSpy).toHaveBeenCalledWith("canceled_refreshes=fitness.v_daily_metrics\n");
+    expect(stdoutWriteSpy).toHaveBeenCalledWith("canceled_refreshes=fitness.v_sleep\n");
   });
 
   it("throws usage for unknown commands", async () => {

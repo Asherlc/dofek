@@ -93,7 +93,8 @@ export async function setupTestDatabase(): Promise<TestContext> {
       .sort();
 
     // Parse view files upfront so we know which views to drop.
-    // Only views with canonical definitions in _views/ are dropped and recreated.
+    // Only files containing CREATE MATERIALIZED VIEW are matviews; CREATE OR
+    // REPLACE VIEW files are plain views (handled differently below).
     const parsedViews = viewFiles.map((file) => {
       const content = readFileSync(join(viewsDir, file), "utf-8");
       const match = content.match(
@@ -102,7 +103,9 @@ export async function setupTestDatabase(): Promise<TestContext> {
       return { content, viewName: match?.[1] };
     });
 
-    // Drop managed views in reverse order (dependents first)
+    // Drop managed matviews in reverse order (dependents first). CASCADE is
+    // used because matviews like activity_summary depend on deduped_sensor,
+    // and both get recreated below in dependency order.
     for (const { viewName } of [...parsedViews].reverse()) {
       if (!viewName) continue;
       await migrationClient.query(
@@ -110,7 +113,8 @@ export async function setupTestDatabase(): Promise<TestContext> {
       );
     }
 
-    // Create in filename order (01_v_activity before 02_activity_summary)
+    // Recreate in filename order — 01_v_activity before 02_v_sleep before
+    // 06_activity_summary (which joins deduped_sensor created by 0012).
     for (const { content } of parsedViews) {
       const statements = content
         .split("--> statement-breakpoint")

@@ -2908,3 +2908,53 @@ The workflow registers the PeerDB search attribute that current PeerDB
 `stable-v0.36.18` requires. Future PeerDB upgrades may add more Temporal search
 attributes; handle those as explicit deploy prerequisites rather than letting
 mirror creation fail after stack rollout.
+
+## 2026-05-04: PR 1092 CI and Review App View Conversion Failures
+
+### Symptoms
+
+PR `#1092` failed CI and review-app deployment while converting analytics
+materialized views to plain views. Typecheck and Knip failed in
+`packages/server`, integration and end-to-end tests failed during migrations,
+unit tests failed on stale materialized-view expectations, and the review-app
+seed failed before reviewer data loaded.
+
+### Evidence
+
+The first fatal typecheck errors were missing package imports for
+`@dofek/db`, `@dofek/jobs/queues`, and `@dofek/lib/cache`. The first migration
+fatal error was:
+
+```text
+"deduped_sensor" is not a view
+Hint: Use DROP MATERIALIZED VIEW to remove a materialized view.
+```
+
+The review app seed failed with:
+
+```text
+error: relation "fitness.deduped_sensor" does not exist
+```
+
+### Root Cause
+
+The branch renamed root package subpath imports inconsistently, migration
+`0012_deduped_sensor_plain_view.sql` tried to drop a materialized view with
+`DROP VIEW`, and review-app seeding assumed a skipped migration had already left
+`fitness.deduped_sensor` present before recreating dependent views.
+
+### Fix or Mitigation
+
+Imports now use the canonical `dofek/*` subpaths. Migration `0012` explicitly
+drops `fitness.deduped_sensor` as a materialized view and preserves/recreates
+`fitness.activity_summary` inside the same migration boundary. Review-app seed
+now repairs `fitness.deduped_sensor` before recreating views when the schema
+already exists. Tests were updated so plain views do not expect refreshes, while
+the still-materialized `fitness.v_activity` and `fitness.v_sleep` paths refresh
+after relevant HealthKit ingestion and in sleep integration setup.
+
+### Remaining Risk
+
+Local integration validation was blocked because the Docker daemon was not
+running. CI should validate the migration and review-app seed path against a
+real Postgres service after the branch is pushed.

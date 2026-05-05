@@ -122,7 +122,6 @@ describe("sleep data consistency across endpoints", () => {
 
     // Refresh materialized views
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {

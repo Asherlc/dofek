@@ -1,15 +1,13 @@
 -- Canonical definition of the fitness.deduped_sensor materialized view.
--- This view depends on fitness.v_activity — it must be created after 01_v_activity.sql.
---
--- Centralizes the best-source dedup logic: for each (canonical_activity, channel),
--- picks the provider_id with the most samples. This ensures BLE data (50Hz) is
--- preferred over API data (1Hz) automatically, and cross-provider data (e.g.
--- Apple Watch HR for a Peloton ride) is included.
---
--- Downstream consumers (activity_summary, getStream, getHrZones) read from this
--- view instead of reimplementing best-source selection independently.
+-- This sits in the dedup graph rooted at fitness.v_activity. Production
+-- consumers query analytics.deduped_sensor in ClickHouse via PeerDB CDC, but
+-- this matview still exists for the Postgres-backed integration test store.
 
-CREATE MATERIALIZED VIEW fitness.deduped_sensor AS
+DROP VIEW IF EXISTS fitness.deduped_sensor;
+
+--> statement-breakpoint
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.deduped_sensor AS
 
 -- Step 0: Flatten v_activity to get canonical_id -> member_id mapping
 WITH canonical_activities AS (

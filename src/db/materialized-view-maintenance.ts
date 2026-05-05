@@ -75,43 +75,7 @@ export const MATERIALIZED_VIEW_REFRESH_INVENTORY: MaterializedViewRefreshInvento
     refreshRisk: "medium",
     notes: "Sleep de-duplication view; recursive overlap logic can be CPU-heavy.",
   },
-  {
-    viewName: "fitness.v_body_measurement",
-    concurrentRefreshIndex: "v_body_measurement_id_idx",
-    refreshRisk: "low",
-    notes: "Body measurement de-duplication view; small relative to sensor data.",
-  },
-  {
-    viewName: "fitness.v_daily_metrics",
-    concurrentRefreshIndex: "v_daily_metrics_date_idx",
-    refreshRisk: "medium",
-    notes: "Daily metric priority view; used by dashboards and stale-view refresh paths.",
-  },
-  {
-    viewName: "fitness.deduped_sensor",
-    concurrentRefreshIndex: "deduped_sensor_pk",
-    refreshRisk: "high",
-    notes: "Scans metric stream data and joins activity data; reader-safe but resource-heavy.",
-  },
-  {
-    viewName: "fitness.derived_resting_heart_rate",
-    concurrentRefreshIndex: "derived_resting_heart_rate_user_date_idx",
-    refreshRisk: "medium",
-    notes: "Derives resting heart rate from sleep-window heart-rate samples.",
-  },
-  {
-    viewName: "fitness.activity_summary",
-    concurrentRefreshIndex: "activity_summary_pk",
-    refreshRisk: "high",
-    notes: "Depends on deduped sensor data and windowed activity calculations.",
-  },
-  {
-    viewName: "fitness.provider_stats",
-    concurrentRefreshIndex: "provider_stats_user_provider_idx",
-    refreshRisk: "high",
-    notes: "Aggregates across many tables including metric stream data.",
-  },
-];
+] as const;
 
 function formatCount(count: number, singular: string, plural: string): string {
   return count === 1 ? `1 ${singular}` : `${count} ${plural}`;

@@ -116,8 +116,8 @@ export abstract class BaseRepository<TDb extends ExecutableDatabase = Executable
   }
 
   async #refreshActivityViews(): Promise<void> {
-    for (const view of ACTIVITY_VIEWS) {
-      await refreshMaterializedView(this.db, view, {
+    for (const viewName of ACTIVITY_VIEWS) {
+      await refreshMaterializedView(this.db, viewName, {
         source: "server.activity_view_self_heal",
         fallbackToBlocking: false,
       });

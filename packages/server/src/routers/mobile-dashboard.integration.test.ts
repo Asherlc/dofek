@@ -62,7 +62,6 @@ describe("mobile-dashboard router integration", () => {
     );
 
     // Refresh materialized views so dashboard queries pick up the data
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_daily_metrics`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const app = createApp(testCtx.db);

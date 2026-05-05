@@ -75,35 +75,37 @@ async function applyMigrations() {
 
 async function recreateMaterializedViews() {
   const viewsDir = join(drizzleDir, "_views");
-  if (existsSync(viewsDir)) {
-    const viewFiles = readdirSync(viewsDir)
-      .filter((fileName) => fileName.endsWith(".sql"))
-      .sort();
+  if (!existsSync(viewsDir)) return;
 
-    const parsed = viewFiles.map((fileName) => {
-      const content = readFileSync(join(viewsDir, fileName), "utf-8");
-      const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-      return { content, viewName: match?.[1] };
-    });
+  const viewFiles = readdirSync(viewsDir)
+    .filter((fileName) => fileName.endsWith(".sql"))
+    .sort();
 
-    // Drop in reverse order (dependents first)
-    for (const { viewName } of [...parsed].reverse()) {
-      if (!viewName) continue;
-      await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
-    }
+  const parsed = viewFiles.map((fileName) => {
+    const content = readFileSync(join(viewsDir, fileName), "utf-8");
+    const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
+    return { fileName, content, viewName: match?.[1] };
+  });
 
-    // Create in filename order
-    for (const { content } of parsed) {
-      const statements = content
-        .split("--> statement-breakpoint")
-        .map((statement) => statement.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        await sql.unsafe(statement);
-      }
-    }
-    console.log(`Views: ${viewFiles.length} recreated`);
+  // Drop matviews in reverse order. CASCADE removes other matview dependents
+  // (deduped_sensor depends on v_activity, activity_summary depends on
+  // deduped_sensor) which the recreate loop below recreates in dependency
+  // order from the canonical _views/*.sql definitions.
+  for (const { viewName } of [...parsed].reverse()) {
+    if (!viewName) continue;
+    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
   }
+
+  for (const { content } of parsed) {
+    const statements = content
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    for (const statement of statements) {
+      await sql.unsafe(statement);
+    }
+  }
+  console.log(`Views: ${viewFiles.length} recreated`);
 }
 
 // ---------------------------------------------------------------------------

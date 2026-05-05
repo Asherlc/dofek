@@ -345,6 +345,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 ### Resilience
 - [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.
 - [ ] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout.
+- [ ] Convert `fitness.v_activity` and `fitness.v_sleep` from materialized views to plain views once we can prove the recursive-CTE dedup query is fast enough on production-scale data. These two are the last remaining matviews; everything else has been converted. Removing them would also let us delete `admin.refreshViews`, the activity self-heal in `BaseRepository.queryWithViewRefresh`, the HealthKit sync `refreshIngestView` helper, and the e2e `/api/internal/materialized-views/refresh` wait, leaving a fully read-time-fresh schema with no refresh maintenance.
 
 ### Authentication Follow-ups
 - [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking

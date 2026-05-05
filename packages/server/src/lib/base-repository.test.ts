@@ -16,7 +16,7 @@ vi.mock("dofek/db/materialized-view-refresh", () => ({
 }));
 
 vi.mock("dofek/db/materialized-views", () => ({
-  ACTIVITY_VIEWS: ["fitness.activity_summary", "fitness.v_activity"],
+  ACTIVITY_VIEWS: ["fitness.v_activity", "fitness.deduped_sensor", "fitness.activity_summary"],
 }));
 
 // Concrete subclass for testing
@@ -173,11 +173,15 @@ describe("BaseRepository", () => {
         extra: { baseCount: 2 },
       },
     );
-    expect(refreshMaterializedView).toHaveBeenNthCalledWith(1, mockDb, "fitness.activity_summary", {
+    expect(refreshMaterializedView).toHaveBeenNthCalledWith(1, mockDb, "fitness.v_activity", {
       source: "server.activity_view_self_heal",
       fallbackToBlocking: false,
     });
-    expect(refreshMaterializedView).toHaveBeenNthCalledWith(2, mockDb, "fitness.v_activity", {
+    expect(refreshMaterializedView).toHaveBeenNthCalledWith(2, mockDb, "fitness.deduped_sensor", {
+      source: "server.activity_view_self_heal",
+      fallbackToBlocking: false,
+    });
+    expect(refreshMaterializedView).toHaveBeenNthCalledWith(3, mockDb, "fitness.activity_summary", {
       source: "server.activity_view_self_heal",
       fallbackToBlocking: false,
     });

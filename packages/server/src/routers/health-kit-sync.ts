@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { queryCache } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
@@ -39,6 +40,21 @@ async function ensureProvider(db: Database, userId: string) {
         VALUES (${PROVIDER_ID}, 'Apple Health', ${userId})
         ON CONFLICT (id) DO NOTHING`,
   );
+}
+
+async function refreshIngestView(
+  db: Database,
+  viewName: "fitness.v_activity" | "fitness.v_sleep",
+  source: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await refreshMaterializedView(db, viewName, { source });
+  } catch (error) {
+    Sentry.captureException(error, {
+      tags: { userId, context: "healthKitMaterializedViewRefresh", viewName, source },
+    });
+  }
 }
 
 /** Route a sample to its destination category */
@@ -91,7 +107,6 @@ export const healthKitSyncRouter = router({
 
       let inserted = 0;
       const errors: string[] = [];
-      let needsDailyMetricsRefresh = false;
 
       try {
         inserted += await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
@@ -101,11 +116,7 @@ export const healthKitSyncRouter = router({
       }
 
       try {
-        const dailyInserted = await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
-        inserted += dailyInserted;
-        if (dailyInserted > 0) {
-          needsDailyMetricsRefresh = true;
-        }
+        inserted += await processDailyMetrics(ctx.db, ctx.userId, dailyMetricSamples);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Daily metrics: ${message}`);
@@ -120,14 +131,12 @@ export const healthKitSyncRouter = router({
           await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
 
           // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-          let aggregatedDailyMetrics = false;
           if (bounds) {
             const hasSpo2 = metricStreamSamples.some(
               (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
             );
             if (hasSpo2) {
               await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
-              aggregatedDailyMetrics = true;
             }
             const skinTempSamples = metricStreamSamples.filter(
               (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
@@ -137,13 +146,7 @@ export const healthKitSyncRouter = router({
                 `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
               );
               await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
-              aggregatedDailyMetrics = true;
             }
-          }
-
-          // Refresh the daily metrics view so the dashboard picks up new data immediately
-          if (aggregatedDailyMetrics) {
-            needsDailyMetricsRefresh = true;
           }
         }
       } catch (error: unknown) {
@@ -156,26 +159,6 @@ export const healthKitSyncRouter = router({
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Health events: ${message}`);
-      }
-
-      // Refresh materialized views so the dashboard picks up new data immediately
-      if (needsDailyMetricsRefresh) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_daily_metrics", {
-            source: "server.healthkit_push_quantity",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_daily_metrics: ${error}`);
-        }
-      }
-      if (bodyMeasurements.length > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_body_measurement", {
-            source: "server.healthkit_push_quantity",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_body_measurement: ${error}`);
-        }
       }
 
       // Invalidate cached data so queries pick up the newly ingested data
@@ -215,16 +198,12 @@ export const healthKitSyncRouter = router({
 
       // Refresh activity views so dashboard picks up new workouts immediately
       if (inserted > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_activity", {
-            source: "server.healthkit_push_workouts",
-          });
-          await refreshMaterializedView(ctx.db, "fitness.activity_summary", {
-            source: "server.healthkit_push_workouts",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh activity views: ${error}`);
-        }
+        await refreshIngestView(
+          ctx.db,
+          "fitness.v_activity",
+          "apple_health.workout_sync",
+          ctx.userId,
+        );
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 
@@ -262,13 +241,7 @@ export const healthKitSyncRouter = router({
 
       // Refresh v_sleep so sleep queries pick up new data immediately
       if (inserted > 0) {
-        try {
-          await refreshMaterializedView(ctx.db, "fitness.v_sleep", {
-            source: "server.healthkit_push_sleep",
-          });
-        } catch (error) {
-          logger.error(`[apple_health] Failed to refresh v_sleep: ${error}`);
-        }
+        await refreshIngestView(ctx.db, "fitness.v_sleep", "apple_health.sleep_sync", ctx.userId);
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 

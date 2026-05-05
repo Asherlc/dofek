@@ -1425,25 +1425,6 @@ describe("HealthKitSyncRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
   });
-
-  describe("refreshDailyMetricsView", () => {
-    it("refreshes materialized view concurrently", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.refreshDailyMetricsView();
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-
-    it("falls back to non-concurrent refresh on error", async () => {
-      const execute = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("concurrent refresh not possible"))
-        .mockResolvedValueOnce([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.refreshDailyMetricsView();
-      expect(execute).toHaveBeenCalledTimes(2);
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 -- Canonical definition of the fitness.derived_resting_heart_rate materialized view.
 -- Derived from raw sleep-window heart-rate samples.
 
-CREATE MATERIALIZED VIEW fitness.derived_resting_heart_rate AS
+CREATE OR REPLACE VIEW fitness.derived_resting_heart_rate AS
 WITH sleep_windows AS (
   SELECT
     user_id,
@@ -69,10 +69,6 @@ GROUP BY user_id, date;
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS derived_resting_heart_rate_user_date_idx
-  ON fitness.derived_resting_heart_rate (user_id, date);
 
 --> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS derived_resting_heart_rate_date_idx
-  ON fitness.derived_resting_heart_rate (date DESC);

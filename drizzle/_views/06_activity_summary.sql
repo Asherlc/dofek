@@ -1,10 +1,15 @@
 -- Canonical definition of the fitness.activity_summary materialized view.
--- This view depends on fitness.deduped_sensor — it must be created after 05_deduped_sensor.sql.
---
--- Reads from fitness.deduped_sensor which already handles best-source dedup
--- and legacy metric_stream fallback. This view only does aggregation.
+-- This sits in the dedup graph rooted at fitness.v_activity, joined to
+-- fitness.deduped_sensor (also materialized) — the analytics queries that
+-- consume it (efficiency.aerobicDecoupling, etc.) self-join sensor rows on
+-- recorded_at, which would re-evaluate the entire dedup CTE chain twice per
+-- query if this stayed as a plain view. Keep it materialized.
 
-CREATE MATERIALIZED VIEW fitness.activity_summary AS
+DROP VIEW IF EXISTS fitness.activity_summary;
+
+--> statement-breakpoint
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.activity_summary AS
 
 -- Step 1: Elevation gain/loss from altitude channel (window function on ordered data)
 WITH altitude_deltas AS (
@@ -156,8 +161,8 @@ LEFT JOIN distance_per_activity d ON d.activity_id = ca.activity_id;
 
 --> statement-breakpoint
 
-CREATE UNIQUE INDEX IF NOT EXISTS activity_summary_pk ON fitness.activity_summary (activity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS activity_summary_pk
+  ON fitness.activity_summary (activity_id);
+
 
 --> statement-breakpoint
-
-CREATE INDEX IF NOT EXISTS activity_summary_user_time ON fitness.activity_summary (user_id, started_at DESC);

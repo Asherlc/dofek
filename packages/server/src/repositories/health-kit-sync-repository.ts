@@ -1,6 +1,5 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import type { Database } from "dofek/db";
-import { refreshMaterializedView } from "dofek/db/materialized-view-refresh";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -842,12 +841,5 @@ export class HealthKitSyncRepository {
           ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
             skin_temp_c = EXCLUDED.skin_temp_c`,
     );
-  }
-
-  /** Refresh the daily metrics materialized view */
-  async refreshDailyMetricsView(): Promise<void> {
-    await refreshMaterializedView(this.#db, "fitness.v_daily_metrics", {
-      source: "server.healthkit_repository",
-    });
   }
 }

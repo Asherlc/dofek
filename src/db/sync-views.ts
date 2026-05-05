@@ -21,6 +21,19 @@ export function extractViewName(sqlContent: string): string | null {
 }
 
 /**
+ * Extract the view name from a plain `CREATE [OR REPLACE] VIEW` statement.
+ * Plain views are managed alongside materialized views in `drizzle/_views/`,
+ * but they are recreated unconditionally because `CREATE OR REPLACE VIEW`
+ * is idempotent and there is no expensive population to avoid.
+ */
+export function extractPlainViewName(sqlContent: string): string | null {
+  const match = sqlContent.match(
+    /CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(\S+)/i,
+  );
+  return match?.[1] ?? null;
+}
+
+/**
  * Compute a SHA-256 hash of the SQL content, ignoring leading comments and whitespace
  * so that comment-only changes don't trigger expensive view recreation.
  */
@@ -253,7 +266,18 @@ export async function syncMaterializedViews(
       const viewName = extractViewName(content);
 
       if (!viewName) {
-        logger.warn(`[views] Could not extract view name from ${file}, skipping`);
+        // Plain `CREATE [OR REPLACE] VIEW` files are run unconditionally —
+        // they're idempotent and have no population step to optimize away.
+        const plainViewName = extractPlainViewName(content);
+        if (plainViewName) {
+          logger.info(`[views] ${plainViewName} is a plain view, applying unconditionally`);
+          for (const statement of splitSqlStatements(content)) {
+            await client.query(statement);
+          }
+          synced++;
+        } else {
+          logger.warn(`[views] Could not extract view name from ${file}, skipping`);
+        }
         continue;
       }
 

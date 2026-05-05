@@ -39,30 +39,6 @@ describe("MATERIALIZED_VIEW_REFRESH_INVENTORY", () => {
         concurrentRefreshIndex: "v_sleep_id_idx",
         viewName: "fitness.v_sleep",
       }),
-      expect.objectContaining({
-        concurrentRefreshIndex: "v_body_measurement_id_idx",
-        viewName: "fitness.v_body_measurement",
-      }),
-      expect.objectContaining({
-        concurrentRefreshIndex: "v_daily_metrics_date_idx",
-        viewName: "fitness.v_daily_metrics",
-      }),
-      expect.objectContaining({
-        concurrentRefreshIndex: "deduped_sensor_pk",
-        viewName: "fitness.deduped_sensor",
-      }),
-      expect.objectContaining({
-        concurrentRefreshIndex: "derived_resting_heart_rate_user_date_idx",
-        viewName: "fitness.derived_resting_heart_rate",
-      }),
-      expect.objectContaining({
-        concurrentRefreshIndex: "activity_summary_pk",
-        viewName: "fitness.activity_summary",
-      }),
-      expect.objectContaining({
-        concurrentRefreshIndex: "provider_stats_user_provider_idx",
-        viewName: "fitness.provider_stats",
-      }),
     ]);
   });
 });
@@ -149,12 +125,12 @@ describe("refreshMaterializedViewForMaintenance", () => {
     const nowSpy = vi.spyOn(performance, "now").mockReturnValueOnce(100).mockReturnValueOnce(125);
 
     try {
-      const result = await refreshMaterializedViewForMaintenance(client, "fitness.v_daily_metrics");
+      const result = await refreshMaterializedViewForMaintenance(client, "fitness.v_sleep");
 
       expect(result).toMatchObject({
         durationMs: 25,
         mode: "concurrent",
-        viewName: "fitness.v_daily_metrics",
+        viewName: "fitness.v_sleep",
         warnings: [],
       });
       expect(result.startedAt).toBeInstanceOf(Date);
@@ -163,7 +139,7 @@ describe("refreshMaterializedViewForMaintenance", () => {
         VIEW_SYNC_LOCK_KEY,
       ]);
       expect(executedQueries(client)).toContain(
-        'REFRESH MATERIALIZED VIEW CONCURRENTLY "fitness"."v_daily_metrics"',
+        'REFRESH MATERIALIZED VIEW CONCURRENTLY "fitness"."v_sleep"',
       );
       expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
         VIEW_SYNC_LOCK_KEY,
@@ -176,9 +152,9 @@ describe("refreshMaterializedViewForMaintenance", () => {
   it("fails before preflight when the maintenance lock is already held", async () => {
     const client = createClient(new Map([["pg_try_advisory_lock", [{ locked: false }]]]));
 
-    await expect(
-      refreshMaterializedViewForMaintenance(client, "fitness.v_daily_metrics"),
-    ).rejects.toThrow("materialized view maintenance lock is already held");
+    await expect(refreshMaterializedViewForMaintenance(client, "fitness.v_sleep")).rejects.toThrow(
+      "materialized view maintenance lock is already held",
+    );
 
     expect(executedQueries(client)).toEqual(["SELECT pg_try_advisory_lock($1) AS locked"]);
   });
@@ -196,33 +172,33 @@ describe("rebuildMaterializedViewForMaintenance", () => {
   it("drops and recreates a canonical materialized view under the maintenance lock", async () => {
     const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
     writeFileSync(
-      join(viewsDir, "01_provider_stats.sql"),
+      join(viewsDir, "01_v_sleep.sql"),
       [
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.v_sleep AS",
         "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
         "--> statement-breakpoint",
-        "CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx",
-        "ON fitness.provider_stats (user_id, provider_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS v_sleep_id_idx",
+        "ON fitness.v_sleep (user_id, provider_id)",
       ].join("\n"),
     );
     const client = createClient(
       new Map([
         ["pg_try_advisory_lock", [{ locked: true }]],
         ["pg_is_in_recovery", [{ in_recovery: false }]],
-        ["fingerprint_source", [{ fingerprint_source: "provider_stats:provider_id:text" }]],
+        ["fingerprint_source", [{ fingerprint_source: "v_sleep:id:text" }]],
       ]),
     );
     const nowSpy = vi.spyOn(performance, "now").mockReturnValueOnce(200).mockReturnValueOnce(260);
 
     try {
-      const result = await rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", {
+      const result = await rebuildMaterializedViewForMaintenance(client, "fitness.v_sleep", {
         viewsDir,
       });
 
       expect(result).toMatchObject({
         durationMs: 60,
         mode: "rebuild",
-        viewName: "fitness.provider_stats",
+        viewName: "fitness.v_sleep",
         warnings: [],
       });
       expect(result.startedAt).toBeInstanceOf(Date);
@@ -231,13 +207,13 @@ describe("rebuildMaterializedViewForMaintenance", () => {
         VIEW_SYNC_LOCK_KEY,
       ]);
       expect(executedQueries(client)).toContain(
-        'DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE',
+        'DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_sleep" CASCADE',
       );
       expect(executedQueries(client)).toContain(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS\nSELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.v_sleep AS\nSELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
       );
       expect(executedQueries(client)).toContain(
-        "CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx\nON fitness.provider_stats (user_id, provider_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS v_sleep_id_idx\nON fitness.v_sleep (user_id, provider_id)",
       );
       expect(executedQueries(client).some((query) => query.includes("drizzle.__view_hashes"))).toBe(
         true,
@@ -254,13 +230,13 @@ describe("rebuildMaterializedViewForMaintenance", () => {
   it("does not cancel target refreshes inside the rebuild command", async () => {
     const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
     writeFileSync(
-      join(viewsDir, "01_provider_stats.sql"),
+      join(viewsDir, "01_v_sleep.sql"),
       [
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.v_sleep AS",
         "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
         "--> statement-breakpoint",
-        "CREATE UNIQUE INDEX IF NOT EXISTS provider_stats_user_provider_idx",
-        "ON fitness.provider_stats (user_id, provider_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS v_sleep_id_idx",
+        "ON fitness.v_sleep (user_id, provider_id)",
       ].join("\n"),
     );
     const client = createClient(
@@ -268,19 +244,19 @@ describe("rebuildMaterializedViewForMaintenance", () => {
         ["pg_try_advisory_lock", [{ locked: true }]],
         ["refresh_query_pid", [{ canceled: true, refresh_query_pid: 42 }]],
         ["pg_is_in_recovery", [{ in_recovery: false }]],
-        ["fingerprint_source", [{ fingerprint_source: "provider_stats:provider_id:text" }]],
+        ["fingerprint_source", [{ fingerprint_source: "v_sleep:id:text" }]],
       ]),
     );
 
     try {
-      const result = await rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", {
+      const result = await rebuildMaterializedViewForMaintenance(client, "fitness.v_sleep", {
         viewsDir,
       });
 
       const queries = executedQueries(client);
       const preflightQueryIndex = queries.findIndex((query) => query.includes("pg_is_in_recovery"));
       const dropQueryIndex = queries.findIndex((query) =>
-        query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
+        query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_sleep" CASCADE'),
       );
       expect(dropQueryIndex).toBeGreaterThan(preflightQueryIndex);
       expect(queries.some((query) => query.includes("pg_cancel_backend"))).toBe(false);
@@ -293,9 +269,9 @@ describe("rebuildMaterializedViewForMaintenance", () => {
   it("fails before preflight when the rebuild lock is already held", async () => {
     const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
     writeFileSync(
-      join(viewsDir, "01_provider_stats.sql"),
+      join(viewsDir, "01_v_sleep.sql"),
       [
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.v_sleep AS",
         "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
       ].join("\n"),
     );
@@ -303,7 +279,7 @@ describe("rebuildMaterializedViewForMaintenance", () => {
 
     try {
       await expect(
-        rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", { viewsDir }),
+        rebuildMaterializedViewForMaintenance(client, "fitness.v_sleep", { viewsDir }),
       ).rejects.toThrow("materialized view maintenance lock is already held");
 
       expect(executedQueries(client)).toEqual(["SELECT pg_try_advisory_lock($1) AS locked"]);
@@ -315,9 +291,9 @@ describe("rebuildMaterializedViewForMaintenance", () => {
   it("fails before dropping the view when quiet database preflight fails", async () => {
     const viewsDir = mkdtempSync(join(tmpdir(), "dofek-views-"));
     writeFileSync(
-      join(viewsDir, "01_provider_stats.sql"),
+      join(viewsDir, "01_v_sleep.sql"),
       [
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.provider_stats AS",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.v_sleep AS",
         "SELECT 'provider'::text AS provider_id, 'user'::text AS user_id",
       ].join("\n"),
     );
@@ -330,12 +306,12 @@ describe("rebuildMaterializedViewForMaintenance", () => {
 
     try {
       await expect(
-        rebuildMaterializedViewForMaintenance(client, "fitness.provider_stats", { viewsDir }),
+        rebuildMaterializedViewForMaintenance(client, "fitness.v_sleep", { viewsDir }),
       ).rejects.toThrow("quiet database preflight failed: database is in recovery");
 
       expect(
         executedQueries(client).some((query) =>
-          query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."provider_stats" CASCADE'),
+          query.includes('DROP MATERIALIZED VIEW IF EXISTS "fitness"."v_sleep" CASCADE'),
         ),
       ).toBe(false);
       expect(client.query).toHaveBeenCalledWith("SELECT pg_advisory_unlock($1)", [
@@ -363,16 +339,16 @@ describe("cancelInProgressMaterializedViewRefreshesForMaintenance", () => {
 
     const result = await cancelInProgressMaterializedViewRefreshesForMaintenance(
       client,
-      "fitness.provider_stats",
+      "fitness.v_sleep",
     );
 
     expect(client.query).toHaveBeenCalledWith(expect.stringContaining("pg_cancel_backend"), [
-      "fitness.provider_stats",
-      '"fitness"."provider_stats"',
+      "fitness.v_sleep",
+      '"fitness"."v_sleep"',
     ]);
     expect(result).toEqual({
-      viewName: "fitness.provider_stats",
-      warnings: ["canceled 1 in-progress refresh for fitness.provider_stats"],
+      viewName: "fitness.v_sleep",
+      warnings: ["canceled 1 in-progress refresh for fitness.v_sleep"],
     });
   });
 
@@ -382,7 +358,7 @@ describe("cancelInProgressMaterializedViewRefreshesForMaintenance", () => {
     );
 
     await expect(
-      cancelInProgressMaterializedViewRefreshesForMaintenance(client, "fitness.provider_stats"),
-    ).rejects.toThrow("failed to cancel 1 in-progress refresh for fitness.provider_stats");
+      cancelInProgressMaterializedViewRefreshesForMaintenance(client, "fitness.v_sleep"),
+    ).rejects.toThrow("failed to cancel 1 in-progress refresh for fitness.v_sleep");
   });
 });

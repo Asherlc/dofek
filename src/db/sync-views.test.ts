@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { logger } from "../logger.ts";
 import {
+  extractPlainViewName,
   extractViewName,
   hashViewContent,
   isViewPopulated,
@@ -96,6 +97,42 @@ describe("extractViewName", () => {
     expect(
       extractViewName("CREATE MATERIALIZED VIEW IF   NOT   EXISTS\nfitness.v_test AS SELECT 1"),
     ).toBe("fitness.v_test");
+  });
+});
+
+describe("extractPlainViewName", () => {
+  it("extracts a name from CREATE VIEW", () => {
+    expect(extractPlainViewName("CREATE VIEW fitness.v_test AS SELECT 1")).toBe("fitness.v_test");
+  });
+
+  it("extracts a name from CREATE OR REPLACE VIEW", () => {
+    expect(extractPlainViewName("CREATE OR REPLACE VIEW fitness.v_test AS SELECT 1")).toBe(
+      "fitness.v_test",
+    );
+  });
+
+  it("does not match CREATE MATERIALIZED VIEW (matviews go through extractViewName)", () => {
+    expect(extractPlainViewName("CREATE MATERIALIZED VIEW fitness.v_test AS SELECT 1")).toBeNull();
+  });
+
+  it("is case-insensitive", () => {
+    expect(extractPlainViewName("create or replace view fitness.v_lowercase AS SELECT 1")).toBe(
+      "fitness.v_lowercase",
+    );
+  });
+
+  it("handles extra whitespace between keywords", () => {
+    expect(extractPlainViewName("CREATE   OR   REPLACE   VIEW   fitness.v_test AS SELECT 1")).toBe(
+      "fitness.v_test",
+    );
+  });
+
+  it("returns null for non-view SQL", () => {
+    expect(extractPlainViewName("CREATE TABLE foo (id INT)")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(extractPlainViewName("")).toBeNull();
   });
 });
 
@@ -912,6 +949,33 @@ describe("syncMaterializedViews", () => {
     await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
 
     expect(warnSpy).toHaveBeenCalledWith("View sync client shutdown failed: %s", expect.any(Error));
+    warnSpy.mockRestore();
+  });
+
+  it("applies plain CREATE OR REPLACE VIEW files unconditionally", async () => {
+    const { syncMaterializedViews } = await import("./sync-views.ts");
+    const viewSql = "CREATE OR REPLACE VIEW fitness.v_plain AS SELECT 1";
+    mockReaddirSync.mockReturnValue(["03_v_plain.sql"]);
+    mockReadFileSync.mockReturnValue(viewSql);
+
+    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+
+    expect(result.synced).toBe(1);
+    expect(executedQueries()).toContain(viewSql);
+  });
+
+  it("warns and continues when a file matches no known view pattern", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const { syncMaterializedViews } = await import("./sync-views.ts");
+    mockReaddirSync.mockReturnValue(["99_unknown.sql"]);
+    mockReadFileSync.mockReturnValue("-- just a comment, no CREATE statement");
+
+    const result = await syncMaterializedViews("postgres://localhost/test", "/tmp/views");
+
+    expect(result.synced).toBe(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Could not extract view name from 99_unknown.sql"),
+    );
     warnSpy.mockRestore();
   });
 });
