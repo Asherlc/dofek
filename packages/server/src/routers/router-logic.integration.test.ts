@@ -79,6 +79,10 @@ describe("Router transformation logic", () => {
   async function refreshViews() {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`);
+    await testCtx.db.execute(
+      sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary`,
+    );
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -1023,6 +1027,10 @@ describe("Router transformation logic", () => {
 
       // Refresh views so deduped_sensor includes the newly inserted sensor data
       await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`);
+      await testCtx.db.execute(
+        sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary`,
+      );
     }, 30_000);
 
     it("detects intervals from intensity changes", async () => {
