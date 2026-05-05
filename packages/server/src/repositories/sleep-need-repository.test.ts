@@ -38,11 +38,24 @@ function makeDb(calls: Record<string, unknown>[][] = []) {
   return { execute };
 }
 
+const sensorStore = {
+  query: vi.fn().mockResolvedValue([{ load: 0 }]),
+  getActivitySummaries: vi.fn(),
+  getStream: vi.fn(),
+  getHeartRateZoneSeconds: vi.fn(),
+  getPowerZoneSeconds: vi.fn(),
+  getPowerCurveSamples: vi.fn(),
+  getNormalizedPowerSamples: vi.fn(),
+  getVo2MaxEstimates: vi.fn(),
+  getHeartRateCurveRows: vi.fn(),
+  getPaceCurveRows: vi.fn(),
+};
+
 describe("SleepNeedRepository", () => {
   describe("calculate", () => {
     it("returns default baseline (480) and canRecommend false when no nights", async () => {
       const db = makeDb([[]]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.baselineMinutes).toBe(480);
@@ -73,7 +86,7 @@ describe("SleepNeedRepository", () => {
       // Average = (400+405+410+415+420+425+430+435) / 8 = 417.5 => 418
 
       const db = makeDb([goodNights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.baselineMinutes).toBe(418);
@@ -91,7 +104,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // Exactly 7 good nights should use calculated baseline (420), not default 480
@@ -111,7 +124,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // 6 good nights is fewer than 7 → default baseline
@@ -128,7 +141,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([fewNights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.baselineMinutes).toBe(480);
@@ -144,7 +157,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.strainDebtMinutes).toBe(60);
@@ -159,7 +172,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.strainDebtMinutes).toBe(20); // 100 / 5 = 20
@@ -178,7 +191,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.accumulatedDebtMinutes).toBe(240); // 3 * 80
@@ -194,7 +207,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.recentNights).toHaveLength(7);
@@ -231,7 +244,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-21");
 
       // baseline = 480 (fewer than 7 good nights), deficit per night = 80
@@ -247,7 +260,7 @@ describe("SleepNeedRepository", () => {
       // load = 50, debt = 50/5 = 10
       const nights = [makeNightRow({ date: "2024-01-14", yesterday_load: 50 })];
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
@@ -270,7 +283,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // accumulatedDebt = 320, recovery = 320 * 0.25 = 80
@@ -286,7 +299,7 @@ describe("SleepNeedRepository", () => {
       const nights = [makeNightRow({ date: "2024-01-14", duration_minutes: 420 })];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.canRecommend).toBe(true);
@@ -314,7 +327,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // The zero-duration night should be excluded, leaving exactly 7 good nights at 420 min
@@ -345,7 +358,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // baseline = 480 (fewer than 7 good nights)
@@ -360,7 +373,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       const jan15 = result.recentNights.find((night) => night.date === "2024-01-15");
@@ -395,7 +408,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-21");
 
       // Only the 7 good recovery nights should be used for baseline
@@ -424,7 +437,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.baselineMinutes).toBe(480);
@@ -441,7 +454,7 @@ describe("SleepNeedRepository", () => {
       ];
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // yesterdayLoad comes from nights[0], which is 100 => strainDebt = 100/5 = 20
@@ -452,7 +465,7 @@ describe("SleepNeedRepository", () => {
 
     it("defaults yesterdayLoad to 0 when no nights exist", async () => {
       const db = makeDb([[]]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.strainDebtMinutes).toBe(0);
@@ -460,7 +473,7 @@ describe("SleepNeedRepository", () => {
 
     it("calendar builds exactly 7 days (not 6 or 8)", async () => {
       const db = makeDb([[]]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.recentNights).toHaveLength(7);
@@ -473,7 +486,7 @@ describe("SleepNeedRepository", () => {
 
     it("calendar dates are in ascending order (subtracted from anchor, not added)", async () => {
       const db = makeDb([[]]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       for (let index = 1; index < result.recentNights.length; index++) {
@@ -487,7 +500,7 @@ describe("SleepNeedRepository", () => {
       // load = 300 => 300/5 = 60, exactly at cap
       const nights = [makeNightRow({ date: "2024-01-14", yesterday_load: 300 })];
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       expect(result.strainDebtMinutes).toBe(60);
@@ -495,7 +508,7 @@ describe("SleepNeedRepository", () => {
       // load = 305 => 305/5 = 61, but capped at 60
       const nights2 = [makeNightRow({ date: "2024-01-14", yesterday_load: 305 })];
       const db2 = makeDb([nights2]);
-      const repo2 = new SleepNeedRepository(db2, "user-1", "UTC");
+      const repo2 = new SleepNeedRepository(db2, "user-1", "UTC", sensorStore);
       const result2 = await repo2.calculate("2024-01-15");
       expect(result2.strainDebtMinutes).toBe(60);
       expect(result2.strainDebtMinutes).not.toBe(61);
@@ -512,7 +525,7 @@ describe("SleepNeedRepository", () => {
       );
 
       const db = makeDb([nights]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.calculate("2024-01-15");
 
       // If it summed without dividing: 420 * 10 = 4200
@@ -524,7 +537,7 @@ describe("SleepNeedRepository", () => {
   describe("getPerformance", () => {
     it("returns null when no sleep data", async () => {
       const db = makeDb([[]]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result).toBeNull();
@@ -534,7 +547,7 @@ describe("SleepNeedRepository", () => {
       const db = makeDb([
         [{ duration_minutes: null, efficiency_pct: 85, sleep_date: "2024-01-15" }],
       ]);
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result).toBeNull();
@@ -548,7 +561,7 @@ describe("SleepNeedRepository", () => {
         [{ avg_duration: 450 }],
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result).not.toBeNull();
@@ -566,7 +579,7 @@ describe("SleepNeedRepository", () => {
         [{ avg_duration: 450 }],
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result?.efficiency).toBe(85);
@@ -578,7 +591,7 @@ describe("SleepNeedRepository", () => {
         [{ avg_duration: null }],
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result?.neededMinutes).toBe(480);
@@ -590,7 +603,7 @@ describe("SleepNeedRepository", () => {
         [], // empty array, not [{ avg_duration: null }]
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result?.neededMinutes).toBe(480);
@@ -604,7 +617,7 @@ describe("SleepNeedRepository", () => {
         [{ avg_duration: 450 }],
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result?.efficiency).not.toBe(80);
@@ -619,7 +632,7 @@ describe("SleepNeedRepository", () => {
         [{ avg_duration: 457.3 }],
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result?.neededMinutes).toBe(457);
@@ -632,7 +645,7 @@ describe("SleepNeedRepository", () => {
         [{ avg_duration: null }],
       ]);
 
-      const repo = new SleepNeedRepository(db, "user-1", "UTC");
+      const repo = new SleepNeedRepository(db, "user-1", "UTC", sensorStore);
       const result = await repo.getPerformance("2024-01-15");
 
       expect(result?.neededMinutes).not.toBe(450);

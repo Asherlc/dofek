@@ -9,6 +9,7 @@ import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -84,20 +85,46 @@ export class SleepNeedRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: ActivitySensorStore;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   async calculate(endDate: string): Promise<SleepNeedResult> {
+    // Yesterday's training load is the only piece that lived in
+    // fitness.activity_summary; fetch it from analytics.activity_summary
+    // and inject as a parameter into the PG sleep + HRV query.
+    const loadRows = await this.#sensorStore.query(
+      z.object({ load: z.coerce.number() }),
+      `SELECT
+        coalesce(sum(
+          dateDiff('second', started_at, ended_at) / 60.0
+          * avg_hr / nullIf(toFloat64(max_hr), 0)
+        ), 0) AS load
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - INTERVAL 1 DAY
+        AND ended_at IS NOT NULL
+        AND avg_hr IS NOT NULL`,
+      { userId: this.#userId, timezone: this.#timezone, endDate },
+    );
+    const yesterdayLoad = loadRows[0]?.load ?? 0;
+
     const nights = await executeWithSchema(
       this.#db,
       sleepNeedRowSchema,
       sql`WITH sleep_raw AS (
             SELECT
-              ${sleepNightDate(this.#timezone)} AS date,
+              (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${this.#timezone})::date AS date,
               COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
             FROM fitness.v_sleep
             WHERE user_id = ${this.#userId}
@@ -110,9 +137,7 @@ export class SleepNeedRepository {
             ORDER BY date, duration_minutes DESC NULLS LAST
           ),
           daily_hrv AS (
-            SELECT
-              date,
-              hrv
+            SELECT date, hrv
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.#userId}
               AND date > ${dateWindowStart(endDate, 90)}
@@ -130,17 +155,6 @@ export class SleepNeedRepository {
             SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY next_day_hrv) AS median_hrv
             FROM sleep_with_next_hrv
             WHERE next_day_hrv IS NOT NULL
-          ),
-          yesterday_load AS (
-            SELECT COALESCE(SUM(
-              EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-              * asum.avg_hr / NULLIF(asum.max_hr, 0)
-            ), 0) AS load
-            FROM fitness.activity_summary asum
-            WHERE asum.user_id = ${this.#userId}
-              AND (asum.started_at AT TIME ZONE ${this.#timezone})::date = ${sql`${endDate}::date - 1`}
-              AND asum.ended_at IS NOT NULL
-              AND asum.avg_hr IS NOT NULL
           )
           SELECT
             s.date::text,
@@ -148,10 +162,9 @@ export class SleepNeedRepository {
             s.next_day_hrv,
             hm.median_hrv,
             CASE WHEN s.next_day_hrv >= hm.median_hrv THEN true ELSE false END AS good_recovery,
-            yl.load AS yesterday_load
+            ${yesterdayLoad}::numeric AS yesterday_load
           FROM sleep_with_next_hrv s
           CROSS JOIN hrv_median hm
-          CROSS JOIN yesterday_load yl
           ORDER BY s.date ASC`,
     );
 
