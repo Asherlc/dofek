@@ -4,6 +4,7 @@ import { z } from "zod";
 import { joinByDate } from "../insights/data-join.ts";
 import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
   type ActivityPredictionTarget,
@@ -149,9 +150,16 @@ type ExerciseMinutesRow = z.infer<typeof exerciseMinutesRowSchema>;
 export class PredictionsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
-  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
+  readonly #sensorStore: ActivitySensorStore;
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    _timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#sensorStore = sensorStore;
   }
 
   /** All available prediction targets (daily + activity-level). */
@@ -257,19 +265,25 @@ export class PredictionsRepository {
     target: ActivityPredictionTarget,
     dailyContext: DailyContext[],
   ): Promise<PredictionResult | null> {
-    const activityRows = await executeWithSchema(
-      this.#db,
+    const activityRows = await this.#sensorStore.query(
       activitySummaryRowSchema,
-      sql`SELECT
-            a.activity_id, a.activity_type, a.started_at,
-            a.avg_hr, a.avg_power, a.avg_speed, a.total_distance,
-            a.elevation_gain_m, a.avg_cadence,
-            EXTRACT(EPOCH FROM (a.last_sample_at - a.first_sample_at)) / 60 AS duration_min
-          FROM fitness.activity_summary a
-          WHERE a.user_id = ${this.#userId}
-            AND a.started_at > CURRENT_DATE - ${days}::int
-            AND a.avg_power IS NOT NULL
-          ORDER BY a.started_at ASC`,
+      `SELECT
+        toString(activity_id) AS activity_id,
+        activity_type,
+        toString(started_at) AS started_at,
+        avg_hr,
+        avg_power,
+        avg_speed,
+        total_distance,
+        elevation_gain_m,
+        avg_cadence,
+        dateDiff('second', first_sample_at, last_sample_at) / 60 AS duration_min
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > today() - INTERVAL {days:Int32} DAY
+        AND avg_power IS NOT NULL
+      ORDER BY started_at ASC`,
+      { userId: this.#userId, days },
     );
 
     const cardioActivities: CardioActivityRow[] = activityRows.map((row) => ({
@@ -413,16 +427,17 @@ export class PredictionsRepository {
   }
 
   async #fetchExerciseMinutes(days: number): Promise<ExerciseMinutesRow[]> {
-    return executeWithSchema(
-      this.#db,
+    return this.#sensorStore.query(
       exerciseMinutesRowSchema,
-      sql`SELECT DATE(started_at) AS date,
-                 SUM(EXTRACT(EPOCH FROM (last_sample_at - first_sample_at)) / 60) AS exercise_minutes
-          FROM fitness.activity_summary
-          WHERE user_id = ${this.#userId}
-            AND started_at > CURRENT_DATE - ${days}::int
-          GROUP BY DATE(started_at)
-          ORDER BY DATE(started_at) ASC`,
+      `SELECT
+        toString(toDate(started_at)) AS date,
+        sum(dateDiff('second', first_sample_at, last_sample_at) / 60) AS exercise_minutes
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > today() - INTERVAL {days:Int32} DAY
+      GROUP BY toDate(started_at)
+      ORDER BY toDate(started_at) ASC`,
+      { userId: this.#userId, days },
     );
   }
 }
