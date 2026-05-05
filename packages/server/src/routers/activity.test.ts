@@ -246,7 +246,9 @@ describe("activityRouter", () => {
         .mockResolvedValueOnce([]) // 1. list from v_activity: empty
         .mockResolvedValueOnce([{ count: 1 }]) // 2. base table count: has data
         .mockResolvedValueOnce([]) // 3. REFRESH v_activity
-        .mockResolvedValueOnce([activityRow]); // 4. retry list
+        .mockResolvedValueOnce([]) // 4. REFRESH deduped_sensor
+        .mockResolvedValueOnce([]) // 5. REFRESH activity_summary
+        .mockResolvedValueOnce([activityRow]); // 6. retry list
       const caller = createCaller({
         db: { execute },
         sensorStore: makeSensorStoreStub(),
@@ -256,7 +258,7 @@ describe("activityRouter", () => {
       const result = await caller.list({ days: 30, limit: 20, offset: 0 });
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toMatchObject({ id: "a1" });
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(execute).toHaveBeenCalledTimes(6);
     });
 
     it("returns empty when both view and base table are empty (genuinely no data)", async () => {
