@@ -3,7 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null; timezone?: string; sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore; }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone?: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -25,7 +32,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
     ),
   };
 });
-
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
 

@@ -16,14 +16,15 @@ export function createTestCallerFactory(router: AnyRouter) {
  * methods stub out to empty arrays. Use in router/repo tests that exercise
  * code paths reading from analytics.activity_summary / analytics.deduped_sensor.
  */
-export function makeMockSensorStore(
-  rows: unknown[] | unknown[][] = [],
-): ActivitySensorStore {
-  const isMatrix = rows.length > 0 && Array.isArray(rows[0]);
+function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
+  return rows.length > 0 && Array.isArray(rows[0]);
+}
+
+export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): ActivitySensorStore {
   let queryMock: ReturnType<typeof vi.fn>;
-  if (isMatrix) {
+  if (isMatrix(rows)) {
     queryMock = vi.fn();
-    for (const batch of rows as unknown[][]) {
+    for (const batch of rows) {
       queryMock.mockResolvedValueOnce(batch);
     }
   } else {

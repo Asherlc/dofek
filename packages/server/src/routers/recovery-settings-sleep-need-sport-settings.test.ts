@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -63,6 +68,7 @@ describe("recoveryRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore(rows),
     });
   }
 
@@ -492,7 +498,9 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.get({ key: "theme" });
       expect(result).toEqual({ key: "theme", value: "dark" });
@@ -504,6 +512,7 @@ describe("settingsRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.get({ key: "nonexistent" });
       expect(result).toBeNull();
@@ -520,7 +529,9 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.getAll();
       expect(result).toHaveLength(2);
@@ -537,7 +548,9 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.set({ key: "theme", value: "light" });
       expect(result).toEqual({ key: "theme", value: "light" });
@@ -550,6 +563,8 @@ describe("settingsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
+        sensorStore: makeMockSensorStore([]),
       });
       await caller.set({ key: "unitSystem", value: "imperial" });
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:settings.");
@@ -560,6 +575,7 @@ describe("settingsRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       await expect(caller.set({ key: "theme", value: "dark" })).rejects.toThrow(
         "Failed to upsert setting",
@@ -626,6 +642,7 @@ describe("settingsRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.slackStatus();
       expect(result).toHaveProperty("configured");
@@ -641,6 +658,7 @@ describe("settingsRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.slackStatus();
       expect(result.connected).toBe(true);
@@ -655,6 +673,7 @@ describe("settingsRouter", () => {
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
           timezone: "UTC",
+          sensorStore: makeMockSensorStore([]),
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
@@ -672,6 +691,7 @@ describe("settingsRouter", () => {
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
           timezone: "UTC",
+          sensorStore: makeMockSensorStore([]),
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(true);
@@ -688,6 +708,7 @@ describe("settingsRouter", () => {
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
           timezone: "UTC",
+          sensorStore: makeMockSensorStore([]),
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(false);
@@ -704,6 +725,7 @@ describe("settingsRouter", () => {
           db: { execute: vi.fn().mockResolvedValue([]) },
           userId: "user-1",
           timezone: "UTC",
+          sensorStore: makeMockSensorStore([]),
         });
         const result = await caller.slackStatus();
         expect(result.configured).toBe(false);
@@ -735,6 +757,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.calculate({});
 
@@ -758,6 +781,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.calculate({});
 
@@ -771,6 +795,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.calculate({});
 
@@ -800,6 +825,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
@@ -827,6 +853,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
@@ -849,6 +876,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
@@ -860,6 +888,7 @@ describe("sleepNeedRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
@@ -881,6 +910,7 @@ describe("sportSettingsRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore(rows),
     });
   }
 

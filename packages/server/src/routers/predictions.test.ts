@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -57,6 +62,7 @@ describe("predictionsRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.targets();
 
@@ -73,7 +79,9 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.predict({ target: "hrv", days: 365 });
 
@@ -87,6 +95,7 @@ describe("predictionsRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.predict({ target: "unknown_target", days: 365 });
       expect(result).toBeNull();
@@ -97,7 +106,9 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.predict({ target: "avg_power", days: 365 });
 
@@ -110,7 +121,9 @@ describe("predictionsRouter", () => {
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
+
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.predict({ target: "total_volume", days: 365 });
       expect(result).toBeNull();
