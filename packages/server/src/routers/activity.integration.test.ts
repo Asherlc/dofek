@@ -104,6 +104,8 @@ describe("Activity router", () => {
     );
 
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
     await new Promise<void>((resolve) => {

@@ -117,6 +117,8 @@ describe("healthspan zone time with variable-interval HR data", () => {
 
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const app = createApp(testCtx.db);
     await new Promise<void>((resolve) => {
@@ -313,6 +315,8 @@ describe("healthspan zone time with variable-interval HR data", () => {
       ) VALUES ${sensorValues.join(",\n")}`),
     );
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     const summaryRows = await testCtx.db.execute<{ power_sample_count: number }>(
       sql`SELECT power_sample_count
