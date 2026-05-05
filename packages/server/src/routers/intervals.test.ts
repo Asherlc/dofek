@@ -218,6 +218,19 @@ const createCaller = createTestCallerFactory(intervalsRouter);
 
 describe("intervalsRouter", () => {
   describe("byActivity", () => {
+    it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.byActivity({
+          activityId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ).rejects.toThrow("intervals.byActivity requires the ClickHouse activity analytics store");
+    });
+
     it("returns intervals for an activity", async () => {
       const intervalRows = [
         {

@@ -101,6 +101,18 @@ import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
 
 describe("mobileDashboard.dashboard", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.dashboard({ endDate: "2026-03-28" })).rejects.toThrow(
+      "mobileDashboard.dashboard requires the ClickHouse activity analytics store",
+    );
+  });
+
   it("identifies only today and yesterday as recent", () => {
     expect(isRecent("2026-03-28", "2026-03-28")).toBe(true);
     expect(isRecent("2026-03-27", "2026-03-28")).toBe(true);

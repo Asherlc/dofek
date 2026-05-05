@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -807,55 +807,45 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
 
 describe("FitbitProvider.getUserIdentity()", () => {
   const originalEnv = { ...process.env };
-  const identityServer = setupServer();
-
-  beforeAll(() => {
-    identityServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
-  });
 
   afterEach(() => {
     process.env = { ...originalEnv };
-    identityServer.resetHandlers();
-  });
-
-  afterAll(() => {
-    identityServer.close();
   });
 
   it("returns identity from profile API", async () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
 
-    identityServer.use(
-      http.get("https://api.fitbit.com/1/user/-/profile.json", () => {
-        return HttpResponse.json({ user: { encodedId: "ABC123", displayName: "Fit User" } });
-      }),
-    );
+    const fetchProfile: typeof fetch = vi.fn(async (input, init) => {
+      expect(input).toBe("https://api.fitbit.com/1/user/-/profile.json");
+      expect(init?.headers).toEqual({ Authorization: "Bearer test-token" });
+      return Response.json({ user: { encodedId: "ABC123", displayName: "Fit User" } });
+    });
 
-    const provider = new FitbitProvider();
+    const provider = new FitbitProvider(fetchProfile);
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     const identity = await setup.getUserIdentity("test-token");
     expect(identity.providerAccountId).toBe("ABC123");
     expect(identity.email).toBeNull();
     expect(identity.name).toBe("Fit User");
+    expect(fetchProfile).toHaveBeenCalledOnce();
   });
 
   it("throws on API error", async () => {
     process.env.FITBIT_CLIENT_ID = "test-id";
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
 
-    identityServer.use(
-      http.get("https://api.fitbit.com/1/user/-/profile.json", () => {
-        return new HttpResponse("Too Many Requests", { status: 429 });
-      }),
-    );
+    const fetchProfile: typeof fetch = vi.fn(async () => {
+      return new Response("Too Many Requests", { status: 429 });
+    });
 
-    const provider = new FitbitProvider();
+    const provider = new FitbitProvider(fetchProfile);
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
     await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
       "Fitbit profile API error (429)",
     );
+    expect(fetchProfile).toHaveBeenCalledOnce();
   });
 });

@@ -68,6 +68,18 @@ import { efficiencyRouter } from "./efficiency.ts";
 const createCaller = createTestCallerFactory(efficiencyRouter);
 
 describe("efficiencyRouter", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.aerobicEfficiency({ days: 180 })).rejects.toThrow(
+      "efficiency.aerobicEfficiency requires the ClickHouse activity analytics store",
+    );
+  });
+
   describe("aerobicEfficiency", () => {
     it("returns activities with exact field mapping", async () => {
       const rows = [

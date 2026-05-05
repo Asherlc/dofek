@@ -75,6 +75,18 @@ describe("hikingRouter", () => {
   }
 
   describe("gradeAdjustedPace", () => {
+    it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.gradeAdjustedPace({ days: 90 })).rejects.toThrow(
+        "hiking.gradeAdjustedPace requires the ClickHouse activity analytics store",
+      );
+    });
+
     it("returns empty array when no data", async () => {
       const caller = makeCaller([]);
       const result = await caller.gradeAdjustedPace({ days: 90 });
