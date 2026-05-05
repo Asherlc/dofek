@@ -1,11 +1,46 @@
 import type { AnyRouter } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
+import { vi } from "vitest";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { Context } from "../trpc.ts";
 
 const trpc = initTRPC.context<Context>().create();
 
 export function createTestCallerFactory(router: AnyRouter) {
   return trpc.createCallerFactory(router);
+}
+
+/**
+ * Construct an in-memory ActivitySensorStore that returns `rows` (or successive
+ * rowsets if `rows` is an array of arrays) from `query()`. All other store
+ * methods stub out to empty arrays. Use in router/repo tests that exercise
+ * code paths reading from analytics.activity_summary / analytics.deduped_sensor.
+ */
+export function makeMockSensorStore(
+  rows: unknown[] | unknown[][] = [],
+): ActivitySensorStore {
+  const isMatrix = rows.length > 0 && Array.isArray(rows[0]);
+  let queryMock: ReturnType<typeof vi.fn>;
+  if (isMatrix) {
+    queryMock = vi.fn();
+    for (const batch of rows as unknown[][]) {
+      queryMock.mockResolvedValueOnce(batch);
+    }
+  } else {
+    queryMock = vi.fn().mockResolvedValue(rows);
+  }
+  return {
+    query: queryMock,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
 }
 
 export function metricRow(

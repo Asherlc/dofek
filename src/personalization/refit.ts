@@ -17,6 +17,7 @@ export interface RefitSensorStore {
     params?: Record<string, unknown>,
   ): Promise<z.infer<TSchema>[]>;
 }
+
 import type { ExponentialMovingAverageInput } from "./fit-ewma.ts";
 import { fitExponentialMovingAverage } from "./fit-ewma.ts";
 import type { ReadinessWeightsInput } from "./fit-readiness-weights.ts";

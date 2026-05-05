@@ -131,27 +131,18 @@ export function summarizeSegment(
 
 const EARTH_RADIUS_METERS = 6_371_000;
 
-function haversineMeters(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
+  const chordSquared =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(a));
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(chordSquared));
 }
 
 type SensorPoint = z.infer<typeof sensorPointRowSchema>;
 
-function aggregateInterval(
-  points: SensorPoint[],
-): {
+function aggregateInterval(points: SensorPoint[]): {
   avg_heart_rate: number | null;
   max_heart_rate: number | null;
   avg_power: number | null;
@@ -165,9 +156,7 @@ function aggregateInterval(
   const hrs = points.map((p) => p.heart_rate);
   const powers = points.map((p) => p.power).filter((v): v is number => v != null && v > 0);
   const speeds = points.map((p) => p.speed);
-  const cadences = points
-    .map((p) => p.cadence)
-    .filter((v): v is number => v != null && v > 0);
+  const cadences = points.map((p) => p.cadence).filter((v): v is number => v != null && v > 0);
 
   const validHrs = hrs.filter((v): v is number => v != null);
   const validSpeeds = speeds.filter((v): v is number => v != null);
@@ -178,12 +167,7 @@ function aggregateInterval(
     const prev = points[index - 1];
     const curr = points[index];
     if (!prev || !curr) continue;
-    if (
-      prev.lat != null &&
-      prev.lng != null &&
-      curr.lat != null &&
-      curr.lng != null
-    ) {
+    if (prev.lat != null && prev.lng != null && curr.lat != null && curr.lng != null) {
       distance += haversineMeters(prev.lat, prev.lng, curr.lat, curr.lng);
     }
     if (prev.altitude != null && curr.altitude != null) {
@@ -218,11 +202,7 @@ export class IntervalsRepository {
   readonly #userId: string;
   readonly #sensorStore: ActivitySensorStore;
 
-  constructor(
-    db: Pick<Database, "execute">,
-    userId: string,
-    sensorStore: ActivitySensorStore,
-  ) {
+  constructor(db: Pick<Database, "execute">, userId: string, sensorStore: ActivitySensorStore) {
     this.#db = db;
     this.#userId = userId;
     this.#sensorStore = sensorStore;
@@ -274,7 +254,9 @@ export class IntervalsRepository {
 
     return intervals.map((interval) => {
       const start = new Date(interval.started_at).getTime();
-      const end = interval.ended_at ? new Date(interval.ended_at).getTime() : Number.POSITIVE_INFINITY;
+      const end = interval.ended_at
+        ? new Date(interval.ended_at).getTime()
+        : Number.POSITIVE_INFINITY;
       const points = samples.filter((point) => {
         const ts = new Date(point.recorded_at).getTime();
         return ts >= start && ts <= end;

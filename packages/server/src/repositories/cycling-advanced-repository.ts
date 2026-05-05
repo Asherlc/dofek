@@ -4,7 +4,7 @@ import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
-const ENDURANCE_TYPES = [...ENDURANCE_ACTIVITY_TYPES] as string[];
+const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -264,18 +264,16 @@ const pedalRowSchema = z.object({
 
 /** Data access for advanced cycling analytics. */
 export class CyclingAdvancedRepository {
-  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
 
   constructor(
-    db: Pick<Database, "execute">,
+    _db: Pick<Database, "execute">,
     userId: string,
     timezone: string,
     sensorStore: ActivitySensorStore,
   ) {
-    this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
     this.#sensorStore = sensorStore;

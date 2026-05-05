@@ -7,11 +7,9 @@ function makeSensorStore(rows: unknown[]): any {
   // Mirror ClickHouseActivitySensorStore.query: parse each row through the
   // supplied Zod schema. Sequential calls return the same `rows`, which works
   // because every getter in this repo issues exactly one CH query.
-  const query = vi
-    .fn()
-    .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
-      return rows.map((row) => schema.parse(row));
-    });
+  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+    return rows.map((row) => schema.parse(row));
+  });
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),

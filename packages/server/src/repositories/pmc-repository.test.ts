@@ -141,8 +141,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-trim", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-trim", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       // The first data point should have non-zero CTL (trimmed leading zeros)
@@ -161,8 +163,10 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       // Activity with no power data — should use HR fallback
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-hr", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-hr", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       expect(result.model.type).toBe("generic");
@@ -178,8 +182,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-power", avg_power: 200, duration_min: 60 })],
-        [{ activity_id: "act-power", np: 220 }],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-power", avg_power: 200, duration_min: 60 })],
+        [{ activity_id: "act-power", np: 220 }],
+      );
       const result = await repo.getChart(180);
 
       // FTP should be estimated (200 * 0.95 = 190)
@@ -194,8 +200,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-round", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-round", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       for (const point of result.data) {
@@ -219,7 +227,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-ewma",
@@ -230,7 +239,8 @@ describe("PmcRepository", () => {
             max_hr: 180,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Find the activity date point
@@ -259,7 +269,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-threshold",
@@ -267,7 +278,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // First data point should have ctl >= 0.1 (the threshold for "meaningful")
@@ -284,7 +296,8 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       // Provide activity with explicit resting_hr=60
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-rhr",
@@ -293,7 +306,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Should produce data (resting HR used in TRIMP calculation)
@@ -311,8 +325,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-query", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-query", avg_power: null, power_samples: 0 })],
+        [],
+      );
 
       // Even with days=90, we still get data because minHistoryDays=365
       // means we fetch 365+42=407 days of history
@@ -350,8 +366,10 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       // Activity with HR but no power -> generic model
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-gen", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-gen", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       expect(result.model.type).toStrictEqual("generic");
@@ -367,7 +385,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-tsb",
@@ -378,7 +397,8 @@ describe("PmcRepository", () => {
             max_hr: 185,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // On the day after a hard activity, ATL > CTL => TSB < 0
@@ -400,7 +420,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - 5);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-ewma-decay",
@@ -411,7 +432,8 @@ describe("PmcRepository", () => {
             max_hr: 180,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Find two consecutive rest days after the activity
@@ -493,7 +515,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-non-negative",
@@ -501,7 +524,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       for (const point of result.data) {
@@ -560,8 +584,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-round2", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-round2", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       for (const point of result.data) {
@@ -581,8 +607,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-warmup", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-warmup", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Should have data (if - was mutated to +, warmUpDays would be huge and no data shown)
@@ -597,7 +625,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-day-index",
@@ -605,7 +634,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(30);
 
       // With days=30, we should have at most 31 data points (30 days + today)
@@ -644,8 +674,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-div", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-div", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       // CTL values should be bounded and reasonable (< 1000)
@@ -664,8 +696,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-atl-div", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-atl-div", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       // ATL values should be bounded
@@ -683,8 +717,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-zero", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-zero", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Days after the activity should have load = 0
@@ -709,7 +745,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-idx",
@@ -720,7 +757,8 @@ describe("PmcRepository", () => {
             max_hr: 190,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       if (result.data.length > 0) {
@@ -776,7 +814,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-consecutive",
@@ -784,7 +823,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(30);
 
       // Check that consecutive data points are exactly 1 day apart
@@ -804,8 +844,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-np-map", avg_power: 200, duration_min: 60 })],
-        [{ activity_id: "act-np-map", np: 215 }],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-np-map", avg_power: 200, duration_min: 60 })],
+        [{ activity_id: "act-np-map", np: 215 }],
+      );
       const result = await repo.getChart(180);
 
       // Should have FTP and data (NP was found via activity_id mapping)
@@ -820,7 +862,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-am",
@@ -836,7 +879,8 @@ describe("PmcRepository", () => {
             duration_min: 30,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Should have aggregated both activities into a single day's load
@@ -855,8 +899,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-shape", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-shape", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       expect(result.data.length).toBeGreaterThan(0);
@@ -874,7 +920,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-swap",
@@ -885,7 +932,8 @@ describe("PmcRepository", () => {
             max_hr: 190,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       const activityDayPoint = result.data.find((point) => point.date === dateStr);
@@ -909,7 +957,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-load-diff",
@@ -920,7 +969,8 @@ describe("PmcRepository", () => {
             max_hr: 185,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       const activityDayPoint = result.data.find((point) => point.date === dateStr);
@@ -996,7 +1046,8 @@ describe("PmcRepository", () => {
       const dateStr = activityDate.toISOString().split("T")[0];
 
       // Activity has FTP (from avg_power) but NP = 0 -> should use HR fallback
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-np-zero",
@@ -1007,7 +1058,8 @@ describe("PmcRepository", () => {
             max_hr: 180,
           }),
         ],
-        [{ activity_id: "act-np-zero", np: 0 }],);
+        [{ activity_id: "act-np-zero", np: 0 }],
+      );
       const result = await repo.getChart(180);
 
       // FTP should still be estimated from avg_power
@@ -1080,7 +1132,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-maxhr-num",
@@ -1089,7 +1142,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // globalMaxHr should be truthy (numeric 195, not string "195" which is also truthy,
@@ -1135,8 +1189,10 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([makeActivityRow({ date: dateStr, id: "act-date-fmt", avg_power: null, power_samples: 0 })],
-        [],);
+      const repo = makeRepo(
+        [makeActivityRow({ date: dateStr, id: "act-date-fmt", avg_power: null, power_samples: 0 })],
+        [],
+      );
       const result = await repo.getChart(180);
 
       for (const point of result.data) {
@@ -1202,7 +1258,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-fallback",
@@ -1210,7 +1267,8 @@ describe("PmcRepository", () => {
             power_samples: 0,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Count rest days (load = 0) vs activity days (load > 0)
@@ -1236,7 +1294,8 @@ describe("PmcRepository", () => {
       activityDate.setDate(activityDate.getDate() - daysAgo);
       const dateStr = activityDate.toISOString().split("T")[0];
 
-      const repo = makeRepo([
+      const repo = makeRepo(
+        [
           makeActivityRow({
             date: dateStr,
             id: "act-ewma-load",
@@ -1247,7 +1306,8 @@ describe("PmcRepository", () => {
             max_hr: 190,
           }),
         ],
-        [],);
+        [],
+      );
       const result = await repo.getChart(180);
 
       // Find the activity day

@@ -36,13 +36,11 @@ function createMockDb(queryResults: Record<string, unknown>[][] = []) {
 function createMockSensorStore(rowSets: Record<string, unknown>[][] = []) {
   let callIndex = 0;
   return {
-    query: vi.fn().mockImplementation(
-      async (schema: { parse: (row: unknown) => unknown }) => {
-        const rows = rowSets[callIndex] ?? [];
-        callIndex++;
-        return rows.map((row) => schema.parse(row));
-      },
-    ),
+    query: vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+      const rows = rowSets[callIndex] ?? [];
+      callIndex++;
+      return rows.map((row) => schema.parse(row));
+    }),
   };
 }
 

@@ -229,12 +229,7 @@ describe("CyclingAdvancedRepository", () => {
     // migrated methods.
     const execute = vi.fn();
     const sensorStore = makeSensorStore(rows);
-    const repo = new CyclingAdvancedRepository(
-      { execute },
-      "user-1",
-      "UTC",
-      sensorStore,
-    );
+    const repo = new CyclingAdvancedRepository({ execute }, "user-1", "UTC", sensorStore);
     return { repo, execute, sensorStore };
   }
 
@@ -299,22 +294,20 @@ describe("CyclingAdvancedRepository", () => {
       const sensorStore = makeSensorStore([]);
       sensorStore.query = vi
         .fn()
-        .mockImplementationOnce(
-          async (schema: { parse: (row: unknown) => unknown }) =>
-            [{ ftp: 250 }].map((row) => schema.parse(row)),
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ ftp: 250 }].map((row) => schema.parse(row)),
         )
-        .mockImplementationOnce(
-          async (schema: { parse: (row: unknown) => unknown }) =>
-            [
-              {
-                activity_id: "ride-2",
-                date: "2024-03-15",
-                name: "Morning Ride",
-                np: 220,
-                avg_power: 200,
-                total_count: 1,
-              },
-            ].map((row) => schema.parse(row)),
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [
+            {
+              activity_id: "ride-2",
+              date: "2024-03-15",
+              name: "Morning Ride",
+              np: 220,
+              avg_power: 200,
+              total_count: 1,
+            },
+          ].map((row) => schema.parse(row)),
         );
       const repo = new CyclingAdvancedRepository(
         { execute: vi.fn() },

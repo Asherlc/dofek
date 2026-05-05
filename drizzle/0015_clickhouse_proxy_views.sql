@@ -9,7 +9,7 @@ CREATE SCHEMA IF NOT EXISTS clickhouse;
 --> statement-breakpoint
 
 CREATE OR REPLACE VIEW clickhouse.user_profile AS
-SELECT id, max_hr, resting_hr, ftp, birth_date, timezone
+SELECT id, max_hr, resting_hr, ftp, birth_date
 FROM fitness.user_profile;
 
 --> statement-breakpoint

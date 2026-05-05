@@ -12,7 +12,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
-const ENDURANCE_TYPES = [...ENDURANCE_ACTIVITY_TYPES] as string[];
+const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Types

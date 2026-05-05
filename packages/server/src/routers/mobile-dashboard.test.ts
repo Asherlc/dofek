@@ -24,10 +24,12 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
 function makeSensorStore(
   dailyLoads: Array<{ metric_date: string; daily_load: number }> = [],
   yesterdayLoad = 0,
-) {
+): SensorStore {
   const query = vi.fn();
   query.mockResolvedValueOnce(dailyLoads);
   query.mockResolvedValueOnce([{ load: yesterdayLoad }]);
@@ -42,7 +44,7 @@ function makeSensorStore(
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  } as unknown as import("../repositories/activity-repository.ts").ActivitySensorStore;
+  };
 }
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {

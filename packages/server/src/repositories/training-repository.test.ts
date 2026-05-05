@@ -10,9 +10,11 @@ describe("TrainingRepository", () => {
   function makeSensorStore(rows: unknown[]): any {
     // Mirror ClickHouseActivitySensorStore.query: parse each row through the
     // supplied Zod schema so timestampStringSchema and friends actually run.
-    const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
-      return rows.map((row) => schema.parse(row));
-    });
+    const query = vi
+      .fn()
+      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+        return rows.map((row) => schema.parse(row));
+      });
     return {
       query,
       getActivitySummaries: vi.fn().mockResolvedValue([]),

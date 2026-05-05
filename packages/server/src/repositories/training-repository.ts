@@ -11,7 +11,7 @@ import { vitalsBaselineCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
-const ENDURANCE_TYPES = [...ENDURANCE_ACTIVITY_TYPES] as string[];
+const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for DB rows

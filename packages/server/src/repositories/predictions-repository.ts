@@ -4,7 +4,6 @@ import { z } from "zod";
 import { joinByDate } from "../insights/data-join.ts";
 import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
   type ActivityPredictionTarget,
@@ -17,6 +16,7 @@ import type { PredictionTarget } from "../ml/features.ts";
 import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models

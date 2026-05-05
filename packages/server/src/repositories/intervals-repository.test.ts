@@ -211,8 +211,7 @@ describe("IntervalsRepository", () => {
         },
       ];
       const db = makeDb(intervalRows);
-      // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-      const sensorStore = makeSensorStore(sensorRows) as any;
+      const sensorStore = makeSensorStore(sensorRows);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -226,8 +225,7 @@ describe("IntervalsRepository", () => {
 
     it("returns empty array when no intervals exist", async () => {
       const db = makeDb([]);
-      // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-      const sensorStore = makeSensorStore([]) as any;
+      const sensorStore = makeSensorStore([]);
       const repo = new IntervalsRepository(db, "user-1", sensorStore);
 
       const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");

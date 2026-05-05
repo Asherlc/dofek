@@ -180,7 +180,9 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-function makeSensorStore(rows: unknown[] = []) {
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function makeSensorStore(rows: unknown[] = []): SensorStore {
   return {
     query: vi.fn().mockResolvedValue(rows),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -192,7 +194,7 @@ function makeSensorStore(rows: unknown[] = []) {
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  } as unknown as import("../repositories/activity-repository.ts").ActivitySensorStore;
+  };
 }
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {

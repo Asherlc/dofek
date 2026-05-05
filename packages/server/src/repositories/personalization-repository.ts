@@ -70,11 +70,7 @@ export class PersonalizationRepository {
   readonly #userId: string;
   readonly #sensorStore: ActivitySensorStore;
 
-  constructor(
-    db: Pick<Database, "execute">,
-    userId: string,
-    sensorStore: ActivitySensorStore,
-  ) {
+  constructor(db: Pick<Database, "execute">, userId: string, sensorStore: ActivitySensorStore) {
     this.#db = db;
     this.#userId = userId;
     this.#sensorStore = sensorStore;

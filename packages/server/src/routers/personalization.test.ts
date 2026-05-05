@@ -137,7 +137,12 @@ describe("personalizationRouter", () => {
     it("passes db and userId to loadPersonalizedParams", async () => {
       mockLoadPersonalizedParams.mockResolvedValue(null);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-42", timezone: "UTC", sensorStore: fakeSensorStore });
+      const caller = createCaller({
+        db: mockDb,
+        userId: "user-42",
+        timezone: "UTC",
+        sensorStore: fakeSensorStore,
+      });
 
       await caller.status();
 
@@ -198,7 +203,12 @@ describe("personalizationRouter", () => {
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-1", timezone: "UTC", sensorStore: fakeSensorStore });
+      const caller = createCaller({
+        db: mockDb,
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: fakeSensorStore,
+      });
 
       const result = await caller.refit();
 
@@ -248,7 +258,12 @@ describe("personalizationRouter", () => {
       };
       mockRefitAllParams.mockResolvedValue(refitResult);
       const mockDb = { execute: vi.fn() };
-      const caller = createCaller({ db: mockDb, userId: "user-99", timezone: "UTC", sensorStore: fakeSensorStore });
+      const caller = createCaller({
+        db: mockDb,
+        userId: "user-99",
+        timezone: "UTC",
+        sensorStore: fakeSensorStore,
+      });
 
       await caller.refit();
 

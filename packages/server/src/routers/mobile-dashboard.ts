@@ -122,7 +122,9 @@ export const mobileDashboardRouter = router({
         ),
       ]);
 
-      const dailyLoadByDate = new Map(dailyLoadRows.map((row) => [row.metric_date, row.daily_load]));
+      const dailyLoadByDate = new Map(
+        dailyLoadRows.map((row) => [row.metric_date, row.daily_load]),
+      );
       const yesterdayLoadFromCh = yesterdayLoadRows[0]?.load ?? 0;
 
       // 1. Fetch Readiness, Strain, and Trends in a consolidated query

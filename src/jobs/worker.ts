@@ -1,8 +1,8 @@
 import * as Sentry from "@sentry/node";
 import { Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
+import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processImportJob } from "./process-import-job.ts";

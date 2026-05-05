@@ -1391,12 +1391,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       return Promise.resolve(result);
     });
     const localSensorStore = { ...sensorStore, query: sensorQuery };
-    const repo = new PredictionsRepository(
-      { execute },
-      "user-1",
-      "UTC",
-      localSensorStore,
-    );
+    const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     return { repo, execute, sensorQuery };
   }
 

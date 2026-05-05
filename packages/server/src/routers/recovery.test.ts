@@ -20,15 +20,20 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-function makeSensorStore(rows: unknown[] | unknown[][] = []) {
-  const queryMock =
-    Array.isArray(rows) && rows.length > 0 && Array.isArray(rows[0])
-      ? (() => {
-          const fn = vi.fn();
-          for (const batch of rows as unknown[][]) fn.mockResolvedValueOnce(batch);
-          return fn;
-        })()
-      : vi.fn().mockResolvedValue(rows);
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function isMatrix(rows: unknown[] | unknown[][]): rows is unknown[][] {
+  return rows.length > 0 && Array.isArray(rows[0]);
+}
+
+function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
+  const queryMock = isMatrix(rows)
+    ? (() => {
+        const fn = vi.fn();
+        for (const batch of rows) fn.mockResolvedValueOnce(batch);
+        return fn;
+      })()
+    : vi.fn().mockResolvedValue(rows);
   return {
     query: queryMock,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -40,7 +45,7 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []) {
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  } as unknown as import("../repositories/activity-repository.ts").ActivitySensorStore;
+  };
 }
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
@@ -1183,9 +1188,9 @@ describe("recoveryRouter.strainTarget", () => {
   // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
   // CH mock: loads (now in analytics.activity_summary).
   function setup({
-    readinessRows = [] as unknown[],
+    readinessRows = [],
     sleepRows,
-    loads = [] as unknown[],
+    loads = [],
   }: {
     readinessRows?: unknown[];
     sleepRows?: unknown[];

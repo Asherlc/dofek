@@ -25,9 +25,8 @@ vi.mock("../trpc.ts", async () => {
 function makeSensorStore(rowSets: unknown[][]): any {
   const query = vi.fn();
   for (const rows of rowSets) {
-    query.mockImplementationOnce(
-      async (schema: { parse: (row: unknown) => unknown }) =>
-        rows.map((row) => schema.parse(row)),
+    query.mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+      rows.map((row) => schema.parse(row)),
     );
   }
   return {
@@ -76,9 +75,7 @@ describe("cyclingAdvancedRouter", () => {
         [{ week: "2024-01-15", monotony: 1.5, strain: 300, weekly_load: 200 }],
       ]);
       const result = await caller.trainingMonotony({ days: 90 });
-      expect(result).toEqual([
-        { week: "2024-01-15", monotony: 1.5, strain: 300, weeklyLoad: 200 },
-      ]);
+      expect(result).toEqual([{ week: "2024-01-15", monotony: 1.5, strain: 300, weeklyLoad: 200 }]);
     });
 
     it("returns empty array when no data", async () => {
