@@ -1,14 +1,22 @@
-import { sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import {
-  dateWindowEnd,
-  dateWindowStart,
-  endDateSchema,
-  timestampWindowStart,
-} from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 /** Strain balance category based on ACWR-like load distribution */
 export type StrainZone = "restoring" | "optimal" | "overreaching";
@@ -63,9 +71,10 @@ export const weeklyReportRouter = router({
   report: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ weeks: z.number().min(1).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WeeklyReportResult> => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "weeklyReport.report");
       const totalDays = input.weeks * 7 + 28; // extra for chronic baseline
+      const windowStart = dateWindowStart(input.endDate, totalDays);
 
-      // Fetch weekly aggregates: training load, sleep, readiness, vitals
       const weeklyReportRowSchema = z.object({
         week_start: dateStringSchema,
         total_hours: z.coerce.number(),
@@ -78,94 +87,95 @@ export const weeklyReportRouter = router({
         prev_3wk_avg_sleep: z.coerce.number().nullable(),
       });
 
-      const rows = await executeWithSchema(
-        ctx.db,
+      const rows = await sensorStore.query(
         weeklyReportRowSchema,
-        sql`WITH date_series AS (
-              SELECT generate_series(
-                ${dateWindowStart(input.endDate, totalDays)},
-                ${dateWindowEnd(input.endDate)},
-                '1 day'::interval
-              )::date AS date
-            ),
-            per_activity AS (
-              SELECT
-                (asum.started_at AT TIME ZONE ${ctx.timezone})::date AS date,
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 3600.0 AS hours,
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                  * asum.avg_hr / NULLIF(asum.max_hr, 0) AS load
-              FROM fitness.activity_summary asum
-              WHERE asum.user_id = ${ctx.userId}
-                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date >= ${dateWindowStart(input.endDate, totalDays)}
-                AND asum.ended_at IS NOT NULL
-                AND asum.avg_hr IS NOT NULL
-            ),
-            daily_training AS (
-              SELECT date, SUM(hours) AS hours, COUNT(*) AS count, SUM(load) AS load
-              FROM per_activity
-              GROUP BY date
-            ),
-            daily AS (
-              SELECT
-                ds.date,
-                COALESCE(dt.hours, 0) AS hours,
-                COALESCE(dt.count, 0) AS count,
-                COALESCE(dt.load, 0) AS load
-              FROM date_series ds
-              LEFT JOIN daily_training dt ON dt.date = ds.date
-            ),
-            raw_sleep AS (
-              SELECT
-                ${sleepNightDate(ctx.timezone)} AS date,
-                duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > ${timestampWindowStart(input.endDate, totalDays)}
-            ),
-            sleep_daily AS (
-              SELECT DISTINCT ON (date) date, duration_minutes
-              FROM raw_sleep
-              ORDER BY date, duration_minutes DESC NULLS LAST
-            ),
-            metrics_daily AS (
-              SELECT
-                dm.date,
-                drhr.resting_hr,
-                dm.hrv
-              FROM fitness.v_daily_metrics dm
-              LEFT JOIN fitness.derived_resting_heart_rate drhr
-                ON drhr.user_id = dm.user_id
-               AND drhr.date = dm.date
-              WHERE dm.user_id = ${ctx.userId}
-                AND dm.date > ${dateWindowStart(input.endDate, totalDays)}
-            ),
-            weekly AS (
-              SELECT
-                date_trunc('week', d.date)::date AS week_start,
-                SUM(d.hours) AS total_hours,
-                SUM(d.count)::int AS activity_count,
-                AVG(d.load) AS avg_daily_load,
-                AVG(sl.duration_minutes) AS avg_sleep_min,
-                AVG(m.resting_hr) AS avg_resting_hr,
-                AVG(m.hrv) AS avg_hrv
-              FROM daily d
-              LEFT JOIN sleep_daily sl ON sl.date = d.date
-              LEFT JOIN metrics_daily m ON m.date = d.date
-              GROUP BY date_trunc('week', d.date)
-              ORDER BY week_start ASC
-            )
-            SELECT
-              week_start::text,
-              total_hours,
-              activity_count,
-              avg_daily_load,
-              avg_sleep_min,
-              avg_resting_hr,
-              avg_hrv,
-              AVG(avg_daily_load) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS chronic_avg_load,
-              AVG(avg_sleep_min) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS prev_3wk_avg_sleep
-            FROM weekly`,
+        `WITH per_activity AS (
+          SELECT
+            toDate(toTimeZone(started_at, {timezone:String})) AS date,
+            dateDiff('second', started_at, ended_at) / 3600.0 AS hours,
+            dateDiff('second', started_at, ended_at) / 60.0
+              * avg_hr / nullIf(toFloat64(max_hr), 0) AS load
+          FROM analytics.activity_summary
+          WHERE user_id = {userId:UUID}
+            AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND ended_at IS NOT NULL
+            AND avg_hr IS NOT NULL
+        ),
+        daily_training AS (
+          SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
+          FROM per_activity
+          GROUP BY date
+        ),
+        sleep_raw AS (
+          SELECT
+            toDate(toTimeZone(ended_at, {timezone:String})) AS date,
+            duration_minutes
+          FROM postgres_fitness_live.v_sleep
+          WHERE user_id = {userId:UUID}
+            AND is_nap = false
+            AND started_at > toDateTime({windowStart:String})
+        ),
+        sleep_daily AS (
+          SELECT date, max(duration_minutes) AS duration_minutes
+          FROM sleep_raw
+          GROUP BY date
+        ),
+        metrics_daily AS (
+          SELECT
+            dm.date AS date,
+            drhr.resting_hr AS resting_hr,
+            dm.hrv AS hrv
+          FROM postgres_fitness_live.v_daily_metrics AS dm
+          LEFT JOIN postgres_fitness_live.derived_resting_heart_rate AS drhr
+            ON drhr.user_id = dm.user_id AND drhr.date = dm.date
+          WHERE dm.user_id = {userId:UUID}
+            AND dm.date > toDate({windowStart:String})
+        ),
+        date_series AS (
+          SELECT toDate({windowStart:String}) + INTERVAL number DAY AS date
+          FROM numbers(toUInt64({totalDays:Int32}) + 1)
+        ),
+        daily AS (
+          SELECT
+            ds.date AS date,
+            coalesce(dt.hours, 0) AS hours,
+            coalesce(dt.count, 0) AS count,
+            coalesce(dt.load, 0) AS load
+          FROM date_series ds
+          LEFT JOIN daily_training dt ON dt.date = ds.date
+        ),
+        weekly AS (
+          SELECT
+            toMonday(d.date) AS week_start,
+            sum(d.hours) AS total_hours,
+            toInt32(sum(d.count)) AS activity_count,
+            avg(d.load) AS avg_daily_load,
+            avg(sl.duration_minutes) AS avg_sleep_min,
+            avg(m.resting_hr) AS avg_resting_hr,
+            avg(m.hrv) AS avg_hrv
+          FROM daily d
+          LEFT JOIN sleep_daily sl ON sl.date = d.date
+          LEFT JOIN metrics_daily m ON m.date = d.date
+          GROUP BY toMonday(d.date)
+          ORDER BY week_start ASC
+        )
+        SELECT
+          toString(week_start) AS week_start,
+          total_hours,
+          activity_count,
+          avg_daily_load,
+          avg_sleep_min,
+          avg_resting_hr,
+          avg_hrv,
+          avg(avg_daily_load) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS chronic_avg_load,
+          avg(avg_sleep_min) OVER (ORDER BY week_start ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS prev_3wk_avg_sleep
+        FROM weekly`,
+        {
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          windowStart,
+          totalDays,
+        },
       );
 
       const parsed = rows.map((row) => {
