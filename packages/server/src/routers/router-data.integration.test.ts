@@ -484,9 +484,7 @@ describe("Router data coverage", () => {
         expect(typeof row.decouplingPct).toBe("number");
         expect(row.totalSamples).toBeGreaterThanOrEqual(600);
       }
-    }, // activity_summary (now plain view), which recomputes the dedup CTE on every read. // The decoupling query traverses v_activity → deduped_sensor (now plain view) →
-    // 30s default isn't enough under Stryker's parallel mutant load.
-    120_000);
+    }, 120_000);
 
     it("polarizationTrend returns weekly zone distribution", async () => {
       const result = await query<{
