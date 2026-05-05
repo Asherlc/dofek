@@ -10,6 +10,7 @@ vi.mock("../trpc.ts", async () => {
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -19,6 +20,29 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+// biome-ignore lint/suspicious/noExplicitAny: test mock helper
+function makeSensorStore(rows: unknown[]): any {
+  // Mirror ClickHouseActivitySensorStore.query: parse rows through the supplied
+  // Zod schema so timestampStringSchema and friends actually run.
+  const query = vi
+    .fn()
+    .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+      return rows.map((row) => schema.parse(row));
+    });
+  return {
+    query,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -61,9 +85,10 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -82,20 +107,24 @@ describe("efficiencyRouter", () => {
 
     it("returns null maxHr when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
       expect(result.maxHr).toBeNull();
       expect(result.activities).toEqual([]);
     });
 
-    it("returns date as string when DB driver returns Date objects", async () => {
+    it("preserves the YYYY-MM-DD date string emitted by ClickHouse", async () => {
+      // CH SQL uses toString(toDate(toTimeZone(...))), so the JSONEachRow
+      // payload includes date as a "YYYY-MM-DD" string. Verify the schema
+      // passes it through unchanged into the activity model.
       const rows = [
         {
           max_hr: 190,
-          date: new Date("2024-01-15T00:00:00.000Z"),
+          date: "2024-01-15",
           activity_type: "cycling",
           name: "Ride",
           avg_power_z2: 180,
@@ -105,13 +134,13 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
-      expect(typeof result.activities[0]?.date).toBe("string");
       expect(result.activities[0]?.date).toBe("2024-01-15");
     });
 
@@ -139,9 +168,10 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.aerobicEfficiency({ days: 180 });
 
@@ -166,9 +196,10 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
 
@@ -186,18 +217,19 @@ describe("efficiencyRouter", () => {
 
     it("returns empty for no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
       expect(result).toEqual([]);
     });
 
-    it("returns date as string when DB driver returns Date objects", async () => {
+    it("preserves the YYYY-MM-DD date string emitted by ClickHouse", async () => {
       const rows = [
         {
-          date: new Date("2024-01-15T00:00:00.000Z"),
+          date: "2024-01-15",
           activity_type: "running",
           name: "Long Run",
           first_half_ratio: 1.5,
@@ -207,13 +239,13 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.aerobicDecoupling({ days: 180 });
 
-      expect(typeof result[0]?.date).toBe("string");
       expect(result[0]?.date).toBe("2024-01-15");
     });
   });
@@ -230,9 +262,10 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -253,9 +286,10 @@ describe("efficiencyRouter", () => {
         { max_hr: 190, week: "2024-01-15", z1_seconds: 5000, z2_seconds: 0, z3_seconds: 100 },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.weeks[0]?.polarizationIndex).toBeNull();
@@ -266,9 +300,10 @@ describe("efficiencyRouter", () => {
         { max_hr: 190, week: "2024-01-15", z1_seconds: 5000, z2_seconds: 500, z3_seconds: 0 },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.weeks[0]?.polarizationIndex).toBeNull();
@@ -279,9 +314,10 @@ describe("efficiencyRouter", () => {
         { max_hr: 190, week: "2024-01-15", z1_seconds: 0, z2_seconds: 500, z3_seconds: 100 },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.weeks[0]?.polarizationIndex).toBeNull();
@@ -292,9 +328,10 @@ describe("efficiencyRouter", () => {
         { max_hr: 185, week: "2024-02-01", z1_seconds: 10000, z2_seconds: 2000, z3_seconds: 500 },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -304,33 +341,35 @@ describe("efficiencyRouter", () => {
       expect(result.weeks[0]?.week).toBe("2024-02-01");
     });
 
-    it("returns week as string when DB driver returns Date objects", async () => {
-      // Some postgres drivers/platforms return Date objects for ::date columns
+    it("preserves the YYYY-MM-DD week-start string emitted by toMonday", async () => {
+      // CH SQL emits week as toString(toMonday(...)) → "YYYY-MM-DD".
+      // Verify it passes through to the polarization model unchanged.
       const rows = [
         {
           max_hr: 190,
-          week: new Date("2024-01-15T00:00:00.000Z"),
+          week: "2024-01-15",
           z1_seconds: 5000,
           z2_seconds: 500,
           z3_seconds: 100,
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
-      expect(typeof result.weeks[0]?.week).toBe("string");
       expect(result.weeks[0]?.week).toBe("2024-01-15");
     });
 
     it("returns null maxHr when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.polarizationTrend({ days: 180 });
       expect(result.maxHr).toBeNull();
@@ -342,9 +381,10 @@ describe("efficiencyRouter", () => {
         { max_hr: 190, week: "2024-01-15", z1_seconds: 3600, z2_seconds: 1800, z3_seconds: 600 },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.polarizationTrend({ days: 180 });
 
@@ -359,12 +399,16 @@ describe("efficiencyRouter", () => {
   });
 
   describe("access window gating", () => {
-    it("aerobicEfficiency passes accessWindow to repository (limited window returns empty)", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
+    it("aerobicEfficiency forwards accessWindow to the repository", async () => {
+      // After the CH migration the access window predicate is enforced by
+      // the repository (and ultimately the SQL). Here we verify that a
+      // limited window doesn't crash and that the result still surfaces
+      // the empty CH dataset cleanly.
       const caller = createCaller({
-        db: { execute },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([]),
         accessWindow: {
           kind: "limited",
           paid: false,

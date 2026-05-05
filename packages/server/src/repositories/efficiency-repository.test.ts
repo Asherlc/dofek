@@ -2,10 +2,37 @@ import { computePolarizationIndex } from "@dofek/zones/zones";
 import { describe, expect, it, vi } from "vitest";
 import { EfficiencyRepository } from "./efficiency-repository.ts";
 
+// biome-ignore lint/suspicious/noExplicitAny: test mock helper
+function makeSensorStore(rows: unknown[]): any {
+  // Mirror ClickHouseActivitySensorStore.query: parse each row through the
+  // supplied Zod schema. Sequential calls return the same `rows`, which works
+  // because every getter in this repo issues exactly one CH query.
+  const query = vi
+    .fn()
+    .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+      return rows.map((row) => schema.parse(row));
+    });
+  return {
+    query,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
+
 function makeRepository(rows: Record<string, unknown>[] = []) {
-  const execute = vi.fn().mockResolvedValue(rows);
-  const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
-  return { repo, execute };
+  // After the CH migration, all efficiency queries route through sensorStore.
+  // The diagnostic logger inside getAerobicEfficiency also uses sensorStore.
+  const execute = vi.fn();
+  const sensorStore = makeSensorStore(rows);
+  const repo = new EfficiencyRepository({ execute }, "user-1", "UTC", sensorStore);
+  return { repo, execute, sensorStore };
 }
 
 // ---------------------------------------------------------------------------
@@ -19,11 +46,13 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(result).toEqual({ maxHr: null, activities: [] });
   });
 
-  it("calls execute for the main query (and diagnostic when empty)", async () => {
-    const { repo, execute } = makeRepository([]);
+  it("issues a CH query for the main aggregation and a diagnostic CH query when empty", async () => {
+    const { repo, sensorStore } = makeRepository([]);
     await repo.getAerobicEfficiency(90);
-    // Main query + diagnostic query when result is empty
-    expect(execute).toHaveBeenCalledTimes(2);
+    // Main aerobic-efficiency CH query + diagnostic CH query when result is empty.
+    // Diagnostic runs in the background via .catch(); flush microtasks first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("maps rows to AerobicEfficiencyActivity objects", async () => {
@@ -139,10 +168,10 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
     expect(result).toEqual([]);
   });
 
-  it("calls execute once", async () => {
-    const { repo, execute } = makeRepository([]);
+  it("issues exactly one CH query", async () => {
+    const { repo, sensorStore } = makeRepository([]);
     await repo.getAerobicDecoupling(90);
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
   it("maps rows to AerobicDecouplingActivity objects", async () => {
@@ -210,10 +239,10 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(result).toEqual({ maxHr: null, weeks: [] });
   });
 
-  it("calls execute once", async () => {
-    const { repo, execute } = makeRepository([]);
+  it("issues exactly one CH query", async () => {
+    const { repo, sensorStore } = makeRepository([]);
     await repo.getPolarizationTrend(90);
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
   it("returns maxHr as number (not null) when rows.length > 0", async () => {
@@ -343,13 +372,12 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
 describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () => {
   it("returns null maxHr when rows.length is 0, non-null when >= 1", async () => {
     // 0 rows => null
-    const executeEmpty = vi.fn().mockResolvedValue([]);
-    const repoEmpty = new EfficiencyRepository({ execute: executeEmpty }, "user-1", "UTC");
+    const { repo: repoEmpty } = makeRepository([]);
     const emptyResult = await repoEmpty.getAerobicEfficiency(180);
     expect(emptyResult.maxHr).toBeNull();
 
     // 1 row => Number(rows[0].max_hr)
-    const executeOne = vi.fn().mockResolvedValue([
+    const { repo: repoOne } = makeRepository([
       {
         max_hr: "200",
         date: "2025-06-01",
@@ -361,7 +389,6 @@ describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () 
         z2_samples: "500",
       },
     ]);
-    const repoOne = new EfficiencyRepository({ execute: executeOne }, "user-1", "UTC");
     const oneResult = await repoOne.getAerobicEfficiency(180);
     expect(oneResult.maxHr).toBe(200);
     expect(oneResult.maxHr).not.toBeNull();
@@ -374,7 +401,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () 
 
 describe("EfficiencyRepository.getAerobicEfficiency (String conversions)", () => {
   it("uses String() for date, activityType, and name fields", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         date: "2025-07-01",
@@ -386,7 +413,6 @@ describe("EfficiencyRepository.getAerobicEfficiency (String conversions)", () =>
         z2_samples: "500",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicEfficiency(180);
     const activity = result.activities[0];
     expect(typeof activity?.date).toBe("string");
@@ -404,7 +430,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (String conversions)", () =>
 
 describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () => {
   it("uses String() for date, activityType, and name fields", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         date: "2025-07-01",
         activity_type: "running",
@@ -415,7 +441,6 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
         total_samples: "2400",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicDecoupling(180);
     const activity = result[0];
     expect(typeof activity?.date).toBe("string");
@@ -427,7 +452,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
   });
 
   it("converts numeric string fields to numbers", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         date: "2025-07-01",
         activity_type: "cycling",
@@ -438,7 +463,6 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
         total_samples: "5000",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicDecoupling(180);
     const activity = result[0];
     expect(typeof activity?.firstHalfRatio).toBe("number");
@@ -458,7 +482,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
 
 describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => {
   it("uses String() for week field", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         week: "2025-06-02",
@@ -467,14 +491,13 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
         z3_seconds: "600",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getPolarizationTrend(180);
     expect(typeof result.weeks[0]?.week).toBe("string");
     expect(result.weeks[0]?.week).toBe("2025-06-02");
   });
 
   it("uses Number() for maxHr from first row", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "193",
         week: "2025-06-02",
@@ -483,7 +506,6 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
         z3_seconds: "100",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getPolarizationTrend(180);
     expect(typeof result.maxHr).toBe("number");
     expect(result.maxHr).toBe(193);
@@ -496,14 +518,13 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
 
 describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
   it("returns result with exactly maxHr and activities keys", async () => {
-    const execute = vi.fn().mockResolvedValue([]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const { repo } = makeRepository([]);
     const result = await repo.getAerobicEfficiency(180);
     expect(Object.keys(result).sort()).toStrictEqual(["activities", "maxHr"]);
   });
 
   it("each activity has all 7 required properties", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         date: "2025-06-01",
@@ -515,7 +536,6 @@ describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
         z2_samples: "500",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicEfficiency(180);
     const activity = result.activities[0];
     expect(Object.keys(activity ?? {}).sort()).toStrictEqual([
@@ -532,7 +552,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
 
 describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
   it("each activity has all 7 required properties", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         date: "2025-06-01",
         activity_type: "cycling",
@@ -543,7 +563,6 @@ describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
         total_samples: "7200",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicDecoupling(180);
     expect(Object.keys(result[0] ?? {}).sort()).toStrictEqual([
       "activityType",
@@ -559,14 +578,13 @@ describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
 
 describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
   it("returns result with exactly maxHr and weeks keys", async () => {
-    const execute = vi.fn().mockResolvedValue([]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
+    const { repo } = makeRepository([]);
     const result = await repo.getPolarizationTrend(180);
     expect(Object.keys(result).sort()).toStrictEqual(["maxHr", "weeks"]);
   });
 
   it("each week has all 5 required properties", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         week: "2025-05-26",
@@ -575,7 +593,6 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
         z3_seconds: "500",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getPolarizationTrend(180);
     expect(Object.keys(result.weeks[0] ?? {}).sort()).toStrictEqual([
       "polarizationIndex",
@@ -588,7 +605,7 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
 
   it("zone seconds are passed to computePolarizationIndex in correct order (z1, z2, z3)", async () => {
     // If z1 and z2 were swapped, the polarization index would differ
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         week: "2025-05-26",
@@ -597,7 +614,6 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
         z3_seconds: "1500",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getPolarizationTrend(180);
     const week = result.weeks[0];
     // Correct order: z1=7200, z2=300, z3=1500
@@ -615,7 +631,7 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
 
 describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", () => {
   it("maps avg_power_z2 to avgPowerZ2, not to avgHrZ2 or other field", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         date: "2025-06-01",
@@ -627,7 +643,6 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
         z2_samples: "500",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicEfficiency(180);
     const activity = result.activities[0];
     // If field mapping were swapped (avgPowerZ2 ↔ avgHrZ2), values would be wrong
@@ -638,7 +653,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
   });
 
   it("efficiencyFactor and z2Samples are mapped to their exact fields", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         date: "2025-06-01",
@@ -650,7 +665,6 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
         z2_samples: "900",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicEfficiency(180);
     const activity = result.activities[0];
     // These two fields should not be swapped
@@ -663,7 +677,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
 
 describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", () => {
   it("maps firstHalfRatio and secondHalfRatio to their exact fields", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         date: "2025-06-01",
         activity_type: "cycling",
@@ -674,7 +688,6 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
         total_samples: "3000",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicDecoupling(180);
     const activity = result[0];
     // If first/second were swapped, values would be wrong
@@ -685,7 +698,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
   });
 
   it("maps decouplingPct and totalSamples to their exact fields", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         date: "2025-06-01",
         activity_type: "cycling",
@@ -696,7 +709,6 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
         total_samples: "7200",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicDecoupling(180);
     const activity = result[0];
     expect(activity?.decouplingPct).toBe(5.19);
@@ -708,7 +720,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
 
 describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", () => {
   it("maps z1, z2, z3 seconds to their exact fields", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "190",
         week: "2025-05-26",
@@ -717,7 +729,6 @@ describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", 
         z3_seconds: "1000",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getPolarizationTrend(180);
     const week = result.weeks[0];
     // Each zone must map to its correct field
@@ -731,7 +742,7 @@ describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", 
   });
 
   it("maxHr uses Number() conversion from first row", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "187",
         week: "2025-06-02",
@@ -740,7 +751,6 @@ describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", 
         z3_seconds: "100",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getPolarizationTrend(180);
     // Number("187") = 187, not String("187")
     expect(result.maxHr).toStrictEqual(187);
@@ -750,7 +760,7 @@ describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", 
 
 describe("EfficiencyRepository.getAerobicEfficiency (mutation: maxHr ternary)", () => {
   it("maxHr is extracted from the first row (index 0), not a later row", async () => {
-    const execute = vi.fn().mockResolvedValue([
+    const { repo } = makeRepository([
       {
         max_hr: "185",
         date: "2025-06-01",
@@ -772,7 +782,6 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: maxHr ternary)", 
         z2_samples: "400",
       },
     ]);
-    const repo = new EfficiencyRepository({ execute }, "user-1", "UTC");
     const result = await repo.getAerobicEfficiency(180);
     // Should come from rows[0].max_hr, not rows[1].max_hr
     expect(result.maxHr).toBe(185);
