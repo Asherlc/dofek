@@ -248,8 +248,6 @@ describe("Nutrition analytics data coverage", () => {
     }
 
     // ── Refresh materialized views ──
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
 
     // Start server
     const app = createApp(testCtx.db);

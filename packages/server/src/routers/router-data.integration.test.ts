@@ -337,13 +337,8 @@ describe("Router data coverage", () => {
     }
 
     // ── Refresh materialized views ──
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
-    await testCtx.db.execute(sql`SELECT 1`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
 
     // Start server
     const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
@@ -643,9 +638,7 @@ describe("Router data coverage", () => {
         ) VALUES ${sensorValues.join(",\n")}`),
       );
 
-      await testCtx.db.execute(sql`SELECT 1`);
-      await testCtx.db.execute(sql`SELECT 1`);
-      await testCtx.db.execute(sql`SELECT 1`);
+      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
       await queryCache.invalidateAll();
 
       const result = await query<

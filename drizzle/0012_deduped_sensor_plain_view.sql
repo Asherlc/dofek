@@ -176,22 +176,21 @@ SELECT
   asmp.scalar
 FROM ambient_samples asmp;
 
+-- Always recreate activity_summary as a plain VIEW. Migration 0013 converts it
+-- to a plain VIEW anyway, and recreating a MATERIALIZED VIEW here would force
+-- population from fitness.v_activity (still a matview) which is empty in
+-- freshly-migrated databases, causing "has not been populated" errors.
 DO $$
 DECLARE
-  dependent_kind "char";
   dependent_definition text;
 BEGIN
-  SELECT relation_kind, view_definition
-  INTO dependent_kind, dependent_definition
+  SELECT view_definition
+  INTO dependent_definition
   FROM pg_temp.dofek_migration_view_definitions
   WHERE view_name = 'fitness.activity_summary';
 
   IF dependent_definition IS NOT NULL THEN
-    IF dependent_kind = 'm' THEN
-      EXECUTE format('CREATE MATERIALIZED VIEW fitness.activity_summary AS %s', dependent_definition);
-    ELSE
-      EXECUTE format('CREATE VIEW fitness.activity_summary AS %s', dependent_definition);
-    END IF;
+    EXECUTE format('CREATE VIEW fitness.activity_summary AS %s', dependent_definition);
   END IF;
 END
 $$;
