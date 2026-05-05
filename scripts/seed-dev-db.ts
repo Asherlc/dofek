@@ -206,11 +206,9 @@ async function verifySeed() {
       170,
       `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${USER_ID}'`,
     ],
-    [
-      "activity summary rows",
-      80,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity_summary WHERE user_id = '${USER_ID}'`,
-    ],
+    // Note: activity_summary is now an analytics.activity_summary CH read model
+    // populated via PeerDB CDC. We don't verify CH counts here because the
+    // refresh is async; downstream tests/dashboards exercise that path.
   ] as const;
 
   console.log("\nVerification:");
