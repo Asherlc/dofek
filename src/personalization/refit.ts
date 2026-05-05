@@ -101,7 +101,7 @@ export function parseExponentialMovingAverageRows(
 
 async function fitEwmaFromDb(sensorStore: RefitSensorStore, userId: string) {
   // Reads from analytics.activity_summary (CH); the dropped Postgres
-  // matview is no longer available.
+  // materialized view is no longer available.
   const rows = await sensorStore.query(
     exponentialMovingAverageRowSchema,
     `WITH daily_load AS (

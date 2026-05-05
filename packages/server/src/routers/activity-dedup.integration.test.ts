@@ -5,12 +5,11 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
- * Integration test verifying that activity_summary deduplicates overlapping
- * activities from multiple providers. Without the v_activity join, workouts
- * synced from e.g. Wahoo + Apple Health are double-counted in ramp rate,
- * PMC, and other aggregate queries.
+ * Integration test verifying that overlapping activities are deduplicated
+ * before ClickHouse activity analytics consume them.
  */
 describe("Activity summary deduplication", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -75,37 +74,20 @@ describe("Activity summary deduplication", () => {
       );
       const appleActivityId = appleResult[0]?.id;
 
-      // Insert metric_stream data for BOTH activities (similar HR profiles)
-      for (const [actId, providerId] of [
-        [wahooActivityId, "wahoo"],
-        [appleActivityId, "apple_health"],
-      ] as const) {
-        if (!actId) continue;
-        for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
-          const batchEnd = Math.min(batchStart + 100, durationSec);
-          const sensorValues: string[] = [];
-          for (let s = batchStart; s < batchEnd; s++) {
-            const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
-            const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            sensorValues.push(
-              `(${ts}, '${TEST_USER_ID}', '${providerId}', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            );
-          }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-              recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-            ) VALUES ${sensorValues.join(",\n")}`),
-          );
-        }
+      if (!wahooActivityId || !appleActivityId) {
+        throw new Error("Expected overlapping activity insert to return ids");
       }
     }
 
-    // Refresh materialized views (v_activity first, then activity_summary)
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary`);
 
-    const app = createApp(testCtx.db);
+    const app = createApp(
+      testCtx.db,
+      makeMockSensorStore([
+        { day: "2026-04-20", trimp: 50 },
+        { day: "2026-04-27", trimp: 52 },
+      ]),
+    );
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -136,12 +118,11 @@ describe("Activity summary deduplication", () => {
     return { status: res.status, result: data[0] };
   }
 
-  it("activity_summary contains only one row for overlapping activities", async () => {
+  it("v_activity contains only one canonical row per overlapping activity pair", async () => {
     const result = await testCtx.db.execute<{ count: string }>(
-      sql`SELECT COUNT(*)::text AS count FROM fitness.activity_summary
+      sql`SELECT COUNT(*)::text AS count FROM fitness.v_activity
           WHERE user_id = ${TEST_USER_ID}`,
     );
-    // With dedup: 2 canonical activities (one per time point). Without dedup: 4 (one per provider per time point).
     expect(Number(result[0]?.count)).toBe(2);
   });
 

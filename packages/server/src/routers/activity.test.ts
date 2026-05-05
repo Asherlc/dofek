@@ -245,7 +245,7 @@ describe("activityRouter", () => {
         .fn()
         .mockResolvedValueOnce([]) // 1. list from v_activity: empty
         .mockResolvedValueOnce([{ count: 1 }]) // 2. base table count: has data
-        .mockResolvedValueOnce([]) // 3. REFRESH v_activity (the only PG matview left;
+        .mockResolvedValueOnce([]) // 3. REFRESH v_activity (the only PG materialized view left;
         //                              deduped_sensor + activity_summary moved to ClickHouse)
         .mockResolvedValueOnce([activityRow]); // 4. retry list
       const caller = createCaller({

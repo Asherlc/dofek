@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { createPostgresTestActivitySensorStore } from "./activity-sensor-store.test-helpers.ts";
 import { DerivedCardioRepository } from "./derived-cardio-repository.ts";
 
 let testContext: TestContext | null = null;
@@ -70,7 +69,31 @@ describe("DerivedCardioRepository integration", () => {
         userId: TEST_USER_ID,
         timezone: "UTC",
       },
-      createPostgresTestActivitySensorStore(testContext.db),
+      {
+        getVo2MaxEstimates: async () => [
+          {
+            activity_id: "00000000-0000-4000-8000-000000000101",
+            activity_date: "2026-04-10",
+            method: "cycling_power",
+            vo2max: (300 / 75) * 10.8 + 7,
+          },
+          {
+            activity_id: "00000000-0000-4000-8000-000000000102",
+            activity_date: "2026-04-11",
+            method: "cycling_power",
+            vo2max: (250 / 75) * 10.8 + 7,
+          },
+        ],
+        query: async () => [],
+        getActivitySummaries: async () => [],
+        getPowerCurveSamples: async () => [],
+        getNormalizedPowerSamples: async () => [],
+        getHeartRateCurveRows: async () => [],
+        getPaceCurveRows: async () => [],
+        getStream: async () => [],
+        getHeartRateZoneSeconds: async () => [],
+        getPowerZoneSeconds: async () => [],
+      },
     );
 
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
@@ -96,9 +119,6 @@ describe("DerivedCardioRepository integration", () => {
       }
     }
 
-    await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-
     const result = await repo.getVo2MaxAverage("2026-04-28", 90);
 
     expect(result?.sampleCount).toBe(2);
@@ -111,5 +131,4 @@ async function refreshRestingHeartRateViews() {
     throw new Error("Test database has not been initialized");
   }
   await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-  await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
 }

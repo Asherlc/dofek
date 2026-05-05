@@ -12,7 +12,7 @@ export function createTestCallerFactory(router: AnyRouter) {
 
 /**
  * Construct an in-memory ActivitySensorStore that returns `rows` (or successive
- * rowsets if `rows` is an array of arrays) from `query()`. All other store
+ * row sets if `rows` is an array of arrays) from `query()`. All other store
  * methods stub out to empty arrays. Use in router/repo tests that exercise
  * code paths reading from analytics.activity_summary / analytics.deduped_sensor.
  */

@@ -4,7 +4,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helpers.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("Activity router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -85,29 +85,61 @@ describe("Activity router", () => {
     cyclingActivityId = cyclingActivity.id;
     walkingActivityId = walkingActivity.id;
 
-    await testCtx.db.execute(
-      sql`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-          ) VALUES
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 150, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 210, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 3.8, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 88, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 152, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 215, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 3.9, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '1 second', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 89, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'heart_rate', ${metricOnlyActivityId}, 155, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'power', ${metricOnlyActivityId}, 220, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'speed', ${metricOnlyActivityId}, 4.0, NULL),
-          (CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '2 seconds', ${TEST_USER_ID}, 'test_provider', NULL, 'api', 'cadence', ${metricOnlyActivityId}, 90, NULL)`,
-    );
-
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
-    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
+    const sensorStore = makeMockSensorStore();
+    sensorStore.getActivitySummaries = async (activityIds) =>
+      activityIds.includes(metricOnlyActivityId)
+        ? [
+            {
+              activity_id: metricOnlyActivityId,
+              avg_hr: 152.3333,
+              max_hr: 155,
+              avg_power: 215,
+              max_power: 220,
+              avg_speed: 3.9,
+              max_speed: 4,
+              avg_cadence: 89,
+              total_distance: null,
+              elevation_gain_m: null,
+              elevation_loss_m: null,
+              sample_count: 12,
+            },
+          ]
+        : [];
+    sensorStore.getStream = async (window) =>
+      window.activityId === metricOnlyActivityId
+        ? [
+            {
+              recorded_at: new Date().toISOString(),
+              heart_rate: 150,
+              power: 210,
+              speed: 3.8,
+              cadence: 88,
+              altitude: null,
+              lat: null,
+              lng: null,
+            },
+          ]
+        : [];
+    sensorStore.getHeartRateZoneSeconds = async (window) =>
+      window.activityId === metricOnlyActivityId
+        ? [
+            { zone: 1, seconds: 0 },
+            { zone: 2, seconds: 1 },
+            { zone: 3, seconds: 1 },
+            { zone: 4, seconds: 1 },
+            { zone: 5, seconds: 0 },
+          ]
+        : [
+            { zone: 1, seconds: 0 },
+            { zone: 2, seconds: 0 },
+            { zone: 3, seconds: 0 },
+            { zone: 4, seconds: 0 },
+            { zone: 5, seconds: 0 },
+          ];
+
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -154,7 +186,7 @@ describe("Activity router", () => {
   });
 
   describe("list", () => {
-    it("falls back to metric_stream-backed summary when metric_stream rows are not available yet", async () => {
+    it("uses deduped ClickHouse summaries when sensor rows are available", async () => {
       const today = new Date().toISOString().slice(0, 10);
       const result = await query("activity.list", {
         days: 30,
@@ -214,7 +246,7 @@ describe("Activity router", () => {
       expect(result.error.data.code).toBe("BAD_REQUEST");
     });
 
-    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
+    it("returns deduped ClickHouse stream rows when sensor rows are available", async () => {
       const result = await query("activity.stream", {
         id: metricOnlyActivityId,
         maxPoints: 500,
@@ -258,7 +290,7 @@ describe("Activity router", () => {
       }
     });
 
-    it("falls back to metric_stream when metric_stream rows are not available yet", async () => {
+    it("returns zones from deduped ClickHouse heart-rate rows", async () => {
       const result = await query("activity.hrZones", {
         id: metricOnlyActivityId,
       });

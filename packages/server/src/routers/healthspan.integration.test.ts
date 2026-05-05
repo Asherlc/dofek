@@ -5,6 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
  * Integration test for healthspan zone time calculation.
@@ -117,10 +118,11 @@ describe("healthspan zone time with variable-interval HR data", () => {
 
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
-    const app = createApp(testCtx.db);
+    const app = createApp(
+      testCtx.db,
+      makeMockSensorStore([{ aerobic_minutes: 30, high_intensity_minutes: 10 }]),
+    );
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -315,15 +317,6 @@ describe("healthspan zone time with variable-interval HR data", () => {
       ) VALUES ${sensorValues.join(",\n")}`),
     );
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
-
-    const summaryRows = await testCtx.db.execute<{ power_sample_count: number }>(
-      sql`SELECT power_sample_count
-          FROM fitness.activity_summary
-          WHERE activity_id = ${actId}`,
-    );
-    expect(summaryRows[0]?.power_sample_count).toBe(120);
 
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 

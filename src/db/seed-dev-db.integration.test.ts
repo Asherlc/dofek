@@ -41,7 +41,6 @@ interface SeedCounts {
   vSleep: number;
   vDailyMetrics: number;
   vBodyMeasurement: number;
-  activitySummary: number;
 }
 
 interface BareDatabaseContext {
@@ -164,7 +163,6 @@ describe("seed-dev-db", () => {
       expect(firstCounts.vSleep).toBeGreaterThanOrEqual(90);
       expect(firstCounts.vDailyMetrics).toBeGreaterThanOrEqual(170);
       expect(firstCounts.vBodyMeasurement).toBeGreaterThanOrEqual(50);
-      expect(firstCounts.activitySummary).toBeGreaterThanOrEqual(80);
     } finally {
       await sql.end();
     }
@@ -298,10 +296,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     vBodyMeasurement: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.v_body_measurement WHERE user_id = '${userId}'`,
-    ),
-    activitySummary: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity_summary WHERE user_id = '${userId}'`,
     ),
   };
 }
