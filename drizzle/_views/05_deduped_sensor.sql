@@ -3,10 +3,6 @@
 -- consumers query analytics.deduped_sensor in ClickHouse via PeerDB CDC, but
 -- this matview still exists for the Postgres-backed integration test store.
 
-DROP VIEW IF EXISTS fitness.deduped_sensor;
-
---> statement-breakpoint
-
 CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.deduped_sensor AS
 
 -- Step 0: Flatten v_activity to get canonical_id -> member_id mapping

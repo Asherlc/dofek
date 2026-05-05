@@ -5,10 +5,6 @@
 -- recorded_at, which would re-evaluate the entire dedup CTE chain twice per
 -- query if this stayed as a plain view. Keep it materialized.
 
-DROP VIEW IF EXISTS fitness.activity_summary;
-
---> statement-breakpoint
-
 CREATE MATERIALIZED VIEW IF NOT EXISTS fitness.activity_summary AS
 
 -- Step 1: Elevation gain/loss from altitude channel (window function on ordered data)
