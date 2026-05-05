@@ -270,7 +270,7 @@ export class PredictionsRepository {
       `SELECT
         toString(activity_summary.activity_id) AS activity_id,
         activity_type,
-        toString(activity_summary.started_at) AS started_at,
+        formatDateTime(activity_summary.started_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS started_at,
         avg_hr,
         avg_power,
         avg_speed,

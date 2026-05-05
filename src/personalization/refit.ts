@@ -29,7 +29,7 @@ import { fitStressThresholds } from "./fit-stress-thresholds.ts";
 import type { TrainingImpulseInput } from "./fit-trimp.ts";
 import { fitTrainingImpulseConstants } from "./fit-trimp.ts";
 import type { PersonalizedParams } from "./params.ts";
-import { savePersonalizedParams } from "./storage.ts";
+import { loadPersonalizedParams, savePersonalizedParams } from "./storage.ts";
 
 /**
  * Refit all personalized parameters for a user from their historical data.
@@ -53,14 +53,36 @@ export async function refitAllParams(
       fitTrimpFromDb(sensorStore, userId),
     ]);
 
+  let existingParams: PersonalizedParams | null = null;
+  try {
+    existingParams = await loadPersonalizedParams(db, userId);
+  } catch (err) {
+    logger.error(`[personalization] Failed to load existing params: ${err}`);
+    Sentry.captureException(err, { tags: { context: "personalization-load-existing" } });
+  }
   const params: PersonalizedParams = {
     version: 1,
     fittedAt: new Date().toISOString(),
-    exponentialMovingAverage: ewmaResult.status === "fulfilled" ? ewmaResult.value : null,
-    readinessWeights: readinessResult.status === "fulfilled" ? readinessResult.value : null,
-    sleepTarget: sleepResult.status === "fulfilled" ? sleepResult.value : null,
-    stressThresholds: stressResult.status === "fulfilled" ? stressResult.value : null,
-    trainingImpulseConstants: trimpResult.status === "fulfilled" ? trimpResult.value : null,
+    exponentialMovingAverage:
+      ewmaResult.status === "fulfilled" && ewmaResult.value != null
+        ? ewmaResult.value
+        : (existingParams?.exponentialMovingAverage ?? null),
+    readinessWeights:
+      readinessResult.status === "fulfilled" && readinessResult.value != null
+        ? readinessResult.value
+        : (existingParams?.readinessWeights ?? null),
+    sleepTarget:
+      sleepResult.status === "fulfilled" && sleepResult.value != null
+        ? sleepResult.value
+        : (existingParams?.sleepTarget ?? null),
+    stressThresholds:
+      stressResult.status === "fulfilled" && stressResult.value != null
+        ? stressResult.value
+        : (existingParams?.stressThresholds ?? null),
+    trainingImpulseConstants:
+      trimpResult.status === "fulfilled" && trimpResult.value != null
+        ? trimpResult.value
+        : (existingParams?.trainingImpulseConstants ?? null),
   };
 
   try {

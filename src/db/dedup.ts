@@ -98,7 +98,7 @@ export async function refreshDedupViews(db: SyncDatabase): Promise<void> {
 
 /**
  * Update user_profile.max_hr from the highest observed heart rate across all
- * activities. Reads heart_rate samples directly from fitness.metric_stream;
+ * activities. Reads heart_rate samples directly from activity-linked fitness.metric_stream;
  * we used to read fitness.activity_summary, but that materialized view has
  * been dropped in favour of analytics.activity_summary (ClickHouse, via PeerDB
  * CDC).
@@ -112,12 +112,15 @@ export async function updateUserMaxHr(db: SyncDatabase): Promise<void> {
     SET max_hr = sub.observed_max_hr,
         updated_at = NOW()
     FROM (
-      SELECT user_id, MAX(scalar)::SMALLINT AS observed_max_hr
-      FROM fitness.metric_stream
-      WHERE channel = 'heart_rate'
-        AND scalar IS NOT NULL
-        AND scalar > 0
-      GROUP BY user_id
+      SELECT ms.user_id, MAX(ms.scalar)::SMALLINT AS observed_max_hr
+      FROM fitness.metric_stream ms
+      JOIN fitness.activity activity
+        ON activity.id = ms.activity_id
+       AND activity.user_id = ms.user_id
+      WHERE ms.channel = 'heart_rate'
+        AND ms.scalar IS NOT NULL
+        AND ms.scalar > 0
+      GROUP BY ms.user_id
     ) sub
     WHERE up.id = sub.user_id
       AND (up.max_hr IS NULL OR sub.observed_max_hr > up.max_hr)

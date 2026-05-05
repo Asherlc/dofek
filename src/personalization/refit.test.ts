@@ -95,13 +95,13 @@ describe("refitAllParams", () => {
 
   it("handles save failure gracefully (logs but does not throw)", async () => {
     // 3 PG fitters (readiness, sleep, stress) each call db.execute once,
-    // then savePersonalizedParams calls execute one more time. Reject the
-    // save call (the 4th).
+    // then loadPersonalizedParams and savePersonalizedParams each call execute.
+    // Reject the save call (the 5th).
     let callCount = 0;
     const db = {
       execute: vi.fn().mockImplementation(() => {
         callCount++;
-        if (callCount === 4) return Promise.reject(new Error("Save failed"));
+        if (callCount === 5) return Promise.reject(new Error("Save failed"));
         return Promise.resolve([]);
       }),
     };
@@ -112,6 +112,30 @@ describe("refitAllParams", () => {
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Failed to save params"));
+  });
+
+  it("preserves existing fitted params when a refit has insufficient data", async () => {
+    const existingParams = {
+      version: 1,
+      fittedAt: "2026-01-01T00:00:00.000Z",
+      exponentialMovingAverage: {
+        chronicTrainingLoadDays: 35,
+        acuteTrainingLoadDays: 8,
+        sampleCount: 40,
+        correlation: 0.5,
+      },
+      readinessWeights: null,
+      sleepTarget: { minutes: 500, sampleCount: 20 },
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    };
+    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
+
+    expect(result.exponentialMovingAverage).toEqual(existingParams.exponentialMovingAverage);
+    expect(result.sleepTarget).toEqual(existingParams.sleepTarget);
+    expect(result.fittedAt).not.toBe(existingParams.fittedAt);
   });
 
   it("handles all fitters rejecting simultaneously", async () => {

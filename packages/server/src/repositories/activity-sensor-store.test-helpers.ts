@@ -40,6 +40,44 @@ interface ZoneRow {
   seconds: number;
 }
 
+const summaryRowSchema = z.object({
+  activity_id: z.string(),
+  avg_hr: z.coerce.number().nullable(),
+  max_hr: z.coerce.number().nullable(),
+  avg_power: z.coerce.number().nullable(),
+  max_power: z.coerce.number().nullable(),
+  avg_speed: z.coerce.number().nullable(),
+  max_speed: z.coerce.number().nullable(),
+  avg_cadence: z.coerce.number().nullable(),
+  total_distance: z.coerce.number().nullable(),
+  elevation_gain_m: z.coerce.number().nullable(),
+  elevation_loss_m: z.coerce.number().nullable(),
+  sample_count: z.coerce.number().nullable(),
+});
+
+const sampleRowSchema = z.object({
+  activity_id: z.string(),
+  activity_date: dateStringSchema,
+  activity_name: z.string().nullable(),
+  recorded_at: z.string(),
+  scalar: z.coerce.number(),
+});
+
+const streamPointRowSchema = z.object({
+  recorded_at: z.string(),
+  heart_rate: z.coerce.number().nullable(),
+  power: z.coerce.number().nullable(),
+  speed: z.coerce.number().nullable(),
+  cadence: z.coerce.number().nullable(),
+  altitude: z.coerce.number().nullable(),
+  lat: z.coerce.number().nullable(),
+  lng: z.coerce.number().nullable(),
+});
+
+const scalarRowSchema = z.object({
+  scalar: z.coerce.number(),
+});
+
 const CURVE_DURATIONS_SECONDS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200];
 const OUTDOOR_VO2_MAX_ACTIVITY_TYPES = ["running", "trail_running", "walking", "hiking"] as const;
 
@@ -72,11 +110,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
       return this.#queryPolarizationTrend(schema, params);
     }
 
-    // The Postgres-backed test store cannot execute arbitrary ClickHouse SQL.
-    // Tests that need CH-specific SQL behavior should mock ActivitySensorStore
-    // at the unit/integration boundary. Returning [] keeps shallow router
-    // coverage tests from requiring a ClickHouse test service.
-    return [];
+    throw new Error(
+      `PostgresTestActivitySensorStore does not support this ClickHouse query shape: ${query.slice(0, 120)}`,
+    );
   }
 
   async #queryPolarizationTrend<TSchema extends z.ZodType>(
@@ -90,7 +126,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     const zoneTwoMaximum = requiredNumberParam(params, "p2");
     const enduranceTypes = requiredStringArrayParam(params, "enduranceTypes");
 
-    const rows = await this.#db.execute<Record<string, unknown>>(
+    const rows = await executeWithSchema(
+      this.#db,
+      schema,
       sql`WITH activity_meta AS (
             SELECT
               activity.id AS id,
@@ -128,7 +166,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
           ORDER BY week`,
     );
 
-    return rows.map((row) => schema.parse(row));
+    return rows;
   }
 
   async getActivitySummaries(activityIds: string[]): Promise<SummaryRow[]> {
@@ -136,7 +174,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
       return [];
     }
 
-    return this.#db.execute<SummaryRow>(
+    return executeWithSchema(
+      this.#db,
+      summaryRowSchema,
       sql`SELECT
             activity.id::text AS activity_id,
             AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'heart_rate')::real AS avg_hr,
@@ -420,7 +460,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   }
 
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
-    const rows = await this.#db.execute<StreamPointRow>(
+    const rows = await executeWithSchema(
+      this.#db,
+      streamPointRowSchema,
       sql`SELECT
             recorded_at::text AS recorded_at,
             MAX(scalar) FILTER (WHERE channel = 'heart_rate')::real AS heart_rate,
@@ -468,7 +510,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   }
 
   async #activityChannelValues(window: ActivitySensorWindow, channel: string): Promise<number[]> {
-    const rows = await this.#db.execute<{ scalar: number }>(
+    const rows = await executeWithSchema(
+      this.#db,
+      scalarRowSchema,
       sql`SELECT scalar::real AS scalar
           FROM fitness.metric_stream
           WHERE user_id = ${window.userId}::uuid
@@ -487,7 +531,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     channel: string,
     requirePositive: boolean,
   ): Promise<SampleRow[]> {
-    return this.#db.execute<SampleRow>(
+    return executeWithSchema(
+      this.#db,
+      sampleRowSchema,
       sql`SELECT
             sensor.activity_id::text AS activity_id,
             TO_CHAR((activity.started_at AT TIME ZONE ${timezone})::date, 'YYYY-MM-DD') AS activity_date,

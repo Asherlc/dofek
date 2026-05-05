@@ -64,4 +64,13 @@ describe("PostgresTestActivitySensorStore", () => {
       { max_hr: 190, week: "2026-04-20", z1_seconds: 1300, z2_seconds: 400, z3_seconds: 200 },
     ]);
   });
+
+  it("fails fast for unsupported ClickHouse query shapes", async () => {
+    const store = createPostgresTestActivitySensorStore({ execute: vi.fn() });
+    const rowSchema = z.object({ value: z.number() });
+
+    await expect(store.query(rowSchema, "SELECT value FROM analytics.unhandled")).rejects.toThrow(
+      "does not support this ClickHouse query shape",
+    );
+  });
 });

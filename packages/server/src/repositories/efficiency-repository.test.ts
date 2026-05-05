@@ -1,9 +1,9 @@
 import { computePolarizationIndex } from "@dofek/zones/zones";
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import { EfficiencyRepository } from "./efficiency-repository.ts";
 
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(rows: unknown[]): any {
+function makeSensorStore(rows: unknown[]): ActivitySensorStore {
   // Mirror ClickHouseActivitySensorStore.query: parse each row through the
   // supplied Zod schema. Sequential calls return the same `rows`, which works
   // because every getter in this repo issues exactly one CH query.
@@ -21,7 +21,7 @@ function makeSensorStore(rows: unknown[]): any {
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  };
+  } satisfies ActivitySensorStore;
 }
 
 function makeRepository(rows: Record<string, unknown>[] = []) {

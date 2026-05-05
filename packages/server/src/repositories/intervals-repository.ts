@@ -235,7 +235,7 @@ export class IntervalsRepository {
     const samples = await this.#sensorStore.query(
       sensorPointRowSchema,
       `SELECT
-        toString(recorded_at) AS recorded_at,
+        formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS recorded_at,
         maxIf(scalar, channel = 'heart_rate') AS heart_rate,
         maxIf(scalar, channel = 'power') AS power,
         maxIf(scalar, channel = 'speed') AS speed,
@@ -252,15 +252,26 @@ export class IntervalsRepository {
       { activityId, userId: this.#userId },
     );
 
+    let sampleCursor = 0;
     return intervals.map((interval) => {
       const start = new Date(interval.started_at).getTime();
       const end = interval.ended_at
         ? new Date(interval.ended_at).getTime()
         : Number.POSITIVE_INFINITY;
-      const points = samples.filter((point) => {
-        const ts = new Date(point.recorded_at).getTime();
-        return ts >= start && ts <= end;
-      });
+      while (
+        sampleCursor < samples.length &&
+        new Date(samples[sampleCursor]?.recorded_at ?? "").getTime() < start
+      ) {
+        sampleCursor++;
+      }
+      const points: z.infer<typeof sensorPointRowSchema>[] = [];
+      for (let index = sampleCursor; index < samples.length; index++) {
+        const point = samples[index];
+        if (!point) continue;
+        const timestamp = new Date(point.recorded_at).getTime();
+        if (timestamp > end) break;
+        points.push(point);
+      }
       const metrics = aggregateInterval(points);
       return {
         id: interval.id,
@@ -298,7 +309,7 @@ export class IntervalsRepository {
         GROUP BY recorded_at
       )
       SELECT
-        toString(toStartOfMinute(recorded_at)) AS minute_start,
+        formatDateTime(toStartOfMinute(recorded_at), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS minute_start,
         round(avgIf(power, power > 0), 1) AS avg_power,
         round(avg(heart_rate), 1) AS avg_hr,
         round(avg(speed), 3) AS avg_speed,

@@ -174,7 +174,7 @@ export class WeeklyReportRepository {
       ),
       sleep_raw AS (
         SELECT
-          toDate(toTimeZone(ended_at, {timezone:String})) AS date,
+          toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) AS date,
           duration_minutes
         FROM postgres_fitness_live.v_sleep
         WHERE user_id = {userId:UUID}

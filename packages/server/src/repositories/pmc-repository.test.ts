@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
@@ -34,8 +35,7 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(activityRows: unknown[], npRows: unknown[]): any {
+function makeSensorStore(activityRows: unknown[], npRows: unknown[]): ActivitySensorStore {
   const query = vi.fn();
   query.mockResolvedValueOnce(activityRows);
   query.mockResolvedValueOnce(npRows);
@@ -50,7 +50,7 @@ function makeSensorStore(activityRows: unknown[], npRows: unknown[]): any {
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  };
+  } satisfies ActivitySensorStore;
 }
 
 function makeRepo(

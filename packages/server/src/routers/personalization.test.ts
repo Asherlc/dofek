@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -18,8 +19,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-const fakeSensorStore: any = {
+const fakeSensorStore = {
   query: vi.fn().mockResolvedValue([]),
   getActivitySummaries: vi.fn().mockResolvedValue([]),
   getStream: vi.fn().mockResolvedValue([]),
@@ -30,7 +30,7 @@ const fakeSensorStore: any = {
   getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
   getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
   getPaceCurveRows: vi.fn().mockResolvedValue([]),
-};
+} satisfies ActivitySensorStore;
 
 const mockLoadPersonalizedParams = vi.fn();
 vi.mock("dofek/personalization/storage", () => ({

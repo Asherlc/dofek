@@ -18,7 +18,7 @@ export interface PostSyncJob {
 export async function processPostSyncJob(
   job: PostSyncJob,
   db: SyncDatabase,
-  sensorStore: RefitSensorStore,
+  getSensorStore: () => RefitSensorStore,
 ) {
   if (job.data.type === "global-maintenance") {
     logger.info("[post-sync] Running global post-sync maintenance");
@@ -45,6 +45,7 @@ export async function processPostSyncJob(
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
     logger.info("[post-sync] Refitting personalized parameters...");
+    const sensorStore = getSensorStore();
     await refitAllParams(db, job.data.userId, sensorStore);
     logger.info("[post-sync] Personalized parameters updated.");
   } catch (err) {

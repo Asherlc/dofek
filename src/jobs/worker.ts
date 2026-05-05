@@ -99,7 +99,7 @@ const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
 );
 const postSyncWorker = new Worker<PostSyncJobData>(
   POST_SYNC_QUEUE,
-  (job) => jobContext.run(job, () => processPostSyncJob(job, db, getRefitSensorStore())),
+  (job) => jobContext.run(job, () => processPostSyncJob(job, db, getRefitSensorStore)),
   { connection, concurrency: 1 },
 );
 // Training export jobs are processed by the standalone Python BullMQ worker
