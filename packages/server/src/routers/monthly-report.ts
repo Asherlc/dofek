@@ -1,7 +1,21 @@
-import { sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 export interface MonthSummary {
   monthStart: string;
@@ -40,67 +54,68 @@ export const monthlyReportRouter = router({
   report: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ months: z.number().min(1).max(24).default(6) }))
     .query(async ({ ctx, input }): Promise<MonthlyReportResult> => {
-      const rows = await executeWithSchema(
-        ctx.db,
+      const sensorStore = requireSensorStore(ctx.sensorStore, "monthlyReport.report");
+      const rows = await sensorStore.query(
         monthRowSchema,
-        sql`WITH per_activity AS (
-              SELECT
-                a.started_at::date AS date,
-                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 3600.0 AS hours,
-                EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0
-                  * a.avg_hr / NULLIF(a.max_hr, 0) AS load
-              FROM fitness.activity_summary a
-              WHERE a.user_id = ${ctx.userId}
-                AND a.started_at >= date_trunc('month', CURRENT_DATE) - (${input.months}::int || ' months')::interval
-                AND a.ended_at IS NOT NULL
-                AND a.avg_hr IS NOT NULL
-            ),
-            daily_training AS (
-              SELECT date, SUM(hours) AS hours, COUNT(*) AS count, SUM(load) AS load
-              FROM per_activity
-              GROUP BY date
-            ),
-            raw_sleep AS (
-              SELECT
-                started_at::date AS date,
-                duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at >= date_trunc('month', CURRENT_DATE) - (${input.months}::int || ' months')::interval
-            ),
-            sleep_daily AS (
-              SELECT DISTINCT ON (date) date, duration_minutes
-              FROM raw_sleep
-              ORDER BY date, duration_minutes DESC NULLS LAST
-            ),
-            metrics_daily AS (
-              SELECT dm.date, drhr.resting_hr, dm.hrv
-              FROM fitness.v_daily_metrics dm
-              LEFT JOIN fitness.derived_resting_heart_rate drhr
-                ON drhr.user_id = dm.user_id
-               AND drhr.date = dm.date
-              WHERE dm.user_id = ${ctx.userId}
-                AND dm.date >= date_trunc('month', CURRENT_DATE) - (${input.months}::int || ' months')::interval
-            )
-            SELECT
-              date_trunc('month', d.date)::date AS month_start,
-              COALESCE(SUM(dt.hours), 0) AS training_hours,
-              COALESCE(SUM(dt.count), 0)::int AS activity_count,
-              COALESCE(AVG(dt.load), 0) AS avg_daily_strain,
-              COALESCE(AVG(sl.duration_minutes), 0) AS avg_sleep_minutes,
-              AVG(m.resting_hr) AS avg_resting_hr,
-              AVG(m.hrv) AS avg_hrv
-            FROM generate_series(
-              date_trunc('month', CURRENT_DATE) - (${input.months}::int || ' months')::interval,
-              CURRENT_DATE,
-              '1 day'::interval
-            ) AS d(date)
-            LEFT JOIN daily_training dt ON dt.date = d.date::date
-            LEFT JOIN sleep_daily sl ON sl.date = d.date::date
-            LEFT JOIN metrics_daily m ON m.date = d.date::date
-            GROUP BY date_trunc('month', d.date)
-            ORDER BY month_start ASC`,
+        `WITH per_activity AS (
+          SELECT
+            toDate(started_at) AS date,
+            dateDiff('second', started_at, ended_at) / 3600.0 AS hours,
+            dateDiff('second', started_at, ended_at) / 60.0
+              * avg_hr / nullIf(toFloat64(max_hr), 0) AS load
+          FROM analytics.activity_summary
+          WHERE user_id = {userId:UUID}
+            AND started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+            AND ended_at IS NOT NULL
+            AND avg_hr IS NOT NULL
+        ),
+        daily_training AS (
+          SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
+          FROM per_activity
+          GROUP BY date
+        ),
+        sleep_raw AS (
+          SELECT toDate(started_at) AS date, duration_minutes
+          FROM postgres_fitness_live.v_sleep
+          WHERE user_id = {userId:UUID}
+            AND is_nap = false
+            AND started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+        ),
+        sleep_daily AS (
+          SELECT date, max(duration_minutes) AS duration_minutes
+          FROM sleep_raw
+          GROUP BY date
+        ),
+        metrics_daily AS (
+          SELECT
+            dm.date AS date,
+            drhr.resting_hr AS resting_hr,
+            dm.hrv AS hrv
+          FROM postgres_fitness_live.v_daily_metrics AS dm
+          LEFT JOIN postgres_fitness_live.derived_resting_heart_rate AS drhr
+            ON drhr.user_id = dm.user_id AND drhr.date = dm.date
+          WHERE dm.user_id = {userId:UUID}
+            AND dm.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+        ),
+        date_series AS (
+          SELECT toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH + INTERVAL number DAY AS date
+          FROM numbers(toUInt64(dateDiff('day', toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH, today()) + 1))
+        )
+        SELECT
+          toString(toStartOfMonth(d.date)) AS month_start,
+          coalesce(sum(dt.hours), 0) AS training_hours,
+          toInt32(coalesce(sum(dt.count), 0)) AS activity_count,
+          coalesce(avg(dt.load), 0) AS avg_daily_strain,
+          coalesce(avg(sl.duration_minutes), 0) AS avg_sleep_minutes,
+          avg(m.resting_hr) AS avg_resting_hr,
+          avg(m.hrv) AS avg_hrv
+        FROM date_series AS d
+        LEFT JOIN daily_training dt ON dt.date = d.date
+        LEFT JOIN sleep_daily sl ON sl.date = d.date
+        LEFT JOIN metrics_daily m ON m.date = d.date
+        GROUP BY toStartOfMonth(d.date)
+        ORDER BY month_start ASC`,
+        { userId: ctx.userId, months: input.months },
       );
 
       // Build summaries with month-over-month trends

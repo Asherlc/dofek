@@ -90,9 +90,21 @@ describe("MonthRow", () => {
 
 describe("MonthlyReportRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new MonthlyReportRepository({ execute }, "user-1");
-    return { repo, execute };
+    const query = vi.fn().mockResolvedValue(rows);
+    const sensorStore = {
+      query,
+      getActivitySummaries: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+    };
+    const repo = new MonthlyReportRepository("user-1", sensorStore);
+    return { repo, execute: query };
   }
 
   function makeDbRow(overrides: Partial<Record<string, unknown>> = {}) {
