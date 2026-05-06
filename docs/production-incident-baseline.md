@@ -7,6 +7,45 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-06: Branch deploy validation exceeded migration timeout
+
+### Impact
+
+Validation deploy run `25417551356` from branch `aloud-bike` built both Docker
+images successfully, then failed in the `Run migrations` step before reaching
+the PeerDB CDC validation step.
+
+### Evidence That Mattered
+
+- Job: `Deploy Web Stack / Deploy Web Stack`, job `74552433086`.
+- Step: `Run migrations`, started `2026-05-06T05:18:03Z`.
+- First fatal line: `Migration exceeded 3300s`.
+- The job log showed regular `Migration still running after ...` messages until
+  the timeout guard fired, so the runner was polling the detached migration
+  container rather than hanging in the Docker CLI.
+- The timeout branch removed the migration container before printing its logs,
+  which left no direct evidence of the slow migration phase.
+
+### Root Cause
+
+The branch image ran longer than the deployment migration budget. The workflow's
+timeout path did not collect migration logs before cleanup, so the exact slow
+substep was not preserved in the GitHub Actions log.
+
+### Fix Or Mitigation
+
+- Bounded the migration step's remote Docker inspect, log collection, and
+  cleanup commands with `timeout` so remote Docker calls fail loudly.
+- Added timeout-path migration log collection before container cleanup so the
+  next timeout captures the slow migration phase instead of only reporting the
+  deploy-level guard.
+
+### Remaining Risk
+
+This instrumentation does not reduce legitimate ClickHouse or Postgres
+migration work. If the branch retry still exceeds `3300s`, use the captured
+migration output as the root-cause evidence before changing behavior.
+
 ## 2026-05-06: Production Deploy failed during PeerDB analytics mirror validation
 
 ### Impact

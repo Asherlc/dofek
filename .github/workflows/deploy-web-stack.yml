@@ -424,6 +424,8 @@ jobs:
             elapsed_seconds=$((SECONDS - migration_start_seconds))
             if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
               echo "::error::Migration exceeded ${migration_timeout_seconds}s"
+              echo "Migration output before timeout (last 120 lines):"
+              timeout 60s docker logs --tail 120 "$migration_container" || true
               cleanup_migration_container
               exit 1
             fi
