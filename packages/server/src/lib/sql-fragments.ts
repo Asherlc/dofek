@@ -1,6 +1,6 @@
 import type { SQL } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "./date-window.ts";
+import { dateWindowStart, timestampWindowStart } from "./date-window.ts";
 
 // ---------------------------------------------------------------------------
 // Sleep night date
@@ -128,66 +128,6 @@ export function bodyWeightDedupCte(
         ${additionalFilter ?? sql``}
     ) weight_sub
     ORDER BY local_date, recorded_at DESC
-  )`;
-}
-
-// ---------------------------------------------------------------------------
-// ACWR (Acute:Chronic Workload Ratio) CTE
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable CTE pipeline for Acute:Chronic Workload Ratio.
- *
- * Produces five CTEs: `acwr_date_series`, `acwr_per_activity`,
- * `acwr_activity_load`, `acwr_daily`, `acwr_with_windows`.
- *
- * The final CTE `acwr_with_windows` has columns:
- *   date, daily_load, acute_load, chronic_load_avg, chronic_count
- *
- * @param days - The output display window; internally adds 28 days for the
- *   chronic window warm-up.
- */
-export function acwrCte(userId: string, timezone: string, endDate: string, days: number): SQL {
-  const totalDays = days + 28;
-  return sql`acwr_date_series AS (
-    SELECT generate_series(
-      ${dateWindowStart(endDate, totalDays)},
-      ${dateWindowEnd(endDate)},
-      '1 day'::interval
-    )::date AS date
-  ),
-  acwr_per_activity AS (
-    SELECT
-      (asum.started_at AT TIME ZONE ${timezone})::date AS date,
-      EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-        * asum.avg_hr
-        / NULLIF(asum.max_hr, 0) AS load
-    FROM fitness.activity_summary asum
-    WHERE asum.user_id = ${userId}
-      AND (asum.started_at AT TIME ZONE ${timezone})::date >= ${dateWindowStart(endDate, totalDays)}
-      AND asum.ended_at IS NOT NULL
-      AND asum.avg_hr IS NOT NULL
-  ),
-  acwr_activity_load AS (
-    SELECT date, SUM(load) AS daily_load
-    FROM acwr_per_activity
-    GROUP BY date
-  ),
-  acwr_daily AS (
-    SELECT
-      ds.date,
-      COALESCE(al.daily_load, 0) AS daily_load
-    FROM acwr_date_series ds
-    LEFT JOIN acwr_activity_load al ON al.date = ds.date
-  ),
-  acwr_with_windows AS (
-    SELECT
-      date,
-      daily_load,
-      SUM(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load,
-      AVG(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_load_avg,
-      COUNT(*) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
-    FROM acwr_daily
   )`;
 }
 

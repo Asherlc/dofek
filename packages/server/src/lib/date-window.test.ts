@@ -4,8 +4,10 @@ import {
   dateWindowEnd,
   dateWindowInput,
   dateWindowStart,
+  dateWindowStartString,
   endDateSchema,
   timestampWindowStart,
+  timestampWindowStartString,
 } from "./date-window.ts";
 
 describe("dateWindowInput", () => {
@@ -115,6 +117,12 @@ describe("dateWindowEnd", () => {
   });
 });
 
+describe("dateWindowStartString", () => {
+  it("returns a YYYY-MM-DD lower bound for non-SQL query parameters", () => {
+    expect(dateWindowStartString("2026-03-23", 30)).toBe("2026-02-21");
+  });
+});
+
 describe("timestampWindowStart", () => {
   it("returns a SQL object with queryChunks", () => {
     const result = timestampWindowStart("2026-03-23", 7);
@@ -145,5 +153,11 @@ describe("timestampWindowStart", () => {
     const dateStart = dateWindowStart("2026-03-23", 7);
     // They use different SQL casts (::timestamp vs just ::date - ::int)
     expect(timestamp).not.toEqual(dateStart);
+  });
+});
+
+describe("timestampWindowStartString", () => {
+  it("returns a midnight timestamp lower bound for non-SQL query parameters", () => {
+    expect(timestampWindowStartString("2026-03-23", 7)).toBe("2026-03-16 00:00:00");
   });
 });

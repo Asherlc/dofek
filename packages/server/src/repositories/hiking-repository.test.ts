@@ -1,3 +1,4 @@
+import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
 import { describe, expect, it, vi } from "vitest";
 import {
   ElevationWeek,
@@ -50,6 +51,14 @@ describe("HikingActivity", () => {
   it("computes grade-adjusted pace (uphill = faster adjusted pace)", () => {
     const activity = new HikingActivity(makeRow({ averageGradePercent: 4 }));
     expect(activity.gradeAdjustedPaceMinPerKm).toBeLessThan(activity.averagePaceMinPerKm);
+  });
+
+  it("passes average grade as a fraction, not percent points", () => {
+    const activity = new HikingActivity(
+      makeRow({ averageGradePercent: 4, distanceMeters: 5000, durationSeconds: 3600 }),
+    );
+
+    expect(activity.gradeAdjustedPaceMinPerKm).toBeCloseTo(computeGradeAdjustedPace(12, 0.04), 6);
   });
 
   it("computes grade-adjusted pace (downhill = slower adjusted pace)", () => {
@@ -181,8 +190,21 @@ describe("HikingRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
-    const repo = new HikingRepository(db, "user-1", "UTC");
-    return { repo, execute };
+    const sensorQuery = vi.fn().mockResolvedValue(rows);
+    const sensorStore = {
+      query: sensorQuery,
+      getActivitySummaries: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+    };
+    const repo = new HikingRepository(db, "user-1", "UTC", sensorStore);
+    return { repo, execute: sensorQuery, dbExecute: execute };
   }
 
   describe("getGradeAdjustedPaces", () => {
@@ -246,6 +268,30 @@ describe("HikingRepository", () => {
       const result = await repo.getWalkingBiomechanics(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(WalkingBiomechanicsSnapshot);
+    });
+
+    it("maps nullable biomechanics fields independently", async () => {
+      const { repo } = makeRepository([
+        {
+          date: "2024-01-15",
+          walking_speed: null,
+          step_length: null,
+          double_support_pct: 24.5,
+          asymmetry_pct: 1.2,
+          steadiness: 92,
+        },
+      ]);
+
+      const result = await repo.getWalkingBiomechanics(90);
+
+      expect(result[0]?.toDetail()).toEqual({
+        date: "2024-01-15",
+        walkingSpeedKmh: null,
+        stepLengthCm: null,
+        doubleSupportPct: 24.5,
+        asymmetryPct: 1.2,
+        steadiness: 92,
+      });
     });
   });
 

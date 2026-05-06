@@ -5,7 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createPostgresTestActivitySensorStore } from "../repositories/activity-sensor-store.test-helpers.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for router coverage gaps:
@@ -270,14 +270,13 @@ describe("Router coverage", () => {
       );
     }
 
-    // ── Refresh materialized views ──
+    // ── Refresh Postgres materialized views ──
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.activity_summary`);
 
     // Start server
-    const app = createApp(testCtx.db, createPostgresTestActivitySensorStore(testCtx.db));
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

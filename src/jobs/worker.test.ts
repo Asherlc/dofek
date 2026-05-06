@@ -15,6 +15,14 @@ vi.mock("../db/index.ts", () => ({
   createDatabaseFromEnv: vi.fn(() => ({})),
 }));
 
+vi.mock("../db/clickhouse.ts", () => ({
+  createClickHouseClientFromEnv: vi.fn(() => ({})),
+}));
+
+vi.mock("../db/refit-sensor-store.ts", () => ({
+  createRefitSensorStore: vi.fn(() => ({})),
+}));
+
 vi.mock("./process-import-job.ts", () => ({
   processImportJob: vi.fn(),
 }));

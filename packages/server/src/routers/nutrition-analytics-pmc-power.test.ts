@@ -73,6 +73,23 @@ import { nutritionAnalyticsRouter } from "./nutrition-analytics.ts";
 import { pmcRouter } from "./pmc.ts";
 import { powerRouter } from "./power.ts";
 
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function makeSensorStore(rows: unknown[] = []): SensorStore {
+  return {
+    query: vi.fn().mockResolvedValue(rows),
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
+
 describe("nutritionAnalyticsRouter", () => {
   const createCaller = createTestCallerFactory(nutritionAnalyticsRouter);
 
@@ -204,9 +221,8 @@ describe("nutritionAnalyticsRouter", () => {
 
   describe("access window gating", () => {
     it("caloricBalance passes accessWindow to repository (limited window returns empty)", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute },
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
         accessWindow: {
@@ -232,6 +248,7 @@ describe("pmcRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -256,9 +273,10 @@ describe("pmcRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -287,9 +305,10 @@ describe("pmcRouter", () => {
         });
       }
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -300,11 +319,11 @@ describe("pmcRouter", () => {
 
   describe("access window gating", () => {
     it("chart passes accessWindow to repository (limited window returns empty)", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute },
+        db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([]),
         accessWindow: {
           kind: "limited",
           paid: false,
@@ -347,10 +366,10 @@ describe("powerRouter", () => {
         Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
       );
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(samples) },
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
       });
       const result = await caller.powerCurve({ days: 90 });
 
@@ -363,10 +382,10 @@ describe("powerRouter", () => {
 
     it("returns empty points when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
       });
       const result = await caller.powerCurve({ days: 90 });
       expect(result.points).toEqual([]);
@@ -374,7 +393,7 @@ describe("powerRouter", () => {
 
     it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
       });
@@ -423,7 +442,7 @@ describe("powerRouter", () => {
 
     it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
       });

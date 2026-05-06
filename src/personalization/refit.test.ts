@@ -33,11 +33,30 @@ function createMockDb(queryResults: Record<string, unknown>[][] = []) {
   };
 }
 
+function createMockSensorStore(rowSets: Record<string, unknown>[][] = []) {
+  let callIndex = 0;
+  return {
+    query: vi
+      .fn()
+      .mockImplementation(
+        async (
+          schema: { parse: (row: unknown) => unknown },
+          _query: string,
+          _params?: Record<string, unknown>,
+        ) => {
+          const rows = rowSets[callIndex] ?? [];
+          callIndex++;
+          return rows.map((row) => schema.parse(row));
+        },
+      ),
+  };
+}
+
 describe("refitAllParams", () => {
   it("returns params with all null fitters when data is insufficient", async () => {
     // All queries return empty results
     const db = createMockDb([[], [], [], [], []]);
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
@@ -51,10 +70,31 @@ describe("refitAllParams", () => {
 
   it("calls execute for data queries and save", async () => {
     const db = createMockDb([[], [], [], [], [], []]);
-    await refitAllParams(db, "user-1");
+    await refitAllParams(db, "user-1", createMockSensorStore());
 
     // Should be called at least once for data queries + once for save
     expect(db.execute).toHaveBeenCalled();
+  });
+
+  it("queries sensor-store refit inputs with the current userId", async () => {
+    const db = createMockDb([[], [], [], [], [], []]);
+    const sensorStore = createMockSensorStore();
+
+    await refitAllParams(db, "user-1", sensorStore);
+
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.stringContaining("analytics.activity_summary asum"),
+      { userId: "user-1" },
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining("FROM analytics.activity_summary asum"),
+      { userId: "user-1" },
+    );
   });
 
   it("handles individual fitter errors gracefully", async () => {
@@ -68,14 +108,14 @@ describe("refitAllParams", () => {
     });
 
     // Should not throw — individual failures are caught
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
   });
 
   it("fittedAt is a valid ISO timestamp", async () => {
     const db = createMockDb([[], [], [], [], []]);
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
     // Should be a valid ISO date string
     const parsed = new Date(result.fittedAt);
@@ -83,22 +123,48 @@ describe("refitAllParams", () => {
   });
 
   it("handles save failure gracefully (logs but does not throw)", async () => {
+    // 3 PG fitters (readiness, sleep, stress) each call db.execute once,
+    // then loadPersonalizedParams and savePersonalizedParams each call execute.
+    // Reject the save call (the 5th).
     let callCount = 0;
     const db = {
       execute: vi.fn().mockImplementation(() => {
         callCount++;
-        // First 5 calls are data queries (one per fitter), 6th is save
-        if (callCount === 6) return Promise.reject(new Error("Save failed"));
+        if (callCount === 5) return Promise.reject(new Error("Save failed"));
         return Promise.resolve([]);
       }),
     };
 
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
     // Should still return params despite save failure
     expect(result).not.toBeNull();
     expect(result.version).toBe(1);
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("Failed to save params"));
+  });
+
+  it("preserves existing fitted params when a refit has insufficient data", async () => {
+    const existingParams = {
+      version: 1,
+      fittedAt: "2026-01-01T00:00:00.000Z",
+      exponentialMovingAverage: {
+        chronicTrainingLoadDays: 35,
+        acuteTrainingLoadDays: 8,
+        sampleCount: 40,
+        correlation: 0.5,
+      },
+      readinessWeights: null,
+      sleepTarget: { minutes: 500, sampleCount: 20 },
+      stressThresholds: null,
+      trainingImpulseConstants: null,
+    };
+    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
+
+    expect(result.exponentialMovingAverage).toEqual(existingParams.exponentialMovingAverage);
+    expect(result.sleepTarget).toEqual(existingParams.sleepTarget);
+    expect(result.fittedAt).not.toBe(existingParams.fittedAt);
   });
 
   it("handles all fitters rejecting simultaneously", async () => {
@@ -107,7 +173,7 @@ describe("refitAllParams", () => {
     };
 
     // Promise.allSettled catches all rejections
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
     expect(result.version).toBe(1);
     expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
@@ -127,7 +193,7 @@ describe("refitAllParams", () => {
       }),
     };
 
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
     // All should be null (either rejected or insufficient data)
     expect(result.exponentialMovingAverage).toBeNull();
     expect(result.readinessWeights).toBeNull();
@@ -138,7 +204,7 @@ describe("refitAllParams", () => {
 
   it("version is always 1", async () => {
     const db = createMockDb([[], [], [], [], []]);
-    const result = await refitAllParams(db, "user-1");
+    const result = await refitAllParams(db, "user-1", createMockSensorStore());
     expect(result.version).toBe(1);
   });
 });

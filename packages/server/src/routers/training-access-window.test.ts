@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -9,6 +9,7 @@ vi.mock("../trpc.ts", async () => {
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -48,6 +49,7 @@ describe("trainingRouter access window gating", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore([]),
       accessWindow: {
         kind: "limited",
         paid: false,

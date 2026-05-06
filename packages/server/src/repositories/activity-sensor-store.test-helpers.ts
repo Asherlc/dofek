@@ -40,6 +40,44 @@ interface ZoneRow {
   seconds: number;
 }
 
+const summaryRowSchema = z.object({
+  activity_id: z.string(),
+  avg_hr: z.coerce.number().nullable(),
+  max_hr: z.coerce.number().nullable(),
+  avg_power: z.coerce.number().nullable(),
+  max_power: z.coerce.number().nullable(),
+  avg_speed: z.coerce.number().nullable(),
+  max_speed: z.coerce.number().nullable(),
+  avg_cadence: z.coerce.number().nullable(),
+  total_distance: z.coerce.number().nullable(),
+  elevation_gain_m: z.coerce.number().nullable(),
+  elevation_loss_m: z.coerce.number().nullable(),
+  sample_count: z.coerce.number().nullable(),
+});
+
+const sampleRowSchema = z.object({
+  activity_id: z.string(),
+  activity_date: dateStringSchema,
+  activity_name: z.string().nullable(),
+  recorded_at: z.string(),
+  scalar: z.coerce.number(),
+});
+
+const streamPointRowSchema = z.object({
+  recorded_at: z.string(),
+  heart_rate: z.coerce.number().nullable(),
+  power: z.coerce.number().nullable(),
+  speed: z.coerce.number().nullable(),
+  cadence: z.coerce.number().nullable(),
+  altitude: z.coerce.number().nullable(),
+  lat: z.coerce.number().nullable(),
+  lng: z.coerce.number().nullable(),
+});
+
+const scalarRowSchema = z.object({
+  scalar: z.coerce.number(),
+});
+
 const CURVE_DURATIONS_SECONDS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200];
 const OUTDOOR_VO2_MAX_ACTIVITY_TYPES = ["running", "trail_running", "walking", "hiking"] as const;
 
@@ -63,30 +101,110 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     this.#db = db;
   }
 
+  async query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params: Record<string, unknown> = {},
+  ): Promise<z.infer<TSchema>[]> {
+    if (isPolarizationTrendQuery(query)) {
+      return this.#queryPolarizationTrend(schema, params);
+    }
+
+    throw new Error(
+      `PostgresTestActivitySensorStore does not support this ClickHouse query shape: ${query.slice(0, 120)}`,
+    );
+  }
+
+  async #queryPolarizationTrend<TSchema extends z.ZodType>(
+    schema: TSchema,
+    params: Record<string, unknown>,
+  ): Promise<z.infer<TSchema>[]> {
+    const userId = requiredStringParam(params, "userId");
+    const timezone = requiredStringParam(params, "timezone");
+    const days = requiredNumberParam(params, "days");
+    const zoneOneMaximum = requiredNumberParam(params, "p1");
+    const zoneTwoMaximum = requiredNumberParam(params, "p2");
+    const enduranceTypes = requiredStringArrayParam(params, "enduranceTypes");
+
+    const rows = await executeWithSchema(
+      this.#db,
+      schema,
+      sql`WITH activity_meta AS (
+            SELECT
+              activity.id AS id,
+              (activity.started_at AT TIME ZONE ${timezone})::date AS activity_date,
+              user_profile.max_hr AS max_hr
+            FROM fitness.v_activity activity
+            INNER JOIN fitness.user_profile user_profile
+              ON user_profile.id = activity.user_id
+            WHERE activity.user_id = ${userId}::uuid
+              AND activity.activity_type IN (${sql.join(
+                enduranceTypes.map((activityType) => sql`${activityType}`),
+                sql`, `,
+              )})
+              AND activity.started_at > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'
+              AND user_profile.max_hr IS NOT NULL
+          )
+          SELECT
+            MAX(activity_meta.max_hr)::real AS max_hr,
+            to_char(date_trunc('week', activity_meta.activity_date::timestamp)::date, 'YYYY-MM-DD') AS week,
+            COUNT(*) FILTER (
+              WHERE sensor.scalar < activity_meta.max_hr * ${zoneOneMaximum}
+            )::int AS z1_seconds,
+            COUNT(*) FILTER (
+              WHERE sensor.scalar >= activity_meta.max_hr * ${zoneOneMaximum}
+                AND sensor.scalar < activity_meta.max_hr * ${zoneTwoMaximum}
+            )::int AS z2_seconds,
+            COUNT(*) FILTER (
+              WHERE sensor.scalar >= activity_meta.max_hr * ${zoneTwoMaximum}
+            )::int AS z3_seconds
+          FROM fitness.metric_stream sensor
+          INNER JOIN activity_meta ON activity_meta.id = sensor.activity_id
+          WHERE sensor.channel = 'heart_rate'
+            AND sensor.scalar IS NOT NULL
+          GROUP BY date_trunc('week', activity_meta.activity_date::timestamp)::date
+          ORDER BY week`,
+    );
+
+    return rows;
+  }
+
   async getActivitySummaries(activityIds: string[]): Promise<SummaryRow[]> {
     if (activityIds.length === 0) {
       return [];
     }
 
-    return this.#db.execute<SummaryRow>(
+    return executeWithSchema(
+      this.#db,
+      summaryRowSchema,
       sql`SELECT
-            activity_id::text AS activity_id,
-            avg_hr,
-            max_hr,
-            avg_power,
-            max_power,
-            avg_speed,
-            max_speed,
-            avg_cadence,
-            total_distance,
-            elevation_gain_m,
-            elevation_loss_m,
-            sample_count
-          FROM fitness.activity_summary
-          WHERE activity_id IN (${sql.join(
+            activity.id::text AS activity_id,
+            AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'heart_rate')::real AS avg_hr,
+            MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'heart_rate')::real AS max_hr,
+            AVG(sensor.scalar) FILTER (
+              WHERE sensor.channel = 'power' AND sensor.scalar > 0
+            )::real AS avg_power,
+            MAX(sensor.scalar) FILTER (
+              WHERE sensor.channel = 'power' AND sensor.scalar > 0
+            )::real AS max_power,
+            AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'speed')::real AS avg_speed,
+            MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'speed')::real AS max_speed,
+            AVG(sensor.scalar) FILTER (
+              WHERE sensor.channel = 'cadence' AND sensor.scalar > 0
+            )::real AS avg_cadence,
+            MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'distance')::real AS total_distance,
+            NULL::real AS elevation_gain_m,
+            NULL::real AS elevation_loss_m,
+            COUNT(sensor.scalar)::int AS sample_count
+          FROM fitness.v_activity activity
+          LEFT JOIN fitness.metric_stream sensor
+            ON sensor.activity_id = activity.id
+           AND sensor.scalar IS NOT NULL
+          WHERE activity.id IN (${sql.join(
             activityIds.map((activityId) => sql`${activityId}::uuid`),
             sql`, `,
-          )})`,
+          )})
+          GROUP BY activity.id`,
     );
   }
 
@@ -183,7 +301,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
                 ORDER BY sensor.recorded_at
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
               ) AS cumulative_sum
-            FROM fitness.deduped_sensor sensor
+            FROM fitness.metric_stream sensor
             JOIN activities ON activities.id = sensor.activity_id
             WHERE sensor.user_id = ${userId}::uuid
               AND sensor.channel = 'power'
@@ -243,7 +361,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
                 MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'altitude')
                 - MIN(sensor.scalar) FILTER (WHERE sensor.channel = 'altitude')
               ) / NULLIF(AVG(sensor.scalar) FILTER (WHERE sensor.channel = 'speed') * 300, 0) AS grade_fraction
-            FROM fitness.deduped_sensor sensor
+            FROM fitness.metric_stream sensor
             JOIN activities ON activities.id = sensor.activity_id
             WHERE sensor.user_id = ${userId}::uuid
               AND activities.activity_type IN (${sql.join(
@@ -342,7 +460,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   }
 
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
-    const rows = await this.#db.execute<StreamPointRow>(
+    const rows = await executeWithSchema(
+      this.#db,
+      streamPointRowSchema,
       sql`SELECT
             recorded_at::text AS recorded_at,
             MAX(scalar) FILTER (WHERE channel = 'heart_rate')::real AS heart_rate,
@@ -352,7 +472,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
             MAX(scalar) FILTER (WHERE channel = 'altitude')::real AS altitude,
             MAX(scalar) FILTER (WHERE channel = 'lat')::real AS lat,
             MAX(scalar) FILTER (WHERE channel = 'lng')::real AS lng
-          FROM fitness.deduped_sensor
+          FROM fitness.metric_stream
           WHERE user_id = ${window.userId}::uuid
             AND activity_id = ${window.activityId}::uuid
             AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
@@ -369,11 +489,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     maxHr: number,
     restingHr: number,
   ): Promise<ZoneRow[]> {
-    const primaryValues = await this.#activityChannelValues(window, "heart_rate");
-    let values = primaryValues;
-    if (values.length === 0) {
-      values = await this.#activityChannelValuesFromMetricStream(window, "heart_rate");
-    }
+    const values = await this.#activityChannelValues(window, "heart_rate");
 
     const calculateZoneRows = (zoneValues: number[]) =>
       [1, 2, 3, 4, 5].map((zone) => ({
@@ -382,20 +498,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
           .length,
       }));
 
-    const zoneRows = calculateZoneRows(values);
-
-    if (zoneRows.every((row) => row.seconds === 0)) {
-      const fallbackValues = await this.#activityChannelValuesFromMetricStream(
-        window,
-        "heart_rate",
-      );
-      const fallbackRows = calculateZoneRows(fallbackValues);
-      if (fallbackRows.some((row) => row.seconds > 0)) {
-        return fallbackRows;
-      }
-    }
-
-    return zoneRows;
+    return calculateZoneRows(values);
   }
 
   async getPowerZoneSeconds(window: ActivitySensorWindow, ftp: number): Promise<ZoneRow[]> {
@@ -407,39 +510,15 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   }
 
   async #activityChannelValues(window: ActivitySensorWindow, channel: string): Promise<number[]> {
-    const rows = await this.#db.execute<{ scalar: number }>(
+    const rows = await executeWithSchema(
+      this.#db,
+      scalarRowSchema,
       sql`SELECT scalar::real AS scalar
-          FROM fitness.deduped_sensor
+          FROM fitness.metric_stream
           WHERE user_id = ${window.userId}::uuid
             AND activity_id = ${window.activityId}::uuid
             AND channel = ${channel}
             AND scalar IS NOT NULL
-          ORDER BY recorded_at`,
-    );
-    return rows.map((row) => row.scalar);
-  }
-
-  async #activityChannelValuesFromMetricStream(
-    window: ActivitySensorWindow,
-    channel: string,
-  ): Promise<number[]> {
-    const activityIds =
-      window.memberActivityIds.length === 0
-        ? [window.activityId]
-        : [window.activityId, ...window.memberActivityIds];
-
-    const deduplicatedActivityIds = [...new Set(activityIds)];
-    const activityIdClauses = deduplicatedActivityIds.map(
-      (memberActivityId) => sql`${memberActivityId}::uuid`,
-    );
-    const rows = await this.#db.execute<{ scalar: number }>(
-      sql`SELECT MAX(scalar)::real AS scalar
-          FROM fitness.metric_stream
-            WHERE user_id = ${window.userId}::uuid
-            AND activity_id IN (${sql.join(activityIdClauses, sql`, `)})
-            AND channel = ${channel}
-            AND scalar IS NOT NULL
-          GROUP BY activity_id, recorded_at
           ORDER BY recorded_at`,
     );
     return rows.map((row) => row.scalar);
@@ -452,14 +531,16 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     channel: string,
     requirePositive: boolean,
   ): Promise<SampleRow[]> {
-    return this.#db.execute<SampleRow>(
+    return executeWithSchema(
+      this.#db,
+      sampleRowSchema,
       sql`SELECT
             sensor.activity_id::text AS activity_id,
             TO_CHAR((activity.started_at AT TIME ZONE ${timezone})::date, 'YYYY-MM-DD') AS activity_date,
             activity.name AS activity_name,
             sensor.recorded_at::text AS recorded_at,
             sensor.scalar::real AS scalar
-          FROM fitness.deduped_sensor sensor
+          FROM fitness.metric_stream sensor
           JOIN fitness.v_activity activity ON activity.id = sensor.activity_id
           WHERE sensor.user_id = ${userId}::uuid
             AND sensor.channel = ${channel}
@@ -539,6 +620,38 @@ function sampleIntervalSeconds(samples: SampleRow[]): number {
   const lastTimestamp = Date.parse(samples[samples.length - 1]?.recorded_at ?? "");
   const durationSeconds = Math.max(1, Math.round((lastTimestamp - firstTimestamp) / 1000));
   return Math.max(1, Math.round(durationSeconds / (samples.length - 1)));
+}
+
+function isPolarizationTrendQuery(query: string): boolean {
+  return (
+    query.includes("countIf(ds.scalar < am.max_hr") &&
+    query.includes("analytics.deduped_sensor") &&
+    query.includes("analytics.activity_summary")
+  );
+}
+
+function requiredStringParam(params: Record<string, unknown>, key: string): string {
+  const value = params[key];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Expected string query param: ${key}`);
+  }
+  return value;
+}
+
+function requiredNumberParam(params: Record<string, unknown>, key: string): number {
+  const value = params[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Expected number query param: ${key}`);
+  }
+  return value;
+}
+
+function requiredStringArrayParam(params: Record<string, unknown>, key: string): string[] {
+  const value = params[key];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`Expected string array query param: ${key}`);
+  }
+  return value;
 }
 
 function bestMovingAverage(values: number[], windowSize: number): number {

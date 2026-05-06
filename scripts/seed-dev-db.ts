@@ -87,10 +87,8 @@ async function recreateMaterializedViews() {
     return { fileName, content, viewName: match?.[1] };
   });
 
-  // Drop matviews in reverse order. CASCADE removes other matview dependents
-  // (deduped_sensor depends on v_activity, activity_summary depends on
-  // deduped_sensor) which the recreate loop below recreates in dependency
-  // order from the canonical _views/*.sql definitions.
+  // Drop matviews in reverse order. CASCADE removes dependents, and the
+  // recreate loop below restores the canonical _views/*.sql definitions.
   for (const { viewName } of [...parsed].reverse()) {
     if (!viewName) continue;
     await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
@@ -206,11 +204,9 @@ async function verifySeed() {
       170,
       `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${USER_ID}'`,
     ],
-    [
-      "activity summary rows",
-      80,
-      `SELECT COUNT(*)::int AS count FROM fitness.activity_summary WHERE user_id = '${USER_ID}'`,
-    ],
+    // Note: activity_summary is now an analytics.activity_summary CH read model
+    // populated via PeerDB CDC. We don't verify CH counts here because the
+    // refresh is async; downstream tests/dashboards exercise that path.
   ] as const;
 
   console.log("\nVerification:");

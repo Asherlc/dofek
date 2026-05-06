@@ -207,9 +207,21 @@ describe("WeeklyReportRepository", () => {
   }
 
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new WeeklyReportRepository({ execute }, "user-1", "UTC");
-    return { repo, execute };
+    const query = vi.fn().mockResolvedValue(rows);
+    const sensorStore = {
+      query,
+      getActivitySummaries: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+    };
+    const repo = new WeeklyReportRepository("user-1", "UTC", sensorStore);
+    return { repo, execute: query };
   }
 
   it("returns null current and empty history for empty rows", async () => {

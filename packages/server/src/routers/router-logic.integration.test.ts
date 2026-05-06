@@ -4,6 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests that INSERT data and verify JS transformation logic
@@ -32,7 +36,8 @@ describe("Router transformation logic", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -79,8 +84,6 @@ describe("Router transformation logic", () => {
   async function refreshViews() {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary`);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -1023,12 +1026,9 @@ describe("Router transformation logic", () => {
           ) VALUES ${sensorValues.join(",")}`),
       );
 
-      // Refresh views so deduped_sensor includes the newly inserted sensor data
+      // Refresh views so v_activity includes the newly inserted activity data
       await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.deduped_sensor`);
-      await testCtx.db.execute(
-        sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.activity_summary`,
-      );
+      await syncClickHouseTestActivitySensorStore(testCtx);
     }, 30_000);
 
     it("detects intervals from intensity changes", async () => {

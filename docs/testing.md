@@ -1,5 +1,20 @@
 # Testing Notes
 
+## Integration Dependencies
+
+Start the local backing services before running integration tests:
+
+```bash
+docker compose up -d db clickhouse redis
+docker compose ps db clickhouse redis
+pnpm exec vitest run --project integration
+```
+
+Router integration tests that exercise activity sensor analytics use ClickHouse-backed
+test stores. The test helper isolates ClickHouse databases per test database, runs
+the tracked ClickHouse migrations after the test fixtures are seeded, and drops the
+isolated databases during test cleanup.
+
 ## Chain-Mock Assertions (`values(...)`)
 
 When testing DB write paths that use chainable mocks (`insert().values().onConflict...`), assert on the recorded payloads directly from `db.values.mock.calls`.

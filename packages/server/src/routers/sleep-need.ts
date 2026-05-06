@@ -3,12 +3,27 @@ import {
   computeSleepPerformance,
   type SleepPerformanceResult,
 } from "@dofek/scoring/sleep-performance";
+import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 export interface SleepPerformanceInfo extends SleepPerformanceResult {
   actualMinutes: number;
@@ -69,7 +84,28 @@ export const sleepNeedRouter = router({
         yesterday_load: z.coerce.number(),
       });
 
-      // Fetch 90 days of sleep + next-day HRV + yesterday's training load in one query.
+      const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.calculate");
+
+      // Yesterday's training load comes from analytics.activity_summary in CH
+      // (the dedup-graph data left Postgres). The sleep + HRV part of the
+      // query stays in PG; we inject the load value as a parameter.
+      const loadRows = await sensorStore.query(
+        z.object({ load: z.coerce.number() }),
+        `SELECT
+          coalesce(sum(
+            dateDiff('second', started_at, ended_at) / 60.0
+            * avg_hr / nullIf(toFloat64(max_hr), 0)
+          ), 0) AS load
+        FROM analytics.activity_summary
+        WHERE user_id = {userId:UUID}
+          AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - INTERVAL 1 DAY
+          AND ended_at IS NOT NULL
+          AND avg_hr IS NOT NULL`,
+        { userId: ctx.userId, timezone: ctx.timezone, endDate: input.endDate },
+      );
+      const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
+
+      // Fetch 90 days of sleep + next-day HRV in one PG query.
       // When v_sleep has multiple non-nap sessions per date (e.g. WHOOP + Apple Health
       // that don't overlap >80%), pick the longest per date to avoid arbitrary Map
       // overwrites and inconsistent duration reporting across endpoints.
@@ -91,9 +127,7 @@ export const sleepNeedRouter = router({
               ORDER BY date, duration_minutes DESC NULLS LAST
             ),
             daily_hrv AS (
-              SELECT
-                date,
-                hrv
+              SELECT date, hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
                 AND date > ${dateWindowStart(input.endDate, 90)}
@@ -111,17 +145,6 @@ export const sleepNeedRouter = router({
               SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY next_day_hrv) AS median_hrv
               FROM sleep_with_next_hrv
               WHERE next_day_hrv IS NOT NULL
-            ),
-            yesterday_load AS (
-              SELECT COALESCE(SUM(
-                EXTRACT(EPOCH FROM (asum.ended_at - asum.started_at)) / 60.0
-                * asum.avg_hr / NULLIF(asum.max_hr, 0)
-              ), 0) AS load
-              FROM fitness.activity_summary asum
-              WHERE asum.user_id = ${ctx.userId}
-                AND (asum.started_at AT TIME ZONE ${ctx.timezone})::date = ${sql`${input.endDate}::date - 1`}
-                AND asum.ended_at IS NOT NULL
-                AND asum.avg_hr IS NOT NULL
             )
             SELECT
               s.date::text,
@@ -129,10 +152,9 @@ export const sleepNeedRouter = router({
               s.next_day_hrv,
               hm.median_hrv,
               CASE WHEN s.next_day_hrv >= hm.median_hrv THEN true ELSE false END AS good_recovery,
-              yl.load AS yesterday_load
+              ${yesterdayLoadFromCh}::numeric AS yesterday_load
             FROM sleep_with_next_hrv s
             CROSS JOIN hrv_median hm
-            CROSS JOIN yesterday_load yl
             ORDER BY s.date ASC`,
       );
 

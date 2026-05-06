@@ -1,4 +1,5 @@
 import { StrainScore } from "@dofek/scoring/scoring";
+import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -6,6 +7,7 @@ import { z } from "zod";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type AnomalyCheckResult,
   AnomalyDetectionRepository,
@@ -18,6 +20,19 @@ import {
 } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 /** Simple date comparison for server-side logic (where @dofek/format is not available). */
 export function isRecent(dateStr: string, anchorDateStr: string): boolean {
@@ -74,6 +89,43 @@ export const mobileDashboardRouter = router({
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
       const { endDate } = input;
       const tz = ctx.timezone;
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboard");
+
+      // Fetch daily loads (last 60 days) + yesterday's load from ClickHouse.
+      const [dailyLoadRows, yesterdayLoadRows] = await Promise.all([
+        sensorStore.query(
+          z.object({
+            metric_date: z.string(),
+            daily_load: z.coerce.number(),
+          }),
+          `SELECT
+            toString(toDate(toTimeZone(ended_at, {timezone:String}))) AS metric_date,
+            sum(dateDiff('second', started_at, ended_at) / 60.0
+                * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
+          FROM analytics.activity_summary
+          WHERE user_id = {userId:UUID}
+            AND ended_at IS NOT NULL
+            AND avg_hr IS NOT NULL
+            AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({endDate:String}) - 60
+            AND toDate(toTimeZone(ended_at, {timezone:String})) <= toDate({endDate:String})
+          GROUP BY metric_date`,
+          { userId: ctx.userId, timezone: tz, endDate },
+        ),
+        sensorStore.query(
+          z.object({ load: z.coerce.number() }),
+          `SELECT coalesce(sum(dateDiff('second', started_at, ended_at) / 60.0
+                  * avg_hr / nullIf(toFloat64(max_hr), 0)), 0) AS load
+          FROM analytics.activity_summary
+          WHERE user_id = {userId:UUID}
+            AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - 1`,
+          { userId: ctx.userId, timezone: tz, endDate },
+        ),
+      ]);
+
+      const dailyLoadByDate = new Map(
+        dailyLoadRows.map((row) => [row.metric_date, row.daily_load]),
+      );
+      const yesterdayLoadFromCh = yesterdayLoadRows[0]?.load ?? 0;
 
       // 1. Fetch Readiness, Strain, and Trends in a consolidated query
       const readinessSchema = z.object({
@@ -88,7 +140,6 @@ export const mobileDashboardRouter = router({
         rhr_sd_30d: z.coerce.number().nullable(),
         rr_mean_30d: z.coerce.number().nullable(),
         rr_sd_30d: z.coerce.number().nullable(),
-        daily_load: z.coerce.number(),
       });
 
       const metricsRows = await executeWithSchema(
@@ -135,19 +186,6 @@ export const mobileDashboardRouter = router({
               STDDEV_POP(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
             FROM metrics_base
           ),
-          daily_loads AS (
-            SELECT
-              (ended_at AT TIME ZONE ${tz})::date AS metric_date,
-              COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0)
-                AS daily_load
-            FROM fitness.activity_summary
-            WHERE user_id = ${ctx.userId}
-              AND ended_at IS NOT NULL
-              AND avg_hr IS NOT NULL
-              AND (ended_at AT TIME ZONE ${tz})::date > ${endDate}::date - 60
-              AND (ended_at AT TIME ZONE ${tz})::date <= ${endDate}
-            GROUP BY metric_date
-          ),
           sleep_eff AS (
             SELECT DISTINCT ON (local_date)
               local_date::text AS sleep_date,
@@ -166,11 +204,9 @@ export const mobileDashboardRouter = router({
           SELECT
             m.metric_date::text AS date,
             m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
-            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d,
-            COALESCE(dl.daily_load, 0) AS daily_load
+            m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d
           FROM metrics_with_baselines m
           LEFT JOIN sleep_eff s ON s.sleep_date = m.metric_date::text
-          LEFT JOIN daily_loads dl ON dl.metric_date = m.metric_date
           ORDER BY m.metric_date DESC
         `,
       );
@@ -266,20 +302,14 @@ export const mobileDashboardRouter = router({
             SELECT date AS metric_date, hrv
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
-          ),
-          yesterday_load AS (
-            SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60.0 * avg_hr / NULLIF(max_hr, 0)), 0) AS load
-            FROM fitness.activity_summary
-            WHERE user_id = ${ctx.userId} AND (started_at AT TIME ZONE ${tz})::date = ${endDate}::date - 1
           )
           SELECT
             s.sleep_date::text AS date,
             s.duration_minutes,
             h.hrv,
-            yl.load as yesterday_load
+            ${yesterdayLoadFromCh}::real AS yesterday_load
           FROM sleep_nights s
           LEFT JOIN daily_hrv h ON h.metric_date = s.sleep_date + 1
-          CROSS JOIN yesterday_load yl
         `,
       );
 
@@ -340,12 +370,13 @@ export const mobileDashboardRouter = router({
         canRecommend: nightsByDate.has(yesterdayStr),
       };
 
-      // 4. Strain (Acute/Chronic)
+      // 4. Strain (Acute/Chronic) — daily loads come from ClickHouse, indexed by metric date
       const acuteLoad = metricsRows
         .slice(0, 7)
-        .reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0);
+        .reduce((sum, r) => sum + (dailyLoadByDate.get(r.date) ?? 0), 0);
       const chronicLoad =
-        metricsRows.slice(0, 28).reduce((sum, r) => sum + Number(r.daily_load ?? 0), 0) / 4;
+        metricsRows.slice(0, 28).reduce((sum, r) => sum + (dailyLoadByDate.get(r.date) ?? 0), 0) /
+        4;
       const isLatestStrainRecent = metricsRows[0] != null && isRecent(metricsRows[0].date, endDate);
       const dailyStrain = isLatestStrainRecent ? StrainScore.fromAcuteLoad(acuteLoad).value : 0;
       const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
@@ -359,7 +390,7 @@ export const mobileDashboardRouter = router({
       };
 
       // 5. Next Workout
-      const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz);
+      const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz, sensorStore);
       const workoutData = await trainingRepo.getNextWorkoutData(endDate);
       const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
 

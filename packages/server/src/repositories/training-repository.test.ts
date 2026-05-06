@@ -6,11 +6,38 @@ import { TrainingRepository } from "./training-repository.ts";
 // ---------------------------------------------------------------------------
 
 describe("TrainingRepository", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: test mock helper
+  function makeSensorStore(rows: unknown[]): any {
+    // Mirror ClickHouseActivitySensorStore.query: parse each row through the
+    // supplied Zod schema so timestampStringSchema and friends actually run.
+    const query = vi
+      .fn()
+      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+        return rows.map((row) => schema.parse(row));
+      });
+    return {
+      query,
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    };
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
+    // Tests pass `rows` to be returned by either PG or CH; the migration
+    // moved most queries to CH, but for backward-compat with this test's
+    // pattern, mock both to return the same rows.
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
-    const repo = new TrainingRepository(db, "user-1", "UTC");
-    return { repo, execute };
+    const sensorStore = makeSensorStore(rows);
+    const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore);
+    return { repo, execute, sensorStore };
   }
 
   describe("getWeeklyVolume", () => {
@@ -114,14 +141,17 @@ describe("TrainingRepository", () => {
       expect(result[0]?.distance_meters).toBeNull();
     });
 
-    it("handles Date objects for timestamps (postgres-js on Linux/ARM)", async () => {
+    it("normalizes ISO timestamp strings from CH formatDateTime to canonical ISO 8601", async () => {
+      // The SQL uses formatDateTime(..., '%Y-%m-%dT%H:%i:%SZ') so CH always
+      // returns timestamps as "2024-01-15T14:00:00Z". timestampStringSchema
+      // re-parses and emits canonical ISO with milliseconds.
       const { repo } = makeRepository([
         {
           id: "act-2",
           activity_type: "cycling",
           name: "Afternoon Ride",
-          started_at: new Date("2024-01-15T14:00:00Z"),
-          ended_at: new Date("2024-01-15T15:30:00Z"),
+          started_at: "2024-01-15T14:00:00Z",
+          ended_at: "2024-01-15T15:30:00Z",
           avg_hr: 152,
           max_hr: 180,
           avg_power: 230,
@@ -160,7 +190,7 @@ describe("TrainingRepository", () => {
 
     it("returns data from non-empty queries", async () => {
       const execute = vi.fn();
-      // latestMetrics
+      // PG queries (in fetch order): latestMetrics, sleep, muscleFreshness, balance, trainingDays
       execute.mockResolvedValueOnce([
         {
           date: "2024-01-14",
@@ -175,13 +205,8 @@ describe("TrainingRepository", () => {
           rr_sd_30d: 1.0,
         },
       ]);
-      // sleep
       execute.mockResolvedValueOnce([{ efficiency_pct: 88.5 }]);
-      // acwr
-      execute.mockResolvedValueOnce([{ acwr: 1.15 }]);
-      // muscleFreshness
       execute.mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: "2024-01-12" }]);
-      // balance
       execute.mockResolvedValueOnce([
         {
           strength_7d: 3,
@@ -190,17 +215,22 @@ describe("TrainingRepository", () => {
           last_endurance_date: "2024-01-14",
         },
       ]);
-      // zoneTotals
-      execute.mockResolvedValueOnce([{ zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 }]);
-      // hiitLoad
-      execute.mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: "2024-01-13" }]);
-      // trainingDays
       execute.mockResolvedValueOnce([
         { training_date: "2024-01-14" },
         { training_date: "2024-01-12" },
       ]);
 
-      const repo = new TrainingRepository({ execute }, "user-1", "UTC");
+      // CH queries (in fetch order): acwr, zoneTotals, hiitLoad
+      const sensorQuery = vi.fn();
+      sensorQuery.mockResolvedValueOnce([{ acwr: 1.15 }]);
+      sensorQuery.mockResolvedValueOnce([
+        { zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 },
+      ]);
+      sensorQuery.mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: "2024-01-13" }]);
+      const sensorStore = makeSensorStore([]);
+      sensorStore.query = sensorQuery;
+
+      const repo = new TrainingRepository({ execute }, "user-1", "UTC", sensorStore);
       const data = await repo.getNextWorkoutData("2024-01-15");
 
       expect(data.latestMetric).not.toBeNull();
@@ -231,11 +261,13 @@ describe("TrainingRepository", () => {
       expect(data.hiitLoad.hiit_count_7d).toStrictEqual(0);
     });
 
-    it("calls execute for each sub-query", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("calls execute for PG sub-queries and sensorStore.query for CH sub-queries", async () => {
+      const { repo, execute, sensorStore } = makeRepository([]);
       await repo.getNextWorkoutData("2024-01-15");
-      // 8 parallel queries
-      expect(execute).toHaveBeenCalledTimes(8);
+      // 5 PG queries: latestMetrics, sleep, muscleFreshness, balance, trainingDays.
+      // 3 CH queries: acwr, zoneTotals, hiitLoad.
+      expect(execute).toHaveBeenCalledTimes(5);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
     });
   });
 });

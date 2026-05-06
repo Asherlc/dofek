@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
+import type { RefitSensorStore } from "../personalization/refit.ts";
 import type { PostSyncJobData } from "./queues.ts";
 
 /** Minimal Job interface — only the subset processPostSyncJob actually uses. */
@@ -14,7 +15,11 @@ export interface PostSyncJob {
  * Global maintenance is serialized through a single delayed job, while personalized refits
  * are debounced per user.
  */
-export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
+export async function processPostSyncJob(
+  job: PostSyncJob,
+  db: SyncDatabase,
+  getSensorStore: () => RefitSensorStore,
+) {
   if (job.data.type === "global-maintenance") {
     logger.info("[post-sync] Running global post-sync maintenance");
 
@@ -40,7 +45,8 @@ export async function processPostSyncJob(job: PostSyncJob, db: SyncDatabase) {
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
     logger.info("[post-sync] Refitting personalized parameters...");
-    await refitAllParams(db, job.data.userId);
+    const sensorStore = getSensorStore();
+    await refitAllParams(db, job.data.userId, sensorStore);
     logger.info("[post-sync] Personalized parameters updated.");
   } catch (err) {
     logger.error(`[post-sync] Failed to refit parameters: ${err}`);

@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -27,7 +32,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 import { classifyStrainZone, weeklyReportRouter } from "./weekly-report.ts";
 
 describe("classifyStrainZone", () => {
@@ -104,6 +109,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.report({ weeks: 4, endDate: "2026-03-24" });
       expect(result.current).toBeNull();
@@ -128,6 +134,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
 
@@ -157,6 +164,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
 
@@ -183,6 +191,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       expect(result.current?.sleepPerformancePct).toBe(100);
@@ -206,6 +215,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       // prev3wkSleep > 0 is false (it's 0), so defaults to 100
@@ -230,6 +240,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       expect(result.current?.avgRestingHr).toBe(58.7);
@@ -254,6 +265,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       expect(result.current?.avgRestingHr).toBeNull();
@@ -278,6 +290,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       // 8 / 5 = 1.6 > 1.3 → overreaching
@@ -324,6 +337,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 3, endDate: "2026-03-24" });
       expect(result.current?.weekStart).toBe("2026-03-17");
@@ -350,6 +364,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       // null avg_sleep_min → avgSleepMin = 0
@@ -419,6 +434,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 2, endDate: "2026-03-24" });
 
@@ -469,6 +485,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 3, endDate: "2026-03-24" });
 
@@ -497,6 +514,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       const currentWeek = result.current;
@@ -524,6 +542,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       // Should not throw — default weeks (12) is applied
       const result = await caller.report({ endDate: "2026-03-24" });
@@ -536,6 +555,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       await expect(caller.report({ weeks: 0, endDate: "2026-03-24" })).rejects.toThrow();
     });
@@ -545,6 +565,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       await expect(caller.report({ weeks: 53, endDate: "2026-03-24" })).rejects.toThrow();
     });
@@ -568,6 +589,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       // With || 0: avgDailyLoad = 2.5. With && 0: avgDailyLoad = 0.
@@ -598,6 +620,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 1, endDate: "2026-03-24" });
       expect(result.current?.sleepPerformancePct).toBe(90);

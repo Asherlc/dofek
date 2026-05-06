@@ -1,7 +1,9 @@
+import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   cardioPlan,
   computeComponentScores,
@@ -19,6 +21,19 @@ import {
   TrainingRepository,
 } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+
+function requireSensorStore(
+  sensorStore: ActivitySensorStore | undefined,
+  feature: string,
+): ActivitySensorStore {
+  if (!sensorStore) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.`,
+    });
+  }
+  return sensorStore;
+}
 
 export {
   cardioPlan,
@@ -48,21 +63,42 @@ export const trainingRouter = router({
   weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
+      const repo = new TrainingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        sensorStore,
+        ctx.accessWindow,
+      );
       return repo.getWeeklyVolume(input.days);
     }),
 
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
+      const repo = new TrainingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        sensorStore,
+        ctx.accessWindow,
+      );
       return repo.getHrZones(input.days);
     }),
 
   activityStats: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
+      const repo = new TrainingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        sensorStore,
+        ctx.accessWindow,
+      );
       return repo.getActivityStats(input.days);
     }),
 
@@ -72,7 +108,14 @@ export const trainingRouter = router({
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const weights = getEffectiveParams(storedParams).readinessWeights;
 
-      const repo = new TrainingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
+      const repo = new TrainingRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        sensorStore,
+        ctx.accessWindow,
+      );
       const data = await repo.getNextWorkoutData(input.endDate);
 
       return repo.getRecommendation(data, input.endDate, weights);

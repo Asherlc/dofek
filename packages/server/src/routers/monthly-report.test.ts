@@ -3,7 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone?: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -26,6 +33,23 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
+
+function makeSensorStore(rows: unknown[] = []): SensorStore {
+  return {
+    query: vi.fn().mockResolvedValue(rows),
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
+
 import { monthlyReportRouter } from "./monthly-report.ts";
 
 const createCaller = createTestCallerFactory(monthlyReportRouter);
@@ -34,8 +58,9 @@ describe("monthlyReportRouter", () => {
   describe("report", () => {
     it("returns empty result when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore([]),
       });
       const result = await caller.report({ months: 6 });
 
@@ -66,8 +91,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -102,8 +128,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -115,13 +142,14 @@ describe("monthlyReportRouter", () => {
     });
 
     it("uses default months of 6", async () => {
-      const executeMock = vi.fn().mockResolvedValue([]);
+      const sensorStore = makeSensorStore([]);
       const caller = createCaller({
-        db: { execute: executeMock },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore,
       });
       await caller.report({});
-      expect(executeMock).toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalled();
     });
 
     // ── Additional tests for mutation coverage ──
@@ -140,8 +168,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -164,8 +193,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -188,8 +218,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -218,8 +249,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -250,8 +282,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -282,8 +315,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -313,8 +347,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -356,8 +391,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -399,8 +435,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -426,8 +463,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 
@@ -458,8 +496,9 @@ describe("monthlyReportRouter", () => {
       ];
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn() },
         userId: "user-1",
+        sensorStore: makeSensorStore(rows),
       });
       const result = await caller.report({ months: 6 });
 

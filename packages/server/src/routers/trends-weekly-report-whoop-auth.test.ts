@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const { mockLoggerInfo, mockLoggerError, mockCaptureException } = vi.hoisted(() => ({
   mockLoggerInfo: vi.fn(),
@@ -10,7 +10,12 @@ const { mockLoggerInfo, mockLoggerError, mockCaptureException } = vi.hoisted(() 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -75,6 +80,7 @@ describe("trendsRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore(rows),
     });
   }
 
@@ -165,6 +171,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.report({ weeks: 12 });
 
@@ -201,6 +208,7 @@ describe("weeklyReportRouter", () => {
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
       });
       const result = await caller.report({ weeks: 12 });
 
@@ -227,6 +235,7 @@ describe("whoopAuthRouter", () => {
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeMockSensorStore([]),
     });
 
     await expect(caller.signIn({ username: "test@example.com", password: "pass" })).rejects.toThrow(
@@ -255,6 +264,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
 
@@ -282,6 +292,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
       const result = await caller.signIn({ username: "test@example.com", password: "pass" });
 
@@ -299,6 +310,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       await expect(
@@ -323,6 +335,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       // Step 1: sign in to get challengeId
@@ -369,6 +382,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       const signInResult = await caller.signIn({ username: "test@example.com", password: "pass" });
@@ -393,6 +407,7 @@ describe("whoopAuthRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
       });
 
       const result = await caller.saveTokens({
