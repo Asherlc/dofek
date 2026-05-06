@@ -74,11 +74,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-      refresh_materialized_views:
-        description: "Trigger the materialized-view refresh webhook after stack deploy"
-        required: false
-        type: boolean
-        default: false
   workflow_dispatch:
     inputs:
       image_tag:
@@ -100,11 +95,6 @@ on:
         required: false
         default: dofek
         type: string
-      refresh_materialized_views:
-        description: "Trigger the materialized-view refresh webhook after stack deploy"
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}
@@ -597,83 +587,6 @@ jobs:
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
-
-      - name: Plan materialized view sync
-        id: view_sync_plan
-        env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-        run: |
-          planner_output_file="$RUNNER_TEMP/view-sync-plan.log"
-          timeout 90s docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; exec node --experimental-transform-types src/db/run-view-sync-planner.ts" >"$planner_output_file"
-
-          echo "Materialized view sync planner output:"
-          cat "$planner_output_file"
-
-          planner_required="$(sed -n 's/^required=//p' "$planner_output_file" | tail -n 1)"
-          planner_reasons="$(sed -n 's/^reasons=//p' "$planner_output_file" | tail -n 1)"
-          rebuild_views="$(printf '%s\n' "$planner_reasons" | tr ',' '\n' | awk -F: '
-            $1 == "view_definition_changed" || $1 == "dependency_fingerprint_changed" {
-              if ($2 != "") {
-                print $2
-              }
-            }
-          ' | sort -u | awk '
-            BEGIN {
-              first = 1
-            }
-            NF {
-              if (!first) {
-                printf ", "
-              }
-              printf "%s", $0
-              first = 0
-            }
-            END {
-              if (!first) {
-                printf "\n"
-              }
-            }
-          ')"
-
-          if [ -z "$planner_required" ]; then
-            echo "::error::Materialized view sync planner did not emit required=<bool>"
-            exit 1
-          fi
-
-          echo "required=${planner_required}" >> "$GITHUB_OUTPUT"
-          echo "reasons=${planner_reasons}" >> "$GITHUB_OUTPUT"
-          echo "rebuild_views=${rebuild_views}" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$rebuild_views" ]; then
-            echo "Materialized views requiring rebuild: ${rebuild_views}"
-          fi
-
-      - name: Fail on required materialized view maintenance
-        if: steps.view_sync_plan.outputs.required == 'true' && inputs.refresh_materialized_views != true
-        run: |
-          echo "::error::Materialized view maintenance is required but automatic view sync is disabled: ${{ steps.view_sync_plan.outputs.reasons }}"
-          if [ -n "${{ steps.view_sync_plan.outputs.rebuild_views }}" ]; then
-            echo "::error::Materialized views requiring rebuild: ${{ steps.view_sync_plan.outputs.rebuild_views }}"
-          fi
-          echo "::error::Run the Materialized View Maintenance workflow for a planned rebuild, or rerun this deploy with refresh_materialized_views=true."
-          exit 1
-
-      - name: Run blocking materialized view maintenance
-        if: inputs.refresh_materialized_views
-        env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
-        run: |
-          echo "Manual materialized view refresh requested by workflow input."
-
-          timeout 50m docker run --rm --network "${STACK_NAME}_default" \
-            --env-file "$INFISICAL_ENV_FILE" \
-            --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc "export DATABASE_URL=\"postgres://health:\${POSTGRES_PASSWORD}@db:5432/health\"; exec node --experimental-transform-types src/db/run-materialized-view-maintenance.ts sync"
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
