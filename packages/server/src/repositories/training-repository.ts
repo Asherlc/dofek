@@ -155,20 +155,39 @@ export class TrainingRepository extends BaseRepository {
 
   /** Weekly training volume grouped by activity type. */
   async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    return this.query(
+    const accessWindowPredicate =
+      this.accessWindow.kind === "full"
+        ? ""
+        : `AND started_at >= toDateTime({accessStart:String})
+          AND started_at < toDateTime({accessEnd:String})`;
+    const accessWindowParams =
+      this.accessWindow.kind === "full"
+        ? {}
+        : {
+            accessStart: this.accessWindow.startDate,
+            accessEnd: this.accessWindow.endDateExclusive,
+          };
+
+    return this.#sensorStore.query(
       weeklyVolumeRowSchema,
-      sql`SELECT
-            date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
-            activity_type,
-            COUNT(*)::int AS count,
-            ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
-          FROM fitness.v_activity
-          WHERE user_id = ${this.userId}
-            AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            AND ended_at IS NOT NULL
-            ${this.timestampAccessPredicate(sql`started_at`)}
-          GROUP BY 1, activity_type
-          ORDER BY week`,
+      `SELECT
+        toString(toMonday(toDate(toTimeZone(started_at, {timezone:String})))) AS week,
+        activity_type,
+        toInt32(count()) AS count,
+        round(sum(dateDiff('second', started_at, ended_at)) / 3600, 2) AS hours
+      FROM analytics.v_activity
+      WHERE user_id = {userId:UUID}
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        AND ended_at IS NOT NULL
+        ${accessWindowPredicate}
+      GROUP BY week, activity_type
+      ORDER BY week`,
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        days,
+        ...accessWindowParams,
+      },
     );
   }
 

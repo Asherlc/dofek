@@ -45,11 +45,12 @@ const createCaller = createTestCallerFactory(trainingRouter);
 describe("trainingRouter access window gating", () => {
   it("weeklyVolume passes accessWindow to repository (limited window returns empty)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeMockSensorStore([]);
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeMockSensorStore([]),
+      sensorStore,
       accessWindow: {
         kind: "limited",
         paid: false,
@@ -60,5 +61,13 @@ describe("trainingRouter access window gating", () => {
     });
     const result = await caller.weeklyVolume({ days: 90 });
     expect(result).toEqual([]);
+    expect(sensorStore.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("started_at >= toDateTime({accessStart:String})"),
+      expect.objectContaining({
+        accessStart: "2026-04-10",
+        accessEnd: "2026-04-17",
+      }),
+    );
   });
 });

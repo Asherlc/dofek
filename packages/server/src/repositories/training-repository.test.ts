@@ -47,6 +47,18 @@ describe("TrainingRepository", () => {
       expect(result).toEqual([]);
     });
 
+    it("reads weekly volume from ClickHouse activity read model", async () => {
+      const { repo, execute, sensorStore } = makeRepository([]);
+      await repo.getWeeklyVolume(90);
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM analytics.v_activity"),
+        expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
+      );
+    });
+
     it("returns parsed weekly volume rows", async () => {
       const { repo } = makeRepository([
         { week: "2024-01-15", activity_type: "cycling", count: 3, hours: 4.5 },
