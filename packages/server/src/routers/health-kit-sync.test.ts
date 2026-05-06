@@ -1166,7 +1166,7 @@ describe("healthKitSyncRouter", () => {
       });
     });
 
-    it("refreshes v_sleep materialized view after inserting sleep data", async () => {
+    it("does not refresh v_sleep materialized view after inserting sleep data", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -1190,19 +1190,11 @@ describe("healthKitSyncRouter", () => {
         const serialized = JSON.stringify(call[0]);
         return serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_sleep");
       });
-      expect(refreshCall).toBeDefined();
+      expect(refreshCall).toBeUndefined();
     });
 
-    it("falls back to non-concurrent refresh when CONCURRENTLY fails", async () => {
-      let callCount = 0;
-      const execute = vi.fn().mockImplementation((query: unknown) => {
-        const serialized = JSON.stringify(query);
-        if (serialized.includes("CONCURRENTLY") && serialized.includes("v_sleep")) {
-          callCount++;
-          if (callCount === 1) throw new Error("has not been populated");
-        }
-        return Promise.resolve([]);
-      });
+    it("does not issue fallback refresh when sleep data is inserted", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1221,7 +1213,6 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Should have called non-concurrent refresh as fallback
       const fallbackCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
         return (
@@ -1230,10 +1221,10 @@ describe("healthKitSyncRouter", () => {
           !serialized.includes("CONCURRENTLY")
         );
       });
-      expect(fallbackCall).toBeDefined();
+      expect(fallbackCall).toBeUndefined();
     });
 
-    it("continues when view refresh fails entirely", async () => {
+    it("continues when a non-refresh insert query fails to match refresh filters", async () => {
       const execute = vi.fn().mockImplementation((query: unknown) => {
         const serialized = JSON.stringify(query);
         if (serialized.includes("REFRESH MATERIALIZED VIEW")) {
@@ -1260,11 +1251,16 @@ describe("healthKitSyncRouter", () => {
         ],
       });
       expect(result.inserted).toBe(1);
+      expect(
+        execute.mock.calls.some((call: unknown[]) =>
+          JSON.stringify(call[0]).includes("REFRESH MATERIALIZED VIEW"),
+        ),
+      ).toBe(false);
     });
   });
 
   describe("pushWorkouts view refresh", () => {
-    it("refreshes v_activity after inserting workouts", async () => {
+    it("does not refresh v_activity after inserting workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -1294,9 +1290,7 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_activity")
         );
       });
-      expect(activityRefreshCall).toBeDefined();
-
-      // Activity summary is now maintained in ClickHouse and is no longer refreshed from Postgres.
+      expect(activityRefreshCall).toBeUndefined();
     });
   });
 

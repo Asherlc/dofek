@@ -1604,11 +1604,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
       expiresAt: new Date("2027-01-01"),
       scopes: "userId:42",
     });
-    mockRefreshMaterializedView.mockResolvedValueOnce({
-      fallbackUsed: false,
-      mode: "concurrent",
-    });
-
     const cycles = [
       {
         days: ["2026-03-01"],
@@ -1631,9 +1626,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
 
-    expect(mockRefreshMaterializedView).toHaveBeenCalledWith(db, "fitness.v_sleep", {
-      source: "whoop.sleep_sync",
-    });
+    expect(mockRefreshMaterializedView).not.toHaveBeenCalled();
   });
 
   it("skips incomplete (non-complete state) sleep records", async () => {

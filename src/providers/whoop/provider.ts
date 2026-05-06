@@ -6,7 +6,6 @@ import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { refreshMaterializedView } from "../../db/materialized-view-refresh.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import {
   activity,
@@ -426,9 +425,6 @@ export class WhoopProvider implements SyncProvider {
         options?.userId,
       );
       recordsSynced += sleepCount;
-      if (sleepCount > 0) {
-        await refreshMaterializedView(db, "fitness.v_sleep", { source: "whoop.sleep_sync" });
-      }
     } catch (err) {
       errors.push({
         message: `sleep: ${err instanceof Error ? err.message : String(err)}`,
