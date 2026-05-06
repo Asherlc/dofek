@@ -36,11 +36,19 @@ function createMockDb(queryResults: Record<string, unknown>[][] = []) {
 function createMockSensorStore(rowSets: Record<string, unknown>[][] = []) {
   let callIndex = 0;
   return {
-    query: vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
-      const rows = rowSets[callIndex] ?? [];
-      callIndex++;
-      return rows.map((row) => schema.parse(row));
-    }),
+    query: vi
+      .fn()
+      .mockImplementation(
+        async (
+          schema: { parse: (row: unknown) => unknown },
+          _query: string,
+          _params?: Record<string, unknown>,
+        ) => {
+          const rows = rowSets[callIndex] ?? [];
+          callIndex++;
+          return rows.map((row) => schema.parse(row));
+        },
+      ),
   };
 }
 
@@ -66,6 +74,27 @@ describe("refitAllParams", () => {
 
     // Should be called at least once for data queries + once for save
     expect(db.execute).toHaveBeenCalled();
+  });
+
+  it("queries sensor-store refit inputs with the current userId", async () => {
+    const db = createMockDb([[], [], [], [], [], []]);
+    const sensorStore = createMockSensorStore();
+
+    await refitAllParams(db, "user-1", sensorStore);
+
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.stringContaining("analytics.activity_summary asum"),
+      { userId: "user-1" },
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining("FROM analytics.activity_summary asum"),
+      { userId: "user-1" },
+    );
   });
 
   it("handles individual fitter errors gracefully", async () => {
