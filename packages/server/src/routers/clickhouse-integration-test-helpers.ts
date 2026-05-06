@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { sql } from "drizzle-orm";
 import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
+  parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import type { TestContext } from "../../../../src/db/test-helpers.ts";
@@ -19,40 +19,199 @@ interface ClickHouseTestHandle {
   client: ClickHouseClient;
 }
 
-interface MetricStreamSyncRow extends Record<string, unknown> {
-  id: string;
-  activity_id: string | null;
-  user_id: string;
-  recorded_at: string;
-  channel: string;
-  provider_id: string;
-  scalar: number | null;
+interface RawTableSync {
+  columns: string[];
+  tableName: string;
 }
 
 const handlesByContext = new WeakMap<TestContext, ClickHouseTestHandle>();
+const rawTableSyncs: RawTableSync[] = [
+  {
+    tableName: "metric_stream",
+    columns: ["id", "activity_id", "user_id", "recorded_at", "channel", "provider_id", "scalar"],
+  },
+  {
+    tableName: "activity",
+    columns: [
+      "id",
+      "provider_id",
+      "user_id",
+      "external_id",
+      "activity_type",
+      "started_at",
+      "ended_at",
+      "name",
+      "notes",
+      "perceived_exertion",
+      "source_name",
+      "timezone",
+      "strava_id",
+      "raw",
+      "created_at",
+    ],
+  },
+  {
+    tableName: "sleep_session",
+    columns: [
+      "id",
+      "provider_id",
+      "user_id",
+      "external_id",
+      "started_at",
+      "ended_at",
+      "duration_minutes",
+      "deep_minutes",
+      "rem_minutes",
+      "light_minutes",
+      "awake_minutes",
+      "efficiency_pct",
+      "sleep_type",
+      "sleep_need_baseline_minutes",
+      "sleep_need_from_debt_minutes",
+      "sleep_need_from_strain_minutes",
+      "sleep_need_from_nap_minutes",
+      "source_name",
+      "created_at",
+    ],
+  },
+  {
+    tableName: "sleep_stage",
+    columns: ["id", "session_id", "stage", "started_at", "ended_at", "source_name", "created_at"],
+  },
+  {
+    tableName: "daily_metrics",
+    columns: [
+      "id",
+      "date",
+      "provider_id",
+      "user_id",
+      "hrv",
+      "spo2_avg",
+      "respiratory_rate_avg",
+      "steps",
+      "active_energy_kcal",
+      "basal_energy_kcal",
+      "distance_km",
+      "cycling_distance_km",
+      "flights_climbed",
+      "exercise_minutes",
+      "walking_speed",
+      "walking_step_length",
+      "walking_double_support_pct",
+      "walking_asymmetry_pct",
+      "walking_steadiness",
+      "stand_hours",
+      "skin_temp_c",
+      "stress_high_minutes",
+      "recovery_high_minutes",
+      "resilience_level",
+      "push_count",
+      "wheelchair_distance_km",
+      "uv_exposure",
+      "source_name",
+      "created_at",
+    ],
+  },
+  {
+    tableName: "body_measurement",
+    columns: [
+      "id",
+      "recorded_at",
+      "provider_id",
+      "user_id",
+      "external_id",
+      "weight_kg",
+      "body_fat_pct",
+      "muscle_mass_kg",
+      "bone_mass_kg",
+      "water_pct",
+      "bmi",
+      "height_cm",
+      "waist_circumference_cm",
+      "systolic_bp",
+      "diastolic_bp",
+      "heart_pulse",
+      "temperature_c",
+      "source_name",
+      "created_at",
+    ],
+  },
+  {
+    tableName: "provider",
+    columns: ["id", "name", "api_base_url", "user_id", "created_at"],
+  },
+  {
+    tableName: "provider_priority",
+    columns: [
+      "provider_id",
+      "priority",
+      "sleep_priority",
+      "body_priority",
+      "recovery_priority",
+      "daily_activity_priority",
+    ],
+  },
+  {
+    tableName: "device_priority",
+    columns: [
+      "provider_id",
+      "source_name_pattern",
+      "priority",
+      "sleep_priority",
+      "body_priority",
+      "recovery_priority",
+      "daily_activity_priority",
+    ],
+  },
+  {
+    tableName: "user_profile",
+    columns: [
+      "id",
+      "name",
+      "email",
+      "birth_date",
+      "max_hr",
+      "resting_hr",
+      "ftp",
+      "is_admin",
+      "created_at",
+      "updated_at",
+    ],
+  },
+];
+const analyticsRefreshOrder = [
+  "analytics.v_activity",
+  "analytics.v_activity_members",
+  "analytics.v_sleep",
+  "analytics.v_body_measurement",
+  "analytics.v_daily_metrics",
+  "analytics.derived_resting_heart_rate",
+  "analytics.provider_stats",
+  "analytics.deduped_sensor",
+  "analytics.activity_summary",
+] as const;
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
-function clickHouseNullableUuid(value: string | null): string {
-  return value == null ? "NULL" : `toUUID(${clickHouseStringLiteral(value)})`;
+function buildPostgresTableFunction(connectionString: string, tableName: string): string {
+  const postgres = parsePostgresConnectionForClickHouse(connectionString);
+  return `postgresql(${clickHouseStringLiteral(postgres.hostAndPort)}, ${clickHouseStringLiteral(
+    postgres.database,
+  )}, ${clickHouseStringLiteral(tableName)}, ${clickHouseStringLiteral(
+    postgres.user,
+  )}, ${clickHouseStringLiteral(postgres.password)}, 'fitness')`;
 }
 
-function clickHouseNullableFloat(value: number | null): string {
-  return value == null ? "NULL" : String(value);
-}
-
-function metricStreamRowValues(row: MetricStreamSyncRow): string {
-  return `(
-  toUUID(${clickHouseStringLiteral(row.id)}),
-  ${clickHouseNullableUuid(row.activity_id)},
-  toUUID(${clickHouseStringLiteral(row.user_id)}),
-  toDateTime64(${clickHouseStringLiteral(row.recorded_at)}, 6, 'UTC'),
-  ${clickHouseStringLiteral(row.channel)},
-  ${clickHouseStringLiteral(row.provider_id)},
-  ${clickHouseNullableFloat(row.scalar)}
-)`;
+function buildRawTableInsertStatement(connectionString: string, sync: RawTableSync): string {
+  const columnList = sync.columns.join(",\n  ");
+  return `INSERT INTO postgres_fitness.${sync.tableName} (
+  ${columnList}
+)
+SELECT
+  ${columnList}
+FROM ${buildPostgresTableFunction(connectionString, sync.tableName)}`;
 }
 
 function rewriteClickHouseDatabaseNames(
@@ -124,36 +283,18 @@ export async function syncClickHouseTestActivitySensorStore(
   if (!handle) {
     throw new Error("ClickHouse test activity sensor store has not been created");
   }
-  const rows = await testContext.db.execute<MetricStreamSyncRow>(
-    sql`SELECT
-      id::text AS id,
-      activity_id::text AS activity_id,
-      user_id::text AS user_id,
-      to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') AS recorded_at,
-      channel,
-      provider_id,
-      scalar
-    FROM fitness.metric_stream
-    ORDER BY recorded_at, id`,
-  );
 
-  await handle.client.command({ query: "TRUNCATE TABLE postgres_fitness.metric_stream" });
-  if (rows.length > 0) {
+  for (const rawTableSync of rawTableSyncs) {
     await handle.client.command({
-      query: `INSERT INTO postgres_fitness.metric_stream (
-  id,
-  activity_id,
-  user_id,
-  recorded_at,
-  channel,
-  provider_id,
-  scalar
-)
-VALUES ${rows.map(metricStreamRowValues).join(",\n")}`,
+      query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
+    });
+    await handle.client.command({
+      query: buildRawTableInsertStatement(testContext.connectionString, rawTableSync),
     });
   }
-  await handle.client.command({ query: "SYSTEM REFRESH VIEW analytics.deduped_sensor" });
-  await handle.client.command({ query: "SYSTEM WAIT VIEW analytics.deduped_sensor" });
-  await handle.client.command({ query: "SYSTEM REFRESH VIEW analytics.activity_summary" });
-  await handle.client.command({ query: "SYSTEM WAIT VIEW analytics.activity_summary" });
+
+  for (const viewName of analyticsRefreshOrder) {
+    await handle.client.command({ query: `SYSTEM REFRESH VIEW ${viewName}` });
+    await handle.client.command({ query: `SYSTEM WAIT VIEW ${viewName}` });
+  }
 }
