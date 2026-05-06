@@ -2958,3 +2958,41 @@ after relevant HealthKit ingestion and in sleep integration setup.
 Local integration validation was blocked because the Docker daemon was not
 running. CI should validate the migration and review-app seed path against a
 real Postgres service after the branch is pushed.
+
+## 2026-05-05: PR 1095 Deploy Migration View Replacement Failure
+
+### Symptoms
+
+The review-app deploy failed while applying migration
+`0015_clickhouse_proxy_views.sql` after successfully applying
+`0014_drop_postgres_dedup_matviews.sql`.
+
+### Evidence
+
+The first fatal migration log line was:
+
+```text
+error: [migrate] error: cannot change name of view column "source_providers" to "walking_step_length"
+```
+
+### Root Cause
+
+Migration `0015` used `CREATE OR REPLACE VIEW fitness.v_daily_metrics`, but the
+existing deployed view had `source_providers` immediately after
+`walking_speed`. The replacement definition inserted the walking metric columns
+before `source_providers`, and Postgres does not allow `CREATE OR REPLACE VIEW`
+to rename or reorder existing view columns.
+
+### Fix or Mitigation
+
+Migration `0015` now drops the dependent ClickHouse proxy view and then drops
+the existing `fitness.v_daily_metrics` relation as either a plain view or
+materialized view before recreating the canonical view definition. A migration
+regression test recreates the old column order and verifies the new column order
+after applying `0015`.
+
+### Remaining Risk
+
+The fix is scoped to `fitness.v_daily_metrics`. Future migrations that insert
+columns into the middle of existing views should drop and recreate those views
+instead of relying on `CREATE OR REPLACE VIEW`.
