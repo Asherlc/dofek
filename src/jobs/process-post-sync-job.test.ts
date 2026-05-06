@@ -6,16 +6,9 @@ vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
-const mockUpdateUserMaxHr = vi.fn();
-const mockRefreshDedupViews = vi.fn();
 const mockLoadProviderPriorityConfig = vi.fn((): unknown => ({ priorities: [] }));
 const mockSyncProviderPriorities = vi.fn();
 const mockRefitAllParams = vi.fn();
-
-vi.mock("../db/dedup.ts", () => ({
-  updateUserMaxHr: (...args: unknown[]) => mockUpdateUserMaxHr(...args),
-  refreshDedupViews: (...args: unknown[]) => mockRefreshDedupViews(...args),
-}));
 
 vi.mock("../db/provider-priority.ts", () => ({
   loadProviderPriorityConfig: () => mockLoadProviderPriorityConfig(),
@@ -64,12 +57,10 @@ describe("processPostSyncJob", () => {
     expect(getSensorStore).not.toHaveBeenCalled();
   });
 
-  it("does not run materialized-view refreshes during post-sync maintenance", async () => {
+  it("does not run per-user refits during global post-sync maintenance", async () => {
     await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getFakeSensorStore);
 
     expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
-    expect(mockRefreshDedupViews).not.toHaveBeenCalled();
-    expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
     expect(mockRefitAllParams).not.toHaveBeenCalled();
   });
 
@@ -79,8 +70,6 @@ describe("processPostSyncJob", () => {
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
     expect(mockLoadProviderPriorityConfig).not.toHaveBeenCalled();
     expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
-    expect(mockRefreshDedupViews).not.toHaveBeenCalled();
-    expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
   });
 
   it("continues when syncProviderPriorities fails", async () => {
@@ -88,8 +77,6 @@ describe("processPostSyncJob", () => {
 
     await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getFakeSensorStore);
 
-    expect(mockRefreshDedupViews).not.toHaveBeenCalled();
-    expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
     expect(mockRefitAllParams).not.toHaveBeenCalled();
   });
 
@@ -99,8 +86,6 @@ describe("processPostSyncJob", () => {
     // Should not throw
     await processPostSyncJob(makeUserRefitJob("user-5"), fakeDb, getFakeSensorStore);
 
-    expect(mockRefreshDedupViews).not.toHaveBeenCalled();
-    expect(mockUpdateUserMaxHr).not.toHaveBeenCalled();
     expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
   });
 

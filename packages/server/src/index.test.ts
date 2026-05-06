@@ -82,12 +82,6 @@ vi.mock("./routes/export.ts", () => ({
     return Router();
   }),
 }));
-vi.mock("./routes/materialized-view-refresh.ts", () => ({
-  createMaterializedViewRefreshRouter: vi.fn(() => {
-    const { Router } = require("express");
-    return Router();
-  }),
-}));
 vi.mock("./routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => {
     const { Router } = require("express");
@@ -134,7 +128,6 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
-import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-refresh.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
@@ -713,10 +706,6 @@ describe("createApp HTTP routes", () => {
           db: expect.anything(),
         }),
       );
-    });
-
-    it("mounts materialized view refresh router", () => {
-      expect(vi.mocked(createMaterializedViewRefreshRouter)).toHaveBeenCalled();
     });
   });
 });

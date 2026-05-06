@@ -155,25 +155,20 @@ export class TrainingRepository extends BaseRepository {
 
   /** Weekly training volume grouped by activity type. */
   async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    return this.queryWithViewRefresh(
-      () =>
-        this.query(
-          weeklyVolumeRowSchema,
-          sql`SELECT
-                date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
-                activity_type,
-                COUNT(*)::int AS count,
-                ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
-              FROM fitness.v_activity
-              WHERE user_id = ${this.userId}
-                AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
-                AND ended_at IS NOT NULL
-                ${this.timestampAccessPredicate(sql`started_at`)}
-              GROUP BY 1, activity_type
-              ORDER BY week`,
-        ),
-      days,
-      "weeklyVolume",
+    return this.query(
+      weeklyVolumeRowSchema,
+      sql`SELECT
+            date_trunc('week', (started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
+            activity_type,
+            COUNT(*)::int AS count,
+            ROUND(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 3600)::numeric, 2) AS hours
+          FROM fitness.v_activity
+          WHERE user_id = ${this.userId}
+            AND started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            AND ended_at IS NOT NULL
+            ${this.timestampAccessPredicate(sql`started_at`)}
+          GROUP BY 1, activity_type
+          ORDER BY week`,
     );
   }
 
@@ -425,7 +420,7 @@ export class TrainingRepository extends BaseRepository {
           SELECT
             COUNT(*) FILTER (WHERE started_at > ${timestampWindowStart(endDate, 7)})::int AS strength_7d,
             MAX((started_at AT TIME ZONE ${this.timezone})::date)::text AS last_strength_date
-          FROM fitness.activity
+          FROM fitness.v_activity
           WHERE user_id = ${this.userId}
             AND activity_type = 'strength'
         ),
@@ -542,7 +537,7 @@ export class TrainingRepository extends BaseRepository {
     return this.query(
       trainingDaySchema,
       sql`SELECT DISTINCT (started_at AT TIME ZONE ${this.timezone})::date::text AS training_date
-          FROM fitness.v_activity
+          FROM fitness.activity
           WHERE user_id = ${this.userId}
             AND started_at > ${timestampWindowStart(endDate, 14)}
             ${this.timestampAccessPredicate(sql`started_at`)}

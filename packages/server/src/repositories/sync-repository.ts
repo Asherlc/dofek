@@ -165,21 +165,21 @@ export class SyncRepository {
       this.#db,
       providerStatsRowSchema,
       sql`SELECT
-            provider_id,
-            activities,
-            daily_metrics,
-            sleep_sessions,
-            body_measurements,
-            food_entries,
-            health_events,
-            metric_stream,
-            nutrition_daily,
-            lab_panels,
-            lab_results,
-            journal_entries
-          FROM fitness.provider_stats
-          WHERE user_id = ${this.#userId}
-          ORDER BY provider_id`,
+            p.id AS provider_id,
+            (SELECT COUNT(*) FROM fitness.activity row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS activities,
+            (SELECT COUNT(*) FROM fitness.daily_metrics row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS daily_metrics,
+            (SELECT COUNT(*) FROM fitness.sleep_session row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS sleep_sessions,
+            (SELECT COUNT(*) FROM fitness.body_measurement row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS body_measurements,
+            (SELECT COUNT(*) FROM fitness.food_entry row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS food_entries,
+            (SELECT COUNT(*) FROM fitness.health_event row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS health_events,
+            (SELECT COUNT(*) FROM fitness.metric_stream row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS metric_stream,
+            (SELECT COUNT(DISTINCT row.date) FROM fitness.food_entry row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS nutrition_daily,
+            (SELECT COUNT(*) FROM fitness.lab_panel row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS lab_panels,
+            (SELECT COUNT(*) FROM fitness.lab_result row JOIN fitness.lab_panel panel ON panel.id = row.panel_id WHERE panel.user_id = ${this.#userId} AND panel.provider_id = p.id)::int AS lab_results,
+            (SELECT COUNT(*) FROM fitness.journal_entry row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS journal_entries
+          FROM fitness.provider p
+          WHERE p.user_id = ${this.#userId}
+          ORDER BY p.id`,
     );
 
     return rows.map((row) => ({

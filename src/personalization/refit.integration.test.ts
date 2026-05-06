@@ -1,6 +1,6 @@
 import assert from "node:assert";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { refreshDedupViews } from "../db/dedup.ts";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
 import { dailyMetrics, sleepSession, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
@@ -62,9 +62,12 @@ async function insertDailyHrv(dates: Map<string, number>): Promise<void> {
   }
 }
 
+async function refreshFitSleepReadModels(): Promise<void> {
+  await ctx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+}
+
 describe("fitSleepFromDb", () => {
   it("executes the LATERAL subquery SQL without error on an empty database", async () => {
-    await refreshDedupViews(ctx.db);
     const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     expect(result).toBeNull();
   });
@@ -93,8 +96,7 @@ describe("fitSleepFromDb", () => {
       hrvDates.set(daysAgo(i), 50.0);
     }
     await insertDailyHrv(hrvDates);
-
-    await refreshDedupViews(ctx.db);
+    await refreshFitSleepReadModels();
 
     const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     expect(result).toBeNull();
@@ -125,8 +127,7 @@ describe("fitSleepFromDb", () => {
       });
     }
     await ctx.db.insert(sleepSession).values(sleepRows);
-
-    await refreshDedupViews(ctx.db);
+    await refreshFitSleepReadModels();
 
     const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     assert(result !== null, "expected non-null sleep target");
@@ -164,8 +165,7 @@ describe("fitSleepFromDb", () => {
       });
     }
     await ctx.db.insert(sleepSession).values(sleepRows);
-
-    await refreshDedupViews(ctx.db);
+    await refreshFitSleepReadModels();
 
     const result = await fitSleepFromDb(ctx.db, TEST_USER_ID);
     // All 20 nights should qualify (10 above median, 10 at median)

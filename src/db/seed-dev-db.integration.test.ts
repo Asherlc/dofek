@@ -287,15 +287,15 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     vSleep: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_sleep WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.sleep_session WHERE user_id = '${userId}'`,
     ),
     vDailyMetrics: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${userId}'`,
     ),
     vBodyMeasurement: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_body_measurement WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${userId}'`,
     ),
   };
 }

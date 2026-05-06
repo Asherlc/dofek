@@ -5,7 +5,7 @@ const sharedTestConfig = {
   testTimeout: 30_000,
   hookTimeout: 120_000,
   teardownTimeout: 60_000,
-  fileParallelism: false,
+  fileParallelism: true,
   pool: "forks" as const,
   retry: 2,
 };
@@ -43,6 +43,12 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "integration",
+          fileParallelism: false,
+          poolOptions: {
+            forks: {
+              singleFork: true,
+            },
+          },
           include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
           exclude: ["**/packages/mobile/**"],
           env: {

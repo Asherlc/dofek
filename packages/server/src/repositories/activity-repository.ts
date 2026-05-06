@@ -255,19 +255,11 @@ export class ActivityRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  /** Paginated activity list with summary metrics. Self-heals stale views on the first page. */
+  /** Paginated activity list with summary metrics. */
   async list(
     input: ListInput,
   ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
-    const queryFn = () => this.#listRawRows(input);
-
-    // Only check staleness on the first page to avoid expensive refreshes on
-    // legitimate empty later pages.
-    const rows =
-      input.offset === 0
-        ? await this.queryWithViewRefresh(queryFn, input.days, "activityList")
-        : await queryFn();
-
+    const rows = await this.#listRawRows(input);
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
     const items = hydratedRows.map(({ total_count, ...rest }) => rest);

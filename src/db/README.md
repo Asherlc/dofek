@@ -23,8 +23,5 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 ## Implementation Notes
 
 - **Metric Channels**: The `metric_stream` table uses a `channel` column to differentiate between data types (e.g., `heart_rate`, `power`).
-- **Deduplication**: `dedup.ts` contains logic to pick the highest-priority provider when multiple sources report the same metric for an activity.
+- **Deduplication**: Activity sensor analytics read deduplicated ClickHouse read models.
 - **Nutrient Columns**: Shared nutrient columns are generated via `nutrient-columns.ts`.
-- **Views**: Materialized views and database-level views are managed in `sync-views.ts`.
-  View syncing is triggered out-of-band (not in the blocking schema migration path).
-  Deploys run a cheap planner first and only trigger sync when a view definition hash changed, a stored dependency fingerprint changed, or a migration was tagged with `-- requires_materialized_view_refresh`.

@@ -33,7 +33,6 @@ import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activit
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
-import { createMaterializedViewRefreshRouter } from "./routes/materialized-view-refresh.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
@@ -156,7 +155,6 @@ function setupRoutes(
   // Webhook routes must be mounted before json() middleware — they use raw body for HMAC verification
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
-  app.use("/api/internal", createMaterializedViewRefreshRouter());
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   // ── Seeded-login helper for local dev and preview environments ──

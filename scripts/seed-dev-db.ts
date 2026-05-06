@@ -20,9 +20,8 @@
  *   - Web and mobile dashboard, recovery, strain, nutrition, body, and provider screens
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { ALL_MATERIALIZED_VIEWS } from "../src/db/materialized-views.ts";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createTaggedQueryClient } from "../src/db/tagged-query-client.ts";
 import { seedBodyHealth } from "./seed/body-health.ts";
 import { clearSeedData, seedCore } from "./seed/core.ts";
@@ -46,7 +45,7 @@ interface CountRow {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1: Apply all migrations and recreate views (same as setupTestDatabase)
+// Step 1: Apply all migrations
 // ---------------------------------------------------------------------------
 
 async function applyMigrations() {
@@ -73,39 +72,6 @@ async function applyMigrations() {
   console.log(`Migrations: ${applied} files applied`);
 }
 
-async function recreateMaterializedViews() {
-  const viewsDir = join(drizzleDir, "_views");
-  if (!existsSync(viewsDir)) return;
-
-  const viewFiles = readdirSync(viewsDir)
-    .filter((fileName) => fileName.endsWith(".sql"))
-    .sort();
-
-  const parsed = viewFiles.map((fileName) => {
-    const content = readFileSync(join(viewsDir, fileName), "utf-8");
-    const match = content.match(/CREATE\s+MATERIALIZED\s+VIEW\s+fitness\.(\w+)/i);
-    return { fileName, content, viewName: match?.[1] };
-  });
-
-  // Drop matviews in reverse order. CASCADE removes dependents, and the
-  // recreate loop below restores the canonical _views/*.sql definitions.
-  for (const { viewName } of [...parsed].reverse()) {
-    if (!viewName) continue;
-    await sql.unsafe(`DROP MATERIALIZED VIEW IF EXISTS fitness.${viewName} CASCADE`);
-  }
-
-  for (const { content } of parsed) {
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) {
-      await sql.unsafe(statement);
-    }
-  }
-  console.log(`Views: ${viewFiles.length} recreated`);
-}
-
 // ---------------------------------------------------------------------------
 // Step 2: Seed data
 // ---------------------------------------------------------------------------
@@ -119,17 +85,6 @@ async function seedData() {
   await seedNutrition(sql, random);
   await seedBodyHealth(sql, random);
   await seedReviewSurfaces(sql, random);
-}
-
-// ---------------------------------------------------------------------------
-// Step 3: Refresh materialized views
-// ---------------------------------------------------------------------------
-
-async function refreshViews() {
-  for (const viewName of ALL_MATERIALIZED_VIEWS) {
-    await sql.unsafe(`REFRESH MATERIALIZED VIEW ${viewName}`);
-  }
-  console.log("Views refreshed");
 }
 
 async function verifySeed() {
@@ -162,7 +117,7 @@ async function verifySeed() {
     [
       "nutrition days",
       85,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_nutrition_daily WHERE user_id = '${USER_ID}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
     ],
     [
       "food entries",
@@ -194,19 +149,6 @@ async function verifySeed() {
       4,
       `SELECT COUNT(*)::int AS count FROM fitness.menstrual_period WHERE user_id = '${USER_ID}'`,
     ],
-    [
-      "v_sleep rows",
-      90,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_sleep WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "v_daily_metrics rows",
-      170,
-      `SELECT COUNT(*)::int AS count FROM fitness.v_daily_metrics WHERE user_id = '${USER_ID}'`,
-    ],
-    // Note: activity_summary is now an analytics.activity_summary CH read model
-    // populated via PeerDB CDC. We don't verify CH counts here because the
-    // refresh is async; downstream tests/dashboards exercise that path.
   ] as const;
 
   console.log("\nVerification:");
@@ -246,10 +188,7 @@ async function main() {
   } else {
     await applyMigrations();
   }
-  await recreateMaterializedViews();
-
   await seedData();
-  await refreshViews();
   await verifySeed();
   console.log(`\nDone. Start the server with:`);
   console.log(`  DATABASE_URL="${databaseUrl}" cd packages/server && pnpm dev`);

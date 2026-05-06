@@ -1,4 +1,3 @@
-import { ALL_MATERIALIZED_VIEWS } from "dofek/db/materialized-views";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -553,48 +552,6 @@ describe("adminRouter", () => {
         since: "2024-01-01",
         until: "2024-02-01",
       });
-    });
-  });
-
-  describe("refreshViews", () => {
-    it("refreshes all materialized views and returns view names", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const caller = makeCaller(execute);
-      const result = await caller.refreshViews();
-      expect(result.refreshed).toEqual([...ALL_MATERIALIZED_VIEWS]);
-      expect(result.failed).toEqual([]);
-      expect(execute).toHaveBeenCalledTimes(ALL_MATERIALIZED_VIEWS.length);
-    });
-
-    it("falls back to non-concurrent refresh on error", async () => {
-      const execute = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("has not been populated"))
-        .mockResolvedValueOnce([]) // fallback non-concurrent
-        .mockResolvedValue([]); // remaining views
-      const caller = makeCaller(execute);
-      const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(ALL_MATERIALIZED_VIEWS.length);
-      expect(result.failed).toHaveLength(0);
-      expect(execute).toHaveBeenCalledTimes(ALL_MATERIALIZED_VIEWS.length + 1);
-    });
-
-    it("reports failed views without aborting the rest", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      // Make v_sleep fail both concurrent and fallback
-      execute.mockResolvedValueOnce([]); // v_activity concurrent OK
-      execute.mockRejectedValueOnce(new Error("does not exist")); // v_sleep concurrent fail
-      execute.mockRejectedValueOnce(new Error("does not exist")); // v_sleep fallback fail
-      execute.mockResolvedValue([]);
-      const caller = makeCaller(execute);
-      const result = await caller.refreshViews();
-      expect(result.refreshed).toHaveLength(ALL_MATERIALIZED_VIEWS.length - 1);
-      expect(result.failed).toEqual([
-        {
-          view: "fitness.v_sleep",
-          error: "Failed to refresh fitness.v_sleep (both CONCURRENT and blocking)",
-        },
-      ]);
     });
   });
 

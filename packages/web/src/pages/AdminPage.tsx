@@ -236,7 +236,6 @@ function formatDuration(seconds: number | null | undefined): string {
 
 function OverviewTab() {
   const { data, isLoading, error } = trpc.admin.overview.useQuery();
-  const refreshViews = trpc.admin.refreshViews.useMutation();
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message={error.message} />;
@@ -253,54 +252,6 @@ function OverviewTab() {
               <div className="text-xs text-muted mt-0.5">{item.table_name}</div>
             </div>
           ))}
-        </div>
-      </AdminCard>
-
-      <AdminCard title="Materialized Views">
-        <div className="p-4 space-y-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              disabled={refreshViews.isPending}
-              onClick={() => refreshViews.mutate()}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-accent/15 text-foreground hover:bg-accent/25 disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
-            >
-              {refreshViews.isPending ? "Refreshing..." : "Refresh All Views"}
-            </button>
-            {refreshViews.isSuccess && (
-              <span
-                className={`text-xs ${refreshViews.data.failed.length > 0 ? "text-amber-400" : "text-green-400"}`}
-              >
-                Refreshed {refreshViews.data.refreshed.length} views
-                {refreshViews.data.failed.length > 0 &&
-                  `, ${refreshViews.data.failed.length} failed`}
-              </span>
-            )}
-            {refreshViews.isError && (
-              <span className="text-xs text-red-400">{refreshViews.error.message}</span>
-            )}
-          </div>
-          {refreshViews.isSuccess && (
-            <div className="flex flex-wrap gap-1.5">
-              {refreshViews.data.refreshed.map((view) => (
-                <span
-                  key={view}
-                  className="px-2 py-0.5 rounded bg-green-500/10 text-green-400 text-xs font-mono"
-                >
-                  {view}
-                </span>
-              ))}
-              {refreshViews.data.failed.map(({ view, error }) => (
-                <span
-                  key={view}
-                  title={error}
-                  className="px-2 py-0.5 rounded bg-red-500/10 text-red-400 text-xs font-mono"
-                >
-                  {view}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       </AdminCard>
     </div>

@@ -113,6 +113,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("_peerdb_synced_at DateTime64(9) DEFAULT now()");
     expect(sql).toContain("_peerdb_is_deleted Int8 DEFAULT 0");
     expect(sql).toContain("_peerdb_version Int64 DEFAULT 0");
+    expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
+    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
@@ -132,6 +134,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );
+    expect(sql).toContain("INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL");
+    expect(sql).toContain("metric_stream._peerdb_is_deleted = 0");
     expect(sql).toContain("FROM analytics.v_activity");
     expect(sql).toContain("FROM analytics.v_activity_members");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");

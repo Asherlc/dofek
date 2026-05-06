@@ -821,7 +821,7 @@ sleep_windows AS (
     started_at,
     ended_at
   FROM analytics.v_sleep
-  WHERE is_nap = false
+  WHERE sleep_type IS DISTINCT FROM 'nap'
     AND ended_at IS NOT NULL
 ),
 raw_samples AS (
@@ -831,12 +831,13 @@ raw_samples AS (
     metric_stream.provider_id AS provider_id,
     metric_stream.scalar AS heart_rate
   FROM sleep_windows
-  INNER JOIN postgres_fitness.metric_stream AS metric_stream
+  INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL
     ON metric_stream.user_id = sleep_windows.user_id
    AND metric_stream.channel = 'heart_rate'
    AND metric_stream.recorded_at >= sleep_windows.started_at
    AND metric_stream.recorded_at <= sleep_windows.ended_at
    AND metric_stream.scalar IS NOT NULL
+   AND metric_stream._peerdb_is_deleted = 0
 ),
 provider_counts AS (
   SELECT user_id, date, provider_id, count() AS sample_count
@@ -905,7 +906,8 @@ providers AS (
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.metric_stream
+  FROM postgres_fitness.metric_stream FINAL
+  WHERE _peerdb_is_deleted = 0
 ),
 activity_counts AS (
   SELECT user_id, provider_id, count() AS count
@@ -933,7 +935,8 @@ body_measurement_counts AS (
 ),
 metric_stream_counts AS (
   SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.metric_stream
+  FROM postgres_fitness.metric_stream FINAL
+  WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
 )
 SELECT
@@ -1036,9 +1039,7 @@ function buildClickHouseBootstrapStatementsForNativeMetricStream(
   scalar Nullable(Float32),
 ${peerDbMetadataColumnDefinitions}
 )
-ENGINE = MergeTree
-ORDER BY (user_id, activity_id, channel, recorded_at, id)
-SETTINGS allow_nullable_key = 1`,
+${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
     ...buildPostgresFitnessRawTableStatements(),
   ];
 
@@ -1083,7 +1084,8 @@ linked_best_source AS (
         channel AS metric_channel,
         provider_id AS metric_provider_id,
         scalar AS metric_scalar
-      FROM postgres_fitness.metric_stream
+      FROM postgres_fitness.metric_stream FINAL
+      WHERE _peerdb_is_deleted = 0
     ) AS metric_stream
     INNER JOIN activity_members
       ON metric_stream.metric_activity_id = activity_members.member_activity_id
@@ -1101,7 +1103,8 @@ linked_sample_bounds AS (
     SELECT
       activity_id AS metric_activity_id,
       recorded_at AS metric_recorded_at
-    FROM postgres_fitness.metric_stream
+    FROM postgres_fitness.metric_stream FINAL
+    WHERE _peerdb_is_deleted = 0
   ) AS metric_stream
   INNER JOIN activity_members
     ON metric_stream.metric_activity_id = activity_members.member_activity_id
@@ -1141,7 +1144,8 @@ ambient_best_source AS (
         channel AS metric_channel,
         provider_id AS metric_provider_id,
         scalar AS metric_scalar
-      FROM postgres_fitness.metric_stream
+      FROM postgres_fitness.metric_stream FINAL
+      WHERE _peerdb_is_deleted = 0
     ) AS metric_stream
     INNER JOIN fallback_windows
       ON fallback_windows.user_id = metric_stream.metric_user_id
@@ -1172,7 +1176,8 @@ linked_samples AS (
       channel AS metric_channel,
       provider_id AS metric_provider_id,
       scalar AS metric_scalar
-    FROM postgres_fitness.metric_stream
+    FROM postgres_fitness.metric_stream FINAL
+    WHERE _peerdb_is_deleted = 0
   ) AS metric_stream
   INNER JOIN activity_members
     ON metric_stream.metric_activity_id = activity_members.member_activity_id
@@ -1199,7 +1204,8 @@ ambient_samples AS (
       channel AS metric_channel,
       provider_id AS metric_provider_id,
       scalar AS metric_scalar
-    FROM postgres_fitness.metric_stream
+    FROM postgres_fitness.metric_stream FINAL
+    WHERE _peerdb_is_deleted = 0
   ) AS metric_stream
   INNER JOIN fallback_windows
     ON fallback_windows.user_id = metric_stream.metric_user_id

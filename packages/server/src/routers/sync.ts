@@ -468,9 +468,9 @@ export const syncRouter = router({
     const countSchema = z.object({ count: z.coerce.number() });
 
     const healthChecks = [
-      { key: "dailyMetrics", baseTable: "fitness.daily_metrics", view: "fitness.v_daily_metrics" },
-      { key: "sleep", baseTable: "fitness.sleep_session", view: "fitness.v_sleep" },
-      { key: "activity", baseTable: "fitness.activity", view: "fitness.v_activity" },
+      { key: "dailyMetrics", baseTable: "fitness.daily_metrics", view: "fitness.daily_metrics" },
+      { key: "sleep", baseTable: "fitness.sleep_session", view: "fitness.sleep_session" },
+      { key: "activity", baseTable: "fitness.activity", view: "fitness.activity" },
     ] as const;
 
     const countTargets = healthChecks.flatMap(({ key, baseTable, view }) => [
