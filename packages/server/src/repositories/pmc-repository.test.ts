@@ -65,6 +65,19 @@ function makeRepo(
   return new PmcRepository(db, "user-1", timezone, sensorStore);
 }
 
+function makeRepoHarness(
+  activityRows: Record<string, unknown>[] = [],
+  npRows: Record<string, unknown>[] = [],
+  timezone = "UTC",
+) {
+  const db = { execute: vi.fn() };
+  const sensorStore = makeSensorStore(activityRows, npRows);
+  return {
+    repo: new PmcRepository(db, "user-1", timezone, sensorStore),
+    query: sensorStore.query,
+  };
+}
+
 describe("PmcRepository", () => {
   describe("getChart", () => {
     it("returns empty data with generic model when no activities", async () => {
@@ -335,6 +348,42 @@ describe("PmcRepository", () => {
       await repo.getChart(90);
       // The execute call should have happened (query was built)
       expect(true).toBe(true);
+    });
+
+    it("passes timezone and expanded queryDays to both ClickHouse queries", async () => {
+      const { repo, query } = makeRepoHarness(
+        [makeActivityRow({ avg_power: null, power_samples: 0 })],
+        [],
+        "America/Los_Angeles",
+      );
+
+      await repo.getChart(30);
+
+      expect(query).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.stringContaining("analytics.activity_summary"),
+        { userId: "user-1", timezone: "America/Los_Angeles", queryDays: 407 },
+      );
+      expect(query).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        expect.stringContaining("analytics.deduped_sensor"),
+        { userId: "user-1", queryDays: 407 },
+      );
+    });
+
+    it("extends queryDays from requested days when request exceeds the minimum history", async () => {
+      const { repo, query } = makeRepoHarness([], []);
+
+      await repo.getChart(400);
+
+      expect(query).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.stringContaining("INTERVAL {queryDays:Int32} DAY"),
+        { userId: "user-1", timezone: "UTC", queryDays: 442 },
+      );
     });
 
     it("queries sufficient history even for small day values (minHistoryDays=365)", async () => {

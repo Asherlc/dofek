@@ -223,6 +223,92 @@ describe("IntervalsRepository", () => {
       expect(result[0]?.avg_heart_rate).toBe(145);
     });
 
+    it("uses only samples inside the interval and computes distance and climbing from GPS samples", async () => {
+      const intervalRows = [
+        {
+          id: "int-gps",
+          interval_index: 0,
+          label: "Hill",
+          interval_type: "climb",
+          started_at: "2024-01-15T10:00:00Z",
+          ended_at: "2024-01-15T10:10:00Z",
+          duration_seconds: 600,
+        },
+      ];
+      const sensorRows = [
+        {
+          recorded_at: "2024-01-15T09:59:00Z",
+          heart_rate: 100,
+          power: 999,
+          speed: 1,
+          cadence: 10,
+          lat: 37,
+          lng: -122,
+          altitude: 100,
+        },
+        {
+          recorded_at: "2024-01-15T10:00:00Z",
+          heart_rate: 140,
+          power: 0,
+          speed: 8,
+          cadence: 0,
+          lat: 37,
+          lng: -122,
+          altitude: 10,
+        },
+        {
+          recorded_at: "2024-01-15T10:05:00Z",
+          heart_rate: null,
+          power: null,
+          speed: null,
+          cadence: null,
+          lat: 37.0009,
+          lng: -122,
+          altitude: 8,
+        },
+        {
+          recorded_at: "2024-01-15T10:10:00Z",
+          heart_rate: 160,
+          power: 240,
+          speed: 10,
+          cadence: 95,
+          lat: 37.0018,
+          lng: -122,
+          altitude: 25,
+        },
+        {
+          recorded_at: "2024-01-15T10:11:00Z",
+          heart_rate: 200,
+          power: 500,
+          speed: 20,
+          cadence: 120,
+          lat: 37.01,
+          lng: -122,
+          altitude: 200,
+        },
+      ];
+      const db = makeDb(intervalRows);
+      const sensorStore = makeSensorStore(sensorRows);
+      const repo = new IntervalsRepository(db, "user-1", sensorStore);
+
+      const result = await repo.getByActivity("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: "int-gps",
+        avg_heart_rate: 150,
+        max_heart_rate: 160,
+        avg_power: 240,
+        max_power: 240,
+        avg_speed: 9,
+        max_speed: 10,
+        avg_cadence: 95,
+        elevation_gain: 17,
+      });
+      expect(result[0]?.distance_meters).toBeGreaterThan(190);
+      expect(result[0]?.distance_meters).toBeLessThan(210);
+    });
+
     it("returns empty array when no intervals exist", async () => {
       const db = makeDb([]);
       const sensorStore = makeSensorStore([]);
