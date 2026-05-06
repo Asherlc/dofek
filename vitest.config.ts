@@ -5,7 +5,7 @@ const sharedTestConfig = {
   testTimeout: 30_000,
   hookTimeout: 120_000,
   teardownTimeout: 60_000,
-  fileParallelism: true,
+  fileParallelism: false,
   pool: "forks" as const,
   retry: 2,
 };

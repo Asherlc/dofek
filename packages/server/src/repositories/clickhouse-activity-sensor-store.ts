@@ -183,7 +183,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               1
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN postgres_fitness_live.v_activity AS activity
+          INNER JOIN analytics.v_activity AS activity
             ON activity.id = deduped_samples.activity_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
@@ -229,7 +229,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               1
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN postgres_fitness_live.v_activity AS activity
+          INNER JOIN analytics.v_activity AS activity
             ON activity.id = deduped_samples.activity_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
@@ -274,7 +274,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             activity_type,
             started_at,
             toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date
-          FROM postgres_fitness_live.v_activity
+          FROM analytics.v_activity
           WHERE user_id = {userId:UUID}
             AND toDate(toTimeZone(started_at, {timezone:String})) > subtractDays(toDate({endDate:String}), {days:UInt32})
             AND toDate(toTimeZone(started_at, {timezone:String})) <= toDate({endDate:String})
@@ -282,7 +282,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ),
         latest_weight AS (
           SELECT weight_kg
-          FROM postgres_fitness_live.v_body_measurement
+          FROM analytics.v_body_measurement
           WHERE user_id = {userId:UUID}
             AND weight_kg IS NOT NULL
           ORDER BY recorded_at DESC
@@ -379,6 +379,17 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND countIf(deduped_samples.channel = 'heart_rate') >= 60
             AND countIf(deduped_samples.channel = 'altitude') >= 2
         ),
+        resting_by_segment AS (
+          SELECT
+            acsm_segments.activity_id AS activity_id,
+            acsm_segments.segment_index AS segment_index,
+            argMax(resting.resting_hr, resting.date) AS resting_hr
+          FROM acsm_segments
+          CROSS JOIN analytics.derived_resting_heart_rate AS resting
+          WHERE resting.user_id = {userId:UUID}
+            AND resting.date <= toDate(acsm_segments.activity_date)
+          GROUP BY acsm_segments.activity_id, acsm_segments.segment_index
+        ),
         acsm_estimates AS (
           SELECT
             toString(acsm_segments.activity_id) AS activity_id,
@@ -400,11 +411,11 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               0
             ) AS vo2max
           FROM acsm_segments
-          INNER JOIN postgres_fitness_live.user_profile AS user_profile
+          INNER JOIN postgres_fitness.user_profile AS user_profile
             ON user_profile.id = {userId:UUID}
-          LEFT JOIN postgres_fitness_live.derived_resting_heart_rate AS resting
-            ON resting.user_id = {userId:UUID}
-           AND resting.date <= toDate(acsm_segments.activity_date)
+          LEFT JOIN resting_by_segment AS resting
+            ON resting.activity_id = acsm_segments.activity_id
+           AND resting.segment_index = acsm_segments.segment_index
           WHERE user_profile.max_hr IS NOT NULL
             AND resting.resting_hr IS NOT NULL
             AND user_profile.max_hr > resting.resting_hr
@@ -418,10 +429,6 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               (acsm_segments.average_heart_rate - resting.resting_hr)
                 / (user_profile.max_hr - resting.resting_hr)
             ) < 1
-          QUALIFY row_number() OVER (
-            PARTITION BY acsm_segments.activity_id, acsm_segments.segment_index
-            ORDER BY resting.date DESC
-          ) = 1
         )
         SELECT activity_id, activity_date, method, vo2max
         FROM cycling_estimates
@@ -464,7 +471,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN postgres_fitness_live.v_activity AS activity
+          INNER JOIN analytics.v_activity AS activity
             ON activity.id = deduped_samples.activity_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'heart_rate'
@@ -548,7 +555,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN postgres_fitness_live.v_activity AS activity
+          INNER JOIN analytics.v_activity AS activity
             ON activity.id = deduped_samples.activity_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'speed'

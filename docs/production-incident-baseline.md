@@ -3074,3 +3074,57 @@ after applying `0015`.
 The fix is scoped to `fitness.v_daily_metrics`. Future migrations that insert
 columns into the middle of existing views should drop and recreate those views
 instead of relying on `CREATE OR REPLACE VIEW`.
+
+## 2026-05-06: Branch Deploy ClickHouse CDC and Postgres View Lock Failures
+
+### Symptoms
+
+The `aloud-bike` branch deploy first failed while configuring ClickHouse CDC,
+then a later deploy hung in the migration step until the workflow timed out.
+During the migration hang, app queries touching the same fitness read models
+also queued behind the pending DDL.
+
+### Evidence
+
+The first CDC fatal log line from run `25415707212`, job `74546726240`, was:
+
+```text
+"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate destination connector dofek_clickhouse_postgres_fitness: not all PeerDB columns found in destination table metric_stream"
+```
+
+The later migration run timed out with:
+
+```text
+Migration exceeded 3300s
+```
+
+Postgres lock inspection showed an active blocked statement:
+
+```text
+CREATE OR REPLACE VIEW fitness.v_daily_metrics AS ...
+```
+
+### Root Cause
+
+The CDC failure was caused by the ClickHouse destination table missing PeerDB
+metadata columns. The migration timeout was caused by deploy-time Postgres view
+DDL on hot fitness read models; the pending replacement waited behind live app
+reads, then new app reads waited behind the pending DDL.
+
+### Fix or Mitigation
+
+PeerDB metadata columns were added to the ClickHouse mirror tables. The
+troublesome fitness read models were moved to ClickHouse-native
+`postgres_fitness` raw mirrors and `analytics.*` read models, and the
+deploy/ingestion-time Postgres view sync and refresh hooks were removed. Runtime
+ClickHouse consumers now read `analytics.v_activity`, `analytics.v_sleep`,
+`analytics.v_daily_metrics`, `analytics.v_body_measurement`, and related
+ClickHouse read models instead of `postgres_fitness_live`.
+
+### Remaining Risk
+
+Local changed-test runs exposed ClickHouse socket hangs when several integration
+files concurrently created and refreshed isolated read-model databases against
+one local ClickHouse service. Vitest file execution is serialized to match the
+service capacity. The branch still needs a successful GitHub Actions deploy
+retry from `aloud-bike` after push.

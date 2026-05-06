@@ -142,7 +142,7 @@ export class MonthlyReportRepository {
       ),
       sleep_raw AS (
         SELECT toDate(started_at) AS date, duration_minutes
-        FROM postgres_fitness_live.v_sleep
+        FROM analytics.v_sleep
         WHERE user_id = {userId:UUID}
           AND is_nap = false
           AND started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
@@ -157,8 +157,8 @@ export class MonthlyReportRepository {
           dm.date AS date,
           drhr.resting_hr AS resting_hr,
           dm.hrv AS hrv
-        FROM postgres_fitness_live.v_daily_metrics AS dm
-        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate AS drhr
+        FROM analytics.v_daily_metrics AS dm
+        LEFT JOIN analytics.derived_resting_heart_rate AS drhr
           ON drhr.user_id = dm.user_id AND drhr.date = dm.date
         WHERE dm.user_id = {userId:UUID}
           AND dm.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH

@@ -188,9 +188,9 @@ export class TrainingRepository extends BaseRepository {
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
-        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
-        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
+        INNER JOIN postgres_fitness.user_profile up ON up.id = asum.user_id
+        LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
          AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
         WHERE asum.user_id = {userId:UUID}
@@ -270,7 +270,7 @@ export class TrainingRepository extends BaseRepository {
         coalesce(sc.hr_samples, 0) AS hr_samples,
         coalesce(sc.power_samples, 0) AS power_samples,
         asum.total_distance AS distance_meters
-      FROM postgres_fitness_live.v_activity a
+      FROM analytics.v_activity a
       LEFT JOIN analytics.activity_summary asum ON asum.activity_id = a.id
       LEFT JOIN sample_counts sc ON sc.activity_id = a.id
       WHERE a.user_id = {userId:UUID}
@@ -457,9 +457,9 @@ export class TrainingRepository extends BaseRepository {
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
-        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
-        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
+        INNER JOIN postgres_fitness.user_profile up ON up.id = asum.user_id
+        LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
          AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
         WHERE asum.user_id = {userId:UUID}
@@ -502,9 +502,9 @@ export class TrainingRepository extends BaseRepository {
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
-        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
-        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
+        INNER JOIN postgres_fitness.user_profile up ON up.id = asum.user_id
+        LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
          AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
         WHERE asum.user_id = {userId:UUID}

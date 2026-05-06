@@ -76,11 +76,11 @@ export class PmcRepository extends BaseRepository {
             WHERE user_id = {userId:UUID} AND max_hr IS NOT NULL
           )) AS global_max_hr,
           coalesce(up.resting_hr, (
-            SELECT resting_hr FROM postgres_fitness_live.derived_resting_heart_rate
+            SELECT resting_hr FROM analytics.derived_resting_heart_rate
             WHERE user_id = {userId:UUID} AND resting_hr IS NOT NULL
             ORDER BY date DESC LIMIT 1
           ), 60) AS resting_hr
-        FROM postgres_fitness_live.user_profile up
+        FROM postgres_fitness.user_profile up
         WHERE up.id = {userId:UUID}
       ),
       sample_counts AS (
@@ -135,7 +135,7 @@ export class PmcRepository extends BaseRepository {
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = ds.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = ds.activity_id
         WHERE ds.user_id = {userId:UUID}
           AND a.started_at > now() - INTERVAL {queryDays:Int32} DAY
           AND ds.channel = 'power'

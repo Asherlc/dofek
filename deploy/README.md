@@ -163,36 +163,12 @@ resource's `triggers_replace` value so Terraform actually reruns the remote
 - Treat migrations as forward-only production changes.
 - If a release includes schema changes, use expand/contract discipline: deploy additive/backward-compatible schema first, then ship code that depends on it, and only remove old schema in a later release.
 
-### Materialized View Refresh Webhook
+### ClickHouse Read Models
 
-Materialized view syncing is intentionally decoupled from normal deploys.
-Normal deploys do not run materialized-view maintenance unless the
-post-migration planner detects one of the conditions above. Manual deploys can
-still force blocking maintenance with `refresh_materialized_views=true` after
-changing materialized-view definitions or when recovering from stale view state.
-Do not use it as a routine deploy gate because it can rebuild heavy views
-against live data.
-
-To explicitly require a post-migration refresh from SQL, add this marker comment to the migration file:
-
-```sql
--- requires_materialized_view_refresh
-```
-
-The migration runner stores that intent on `drizzle.__drizzle_migrations`, and `syncMaterializedViews()` acknowledges it after a successful sync.
-
-- Endpoint: `POST /api/internal/materialized-views/refresh`
-- Auth: `Authorization: Bearer <MATERIALIZED_VIEW_REFRESH_TOKEN>`
-- Behavior: starts refresh asynchronously and returns `202`; if one is already running, returns `202` with `already_running`.
-- Required env vars:
-  - `MATERIALIZED_VIEW_REFRESH_TOKEN`
-  - `DATABASE_URL`
-
-For planned production maintenance, prefer the blocking runbook command in
-[docs/materialized-view-maintenance-runbook.md](../docs/materialized-view-maintenance-runbook.md).
-The deploy workflow uses that blocking command for manual
-`refresh_materialized_views=true` runs instead of treating webhook acceptance as
-completion.
+Deploys do not run Postgres materialized-view sync or refresh maintenance.
+Fitness read models that need incremental updates are maintained in ClickHouse,
+and the ClickHouse setup is responsible for keeping those analytics tables
+current. Do not add deploy-time Postgres view refreshes for normal releases.
 
 ### Postgres Statement Diagnostics
 

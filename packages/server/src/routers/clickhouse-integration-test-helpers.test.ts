@@ -20,11 +20,36 @@ vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
 });
 
 vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
-  runClickHouseMigrations: vi.fn().mockResolvedValue(0),
+  runClickHouseMigrations: vi.fn(
+    async (client: { command(options: { query: string }): Promise<unknown> }) => {
+      for (const viewName of [
+        "analytics.v_activity",
+        "analytics.v_activity_members",
+        "analytics.v_sleep",
+        "analytics.v_body_measurement",
+        "analytics.v_daily_metrics",
+        "analytics.derived_resting_heart_rate",
+        "analytics.provider_stats",
+        "analytics.deduped_sensor",
+        "analytics.activity_summary",
+      ]) {
+        await client.command({
+          query: `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
+REFRESH EVERY 1 MINUTE
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_nullable_key = 1
+AS
+SELECT 1 AS value`,
+        });
+      }
+      return 0;
+    },
+  ),
 }));
 
 describe("clickhouse integration test helpers", () => {
-  it("syncs raw mirrored tables and refreshes all analytics read models", async () => {
+  it("syncs raw mirrored tables and populates stored test read models", async () => {
     clickHouseMocks.command.mockReset().mockResolvedValue(undefined);
     clickHouseMocks.query.mockReset().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) });
     clickHouseMocks.close.mockReset().mockResolvedValue(undefined);
@@ -87,33 +112,21 @@ describe("clickhouse integration test helpers", () => {
           command.includes("FROM postgresql('db:5432', 'health', 'activity'"),
       ),
     ).toBe(true);
+    expect(commands.every((command) => !command.includes("SYSTEM REFRESH VIEW"))).toBe(true);
+    expect(commands.every((command) => !command.includes("SYSTEM WAIT VIEW"))).toBe(true);
     expect(
       commands.some(
         (command) =>
-          command.includes("SYSTEM REFRESH VIEW analytics_test_") &&
+          command.includes("TRUNCATE TABLE analytics_test_") &&
           command.endsWith(".v_daily_metrics"),
       ),
     ).toBe(true);
     expect(
       commands.some(
         (command) =>
-          command.includes("SYSTEM WAIT VIEW analytics_test_") &&
-          command.endsWith(".provider_stats"),
+          command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("SYSTEM REFRESH VIEW analytics_test_") &&
-          command.endsWith(".deduped_sensor"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("SYSTEM WAIT VIEW analytics_test_") &&
-          command.endsWith(".activity_summary"),
-      ),
-    ).toBe(true);
+    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(9);
   });
 });

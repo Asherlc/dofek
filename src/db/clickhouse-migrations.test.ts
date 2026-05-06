@@ -33,9 +33,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
-    expect(sql).toContain(
-      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'fixture', 'clickhouse')",
-    );
+    expect(sql).not.toContain("ENGINE = PostgreSQL");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor/g),

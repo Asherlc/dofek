@@ -274,7 +274,18 @@ device_priority_match AS (
 ),
 ranked AS (
   SELECT
-    active_activity.*,
+    active_activity.id AS id,
+    active_activity.provider_id AS provider_id,
+    active_activity.user_id AS user_id,
+    active_activity.external_id AS external_id,
+    active_activity.activity_type AS activity_type,
+    active_activity.started_at AS started_at,
+    active_activity.ended_at AS ended_at,
+    active_activity.source_name AS source_name,
+    active_activity.name AS name,
+    active_activity.notes AS notes,
+    active_activity.timezone AS timezone,
+    active_activity.raw AS raw,
     coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
   FROM active_activity
   LEFT JOIN active_provider_priority
@@ -438,7 +449,19 @@ device_priority_match AS (
 ),
 ranked AS (
   SELECT
-    active_sleep.*,
+    active_sleep.id AS id,
+    active_sleep.provider_id AS provider_id,
+    active_sleep.user_id AS user_id,
+    active_sleep.started_at AS started_at,
+    active_sleep.ended_at AS ended_at,
+    active_sleep.duration_minutes AS duration_minutes,
+    active_sleep.deep_minutes AS deep_minutes,
+    active_sleep.rem_minutes AS rem_minutes,
+    active_sleep.light_minutes AS light_minutes,
+    active_sleep.awake_minutes AS awake_minutes,
+    active_sleep.efficiency_pct AS efficiency_pct,
+    active_sleep.sleep_type AS sleep_type,
+    active_sleep.source_name AS source_name,
     coalesce(device_priority_match.sleep_priority, active_provider_priority.sleep_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority,
     multiIf(
       active_sleep.sleep_type IN ('nap', 'late_nap', 'rest'), true,
@@ -497,7 +520,21 @@ best AS (
   FROM (
     SELECT
       final_groups.group_id AS group_id,
-      ranked.*,
+      ranked.id AS id,
+      ranked.provider_id AS provider_id,
+      ranked.user_id AS user_id,
+      ranked.started_at AS started_at,
+      ranked.ended_at AS ended_at,
+      ranked.duration_minutes AS duration_minutes,
+      ranked.deep_minutes AS deep_minutes,
+      ranked.rem_minutes AS rem_minutes,
+      ranked.light_minutes AS light_minutes,
+      ranked.awake_minutes AS awake_minutes,
+      ranked.efficiency_pct AS efficiency_pct,
+      ranked.sleep_type AS sleep_type,
+      ranked.source_name AS source_name,
+      ranked.priority AS priority,
+      ranked.is_nap AS is_nap,
       row_number() OVER (
         PARTITION BY final_groups.group_id
         ORDER BY ranked.priority ASC, toString(ranked.id) ASC
@@ -598,7 +635,18 @@ device_priority_match AS (
 ),
 ranked AS (
   SELECT
-    active_body.*,
+    active_body.id AS id,
+    active_body.provider_id AS provider_id,
+    active_body.user_id AS user_id,
+    active_body.recorded_at AS recorded_at,
+    active_body.weight_kg AS weight_kg,
+    active_body.body_fat_pct AS body_fat_pct,
+    active_body.muscle_mass_kg AS muscle_mass_kg,
+    active_body.bmi AS bmi,
+    active_body.systolic_bp AS systolic_bp,
+    active_body.diastolic_bp AS diastolic_bp,
+    active_body.temperature_c AS temperature_c,
+    active_body.height_cm AS height_cm,
     coalesce(device_priority_match.body_priority, active_provider_priority.body_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority
   FROM active_body
   LEFT JOIN active_provider_priority
@@ -633,7 +681,11 @@ best AS (
   FROM (
     SELECT
       final_groups.group_id AS group_id,
-      ranked.*,
+      ranked.id AS id,
+      ranked.provider_id AS provider_id,
+      ranked.user_id AS user_id,
+      ranked.recorded_at AS recorded_at,
+      ranked.priority AS priority,
       row_number() OVER (
         PARTITION BY final_groups.group_id
         ORDER BY ranked.priority ASC, toString(ranked.id) ASC
@@ -705,7 +757,25 @@ device_priority_match AS (
 ),
 ranked AS (
   SELECT
-    active_daily_metrics.*,
+    active_daily_metrics.date AS date,
+    active_daily_metrics.provider_id AS provider_id,
+    active_daily_metrics.user_id AS user_id,
+    active_daily_metrics.hrv AS hrv,
+    active_daily_metrics.spo2_avg AS spo2_avg,
+    active_daily_metrics.respiratory_rate_avg AS respiratory_rate_avg,
+    active_daily_metrics.steps AS steps,
+    active_daily_metrics.active_energy_kcal AS active_energy_kcal,
+    active_daily_metrics.basal_energy_kcal AS basal_energy_kcal,
+    active_daily_metrics.distance_km AS distance_km,
+    active_daily_metrics.flights_climbed AS flights_climbed,
+    active_daily_metrics.exercise_minutes AS exercise_minutes,
+    active_daily_metrics.walking_speed AS walking_speed,
+    active_daily_metrics.walking_step_length AS walking_step_length,
+    active_daily_metrics.walking_double_support_pct AS walking_double_support_pct,
+    active_daily_metrics.walking_asymmetry_pct AS walking_asymmetry_pct,
+    active_daily_metrics.walking_steadiness AS walking_steadiness,
+    active_daily_metrics.stand_hours AS stand_hours,
+    active_daily_metrics.skin_temp_c AS skin_temp_c,
     coalesce(device_priority_match.recovery_priority, active_provider_priority.recovery_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS recovery_priority,
     coalesce(device_priority_match.daily_activity_priority, active_provider_priority.daily_activity_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS activity_priority
   FROM active_daily_metrics
@@ -953,11 +1023,7 @@ export function buildClickHouseBootstrapStatements(postgresConnectionString: str
 function buildClickHouseBootstrapStatementsForNativeMetricStream(
   postgresConnectionString: string,
 ): string[] {
-  const postgres = parsePostgresConnectionForClickHouse(postgresConnectionString);
-  const hostAndPort = clickHouseStringLiteral(postgres.hostAndPort);
-  const database = clickHouseStringLiteral(postgres.database);
-  const user = clickHouseStringLiteral(postgres.user);
-  const password = clickHouseStringLiteral(postgres.password);
+  void postgresConnectionString;
   const metricStreamStatements = [
     "CREATE DATABASE IF NOT EXISTS postgres_fitness",
     `CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream (
@@ -979,8 +1045,6 @@ SETTINGS allow_nullable_key = 1`,
   return [
     "CREATE DATABASE IF NOT EXISTS analytics",
     ...metricStreamStatements,
-    `CREATE DATABASE IF NOT EXISTS postgres_fitness_live
-ENGINE = PostgreSQL(${hostAndPort}, ${database}, ${user}, ${password}, 'clickhouse')`,
     ...buildAnalyticsFitnessReadModelStatements(),
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor
 REFRESH EVERY 1 MINUTE
