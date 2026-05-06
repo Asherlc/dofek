@@ -125,8 +125,19 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
     expect(sql).toContain("REFRESH EVERY 1 MINUTE");
     expect(sql).toContain("FROM postgres_fitness.metric_stream");
-    expect(sql).toContain("FROM postgres_fitness_live.v_activity");
-    expect(sql).toContain("FROM postgres_fitness_live.v_activity_members");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
+    );
+    expect(sql).toContain("FROM analytics.v_activity");
+    expect(sql).toContain("FROM analytics.v_activity_members");
+    expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
+    expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",

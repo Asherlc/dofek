@@ -223,6 +223,707 @@ ${replacingMergeTreeTable("(id)")}`,
   ];
 }
 
+function refreshableMergeTreeViewHeader(
+  viewName: string,
+  orderBy: string,
+  refreshOffset = "",
+): string {
+  const offsetClause = refreshOffset ? ` OFFSET ${refreshOffset}` : "";
+  return `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
+REFRESH EVERY 1 MINUTE${offsetClause}
+ENGINE = MergeTree
+ORDER BY ${orderBy}
+SETTINGS allow_nullable_key = 1
+AS`;
+}
+
+function buildActivityReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader("analytics.v_activity", "(user_id, started_at, id)")}
+WITH
+active_activity AS (
+  SELECT *
+  FROM postgres_fitness.activity FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_provider_priority AS (
+  SELECT *
+  FROM postgres_fitness.provider_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_device_priority AS (
+  SELECT *
+  FROM postgres_fitness.device_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+device_priority_match AS (
+  SELECT activity_id, priority
+  FROM (
+    SELECT
+      active_activity.id AS activity_id,
+      active_device_priority.priority AS priority,
+      row_number() OVER (
+        PARTITION BY active_activity.id
+        ORDER BY length(active_device_priority.source_name_pattern) DESC
+      ) AS row_number
+    FROM active_activity
+    INNER JOIN active_device_priority
+      ON active_device_priority.provider_id = active_activity.provider_id
+     AND active_activity.source_name LIKE active_device_priority.source_name_pattern
+  )
+  WHERE row_number = 1
+),
+ranked AS (
+  SELECT
+    active_activity.*,
+    coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
+  FROM active_activity
+  LEFT JOIN active_provider_priority
+    ON active_provider_priority.provider_id = active_activity.provider_id
+  LEFT JOIN device_priority_match
+    ON device_priority_match.activity_id = active_activity.id
+),
+pairs AS (
+  SELECT
+    left_activity.id AS id1,
+    right_activity.id AS id2
+  FROM ranked AS left_activity
+  INNER JOIN ranked AS right_activity
+    ON left_activity.user_id = right_activity.user_id
+   AND toString(left_activity.id) < toString(right_activity.id)
+   AND dateDiff(
+      'second',
+      greatest(left_activity.started_at, right_activity.started_at),
+      least(
+        coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 1 HOUR),
+        coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 1 HOUR)
+      )
+    ) / nullIf(dateDiff(
+      'second',
+      least(left_activity.started_at, right_activity.started_at),
+      greatest(
+        coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 1 HOUR),
+        coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 1 HOUR)
+      )
+    ), 0) > 0.8
+),
+final_groups AS (
+  SELECT activity_id, min(group_id) AS group_id
+  FROM (
+    SELECT id AS activity_id, toString(id) AS group_id
+    FROM ranked
+    UNION ALL
+    SELECT id1 AS activity_id, least(toString(id1), toString(id2)) AS group_id
+    FROM pairs
+    UNION ALL
+    SELECT id2 AS activity_id, least(toString(id1), toString(id2)) AS group_id
+    FROM pairs
+  )
+  GROUP BY activity_id
+),
+best AS (
+  SELECT *
+  FROM (
+    SELECT
+      final_groups.group_id AS group_id,
+      ranked.id AS canonical_id,
+      ranked.provider_id AS provider_id,
+      ranked.user_id AS user_id,
+      ranked.activity_type AS activity_type,
+      ranked.started_at AS started_at,
+      ranked.ended_at AS ended_at,
+      ranked.source_name AS source_name,
+      ranked.priority AS priority,
+      row_number() OVER (
+        PARTITION BY final_groups.group_id
+        ORDER BY ranked.priority ASC, toString(ranked.id) ASC
+      ) AS row_number
+    FROM final_groups
+    INNER JOIN ranked
+      ON ranked.id = final_groups.activity_id
+  )
+  WHERE row_number = 1
+),
+merged AS (
+  SELECT
+    best.group_id AS group_id,
+    best.canonical_id AS id,
+    any(best.provider_id) AS provider_id,
+    any(best.user_id) AS user_id,
+    any(best.activity_type) AS activity_type,
+    any(best.started_at) AS started_at,
+    any(best.ended_at) AS ended_at,
+    any(best.source_name) AS source_name,
+    argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
+    argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
+    argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
+    argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
+    arraySort(groupUniqArray(ranked.provider_id)) AS source_providers,
+    groupArrayIf(map('providerId', ranked.provider_id, 'externalId', ranked.external_id), ranked.external_id IS NOT NULL AND ranked.external_id != '') AS source_external_ids,
+    groupArray(ranked.id) AS member_activity_ids
+  FROM best
+  INNER JOIN final_groups
+    ON final_groups.group_id = best.group_id
+  INNER JOIN ranked
+    ON ranked.id = final_groups.activity_id
+  GROUP BY best.group_id, best.canonical_id
+)
+SELECT
+  id,
+  provider_id,
+  user_id,
+  id AS primary_activity_id,
+  activity_type,
+  started_at,
+  ended_at,
+  source_name,
+  name,
+  notes,
+  timezone,
+  raw,
+  source_providers,
+  source_external_ids,
+  member_activity_ids
+FROM merged`;
+}
+
+function buildActivityMembersReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader(
+    "analytics.v_activity_members",
+    "(user_id, started_at, activity_id, member_activity_id)",
+  )}
+SELECT
+  id AS activity_id,
+  user_id,
+  started_at,
+  ended_at,
+  arrayJoin(member_activity_ids) AS member_activity_id
+FROM analytics.v_activity`;
+}
+
+function buildSleepReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader("analytics.v_sleep", "(user_id, started_at, id)")}
+WITH
+active_sleep AS (
+  SELECT *
+  FROM postgres_fitness.sleep_session FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_provider_priority AS (
+  SELECT *
+  FROM postgres_fitness.provider_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_device_priority AS (
+  SELECT *
+  FROM postgres_fitness.device_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+device_priority_match AS (
+  SELECT sleep_id, sleep_priority, priority
+  FROM (
+    SELECT
+      active_sleep.id AS sleep_id,
+      active_device_priority.sleep_priority AS sleep_priority,
+      active_device_priority.priority AS priority,
+      row_number() OVER (
+        PARTITION BY active_sleep.id
+        ORDER BY length(active_device_priority.source_name_pattern) DESC
+      ) AS row_number
+    FROM active_sleep
+    INNER JOIN active_device_priority
+      ON active_device_priority.provider_id = active_sleep.provider_id
+     AND active_sleep.source_name LIKE active_device_priority.source_name_pattern
+  )
+  WHERE row_number = 1
+),
+ranked AS (
+  SELECT
+    active_sleep.*,
+    coalesce(device_priority_match.sleep_priority, active_provider_priority.sleep_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority,
+    multiIf(
+      active_sleep.sleep_type IN ('nap', 'late_nap', 'rest'), true,
+      active_sleep.sleep_type IN ('sleep', 'long_sleep', 'main'), false,
+      active_sleep.sleep_type = 'not_main', coalesce(active_sleep.duration_minutes < 120, true),
+      active_sleep.duration_minutes IS NOT NULL, active_sleep.duration_minutes < 120,
+      false
+    ) AS is_nap
+  FROM active_sleep
+  LEFT JOIN active_provider_priority
+    ON active_provider_priority.provider_id = active_sleep.provider_id
+  LEFT JOIN device_priority_match
+    ON device_priority_match.sleep_id = active_sleep.id
+),
+pairs AS (
+  SELECT
+    left_sleep.id AS id1,
+    right_sleep.id AS id2
+  FROM ranked AS left_sleep
+  INNER JOIN ranked AS right_sleep
+    ON left_sleep.user_id = right_sleep.user_id
+   AND left_sleep.is_nap = right_sleep.is_nap
+   AND toString(left_sleep.id) < toString(right_sleep.id)
+   AND dateDiff(
+      'second',
+      greatest(left_sleep.started_at, right_sleep.started_at),
+      least(
+        coalesce(left_sleep.ended_at, left_sleep.started_at + INTERVAL 8 HOUR),
+        coalesce(right_sleep.ended_at, right_sleep.started_at + INTERVAL 8 HOUR)
+      )
+    ) / nullIf(dateDiff(
+      'second',
+      least(left_sleep.started_at, right_sleep.started_at),
+      greatest(
+        coalesce(left_sleep.ended_at, left_sleep.started_at + INTERVAL 8 HOUR),
+        coalesce(right_sleep.ended_at, right_sleep.started_at + INTERVAL 8 HOUR)
+      )
+    ), 0) > 0.8
+),
+final_groups AS (
+  SELECT sleep_id, min(group_id) AS group_id
+  FROM (
+    SELECT id AS sleep_id, toString(id) AS group_id
+    FROM ranked
+    UNION ALL
+    SELECT id1 AS sleep_id, least(toString(id1), toString(id2)) AS group_id
+    FROM pairs
+    UNION ALL
+    SELECT id2 AS sleep_id, least(toString(id1), toString(id2)) AS group_id
+    FROM pairs
+  )
+  GROUP BY sleep_id
+),
+best AS (
+  SELECT *
+  FROM (
+    SELECT
+      final_groups.group_id AS group_id,
+      ranked.*,
+      row_number() OVER (
+        PARTITION BY final_groups.group_id
+        ORDER BY ranked.priority ASC, toString(ranked.id) ASC
+      ) AS row_number
+    FROM final_groups
+    INNER JOIN ranked
+      ON ranked.id = final_groups.sleep_id
+  )
+  WHERE row_number = 1
+)
+SELECT
+  best.id AS id,
+  best.provider_id AS provider_id,
+  best.user_id AS user_id,
+  best.started_at AS started_at,
+  best.ended_at AS ended_at,
+  best.duration_minutes AS duration_minutes,
+  best.deep_minutes AS deep_minutes,
+  best.rem_minutes AS rem_minutes,
+  best.light_minutes AS light_minutes,
+  best.awake_minutes AS awake_minutes,
+  coalesce(
+    best.efficiency_pct,
+    multiIf(
+      best.provider_id = 'apple_health'
+        AND best.duration_minutes > 0
+        AND (best.deep_minutes IS NOT NULL OR best.rem_minutes IS NOT NULL OR best.light_minutes IS NOT NULL),
+      round((coalesce(best.deep_minutes, 0) + coalesce(best.rem_minutes, 0) + coalesce(best.light_minutes, 0)) / best.duration_minutes * 100, 1),
+      best.provider_id IN ('eight-sleep', 'polar') AND best.duration_minutes > 0 AND best.awake_minutes IS NOT NULL,
+      round(best.duration_minutes / (best.duration_minutes + best.awake_minutes) * 100, 1),
+      NULL
+    )
+  ) AS efficiency_pct,
+  best.sleep_type AS sleep_type,
+  best.is_nap AS is_nap,
+  best.source_name AS source_name,
+  arraySort(groupUniqArray(ranked.provider_id)) AS source_providers
+FROM best
+INNER JOIN final_groups
+  ON final_groups.group_id = best.group_id
+INNER JOIN ranked
+  ON ranked.id = final_groups.sleep_id
+GROUP BY
+  best.id,
+  best.provider_id,
+  best.user_id,
+  best.started_at,
+  best.ended_at,
+  best.duration_minutes,
+  best.deep_minutes,
+  best.rem_minutes,
+  best.light_minutes,
+  best.awake_minutes,
+  best.efficiency_pct,
+  best.sleep_type,
+  best.is_nap,
+  best.source_name`;
+}
+
+function buildBodyMeasurementReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader(
+    "analytics.v_body_measurement",
+    "(user_id, recorded_at, id)",
+  )}
+WITH
+active_body AS (
+  SELECT *
+  FROM postgres_fitness.body_measurement FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_provider_priority AS (
+  SELECT *
+  FROM postgres_fitness.provider_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_device_priority AS (
+  SELECT *
+  FROM postgres_fitness.device_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+device_priority_match AS (
+  SELECT measurement_id, body_priority, priority
+  FROM (
+    SELECT
+      active_body.id AS measurement_id,
+      active_device_priority.body_priority AS body_priority,
+      active_device_priority.priority AS priority,
+      row_number() OVER (
+        PARTITION BY active_body.id
+        ORDER BY length(active_device_priority.source_name_pattern) DESC
+      ) AS row_number
+    FROM active_body
+    INNER JOIN active_device_priority
+      ON active_device_priority.provider_id = active_body.provider_id
+     AND active_body.source_name LIKE active_device_priority.source_name_pattern
+  )
+  WHERE row_number = 1
+),
+ranked AS (
+  SELECT
+    active_body.*,
+    coalesce(device_priority_match.body_priority, active_provider_priority.body_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority
+  FROM active_body
+  LEFT JOIN active_provider_priority
+    ON active_provider_priority.provider_id = active_body.provider_id
+  LEFT JOIN device_priority_match
+    ON device_priority_match.measurement_id = active_body.id
+),
+pairs AS (
+  SELECT left_body.id AS id1, right_body.id AS id2
+  FROM ranked AS left_body
+  INNER JOIN ranked AS right_body
+    ON left_body.user_id = right_body.user_id
+   AND toString(left_body.id) < toString(right_body.id)
+   AND abs(dateDiff('second', left_body.recorded_at, right_body.recorded_at)) < 300
+),
+final_groups AS (
+  SELECT measurement_id, min(group_id) AS group_id
+  FROM (
+    SELECT id AS measurement_id, toString(id) AS group_id
+    FROM ranked
+    UNION ALL
+    SELECT id1 AS measurement_id, least(toString(id1), toString(id2)) AS group_id
+    FROM pairs
+    UNION ALL
+    SELECT id2 AS measurement_id, least(toString(id1), toString(id2)) AS group_id
+    FROM pairs
+  )
+  GROUP BY measurement_id
+),
+best AS (
+  SELECT *
+  FROM (
+    SELECT
+      final_groups.group_id AS group_id,
+      ranked.*,
+      row_number() OVER (
+        PARTITION BY final_groups.group_id
+        ORDER BY ranked.priority ASC, toString(ranked.id) ASC
+      ) AS row_number
+    FROM final_groups
+    INNER JOIN ranked
+      ON ranked.id = final_groups.measurement_id
+  )
+  WHERE row_number = 1
+)
+SELECT
+  best.id AS id,
+  best.provider_id AS provider_id,
+  best.user_id AS user_id,
+  best.recorded_at AS recorded_at,
+  argMinIf(ranked.weight_kg, ranked.priority, ranked.weight_kg IS NOT NULL) AS weight_kg,
+  argMinIf(ranked.body_fat_pct, ranked.priority, ranked.body_fat_pct IS NOT NULL) AS body_fat_pct,
+  argMinIf(ranked.muscle_mass_kg, ranked.priority, ranked.muscle_mass_kg IS NOT NULL) AS muscle_mass_kg,
+  argMinIf(ranked.bmi, ranked.priority, ranked.bmi IS NOT NULL) AS bmi,
+  argMinIf(ranked.systolic_bp, ranked.priority, ranked.systolic_bp IS NOT NULL) AS systolic_bp,
+  argMinIf(ranked.diastolic_bp, ranked.priority, ranked.diastolic_bp IS NOT NULL) AS diastolic_bp,
+  argMinIf(ranked.temperature_c, ranked.priority, ranked.temperature_c IS NOT NULL) AS temperature_c,
+  argMinIf(ranked.height_cm, ranked.priority, ranked.height_cm IS NOT NULL) AS height_cm,
+  arraySort(groupUniqArray(ranked.provider_id)) AS source_providers
+FROM best
+INNER JOIN final_groups
+  ON final_groups.group_id = best.group_id
+INNER JOIN ranked
+  ON ranked.id = final_groups.measurement_id
+GROUP BY best.id, best.provider_id, best.user_id, best.recorded_at`;
+}
+
+function buildDailyMetricsReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader("analytics.v_daily_metrics", "(user_id, date)")}
+WITH
+active_daily_metrics AS (
+  SELECT *
+  FROM postgres_fitness.daily_metrics FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_provider_priority AS (
+  SELECT *
+  FROM postgres_fitness.provider_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_device_priority AS (
+  SELECT *
+  FROM postgres_fitness.device_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+device_priority_match AS (
+  SELECT daily_metrics_id, recovery_priority, daily_activity_priority, priority
+  FROM (
+    SELECT
+      active_daily_metrics.id AS daily_metrics_id,
+      active_device_priority.recovery_priority AS recovery_priority,
+      active_device_priority.daily_activity_priority AS daily_activity_priority,
+      active_device_priority.priority AS priority,
+      row_number() OVER (
+        PARTITION BY active_daily_metrics.id
+        ORDER BY length(active_device_priority.source_name_pattern) DESC
+      ) AS row_number
+    FROM active_daily_metrics
+    INNER JOIN active_device_priority
+      ON active_device_priority.provider_id = active_daily_metrics.provider_id
+     AND active_daily_metrics.source_name LIKE active_device_priority.source_name_pattern
+  )
+  WHERE row_number = 1
+),
+ranked AS (
+  SELECT
+    active_daily_metrics.*,
+    coalesce(device_priority_match.recovery_priority, active_provider_priority.recovery_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS recovery_priority,
+    coalesce(device_priority_match.daily_activity_priority, active_provider_priority.daily_activity_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS activity_priority
+  FROM active_daily_metrics
+  LEFT JOIN active_provider_priority
+    ON active_provider_priority.provider_id = active_daily_metrics.provider_id
+  LEFT JOIN device_priority_match
+    ON device_priority_match.daily_metrics_id = active_daily_metrics.id
+)
+SELECT
+  date,
+  user_id,
+  argMinIf(hrv, recovery_priority, hrv IS NOT NULL) AS hrv,
+  argMinIf(spo2_avg, recovery_priority, spo2_avg IS NOT NULL) AS spo2_avg,
+  argMinIf(respiratory_rate_avg, recovery_priority, respiratory_rate_avg IS NOT NULL) AS respiratory_rate_avg,
+  argMinIf(skin_temp_c, recovery_priority, skin_temp_c IS NOT NULL) AS skin_temp_c,
+  argMinIf(steps, activity_priority, steps IS NOT NULL) AS steps,
+  argMinIf(active_energy_kcal, activity_priority, active_energy_kcal IS NOT NULL) AS active_energy_kcal,
+  argMinIf(basal_energy_kcal, activity_priority, basal_energy_kcal IS NOT NULL) AS basal_energy_kcal,
+  argMinIf(distance_km, activity_priority, distance_km IS NOT NULL) AS distance_km,
+  argMinIf(flights_climbed, activity_priority, flights_climbed IS NOT NULL) AS flights_climbed,
+  argMinIf(exercise_minutes, activity_priority, exercise_minutes IS NOT NULL) AS exercise_minutes,
+  argMinIf(stand_hours, activity_priority, stand_hours IS NOT NULL) AS stand_hours,
+  argMinIf(walking_speed, activity_priority, walking_speed IS NOT NULL) AS walking_speed,
+  argMinIf(walking_step_length, activity_priority, walking_step_length IS NOT NULL) AS walking_step_length,
+  argMinIf(walking_double_support_pct, activity_priority, walking_double_support_pct IS NOT NULL) AS walking_double_support_pct,
+  argMinIf(walking_asymmetry_pct, activity_priority, walking_asymmetry_pct IS NOT NULL) AS walking_asymmetry_pct,
+  argMinIf(walking_steadiness, activity_priority, walking_steadiness IS NOT NULL) AS walking_steadiness,
+  arraySort(groupUniqArray(provider_id)) AS source_providers
+FROM ranked
+GROUP BY date, user_id`;
+}
+
+function buildDerivedRestingHeartRateReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader(
+    "analytics.derived_resting_heart_rate",
+    "(user_id, date)",
+  )}
+WITH
+sleep_windows AS (
+  SELECT
+    user_id,
+    toDate(ended_at) AS date,
+    started_at,
+    ended_at
+  FROM analytics.v_sleep
+  WHERE is_nap = false
+    AND ended_at IS NOT NULL
+),
+raw_samples AS (
+  SELECT
+    sleep_windows.user_id AS user_id,
+    sleep_windows.date AS date,
+    metric_stream.provider_id AS provider_id,
+    metric_stream.scalar AS heart_rate
+  FROM sleep_windows
+  INNER JOIN postgres_fitness.metric_stream AS metric_stream
+    ON metric_stream.user_id = sleep_windows.user_id
+   AND metric_stream.channel = 'heart_rate'
+   AND metric_stream.recorded_at >= sleep_windows.started_at
+   AND metric_stream.recorded_at <= sleep_windows.ended_at
+   AND metric_stream.scalar IS NOT NULL
+),
+provider_counts AS (
+  SELECT user_id, date, provider_id, count() AS sample_count
+  FROM raw_samples
+  GROUP BY user_id, date, provider_id
+),
+best_provider AS (
+  SELECT user_id, date, provider_id
+  FROM (
+    SELECT
+      user_id,
+      date,
+      provider_id,
+      row_number() OVER (
+        PARTITION BY user_id, date
+        ORDER BY sample_count DESC, provider_id ASC
+      ) AS row_number
+    FROM provider_counts
+  )
+  WHERE row_number = 1
+),
+samples AS (
+  SELECT
+    raw_samples.user_id AS user_id,
+    raw_samples.date AS date,
+    raw_samples.heart_rate AS heart_rate,
+    row_number() OVER (
+      PARTITION BY raw_samples.user_id, raw_samples.date
+      ORDER BY raw_samples.heart_rate ASC
+    ) AS ascending_rank,
+    count() OVER (PARTITION BY raw_samples.user_id, raw_samples.date) AS sample_count
+  FROM raw_samples
+  INNER JOIN best_provider
+    ON best_provider.user_id = raw_samples.user_id
+   AND best_provider.date = raw_samples.date
+   AND best_provider.provider_id = raw_samples.provider_id
+)
+SELECT
+  user_id,
+  date,
+  CAST(round(avg(heart_rate)), 'Int32') AS resting_hr
+FROM samples
+WHERE sample_count >= 30
+  AND ascending_rank <= greatest(ceil(sample_count * 0.10), 1)
+GROUP BY user_id, date`;
+}
+
+function buildProviderStatsReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader("analytics.provider_stats", "(user_id, provider_id)")}
+WITH
+providers AS (
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.activity FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.daily_metrics FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.sleep_session FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.body_measurement FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.metric_stream
+),
+activity_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.activity FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+daily_metric_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.daily_metrics FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+sleep_session_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.sleep_session FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+body_measurement_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.body_measurement FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+metric_stream_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.metric_stream
+  GROUP BY user_id, provider_id
+)
+SELECT
+  providers.user_id AS user_id,
+  providers.provider_id AS provider_id,
+  coalesce(activity_counts.count, 0) AS activities,
+  coalesce(daily_metric_counts.count, 0) AS daily_metrics,
+  coalesce(sleep_session_counts.count, 0) AS sleep_sessions,
+  coalesce(body_measurement_counts.count, 0) AS body_measurements,
+  CAST(0, 'UInt64') AS food_entries,
+  CAST(0, 'UInt64') AS health_events,
+  coalesce(metric_stream_counts.count, 0) AS metric_stream,
+  CAST(0, 'UInt64') AS nutrition_daily,
+  CAST(0, 'UInt64') AS lab_panels,
+  CAST(0, 'UInt64') AS lab_results,
+  CAST(0, 'UInt64') AS journal_entries
+FROM providers
+LEFT JOIN activity_counts
+  ON activity_counts.user_id = providers.user_id
+ AND activity_counts.provider_id = providers.provider_id
+LEFT JOIN daily_metric_counts
+  ON daily_metric_counts.user_id = providers.user_id
+ AND daily_metric_counts.provider_id = providers.provider_id
+LEFT JOIN sleep_session_counts
+  ON sleep_session_counts.user_id = providers.user_id
+ AND sleep_session_counts.provider_id = providers.provider_id
+LEFT JOIN body_measurement_counts
+  ON body_measurement_counts.user_id = providers.user_id
+ AND body_measurement_counts.provider_id = providers.provider_id
+LEFT JOIN metric_stream_counts
+  ON metric_stream_counts.user_id = providers.user_id
+ AND metric_stream_counts.provider_id = providers.provider_id`;
+}
+
+function buildAnalyticsFitnessReadModelStatements(): string[] {
+  return [
+    buildActivityReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.v_activity",
+    "SYSTEM WAIT VIEW analytics.v_activity",
+    buildActivityMembersReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.v_activity_members",
+    "SYSTEM WAIT VIEW analytics.v_activity_members",
+    buildSleepReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.v_sleep",
+    "SYSTEM WAIT VIEW analytics.v_sleep",
+    buildBodyMeasurementReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.v_body_measurement",
+    "SYSTEM WAIT VIEW analytics.v_body_measurement",
+    buildDailyMetricsReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.v_daily_metrics",
+    "SYSTEM WAIT VIEW analytics.v_daily_metrics",
+    buildDerivedRestingHeartRateReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.derived_resting_heart_rate",
+    "SYSTEM WAIT VIEW analytics.derived_resting_heart_rate",
+    buildProviderStatsReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.provider_stats",
+    "SYSTEM WAIT VIEW analytics.provider_stats",
+  ];
+}
+
 export function parsePostgresConnectionForClickHouse(
   connectionString: string,
 ): ClickHousePostgresConnection {
@@ -280,6 +981,7 @@ SETTINGS allow_nullable_key = 1`,
     ...metricStreamStatements,
     `CREATE DATABASE IF NOT EXISTS postgres_fitness_live
 ENGINE = PostgreSQL(${hostAndPort}, ${database}, ${user}, ${password}, 'clickhouse')`,
+    ...buildAnalyticsFitnessReadModelStatements(),
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor
 REFRESH EVERY 1 MINUTE
 ENGINE = MergeTree
@@ -294,7 +996,7 @@ activity_members AS (
     started_at,
     ended_at,
     member_activity_id
-  FROM postgres_fitness_live.v_activity_members
+  FROM analytics.v_activity_members
 ),
 linked_best_source AS (
   SELECT
@@ -348,7 +1050,7 @@ fallback_windows AS (
     activity.user_id AS user_id,
     activity.started_at AS started_at,
     coalesce(activity.ended_at, linked_sample_bounds.last_linked_sample_at) AS fallback_ended_at
-  FROM postgres_fitness_live.v_activity AS activity
+  FROM analytics.v_activity AS activity
   LEFT JOIN linked_sample_bounds
     ON linked_sample_bounds.activity_id = activity.id
 ),
@@ -484,7 +1186,7 @@ activity_bounds AS (
     name,
     started_at,
     ended_at
-  FROM postgres_fitness_live.v_activity
+  FROM analytics.v_activity
 ),
 altitude_deltas AS (
   SELECT
