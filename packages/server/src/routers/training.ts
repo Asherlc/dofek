@@ -18,8 +18,8 @@ import {
   pickStrengthSplit,
   shouldDoStrengthToday,
   shouldPreferRest,
-  TrainingRepository,
-} from "../repositories/training-repository.ts";
+} from "../repositories/training-recommendation.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(

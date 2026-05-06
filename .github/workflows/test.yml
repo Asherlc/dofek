@@ -601,7 +601,7 @@ jobs:
             DIFF_RANGE="HEAD~1...HEAD"
           fi
 
-          CANDIDATES=$(git diff -M -C --diff-filter=M --name-only $DIFF_RANGE \
+          CANDIDATES=$(git diff -M -C --diff-filter=AM --name-only $DIFF_RANGE \
             | { grep '\.ts$' || true; } \
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
@@ -616,7 +616,7 @@ jobs:
             | { grep -v '\.storybook/' || true; } \
             | { grep -v '\.stories\.ts$' || true; })
 
-          ALL_FILES=()
+          FILE_WEIGHTS=()
           for f in $CANDIDATES; do
             [ ! -f "$f" ] && continue
 
@@ -629,30 +629,63 @@ jobs:
               continue
             fi
 
-            ALL_FILES+=("$f")
+            WEIGHT=$(wc -l < "$f" | tr -d ' ')
+            FILE_WEIGHTS+=("$WEIGHT $f")
           done
 
-          COUNT=${#ALL_FILES[@]}
+          COUNT=${#FILE_WEIGHTS[@]}
           if [ "$COUNT" -eq 0 ]; then
             echo "shards=[]" >> "$GITHUB_OUTPUT"
             echo "No files to mutate"
             exit 0
           fi
 
-          SHARD_SIZE=5
-          SHARDS="["
-          for (( i=0; i<COUNT; i+=SHARD_SIZE )); do
-            CHUNK=""
-            for (( j=i; j<i+SHARD_SIZE && j<COUNT; j++ )); do
-              CHUNK="${CHUNK:+$CHUNK,}${ALL_FILES[$j]}"
+          MAX_SHARDS=8
+          if [ "$COUNT" -lt "$MAX_SHARDS" ]; then
+            SHARD_COUNT="$COUNT"
+          else
+            SHARD_COUNT="$MAX_SHARDS"
+          fi
+
+          SHARD_FILES=()
+          SHARD_WEIGHTS=()
+          for (( i=0; i<SHARD_COUNT; i++ )); do
+            SHARD_FILES[$i]=""
+            SHARD_WEIGHTS[$i]=0
+          done
+
+          SORTED_FILES=$(printf '%s\n' "${FILE_WEIGHTS[@]}" | sort -rn)
+          while IFS= read -r entry; do
+            [ -z "$entry" ] && continue
+            WEIGHT="${entry%% *}"
+            FILE="${entry#* }"
+            TARGET=0
+            for (( i=1; i<SHARD_COUNT; i++ )); do
+              if [ "${SHARD_WEIGHTS[$i]}" -lt "${SHARD_WEIGHTS[$TARGET]}" ]; then
+                TARGET="$i"
+              fi
             done
-            [ "$i" -gt 0 ] && SHARDS="$SHARDS,"
-            SHARDS="$SHARDS\"$CHUNK\""
+            if [ -z "${SHARD_FILES[$TARGET]}" ]; then
+              SHARD_FILES[$TARGET]="$FILE"
+            else
+              SHARD_FILES[$TARGET]="${SHARD_FILES[$TARGET]},$FILE"
+            fi
+            SHARD_WEIGHTS[$TARGET]=$((SHARD_WEIGHTS[$TARGET] + WEIGHT))
+          done <<< "$SORTED_FILES"
+
+          SHARDS="["
+          WRITTEN=0
+          for (( i=0; i<SHARD_COUNT; i++ )); do
+            [ -z "${SHARD_FILES[$i]}" ] && continue
+            [ "$WRITTEN" -gt 0 ] && SHARDS="$SHARDS,"
+            SHARDS="$SHARDS\"${SHARD_FILES[$i]}\""
+            echo "Shard $i (${SHARD_WEIGHTS[$i]} lines): ${SHARD_FILES[$i]}"
+            WRITTEN=$((WRITTEN + 1))
           done
           SHARDS="$SHARDS]"
 
           echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
-          echo "Split $COUNT files into shards: $SHARDS"
+          echo "Split $COUNT files into $WRITTEN weighted shards: $SHARDS"
 
   mutation:
     name: Stryker (${{ strategy.job-index }})
