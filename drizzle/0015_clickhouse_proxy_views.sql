@@ -172,6 +172,31 @@ FROM fitness.v_sleep;
 
 --> statement-breakpoint
 
+DROP VIEW IF EXISTS clickhouse.v_daily_metrics;
+
+--> statement-breakpoint
+
+DO $$
+DECLARE
+  relation_kind "char";
+BEGIN
+  SELECT c.relkind
+  INTO relation_kind
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'fitness'
+    AND c.relname = 'v_daily_metrics';
+
+  IF relation_kind = 'v' THEN
+    DROP VIEW fitness.v_daily_metrics;
+  ELSIF relation_kind = 'm' THEN
+    DROP MATERIALIZED VIEW fitness.v_daily_metrics;
+  END IF;
+END
+$$;
+
+--> statement-breakpoint
+
 CREATE OR REPLACE VIEW fitness.v_daily_metrics AS
 WITH ranked AS (
   SELECT
