@@ -1,9 +1,47 @@
 import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
-import type {
-  MuscleFreshnessRow,
-  NextWorkoutData,
-  ReadinessMetricRow,
-} from "./training-repository.ts";
+
+interface RecommendationReadinessMetric {
+  date: string;
+  hrv: number | null;
+  resting_hr: number | null;
+  respiratory_rate: number | null;
+  hrv_mean_30d: number | null;
+  hrv_sd_30d: number | null;
+  rhr_mean_30d: number | null;
+  rhr_sd_30d: number | null;
+  rr_mean_30d: number | null;
+  rr_sd_30d: number | null;
+}
+
+interface RecommendationMuscleFreshness {
+  muscle_group: string;
+  last_trained_date: string;
+}
+
+interface NextWorkoutRecommendationData {
+  latestMetric: RecommendationReadinessMetric | null;
+  latestSleepEfficiency: number | null;
+  acwr: number | null;
+  muscleFreshness: RecommendationMuscleFreshness[];
+  balance: {
+    strength_7d: number;
+    endurance_7d: number;
+    last_strength_date: string | null;
+    last_endurance_date: string | null;
+  };
+  zoneTotals: {
+    zone1: number;
+    zone2: number;
+    zone3: number;
+    zone4: number;
+    zone5: number;
+  };
+  hiitLoad: {
+    hiit_count_7d: number;
+    last_hiit_date: string | null;
+  };
+  trainingDates: string[];
+}
 
 // ---------------------------------------------------------------------------
 // Pure logic and types moved from TrainingRouter
@@ -40,7 +78,7 @@ export interface NextWorkoutRecommendation {
 }
 
 export function buildNextWorkoutRecommendation(
-  data: NextWorkoutData,
+  data: NextWorkoutRecommendationData,
   endDate: string,
   weights: { hrv: number; restingHr: number; sleep: number; respiratoryRate: number },
 ): NextWorkoutRecommendation {
@@ -242,7 +280,7 @@ export function computeZonePercentages(zoneTotals: {
 }
 
 export function computeComponentScores(
-  latestMetric: ReadinessMetricRow | null,
+  latestMetric: RecommendationReadinessMetric | null,
   latestSleepEfficiency: number | null,
 ): {
   hrvScore: number;
@@ -334,7 +372,7 @@ export function shouldDoStrengthToday(input: {
 }
 
 export function computeFocusMuscles(
-  muscleFreshness: MuscleFreshnessRow[],
+  muscleFreshness: RecommendationMuscleFreshness[],
   todayDate: string,
 ): string[] {
   const freshMuscles = muscleFreshness
