@@ -91,11 +91,25 @@ describe("buildClickHouseBootstrapStatements", () => {
     const sql = buildClickHouseBootstrapStatements("postgres://health:secret@db:5432/health").join(
       "\n",
     );
+    const rawDependencyTables = [
+      "activity",
+      "sleep_session",
+      "sleep_stage",
+      "daily_metrics",
+      "body_measurement",
+      "provider",
+      "provider_priority",
+      "device_priority",
+      "user_profile",
+    ];
 
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    for (const rawDependencyTable of rawDependencyTables) {
+      expect(sql).toContain(`CREATE TABLE IF NOT EXISTS postgres_fitness.${rawDependencyTable}`);
+    }
     expect(sql).toContain("_peerdb_synced_at DateTime64(9) DEFAULT now()");
     expect(sql).toContain("_peerdb_is_deleted Int8 DEFAULT 0");
     expect(sql).toContain("_peerdb_version Int64 DEFAULT 0");

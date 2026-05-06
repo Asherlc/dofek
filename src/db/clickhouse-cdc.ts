@@ -37,6 +37,25 @@ interface RuntimeConfig {
   templateValues: PeerDbSqlTemplateValues;
 }
 
+const analyticsPublicationName = "peerdb_metric_stream_publication";
+const analyticsSourceTables = [
+  "metric_stream",
+  "activity",
+  "sleep_session",
+  "sleep_stage",
+  "daily_metrics",
+  "body_measurement",
+  "provider",
+  "provider_priority",
+  "device_priority",
+  "user_profile",
+] as const;
+const peerDbMetadataColumns = [
+  "_peerdb_synced_at DateTime64(9) DEFAULT now()",
+  "_peerdb_is_deleted Int8 DEFAULT 0",
+  "_peerdb_version Int64 DEFAULT 0",
+] as const;
+
 function peerDbStringLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
@@ -263,48 +282,63 @@ function splitPeerDbSqlStatements(sql: string): string[] {
   return statements;
 }
 
-async function ensureMetricStreamPublication(client: SourcePostgresClient): Promise<void> {
+async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise<void> {
+  const publicationTables = analyticsSourceTables
+    .map((tableName) => `fitness.${tableName}`)
+    .join(", ");
+  const tableValueRows = analyticsSourceTables
+    .map((tableName) => `('${tableName}')`)
+    .join(", ");
+
   await client.query(`
     DO $$
+    DECLARE
+      analytics_table_name text;
     BEGIN
       IF NOT EXISTS (
         SELECT 1
         FROM pg_publication
-        WHERE pubname = 'peerdb_metric_stream_publication'
+        WHERE pubname = '${analyticsPublicationName}'
       ) THEN
-        CREATE PUBLICATION peerdb_metric_stream_publication FOR TABLE fitness.metric_stream;
-      ELSIF NOT EXISTS (
-        SELECT 1
-        FROM pg_publication_tables
-        WHERE pubname = 'peerdb_metric_stream_publication'
-          AND schemaname = 'fitness'
-          AND tablename = 'metric_stream'
-      ) THEN
-        ALTER PUBLICATION peerdb_metric_stream_publication ADD TABLE fitness.metric_stream;
+        CREATE PUBLICATION ${analyticsPublicationName} FOR TABLE ${publicationTables};
       END IF;
+
+      FOR analytics_table_name IN
+        SELECT table_name
+        FROM (VALUES ${tableValueRows}) AS mirrored_tables(table_name)
+      LOOP
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_publication_tables
+          WHERE pubname = '${analyticsPublicationName}'
+            AND schemaname = 'fitness'
+            AND tablename = analytics_table_name
+        ) THEN
+          EXECUTE format(
+            'ALTER PUBLICATION ${analyticsPublicationName} ADD TABLE fitness.%I',
+            analytics_table_name
+          );
+        END IF;
+      END LOOP;
     END
     $$;
   `);
 }
 
-async function ensureAnalyticsMetricStreamPeerDbColumns(
-  client: ClickHouseCommandClient,
-): Promise<void> {
-  const statements = [
-    "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
-    "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
-    "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
-  ];
-
-  for (const statement of statements) {
-    await client.command({ query: statement });
+async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Promise<void> {
+  for (const tableName of analyticsSourceTables) {
+    for (const metadataColumn of peerDbMetadataColumns) {
+      await client.command({
+        query: `ALTER TABLE postgres_fitness.${tableName} ADD COLUMN IF NOT EXISTS ${metadataColumn}`,
+      });
+    }
   }
 }
 
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
-  await ensureAnalyticsMetricStreamPeerDbColumns(options.clickHouseClient);
-  await ensureMetricStreamPublication(options.sourcePostgresClient);
+  await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
+  await ensureAnalyticsPublication(options.sourcePostgresClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);
