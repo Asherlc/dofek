@@ -44,8 +44,8 @@ Postgres advisory lock used by materialized-view sync, sets a short lock timeout
 sets a statement timeout, and prints the final duration.
 
 `sync` runs the quiet-DB preflight and then runs `syncMaterializedViews()` as a
-blocking command. This is the path used by manual deploys when
-`refresh_materialized_views=true`.
+blocking command. This is an explicit maintenance-window path, not a normal
+deploy path.
 
 `cancel-refreshes <view>` cancels active `REFRESH MATERIALIZED VIEW` statements
 for the selected canonical view.
@@ -57,15 +57,15 @@ it from `drizzle/_views`, and records the new hash.
 
 ## GitHub Manual Action
 
-For the common production case, use **Actions → Materialized View Maintenance →
-Run workflow**. Choose `environment=production` or `environment=staging`; the
-workflow derives the matching Infisical environment and SSH tunnel target. Set
-`view_names` to one canonical materialized view, comma-separated or
-newline-separated view names, or `all`. The defaults run against production and
-rebuild `fitness.provider_stats` from the checked-out workflow branch. The
-action opens an SSH tunnel to the selected server's loopback-only Postgres port
-and runs the maintenance TypeScript command directly; it does not pull or run
-Docker images.
+For the common production maintenance case, use **Actions → Materialized View
+Maintenance → Run workflow**. Choose `environment=production` or
+`environment=staging`; the workflow derives the matching Infisical environment
+and SSH tunnel target. Set `view_names` to one canonical materialized view,
+comma-separated or newline-separated view names, or `all`. The defaults run
+against production and rebuild `fitness.provider_stats` from the checked-out
+workflow branch. The action opens an SSH tunnel to the selected server's
+loopback-only Postgres port and runs the maintenance TypeScript command
+directly; it does not pull or run Docker images.
 
 The workflow:
 
@@ -204,7 +204,7 @@ callers move to ClickHouse.
    pnpm tsx src/db/run-materialized-view-maintenance.ts refresh fitness.v_daily_metrics
    ```
 
-4. For deploy/manual sync maintenance, use the blocking sync command:
+4. For manual sync maintenance, use the blocking sync command:
 
    ```bash
    pnpm tsx src/db/run-materialized-view-maintenance.ts sync
