@@ -5,9 +5,13 @@ import {
   parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
-import type { TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
+
+interface ClickHouseSyncTestContext {
+  addCleanup(cleanup: () => Promise<void>): void;
+  connectionString: string;
+}
 
 interface IsolatedClickHouseDatabases {
   analytics: string;
@@ -24,7 +28,7 @@ interface RawTableSync {
   tableName: string;
 }
 
-const handlesByContext = new WeakMap<TestContext, ClickHouseTestHandle>();
+const handlesByContext = new WeakMap<ClickHouseSyncTestContext, ClickHouseTestHandle>();
 const rawTableSyncs: RawTableSync[] = [
   {
     tableName: "metric_stream",
@@ -248,7 +252,7 @@ function createIsolatedClickHouseClient(
 }
 
 export async function createClickHouseTestActivitySensorStore(
-  testContext: TestContext,
+  testContext: ClickHouseSyncTestContext,
 ): Promise<ActivitySensorStore> {
   const suffix = randomBytes(6).toString("hex");
   const databases = {
@@ -277,7 +281,7 @@ export async function createClickHouseTestActivitySensorStore(
 }
 
 export async function syncClickHouseTestActivitySensorStore(
-  testContext: TestContext,
+  testContext: ClickHouseSyncTestContext,
 ): Promise<void> {
   const handle = handlesByContext.get(testContext);
   if (!handle) {

@@ -286,9 +286,7 @@ async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise
   const publicationTables = analyticsSourceTables
     .map((tableName) => `fitness.${tableName}`)
     .join(", ");
-  const tableValueRows = analyticsSourceTables
-    .map((tableName) => `('${tableName}')`)
-    .join(", ");
+  const tableValueRows = analyticsSourceTables.map((tableName) => `('${tableName}')`).join(", ");
 
   await client.query(`
     DO $$

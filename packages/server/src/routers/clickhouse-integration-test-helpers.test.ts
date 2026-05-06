@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
@@ -37,8 +36,7 @@ describe("clickhouse integration test helpers", () => {
     const testContext = {
       addCleanup: vi.fn(),
       connectionString: "postgres://health:fixture@db:5432/health",
-      db: { execute: vi.fn() },
-    } as TestContext;
+    };
 
     await createClickHouseTestActivitySensorStore(testContext);
     clickHouseMocks.command.mockClear();
@@ -47,8 +45,10 @@ describe("clickhouse integration test helpers", () => {
 
     const commands = clickHouseMocks.command.mock.calls.map(([options]) => String(options.query));
     expect(
-      commands.some((command) =>
-        command.includes("TRUNCATE TABLE postgres_fitness_test_") && command.endsWith(".activity"),
+      commands.some(
+        (command) =>
+          command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
+          command.endsWith(".activity"),
       ),
     ).toBe(true);
     expect(
@@ -97,7 +97,8 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
-          command.includes("SYSTEM WAIT VIEW analytics_test_") && command.endsWith(".provider_stats"),
+          command.includes("SYSTEM WAIT VIEW analytics_test_") &&
+          command.endsWith(".provider_stats"),
       ),
     ).toBe(true);
     expect(
