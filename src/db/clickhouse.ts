@@ -253,7 +253,7 @@ AS`;
 
 function buildActivityReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader("analytics.v_activity", "(user_id, started_at, id)")}
-WITH
+WITH RECURSIVE
 active_activity AS (
   SELECT *
   FROM postgres_fitness.activity FINAL
@@ -331,18 +331,32 @@ pairs AS (
       )
     ), 0) > 0.8
 ),
+graph_edges AS (
+  SELECT id1 AS from_id, id2 AS to_id
+  FROM pairs
+  UNION ALL
+  SELECT id2 AS from_id, id1 AS to_id
+  FROM pairs
+),
+connected_components AS (
+  SELECT
+    id AS activity_id,
+    id AS connected_activity_id,
+    [toString(id)] AS visited_activity_ids
+  FROM ranked
+  UNION ALL
+  SELECT
+    connected_components.activity_id AS activity_id,
+    graph_edges.to_id AS connected_activity_id,
+    arrayConcat(connected_components.visited_activity_ids, [toString(graph_edges.to_id)]) AS visited_activity_ids
+  FROM connected_components
+  INNER JOIN graph_edges
+    ON graph_edges.from_id = connected_components.connected_activity_id
+  WHERE NOT has(connected_components.visited_activity_ids, toString(graph_edges.to_id))
+),
 final_groups AS (
-  SELECT activity_id, min(group_id) AS group_id
-  FROM (
-    SELECT id AS activity_id, toString(id) AS group_id
-    FROM ranked
-    UNION ALL
-    SELECT id1 AS activity_id, least(toString(id1), toString(id2)) AS group_id
-    FROM pairs
-    UNION ALL
-    SELECT id2 AS activity_id, least(toString(id1), toString(id2)) AS group_id
-    FROM pairs
-  )
+  SELECT activity_id, min(toString(connected_activity_id)) AS group_id
+  FROM connected_components
   GROUP BY activity_id
 ),
 best AS (
@@ -427,7 +441,7 @@ FROM analytics.v_activity`;
 
 function buildSleepReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader("analytics.v_sleep", "(user_id, started_at, id)")}
-WITH
+WITH RECURSIVE
 active_sleep AS (
   SELECT *
   FROM postgres_fitness.sleep_session FINAL
@@ -515,18 +529,32 @@ pairs AS (
       )
     ), 0) > 0.8
 ),
+graph_edges AS (
+  SELECT id1 AS from_id, id2 AS to_id
+  FROM pairs
+  UNION ALL
+  SELECT id2 AS from_id, id1 AS to_id
+  FROM pairs
+),
+connected_components AS (
+  SELECT
+    id AS sleep_id,
+    id AS connected_sleep_id,
+    [toString(id)] AS visited_sleep_ids
+  FROM ranked
+  UNION ALL
+  SELECT
+    connected_components.sleep_id AS sleep_id,
+    graph_edges.to_id AS connected_sleep_id,
+    arrayConcat(connected_components.visited_sleep_ids, [toString(graph_edges.to_id)]) AS visited_sleep_ids
+  FROM connected_components
+  INNER JOIN graph_edges
+    ON graph_edges.from_id = connected_components.connected_sleep_id
+  WHERE NOT has(connected_components.visited_sleep_ids, toString(graph_edges.to_id))
+),
 final_groups AS (
-  SELECT sleep_id, min(group_id) AS group_id
-  FROM (
-    SELECT id AS sleep_id, toString(id) AS group_id
-    FROM ranked
-    UNION ALL
-    SELECT id1 AS sleep_id, least(toString(id1), toString(id2)) AS group_id
-    FROM pairs
-    UNION ALL
-    SELECT id2 AS sleep_id, least(toString(id1), toString(id2)) AS group_id
-    FROM pairs
-  )
+  SELECT sleep_id, min(toString(connected_sleep_id)) AS group_id
+  FROM connected_components
   GROUP BY sleep_id
 ),
 best AS (
@@ -613,7 +641,7 @@ function buildBodyMeasurementReadModelSql(): string {
     "analytics.v_body_measurement",
     "(user_id, recorded_at, id)",
   )}
-WITH
+WITH RECURSIVE
 active_body AS (
   SELECT *
   FROM postgres_fitness.body_measurement FINAL
@@ -676,18 +704,32 @@ pairs AS (
    AND toString(left_body.id) < toString(right_body.id)
    AND abs(dateDiff('second', left_body.recorded_at, right_body.recorded_at)) < 300
 ),
+graph_edges AS (
+  SELECT id1 AS from_id, id2 AS to_id
+  FROM pairs
+  UNION ALL
+  SELECT id2 AS from_id, id1 AS to_id
+  FROM pairs
+),
+connected_components AS (
+  SELECT
+    id AS measurement_id,
+    id AS connected_measurement_id,
+    [toString(id)] AS visited_measurement_ids
+  FROM ranked
+  UNION ALL
+  SELECT
+    connected_components.measurement_id AS measurement_id,
+    graph_edges.to_id AS connected_measurement_id,
+    arrayConcat(connected_components.visited_measurement_ids, [toString(graph_edges.to_id)]) AS visited_measurement_ids
+  FROM connected_components
+  INNER JOIN graph_edges
+    ON graph_edges.from_id = connected_components.connected_measurement_id
+  WHERE NOT has(connected_components.visited_measurement_ids, toString(graph_edges.to_id))
+),
 final_groups AS (
-  SELECT measurement_id, min(group_id) AS group_id
-  FROM (
-    SELECT id AS measurement_id, toString(id) AS group_id
-    FROM ranked
-    UNION ALL
-    SELECT id1 AS measurement_id, least(toString(id1), toString(id2)) AS group_id
-    FROM pairs
-    UNION ALL
-    SELECT id2 AS measurement_id, least(toString(id1), toString(id2)) AS group_id
-    FROM pairs
-  )
+  SELECT measurement_id, min(toString(connected_measurement_id)) AS group_id
+  FROM connected_components
   GROUP BY measurement_id
 ),
 best AS (
@@ -835,7 +877,7 @@ sleep_windows AS (
     started_at,
     ended_at
   FROM analytics.v_sleep
-  WHERE sleep_type IS DISTINCT FROM 'nap'
+  WHERE NOT is_nap
     AND ended_at IS NOT NULL
 ),
 raw_samples AS (

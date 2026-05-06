@@ -69,6 +69,8 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).not.toContain("FROM postgres_fitness_live.v_sleep");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
+    expect(sql).toContain("connected_components AS");
+    expect(sql).toContain("WHERE NOT is_nap");
   });
 });
 

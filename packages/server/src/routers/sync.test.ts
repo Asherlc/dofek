@@ -1344,9 +1344,12 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
       const result = await caller.dataHealth();
-      expect(result.dailyMetrics).toBe(42);
-      expect(result.sleep).toBe(42);
-      expect(result.activity).toBe(42);
+      expect(result).toEqual({
+        dailyMetrics: 42,
+        sleep: 42,
+        activity: 42,
+      });
+      expect(mockExecute).toHaveBeenCalledTimes(3);
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
   });

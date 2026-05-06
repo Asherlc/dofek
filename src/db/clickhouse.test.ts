@@ -143,6 +143,12 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("FROM analytics.v_activity_members");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
+    expect(sql).toContain("WITH RECURSIVE");
+    expect(sql).toContain("connected_components AS");
+    expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
+    expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
+    expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
+    expect(sql).toContain("WHERE NOT is_nap");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",

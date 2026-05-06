@@ -381,13 +381,13 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ),
         resting_by_activity AS (
           SELECT
-            acsm_segments.activity_id AS activity_id,
+            activities.id AS activity_id,
             argMax(resting.resting_hr, resting.date) AS resting_hr
-          FROM acsm_segments
+          FROM activities
           CROSS JOIN analytics.derived_resting_heart_rate AS resting
           WHERE resting.user_id = {userId:UUID}
-            AND resting.date <= toDate(acsm_segments.activity_date)
-          GROUP BY acsm_segments.activity_id
+            AND resting.date <= toDate(activities.activity_date)
+          GROUP BY activities.id
         ),
         acsm_estimates AS (
           SELECT
