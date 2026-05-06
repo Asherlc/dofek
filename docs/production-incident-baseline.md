@@ -3128,3 +3128,42 @@ files concurrently created and refreshed isolated read-model databases against
 one local ClickHouse service. Vitest file execution is serialized to match the
 service capacity. A branch deploy retry from `aloud-bike` completed successfully
 in GitHub Actions run `25457794464`.
+
+## 2026-05-06: Branch Deploy Blocked by Full Root Filesystem
+
+### Symptoms
+
+The `aloud-bike` branch deploy run `25461143484` reached `Deploy Web Stack` and
+then sat in `Pull deploy images` without advancing.
+
+### Evidence
+
+Production host inspection during the stuck pull showed:
+
+```text
+/dev/sdb1        38G   37G     0 100% /
+/dev/sda         99G   44G   51G  47% /mnt/HC_Volume_105292545
+```
+
+The deploy was waiting on remote Docker image inspection/pull work while the
+root filesystem had no free space.
+
+### Root Cause
+
+The Docker root filesystem on the production host was exhausted before the
+deploy image pulls. The data volume still had free space, but Docker image and
+runtime artifacts live on `/`, so the deploy could not reliably pull or inspect
+images.
+
+### Fix or Mitigation
+
+The deploy workflow now runs Docker cleanup before release image pulls and then
+fails loudly if `/` still has less than 8 GiB available. This turns the previous
+silent pull hang into an explicit disk-headroom failure and gives the image pull
+step enough room to proceed when stale Docker artifacts are reclaimable.
+
+### Remaining Risk
+
+The host still keeps Docker runtime state on the root disk. A longer-term fix
+should either move Docker's data root to persistent storage or add host-level
+disk monitoring for `/` so operators know before deploys hit zero free space.
