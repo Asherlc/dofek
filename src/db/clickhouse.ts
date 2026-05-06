@@ -220,6 +220,20 @@ ${replacingMergeTreeTable("(provider_id, source_name_pattern)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(id)")}`,
+    `CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current AS
+SELECT
+  id,
+  name,
+  email,
+  birth_date,
+  max_hr,
+  resting_hr,
+  ftp,
+  is_admin,
+  created_at,
+  updated_at
+FROM postgres_fitness.user_profile FINAL
+WHERE _peerdb_is_deleted = 0`,
   ];
 }
 

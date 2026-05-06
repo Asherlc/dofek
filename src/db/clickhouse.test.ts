@@ -114,6 +114,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("_peerdb_is_deleted Int8 DEFAULT 0");
     expect(sql).toContain("_peerdb_version Int64 DEFAULT 0");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
+    expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
+    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");

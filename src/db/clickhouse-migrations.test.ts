@@ -58,6 +58,9 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
+    expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
+    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );

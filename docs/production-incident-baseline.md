@@ -3126,5 +3126,5 @@ ClickHouse read models instead of `postgres_fitness_live`.
 Local changed-test runs exposed ClickHouse socket hangs when several integration
 files concurrently created and refreshed isolated read-model databases against
 one local ClickHouse service. Vitest file execution is serialized to match the
-service capacity. The branch still needs a successful GitHub Actions deploy
-retry from `aloud-bike` after push.
+service capacity. A branch deploy retry from `aloud-bike` completed successfully
+in GitHub Actions run `25457794464`.

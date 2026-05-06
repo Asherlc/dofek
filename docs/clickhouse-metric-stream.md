@@ -78,9 +78,11 @@ ClickHouse migrations create and update the databases and read models:
   of the raw metric stream and the active PeerDB CDC sink for analytics
   refreshers.
 - `peerdb.metric_stream`: the PeerDB CDC validation target.
-- `postgres_fitness_live`: a PostgreSQL database bridge for scalar-only views in
-  the Postgres `clickhouse` schema:
-  `clickhouse.v_activity` and `clickhouse.v_activity_members`.
+- `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
+  metadata columns.
+- `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
+  `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: ClickHouse
+  read models over the raw mirrors.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
   minute from the copied raw rows and activity membership.
 - `analytics.activity_summary`: a refreshable materialized view refreshed from

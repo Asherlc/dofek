@@ -66,11 +66,11 @@ async function fetchHrZoneTime(
         up.ftp AS ftp,
         coalesce(drhr.resting_hr, up.resting_hr) AS resting_hr
       FROM analytics.activity_summary AS asum
-      INNER JOIN postgres_fitness.user_profile AS up
+      INNER JOIN postgres_fitness.user_profile_current AS up
         ON up.id = asum.user_id
       LEFT JOIN analytics.derived_resting_heart_rate AS drhr
         ON drhr.user_id = asum.user_id
-       AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
+       AND drhr.date = toDate(asum.started_at)
       WHERE asum.user_id = {userId:UUID}
         AND asum.started_at > toDateTime({windowStart:String})
         AND asum.ended_at IS NOT NULL

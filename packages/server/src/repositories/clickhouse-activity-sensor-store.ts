@@ -379,16 +379,15 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND countIf(deduped_samples.channel = 'heart_rate') >= 60
             AND countIf(deduped_samples.channel = 'altitude') >= 2
         ),
-        resting_by_segment AS (
+        resting_by_activity AS (
           SELECT
             acsm_segments.activity_id AS activity_id,
-            acsm_segments.segment_index AS segment_index,
             argMax(resting.resting_hr, resting.date) AS resting_hr
           FROM acsm_segments
           CROSS JOIN analytics.derived_resting_heart_rate AS resting
           WHERE resting.user_id = {userId:UUID}
             AND resting.date <= toDate(acsm_segments.activity_date)
-          GROUP BY acsm_segments.activity_id, acsm_segments.segment_index
+          GROUP BY acsm_segments.activity_id
         ),
         acsm_estimates AS (
           SELECT
@@ -411,11 +410,10 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               0
             ) AS vo2max
           FROM acsm_segments
-          INNER JOIN postgres_fitness.user_profile AS user_profile
+          INNER JOIN postgres_fitness.user_profile_current AS user_profile
             ON user_profile.id = {userId:UUID}
-          LEFT JOIN resting_by_segment AS resting
+          LEFT JOIN resting_by_activity AS resting
             ON resting.activity_id = acsm_segments.activity_id
-           AND resting.segment_index = acsm_segments.segment_index
           WHERE user_profile.max_hr IS NOT NULL
             AND resting.resting_hr IS NOT NULL
             AND user_profile.max_hr > resting.resting_hr

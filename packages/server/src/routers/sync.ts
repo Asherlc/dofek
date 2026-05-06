@@ -14,7 +14,6 @@ import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { logger } from "../logger.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CacheTTL,
@@ -462,24 +461,18 @@ export const syncRouter = router({
     return repo.getProviderStats();
   }),
 
-  /** Diagnostic: compare materialized view row counts vs base table row counts.
-   *  Helps identify when views are empty/stale but base tables have data. */
+  /** Diagnostic: row counts for primary user-owned raw tables. */
   dataHealth: protectedProcedure.query(async ({ ctx }) => {
     const countSchema = z.object({ count: z.coerce.number() });
 
     const healthChecks = [
-      { key: "dailyMetrics", baseTable: "fitness.daily_metrics", view: "fitness.daily_metrics" },
-      { key: "sleep", baseTable: "fitness.sleep_session", view: "fitness.sleep_session" },
-      { key: "activity", baseTable: "fitness.activity", view: "fitness.activity" },
+      { key: "dailyMetrics", table: "fitness.daily_metrics" },
+      { key: "sleep", table: "fitness.sleep_session" },
+      { key: "activity", table: "fitness.activity" },
     ] as const;
 
-    const countTargets = healthChecks.flatMap(({ key, baseTable, view }) => [
-      { key, target: "baseTable" as const, table: baseTable },
-      { key, target: "materializedView" as const, table: view },
-    ]);
-
     const counts = await Promise.all(
-      countTargets.map(({ table }) =>
+      healthChecks.map(({ table }) =>
         executeWithSchema(
           ctx.db,
           countSchema,
@@ -488,22 +481,11 @@ export const syncRouter = router({
       ),
     );
 
-    const health: Record<string, { baseTable: number; materializedView: number }> = {};
-    for (const [index, { key, target }] of countTargets.entries()) {
-      if (!health[key]) health[key] = { baseTable: 0, materializedView: 0 };
-      health[key][target] = counts[index]?.[0]?.count ?? 0;
+    const health: Record<string, number> = {};
+    for (const [index, { key }] of healthChecks.entries()) {
+      health[key] = counts[index]?.[0]?.count ?? 0;
     }
 
-    const hasStaleViews = Object.values(health).some(
-      (table) => table.baseTable > 0 && table.materializedView === 0,
-    );
-
-    if (hasStaleViews) {
-      logger.warn(
-        `[data-health] User ${ctx.userId} has stale materialized views: ${JSON.stringify(health)}`,
-      );
-    }
-
-    return { ...health, hasStaleViews };
+    return health;
   }),
 });

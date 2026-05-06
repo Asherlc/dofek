@@ -1,7 +1,8 @@
 # Handoff: ClickHouse View Migration / Deploy Retry
 
 Date: 2026-05-06
-Branch/worktree: `aloud-bike` at `/Users/ashercohen/.superset/worktrees/3dac70ca-18a4-4e4d-a64b-a6fad93a2d68/aloud-bike`
+Branch: `aloud-bike`
+Worktree: local path omitted (machine-specific)
 
 ## Goal
 

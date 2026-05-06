@@ -336,7 +336,10 @@ describe("runMigrations", () => {
 
     const queries = executedQueries();
     expect(
-      queries.every((query) => !query.includes("DROP ") && !query.includes("CREATE VIEW")),
+      queries.every(
+        (query) =>
+          !/\bDROP\b/i.test(query) && !/\bCREATE\s+(?:MATERIALIZED\s+)?VIEW\b/i.test(query),
+      ),
     ).toBe(true);
   });
 

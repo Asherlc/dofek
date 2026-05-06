@@ -293,10 +293,10 @@ export class CyclingAdvancedRepository {
           up.max_hr AS max_hr,
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness.user_profile up ON up.id = asum.user_id
+        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
+         AND drhr.date = toDate(asum.started_at)
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
@@ -432,10 +432,10 @@ export class CyclingAdvancedRepository {
           up.max_hr AS max_hr,
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness.user_profile up ON up.id = asum.user_id
+        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
+         AND drhr.date = toDate(asum.started_at)
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
@@ -675,7 +675,7 @@ export class CyclingAdvancedRepository {
           ap.prev_altitude AS prev_altitude,
           ap.prev_recorded_at AS prev_recorded_at,
           gp.grade AS grade,
-          ga.has_grade_samples = 1 AS has_grade_samples,
+          coalesce(ga.has_grade_samples, 0) = 1 AS has_grade_samples,
           row_number() OVER (
             PARTITION BY ap.activity_id, ap.recorded_at
             ORDER BY
@@ -701,7 +701,7 @@ export class CyclingAdvancedRepository {
         AND cs.prev_recorded_at IS NOT NULL
         AND cs.altitude > cs.prev_altitude
         AND cs.grade_rank = 1
-        AND (NOT cs.has_grade_samples OR cs.grade > 3)
+        AND (NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)
       GROUP BY a.id, a.started_at, a.name
       HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60
       ORDER BY a.started_at`,

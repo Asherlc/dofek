@@ -64,7 +64,7 @@ export class PmcRepository extends BaseRepository {
     const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
 
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
-    // user_profile and derived_resting_heart_rate are accessed via FDW.
+    // user_profile and derived_resting_heart_rate are accessed via ClickHouse read models.
     // Sample counts come from analytics.deduped_sensor since CH activity_summary
     // doesn't carry per-channel sample counts.
     const activityRows = await this.#sensorStore.query(
@@ -80,7 +80,7 @@ export class PmcRepository extends BaseRepository {
             WHERE user_id = {userId:UUID} AND resting_hr IS NOT NULL
             ORDER BY date DESC LIMIT 1
           ), 60) AS resting_hr
-        FROM postgres_fitness.user_profile up
+        FROM postgres_fitness.user_profile_current up
         WHERE up.id = {userId:UUID}
       ),
       sample_counts AS (

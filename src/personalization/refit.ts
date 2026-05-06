@@ -473,7 +473,7 @@ async function fitTrimpFromDb(sensorStore: RefitSensorStore, userId: string) {
         * (dateDiff('second', asum.started_at, asum.ended_at) / 3600.0)
         * 100 AS power_tss
     FROM analytics.activity_summary asum
-    INNER JOIN postgres_fitness.user_profile up ON up.id = asum.user_id
+    INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
     INNER JOIN np_data n ON n.activity_id = asum.activity_id
     WHERE asum.user_id = {userId:UUID}
       AND asum.hr_sample_count > 0
