@@ -287,8 +287,23 @@ async function ensureMetricStreamPublication(client: SourcePostgresClient): Prom
   `);
 }
 
+async function ensureAnalyticsMetricStreamPeerDbColumns(
+  client: ClickHouseCommandClient,
+): Promise<void> {
+  const statements = [
+    "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
+    "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
+    "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
+  ];
+
+  for (const statement of statements) {
+    await client.command({ query: statement });
+  }
+}
+
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
+  await ensureAnalyticsMetricStreamPeerDbColumns(options.clickHouseClient);
   await ensureMetricStreamPublication(options.sourcePostgresClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {

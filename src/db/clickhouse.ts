@@ -98,7 +98,10 @@ function buildClickHouseBootstrapStatementsForNativeMetricStream(
   recorded_at DateTime64(6, 'UTC'),
   channel String,
   provider_id String,
-  scalar Nullable(Float32)
+  scalar Nullable(Float32),
+  _peerdb_synced_at DateTime64(9) DEFAULT now(),
+  _peerdb_is_deleted Int8 DEFAULT 0,
+  _peerdb_version Int64 DEFAULT 0
 )
 ENGINE = MergeTree
 ORDER BY (user_id, activity_id, channel, recorded_at, id)

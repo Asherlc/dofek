@@ -86,6 +86,13 @@ ClickHouse migrations create and update the databases and read models:
 - `analytics.activity_summary`: a refreshable materialized view refreshed from
   `analytics.deduped_sensor`.
 
+Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
+table rather than a table created by PeerDB, it must include PeerDB's CDC
+metadata columns before the analytics mirror is submitted:
+`_peerdb_synced_at`, `_peerdb_is_deleted`, and `_peerdb_version`. The deploy CDC
+setup command repairs these columns idempotently with `ALTER TABLE ... ADD
+COLUMN IF NOT EXISTS` before PeerDB validates the mirror.
+
 The native-table backfill is resumable within a successful migration attempt,
 but migration `0006_backfill_native_metric_stream` intentionally drops the
 backfill checkpoint table before rebuilding the raw table. If the migration

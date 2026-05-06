@@ -96,6 +96,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("_peerdb_synced_at DateTime64(9) DEFAULT now()");
+    expect(sql).toContain("_peerdb_is_deleted Int8 DEFAULT 0");
+    expect(sql).toContain("_peerdb_version Int64 DEFAULT 0");
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");

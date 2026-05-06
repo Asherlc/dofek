@@ -7,6 +7,45 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-06: Production Deploy failed during PeerDB analytics mirror validation
+
+### Impact
+
+Deploy Web run `25415707212` updated the production stack but failed in the
+post-deploy `Configure ClickHouse CDC` step, so the workflow ended red before
+materialized-view planning ran.
+
+### Evidence That Mattered
+
+- Failing job: `Deploy Web Production / Deploy Web Stack / Deploy Web Stack`.
+- Failing step: `Configure ClickHouse CDC`.
+- First fatal line:
+  `[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate destination connector dofek_clickhouse_postgres_fitness: not all PeerDB columns found in destination table metric_stream\"`.
+- The checked-in ClickHouse DDL for `postgres_fitness.metric_stream` had app
+  columns only and omitted PeerDB CDC metadata columns.
+
+### Root Cause
+
+The analytics CDC mirror targets an existing app-managed ClickHouse table.
+PeerDB requires its metadata columns on existing ClickHouse destination tables,
+but `postgres_fitness.metric_stream` lacked `_peerdb_synced_at`,
+`_peerdb_is_deleted`, and `_peerdb_version`.
+
+### Fix Or Mitigation
+
+- Added PeerDB metadata columns to fresh `postgres_fitness.metric_stream`
+  bootstrap DDL.
+- Made `setupClickHouseCdc()` repair existing analytics tables with
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` before submitting the PeerDB mirror.
+- Added unit coverage for both fresh DDL and deploy-time repair commands.
+
+### Remaining Risk
+
+Local test execution was blocked in the sandbox because dependencies were not
+installed and npm registry access failed with DNS `ENOTFOUND`. CI must run the
+targeted unit tests and deploy workflow to confirm the fix in the real runner
+environment.
+
 ## 2026-05-03: Deploy Staging failed while creating Temporal search attribute
 
 ### Impact

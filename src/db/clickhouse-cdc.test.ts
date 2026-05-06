@@ -157,7 +157,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(clickHouseCommands).toEqual(["CREATE DATABASE IF NOT EXISTS peerdb"]);
+    expect(clickHouseCommands).toEqual([
+      "CREATE DATABASE IF NOT EXISTS peerdb",
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
+    ]);
     expect(sourcePostgresQueries).toHaveLength(1);
     expect(sourcePostgresQueries[0]).toContain("CREATE PUBLICATION");
     expect(sourcePostgresQueries[0]).toContain("ALTER PUBLICATION");
@@ -318,6 +323,21 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbClientMocks.connect).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
       query: "CREATE DATABASE IF NOT EXISTS peerdb",
+    });
+    expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
+      query: expect.stringContaining(
+        "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at",
+      ),
+    });
+    expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
+      query: expect.stringContaining(
+        "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted",
+      ),
+    });
+    expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
+      query: expect.stringContaining(
+        "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version",
+      ),
     });
     const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
       String(queryText),
