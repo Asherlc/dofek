@@ -33,7 +33,7 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `daily_metrics.resting_hr` | Derived from low-percentile sleep-window heart-rate samples. Removed in migration 0007. |
 | `daily_metrics.vo2max` | Derived from qualifying activity-level estimates using transparent public equations. Removed in migration 0007. |
 
-The `activity_summary` materialized view computes all of these at refresh time from `sensor_sample` data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
+The ClickHouse `analytics.activity_summary` read model computes these values from mirrored raw sensor data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
 ### Columns we DO store and why they're not derivable
 
@@ -103,17 +103,9 @@ See `src/db/sensor-channels.ts` for the full list of channel constants.
 |-------|---------|
 | `fitness.daily_metrics` | Device-reported daily health data — HRV, steps, SpO2, walking biomechanics |
 
-### Materialized Views
-
-Existing materialized views are not dropped or rebuilt automatically during deploy. A missing view can be created from the canonical SQL in `drizzle/_views`, but definition drift on an existing view requires explicit maintenance so production deploys do not trigger full-history rebuilds under traffic.
-
-| View | Purpose |
-|------|---------|
-| `fitness.v_metric_stream` | Pivot view — presents sensor_sample in wide-row format for legacy queries |
-
 ### Continuous Aggregates
 
-Use Timescale continuous aggregates for straightforward time-bucket rollups where the query is grouped by time and stable dimensions. Keep deduplication-heavy views as materialized views unless the data model can express the logic as an incremental Timescale aggregate.
+Use Timescale continuous aggregates for straightforward time-bucket rollups where the query is grouped by time and stable dimensions. Keep deduplication-heavy analytics in ClickHouse read models so deploys do not rebuild hot Postgres projections.
 
 | View | Purpose |
 |------|---------|

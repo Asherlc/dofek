@@ -53,8 +53,7 @@ export async function processPostSyncJob(
     Sentry.captureException(err, { tags: { postSyncStep: "refitParams" } });
   }
 
-  // Invalidate user-specific cache after all views are refreshed and params refitted.
-  // This ensures the dashboard sees fresh data from the newly refreshed materialized views.
+  // Invalidate user-specific cache after personalized parameters are refitted.
   try {
     await queryCache.invalidateByPrefix(`${job.data.userId}:`);
     logger.info(`[post-sync] Cache invalidated for user ${job.data.userId}`);

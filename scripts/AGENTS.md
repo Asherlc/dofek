@@ -14,7 +14,7 @@ To get a fully functional dev environment with charts and data:
 ```bash
 ./scripts/with-env.sh pnpm seed
 ```
-This will also refresh materialized views, so the dashboard shows data immediately.
+The seed command applies migrations and verifies representative row counts before reporting success.
 
 ### Updating Schema Diagrams
 After modifying `src/db/schema.ts`, run:
@@ -32,4 +32,3 @@ This will output `whoop_imu_data.csv` with decoded sensor samples.
 
 ## Guardrails
 - **Production Access**: `make-admin.sh` requires SSH access to the production server. Use with caution.
-- **Migration Views**: The `seed` script recreates materialized views by dropping them `CASCADE`. Ensure no manual views have been added to the `fitness` schema that might be lost.

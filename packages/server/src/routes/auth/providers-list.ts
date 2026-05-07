@@ -15,7 +15,7 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
     const identityProviders = getConfiguredProviders();
 
     const { getAllProviders } = await import("dofek/providers/registry");
-    const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+    const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
     await ensureProvidersRegistered();
 
     const allRegistered = getAllProviders();

@@ -137,7 +137,7 @@ describe("ensureProvidersRegistered failure path", () => {
       }
     });
 
-    const { ensureProvidersRegistered } = await import("./sync.ts");
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
 
     await expect(ensureProvidersRegistered()).rejects.toThrow(
       "Failed to register fatsecret provider: FATSECRET_CONSUMER_KEY is not set",

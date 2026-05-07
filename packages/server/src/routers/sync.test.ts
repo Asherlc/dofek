@@ -142,17 +142,19 @@ vi.mock("dofek/db/schema", () => ({
 }));
 
 import {
-  ensureProvidersRegistered,
-  isAuthError,
   logsInput,
-  mapBullMqStateToSyncStatus,
-  parseJobId,
   sanitizeErrorMessage,
   syncRouter,
   syncStatusInput,
-  toJobId,
   triggerSyncInput,
 } from "./sync.ts";
+import {
+  ensureProvidersRegistered,
+  isAuthError,
+  mapBullMqStateToSyncStatus,
+  parseJobId,
+  toJobId,
+} from "./sync-helpers.ts";
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
@@ -1336,7 +1338,7 @@ describe("syncRouter", () => {
   });
 
   describe("dataHealth", () => {
-    it("returns row counts for base tables and materialized views", async () => {
+    it("returns row counts for primary user-owned raw tables", async () => {
       const mockExecute = vi.fn().mockResolvedValue([{ count: 42 }]);
       const caller = createCaller({
         db: { execute: mockExecute },
@@ -1344,29 +1346,13 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
       const result = await caller.dataHealth();
-      expect(result.dailyMetrics).toEqual({ baseTable: 42, materializedView: 42 });
-      expect(result.sleep).toEqual({ baseTable: 42, materializedView: 42 });
-      expect(result.activity).toEqual({ baseTable: 42, materializedView: 42 });
-      expect(result.hasStaleViews).toBe(false);
-    });
-
-    it("detects stale views when base has data but view is empty", async () => {
-      let callCount = 0;
-      const mockExecute = vi.fn().mockImplementation(() => {
-        callCount++;
-        // Odd calls (base tables) return data, even calls (views) return 0
-        return Promise.resolve([{ count: callCount % 2 === 1 ? 100 : 0 }]);
+      expect(result).toEqual({
+        dailyMetrics: 42,
+        sleep: 42,
+        activity: 42,
       });
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-      const result = await caller.dataHealth();
-      expect(result.hasStaleViews).toBe(true);
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.stringContaining("stale materialized views"),
-      );
+      expect(mockExecute).toHaveBeenCalledTimes(3);
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
   });
 

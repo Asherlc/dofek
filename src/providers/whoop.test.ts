@@ -22,8 +22,6 @@ import { WhoopProvider } from "./whoop/provider.ts";
 // Mocks for sync tests
 // ============================================================
 
-const mockRefreshMaterializedView = vi.hoisted(() => vi.fn());
-
 vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     (
@@ -33,10 +31,6 @@ vi.mock("../db/sync-log.ts", () => ({
       fn: () => Promise<{ recordCount: number; result: number }>,
     ) => fn().then((r) => r.result),
   ),
-}));
-
-vi.mock("../db/materialized-view-refresh.ts", () => ({
-  refreshMaterializedView: mockRefreshMaterializedView,
 }));
 
 vi.mock("../db/tokens.ts", () => ({
@@ -1522,9 +1516,7 @@ describe("WhoopProvider.getUserIdentity()", () => {
 // ============================================================
 
 describe("WhoopProvider.sync() — sleep sync", () => {
-  afterEach(() => {
-    mockRefreshMaterializedView.mockReset();
-  });
+  afterEach(() => {});
 
   /** Inline sleep record matching the BFF v0 cycle.sleeps format */
   function makeInlineSleep(overrides: Record<string, unknown> = {}) {
@@ -1604,11 +1596,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
       expiresAt: new Date("2027-01-01"),
       scopes: "userId:42",
     });
-    mockRefreshMaterializedView.mockResolvedValueOnce({
-      fallbackUsed: false,
-      mode: "concurrent",
-    });
-
     const cycles = [
       {
         days: ["2026-03-01"],
@@ -1630,10 +1617,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     db.returning = vi.fn().mockResolvedValue([]);
 
     await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
-
-    expect(mockRefreshMaterializedView).toHaveBeenCalledWith(db, "fitness.v_sleep", {
-      source: "whoop.sleep_sync",
-    });
   });
 
   it("skips incomplete (non-complete state) sleep records", async () => {

@@ -3,218 +3,16 @@ import type { Database } from "dofek/db";
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  ActivityVariabilityModel,
+  PedalDynamicsModel,
+  type RampRateResultData,
+  RampRateWeekModel,
+  TrainingMonotonyWeekModel,
+  VerticalAscentModel,
+} from "./cycling-advanced-models.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
-
-// ---------------------------------------------------------------------------
-// Domain models
-// ---------------------------------------------------------------------------
-
-export interface RampRateWeekRow {
-  week: string;
-  ctlStart: number;
-  ctlEnd: number;
-  rampRate: number;
-}
-
-/** A single week in the ramp rate timeline. */
-export class RampRateWeekModel {
-  readonly #row: RampRateWeekRow;
-
-  constructor(row: RampRateWeekRow) {
-    this.#row = row;
-  }
-
-  get week(): string {
-    return this.#row.week;
-  }
-
-  get ctlStart(): number {
-    return this.#row.ctlStart;
-  }
-
-  get ctlEnd(): number {
-    return this.#row.ctlEnd;
-  }
-
-  get rampRate(): number {
-    return this.#row.rampRate;
-  }
-
-  toDetail() {
-    return {
-      week: this.#row.week,
-      ctlStart: this.#row.ctlStart,
-      ctlEnd: this.#row.ctlEnd,
-      rampRate: this.#row.rampRate,
-    };
-  }
-}
-
-export interface RampRateResultData {
-  weeks: RampRateWeekModel[];
-  currentRampRate: number;
-  recommendation: string;
-}
-
-export interface TrainingMonotonyWeekRow {
-  week: string;
-  monotony: number;
-  strain: number;
-  weeklyLoad: number;
-}
-
-/** Weekly training monotony and strain. */
-export class TrainingMonotonyWeekModel {
-  readonly #row: TrainingMonotonyWeekRow;
-
-  constructor(row: TrainingMonotonyWeekRow) {
-    this.#row = row;
-  }
-
-  toDetail() {
-    return {
-      week: this.#row.week,
-      monotony: this.#row.monotony,
-      strain: this.#row.strain,
-      weeklyLoad: this.#row.weeklyLoad,
-    };
-  }
-}
-
-export interface ActivityVariabilityRowData {
-  activityId: string;
-  date: string;
-  activityName: string;
-  normalizedPower: number;
-  averagePower: number;
-}
-
-/** A single activity with variability and intensity factor metrics. */
-export class ActivityVariabilityModel {
-  readonly #row: ActivityVariabilityRowData;
-  readonly #ftp: number;
-
-  constructor(row: ActivityVariabilityRowData, ftp: number) {
-    this.#row = row;
-    this.#ftp = ftp;
-  }
-
-  get date(): string {
-    return this.#row.date;
-  }
-
-  get activityId(): string {
-    return this.#row.activityId;
-  }
-
-  get activityName(): string {
-    return this.#row.activityName;
-  }
-
-  get normalizedPower(): number {
-    return this.#row.normalizedPower;
-  }
-
-  get averagePower(): number {
-    return this.#row.averagePower;
-  }
-
-  get variabilityIndex(): number {
-    return Math.round((this.#row.normalizedPower / this.#row.averagePower) * 1000) / 1000;
-  }
-
-  get intensityFactor(): number {
-    return Math.round((this.#row.normalizedPower / this.#ftp) * 1000) / 1000;
-  }
-
-  toDetail() {
-    return {
-      activityId: this.activityId,
-      date: this.date,
-      activityName: this.activityName,
-      normalizedPower: this.normalizedPower,
-      averagePower: this.averagePower,
-      variabilityIndex: this.variabilityIndex,
-      intensityFactor: this.intensityFactor,
-    };
-  }
-}
-
-export interface VerticalAscentRowData {
-  date: string;
-  activityName: string;
-  elevationGainMeters: number;
-  climbingSeconds: number;
-}
-
-/** An activity with vertical ascent rate (VAM) for climbing segments. */
-export class VerticalAscentModel {
-  readonly #row: VerticalAscentRowData;
-
-  constructor(row: VerticalAscentRowData) {
-    this.#row = row;
-  }
-
-  get date(): string {
-    return this.#row.date;
-  }
-
-  get activityName(): string {
-    return this.#row.activityName;
-  }
-
-  get elevationGainMeters(): number {
-    return this.#row.elevationGainMeters;
-  }
-
-  get climbingMinutes(): number {
-    return Math.round((this.#row.climbingSeconds / 60) * 10) / 10;
-  }
-
-  get verticalAscentRate(): number {
-    return this.#row.climbingSeconds > 0
-      ? Math.round((this.#row.elevationGainMeters / (this.#row.climbingSeconds / 3600)) * 10) / 10
-      : 0;
-  }
-
-  toDetail() {
-    return {
-      date: this.date,
-      activityName: this.activityName,
-      verticalAscentRate: this.verticalAscentRate,
-      elevationGainMeters: this.elevationGainMeters,
-      climbingMinutes: this.climbingMinutes,
-    };
-  }
-}
-
-export interface PedalDynamicsRowData {
-  date: string;
-  activityName: string;
-  leftRightBalance: number;
-  avgTorqueEffectiveness: number;
-  avgPedalSmoothness: number;
-}
-
-/** An activity with pedal dynamics metrics. */
-export class PedalDynamicsModel {
-  readonly #row: PedalDynamicsRowData;
-
-  constructor(row: PedalDynamicsRowData) {
-    this.#row = row;
-  }
-
-  toDetail() {
-    return {
-      date: this.#row.date,
-      activityName: this.#row.activityName,
-      leftRightBalance: this.#row.leftRightBalance,
-      avgTorqueEffectiveness: this.#row.avgTorqueEffectiveness,
-      avgPedalSmoothness: this.#row.avgPedalSmoothness,
-    };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -293,11 +91,11 @@ export class CyclingAdvancedRepository {
           up.max_hr AS max_hr,
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
-        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
+        LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
+         AND drhr.date = toDate(asum.started_at)
+        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > now() - INTERVAL ({days:Int32} + 42) DAY
@@ -432,11 +230,11 @@ export class CyclingAdvancedRepository {
           up.max_hr AS max_hr,
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
-        INNER JOIN postgres_fitness_live.user_profile up ON up.id = asum.user_id
-        LEFT JOIN postgres_fitness_live.derived_resting_heart_rate drhr
+        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
+        LEFT JOIN analytics.derived_resting_heart_rate drhr
           ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(toTimeZone(asum.started_at, {timezone:String}))
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
+         AND drhr.date = toDate(asum.started_at)
+        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
@@ -510,7 +308,7 @@ export class CyclingAdvancedRepository {
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
           ) AS cumsum
         FROM analytics.deduped_sensor ds
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = ds.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = ds.activity_id
         WHERE ds.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
@@ -564,7 +362,7 @@ export class CyclingAdvancedRepository {
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = ds.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = ds.activity_id
         WHERE ds.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
@@ -580,7 +378,7 @@ export class CyclingAdvancedRepository {
           round(pow(avg(pow(r.rolling_30s_power, 4)), 0.25), 1) AS np,
           round(avg(r.rolling_30s_power), 1) AS avg_power
         FROM rolling r
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = r.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = r.activity_id
         GROUP BY a.id, a.started_at, a.name
         HAVING count() >= 60
       )
@@ -638,16 +436,18 @@ export class CyclingAdvancedRepository {
             PARTITION BY alt.activity_id ORDER BY alt.recorded_at
           ) AS prev_recorded_at
         FROM analytics.deduped_sensor alt
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = alt.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = alt.activity_id
         WHERE a.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
           AND alt.channel = 'altitude'
       ),
       grade_activities AS (
-        SELECT DISTINCT grd.activity_id AS activity_id
+        SELECT DISTINCT
+          grd.activity_id AS activity_id,
+          1 AS has_grade_samples
         FROM analytics.deduped_sensor grd
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = grd.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = grd.activity_id
         WHERE a.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
@@ -659,7 +459,7 @@ export class CyclingAdvancedRepository {
           grd.recorded_at AS recorded_at,
           grd.scalar AS grade
         FROM analytics.deduped_sensor grd
-        INNER JOIN postgres_fitness_live.v_activity a ON a.id = grd.activity_id
+        INNER JOIN analytics.v_activity a ON a.id = grd.activity_id
         WHERE a.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
@@ -673,7 +473,7 @@ export class CyclingAdvancedRepository {
           ap.prev_altitude AS prev_altitude,
           ap.prev_recorded_at AS prev_recorded_at,
           gp.grade AS grade,
-          ga.activity_id IS NOT NULL AS has_grade_samples,
+          coalesce(ga.has_grade_samples, 0) = 1 AS has_grade_samples,
           row_number() OVER (
             PARTITION BY ap.activity_id, ap.recorded_at
             ORDER BY
@@ -694,12 +494,12 @@ export class CyclingAdvancedRepository {
         round(sum(cs.altitude - cs.prev_altitude), 1) AS elevation_gain,
         toInt32(sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at))) AS climbing_seconds
       FROM climbing_segments cs
-      INNER JOIN postgres_fitness_live.v_activity a ON a.id = cs.activity_id
+      INNER JOIN analytics.v_activity a ON a.id = cs.activity_id
       WHERE cs.prev_altitude IS NOT NULL
         AND cs.prev_recorded_at IS NOT NULL
         AND cs.altitude > cs.prev_altitude
         AND cs.grade_rank = 1
-        AND (NOT cs.has_grade_samples OR cs.grade > 3)
+        AND (NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)
       GROUP BY a.id, a.started_at, a.name
       HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60
       ORDER BY a.started_at`,
@@ -733,7 +533,7 @@ export class CyclingAdvancedRepository {
         round((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2, 1) AS avg_torque_effectiveness,
         round((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2, 1) AS avg_pedal_smoothness
       FROM analytics.activity_summary asum
-      INNER JOIN postgres_fitness_live.v_activity a ON a.id = asum.activity_id
+      INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
       WHERE asum.user_id = {userId:UUID}
         AND has({enduranceTypes:Array(String)}, a.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY

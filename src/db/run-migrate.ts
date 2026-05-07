@@ -2,7 +2,6 @@ import { logger } from "../logger.ts";
 import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
 import { runMigrations } from "./migrate.ts";
-import { syncMaterializedViews } from "./sync-views.ts";
 
 const CLICKHOUSE_MIGRATION_REQUEST_TIMEOUT_MS = 3_300_000;
 
@@ -18,10 +17,6 @@ export async function main(): Promise<void> {
 
   const count = await runMigrations(databaseUrl);
   logger.info(`[migrate] Done — ${count} migration(s) applied`);
-  const viewResult = await syncMaterializedViews(databaseUrl);
-  logger.info(
-    `[migrate] Materialized views synced=${viewResult.synced} skipped=${viewResult.skipped} refreshed=${viewResult.refreshed}`,
-  );
 
   const clickHouseClient = createClickHouseClientFromEnv(process.env, {
     requestTimeoutMs: CLICKHOUSE_MIGRATION_REQUEST_TIMEOUT_MS,

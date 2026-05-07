@@ -16,8 +16,8 @@ import {
   computeComponentScores,
   computeReadinessScore,
   type NextWorkoutRecommendation,
-  TrainingRepository,
-} from "../repositories/training-repository.ts";
+} from "../repositories/training-recommendation.ts";
+import { TrainingRepository } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 

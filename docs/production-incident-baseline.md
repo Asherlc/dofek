@@ -7,6 +7,84 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-06: Branch deploy validation exceeded migration timeout
+
+### Impact
+
+Validation deploy run `25417551356` from branch `aloud-bike` built both Docker
+images successfully, then failed in the `Run migrations` step before reaching
+the PeerDB CDC validation step.
+
+### Evidence That Mattered
+
+- Job: `Deploy Web Stack / Deploy Web Stack`, job `74552433086`.
+- Step: `Run migrations`, started `2026-05-06T05:18:03Z`.
+- First fatal line: `Migration exceeded 3300s`.
+- The job log showed regular `Migration still running after ...` messages until
+  the timeout guard fired, so the runner was polling the detached migration
+  container rather than hanging in the Docker CLI.
+- The timeout branch removed the migration container before printing its logs,
+  which left no direct evidence of the slow migration phase.
+
+### Root Cause
+
+The branch image ran longer than the deployment migration budget. The workflow's
+timeout path did not collect migration logs before cleanup, so the exact slow
+substep was not preserved in the GitHub Actions log.
+
+### Fix Or Mitigation
+
+- Bounded the migration step's remote Docker inspect, log collection, and
+  cleanup commands with `timeout` so remote Docker calls fail loudly.
+- Added timeout-path migration log collection before container cleanup so the
+  next timeout captures the slow migration phase instead of only reporting the
+  deploy-level guard.
+
+### Remaining Risk
+
+This instrumentation does not reduce legitimate ClickHouse or Postgres
+migration work. If the branch retry still exceeds `3300s`, use the captured
+migration output as the root-cause evidence before changing behavior.
+
+## 2026-05-06: Production Deploy failed during PeerDB analytics mirror validation
+
+### Impact
+
+Deploy Web run `25415707212` updated the production stack but failed in the
+post-deploy `Configure ClickHouse CDC` step, so the workflow ended red before
+materialized-view planning ran.
+
+### Evidence That Mattered
+
+- Failing job: `Deploy Web Production / Deploy Web Stack / Deploy Web Stack`.
+- Failing step: `Configure ClickHouse CDC`.
+- First fatal line:
+  `[clickhouse-cdc] error: unable to submit job: "status: Internal, message: \"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate destination connector dofek_clickhouse_postgres_fitness: not all PeerDB columns found in destination table metric_stream\"`.
+- The checked-in ClickHouse DDL for `postgres_fitness.metric_stream` had app
+  columns only and omitted PeerDB CDC metadata columns.
+
+### Root Cause
+
+The analytics CDC mirror targets an existing app-managed ClickHouse table.
+PeerDB requires its metadata columns on existing ClickHouse destination tables,
+but `postgres_fitness.metric_stream` lacked `_peerdb_synced_at`,
+`_peerdb_is_deleted`, and `_peerdb_version`.
+
+### Fix Or Mitigation
+
+- Added PeerDB metadata columns to fresh `postgres_fitness.metric_stream`
+  bootstrap DDL.
+- Made `setupClickHouseCdc()` repair existing analytics tables with
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` before submitting the PeerDB mirror.
+- Added unit coverage for both fresh DDL and deploy-time repair commands.
+
+### Remaining Risk
+
+Local test execution was blocked in the sandbox because dependencies were not
+installed and npm registry access failed with DNS `ENOTFOUND`. CI must run the
+targeted unit tests and deploy workflow to confirm the fix in the real runner
+environment.
+
 ## 2026-05-03: Deploy Staging failed while creating Temporal search attribute
 
 ### Impact
@@ -2996,3 +3074,134 @@ after applying `0015`.
 The fix is scoped to `fitness.v_daily_metrics`. Future migrations that insert
 columns into the middle of existing views should drop and recreate those views
 instead of relying on `CREATE OR REPLACE VIEW`.
+
+## 2026-05-06: Branch Deploy ClickHouse CDC and Postgres View Lock Failures
+
+### Symptoms
+
+The `aloud-bike` branch deploy first failed while configuring ClickHouse CDC,
+then a later deploy hung in the migration step until the workflow timed out.
+During the migration hang, app queries touching the same fitness read models
+also queued behind the pending DDL.
+
+### Evidence
+
+The first CDC fatal log line from run `25415707212`, job `74546726240`, was:
+
+```text
+"invalid mirror: rpc error: code = FailedPrecondition desc = failed to validate destination connector dofek_clickhouse_postgres_fitness: not all PeerDB columns found in destination table metric_stream"
+```
+
+The later migration run timed out with:
+
+```text
+Migration exceeded 3300s
+```
+
+Postgres lock inspection showed an active blocked statement:
+
+```text
+CREATE OR REPLACE VIEW fitness.v_daily_metrics AS ...
+```
+
+### Root Cause
+
+The CDC failure was caused by the ClickHouse destination table missing PeerDB
+metadata columns. The migration timeout was caused by deploy-time Postgres view
+DDL on hot fitness read models; the pending replacement waited behind live app
+reads, then new app reads waited behind the pending DDL.
+
+### Fix or Mitigation
+
+PeerDB metadata columns were added to the ClickHouse mirror tables. The
+troublesome fitness read models were moved to ClickHouse-native
+`postgres_fitness` raw mirrors and `analytics.*` read models, and the
+deploy/ingestion-time Postgres view sync and refresh hooks were removed. Runtime
+ClickHouse consumers now read `analytics.v_activity`, `analytics.v_sleep`,
+`analytics.v_daily_metrics`, `analytics.v_body_measurement`, and related
+ClickHouse read models instead of `postgres_fitness_live`.
+
+### Remaining Risk
+
+Local changed-test runs exposed ClickHouse socket hangs when several integration
+files concurrently created and refreshed isolated read-model databases against
+one local ClickHouse service. Vitest file execution is serialized to match the
+service capacity. A branch deploy retry from `aloud-bike` completed successfully
+in GitHub Actions run `25457794464`.
+
+## 2026-05-06: Branch Deploy Blocked by Full Root Filesystem
+
+### Symptoms
+
+The `aloud-bike` branch deploy run `25461143484` reached `Deploy Web Stack` and
+then sat in `Pull deploy images` without advancing.
+
+### Evidence
+
+Production host inspection during the stuck pull showed:
+
+```text
+/dev/sdb1        38G   37G     0 100% /
+/dev/sda         99G   44G   51G  47% /mnt/HC_Volume_105292545
+```
+
+The deploy was waiting on remote Docker image inspection/pull work while the
+root filesystem had no free space.
+
+### Root Cause
+
+The Docker root filesystem on the production host was exhausted before the
+deploy image pulls. The data volume still had free space, but Docker image and
+runtime artifacts live on `/`, so the deploy could not reliably pull or inspect
+images.
+
+### Fix or Mitigation
+
+The deploy workflow now runs Docker cleanup before release image pulls and then
+fails loudly if `/` still has less than 8 GiB available. This turns the previous
+silent pull hang into an explicit disk-headroom failure and gives the image pull
+step enough room to proceed when stale Docker artifacts are reclaimable.
+
+### Remaining Risk
+
+The host still keeps Docker runtime state on the root disk. A longer-term fix
+should either move Docker's data root to persistent storage or add host-level
+disk monitoring for `/` so operators know before deploys hit zero free space.
+
+## 2026-05-06: Stryker Shard Failed on Read-Model Mutation Survivors
+
+### Symptoms
+
+PR #1097 run `25467432350` failed `Test / Stryker (3)` after the branch split
+large read-model files into Stryker shards.
+
+### Evidence
+
+The first fatal Stryker line was:
+
+```text
+Final mutation score 62.01 under breaking threshold 75, setting exit code to 1
+```
+
+The surviving mutants were concentrated in
+`packages/server/src/repositories/cycling-advanced-repository.ts` and
+`packages/server/src/routers/provider-detail.ts`.
+
+### Root Cause
+
+The new shard pairing exposed under-specified tests for cycling ramp-rate edge
+cases and provider disconnect revocation branches. Unit tests covered the happy
+paths, but did not assert the query shape, ramp-rate thresholds, missing-token
+branches, or error reporting side effects tightly enough to kill the mutants.
+
+### Fix or Mitigation
+
+Added focused mutation tests for the cycling advanced repository queries,
+ramp-rate thresholds, and provider disconnect revocation behavior. A local
+targeted Stryker retry for the same two files reached a 79.89 mutation score,
+above the 75 break threshold.
+
+### Remaining Risk
+
+The targeted shard is now above threshold locally. Full CI still needs to rerun
+on GitHub Actions to verify the complete sharded matrix with runner timing.

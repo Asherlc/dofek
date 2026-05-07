@@ -58,7 +58,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       await oauth1SecretStore.delete(oauthToken);
 
       const { getAllProviders } = await import("dofek/providers/registry");
-      const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+      const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
       await ensureProvidersRegistered();
 
       const provider = getAllProviders().find((p) => p.id === stored.providerId);
@@ -138,7 +138,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     resolvedProviderName = providerId;
 
     const { getAllProviders } = await import("dofek/providers/registry");
-    const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+    const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
     await ensureProvidersRegistered();
 
     const provider = getAllProviders().find((p) => p.id === providerId);

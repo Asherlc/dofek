@@ -496,6 +496,82 @@ describe("weeklyReportRouter", () => {
       expect(result.current?.weekStart).toBe("2026-03-17");
     });
 
+    it("uses the previous full week as current when the latest requested week is partial", async () => {
+      const rows = [
+        {
+          week_start: "2026-03-09",
+          total_hours: 4,
+          activity_count: 2,
+          avg_daily_load: 1,
+          avg_sleep_min: 420,
+          avg_resting_hr: 60,
+          avg_hrv: 45,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 420,
+        },
+        {
+          week_start: "2026-03-16",
+          total_hours: 1,
+          activity_count: 1,
+          avg_daily_load: 0.5,
+          avg_sleep_min: 390,
+          avg_resting_hr: 62,
+          avg_hrv: 40,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 420,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
+      });
+
+      const result = await caller.report({ weeks: 2, endDate: "2026-03-17" });
+
+      expect(result.current?.weekStart).toBe("2026-03-09");
+      expect(result.history).toEqual([]);
+    });
+
+    it("treats Sunday as part of the week that started six days earlier", async () => {
+      const rows = [
+        {
+          week_start: "2026-03-09",
+          total_hours: 4,
+          activity_count: 2,
+          avg_daily_load: 1,
+          avg_sleep_min: 420,
+          avg_resting_hr: 60,
+          avg_hrv: 45,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 420,
+        },
+        {
+          week_start: "2026-03-16",
+          total_hours: 1,
+          activity_count: 1,
+          avg_daily_load: 0.5,
+          avg_sleep_min: 390,
+          avg_resting_hr: 62,
+          avg_hrv: 40,
+          chronic_avg_load: 1,
+          prev_3wk_avg_sleep: 420,
+        },
+      ];
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue(rows) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore(rows),
+      });
+
+      const result = await caller.report({ weeks: 2, endDate: "2026-03-22" });
+
+      expect(result.current?.weekStart).toBe("2026-03-09");
+      expect(result.history).toEqual([]);
+    });
+
     it("verifies full computed values for a single week (kills || 0, rounding, null-check mutants)", async () => {
       const rows = [
         {

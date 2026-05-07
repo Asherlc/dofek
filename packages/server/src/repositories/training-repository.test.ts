@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { TrainingRepository } from "./training-repository.ts";
+import type { AccessWindow } from "../billing/entitlement.ts";
+import { type NextWorkoutData, TrainingRepository } from "./training-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -29,22 +30,94 @@ describe("TrainingRepository", () => {
     };
   }
 
-  function makeRepository(rows: Record<string, unknown>[] = []) {
+  function makeRepository(rows: Record<string, unknown>[] = [], accessWindow?: AccessWindow) {
     // Tests pass `rows` to be returned by either PG or CH; the migration
     // moved most queries to CH, but for backward-compat with this test's
     // pattern, mock both to return the same rows.
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
     const sensorStore = makeSensorStore(rows);
-    const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore);
+    const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore, accessWindow);
     return { repo, execute, sensorStore };
   }
+
+  function makeNextWorkoutData(overrides: Partial<NextWorkoutData> = {}): NextWorkoutData {
+    return {
+      latestMetric: null,
+      latestSleepEfficiency: null,
+      acwr: null,
+      muscleFreshness: [],
+      balance: {
+        strength_7d: 0,
+        endurance_7d: 0,
+        last_strength_date: null,
+        last_endurance_date: null,
+      },
+      zoneTotals: { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 },
+      hiitLoad: { hiit_count_7d: 0, last_hiit_date: null },
+      trainingDates: [],
+      ...overrides,
+    };
+  }
+
+  const sleepOnlyWeights = { hrv: 0, restingHr: 0, sleep: 1, respiratoryRate: 0 };
 
   describe("getWeeklyVolume", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getWeeklyVolume(90);
       expect(result).toEqual([]);
+    });
+
+    it("reads weekly volume from ClickHouse activity read model", async () => {
+      const { repo, execute, sensorStore } = makeRepository([]);
+      await repo.getWeeklyVolume(90);
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM analytics.v_activity"),
+        expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
+      );
+    });
+
+    it("does not add access-window filters for full access", async () => {
+      const accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
+      const { repo, sensorStore } = makeRepository([], accessWindow);
+      await repo.getWeeklyVolume(30);
+
+      const query = sensorStore.query.mock.calls[0]?.[1];
+      const params = sensorStore.query.mock.calls[0]?.[2];
+
+      expect(query).toContain("FROM analytics.v_activity");
+      expect(query).not.toContain("toDateTime({accessStart:String})");
+      expect(query).not.toContain("toDateTime({accessEnd:String})");
+      expect(params).toEqual({ userId: "user-1", timezone: "UTC", days: 30 });
+    });
+
+    it("adds access-window filters and parameters for limited access", async () => {
+      const accessWindow: AccessWindow = {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2024-01-01T00:00:00Z",
+        endDateExclusive: "2024-01-08T00:00:00Z",
+      };
+      const { repo, sensorStore } = makeRepository([], accessWindow);
+      await repo.getWeeklyVolume(30);
+
+      const query = sensorStore.query.mock.calls[0]?.[1];
+      const params = sensorStore.query.mock.calls[0]?.[2];
+
+      expect(query).toContain("AND started_at >= toDateTime({accessStart:String})");
+      expect(query).toContain("AND started_at < toDateTime({accessEnd:String})");
+      expect(params).toEqual({
+        userId: "user-1",
+        timezone: "UTC",
+        days: 30,
+        accessStart: "2024-01-01T00:00:00Z",
+        accessEnd: "2024-01-08T00:00:00Z",
+      });
     });
 
     it("returns parsed weekly volume rows", async () => {
@@ -268,6 +341,135 @@ describe("TrainingRepository", () => {
       // 3 CH queries: acwr, zoneTotals, hiitLoad.
       expect(execute).toHaveBeenCalledTimes(5);
       expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("getRecommendation", () => {
+    it("recommends rest after a long training streak and reports hard cardio load", async () => {
+      const { repo } = makeRepository([]);
+      const recommendation = await repo.getRecommendation(
+        makeNextWorkoutData({
+          acwr: 1.1,
+          balance: {
+            strength_7d: 3,
+            endurance_7d: 4,
+            last_strength_date: "2024-01-14",
+            last_endurance_date: "2024-01-14",
+          },
+          hiitLoad: { hiit_count_7d: 2, last_hiit_date: "2024-01-14" },
+          trainingDates: [
+            "2024-01-15",
+            "2024-01-14",
+            "2024-01-13",
+            "2024-01-12",
+            "2024-01-11",
+            "2024-01-10",
+          ],
+        }),
+        "2024-01-15",
+        sleepOnlyWeights,
+      );
+
+      expect(recommendation.recommendationType).toBe("rest");
+      expect(recommendation.cardio?.focus).toBe("recovery");
+      expect(recommendation.cardio?.durationMinutes).toBe(30);
+      expect(recommendation.strength).toBeNull();
+      expect(recommendation.rationale).toContain("Training streak is 6 consecutive days.");
+      expect(recommendation.rationale).toContain("Hard cardio sessions in last 7 days: 2.");
+    });
+
+    it("keeps intensity low when readiness is moderate but below the high-performance threshold", async () => {
+      const { repo } = makeRepository([]);
+      const recommendation = await repo.getRecommendation(
+        makeNextWorkoutData({
+          latestMetric: {
+            date: "2024-01-15",
+            hrv: null,
+            resting_hr: null,
+            respiratory_rate: null,
+            hrv_mean_30d: null,
+            hrv_sd_30d: null,
+            rhr_mean_30d: null,
+            rhr_sd_30d: null,
+            rr_mean_30d: null,
+            rr_sd_30d: null,
+          },
+          latestSleepEfficiency: 40,
+          balance: {
+            strength_7d: 2,
+            endurance_7d: 2,
+            last_strength_date: "2024-01-14",
+            last_endurance_date: "2024-01-14",
+          },
+        }),
+        "2024-01-15",
+        sleepOnlyWeights,
+      );
+
+      expect(recommendation.recommendationType).toBe("cardio");
+      expect(recommendation.title).toBe("Easy Aerobic Session");
+      expect(recommendation.readiness).toEqual({ score: 40, level: "moderate" });
+      expect(recommendation.cardio?.targetZones).toEqual(["Z1", "Z2"]);
+      expect(recommendation.rationale).toContain(
+        "Readiness is below high-performance threshold; keep intensity low today.",
+      );
+    });
+
+    it("recommends strength when strength is under target and recovered muscles are available", async () => {
+      const { repo } = makeRepository([]);
+      const recommendation = await repo.getRecommendation(
+        makeNextWorkoutData({
+          muscleFreshness: [
+            { muscle_group: "lats", last_trained_date: "2024-01-10" },
+            { muscle_group: "delts", last_trained_date: "2024-01-11" },
+          ],
+          balance: {
+            strength_7d: 1,
+            endurance_7d: 4,
+            last_strength_date: "2024-01-10",
+            last_endurance_date: "2024-01-14",
+          },
+        }),
+        "2024-01-15",
+        sleepOnlyWeights,
+      );
+
+      expect(recommendation.recommendationType).toBe("strength");
+      expect(recommendation.cardio).toBeNull();
+      expect(recommendation.strength?.focusMuscles).toEqual(["back", "shoulders"]);
+      expect(recommendation.strength?.lastStrengthDaysAgo).toBe(5);
+      expect(recommendation.rationale).toContain("Most recovered muscle groups: back, shoulders.");
+    });
+
+    it("recommends aerobic cardio when the weekly HIIT cap was reached recently", async () => {
+      const { repo } = makeRepository([]);
+      const recommendation = await repo.getRecommendation(
+        makeNextWorkoutData({
+          balance: {
+            strength_7d: 3,
+            endurance_7d: 1,
+            last_strength_date: "2024-01-14",
+            last_endurance_date: "2024-01-13",
+          },
+          zoneTotals: { zone1: 50, zone2: 30, zone3: 10, zone4: 5, zone5: 5 },
+          hiitLoad: { hiit_count_7d: 3, last_hiit_date: "2024-01-14" },
+        }),
+        "2024-01-15",
+        sleepOnlyWeights,
+      );
+
+      expect(recommendation.recommendationType).toBe("cardio");
+      expect(recommendation.cardio?.focus).toBe("z2");
+      expect(recommendation.cardio?.lastEnduranceDaysAgo).toBe(2);
+      expect(recommendation.rationale).toContain(
+        "Recent intensity split: 80% low, 10% moderate, 10% high.",
+      );
+      expect(recommendation.rationale).toContain(
+        "HIIT cap reached (3/week), so today stays aerobic.",
+      );
+      expect(recommendation.rationale).toContain(
+        "Less than 48 hours since the last hard cardio session.",
+      );
     });
   });
 });

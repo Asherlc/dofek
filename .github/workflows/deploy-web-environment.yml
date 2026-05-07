@@ -81,11 +81,6 @@ on:
         required: false
         type: string
         default: ""
-      refresh_materialized_views:
-        description: "Trigger the materialized-view refresh webhook after stack deploy"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -170,5 +165,4 @@ jobs:
       cloudbeaver_host_rule: ${{ inputs.cloudbeaver_host_rule }}
       pgadmin_host_rule: ${{ inputs.pgadmin_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
-      refresh_materialized_views: ${{ inputs.refresh_materialized_views }}
     secrets: inherit

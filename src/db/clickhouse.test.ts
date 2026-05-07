@@ -91,25 +91,64 @@ describe("buildClickHouseBootstrapStatements", () => {
     const sql = buildClickHouseBootstrapStatements("postgres://health:secret@db:5432/health").join(
       "\n",
     );
+    const rawDependencyTables = [
+      "activity",
+      "sleep_session",
+      "sleep_stage",
+      "daily_metrics",
+      "body_measurement",
+      "provider",
+      "provider_priority",
+      "device_priority",
+      "user_profile",
+    ];
 
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    for (const rawDependencyTable of rawDependencyTables) {
+      expect(sql).toContain(`CREATE TABLE IF NOT EXISTS postgres_fitness.${rawDependencyTable}`);
+    }
+    expect(sql).toContain("_peerdb_synced_at DateTime64(9) DEFAULT now()");
+    expect(sql).toContain("_peerdb_is_deleted Int8 DEFAULT 0");
+    expect(sql).toContain("_peerdb_version Int64 DEFAULT 0");
+    expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
+    expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
+    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
+    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
-    expect(sql).toContain(
-      "ENGINE = PostgreSQL('db:5432', 'health', 'health', 'secret', 'clickhouse')",
-    );
+    expect(sql).not.toContain("ENGINE = PostgreSQL");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
     expect(sql).toContain("REFRESH EVERY 1 MINUTE");
     expect(sql).toContain("FROM postgres_fitness.metric_stream");
-    expect(sql).toContain("FROM postgres_fitness_live.v_activity");
-    expect(sql).toContain("FROM postgres_fitness_live.v_activity_members");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
+    );
+    expect(sql).toContain("INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL");
+    expect(sql).toContain("metric_stream._peerdb_is_deleted = 0");
+    expect(sql).toContain("FROM analytics.v_activity");
+    expect(sql).toContain("FROM analytics.v_activity_members");
+    expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
+    expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
+    expect(sql).toContain("WITH RECURSIVE");
+    expect(sql).toContain("connected_components AS");
+    expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
+    expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
+    expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
+    expect(sql).toContain("WHERE NOT is_nap");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",

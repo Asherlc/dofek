@@ -145,10 +145,6 @@ CI (main) -> build dofek + dofek-ml (same tag)
    9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false <stack>` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, and creates the Postgres peer, ClickHouse peer, and `dofek_metric_stream_cdc` mirror if they do not already exist.
-   11. Run the materialized-view sync planner. It triggers the refresh webhook only when one of these is true:
-      - a canonical `drizzle/_views/*.sql` hash changed
-      - a stored dependency fingerprint for a materialized view changed
-      - an applied migration was marked with `-- requires_materialized_view_refresh` and has not yet been acknowledged by a successful sync
 
 When adding a new host bind mount under `/mnt/dofek-data`, update both
 `deploy/stack.yml` and the Terraform provisioner that creates the directory. If
@@ -163,36 +159,12 @@ resource's `triggers_replace` value so Terraform actually reruns the remote
 - Treat migrations as forward-only production changes.
 - If a release includes schema changes, use expand/contract discipline: deploy additive/backward-compatible schema first, then ship code that depends on it, and only remove old schema in a later release.
 
-### Materialized View Refresh Webhook
+### ClickHouse Read Models
 
-Materialized view syncing is intentionally decoupled from normal deploys.
-Normal deploys do not run materialized-view maintenance unless the
-post-migration planner detects one of the conditions above. Manual deploys can
-still force blocking maintenance with `refresh_materialized_views=true` after
-changing materialized-view definitions or when recovering from stale view state.
-Do not use it as a routine deploy gate because it can rebuild heavy views
-against live data.
-
-To explicitly require a post-migration refresh from SQL, add this marker comment to the migration file:
-
-```sql
--- requires_materialized_view_refresh
-```
-
-The migration runner stores that intent on `drizzle.__drizzle_migrations`, and `syncMaterializedViews()` acknowledges it after a successful sync.
-
-- Endpoint: `POST /api/internal/materialized-views/refresh`
-- Auth: `Authorization: Bearer <MATERIALIZED_VIEW_REFRESH_TOKEN>`
-- Behavior: starts refresh asynchronously and returns `202`; if one is already running, returns `202` with `already_running`.
-- Required env vars:
-  - `MATERIALIZED_VIEW_REFRESH_TOKEN`
-  - `DATABASE_URL`
-
-For planned production maintenance, prefer the blocking runbook command in
-[docs/materialized-view-maintenance-runbook.md](../docs/materialized-view-maintenance-runbook.md).
-The deploy workflow uses that blocking command for manual
-`refresh_materialized_views=true` runs instead of treating webhook acceptance as
-completion.
+Deploys do not run Postgres materialized-view sync or refresh maintenance.
+Fitness read models that need incremental updates are maintained in ClickHouse,
+and the ClickHouse setup is responsible for keeping those analytics tables
+current. Do not add deploy-time Postgres view refreshes for normal releases.
 
 ### Postgres Statement Diagnostics
 

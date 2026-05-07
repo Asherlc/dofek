@@ -21,11 +21,6 @@ on:
         required: false
         default: "latest"
         type: string
-      refresh_materialized_views:
-        description: "Trigger materialized-view refresh after stack deploy"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -53,7 +48,6 @@ jobs:
       image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
       automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
       ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
-      refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
     secrets: inherit
 
   staging:
@@ -82,7 +76,6 @@ jobs:
       databasus_host_rule: 'Host(`staging-databasus.dofek.asherlc.com`)'
       cloudbeaver_host_rule: 'Host(`staging-cloudbeaver.dofek.asherlc.com`)'
       pgadmin_host_rule: 'Host(`staging-pgadmin.dofek.asherlc.com`)'
-      refresh_materialized_views: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_materialized_views || false }}
     secrets: inherit
 
   # Image cleanup runs on the server via docuum (see stack.yml).

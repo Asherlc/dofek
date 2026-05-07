@@ -65,7 +65,7 @@ vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("../repositories/training-repository.ts", () => ({
+vi.mock("../repositories/training-recommendation.ts", () => ({
   computeComponentScores: vi.fn(() => ({
     hrvScore: 62,
     restingHrScore: 62,
@@ -73,6 +73,9 @@ vi.mock("../repositories/training-repository.ts", () => ({
     respiratoryRateScore: 62,
   })),
   computeReadinessScore: vi.fn(() => 62),
+}));
+
+vi.mock("../repositories/training-repository.ts", () => ({
   TrainingRepository: class {
     getNextWorkoutData() {
       return Promise.resolve(null);
@@ -95,7 +98,7 @@ vi.mock("../repositories/anomaly-detection-repository.ts", () => ({
 import {
   computeComponentScores,
   computeReadinessScore,
-} from "../repositories/training-repository.ts";
+} from "../repositories/training-recommendation.ts";
 import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);

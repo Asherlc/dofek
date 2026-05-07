@@ -1,7 +1,6 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { refreshDedupViews } from "../../../../src/db/dedup.ts";
 import { dailyMetrics, TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
@@ -79,7 +78,6 @@ describe("Anomaly detection", () => {
         hrv: 42,
       });
       await testCtx.db.insert(dailyMetrics).values(rows).onConflictDoNothing();
-      await refreshDedupViews(testCtx.db);
 
       const result = await checkAnomalies(testCtx.db, TEST_USER_ID, "UTC", "2026-02-02");
 

@@ -7,7 +7,7 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 // Recovery router types
 
 // Training router types
-export type { NextWorkoutRecommendation } from "./repositories/training-repository.ts";
+export type { NextWorkoutRecommendation } from "./repositories/training-recommendation.ts";
 // Calendar router types
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types

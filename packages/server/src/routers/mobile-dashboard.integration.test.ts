@@ -5,7 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import type { NextWorkoutRecommendation } from "../repositories/training-repository.ts";
+import type { NextWorkoutRecommendation } from "../repositories/training-recommendation.ts";
 import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 import type { SleepNeedResult } from "./sleep-need.ts";
 

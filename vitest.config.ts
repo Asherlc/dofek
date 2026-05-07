@@ -43,6 +43,12 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "integration",
+          fileParallelism: false,
+          poolOptions: {
+            forks: {
+              singleFork: true,
+            },
+          },
           include: ["src/**/*.integration.test.ts", "packages/*/src/**/*.integration.test.ts"],
           exclude: ["**/packages/mobile/**"],
           env: {
