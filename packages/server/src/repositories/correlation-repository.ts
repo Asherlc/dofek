@@ -16,6 +16,7 @@ import {
   sleepRowSchema,
 } from "../insights/schemas.ts";
 import { spearmanCorrelation } from "../insights/stats.ts";
+import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 // ── Metric extraction ───────────────────────────────────────────────────
@@ -205,11 +206,11 @@ export class CorrelationRepository {
       executeWithSchema(
         this.#db,
         dailyRowSchema,
-        sql`SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.active_energy_kcal, dm.skin_temp_c
-            FROM fitness.v_daily_metrics dm
-            LEFT JOIN fitness.derived_resting_heart_rate drhr
-              ON drhr.user_id = dm.user_id
-             AND drhr.date = dm.date
+        sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${days}::int`)}
+            SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.active_energy_kcal, dm.skin_temp_c
+	            FROM fitness.v_daily_metrics dm
+	            LEFT JOIN resting_heart_rate drhr
+	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}
               AND dm.date > CURRENT_DATE - ${days}::int
             ORDER BY dm.date ASC`,

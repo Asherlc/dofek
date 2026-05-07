@@ -145,6 +145,13 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         ...buildProviderStatsReadModelStatements(),
       ],
     },
+    {
+      id: "0009_drop_derived_resting_heart_rate_read_model",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.derived_resting_heart_rate",
+        "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
+      ],
+    },
   ];
 }
 
@@ -283,14 +290,6 @@ async function replaceLegacyMetricStreamIfNeeded(
   }
 
   await backfillNativeMetricStream(client, postgresConnectionString);
-  await runClickHouseMigrationStatement(
-    client,
-    "SYSTEM REFRESH VIEW analytics.derived_resting_heart_rate",
-  );
-  await runClickHouseMigrationStatement(
-    client,
-    "SYSTEM WAIT VIEW analytics.derived_resting_heart_rate",
-  );
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.provider_stats");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.provider_stats");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import { InsightsRepository } from "./insights-repository.ts";
 
 vi.mock("../insights/engine.ts", () => ({
@@ -8,7 +9,6 @@ vi.mock("../insights/engine.ts", () => ({
 function makeDb() {
   const execute = vi
     .fn()
-    .mockResolvedValueOnce([]) // metrics
     .mockResolvedValueOnce([]) // sleep
     .mockResolvedValueOnce([]) // activities
     .mockResolvedValueOnce([]) // nutrition
@@ -16,18 +16,26 @@ function makeDb() {
   return { execute };
 }
 
+function makeSensorStore(): Pick<ActivitySensorStore, "query"> {
+  return {
+    query: vi.fn().mockResolvedValue([]),
+  };
+}
+
 describe("InsightsRepository", () => {
   describe("computeInsights", () => {
-    it("executes 5 queries (one per dataset)", async () => {
+    it("executes Postgres queries only for non-vitals datasets", async () => {
       const db = makeDb();
-      const repo = new InsightsRepository(db, "user-1");
+      const sensorStore = makeSensorStore();
+      const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
       await repo.computeInsights(90, "2024-06-01");
-      expect(db.execute).toHaveBeenCalledTimes(5);
+      expect(db.execute).toHaveBeenCalledTimes(4);
+      expect(sensorStore.query).toHaveBeenCalledTimes(2);
     });
 
     it("returns engine result for empty data", async () => {
       const db = makeDb();
-      const repo = new InsightsRepository(db, "user-1");
+      const repo = new InsightsRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.computeInsights(90, "2024-06-01");
       expect(result).toEqual([]);
     });
@@ -35,9 +43,23 @@ describe("InsightsRepository", () => {
     it("passes parsed rows to computeInsights engine", async () => {
       const { computeInsights } = await import("../insights/engine.ts");
       const db = makeDb();
-      const repo = new InsightsRepository(db, "user-1");
+      const repo = new InsightsRepository(db, "user-1", "UTC", makeSensorStore());
       await repo.computeInsights(30, "2024-06-01");
       expect(computeInsights).toHaveBeenCalledWith([], [], [], [], []);
+    });
+
+    it("does not query derived resting heart rate views for vitals", async () => {
+      const db = makeDb();
+      const sensorStore = makeSensorStore();
+      const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
+      await repo.computeInsights(30, "2024-06-01");
+
+      const vitalsQuery = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+      const restingHeartRateQuery = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
+      expect(vitalsQuery).toContain("analytics.v_daily_metrics");
+      expect(vitalsQuery).not.toContain("derived_resting_heart_rate");
+      expect(restingHeartRateQuery).toContain("analytics.deduped_sensor");
+      expect(restingHeartRateQuery).not.toContain("derived_resting_heart_rate");
     });
   });
 });

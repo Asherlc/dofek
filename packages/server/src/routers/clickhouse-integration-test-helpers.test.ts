@@ -28,7 +28,6 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.v_sleep",
         "analytics.v_body_measurement",
         "analytics.v_daily_metrics",
-        "analytics.derived_resting_heart_rate",
         "analytics.provider_stats",
         "analytics.deduped_sensor",
         "analytics.activity_summary",
@@ -149,6 +148,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(9);
+    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(8);
   });
 });

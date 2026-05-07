@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -100,7 +101,8 @@ export class BehaviorImpactRepository {
     const rows = await executeWithSchema(
       this.#db,
       impactDbSchema,
-      sql`WITH boolean_entries AS (
+      sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${days + 1}::int`)},
+          boolean_entries AS (
             SELECT
               je.date,
               je.question_slug,
@@ -131,10 +133,9 @@ export class BehaviorImpactRepository {
                   ELSE NULL
                 END
               ) AS readiness_score
-            FROM fitness.v_daily_metrics dm
-            LEFT JOIN fitness.derived_resting_heart_rate drhr
-              ON drhr.user_id = dm.user_id
-             AND drhr.date = dm.date
+	            FROM fitness.v_daily_metrics dm
+	            LEFT JOIN resting_heart_rate drhr
+	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}
               AND dm.date >= (CURRENT_DATE - ${days}::int)
             GROUP BY dm.date

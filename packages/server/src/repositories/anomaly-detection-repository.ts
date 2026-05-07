@@ -3,7 +3,7 @@ import { decryptCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { restingHeartRatePostgresCte, sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -145,20 +145,23 @@ export class AnomalyDetectionRepository {
       this.#db,
       anomalyCheckRowSchema,
       sql`WITH target_date AS (
-          SELECT ${dateWindowEnd(endDate)}::date AS date
-        ),
-        baseline AS (
-          SELECT
-            date,
-            resting_hr,
+	          SELECT ${dateWindowEnd(endDate)}::date AS date
+	        ),
+          ${restingHeartRatePostgresCte(
+            this.#userId,
+            dateWindowStart(endDate, BASELINE_LOOKBACK_DAYS),
+            dateWindowEnd(endDate),
+          )},
+	        baseline AS (
+	          SELECT
+	            date,
+	            resting_hr,
             AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
             STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
             COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
-            FROM fitness.derived_resting_heart_rate
-            WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(endDate, BASELINE_LOOKBACK_DAYS)}
-            ORDER BY date ASC
-          ),
+	            FROM resting_heart_rate
+	            ORDER BY date ASC
+	          ),
           ranked_daily AS (
             SELECT
               d.*,
@@ -329,18 +332,17 @@ export class AnomalyDetectionRepository {
     const rows = await executeWithSchema(
       this.#db,
       anomalyHistoryRowSchema,
-      sql`WITH baseline AS (
-          SELECT
-            date,
-            resting_hr,
+      sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${queryDays}::int`)},
+          baseline AS (
+	          SELECT
+	            date,
+	            resting_hr,
             AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
             STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
             COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
-            FROM fitness.derived_resting_heart_rate
-            WHERE user_id = ${this.#userId}
-              AND date > CURRENT_DATE - ${queryDays}::int
-            ORDER BY date ASC
-          ),
+	            FROM resting_heart_rate
+	            ORDER BY date ASC
+	          ),
           ranked_daily AS (
             SELECT
               d.*,

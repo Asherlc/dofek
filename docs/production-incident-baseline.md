@@ -3328,3 +3328,54 @@ Local automated verification could not run in this isolated worktree because
 `node_modules` was absent and `pnpm install --offline --frozen-lockfile` could
 not find `zod` in the local pnpm store. CI must run the focused migration tests
 and the deploy workflow to verify the production repair path end to end.
+
+## 2026-05-07: Dashboard Analytics Saturated Postgres
+
+### Symptoms
+
+Dashboard cards including Top Insights, Healthspan, Next Workout, and Stress
+Monitor took a very long time to load. Authenticated requests eventually showed
+a session lookup failure:
+
+```text
+SELECT user_id FROM fitness.session WHERE id = $1 AND expires_at > NOW() LIMIT 1
+```
+
+### User Impact
+
+Dashboard and mobile dashboard API responses were degraded. Some authenticated
+requests surfaced session-query errors because the web process could not get
+through its normal Postgres request path during the contention window.
+
+### Evidence
+
+The session lookup itself was not the expensive query; direct inspection showed
+it completed in sub-millisecond time. Production evidence pointed at dashboard
+analytics queries holding Postgres connections for long periods, including
+`insights.compute` requests in the 810-1047 second range and other dashboard
+analytics requests around 10 seconds or more. `pg_stat_statements` also showed a
+dashboard analytics query with very high cumulative time and multi-thousand
+second maximum runtime.
+
+### Root Cause
+
+Dashboard analytics were still using expensive live Postgres read paths and the
+resting-heart-rate derived read model. Under dashboard burst load, those queries
+could hold the small web Postgres pool long enough that unrelated session
+lookups failed while waiting behind analytics work.
+
+### Fix or Mitigation
+
+Removed the resting-heart-rate derived tables/read model from both Postgres and
+ClickHouse. Added a reusable resting-heart-rate SQL helper for Postgres call
+sites and a ClickHouse helper that computes resting heart rate directly from
+`analytics.v_sleep` and `analytics.deduped_sensor`. Dashboard-heavy paths now
+reuse that helper instead of reading `fitness.derived_resting_heart_rate` or
+`analytics.derived_resting_heart_rate`.
+
+### Remaining Risk
+
+The helper is intentionally a regular query for now, not a materialized view.
+Monitor ClickHouse latency for RHR-heavy dashboard paths; if it becomes the next
+hot spot, revisit a ClickHouse materialized view or scheduled read model with a
+documented late-data refresh strategy.

@@ -136,6 +136,89 @@ export function bodyWeightDedupCte(
 // ---------------------------------------------------------------------------
 
 /**
+ * Reusable CTE that computes daily resting heart rate directly from raw
+ * sleep-window heart-rate samples.
+ *
+ * Returns a single CTE named `resting_heart_rate` with:
+ *   user_id, date, resting_hr
+ */
+export function restingHeartRatePostgresCte(
+  userId: string | SQL,
+  startDate: SQL,
+  endDate?: SQL,
+): SQL {
+  return sql`resting_heart_rate AS (
+    WITH sleep_windows AS (
+      SELECT
+        user_id,
+        (ended_at AT TIME ZONE 'UTC')::date AS date,
+        started_at,
+        ended_at
+      FROM fitness.v_sleep
+      WHERE user_id = ${userId}
+        AND is_nap = false
+        AND ended_at IS NOT NULL
+        AND (ended_at AT TIME ZONE 'UTC')::date > ${startDate}
+        ${endDate ? sql`AND (ended_at AT TIME ZONE 'UTC')::date <= ${endDate}` : sql``}
+    ),
+    raw_samples AS (
+      SELECT
+        sw.user_id,
+        sw.date,
+        ms.provider_id,
+        ms.scalar AS heart_rate
+      FROM sleep_windows sw
+      JOIN fitness.metric_stream ms
+        ON ms.user_id = sw.user_id
+       AND ms.channel = 'heart_rate'
+       AND ms.recorded_at >= sw.started_at
+       AND ms.recorded_at <= sw.ended_at
+       AND ms.scalar IS NOT NULL
+    ),
+    best_provider AS (
+      SELECT DISTINCT ON (user_id, date)
+        user_id,
+        date,
+        provider_id
+      FROM (
+        SELECT
+          user_id,
+          date,
+          provider_id,
+          count(*) AS sample_count
+        FROM raw_samples
+        GROUP BY user_id, date, provider_id
+      ) provider_counts
+      ORDER BY user_id, date, sample_count DESC, provider_id ASC
+    ),
+    samples AS (
+      SELECT
+        raw_samples.user_id,
+        raw_samples.date,
+        raw_samples.heart_rate,
+        row_number() OVER (
+          PARTITION BY raw_samples.user_id, raw_samples.date
+          ORDER BY raw_samples.heart_rate ASC
+        ) AS ascending_rank,
+        count(*) OVER (PARTITION BY raw_samples.user_id, raw_samples.date) AS sample_count
+      FROM raw_samples
+      JOIN best_provider
+        ON best_provider.user_id = raw_samples.user_id
+       AND best_provider.date = raw_samples.date
+       AND best_provider.provider_id = raw_samples.provider_id
+    )
+    SELECT
+      user_id,
+      date,
+      round(avg(heart_rate))::int AS resting_hr
+    FROM samples
+    WHERE sample_count >= 30
+      AND ascending_rank <= greatest(ceil(sample_count * 0.10)::int, 1)
+    GROUP BY user_id, date
+  )`;
+}
+
+/**
  * Reusable CTE that computes rolling AVG and STDDEV_POP window statistics
  * for daily vitals (HRV, derived resting HR, respiratory rate).
  *
@@ -159,7 +242,12 @@ export function vitalsBaselineCte(
 ): SQL {
   const queryDays = days + windowSize;
   const preceding = windowSize - 1;
-  return sql`vitals_baseline AS (
+  return sql`${restingHeartRatePostgresCte(
+    userId,
+    dateWindowStart(endDate, queryDays),
+    sql`${endDate}::date`,
+  )},
+  vitals_baseline AS (
     SELECT
       base.date,
       base.hrv,
@@ -177,7 +265,7 @@ export function vitalsBaselineCte(
       WHERE user_id = ${userId}
         AND date > ${dateWindowStart(endDate, queryDays)}
     ) base
-    LEFT JOIN fitness.derived_resting_heart_rate drhr
+    LEFT JOIN resting_heart_rate drhr
       ON drhr.user_id = base.user_id
      AND drhr.date = base.date
     ORDER BY base.date ASC
@@ -237,11 +325,10 @@ export function heartRateZoneColumns(
  */
 export function restingHeartRateLateral(userIdExpression: SQL, dateExpression: SQL): SQL {
   return sql`LATERAL (
-    SELECT drhr.resting_hr
-    FROM fitness.derived_resting_heart_rate drhr
-    WHERE drhr.user_id = ${userIdExpression}
-      AND drhr.date <= ${dateExpression}
-    ORDER BY drhr.date DESC
+    WITH ${restingHeartRatePostgresCte(userIdExpression, sql`'1900-01-01'::date`, dateExpression)}
+    SELECT resting_hr
+    FROM resting_heart_rate
+    ORDER BY date DESC
     LIMIT 1
   ) rhr ON true`;
 }

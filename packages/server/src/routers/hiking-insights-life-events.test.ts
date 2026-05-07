@@ -251,12 +251,13 @@ describe("insightsRouter", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.compute({ days: 90, endDate: "2026-03-15" });
 
     expect(result).toEqual({ insights: ["test-insight"] });
-    // Should call execute 5 times (metrics, sleep, activities, nutrition, bodyComp)
-    expect(execute).toHaveBeenCalledTimes(5);
+    // Sleep, activities, nutrition, and bodyComp stay in Postgres; metrics/RHR come from ClickHouse.
+    expect(execute).toHaveBeenCalledTimes(4);
   });
 });
 

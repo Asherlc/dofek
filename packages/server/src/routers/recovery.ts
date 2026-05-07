@@ -20,7 +20,7 @@ import {
   endDateSchema,
   timestampWindowStart,
 } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { restingHeartRatePostgresCte, sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -463,7 +463,12 @@ export const recoveryRouter = router({
       const combinedRows = await executeWithSchema(
         ctx.db,
         readinessRowSchema,
-        sql`WITH metrics_with_baselines AS (
+        sql`WITH ${restingHeartRatePostgresCte(
+          ctx.userId,
+          dateWindowStart(input.endDate, queryDays),
+          dateWindowEnd(input.endDate),
+        )},
+          metrics_with_baselines AS (
               SELECT
                 dm.date::text AS date,
                 dm.hrv,
@@ -476,9 +481,8 @@ export const recoveryRouter = router({
                 AVG(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
                 STDDEV_POP(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
               FROM fitness.v_daily_metrics dm
-              LEFT JOIN fitness.derived_resting_heart_rate drhr
-                ON drhr.user_id = dm.user_id
-               AND drhr.date = dm.date
+	              LEFT JOIN resting_heart_rate drhr
+	                ON drhr.date = dm.date
               WHERE dm.user_id = ${ctx.userId}
                 AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
                 ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
@@ -607,7 +611,12 @@ export const recoveryRouter = router({
           respiratory_rate_avg: z.number().nullable(),
         }),
         sql`
-          WITH metric_dates AS (
+	          WITH ${restingHeartRatePostgresCte(
+              ctx.userId,
+              dateWindowStart(input.endDate, input.days),
+              dateWindowEnd(input.endDate),
+            )},
+            metric_dates AS (
             SELECT dm.date
             FROM fitness.v_daily_metrics dm
             WHERE dm.user_id = ${ctx.userId}
@@ -615,21 +624,19 @@ export const recoveryRouter = router({
               AND dm.date <= ${dateWindowEnd(input.endDate)}
               ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
             UNION
-            SELECT drhr.date
-            FROM fitness.derived_resting_heart_rate drhr
-            WHERE drhr.user_id = ${ctx.userId}
-              AND drhr.date > ${dateWindowStart(input.endDate, input.days)}
-              AND drhr.date <= ${dateWindowEnd(input.endDate)}
-              ${dateAccessPredicate(ctx.accessWindow, sql`drhr.date`)}
+	            SELECT drhr.date
+	            FROM resting_heart_rate drhr
+	            WHERE drhr.date > ${dateWindowStart(input.endDate, input.days)}
+	              AND drhr.date <= ${dateWindowEnd(input.endDate)}
+	              ${dateAccessPredicate(ctx.accessWindow, sql`drhr.date`)}
           )
           SELECT dates.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.respiratory_rate_avg
           FROM metric_dates dates
           LEFT JOIN fitness.v_daily_metrics dm
             ON dm.user_id = ${ctx.userId}
            AND dm.date = dates.date
-          LEFT JOIN fitness.derived_resting_heart_rate drhr
-            ON drhr.user_id = ${ctx.userId}
-           AND drhr.date = dates.date
+	          LEFT JOIN resting_heart_rate drhr
+	            ON drhr.date = dates.date
           ORDER BY dates.date DESC
           LIMIT 1
         `,

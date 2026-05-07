@@ -32,7 +32,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(3);
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
-    expect(sql).toContain("metric_stream._peerdb_is_deleted = 0");
+    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
@@ -74,16 +74,15 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
-    expect(sql).toContain(
+    expect(sql).not.toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );
-    expect(sql).toContain("INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL");
+    expect(sql).toContain("DROP TABLE IF EXISTS analytics.derived_resting_heart_rate");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_daily_metrics");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_sleep");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("connected_components AS");
-    expect(sql).toContain("WHERE NOT is_nap");
   });
 });
 
@@ -115,7 +114,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(8);
+    expect(count).toBe(9);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

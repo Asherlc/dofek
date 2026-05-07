@@ -42,15 +42,5 @@ BEGIN
     EXECUTE format('CREATE VIEW fitness.provider_stats AS %s', view_definition);
   END IF;
 
-  IF EXISTS (
-    SELECT 1
-    FROM pg_matviews
-    WHERE schemaname = 'fitness' AND matviewname = 'derived_resting_heart_rate'
-  ) THEN
-    SELECT pg_get_viewdef(('fitness.derived_resting_heart_rate')::regclass, true)
-    INTO view_definition;
-    EXECUTE 'DROP MATERIALIZED VIEW IF EXISTS fitness.derived_resting_heart_rate';
-    EXECUTE format('CREATE VIEW fitness.derived_resting_heart_rate AS %s', view_definition);
-  END IF;
 END
 $$;

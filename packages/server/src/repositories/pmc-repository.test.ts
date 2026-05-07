@@ -447,7 +447,11 @@ describe("PmcRepository", () => {
         1,
         expect.anything(),
         expect.stringContaining("analytics.activity_summary"),
-        { userId: "user-1", timezone: "America/Los_Angeles", queryDays: 407 },
+        expect.objectContaining({
+          userId: "user-1",
+          timezone: "America/Los_Angeles",
+          queryDays: 407,
+        }),
       );
       expect(query).toHaveBeenNthCalledWith(
         2,
@@ -466,7 +470,7 @@ describe("PmcRepository", () => {
         1,
         expect.anything(),
         expect.stringContaining("INTERVAL {queryDays:Int32} DAY"),
-        { userId: "user-1", timezone: "UTC", queryDays: 442 },
+        expect.objectContaining({ userId: "user-1", timezone: "UTC", queryDays: 442 }),
       );
     });
 

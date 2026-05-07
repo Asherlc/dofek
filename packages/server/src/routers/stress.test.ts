@@ -9,6 +9,7 @@ vi.mock("../trpc.ts", async () => {
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
   return {
@@ -67,6 +68,18 @@ function makeCaller(rows: unknown[]) {
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
     timezone: "UTC",
+    sensorStore: {
+      query: vi.fn().mockResolvedValue([]),
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    },
   });
 }
 
@@ -405,6 +418,18 @@ describe("stressRouter access window gating", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      sensorStore: {
+        query: vi.fn().mockResolvedValue([]),
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
       accessWindow: {
         kind: "limited",
         paid: false,

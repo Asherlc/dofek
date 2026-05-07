@@ -1,9 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -42,6 +49,8 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
+    timezone: "UTC",
+    sensorStore: makeMockSensorStore([]),
   });
 }
 

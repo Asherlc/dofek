@@ -119,9 +119,10 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("analytics.deduped_sensor");
     expect(queryText).toContain("analytics.v_activity");
     expect(queryText).toContain("analytics.v_body_measurement");
-    expect(queryText).toContain("analytics.derived_resting_heart_rate");
+    expect(queryText).toContain("resting_heart_rate AS");
+    expect(queryText).toContain("analytics.v_sleep");
     expect(queryText).toContain("FROM activities");
-    expect(queryText).toContain("resting.date <= toDate(activities.activity_date)");
+    expect(queryText).toContain("resting.date <= activities.activity_date");
     expect(queryText).not.toContain("fitness.derived_vo2max_estimates");
     expect(queryText).not.toContain("fitness.metric_stream");
   });

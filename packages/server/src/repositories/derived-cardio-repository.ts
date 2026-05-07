@@ -2,6 +2,7 @@ import { averageVo2MaxEstimates, isValidVo2MaxEstimate } from "@dofek/training/d
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
@@ -61,12 +62,14 @@ export class DerivedCardioRepository {
     const rows = await executeWithSchema(
       this.#db,
       dailyRestingHeartRateRowSchema,
-      sql`SELECT date, resting_hr
-          FROM fitness.derived_resting_heart_rate
-          WHERE user_id = ${this.#ctx.userId}
-            AND date > (${endDate}::date - ${days}::int)
-            AND date <= ${endDate}::date
-          ORDER BY date ASC`,
+      sql`WITH ${restingHeartRatePostgresCte(
+        this.#ctx.userId,
+        sql`${endDate}::date - ${days}::int`,
+        sql`${endDate}::date`,
+      )}
+          SELECT date, resting_hr
+	          FROM resting_heart_rate
+	          ORDER BY date ASC`,
     );
     return rows.map((row) => ({ date: row.date, restingHr: row.resting_hr }));
   }

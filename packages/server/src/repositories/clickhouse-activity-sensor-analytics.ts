@@ -1,10 +1,12 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import type {
   ClickHouseQueryClient,
   NormalizedPowerSampleRow,
   PowerCurveSampleRow,
   Vo2MaxEstimateRow,
 } from "./clickhouse-activity-sensor-types.ts";
+import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const OUTDOOR_VO2_MAX_ACTIVITY_TYPES = ["running", "trail_running", "walking", "hiking"] as const;
 
@@ -23,6 +25,8 @@ function userDateWindowParams(endDate: string, days: number, userId: string, tim
     days,
     userId,
     timezone,
+    rhrEndDate: endDate,
+    rhrWindowStart: dateWindowStartString(endDate, days + 60),
     enduranceActivityTypes: [...ENDURANCE_ACTIVITY_TYPES],
     outdoorVo2MaxActivityTypes: [...OUTDOOR_VO2_MAX_ACTIVITY_TYPES],
   };
@@ -133,7 +137,7 @@ export async function getClickHouseVo2MaxEstimates(
 ): Promise<Vo2MaxEstimateRow[]> {
   const result = await client.query<Vo2MaxEstimateRow>({
     query: `
-        WITH
+        WITH ${restingHeartRateClickHouseCte()},
         activities AS (
           SELECT
             id,
@@ -251,9 +255,8 @@ export async function getClickHouseVo2MaxEstimates(
             activities.id AS activity_id,
             argMax(resting.resting_hr, resting.date) AS resting_hr
           FROM activities
-          CROSS JOIN analytics.derived_resting_heart_rate AS resting
-          WHERE resting.user_id = {userId:UUID}
-            AND resting.date <= toDate(activities.activity_date)
+          CROSS JOIN resting_heart_rate AS resting
+          WHERE resting.date <= activities.activity_date
           GROUP BY activities.id
         ),
         acsm_estimates AS (

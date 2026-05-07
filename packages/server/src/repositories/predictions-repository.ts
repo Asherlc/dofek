@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { joinByDate } from "../insights/data-join.ts";
 import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
+import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
@@ -347,17 +348,16 @@ export class PredictionsRepository {
     return executeWithSchema(
       this.#db,
       dailyRowSchema,
-      sql`WITH metric_dates AS (
-            SELECT dm.date
-            FROM fitness.v_daily_metrics dm
-            WHERE dm.user_id = ${this.#userId}
-              AND dm.date > CURRENT_DATE - ${days}::int
-            UNION
-            SELECT drhr.date
-            FROM fitness.derived_resting_heart_rate drhr
-            WHERE drhr.user_id = ${this.#userId}
-              AND drhr.date > CURRENT_DATE - ${days}::int
-          )
+      sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${days}::int`)},
+          metric_dates AS (
+	            SELECT dm.date
+	            FROM fitness.v_daily_metrics dm
+	            WHERE dm.user_id = ${this.#userId}
+	              AND dm.date > CURRENT_DATE - ${days}::int
+	            UNION
+	            SELECT drhr.date
+	            FROM resting_heart_rate drhr
+	          )
           SELECT
             dates.date,
             drhr.resting_hr,
@@ -370,9 +370,8 @@ export class PredictionsRepository {
           LEFT JOIN fitness.v_daily_metrics dm
             ON dm.user_id = ${this.#userId}
            AND dm.date = dates.date
-          LEFT JOIN fitness.derived_resting_heart_rate drhr
-            ON drhr.user_id = ${this.#userId}
-           AND drhr.date = dates.date
+	          LEFT JOIN resting_heart_rate drhr
+	            ON drhr.date = dates.date
           ORDER BY dates.date ASC`,
     );
   }

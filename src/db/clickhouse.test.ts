@@ -152,11 +152,11 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_panels");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_results");
     expect(sql).not.toContain("CAST(0, 'UInt64') AS journal_entries");
-    expect(sql).toContain(
+    expect(sql).not.toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );
-    expect(sql).toContain("INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL");
-    expect(sql).toContain("metric_stream._peerdb_is_deleted = 0");
+    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
+    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM analytics.v_activity");
     expect(sql).toContain("FROM analytics.v_activity_members");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
@@ -166,7 +166,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
-    expect(sql).toContain("WHERE NOT is_nap");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",

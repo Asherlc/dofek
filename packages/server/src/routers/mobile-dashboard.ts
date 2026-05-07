@@ -13,6 +13,10 @@ import {
   AnomalyDetectionRepository,
 } from "../repositories/anomaly-detection-repository.ts";
 import {
+  fetchRestingHeartRateRows,
+  restingHeartRateValuesCte,
+} from "../repositories/resting-heart-rate-query.ts";
+import {
   computeComponentScores,
   computeReadinessScore,
   type NextWorkoutRecommendation,
@@ -92,7 +96,7 @@ export const mobileDashboardRouter = router({
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboard");
 
       // Fetch daily loads (last 60 days) + yesterday's load from ClickHouse.
-      const [dailyLoadRows, yesterdayLoadRows] = await Promise.all([
+      const [dailyLoadRows, yesterdayLoadRows, restingHeartRateRows] = await Promise.all([
         sensorStore.query(
           z.object({
             metric_date: z.string(),
@@ -120,12 +124,20 @@ export const mobileDashboardRouter = router({
             AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - 1`,
           { userId: ctx.userId, timezone: tz, endDate },
         ),
+        fetchRestingHeartRateRows({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: tz,
+          endDate,
+          days: 60,
+        }),
       ]);
 
       const dailyLoadByDate = new Map(
         dailyLoadRows.map((row) => [row.metric_date, row.daily_load]),
       );
       const yesterdayLoadFromCh = yesterdayLoadRows[0]?.load ?? 0;
+      const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
 
       // 1. Fetch Readiness, Strain, and Trends in a consolidated query
       const readinessSchema = z.object({
@@ -146,7 +158,8 @@ export const mobileDashboardRouter = router({
         ctx.db,
         readinessSchema,
         sql`
-          WITH metrics_base AS (
+          WITH ${restingHeartRateCte},
+          metrics_base AS (
             SELECT
               base_dates.date AS metric_date,
               dm.hrv,
@@ -159,18 +172,14 @@ export const mobileDashboardRouter = router({
                 AND date > ${endDate}::date - 60
                 AND date <= ${endDate}
               UNION
-              SELECT user_id, date
-              FROM fitness.derived_resting_heart_rate
-              WHERE user_id = ${ctx.userId}
-                AND date > ${endDate}::date - 60
-                AND date <= ${endDate}
+              SELECT ${ctx.userId} AS user_id, date
+              FROM resting_heart_rate
             ) base_dates
             LEFT JOIN fitness.v_daily_metrics dm
               ON dm.user_id = base_dates.user_id
              AND dm.date = base_dates.date
-            LEFT JOIN fitness.derived_resting_heart_rate drhr
-              ON drhr.user_id = base_dates.user_id
-             AND drhr.date = base_dates.date
+            LEFT JOIN resting_heart_rate drhr
+              ON drhr.date = base_dates.date
           ),
           metrics_with_baselines AS (
             SELECT
