@@ -99,22 +99,23 @@ describe("runClickHouseMigrations", () => {
 
   it("runs pending ClickHouse migrations once and records them", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
-    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
-      json: vi
-        .fn()
-        .mockResolvedValue(
-          queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
-            : queryText.includes("system.databases")
-              ? [{ engine: "Atomic" }]
-              : [{ migration_count: 0 }],
-        ),
-    }));
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      if (queryText.includes("system.tables") && queryText.includes("engine")) {
+        return { json: vi.fn().mockResolvedValue([{ engine: "ReplacingMergeTree" }]) };
+      }
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+      }
+      if (queryText.includes("system.databases")) {
+        return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+    });
     const client = { command, query };
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(7);
+    expect(count).toBe(8);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -157,7 +158,7 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(17);
+    expect(systemTableQueries).toHaveLength(18);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
@@ -425,6 +426,85 @@ describe("runClickHouseMigrations", () => {
     expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
         query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+  });
+
+  it("replaces a legacy MergeTree metric stream mirror before FINAL queries run", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "2026-04-22 00:00:00+00",
+            upper_bound: "2026-04-22 01:00:00+00",
+          },
+        ],
+      });
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      if (queryText.includes("system.tables") && queryText.includes("engine")) {
+        return { json: vi.fn().mockResolvedValue([{ engine: "MergeTree" }]) };
+      }
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+      }
+      if (queryText.includes("system.databases")) {
+        return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
+      }
+      if (queryText.includes("0007_repair_legacy_metric_stream_engine")) {
+        return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+      }
+      if (queryText.includes("metric_stream_backfill_chunks")) {
+        return { json: vi.fn().mockResolvedValue([{ chunk_count: 0 }]) };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
+    });
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("ENGINE = ReplacingMergeTree(_peerdb_version)"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "SYSTEM REFRESH VIEW analytics.provider_stats",
       }),
     );
   });

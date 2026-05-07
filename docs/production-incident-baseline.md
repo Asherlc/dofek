@@ -3281,3 +3281,50 @@ Other expensive Postgres read paths were observed during the incident, especiall
 daily-metrics/recovery/insights queries over `fitness.v_daily_metrics` and
 related views. Those paths still need follow-up migration or query tightening so
 dashboard/mobile bursts cannot exhaust each web process's small Postgres pool.
+
+## 2026-05-07: Deploy Web Production Failed in ClickHouse Migrations
+
+### Symptoms
+
+The `Deploy Web` workflow run `25514597539` failed in the production
+`Deploy Web Stack` job during the `Run migrations` step.
+
+### User Impact
+
+The new image tag `sha-edcd2a2` did not roll out to production because the
+workflow stopped before `docker stack deploy`.
+
+### Evidence
+
+The production migration container exited with:
+
+```text
+[migrate] Error: Storage MergeTree doesn't support FINAL.
+```
+
+Earlier deploy steps had already passed: GHCR login, image pulls, host bind
+mount validation, Postgres writability, and ClickHouse readiness.
+
+### Root Cause
+
+Production still had a legacy `postgres_fitness.metric_stream` ClickHouse table
+created with the plain `MergeTree` engine. Newer ClickHouse read models query
+the PeerDB-style raw mirror with `FINAL`, which requires
+`ReplacingMergeTree(_peerdb_version)`. The bootstrap SQL used
+`CREATE TABLE IF NOT EXISTS`, so it did not repair the existing table engine.
+
+### Fix or Mitigation
+
+Added a ClickHouse migration that detects a legacy `metric_stream` engine before
+the provider-stats read-model migration runs. When the table is not
+`ReplacingMergeTree`, it drops dependent analytics read models, clears the
+metric-stream backfill marker, recreates `postgres_fitness.metric_stream` with
+`ReplacingMergeTree(_peerdb_version)`, backfills it from Postgres, and refreshes
+dependent ClickHouse read models.
+
+### Remaining Risk
+
+Local automated verification could not run in this isolated worktree because
+`node_modules` was absent and `pnpm install --offline --frozen-lockfile` could
+not find `zod` in the local pnpm store. CI must run the focused migration tests
+and the deploy workflow to verify the production repair path end to end.

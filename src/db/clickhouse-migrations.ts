@@ -135,6 +135,10 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       ],
     },
     {
+      id: "0007_repair_legacy_metric_stream_engine",
+      run: replaceLegacyMetricStreamIfNeeded,
+    },
+    {
       id: "0008_complete_provider_stats_raw_mirrors",
       statements: [
         ...buildPostgresFitnessRawTableStatements(),
@@ -247,6 +251,69 @@ async function shouldReplacePostgresFitnessDatabase(
   }
   const row = clickHouseDatabaseEngineRowSchema.parse(rows[0]);
   return row.engine !== "Atomic" && row.engine !== "Ordinary";
+}
+
+async function replaceLegacyMetricStreamIfNeeded(
+  client: ClickHouseCommandClient,
+  postgresConnectionString: string,
+): Promise<void> {
+  if (!(await shouldReplaceMetricStreamTable(client))) {
+    return;
+  }
+
+  const resetStatements = [
+    "DROP VIEW IF EXISTS analytics.provider_stats",
+    "DROP TABLE IF EXISTS analytics.provider_stats",
+    "DROP VIEW IF EXISTS analytics.derived_resting_heart_rate",
+    "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
+    "DROP VIEW IF EXISTS analytics.activity_summary",
+    "DROP TABLE IF EXISTS analytics.activity_summary",
+    "DROP VIEW IF EXISTS analytics.deduped_sensor",
+    "DROP TABLE IF EXISTS analytics.deduped_sensor",
+    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+    "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+  ];
+
+  for (const statement of resetStatements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  await backfillNativeMetricStream(client, postgresConnectionString);
+  await runClickHouseMigrationStatement(
+    client,
+    "SYSTEM REFRESH VIEW analytics.derived_resting_heart_rate",
+  );
+  await runClickHouseMigrationStatement(
+    client,
+    "SYSTEM WAIT VIEW analytics.derived_resting_heart_rate",
+  );
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.provider_stats");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.provider_stats");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+}
+
+async function shouldReplaceMetricStreamTable(client: ClickHouseCommandClient): Promise<boolean> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
+  const result = await client.query<ClickHouseDatabaseEngineRow>({
+    query:
+      "SELECT engine FROM system.tables WHERE database = 'postgres_fitness' AND name = 'metric_stream'",
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  if (!rows[0]) {
+    return false;
+  }
+  const row = clickHouseDatabaseEngineRowSchema.parse(rows[0]);
+  return row.engine !== "ReplacingMergeTree";
 }
 
 async function backfillNativeMetricStream(
