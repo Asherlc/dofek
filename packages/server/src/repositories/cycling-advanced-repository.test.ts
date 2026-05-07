@@ -286,7 +286,7 @@ describe("CyclingAdvancedRepository", () => {
     });
 
     it("computes aggressive ramp rate for moderate load increase", async () => {
-      const { repo } = makeRepository(recentDailyLoads(35, (index) => (index < 14 ? 20 : 140)));
+      const { repo } = makeRepository(recentDailyLoads(35, (index) => (index < 14 ? 20 : 120)));
       const result = await repo.getRampRate(30);
       expect(result.currentRampRate).toBeGreaterThanOrEqual(5);
       expect(result.currentRampRate).toBeLessThanOrEqual(7);
