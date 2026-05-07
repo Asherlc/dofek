@@ -233,6 +233,18 @@ describe("CyclingAdvancedRepository", () => {
     return { repo, execute, sensorStore };
   }
 
+  function recentDailyLoads(count: number, loadForIndex: (index: number) => number) {
+    const today = new Date();
+    return Array.from({ length: count }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (count - 1 - index));
+      return {
+        day: date.toISOString().slice(0, 10),
+        trimp: loadForIndex(index),
+      };
+    });
+  }
+
   describe("getRampRate", () => {
     it("returns no-data result when no daily loads", async () => {
       const { repo } = makeRepository([]);
@@ -246,6 +258,48 @@ describe("CyclingAdvancedRepository", () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getRampRate(30);
       expect(sensorStore.query).toHaveBeenCalledTimes(1);
+    });
+
+    it("queries ClickHouse with warmup window and endurance activity filter", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getRampRate(30);
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("analytics.activity_summary");
+      expect(query).toContain("INTERVAL ({days:Int32} + 42) DAY");
+      expect(query).toContain("has({enduranceTypes:Array(String)}, a.activity_type)");
+      expect(params).toMatchObject({
+        userId: "user-1",
+        timezone: "UTC",
+        days: 30,
+      });
+      expect(params.enduranceTypes).toContain("cycling");
+    });
+
+    it("computes safe ramp rate from steady low load", async () => {
+      const { repo } = makeRepository(recentDailyLoads(35, () => 20));
+      const result = await repo.getRampRate(30);
+      expect(result.weeks.length).toBeGreaterThanOrEqual(3);
+      expect(result.currentRampRate).toBeGreaterThan(0);
+      expect(result.currentRampRate).toBeLessThan(5);
+      expect(result.recommendation).toBe("Safe: ramp rate is within sustainable range");
+      expect(result.weeks.at(-1)?.ctlEnd).toBeGreaterThan(result.weeks[0]?.ctlStart ?? 0);
+    });
+
+    it("computes aggressive ramp rate for moderate load increase", async () => {
+      const { repo } = makeRepository(recentDailyLoads(35, (index) => (index < 14 ? 20 : 140)));
+      const result = await repo.getRampRate(30);
+      expect(result.currentRampRate).toBeGreaterThanOrEqual(5);
+      expect(result.currentRampRate).toBeLessThanOrEqual(7);
+      expect(result.recommendation).toBe("Aggressive: monitor fatigue closely and ensure recovery");
+    });
+
+    it("computes danger recommendation for large load increase", async () => {
+      const { repo } = makeRepository(recentDailyLoads(35, (index) => (index < 14 ? 20 : 200)));
+      const result = await repo.getRampRate(30);
+      expect(result.currentRampRate).toBeGreaterThan(7);
+      expect(result.recommendation).toBe(
+        "Danger: ramp rate is too high, risk of overtraining or injury",
+      );
     });
   });
 
@@ -265,6 +319,21 @@ describe("CyclingAdvancedRepository", () => {
       expect(result[0]).toBeInstanceOf(TrainingMonotonyWeekModel);
       expect(result[0]?.toDetail().monotony).toBe(1.8);
     });
+
+    it("queries training monotony with weekly stats and user parameters", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getTrainingMonotony(45);
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("weekly_stats");
+      expect(query).toContain("stddevPop(trimp) > 0");
+      expect(query).toContain("round(weekly_load * (mean_load / stdev_load), 1)");
+      expect(params).toMatchObject({
+        userId: "user-1",
+        timezone: "UTC",
+        days: 45,
+      });
+      expect(params.enduranceTypes).toContain("cycling");
+    });
   });
 
   describe("getEstimatedFtp", () => {
@@ -278,6 +347,20 @@ describe("CyclingAdvancedRepository", () => {
       const { repo } = makeRepository([{ ftp: 250 }]);
       const result = await repo.getEstimatedFtp(90);
       expect(result).toBe(250);
+    });
+
+    it("queries estimated FTP as ninety-five percent of best twenty-minute power", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getEstimatedFtp(60);
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("round(1200.0 / sr.interval_s)");
+      expect(query).toContain("* 0.95");
+      expect(query).toContain("ds.channel = 'power'");
+      expect(params).toMatchObject({
+        userId: "user-1",
+        days: 60,
+      });
+      expect(params.enduranceTypes).toContain("cycling");
     });
   });
 
@@ -319,6 +402,19 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.models).toHaveLength(1);
       expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
       expect(result.totalCount).toBe(1);
+      expect(sensorStore.query).toHaveBeenCalledTimes(2);
+      const [, query, params] = sensorStore.query.mock.calls[1];
+      expect(query).toContain("RANGE BETWEEN 29 PRECEDING AND CURRENT ROW");
+      expect(query).toContain("pow(avg(pow(r.rolling_30s_power, 4)), 0.25)");
+      expect(query).toContain("LIMIT {limit:Int32}");
+      expect(query).toContain("OFFSET {offset:Int32}");
+      expect(params).toMatchObject({
+        userId: "user-1",
+        timezone: "UTC",
+        days: 90,
+        limit: 20,
+        offset: 0,
+      });
     });
   });
 
@@ -362,6 +458,24 @@ describe("CyclingAdvancedRepository", () => {
       // Single CH query.
       expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
+
+    it("queries vertical ascent with grade fallback and minimum climb duration", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getVerticalAscentRates(90);
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("LEFT JOIN grade_activities");
+      expect(query).toContain("LEFT JOIN grade_points");
+      expect(query).toContain("(NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)");
+      expect(query).toContain(
+        "HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60",
+      );
+      expect(params).toMatchObject({
+        userId: "user-1",
+        timezone: "UTC",
+        days: 90,
+      });
+      expect(params.enduranceTypes).toContain("cycling");
+    });
   });
 
   describe("getPedalDynamics", () => {
@@ -385,6 +499,22 @@ describe("CyclingAdvancedRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(PedalDynamicsModel);
       expect(result[0]?.toDetail().leftRightBalance).toBe(49.5);
+    });
+
+    it("queries pedal dynamics from activity summary with left balance present", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getPedalDynamics(90);
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("analytics.activity_summary");
+      expect(query).toContain("asum.avg_left_balance IS NOT NULL");
+      expect(query).toContain("(asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2");
+      expect(query).toContain("(asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2");
+      expect(params).toMatchObject({
+        userId: "user-1",
+        timezone: "UTC",
+        days: 90,
+      });
+      expect(params.enduranceTypes).toContain("cycling");
     });
   });
 });

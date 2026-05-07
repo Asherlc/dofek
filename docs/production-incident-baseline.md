@@ -3167,3 +3167,41 @@ step enough room to proceed when stale Docker artifacts are reclaimable.
 The host still keeps Docker runtime state on the root disk. A longer-term fix
 should either move Docker's data root to persistent storage or add host-level
 disk monitoring for `/` so operators know before deploys hit zero free space.
+
+## 2026-05-06: Stryker Shard Failed on Read-Model Mutation Survivors
+
+### Symptoms
+
+PR #1097 run `25467432350` failed `Test / Stryker (3)` after the branch split
+large read-model files into Stryker shards.
+
+### Evidence
+
+The first fatal Stryker line was:
+
+```text
+Final mutation score 62.01 under breaking threshold 75, setting exit code to 1
+```
+
+The surviving mutants were concentrated in
+`packages/server/src/repositories/cycling-advanced-repository.ts` and
+`packages/server/src/routers/provider-detail.ts`.
+
+### Root Cause
+
+The new shard pairing exposed under-specified tests for cycling ramp-rate edge
+cases and provider disconnect revocation branches. Unit tests covered the happy
+paths, but did not assert the query shape, ramp-rate thresholds, missing-token
+branches, or error reporting side effects tightly enough to kill the mutants.
+
+### Fix or Mitigation
+
+Added focused mutation tests for the cycling advanced repository queries,
+ramp-rate thresholds, and provider disconnect revocation behavior. A local
+targeted Stryker retry for the same two files reached a 79.89 mutation score,
+above the 75 break threshold.
+
+### Remaining Risk
+
+The targeted shard is now above threshold locally. Full CI still needs to rerun
+on GitHub Actions to verify the complete sharded matrix with runner timing.

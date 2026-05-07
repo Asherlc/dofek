@@ -49,6 +49,7 @@ const {
   mockRevokeToken,
   mockLoggerInfo,
   mockLoggerWarn,
+  mockSentryCaptureException,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
   mockGetAllProviders: vi.fn(),
@@ -56,6 +57,7 @@ const {
   mockRevokeToken: vi.fn(),
   mockLoggerInfo: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockSentryCaptureException: vi.fn(),
 }));
 
 vi.mock("dofek/db/tokens", () => ({
@@ -79,7 +81,7 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 vi.mock("@sentry/node", () => ({
-  captureException: vi.fn(),
+  captureException: (...args: unknown[]) => mockSentryCaptureException(...args),
 }));
 
 import {
@@ -813,6 +815,91 @@ describe("providerDetailRouter", () => {
       expect(mockTransaction).toHaveBeenCalledTimes(1);
     });
 
+    it("skips standard OAuth revocation when provider has no OAuth config", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "access-abc",
+        refreshToken: "refresh-def",
+        expiresAt: new Date("2026-12-31"),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "manual-provider",
+          name: "Manual Provider",
+          validate: () => null,
+          authSetup: () => ({
+            exchangeCode: vi.fn(),
+          }),
+        },
+      ]);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "manual-provider" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.disconnect({ providerId: "manual-provider" });
+
+      expect(mockRevokeToken).not.toHaveBeenCalled();
+      expect(mockTransaction).toHaveBeenCalledTimes(1);
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+    });
+
+    it("does not call standard OAuth revocation for a missing access token", async () => {
+      mockLoadTokens.mockResolvedValue({
+        accessToken: null,
+        refreshToken: "refresh-only",
+        expiresAt: new Date("2026-12-31"),
+        scopes: null,
+      });
+      mockEnsureProvidersRegistered.mockResolvedValue(undefined);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: {
+              clientId: "client-id",
+              clientSecret: "secret",
+              revokeUrl: "https://www.strava.com/oauth/deauthorize",
+            },
+            exchangeCode: vi.fn(),
+          }),
+        },
+      ]);
+      mockRevokeToken.mockResolvedValue(undefined);
+
+      const txExecute = vi.fn().mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
+
+      const caller = createCaller({
+        db: { execute: mockExecute, transaction: mockTransaction },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.disconnect({ providerId: "strava" });
+
+      expect(mockRevokeToken).toHaveBeenCalledTimes(1);
+      expect(mockRevokeToken).toHaveBeenCalledWith(expect.anything(), "refresh-only");
+    });
+
     it("falls back to standard OAuth revocation when custom revocation fails", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
@@ -903,6 +990,14 @@ describe("providerDetailRouter", () => {
       const result = await caller.disconnect({ providerId: "wahoo" });
 
       expect(result).toEqual({ success: true });
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("Access token revocation failed for wahoo"),
+      );
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.stringContaining("Refresh token revocation failed for wahoo"),
+      );
+      expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(Error));
+      expect(mockSentryCaptureException).toHaveBeenCalledTimes(3);
       expect(mockTransaction).toHaveBeenCalledTimes(1);
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
