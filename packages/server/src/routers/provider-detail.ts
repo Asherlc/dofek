@@ -30,7 +30,7 @@ async function revokeTokensOnDisconnect(
     if (!tokens) return;
 
     const { getAllProviders } = await import("dofek/providers/registry");
-    const { ensureProvidersRegistered } = await import("./sync.ts");
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
     await ensureProvidersRegistered();
 
     const provider = getAllProviders().find(

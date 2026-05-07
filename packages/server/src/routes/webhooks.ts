@@ -51,7 +51,7 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
     try {
       const { getAllProviders } = await import("dofek/providers/registry");
       const { isWebhookProvider } = await import("dofek/providers/types");
-      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+      const { ensureProvidersRegistered } = await import("../routers/sync-helpers.ts");
       await ensureProvidersRegistered();
 
       const provider = getAllProviders().find((p) => p.id === providerName);
@@ -99,7 +99,7 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
     try {
       const { getAllProviders } = await import("dofek/providers/registry");
       const { isWebhookProvider } = await import("dofek/providers/types");
-      const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+      const { ensureProvidersRegistered } = await import("../routers/sync-helpers.ts");
       await ensureProvidersRegistered();
 
       const provider = getAllProviders().find((p) => p.id === providerName);

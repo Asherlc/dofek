@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ActivityVariabilityModel,
-  CyclingAdvancedRepository,
   PedalDynamicsModel,
   RampRateWeekModel,
   TrainingMonotonyWeekModel,
   VerticalAscentModel,
-} from "./cycling-advanced-repository.ts";
+} from "./cycling-advanced-models.ts";
+import { CyclingAdvancedRepository } from "./cycling-advanced-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models

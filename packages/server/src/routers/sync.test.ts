@@ -142,17 +142,19 @@ vi.mock("dofek/db/schema", () => ({
 }));
 
 import {
-  ensureProvidersRegistered,
-  isAuthError,
   logsInput,
-  mapBullMqStateToSyncStatus,
-  parseJobId,
   sanitizeErrorMessage,
   syncRouter,
   syncStatusInput,
-  toJobId,
   triggerSyncInput,
 } from "./sync.ts";
+import {
+  ensureProvidersRegistered,
+  isAuthError,
+  mapBullMqStateToSyncStatus,
+  parseJobId,
+  toJobId,
+} from "./sync-helpers.ts";
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);

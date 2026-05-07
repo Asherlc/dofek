@@ -81,7 +81,7 @@ vi.mock("dofek/auth/oauth", () => ({
   revokeToken: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock("../routers/sync.ts", () => ({
+vi.mock("../routers/sync-helpers.ts", () => ({
   ensureProvidersRegistered: vi.fn(() => Promise.resolve()),
 }));
 

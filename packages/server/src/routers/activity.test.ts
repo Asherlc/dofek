@@ -52,7 +52,7 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock("./sync.ts", () => ({
+vi.mock("./sync-helpers.ts", () => ({
   ensureProvidersRegistered: vi.fn(async () => {}),
 }));
 

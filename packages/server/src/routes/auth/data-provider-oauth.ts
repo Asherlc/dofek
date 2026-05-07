@@ -20,7 +20,7 @@ async function startDataProviderOAuth(
   stateEntry: OAuthStateEntry,
 ): Promise<void> {
   const { getAllProviders } = await import("dofek/providers/registry");
-  const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+  const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
   await ensureProvidersRegistered();
 
   const provider = getAllProviders().find((p) => p.id === providerId);
@@ -159,7 +159,7 @@ export async function handleDataProviderOAuthStart(req: Request, res: Response):
     }
     // 1. Check if provider exists first (returns 404 if not)
     const { getAllProviders } = await import("dofek/providers/registry");
-    const { ensureProvidersRegistered } = await import("../../routers/sync.ts");
+    const { ensureProvidersRegistered } = await import("../../routers/sync-helpers.ts");
     await ensureProvidersRegistered();
     const provider = getAllProviders().find((candidate) => candidate.id === providerId);
     if (!provider) {

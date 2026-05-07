@@ -4,7 +4,7 @@ import { queryCache } from "dofek/lib/cache";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
-import { ensureProvidersRegistered } from "./sync.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export const credentialAuthRouter = router({
   /** Generic credential sign-in for any provider with automatedLogin */

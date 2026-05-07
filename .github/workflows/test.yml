@@ -640,7 +640,7 @@ jobs:
             exit 0
           fi
 
-          MAX_SHARDS=8
+          MAX_SHARDS=16
           if [ "$COUNT" -lt "$MAX_SHARDS" ]; then
             SHARD_COUNT="$COUNT"
           else

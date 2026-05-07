@@ -16,7 +16,7 @@ vi.mock("dofek/providers/types", async (importOriginal) => {
   return { ...actual };
 });
 
-vi.mock("../routers/sync.ts", () => ({
+vi.mock("../routers/sync-helpers.ts", () => ({
   ensureProvidersRegistered: vi.fn(async () => {}),
 }));
 
@@ -625,7 +625,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
   it("returns 200 even on unexpected top-level error to prevent retries", async () => {
     // Force ensureProvidersRegistered to throw
-    const { ensureProvidersRegistered } = await import("../routers/sync.ts");
+    const { ensureProvidersRegistered } = await import("../routers/sync-helpers.ts");
     vi.mocked(ensureProvidersRegistered).mockRejectedValueOnce(new Error("boom"));
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", "{}");

@@ -12,7 +12,7 @@ import {
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
-import { ensureProvidersRegistered } from "./sync.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export interface StrengthExerciseDetail {
   exerciseIndex: number;

@@ -64,7 +64,7 @@ vi.mock("dofek/db/tokens", () => ({
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: () => mockGetAllProviders(),
 }));
-vi.mock("./sync.ts", () => ({
+vi.mock("./sync-helpers.ts", () => ({
   ensureProvidersRegistered: () => mockEnsureProvidersRegistered(),
 }));
 vi.mock("dofek/auth/oauth", () => ({

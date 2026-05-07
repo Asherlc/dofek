@@ -23,7 +23,7 @@ vi.mock("dofek/providers/registry", () => ({
   getAllProviders: mockGetAllProviders,
 }));
 
-vi.mock("../routers/sync.ts", () => ({
+vi.mock("../routers/sync-helpers.ts", () => ({
   ensureProvidersRegistered: mockEnsureProvidersRegistered,
 }));
 
