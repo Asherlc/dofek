@@ -1,3 +1,4 @@
+import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
@@ -204,6 +205,89 @@ describe("PmcRepository", () => {
       // FTP should be estimated (200 * 0.95 = 190)
       expect(result.model.ftp).toBe(190);
       expect(result.data.length).toBeGreaterThan(0);
+    });
+
+    it("returns learned model metadata with rounded r2 when regression succeeds", async () => {
+      const buildModelSpy = vi
+        .spyOn(TrainingStressCalculator, "buildTssModel")
+        .mockReturnValue({ slope: 1.25, intercept: 4, r2: 0.4567 });
+
+      try {
+        const today = new Date();
+        const activityDate = new Date(today);
+        activityDate.setDate(activityDate.getDate() - 4);
+        const dateStr = activityDate.toISOString().split("T")[0];
+
+        const repo = makeRepo(
+          [
+            makeActivityRow({
+              date: dateStr,
+              id: "act-learned-model",
+              avg_power: 200,
+              duration_min: 60,
+            }),
+          ],
+          [{ activity_id: "act-learned-model", np: 220 }],
+        );
+
+        const result = await repo.getChart(180);
+
+        expect(buildModelSpy).toHaveBeenCalledWith([
+          expect.objectContaining({ trimp: expect.any(Number), powerTss: expect.any(Number) }),
+        ]);
+        expect(result.model).toEqual({
+          type: "learned",
+          pairedActivities: 1,
+          r2: 0.457,
+          ftp: 190,
+        });
+      } finally {
+        buildModelSpy.mockRestore();
+      }
+    });
+
+    it("uses the learned TRIMP model for HR-only activities when FTP is known", async () => {
+      const buildModelSpy = vi
+        .spyOn(TrainingStressCalculator, "buildTssModel")
+        .mockReturnValue({ slope: 1.5, intercept: 10, r2: 0.75 });
+
+      try {
+        const today = new Date();
+        const powerActivityDate = new Date(today);
+        powerActivityDate.setDate(powerActivityDate.getDate() - 4);
+        const powerDateStr = powerActivityDate.toISOString().split("T")[0];
+        const hrOnlyActivityDate = new Date(today);
+        hrOnlyActivityDate.setDate(hrOnlyActivityDate.getDate() - 3);
+        const hrOnlyDateStr = hrOnlyActivityDate.toISOString().split("T")[0];
+
+        const repo = makeRepo(
+          [
+            makeActivityRow({
+              date: powerDateStr,
+              id: "act-model-source",
+              avg_power: 200,
+              duration_min: 60,
+            }),
+            makeActivityRow({
+              date: hrOnlyDateStr,
+              id: "act-hr-only-learned",
+              avg_power: null,
+              power_samples: 0,
+              duration_min: 60,
+              avg_hr: 150,
+            }),
+          ],
+          [{ activity_id: "act-model-source", np: 220 }],
+        );
+
+        const result = await repo.getChart(180);
+        const hrOnlyPoint = result.data.find((point) => point.date === hrOnlyDateStr);
+
+        expect(hrOnlyPoint?.load).toBeGreaterThan(10);
+        expect(result.model.type).toBe("learned");
+      } finally {
+        buildModelSpy.mockRestore();
+      }
     });
 
     it("rounds load, ctl, atl, tsb to 1 decimal place (*10/10)", async () => {
