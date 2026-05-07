@@ -97,6 +97,11 @@ describe("buildClickHouseBootstrapStatements", () => {
       "sleep_stage",
       "daily_metrics",
       "body_measurement",
+      "food_entry",
+      "health_event",
+      "lab_panel",
+      "lab_result",
+      "journal_entry",
       "provider",
       "provider_priority",
       "device_priority",
@@ -134,6 +139,19 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("FROM postgres_fitness.provider FINAL");
+    expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
+    expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
+    expect(sql).toContain("FROM postgres_fitness.lab_panel FINAL");
+    expect(sql).toContain("FROM postgres_fitness.lab_result FINAL");
+    expect(sql).toContain("FROM postgres_fitness.journal_entry FINAL");
+    expect(sql).toContain("uniqExact(date) AS count");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS food_entries");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS health_events");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS nutrition_daily");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_panels");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_results");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS journal_entries");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );

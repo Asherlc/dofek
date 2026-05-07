@@ -694,6 +694,10 @@ function buildProviderStatsReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader("analytics.provider_stats", "(user_id, provider_id)")}
 WITH
 providers AS (
+  SELECT DISTINCT user_id, id AS provider_id
+  FROM postgres_fitness.provider FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
@@ -712,6 +716,26 @@ providers AS (
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.metric_stream FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.food_entry FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.health_event FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.lab_panel FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.lab_result FINAL
+  WHERE _peerdb_is_deleted = 0
+  UNION DISTINCT
+  SELECT DISTINCT user_id, provider_id
+  FROM postgres_fitness.journal_entry FINAL
   WHERE _peerdb_is_deleted = 0
 ),
 activity_counts AS (
@@ -743,6 +767,42 @@ metric_stream_counts AS (
   FROM postgres_fitness.metric_stream FINAL
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
+),
+food_entry_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.food_entry FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+health_event_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.health_event FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+nutrition_daily_counts AS (
+  SELECT user_id, provider_id, uniqExact(date) AS count
+  FROM postgres_fitness.food_entry FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+lab_panel_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.lab_panel FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+lab_result_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.lab_result FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
+),
+journal_entry_counts AS (
+  SELECT user_id, provider_id, count() AS count
+  FROM postgres_fitness.journal_entry FINAL
+  WHERE _peerdb_is_deleted = 0
+  GROUP BY user_id, provider_id
 )
 SELECT
   providers.user_id AS user_id,
@@ -751,13 +811,13 @@ SELECT
   coalesce(daily_metric_counts.count, 0) AS daily_metrics,
   coalesce(sleep_session_counts.count, 0) AS sleep_sessions,
   coalesce(body_measurement_counts.count, 0) AS body_measurements,
-  CAST(0, 'UInt64') AS food_entries,
-  CAST(0, 'UInt64') AS health_events,
+  coalesce(food_entry_counts.count, 0) AS food_entries,
+  coalesce(health_event_counts.count, 0) AS health_events,
   coalesce(metric_stream_counts.count, 0) AS metric_stream,
-  CAST(0, 'UInt64') AS nutrition_daily,
-  CAST(0, 'UInt64') AS lab_panels,
-  CAST(0, 'UInt64') AS lab_results,
-  CAST(0, 'UInt64') AS journal_entries
+  coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
+  coalesce(lab_panel_counts.count, 0) AS lab_panels,
+  coalesce(lab_result_counts.count, 0) AS lab_results,
+  coalesce(journal_entry_counts.count, 0) AS journal_entries
 FROM providers
 LEFT JOIN activity_counts
   ON activity_counts.user_id = providers.user_id
@@ -773,7 +833,35 @@ LEFT JOIN body_measurement_counts
  AND body_measurement_counts.provider_id = providers.provider_id
 LEFT JOIN metric_stream_counts
   ON metric_stream_counts.user_id = providers.user_id
- AND metric_stream_counts.provider_id = providers.provider_id`;
+ AND metric_stream_counts.provider_id = providers.provider_id
+LEFT JOIN food_entry_counts
+  ON food_entry_counts.user_id = providers.user_id
+ AND food_entry_counts.provider_id = providers.provider_id
+LEFT JOIN health_event_counts
+  ON health_event_counts.user_id = providers.user_id
+ AND health_event_counts.provider_id = providers.provider_id
+LEFT JOIN nutrition_daily_counts
+  ON nutrition_daily_counts.user_id = providers.user_id
+ AND nutrition_daily_counts.provider_id = providers.provider_id
+LEFT JOIN lab_panel_counts
+  ON lab_panel_counts.user_id = providers.user_id
+ AND lab_panel_counts.provider_id = providers.provider_id
+LEFT JOIN lab_result_counts
+  ON lab_result_counts.user_id = providers.user_id
+ AND lab_result_counts.provider_id = providers.provider_id
+LEFT JOIN journal_entry_counts
+  ON journal_entry_counts.user_id = providers.user_id
+ AND journal_entry_counts.provider_id = providers.provider_id`;
+}
+
+export function buildProviderStatsReadModelStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.provider_stats",
+    "DROP TABLE IF EXISTS analytics.provider_stats",
+    buildProviderStatsReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.provider_stats",
+    "SYSTEM WAIT VIEW analytics.provider_stats",
+  ];
 }
 
 export function buildAnalyticsFitnessReadModelStatements(): string[] {
@@ -796,8 +884,6 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildDerivedRestingHeartRateReadModelSql(),
     "SYSTEM REFRESH VIEW analytics.derived_resting_heart_rate",
     "SYSTEM WAIT VIEW analytics.derived_resting_heart_rate",
-    buildProviderStatsReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.provider_stats",
-    "SYSTEM WAIT VIEW analytics.provider_stats",
+    ...buildProviderStatsReadModelStatements().slice(2),
   ];
 }

@@ -107,9 +107,31 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
+          command.endsWith(".food_entry"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
+          command.endsWith(".journal_entry"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO postgres_fitness_test_") &&
           command.includes(".activity") &&
           command.includes("FROM postgresql('db:5432', 'health', 'activity'"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO postgres_fitness_test_") &&
+          command.includes(".lab_result") &&
+          command.includes("FROM postgresql('db:5432', 'health', 'lab_result'"),
       ),
     ).toBe(true);
     expect(commands.every((command) => !command.includes("SYSTEM REFRESH VIEW"))).toBe(true);

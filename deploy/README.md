@@ -144,7 +144,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
    9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false <stack>` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
-   10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, and creates the Postgres peer, ClickHouse peer, and `dofek_metric_stream_cdc` mirror if they do not already exist.
+   10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
 
 When adding a new host bind mount under `/mnt/dofek-data`, update both
 `deploy/stack.yml` and the Terraform provisioner that creates the directory. If

@@ -313,7 +313,7 @@ export const syncRouter = router({
 
   /** Per-provider record counts broken down by table */
   providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const repo = new SyncRepository(ctx.db, ctx.userId);
+    const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
     return repo.getProviderStats();
   }),
 

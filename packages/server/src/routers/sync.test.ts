@@ -27,7 +27,7 @@ const {
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
   return {
     router: trpc.router,
@@ -1160,17 +1160,21 @@ describe("syncRouter", () => {
   });
 
   describe("providerStats", () => {
-    it("maps database rows to provider stats", async () => {
+    it("maps ClickHouse rows to provider stats", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: {
-          execute: vi.fn().mockResolvedValue([
+          execute,
+        },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([
             {
               provider_id: "wahoo",
               activities: 10,
               daily_metrics: 5,
               sleep_sessions: 3,
               body_measurements: 2,
-              food_entries: 0,
+              food_entries: 8,
               health_events: 1,
               metric_stream: 100,
               nutrition_daily: 7,
@@ -1193,7 +1197,7 @@ describe("syncRouter", () => {
           dailyMetrics: 5,
           sleepSessions: 3,
           bodyMeasurements: 2,
-          foodEntries: 0,
+          foodEntries: 8,
           healthEvents: 1,
           metricStream: 100,
           nutritionDaily: 7,
@@ -1202,17 +1206,23 @@ describe("syncRouter", () => {
           journalEntries: 6,
         },
       ]);
+      expect(execute).not.toHaveBeenCalled();
     });
 
     it("returns empty array when no providers", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+        },
         userId: "user-1",
         timezone: "UTC",
       });
 
       const result = await caller.providerStats();
       expect(result).toEqual([]);
+      expect(execute).not.toHaveBeenCalled();
     });
   });
 

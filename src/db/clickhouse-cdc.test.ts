@@ -44,6 +44,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
     "sleep_stage",
     "daily_metrics",
     "body_measurement",
+    "food_entry",
+    "health_event",
+    "lab_panel",
+    "lab_result",
+    "journal_entry",
     "provider",
     "provider_priority",
     "device_priority",
@@ -249,7 +254,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(peerDbQueries).toHaveLength(6);
+    expect(peerDbQueries).toHaveLength(7);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
     expect(peerDbQueries[1]).toContain("CREATE PEER IF NOT EXISTS dofek_clickhouse");
     expect(peerDbQueries[2]).toContain(
@@ -258,15 +263,20 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries[3]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc");
     expect(peerDbQueries[4]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
     expect(peerDbQueries[5]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
+    expect(peerDbQueries[6]).toContain(
+      "CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics",
+    );
     expect(peerDbQueries[1]).toContain("database = 'peerdb'");
     expect(peerDbQueries[2]).toContain("database = 'postgres_fitness'");
     expect(peerDbQueries[3]).toContain("TO dofek_clickhouse");
     expect(peerDbQueries[3]).toContain("dofek_metric_stream_cdc");
     expect(peerDbQueries[4]).toContain("TO dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[5]).toContain("TO dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[6]).toContain("TO dofek_clickhouse_postgres_fitness");
+    const rawMirrorSql = `${peerDbQueries[5]}\n${peerDbQueries[6]}`;
     for (const rawAnalyticsTable of rawAnalyticsTables) {
-      expect(peerDbQueries[5]).toContain(`from: fitness.${rawAnalyticsTable}`);
-      expect(peerDbQueries[5]).toContain(`to: ${rawAnalyticsTable}`);
+      expect(rawMirrorSql).toContain(`from: fitness.${rawAnalyticsTable}`);
+      expect(rawMirrorSql).toContain(`to: ${rawAnalyticsTable}`);
     }
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
@@ -365,7 +375,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
       String(queryText),
     );
-    expect(peerDbQueries).toHaveLength(7);
+    expect(peerDbQueries).toHaveLength(8);
     expect(peerDbQueries[0]).toContain("peerdb_metric_stream_publication");
     expect(peerDbQueries[1]).toContain("host = 'postgres.example'");
     expect(peerDbQueries[1]).toContain("port = 6543");
@@ -381,6 +391,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries[5]).toContain("dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[6]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
     expect(peerDbQueries[6]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[7]).toContain(
+      "CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics",
+    );
+    expect(peerDbQueries[7]).toContain("dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(peerDbClientMocks.end).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
