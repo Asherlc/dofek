@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import {
   createSyncQueue,
@@ -43,6 +44,23 @@ export const triggerSyncInput = z.object({
 export const syncStatusInput = z.object({ jobId: z.string() });
 
 export const logsInput = z.object({ limit: z.number().default(100) });
+
+const providerStatsOutputSchema = z.array(
+  z.object({
+    providerId: z.string(),
+    activities: z.number().int().nonnegative(),
+    dailyMetrics: z.number().int().nonnegative(),
+    sleepSessions: z.number().int().nonnegative(),
+    bodyMeasurements: z.number().int().nonnegative(),
+    foodEntries: z.number().int().nonnegative(),
+    healthEvents: z.number().int().nonnegative(),
+    metricStream: z.number().int().nonnegative(),
+    nutritionDaily: z.number().int().nonnegative(),
+    labPanels: z.number().int().nonnegative(),
+    labResults: z.number().int().nonnegative(),
+    journalEntries: z.number().int().nonnegative(),
+  }),
+);
 
 const syncJobDataSchema = z.object({
   userId: z.string(),
@@ -312,10 +330,19 @@ export const syncRouter = router({
     }),
 
   /** Per-provider record counts broken down by table */
-  providerStats: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const repo = new SyncRepository(ctx.db, ctx.userId);
-    return repo.getProviderStats();
-  }),
+  providerStats: cachedProtectedQuery(CacheTTL.SHORT)
+    .output(providerStatsOutputSchema)
+    .query(async ({ ctx }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "sync.providerStats requires the ClickHouse provider stats store. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
+      return repo.getProviderStats();
+    }),
 
   /** Diagnostic: row counts for primary user-owned raw tables. */
   dataHealth: protectedProcedure.query(async ({ ctx }) => {

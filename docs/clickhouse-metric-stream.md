@@ -65,6 +65,13 @@ membership in Postgres. Stream, heart-rate-zone, power-zone, and activity
 summary reads then query stored ClickHouse `analytics.*` materialized views. The
 app does not issue raw `metric_stream` analytical reads for those endpoints.
 
+Provider record inventory uses the ClickHouse `analytics.provider_stats` read
+model for all provider-owned record counts displayed by sync/provider detail:
+activity, daily metric, sleep, body measurement, food entry, health event,
+metric stream, distinct nutrition day, lab panel, lab result, and journal entry
+counts. The provider detail UI still treats these as raw provider-owned record
+counts, not deduped analytical sample counts.
+
 ## Sync Model
 
 ClickHouse migrations run from the normal one-shot `migrate` container when
@@ -79,7 +86,9 @@ ClickHouse migrations create and update the databases and read models:
   refreshers.
 - `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
-  metadata columns.
+  metadata columns. Besides the activity/sleep/body/daily/metric stream
+  analytics sources, this includes provider inventory mirrors for `food_entry`,
+  `health_event`, `lab_panel`, `lab_result`, and `journal_entry`.
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
   `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: ClickHouse
   read models over the raw mirrors.
@@ -106,8 +115,11 @@ Postgres runs with `wal_level=logical`, `max_replication_slots`, and
 `src/db/setup-clickhouse-cdc.ts` after `docker stack deploy`; that command
 loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment
 connection values, and applies the declarative PeerDB peer and mirror
-definition. The mirror uses a dedicated publication name, excludes `device_id`,
-`source_type`, and `vector`, and enables soft deletes so delete events are
+definition. Provider inventory tables are mirrored by
+`dofek_provider_inventory_raw_analytics` so existing raw analytics mirrors do
+not need to be rebuilt when inventory coverage expands. The mirrors use a
+dedicated publication name, exclude `device_id`, `source_type`, and `vector`
+from the metric stream mirrors, and enable soft deletes so delete events are
 represented in ClickHouse.
 ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
 `metric_stream`.

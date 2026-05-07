@@ -6,6 +6,8 @@ import {
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
+import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
+import { buildProviderStatsReadModelStatements } from "./clickhouse-read-models.ts";
 
 interface MigrationCountRow {
   migration_count: number | string;
@@ -130,6 +132,13 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         "DROP VIEW IF EXISTS analytics.provider_stats",
         "DROP TABLE IF EXISTS analytics.provider_stats",
         ...buildClickHouseBootstrapStatements(postgresConnectionString),
+      ],
+    },
+    {
+      id: "0008_complete_provider_stats_raw_mirrors",
+      statements: [
+        ...buildPostgresFitnessRawTableStatements(),
+        ...buildProviderStatsReadModelStatements(),
       ],
     },
   ];

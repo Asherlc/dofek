@@ -3205,3 +3205,79 @@ above the 75 break threshold.
 
 The targeted shard is now above threshold locally. Full CI still needs to rerun
 on GitHub Actions to verify the complete sharded matrix with runner timing.
+
+## 2026-05-07: Auth Session Queries Failed During Web DB Pool Starvation
+
+### Symptoms
+
+Production web logs showed repeated tRPC errors like:
+
+```text
+[trpc] settings.get: Failed query: SELECT user_id FROM fitness.session
+```
+
+The same failure appeared across many unrelated routes, including dashboard,
+sleep, stress, recovery, sync, provider guide, and mobile sensor push endpoints.
+OAuth callbacks and webhook lookups also failed around the same window.
+
+### User Impact
+
+Authenticated web and mobile requests intermittently failed because even the
+cheap session validation query could not get a Postgres client from the web
+process pool.
+
+### Evidence
+
+Axiom OpenTelemetry spans for `dofek-web` showed the underlying failure:
+
+```text
+name="pg-pool.connect"
+status.message="timeout exceeded when trying to connect"
+duration="9.999601248s"
+```
+
+The app log wrapper around the same time was:
+
+```text
+[trpc] settings.get: Failed query: SELECT user_id FROM fitness.session
+```
+
+Postgres itself was writable and not in recovery:
+
+```text
+pg_is_in_recovery = false
+to_regclass('fitness.session') = fitness.session
+session_count = 7
+connections = 20
+```
+
+`pg_stat_activity` showed many long-running app queries active for 28-35 minutes,
+including `fitness.v_daily_metrics`, `fitness.activity`, stress, recovery, and
+provider-stat read queries. The app DB pool is configured in `src/db/index.ts`
+with `max: 5` and `connectionTimeoutMillis: 10_000`.
+
+### Root Cause
+
+The immediate root cause was web-process Postgres pool starvation: expensive
+read queries held all available pg pool clients long enough that new requests
+timed out after 10 seconds while trying to acquire/connect a client. The
+`fitness.session` query was the first query most authenticated requests run, so
+it surfaced as an auth/session failure even though the session table existed and
+Postgres was writable.
+
+### Fix or Mitigation
+
+Moved `sync.providerStats` off the hot Postgres request path.
+`SyncRepository.getProviderStats()` now reads all provider record counts from
+the ClickHouse `analytics.provider_stats` read model. The ClickHouse raw mirrors
+were extended to include `food_entry`, `health_event`, `lab_panel`,
+`lab_result`, and `journal_entry`, so the endpoint no longer runs per-provider
+count subqueries against Postgres. The fix intentionally did not increase
+Postgres pool size or timeouts.
+
+### Remaining Risk
+
+Other expensive Postgres read paths were observed during the incident, especially
+daily-metrics/recovery/insights queries over `fitness.v_daily_metrics` and
+related views. Those paths still need follow-up migration or query tightening so
+dashboard/mobile bursts cannot exhaust each web process's small Postgres pool.

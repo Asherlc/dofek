@@ -19,7 +19,7 @@ const latestErrorRowSchema = z.object({
   error_message: z.string().nullable(),
 });
 
-const providerStatsRowSchema = z.object({
+const clickHouseProviderStatsRowSchema = z.object({
   provider_id: z.string(),
   activities: z.coerce.number(),
   daily_metrics: z.coerce.number(),
@@ -79,6 +79,14 @@ export interface SyncLogRow {
   errorMessage: string | null;
 }
 
+interface ProviderStatsClickHouseStore {
+  query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params?: Record<string, unknown>,
+  ): Promise<z.infer<TSchema>[]>;
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -87,10 +95,16 @@ export interface SyncLogRow {
 export class SyncRepository {
   readonly #db: Pick<Database, "execute" | "select">;
   readonly #userId: string;
+  readonly #providerStatsStore: ProviderStatsClickHouseStore | undefined;
 
-  constructor(db: Pick<Database, "execute" | "select">, userId: string) {
+  constructor(
+    db: Pick<Database, "execute" | "select">,
+    userId: string,
+    providerStatsStore?: ProviderStatsClickHouseStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#providerStatsStore = providerStatsStore;
   }
 
   /** Get distinct provider IDs that have OAuth tokens for this user. */
@@ -161,26 +175,7 @@ export class SyncRepository {
 
   /** Per-provider record counts broken down by table. */
   async getProviderStats(): Promise<ProviderStatRow[]> {
-    const rows = await executeWithSchema(
-      this.#db,
-      providerStatsRowSchema,
-      sql`SELECT
-            p.id AS provider_id,
-            (SELECT COUNT(*) FROM fitness.activity row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS activities,
-            (SELECT COUNT(*) FROM fitness.daily_metrics row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS daily_metrics,
-            (SELECT COUNT(*) FROM fitness.sleep_session row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS sleep_sessions,
-            (SELECT COUNT(*) FROM fitness.body_measurement row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS body_measurements,
-            (SELECT COUNT(*) FROM fitness.food_entry row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS food_entries,
-            (SELECT COUNT(*) FROM fitness.health_event row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS health_events,
-            (SELECT COUNT(*) FROM fitness.metric_stream row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS metric_stream,
-            (SELECT COUNT(DISTINCT row.date) FROM fitness.food_entry row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS nutrition_daily,
-            (SELECT COUNT(*) FROM fitness.lab_panel row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS lab_panels,
-            (SELECT COUNT(*) FROM fitness.lab_result row JOIN fitness.lab_panel panel ON panel.id = row.panel_id WHERE panel.user_id = ${this.#userId} AND panel.provider_id = p.id)::int AS lab_results,
-            (SELECT COUNT(*) FROM fitness.journal_entry row WHERE row.user_id = ${this.#userId} AND row.provider_id = p.id)::int AS journal_entries
-          FROM fitness.provider p
-          WHERE p.user_id = ${this.#userId}
-          ORDER BY p.id`,
-    );
+    const rows = await this.#getClickHouseProviderStats();
 
     return rows.map((row) => ({
       providerId: row.provider_id,
@@ -196,5 +191,37 @@ export class SyncRepository {
       labResults: row.lab_results,
       journalEntries: row.journal_entries,
     }));
+  }
+
+  async #getClickHouseProviderStats(): Promise<z.infer<typeof clickHouseProviderStatsRowSchema>[]> {
+    if (!this.#providerStatsStore) {
+      throw new Error(
+        "sync.providerStats requires the ClickHouse provider stats store. Set CLICKHOUSE_URL and retry.",
+      );
+    }
+
+    const rows = await this.#providerStatsStore.query(
+      clickHouseProviderStatsRowSchema,
+      `
+        SELECT
+          provider_id,
+          activities,
+          daily_metrics,
+          sleep_sessions,
+          body_measurements,
+          food_entries,
+          health_events,
+          metric_stream,
+          nutrition_daily,
+          lab_panels,
+          lab_results,
+          journal_entries
+        FROM analytics.provider_stats
+        WHERE user_id = {userId:UUID}
+        ORDER BY provider_id
+      `,
+      { userId: this.#userId },
+    );
+    return rows;
   }
 }

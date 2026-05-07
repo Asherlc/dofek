@@ -114,3 +114,36 @@ WITH (
   publication_name = 'peerdb_metric_stream_publication',
   soft_delete = true
 );
+
+CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics
+FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
+WITH TABLE MAPPING
+(
+  {
+    from: fitness.food_entry,
+    to: food_entry
+  },
+  {
+    from: fitness.health_event,
+    to: health_event
+  },
+  {
+    from: fitness.lab_panel,
+    to: lab_panel
+  },
+  {
+    from: fitness.lab_result,
+    to: lab_result
+  },
+  {
+    from: fitness.journal_entry,
+    to: journal_entry
+  }
+)
+WITH (
+  do_initial_copy = true,
+  max_batch_size = 1000000,
+  sync_interval = 60,
+  publication_name = 'peerdb_metric_stream_publication',
+  soft_delete = true
+);

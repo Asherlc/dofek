@@ -58,6 +58,19 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("FROM postgres_fitness.provider FINAL");
+    expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
+    expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
+    expect(sql).toContain("FROM postgres_fitness.lab_panel FINAL");
+    expect(sql).toContain("FROM postgres_fitness.lab_result FINAL");
+    expect(sql).toContain("FROM postgres_fitness.journal_entry FINAL");
+    expect(sql).toContain("uniqExact(date) AS count");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS food_entries");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS health_events");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS nutrition_daily");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_panels");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS lab_results");
+    expect(sql).not.toContain("CAST(0, 'UInt64') AS journal_entries");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
@@ -101,7 +114,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(6);
+    expect(count).toBe(7);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
