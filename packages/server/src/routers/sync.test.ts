@@ -1224,6 +1224,20 @@ describe("syncRouter", () => {
       expect(result).toEqual([]);
       expect(execute).not.toHaveBeenCalled();
     });
+
+    it("throws a precondition error when ClickHouse is not configured", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.providerStats()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "sync.providerStats requires the ClickHouse provider stats store. Set CLICKHOUSE_URL and retry.",
+      });
+    });
   });
 
   describe("sanitizeErrorMessage", () => {

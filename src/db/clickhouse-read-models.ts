@@ -854,13 +854,19 @@ LEFT JOIN journal_entry_counts
  AND journal_entry_counts.provider_id = providers.provider_id`;
 }
 
+export function buildProviderStatsCreateReadModelStatements(): string[] {
+  return [
+    buildProviderStatsReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.provider_stats",
+    "SYSTEM WAIT VIEW analytics.provider_stats",
+  ];
+}
+
 export function buildProviderStatsReadModelStatements(): string[] {
   return [
     "DROP VIEW IF EXISTS analytics.provider_stats",
     "DROP TABLE IF EXISTS analytics.provider_stats",
-    buildProviderStatsReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.provider_stats",
-    "SYSTEM WAIT VIEW analytics.provider_stats",
+    ...buildProviderStatsCreateReadModelStatements(),
   ];
 }
 
@@ -884,6 +890,6 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildDerivedRestingHeartRateReadModelSql(),
     "SYSTEM REFRESH VIEW analytics.derived_resting_heart_rate",
     "SYSTEM WAIT VIEW analytics.derived_resting_heart_rate",
-    ...buildProviderStatsReadModelStatements().slice(2),
+    ...buildProviderStatsCreateReadModelStatements(),
   ];
 }

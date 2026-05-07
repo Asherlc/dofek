@@ -195,7 +195,9 @@ export class SyncRepository {
 
   async #getClickHouseProviderStats(): Promise<z.infer<typeof clickHouseProviderStatsRowSchema>[]> {
     if (!this.#providerStatsStore) {
-      throw new Error("sync.providerStats requires the ClickHouse activity analytics store");
+      throw new Error(
+        "sync.providerStats requires the ClickHouse provider stats store. Set CLICKHOUSE_URL and retry.",
+      );
     }
 
     const rows = await this.#providerStatsStore.query(
