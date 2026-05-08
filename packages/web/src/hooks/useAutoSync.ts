@@ -1,11 +1,52 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useRef } from "react";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc";
+
+const autoSyncAttemptStorageKey = "dofek.dashboard.autoSyncAttempt";
+let fallbackAutoSyncAttemptKey: string | null = null;
+let reportedSessionStorageError = false;
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
   if (!latestDate) return false; // No data at all — nothing to refresh
-  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
-  return latestDate < today;
+  return latestDate < todayYmd();
+}
+
+function todayYmd(): string {
+  return formatDateYmd(new Date());
+}
+
+function autoSyncAttemptKey(latestDate: string): string {
+  return `${todayYmd()}:${latestDate}`;
+}
+
+function reportSessionStorageError(error: unknown): void {
+  if (reportedSessionStorageError) return;
+  reportedSessionStorageError = true;
+  captureException(error, { context: "dashboard-auto-sync-session-storage" });
+}
+
+function hasAttemptedAutoSyncForLatestDate(latestDate: string): boolean {
+  if (typeof window === "undefined") return false;
+  const expectedAttemptKey = autoSyncAttemptKey(latestDate);
+  try {
+    return window.sessionStorage.getItem(autoSyncAttemptStorageKey) === expectedAttemptKey;
+  } catch (error) {
+    reportSessionStorageError(error);
+    return fallbackAutoSyncAttemptKey === expectedAttemptKey;
+  }
+}
+
+function markAutoSyncAttemptedForLatestDate(latestDate: string): void {
+  if (typeof window === "undefined") return;
+  const attemptKey = autoSyncAttemptKey(latestDate);
+  fallbackAutoSyncAttemptKey = attemptKey;
+  try {
+    window.sessionStorage.setItem(autoSyncAttemptStorageKey, attemptKey);
+  } catch (error) {
+    reportSessionStorageError(error);
+  }
 }
 
 /**
@@ -18,18 +59,23 @@ export function isDataStale(latestDate: string | null | undefined): boolean {
  */
 export function useAutoSync(latestDate: string | null | undefined) {
   const triggered = useRef(false);
+  const dataIsStale = isDataStale(latestDate);
+  const attemptedForLatestDate = latestDate ? hasAttemptedAutoSyncForLatestDate(latestDate) : false;
   const triggerSync = trpc.sync.triggerSync.useMutation();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
-    enabled: isDataStale(latestDate),
+    enabled: dataIsStale && !attemptedForLatestDate,
   });
 
   useEffect(() => {
     if (triggered.current) return;
-    if (!isDataStale(latestDate)) return;
+    if (!dataIsStale) return;
+    if (!latestDate) return;
+    if (hasAttemptedAutoSyncForLatestDate(latestDate)) return;
     if (activeSyncs.isLoading) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return; // sync already in progress
 
     triggered.current = true;
+    markAutoSyncAttemptedForLatestDate(latestDate);
     triggerSync.mutate({ sinceDays: 1 });
-  }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
+  }, [latestDate, dataIsStale, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
 }
