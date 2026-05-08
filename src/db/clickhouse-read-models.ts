@@ -792,6 +792,7 @@ SELECT
   countIf(channel = 'heart_rate') AS hr_samples,
   countIf(channel = 'power' AND scalar > 0) AS power_samples,
   countIf(channel = 'cadence' AND scalar > 0) AS cadence_samples,
+  countIf(channel = 'speed') AS speed_samples,
   uniqExact(activity_id) AS activity_count
 FROM analytics.deduped_sensor
 WHERE activity_id IS NOT NULL

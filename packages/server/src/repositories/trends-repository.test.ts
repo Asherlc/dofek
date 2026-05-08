@@ -276,6 +276,8 @@ describe("TrendsRepository", () => {
       );
       const query = sensorStore.query.mock.calls[0]?.[1];
       expect(query).not.toContain("fitness.cagg_metric_weekly");
+      expect(query).toContain("avg_speed * speed_samples");
+      expect(query).toContain("weekly_speed_samples");
     });
 
     it("maps rows correctly to TrendRow", async () => {

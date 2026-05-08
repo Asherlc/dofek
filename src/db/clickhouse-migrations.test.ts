@@ -163,6 +163,11 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
+        query: expect.stringContaining("countIf(channel = 'speed') AS speed_samples"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
         query: expect.stringContaining("INSERT INTO analytics.schema_migrations"),
       }),
     );

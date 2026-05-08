@@ -45,9 +45,12 @@ function requireSensorStore(
   return sensorStore;
 }
 
+const maxTrendDays = 3650;
+const maxTrendWeeks = 520;
+
 export const trendsRouter = router({
   daily: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(365) }))
+    .input(z.object({ days: z.number().int().min(1).max(maxTrendDays).default(365) }))
     .query(async ({ ctx, input }): Promise<DailyTrendRow[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "trends.daily");
       const repo = new TrendsRepository(ctx.userId, sensorStore);
@@ -58,7 +61,7 @@ export const trendsRouter = router({
     }),
 
   weekly: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ weeks: z.number().default(52) }))
+    .input(z.object({ weeks: z.number().int().min(1).max(maxTrendWeeks).default(52) }))
     .query(async ({ ctx, input }): Promise<WeeklyTrendRow[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "trends.weekly");
       const repo = new TrendsRepository(ctx.userId, sensorStore);

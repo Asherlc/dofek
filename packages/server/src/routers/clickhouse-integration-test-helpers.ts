@@ -468,6 +468,7 @@ total_samples UInt64,
 hr_samples UInt64,
 power_samples UInt64,
 cadence_samples UInt64,
+speed_samples UInt64,
 activity_count UInt64`,
   };
   const shortViewName = viewName.split(".").at(-1);

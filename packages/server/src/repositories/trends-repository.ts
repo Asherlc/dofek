@@ -156,7 +156,7 @@ export class TrendsRepository {
           CAST(power_weighted_sum / nullIf(weekly_power_samples, 0), 'Nullable(Float64)') AS avg_power,
           max_power,
           CAST(cadence_weighted_sum / nullIf(weekly_cadence_samples, 0), 'Nullable(Float64)') AS avg_cadence,
-          CAST(speed_weighted_sum / nullIf(weekly_total_samples, 0), 'Nullable(Float64)') AS avg_speed,
+          CAST(speed_weighted_sum / nullIf(weekly_speed_samples, 0), 'Nullable(Float64)') AS avg_speed,
           weekly_total_samples AS total_samples,
           weekly_hr_samples AS hr_samples,
           weekly_power_samples AS power_samples,
@@ -169,11 +169,12 @@ export class TrendsRepository {
             sum(avg_power * power_samples) AS power_weighted_sum,
             max(max_power) AS max_power,
             sum(avg_cadence * cadence_samples) AS cadence_weighted_sum,
-            sum(avg_speed * total_samples) AS speed_weighted_sum,
+            sum(avg_speed * speed_samples) AS speed_weighted_sum,
             sum(total_samples) AS weekly_total_samples,
             sum(hr_samples) AS weekly_hr_samples,
             sum(power_samples) AS weekly_power_samples,
             sum(cadence_samples) AS weekly_cadence_samples,
+            sum(speed_samples) AS weekly_speed_samples,
             sum(activity_count) AS weekly_activity_count
           FROM analytics.activity_trend_daily
           WHERE user_id = {userId:UUID}

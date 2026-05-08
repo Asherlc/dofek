@@ -29,7 +29,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 });
 
 describe("trendsRouter", () => {
-  async function makeCaller(executeResult: unknown[] = []) {
+  async function makeCaller(executeResult: unknown[] = [], includeSensorStore = true) {
     const execute = vi.fn().mockResolvedValue(executeResult);
     const sensorStore = {
       query: vi
@@ -41,7 +41,12 @@ describe("trendsRouter", () => {
     const { trendsRouter } = await import("./trends.ts");
     const callerFactory = createTestCallerFactory(trendsRouter);
     return {
-      caller: callerFactory({ db: { execute }, sensorStore, userId: "user-1", timezone: "UTC" }),
+      caller: callerFactory({
+        db: { execute },
+        sensorStore: includeSensorStore ? sensorStore : undefined,
+        userId: "user-1",
+        timezone: "UTC",
+      }),
       execute,
       sensorStore,
     };
@@ -93,6 +98,20 @@ describe("trendsRouter", () => {
       expect(result[0]?.avgSpeed).toBe(28.57);
       expect(result[0]?.activityCount).toBe(2);
     });
+
+    it("rejects unsafe day ranges before querying ClickHouse", async () => {
+      const { caller, sensorStore } = await makeCaller([]);
+      await expect(caller.daily({ days: -1 })).rejects.toThrow();
+      expect(sensorStore.query).not.toHaveBeenCalled();
+    });
+
+    it("fails clearly when the ClickHouse sensor store is missing", async () => {
+      const { caller, sensorStore } = await makeCaller([], false);
+      await expect(caller.daily({})).rejects.toThrow(
+        "trends.daily requires the ClickHouse activity analytics store",
+      );
+      expect(sensorStore.query).not.toHaveBeenCalled();
+    });
   });
 
   describe("weekly", () => {
@@ -126,6 +145,20 @@ describe("trendsRouter", () => {
       expect(result[0]?.avgHr).toBe(142.5);
       expect(result[0]?.avgPower).toBe(210.3);
       expect(result[0]?.totalSamples).toBe(3600);
+    });
+
+    it("rejects unsafe week ranges before querying ClickHouse", async () => {
+      const { caller, sensorStore } = await makeCaller([]);
+      await expect(caller.weekly({ weeks: 1.5 })).rejects.toThrow();
+      expect(sensorStore.query).not.toHaveBeenCalled();
+    });
+
+    it("fails clearly when the ClickHouse sensor store is missing", async () => {
+      const { caller, sensorStore } = await makeCaller([], false);
+      await expect(caller.weekly({})).rejects.toThrow(
+        "trends.weekly requires the ClickHouse activity analytics store",
+      );
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
   });
 });
