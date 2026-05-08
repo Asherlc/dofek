@@ -152,6 +152,16 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
       ],
     },
+    {
+      id: "0010_include_standalone_deduped_sensor_samples",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        "DROP VIEW IF EXISTS analytics.deduped_sensor",
+        "DROP TABLE IF EXISTS analytics.deduped_sensor",
+        ...buildClickHouseBootstrapStatements(postgresConnectionString),
+      ],
+    },
   ];
 }
 

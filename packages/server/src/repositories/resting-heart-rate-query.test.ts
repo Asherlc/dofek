@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
 
 describe("fetchRestingHeartRateRows", () => {
-  it("queries raw ClickHouse sleep and heart-rate samples instead of derived RHR read models", async () => {
+  it("queries ClickHouse sleep and heart-rate samples instead of derived RHR read models", async () => {
     const query = vi.fn().mockResolvedValue([{ date: "2026-05-01", resting_hr: 52 }]);
     const sensorStore = { query };
 
@@ -24,6 +24,9 @@ describe("fetchRestingHeartRateRows", () => {
     expect(queryText).toContain("analytics.v_sleep");
     expect(queryText).toContain("analytics.deduped_sensor");
     expect(queryText).toContain("channel = 'heart_rate'");
+    expect(queryText).toContain("activity_id IS NULL");
+    expect(queryText).toContain("raw_sleep_windows");
+    expect(queryText).toContain("LIMIT 1 BY user_id, date");
     expect(queryText).toContain("arraySort");
     expect(queryText).toContain("arraySlice");
     expect(queryText).not.toContain("derived_resting_heart_rate");
@@ -34,7 +37,11 @@ describe("resting heart rate architecture", () => {
   it("does not allow runtime code to compute resting heart rate from Postgres", () => {
     const repositoriesDir = dirname(fileURLToPath(import.meta.url));
     const sourceDir = dirname(repositoriesDir);
-    const runtimeFiles = collectRuntimeTypeScriptFiles(sourceDir);
+    const repoRoot = join(sourceDir, "../../..");
+    const runtimeFiles = [
+      ...collectRuntimeTypeScriptFiles(sourceDir),
+      ...collectRuntimeTypeScriptFiles(join(repoRoot, "src/personalization")),
+    ];
 
     const offenders = runtimeFiles
       .map((filePath) => ({
@@ -44,9 +51,11 @@ describe("resting heart rate architecture", () => {
       .filter(
         ({ source }) =>
           source.includes("restingHeartRatePostgresCte") ||
-          source.includes("restingHeartRateLateral"),
+          source.includes("restingHeartRateLateral") ||
+          source.includes("fitness.derived_resting_heart_rate") ||
+          source.includes("analytics.derived_resting_heart_rate"),
       )
-      .map(({ filePath }) => filePath.replace(`${sourceDir}/`, ""));
+      .map(({ filePath }) => filePath.replace(`${repoRoot}/`, ""));
 
     expect(offenders).toEqual([]);
   });

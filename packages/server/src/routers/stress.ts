@@ -43,7 +43,7 @@ export const stressRouter = router({
    * Mirrors Whoop's 0-3 stress scale with cumulative weekly tracking.
    */
   scores: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
+    .input(z.object({ days: z.number().min(1).max(365).default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StressResult> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({

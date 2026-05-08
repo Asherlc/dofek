@@ -82,18 +82,21 @@ describe("refitAllParams", () => {
 
     await refitAllParams(db, "user-1", sensorStore);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
-    expect(sensorStore.query).toHaveBeenNthCalledWith(
-      1,
+    expect(sensorStore.query).toHaveBeenCalledTimes(4);
+    expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("analytics.activity_summary asum"),
-      { userId: "user-1" },
+      expect.objectContaining({ userId: "user-1" }),
     );
-    expect(sensorStore.query).toHaveBeenNthCalledWith(
-      2,
+    expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("FROM analytics.activity_summary asum"),
-      { userId: "user-1" },
+      expect.objectContaining({ userId: "user-1" }),
+    );
+    expect(sensorStore.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("analytics.deduped_sensor"),
+      expect.objectContaining({ userId: "user-1" }),
     );
   });
 

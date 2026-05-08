@@ -103,7 +103,7 @@ describe("MonthlyReportRepository", () => {
       getHeartRateCurveRows: vi.fn(),
       getPaceCurveRows: vi.fn(),
     };
-    const repo = new MonthlyReportRepository("user-1", sensorStore);
+    const repo = new MonthlyReportRepository("user-1", sensorStore, "America/Los_Angeles");
     return { repo, execute: query };
   }
 
@@ -167,6 +167,17 @@ describe("MonthlyReportRepository", () => {
     const result = await repo.getReport(6);
     expect(result.current?.avgRestingHr).toBeNull();
     expect(result.current?.avgHrv).toBeNull();
+  });
+
+  it("uses the configured timezone for resting heart rate dates", async () => {
+    const { repo, execute } = makeRepository([]);
+    await repo.getReport(6);
+
+    expect(execute).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ timezone: "America/Los_Angeles" }),
+    );
   });
 
   it("returns null trend when previous training hours is zero", async () => {

@@ -116,10 +116,12 @@ export class MonthRow {
 export class MonthlyReportRepository {
   readonly #userId: string;
   readonly #sensorStore: ActivitySensorStore;
+  readonly #timezone: string;
 
-  constructor(userId: string, sensorStore: ActivitySensorStore) {
+  constructor(userId: string, sensorStore: ActivitySensorStore, timezone = "UTC") {
     this.#userId = userId;
     this.#sensorStore = sensorStore;
+    this.#timezone = timezone;
   }
 
   async getReport(months: number): Promise<MonthlyReportResult> {
@@ -186,7 +188,7 @@ export class MonthlyReportRepository {
       LEFT JOIN metrics_daily m ON m.date = d.date
       GROUP BY toStartOfMonth(d.date)
       ORDER BY month_start ASC`,
-      { userId: this.#userId, timezone: "UTC", months, rhrEndDate: today, rhrWindowStart },
+      { userId: this.#userId, timezone: this.#timezone, months, rhrEndDate: today, rhrWindowStart },
     );
 
     const monthRows = rows.map((row) => new MonthRow(row));

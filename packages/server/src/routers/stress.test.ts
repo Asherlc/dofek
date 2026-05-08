@@ -93,6 +93,11 @@ describe("Router transformation logic", () => {
     expect(result.trend).toBe("stable");
   });
 
+  it("rejects unbounded day windows", async () => {
+    const caller = makeCaller([]);
+    await expect(caller.scores({ days: 366, endDate: "2026-03-24" })).rejects.toThrow();
+  });
+
   it("computes HRV z-score deviation when all values present and sd > 0", async () => {
     // hrv=40, mean=60, sd=10 → z = (40-60)/10 = -2.0
     const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 });

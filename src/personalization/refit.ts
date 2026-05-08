@@ -2,6 +2,10 @@ import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
 import * as Sentry from "@sentry/node";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  fetchRestingHeartRateRowsFromClickHouse,
+  restingHeartRateValuesCte,
+} from "../db/resting-heart-rate-query.ts";
 import type { Database } from "../db/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -36,8 +40,8 @@ import { loadPersonalizedParams, savePersonalizedParams } from "./storage.ts";
  * Each fitter runs independently — one failure doesn't block others.
  * Saves the result to user_settings and returns it.
  *
- * Activity-load fitters (EWMA, TRIMP) read from analytics.activity_summary
- * via `sensorStore`. Other fitters read PG directly via `db`.
+ * Activity-load and resting-heart-rate fitters read from ClickHouse via
+ * `sensorStore`. Other fitters read Postgres directly via `db`.
  */
 export async function refitAllParams(
   db: Database,
@@ -47,9 +51,9 @@ export async function refitAllParams(
   const [ewmaResult, readinessResult, sleepResult, stressResult, trimpResult] =
     await Promise.allSettled([
       fitEwmaFromDb(sensorStore, userId),
-      fitReadinessFromDb(db, userId),
+      fitReadinessFromDb(db, sensorStore, userId),
       fitSleepFromDb(db, userId),
-      fitStressFromDb(db, userId),
+      fitStressFromDb(db, sensorStore, userId),
       fitTrimpFromDb(sensorStore, userId),
     ]);
 
@@ -240,9 +244,19 @@ export function parseReadinessRows(rows: Record<string, unknown>[]): ReadinessWe
   return data;
 }
 
-async function fitReadinessFromDb(db: Database, userId: string) {
+async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, userId: string) {
+  const restingHeartRateCte = restingHeartRateValuesCte(
+    await fetchRestingHeartRateRowsFromClickHouse({
+      queryStore: sensorStore,
+      userId,
+      timezone: "UTC",
+      endDate: currentUtcDateString(),
+      days: 425,
+    }),
+  );
   const rows = await db.execute(
-    sql`WITH metrics_base AS (
+    sql`WITH ${restingHeartRateCte},
+        metrics_base AS (
           SELECT
             dm.date,
             dm.hrv,
@@ -255,9 +269,8 @@ async function fitReadinessFromDb(db: Database, userId: string) {
             AVG(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean,
             STDDEV_POP(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd
           FROM fitness.v_daily_metrics dm
-          LEFT JOIN fitness.derived_resting_heart_rate drhr
-            ON drhr.user_id = dm.user_id
-           AND drhr.date = dm.date
+          LEFT JOIN resting_heart_rate drhr
+            ON drhr.date = dm.date
           WHERE dm.user_id = ${userId}
             AND dm.date > CURRENT_DATE - 425
         ),
@@ -367,17 +380,26 @@ export function parseStressRows(rows: Record<string, unknown>[]): StressThreshol
   return data;
 }
 
-async function fitStressFromDb(db: Database, userId: string) {
+async function fitStressFromDb(db: Database, sensorStore: RefitSensorStore, userId: string) {
+  const restingHeartRateCte = restingHeartRateValuesCte(
+    await fetchRestingHeartRateRowsFromClickHouse({
+      queryStore: sensorStore,
+      userId,
+      timezone: "UTC",
+      endDate: currentUtcDateString(),
+      days: 425,
+    }),
+  );
   const rows = await db.execute(
-    sql`WITH metrics AS (
+    sql`WITH ${restingHeartRateCte},
+        metrics AS (
           SELECT
             dm.date,
             dm.hrv,
             drhr.resting_hr
           FROM fitness.v_daily_metrics dm
-          JOIN fitness.derived_resting_heart_rate drhr
-            ON drhr.user_id = dm.user_id
-           AND drhr.date = dm.date
+          JOIN resting_heart_rate drhr
+            ON drhr.date = dm.date
           WHERE dm.user_id = ${userId}
             AND dm.date > CURRENT_DATE - 425
             AND dm.hrv IS NOT NULL
@@ -392,6 +414,10 @@ async function fitStressFromDb(db: Database, userId: string) {
   );
 
   return fitStressThresholds(parseStressRows(rows));
+}
+
+function currentUtcDateString(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export const trainingImpulseActivityRowSchema = z.object({

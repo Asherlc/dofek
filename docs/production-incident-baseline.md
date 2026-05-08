@@ -3379,3 +3379,15 @@ The helper is intentionally a regular query for now, not a materialized view.
 Monitor ClickHouse latency for RHR-heavy dashboard paths; if it becomes the next
 hot spot, revisit a ClickHouse materialized view or scheduled read model with a
 documented late-data refresh strategy.
+
+### Follow-Up Work
+
+- Monitor ClickHouse latency for RHR-heavy dashboard queries that use
+  `analytics.v_sleep` and `analytics.deduped_sensor`, and add an alert if those
+  helpers become a new hot path.
+- Keep runtime scans in review for any reintroduced
+  `fitness.derived_resting_heart_rate` or `analytics.derived_resting_heart_rate`
+  callers, and refactor them back to the unified RHR helper.
+- Evaluate a ClickHouse materialized view or scheduled read model if RHR query
+  latency rises under dashboard load.
+- Assign an analytics owner and review the mitigation by 2026-05-21.
