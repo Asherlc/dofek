@@ -4,12 +4,13 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 import type { DailyTrendRow, WeeklyTrendRow } from "./trends.ts";
 
 /**
  * Integration tests for the trends router.
- * Inserts metric_stream data and verifies the endpoints return
- * correctly aggregated data from the trend read models.
+ * Inserts metric_stream data and verifies the endpoints return correctly
+ * aggregated data from ClickHouse trend read models.
  */
 describe("Trends router — trend data tests", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -73,10 +74,8 @@ describe("Trends router — trend data tests", () => {
       }
     }
 
-    // The baseline test schema defines these relations as views, so newly
-    // inserted metric_stream rows are visible without a refresh step.
-
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -112,10 +111,9 @@ describe("Trends router — trend data tests", () => {
   }
 
   describe("daily", () => {
-    it("returns daily aggregated metrics from cagg_metric_daily", async () => {
+    it("returns daily aggregated metrics from the ClickHouse trend read model", async () => {
       const result = await query<DailyTrendRow[]>("trends.daily", { days: 90 });
 
-      // If continuous aggregates are available, we should have data
       if (result.length > 0) {
         for (const row of result) {
           expect(row.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -170,7 +168,7 @@ describe("Trends router — trend data tests", () => {
   });
 
   describe("weekly", () => {
-    it("returns weekly aggregated metrics from cagg_metric_weekly", async () => {
+    it("returns weekly aggregated metrics from daily ClickHouse trend rows", async () => {
       const result = await query<WeeklyTrendRow[]>("trends.weekly", { weeks: 52 });
 
       if (result.length > 0) {

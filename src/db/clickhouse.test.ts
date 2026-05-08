@@ -139,6 +139,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
+    expect(sql).toContain("uniqExact(activity_id) AS activity_count");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
@@ -205,6 +207,11 @@ describe("bootstrapClickHouseFromEnv", () => {
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
+      query:
+        "SELECT count() AS table_count FROM system.tables WHERE database = 'analytics' AND name = 'activity_trend_daily'",
+      format: "JSONEachRow",
+    });
+    expect(query).toHaveBeenCalledWith({
       query: "SELECT count() AS smoke_count FROM postgres_fitness.metric_stream LIMIT 1",
       format: "JSONEachRow",
     });
@@ -214,6 +221,10 @@ describe("bootstrapClickHouseFromEnv", () => {
     });
     expect(query).toHaveBeenCalledWith({
       query: "SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1",
+      format: "JSONEachRow",
+    });
+    expect(query).toHaveBeenCalledWith({
+      query: "SELECT count() AS smoke_count FROM analytics.activity_trend_daily LIMIT 1",
       format: "JSONEachRow",
     });
   });

@@ -7,7 +7,10 @@ import {
   waitForClickHouseTable,
 } from "./clickhouse.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
-import { buildProviderStatsReadModelStatements } from "./clickhouse-read-models.ts";
+import {
+  buildActivityTrendDailyReadModelStatements,
+  buildProviderStatsReadModelStatements,
+} from "./clickhouse-read-models.ts";
 
 interface MigrationCountRow {
   migration_count: number | string;
@@ -161,6 +164,10 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         "DROP TABLE IF EXISTS analytics.deduped_sensor",
         ...buildClickHouseBootstrapStatements(postgresConnectionString),
       ],
+    },
+    {
+      id: "0011_activity_trend_daily_read_model",
+      statements: buildActivityTrendDailyReadModelStatements(),
     },
   ];
 }

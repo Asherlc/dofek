@@ -31,6 +31,7 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.provider_stats",
         "analytics.deduped_sensor",
         "analytics.activity_summary",
+        "analytics.activity_trend_daily",
       ]) {
         await client.command({
           query: `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
@@ -148,6 +149,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(8);
+    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(9);
   });
 });

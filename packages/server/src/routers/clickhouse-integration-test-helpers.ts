@@ -302,6 +302,7 @@ const analyticsRefreshOrder = [
   "analytics.provider_stats",
   "analytics.deduped_sensor",
   "analytics.activity_summary",
+  "analytics.activity_trend_daily",
 ] as const;
 
 function clickHouseStringLiteral(value: string): string {
@@ -455,6 +456,19 @@ hr_sample_count UInt64,
 power_sample_count UInt64,
 first_sample_at DateTime64(6, 'UTC'),
 last_sample_at DateTime64(6, 'UTC')`,
+    activity_trend_daily: `user_id UUID,
+bucket_date Date,
+avg_hr Nullable(Float64),
+max_hr Nullable(Int16),
+avg_power Nullable(Float64),
+max_power Nullable(Int16),
+avg_cadence Nullable(Float64),
+avg_speed Nullable(Float64),
+total_samples UInt64,
+hr_samples UInt64,
+power_samples UInt64,
+cadence_samples UInt64,
+activity_count UInt64`,
   };
   const shortViewName = viewName.split(".").at(-1);
   if (!shortViewName) {

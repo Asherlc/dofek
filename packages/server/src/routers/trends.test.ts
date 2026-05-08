@@ -4,7 +4,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
   return {
     router: trpc.router,
@@ -31,11 +31,19 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 describe("trendsRouter", () => {
   async function makeCaller(executeResult: unknown[] = []) {
     const execute = vi.fn().mockResolvedValue(executeResult);
+    const sensorStore = {
+      query: vi
+        .fn()
+        .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) =>
+          executeResult.map((row) => schema.parse(row)),
+        ),
+    };
     const { trendsRouter } = await import("./trends.ts");
     const callerFactory = createTestCallerFactory(trendsRouter);
     return {
-      caller: callerFactory({ db: { execute }, userId: "user-1", timezone: "UTC" }),
+      caller: callerFactory({ db: { execute }, sensorStore, userId: "user-1", timezone: "UTC" }),
       execute,
+      sensorStore,
     };
   }
 
@@ -61,9 +69,14 @@ describe("trendsRouter", () => {
     });
 
     it("uses default days (365) when not specified", async () => {
-      const { caller, execute } = await makeCaller([]);
+      const { caller, execute, sensorStore } = await makeCaller([]);
       await caller.daily({});
-      expect(execute).toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("analytics.activity_trend_daily"),
+        { userId: "user-1", days: 365 },
+      );
     });
 
     it("maps period to date field", async () => {
@@ -90,9 +103,14 @@ describe("trendsRouter", () => {
     });
 
     it("uses default weeks (52) when not specified", async () => {
-      const { caller, execute } = await makeCaller([]);
+      const { caller, execute, sensorStore } = await makeCaller([]);
       await caller.weekly({});
-      expect(execute).toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("analytics.activity_trend_daily"),
+        { userId: "user-1", days: 364 },
+      );
     });
 
     it("maps period to week field", async () => {

@@ -18,7 +18,7 @@ import {
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
  * - supplements (list, save)
- * - trends (daily, weekly — via continuous aggregates)
+ * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
  * - food (search, quickAdd, update, delete, list with meal filter)
@@ -799,7 +799,7 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Trends — daily and weekly from continuous aggregates
+  // Trends — daily and weekly from ClickHouse read models
   // ══════════════════════════════════════════════════════════════
   describe("trends", () => {
     it("daily returns aggregated metric data per day", async () => {
@@ -1392,9 +1392,9 @@ describe("Router data coverage", () => {
     });
   });
 
-  // ── Trends (covers roundOrNull non-null branch with continuous aggregate data) ──
+  // ── Trends (covers roundOrNull non-null branch with ClickHouse trend data) ──
   describe("trends with data", () => {
-    it("daily returns aggregated metrics from continuous aggregate", async () => {
+    it("daily returns aggregated metrics from the ClickHouse trend read model", async () => {
       await queryCache.invalidateAll();
       const result = await query<
         {
