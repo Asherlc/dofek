@@ -1,5 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import * as Sentry from "@sentry/node";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+const cacheMocks = vi.hoisted(() => ({
+  invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
+vi.mock("dofek/lib/cache", () => ({
+  queryCache: {
+    invalidateByPrefix: cacheMocks.invalidateByPrefix,
+  },
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -72,6 +87,12 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
 }
 
 describe("foodRouter", () => {
+  beforeEach(() => {
+    cacheMocks.invalidateByPrefix.mockReset();
+    cacheMocks.invalidateByPrefix.mockResolvedValue(undefined);
+    vi.mocked(Sentry.captureException).mockReset();
+  });
+
   describe("list", () => {
     it("returns food entries for date range", async () => {
       const rows = [{ id: "f1", food_name: "Chicken", calories: 300 }];
@@ -209,6 +230,23 @@ describe("foodRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
+    });
+
+    it("reports cache invalidation errors without failing the delete", async () => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+      const cacheError = new Error("Redis unavailable");
+      cacheMocks.invalidateByPrefix.mockRejectedValueOnce(cacheError);
+      const caller = makeCaller([]);
+
+      const result = await caller.delete({
+        id: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result).toEqual({ success: true });
+      expect(Sentry.captureException).toHaveBeenCalledWith(cacheError);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[food] Failed to invalidate food cache for userId=user-1: Error: Redis unavailable",
+      );
     });
   });
 

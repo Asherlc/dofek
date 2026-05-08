@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
 import { queryCache } from "dofek/lib/cache";
@@ -45,8 +46,17 @@ function isAiStructuredOutputError(error: unknown): boolean {
 }
 
 async function invalidateFoodCaches(userId: string): Promise<void> {
-  await queryCache.invalidateByPrefix(`${userId}:food.`);
-  await queryCache.invalidateByPrefix(`${userId}:nutrition.`);
+  const results = await Promise.allSettled([
+    queryCache.invalidateByPrefix(`${userId}:food.`),
+    queryCache.invalidateByPrefix(`${userId}:nutrition.`),
+  ]);
+
+  for (const result of results) {
+    if (result.status === "rejected") {
+      logger.warn(`[food] Failed to invalidate food cache for userId=${userId}: ${result.reason}`);
+      Sentry.captureException(result.reason);
+    }
+  }
 }
 
 const foodCategoryValues = [
