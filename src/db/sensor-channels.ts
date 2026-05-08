@@ -16,10 +16,6 @@ export const POWER = "power";
 export const CADENCE = "cadence";
 /** Speed in m/s */
 export const SPEED = "speed";
-/** @deprecated Coordinates are stored in fitness.location_sample.position. */
-export const LAT = "lat";
-/** @deprecated Coordinates are stored in fitness.location_sample.position. */
-export const LNG = "lng";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
 /** Temperature in celsius */
@@ -32,8 +28,6 @@ export const VERTICAL_SPEED = "vertical_speed";
 export const SPO2 = "spo2";
 /** Respiratory rate in breaths/min */
 export const RESPIRATORY_RATE = "respiratory_rate";
-/** @deprecated FIT gps_accuracy is stored with the location fix in fitness.location_sample. */
-export const GPS_ACCURACY = "gps_accuracy";
 /** Cumulative power in watts */
 export const ACCUMULATED_POWER = "accumulated_power";
 /** Stress score */

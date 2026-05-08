@@ -359,6 +359,7 @@
     "Codeable",
     "ILIKE",
     "NTILE",
+    "SRID",
     "ribeye",
     "Apim",
     "asum",

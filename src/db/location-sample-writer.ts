@@ -1,10 +1,14 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
-import type { MetricStreamSourceRow } from "./metric-stream-writer.ts";
 
 const DEFAULT_BATCH_SIZE = 1000;
 
-export interface LocationSampleSourceRow extends MetricStreamSourceRow {
+export interface LocationSampleSourceRow {
+  recordedAt: Date;
+  userId?: string;
+  providerId: string;
+  activityId?: string | null;
+  sourceName?: string | null;
   lat?: number | null;
   lng?: number | null;
   horizontalAccuracy?: number | null;
