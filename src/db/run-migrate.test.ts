@@ -104,7 +104,7 @@ describe("run-migrate main()", () => {
     );
     expect(clickHouseClient.close).toHaveBeenCalled();
     expect(mockLogger.info).toHaveBeenCalledWith(
-      expect.stringContaining("1 ClickHouse migration(s) applied"),
+      expect.stringContaining("ClickHouse migrations complete — 1 migration(s) applied"),
     );
   });
 
