@@ -131,13 +131,13 @@ export class AnomalyDetectionRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
-  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
+  readonly #sensorStore: Pick<ActivitySensorStore, "query">;
 
   constructor(
     db: Pick<Database, "execute">,
     userId: string,
     timezone: string,
-    sensorStore?: Pick<ActivitySensorStore, "query">,
+    sensorStore: Pick<ActivitySensorStore, "query">,
   ) {
     this.#db = db;
     this.#userId = userId;
@@ -151,7 +151,7 @@ export class AnomalyDetectionRepository {
    */
   async check(endDate: string): Promise<AnomalyCheckResult> {
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
-      sensorStore: this.#requireSensorStore(),
+      sensorStore: this.#sensorStore,
       userId: this.#userId,
       timezone: this.#timezone,
       endDate,
@@ -343,7 +343,7 @@ export class AnomalyDetectionRepository {
     const queryDays = days + BASELINE_WINDOW_DAYS;
     const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
-      sensorStore: this.#requireSensorStore(),
+      sensorStore: this.#sensorStore,
       userId: this.#userId,
       timezone: this.#timezone,
       endDate: effectiveEndDate,
@@ -385,7 +385,7 @@ export class AnomalyDetectionRepository {
             ) dp ON true
             WHERE d.user_id = ${this.#userId}
               AND d.hrv IS NOT NULL
-              AND d.date > CURRENT_DATE - ${queryDays}::int
+              AND d.date > ${dateWindowEnd(effectiveEndDate)}::date - ${queryDays}::int
           ),
           hrv_baseline AS (
             SELECT
@@ -427,7 +427,7 @@ export class AnomalyDetectionRepository {
           FROM dates
           LEFT JOIN baseline b ON b.date = dates.date
           LEFT JOIN hrv_baseline h ON h.date = dates.date
-          WHERE dates.date > CURRENT_DATE - ${days}::int
+          WHERE dates.date > ${dateWindowEnd(effectiveEndDate)}::date - ${days}::int
           ORDER BY dates.date ASC`,
     );
 
@@ -485,13 +485,6 @@ export class AnomalyDetectionRepository {
 
     return anomalies;
   }
-
-  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
-    if (!this.#sensorStore) {
-      throw new Error("ClickHouse activity analytics store is required for anomaly detection");
-    }
-    return this.#sensorStore;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -507,7 +500,7 @@ export async function checkAnomalies(
   userId: string,
   timezone: string,
   endDate: string,
-  sensorStore?: Pick<ActivitySensorStore, "query">,
+  sensorStore: Pick<ActivitySensorStore, "query">,
 ): Promise<AnomalyCheckResult> {
   const repo = new AnomalyDetectionRepository(db, userId, timezone, sensorStore);
   return repo.check(endDate);

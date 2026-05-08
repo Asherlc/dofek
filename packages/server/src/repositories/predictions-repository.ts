@@ -17,7 +17,7 @@ import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
+import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -347,7 +347,7 @@ export class PredictionsRepository {
   // ── Private: shared data fetchers ─────────────────────────────────────
 
   async #fetchDailyMetrics(days: number): Promise<DailyRow[]> {
-    const endDate = new Date().toISOString().slice(0, 10);
+    const endDate = localDateString(new Date(), this.#timezone);
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
       sensorStore: this.#sensorStore,
       userId: this.#userId,

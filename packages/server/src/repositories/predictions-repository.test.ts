@@ -1103,6 +1103,31 @@ describe("PredictionsRepository predict dispatching to activity subtypes", () =>
     expect(localSensorStore.query).toHaveBeenCalledTimes(2);
   });
 
+  it("fetches resting heart rate using the repository timezone date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-08T01:30:00.000Z"));
+    try {
+      const execute = vi.fn().mockResolvedValue([]);
+      const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
+      const repo = new PredictionsRepository(
+        { execute },
+        "user-1",
+        "America/Los_Angeles",
+        localSensorStore,
+      );
+
+      await repo.predict("hrv", 30);
+
+      expect(localSensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.objectContaining({ rhrEndDate: "2026-05-07" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("predict for daily target fetches exactly 5 data sources in parallel", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", sensorStore);

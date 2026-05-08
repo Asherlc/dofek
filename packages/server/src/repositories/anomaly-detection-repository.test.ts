@@ -612,6 +612,16 @@ describe("AnomalyDetectionRepository", () => {
       expect(db.execute).toHaveBeenCalledTimes(1);
     });
 
+    it("anchors history windows on the supplied endDate instead of CURRENT_DATE", async () => {
+      const db = makeDb([]);
+      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      await repo.getHistory(90, "2024-06-15");
+
+      const queryText = JSON.stringify(db.execute.mock.calls[0]?.[0]?.queryChunks ?? []);
+      expect(queryText).toContain("2024-06-15");
+      expect(queryText).not.toContain("CURRENT_DATE");
+    });
+
     it("returns correct anomaly values from buildRestingHrAnomaly helper", async () => {
       // Verify all fields produced by buildRestingHrAnomaly:
       // metric name, rounding of baselineMean (*10/10), baselineStddev (*10/10), zScore (*100/100)
