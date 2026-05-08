@@ -74,8 +74,7 @@ reviews:
         `as never`, or double-cast `as unknown as X`. Prefer `null`/`undefined`
         over empty strings for absent values. No barrel files (no `index.ts`
         re-export shims). Files must stay under 1000 lines. No single-letter
-        variables; no unexplained acronyms. Default class members to private
-        using JS `#` syntax.
+        variables; no unexplained acronyms.
     - path: "**/*.{ts,tsx}"
       instructions: >-
         Use Zod to parse data crossing runtime boundaries (API responses, DB
@@ -231,10 +230,10 @@ reviews:
     biome:
       enabled: true
     eslint:
-      enabled: true
+      enabled: false  # Biome is the canonical JS/TS linter (AGENTS.md "no duplicate tools")
     semgrep:
       enabled: true
-      config_file: ".semgrep"
+      config_file: ".semgrep/"
     gitleaks:
       enabled: true
     hadolint:
@@ -268,9 +267,9 @@ reviews:
 
     # JS/TS ecosystem extras.
     oxc:
-      enabled: true
+      enabled: false  # Biome covers JS/TS linting
     htmlhint:
-      enabled: true
+      enabled: false  # no HTML in this stack (Vite + React)
     stylelint:
       enabled: true
     dotenvLint:
@@ -284,7 +283,7 @@ reviews:
     ruff:
       enabled: true
     pylint:
-      enabled: true
+      enabled: false  # Ruff is the canonical Python linter here
     flake8:
       enabled: false  # ruff covers this
     fortitudeLint:
