@@ -397,6 +397,7 @@ body_measurement_samples AS (
     provider_id,
     user_id,
     recorded_at,
+    _peerdb_synced_at AS created_at,
     device_id,
     channel,
     scalar,
@@ -428,6 +429,7 @@ active_body AS (
     user_id,
     measurement_key AS external_id,
     recorded_at,
+    min(created_at) AS created_at,
     device_id AS source_name,
     maxIf(scalar, channel = 'body_weight') AS weight_kg,
     maxIf(scalar, channel = 'body_fat_percentage') AS body_fat_pct,
@@ -484,6 +486,7 @@ ranked AS (
     active_body.user_id AS user_id,
     active_body.external_id AS external_id,
     active_body.recorded_at AS recorded_at,
+    active_body.created_at AS created_at,
     active_body.weight_kg AS weight_kg,
     active_body.body_fat_pct AS body_fat_pct,
     active_body.muscle_mass_kg AS muscle_mass_kg,
@@ -550,6 +553,7 @@ best AS (
       ranked.user_id AS user_id,
       ranked.external_id AS external_id,
       ranked.recorded_at AS recorded_at,
+      ranked.created_at AS created_at,
       ranked.source_name AS source_name,
       ranked.priority AS priority,
       row_number() OVER (
@@ -568,6 +572,7 @@ SELECT
   best.user_id AS user_id,
   best.external_id AS external_id,
   best.recorded_at AS recorded_at,
+  best.created_at AS created_at,
   argMinIf(ranked.weight_kg, ranked.priority, ranked.weight_kg IS NOT NULL) AS weight_kg,
   argMinIf(ranked.body_fat_pct, ranked.priority, ranked.body_fat_pct IS NOT NULL) AS body_fat_pct,
   argMinIf(ranked.muscle_mass_kg, ranked.priority, ranked.muscle_mass_kg IS NOT NULL) AS muscle_mass_kg,
@@ -587,7 +592,7 @@ INNER JOIN final_groups
   ON final_groups.group_id = best.group_id
 INNER JOIN ranked
   ON ranked.id = final_groups.measurement_id
-GROUP BY best.id, best.provider_id, best.user_id, best.external_id, best.recorded_at, best.source_name`;
+GROUP BY best.id, best.provider_id, best.user_id, best.external_id, best.recorded_at, best.created_at, best.source_name`;
 }
 
 function buildDailyMetricsReadModelSql(): string {
