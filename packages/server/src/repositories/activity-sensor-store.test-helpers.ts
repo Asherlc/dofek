@@ -1,7 +1,6 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type {
   ActivitySensorStore,
@@ -264,12 +263,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     return executeWithSchema(
       this.#db,
       vo2MaxEstimateRowSchema,
-      sql`WITH ${restingHeartRatePostgresCte(
-        userId,
-        sql`${endDate}::date - ${days + 60}::int`,
-        sql`${endDate}::date`,
-      )},
-          activities AS (
+      sql`WITH activities AS (
             SELECT
               activity.id,
               activity.started_at,
@@ -283,6 +277,15 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
                 ENDURANCE_ACTIVITY_TYPES.map((activityType) => sql`${activityType}`),
                 sql`, `,
               )})
+          ),
+          resting_heart_rate AS (
+            SELECT DISTINCT
+              activities.activity_date AS date,
+              user_profile.resting_hr::real AS resting_hr
+            FROM activities
+            JOIN fitness.user_profile user_profile
+              ON user_profile.id = ${userId}::uuid
+            WHERE user_profile.resting_hr IS NOT NULL
           ),
           latest_weight AS (
             SELECT body.weight_kg

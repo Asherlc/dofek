@@ -362,6 +362,7 @@ describe("lifeEventsRouter", () => {
         db: { execute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore([{ date: "2024-05-31", resting_hr: 52 }]),
       });
       const result = await caller.analyze({
         id: "00000000-0000-0000-0000-000000000001",

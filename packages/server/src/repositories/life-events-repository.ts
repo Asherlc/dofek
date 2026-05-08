@@ -1,8 +1,10 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { restingHeartRatePostgresCte, sleepNightDate } from "../lib/sql-fragments.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -101,11 +103,18 @@ export class LifeEventsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** List all life events for the user, ordered by start date descending. */
@@ -186,16 +195,24 @@ export class LifeEventsRepository {
 
     const afterEndDate = endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`;
     const metricsEndDate = endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`;
+    const metricsEndDateString =
+      endDate === "NOW()"
+        ? new Date().toISOString().slice(0, 10)
+        : (endDate ?? addDays(startDate, windowDays));
+    const restingHeartRateDays = daysBetween(addDays(startDate, -windowDays), metricsEndDateString);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: metricsEndDateString,
+      days: restingHeartRateDays,
+    });
 
     const metrics = await executeWithSchema(
       this.#db,
       metricsComparisonRowSchema,
       sql`
-			WITH ${restingHeartRatePostgresCte(
-        this.#userId,
-        sql`${startDate}::date - ${windowDays}::int`,
-        metricsEndDate,
-      )},
+			WITH ${restingHeartRateCte},
       before_dates AS (
 				SELECT dm.date
 				FROM fitness.v_daily_metrics dm
@@ -349,4 +366,24 @@ export class LifeEventsRepository {
 
     return { event, metrics, sleep, bodyComp };
   }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for life event analysis");
+    }
+    return this.#sensorStore;
+  }
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  const startTime = new Date(`${startDate}T00:00:00.000Z`).getTime();
+  const endTime = new Date(`${endDate}T00:00:00.000Z`).getTime();
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.ceil((endTime - startTime) / millisecondsPerDay));
 }

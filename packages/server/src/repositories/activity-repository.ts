@@ -4,9 +4,9 @@ import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
-import { restingHeartRateLateral } from "../lib/sql-fragments.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
+import { fetchRestingHeartRateRows, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -441,24 +441,29 @@ export class ActivityRepository extends BaseRepository {
   async #findHeartRateZoneParams(
     window: ActivitySensorWindow,
   ): Promise<z.infer<typeof heartRateZoneParamsRowSchema> | null> {
+    const activityDate = localDateString(new Date(window.startedAt), this.timezone);
+    const restingHeartRateRows = await fetchRestingHeartRateRows({
+      sensorStore: this.#requireSensorStore("heart-rate zones"),
+      userId: this.userId,
+      timezone: this.timezone,
+      endDate: activityDate,
+      days: 3650,
+    });
+    const latestRestingHeartRate = restingHeartRateRows.at(-1)?.resting_hr ?? null;
     const rows = await this.query(
       heartRateZoneParamsRowSchema,
       sql`SELECT
             up.max_hr,
           CASE
-            WHEN rhr.resting_hr > 0
-              AND rhr.resting_hr < up.max_hr
-            THEN rhr.resting_hr
+            WHEN ${latestRestingHeartRate}::real > 0
+              AND ${latestRestingHeartRate}::real < up.max_hr
+            THEN ${latestRestingHeartRate}::real
             WHEN up.resting_hr > 0
               AND up.resting_hr < up.max_hr
             THEN up.resting_hr
             ELSE LEAST(60, up.max_hr - 1)
           END AS resting_hr
           FROM fitness.user_profile up
-          LEFT JOIN ${restingHeartRateLateral(
-            sql`up.id`,
-            sql`(${window.startedAt}::timestamptz AT TIME ZONE ${this.timezone})::date`,
-          )}
           WHERE up.id = ${this.userId}
             AND up.max_hr > 1`,
     );

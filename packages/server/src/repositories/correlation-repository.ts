@@ -16,8 +16,10 @@ import {
   sleepRowSchema,
 } from "../insights/schemas.ts";
 import { spearmanCorrelation } from "../insights/stats.ts";
-import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
+import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ── Metric extraction ───────────────────────────────────────────────────
 
@@ -185,10 +187,19 @@ export function emptyStats() {
 export class CorrelationRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #timezone: string;
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   getMetrics() {
@@ -201,18 +212,28 @@ export class CorrelationRepository {
     }));
   }
 
-  async compute(metricX: string, metricY: string, days: number, lag: number, _endDate: string) {
+  async compute(metricX: string, metricY: string, days: number, lag: number, endDate: string) {
+    const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
+    const sensorStore = this.#requireSensorStore();
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: effectiveEndDate,
+      days,
+    });
     const [metrics, sleep, activities, nutrition, bodyComp] = await Promise.all([
       executeWithSchema(
         this.#db,
         dailyRowSchema,
-        sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${days}::int`)}
+        sql`WITH ${restingHeartRateCte}
             SELECT dm.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.steps, dm.active_energy_kcal, dm.skin_temp_c
 	            FROM fitness.v_daily_metrics dm
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}
-              AND dm.date > CURRENT_DATE - ${days}::int
+              AND dm.date > ${dateWindowStart(effectiveEndDate, days)}
+              AND dm.date <= ${effectiveEndDate}::date
             ORDER BY dm.date ASC`,
       ),
       executeWithSchema(
@@ -222,7 +243,7 @@ export class CorrelationRepository {
                    light_minutes, awake_minutes, efficiency_pct, is_nap
             FROM fitness.v_sleep
             WHERE user_id = ${this.#userId}
-              AND started_at > CURRENT_DATE - ${days}::int
+              AND started_at > ${timestampWindowStart(effectiveEndDate, days)}
             ORDER BY started_at ASC`,
       ),
       executeWithSchema(
@@ -231,7 +252,7 @@ export class CorrelationRepository {
         sql`SELECT started_at, ended_at, activity_type
             FROM fitness.v_activity
             WHERE user_id = ${this.#userId}
-              AND started_at > CURRENT_DATE - ${days}::int
+              AND started_at > ${timestampWindowStart(effectiveEndDate, days)}
             ORDER BY started_at ASC`,
       ),
       executeWithSchema(
@@ -240,7 +261,8 @@ export class CorrelationRepository {
         sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.#userId}
-              AND date > CURRENT_DATE - ${days}::int
+              AND date > ${dateWindowStart(effectiveEndDate, days)}
+              AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),
       executeWithSchema(
@@ -249,7 +271,7 @@ export class CorrelationRepository {
         sql`SELECT recorded_at, weight_kg, body_fat_pct
             FROM fitness.v_body_measurement
             WHERE user_id = ${this.#userId}
-              AND recorded_at > CURRENT_DATE - ${days}::int
+              AND recorded_at > ${timestampWindowStart(effectiveEndDate, days)}
             ORDER BY recorded_at ASC`,
       ),
     ]);
@@ -259,5 +281,12 @@ export class CorrelationRepository {
     });
 
     return computeCorrelation(joined, { metricX, metricY, days, lag });
+  }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for correlations");
+    }
+    return this.#sensorStore;
   }
 }

@@ -10,8 +10,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStart } from "../lib/date-window.ts";
-import { sleepDedupCte, vitalsBaselineCte } from "../lib/sql-fragments.ts";
+import { sleepDedupCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 export type { WeeklyStressRow };
 
@@ -93,12 +95,50 @@ function computeRestingHrDeviation(row: RawRow): number | null {
 
 /** Data access and stress computation for daily/weekly physiological stress. */
 export class StressRepository extends BaseRepository {
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
+
+  constructor(
+    db: Pick<import("dofek/db").Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+  ) {
+    super(db, userId, timezone);
+    this.#sensorStore = sensorStore;
+  }
+
   async getStressScores(days: number, endDate: string): Promise<StressResult> {
     const queryDays = days + BASELINE_LOOKBACK_DAYS;
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.userId,
+      timezone: this.timezone,
+      endDate,
+      days: queryDays,
+    });
 
     const rows = await this.query(
       rawRowSchema,
-      sql`WITH ${vitalsBaselineCte(this.userId, endDate, days, 60)},
+      sql`WITH ${restingHeartRateCte},
+          vitals_baseline AS (
+            SELECT
+              base.date,
+              base.hrv,
+              drhr.resting_hr,
+              AVG(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
+              STDDEV_POP(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_stddev_60d,
+              AVG(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS resting_hr_mean_60d,
+              STDDEV_POP(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS resting_hr_stddev_60d
+            FROM (
+              SELECT date, hrv
+              FROM fitness.v_daily_metrics
+              WHERE user_id = ${this.userId}
+                AND date > ${dateWindowStart(endDate, queryDays)}
+            ) base
+            LEFT JOIN resting_heart_rate drhr
+              ON drhr.date = base.date
+            ORDER BY base.date ASC
+          ),
           ${sleepDedupCte(this.userId, this.timezone, endDate, queryDays)}
           SELECT
             m.date::text,
@@ -143,5 +183,12 @@ export class StressRepository extends BaseRepository {
     const trend = computeStressTrend(daily);
 
     return { daily, weekly, latestScore, trend };
+  }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for stress scores");
+    }
+    return this.#sensorStore;
   }
 }

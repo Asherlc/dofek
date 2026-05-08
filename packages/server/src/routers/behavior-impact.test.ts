@@ -3,7 +3,14 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone?: string;
+      sensorStore?: { query: (...args: unknown[]) => Promise<unknown[]> };
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -30,12 +37,20 @@ import { behaviorImpactRouter } from "./behavior-impact.ts";
 
 const createCaller = createTestCallerFactory(behaviorImpactRouter);
 
+function makeSensorStore() {
+  return {
+    query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+  };
+}
+
 describe("behaviorImpactRouter", () => {
   describe("impactSummary", () => {
     it("returns empty array when no data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       const result = await caller.impactSummary({ days: 90 });
 
@@ -67,6 +82,8 @@ describe("behaviorImpactRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       const result = await caller.impactSummary({ days: 90 });
 
@@ -92,6 +109,8 @@ describe("behaviorImpactRouter", () => {
       const caller = createCaller({
         db: { execute: executeMock },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       await caller.impactSummary({});
 

@@ -4,7 +4,12 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: { query: (...args: unknown[]) => Promise<unknown[]> };
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -37,7 +42,14 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
     db: { execute: vi.fn().mockResolvedValue(rows) },
     userId: "user-1",
     timezone: "UTC",
+    sensorStore: makeSensorStore(),
   });
+}
+
+function makeSensorStore() {
+  return {
+    query: vi.fn().mockResolvedValue([{ date: "2026-01-01", resting_hr: 52 }]),
+  };
 }
 
 describe("lifeEventsRouter", () => {
@@ -244,6 +256,7 @@ describe("lifeEventsRouter", () => {
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
 
       const result = await caller.analyze({

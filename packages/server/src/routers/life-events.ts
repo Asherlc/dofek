@@ -4,7 +4,7 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 
 export const lifeEventsRouter = router({
   list: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone);
+    const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
     return repo.list();
   }),
 
@@ -20,7 +20,7 @@ export const lifeEventsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.create(input);
     }),
 
@@ -38,14 +38,14 @@ export const lifeEventsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...fields } = input;
-      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.update(id, fields);
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.delete(input.id);
     }),
 
@@ -58,7 +58,7 @@ export const lifeEventsRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.analyze(input.id, input.windowDays);
     }),
 });

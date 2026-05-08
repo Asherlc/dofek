@@ -41,6 +41,12 @@ export async function fetchRestingHeartRateRows({
   );
 }
 
+export async function fetchRestingHeartRateValuesCte(
+  input: FetchRestingHeartRateRowsInput,
+): Promise<SQL> {
+  return restingHeartRateValuesCte(await fetchRestingHeartRateRows(input));
+}
+
 export function restingHeartRateClickHouseCte(): string {
   return `sleep_windows AS (
       SELECT
@@ -91,4 +97,20 @@ export function restingHeartRateValuesCte(rows: RestingHeartRateRow[]): SQL {
 
   const values = rows.map((row) => sql`(${row.date}::date, ${row.resting_hr}::real)`);
   return sql`resting_heart_rate(date, resting_hr) AS (VALUES ${sql.join(values, sql`, `)})`;
+}
+
+export function localDateString(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) {
+    return date.toISOString().slice(0, 10);
+  }
+  return `${year}-${month}-${day}`;
 }

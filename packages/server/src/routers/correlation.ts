@@ -19,7 +19,7 @@ export const correlationRouter = router({
   metrics: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({}).optional())
     .query(({ ctx }) => {
-      const repo = new CorrelationRepository(ctx.db, ctx.userId);
+      const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.getMetrics();
     }),
 
@@ -33,7 +33,13 @@ export const correlationRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new CorrelationRepository(ctx.db, ctx.userId);
-      return repo.compute(input.metricX, input.metricY, input.days, input.lag, "");
+      const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
+      return repo.compute(
+        input.metricX,
+        input.metricY,
+        input.days,
+        input.lag,
+        new Date().toISOString().slice(0, 10),
+      );
     }),
 });

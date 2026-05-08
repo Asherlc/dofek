@@ -1,15 +1,9 @@
 import { averageVo2MaxEstimates, isValidVo2MaxEstimate } from "@dofek/training/derived-cardio";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
-import { z } from "zod";
-import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
 
-const dailyRestingHeartRateRowSchema = z.object({
-  date: dateStringSchema,
-  resting_hr: z.coerce.number(),
-});
+type DerivedCardioSensorStore = Partial<Pick<ActivitySensorStore, "getVo2MaxEstimates" | "query">>;
 
 export interface DerivedCardioContext {
   userId: string;
@@ -27,26 +21,21 @@ export interface DailyRestingHeartRate {
 }
 
 export class DerivedCardioRepository {
-  readonly #db: Pick<Database, "execute">;
   readonly #ctx: DerivedCardioContext;
-  readonly #sensorStore?: ActivitySensorStore;
+  readonly #sensorStore?: DerivedCardioSensorStore;
 
   constructor(
-    db: Pick<Database, "execute">,
+    _db: Pick<Database, "execute">,
     ctx: DerivedCardioContext,
-    sensorStore?: ActivitySensorStore,
+    sensorStore?: DerivedCardioSensorStore,
   ) {
-    this.#db = db;
     this.#ctx = ctx;
     this.#sensorStore = sensorStore;
   }
 
   async getVo2MaxAverage(endDate: string, days: number): Promise<DerivedVo2MaxAverage | null> {
-    if (!this.#sensorStore) {
-      throw new Error("VO2 max estimates require an activity sensor store");
-    }
-
-    const rows = await this.#sensorStore.getVo2MaxEstimates(
+    const sensorStore = this.#requireVo2MaxStore();
+    const rows = await sensorStore.getVo2MaxEstimates(
       endDate,
       days,
       this.#ctx.userId,
@@ -59,19 +48,15 @@ export class DerivedCardioRepository {
   }
 
   async getDailyRestingHeartRates(endDate: string, days: number): Promise<DailyRestingHeartRate[]> {
-    const rows = await executeWithSchema(
-      this.#db,
-      dailyRestingHeartRateRowSchema,
-      sql`WITH ${restingHeartRatePostgresCte(
-        this.#ctx.userId,
-        sql`${endDate}::date - ${days}::int`,
-        sql`${endDate}::date`,
-      )}
-          SELECT date, resting_hr
-	          FROM resting_heart_rate
-	          ORDER BY date ASC`,
-    );
-    return rows.map((row) => ({ date: row.date, restingHr: row.resting_hr }));
+    const sensorStore = this.#requireQueryStore("resting heart rate");
+    const rows = await fetchRestingHeartRateRows({
+      sensorStore,
+      userId: this.#ctx.userId,
+      timezone: this.#ctx.timezone,
+      endDate,
+      days,
+    });
+    return rows.map((row) => ({ date: row.date, restingHr: Number(row.resting_hr) }));
   }
 
   async getAverageRestingHeartRate(endDate: string, days: number): Promise<number | null> {
@@ -80,5 +65,22 @@ export class DerivedCardioRepository {
       return null;
     }
     return rows.reduce((sum, row) => sum + row.restingHr, 0) / rows.length;
+  }
+
+  #requireVo2MaxStore(): DerivedCardioSensorStore &
+    Pick<ActivitySensorStore, "getVo2MaxEstimates"> {
+    const getVo2MaxEstimates = this.#sensorStore?.getVo2MaxEstimates;
+    if (!getVo2MaxEstimates) {
+      throw new Error("VO2 max estimates require an activity sensor store");
+    }
+    return { ...this.#sensorStore, getVo2MaxEstimates };
+  }
+
+  #requireQueryStore(featureName: string): Pick<ActivitySensorStore, "query"> {
+    const query = this.#sensorStore?.query;
+    if (!query) {
+      throw new Error(`ClickHouse activity analytics store is required for ${featureName}`);
+    }
+    return { query };
   }
 }

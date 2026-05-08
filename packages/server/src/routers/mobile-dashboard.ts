@@ -404,7 +404,7 @@ export const mobileDashboardRouter = router({
       const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
 
       // 6. Anomalies
-      const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz);
+      const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz, ctx.sensorStore);
       const anomalies = await anomalyRepo.check(endDate);
 
       return {

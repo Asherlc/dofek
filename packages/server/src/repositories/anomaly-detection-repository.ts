@@ -2,10 +2,12 @@ import type { Database } from "dofek/db";
 import { decryptCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
-import { restingHeartRatePostgresCte, sleepNightDate } from "../lib/sql-fragments.ts";
+import { dateWindowEnd, timestampWindowStart } from "../lib/date-window.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -129,11 +131,18 @@ export class AnomalyDetectionRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /**
@@ -141,17 +150,20 @@ export class AnomalyDetectionRepository {
    * a rolling 30-day baseline. Flags deviations beyond 2 standard deviations.
    */
   async check(endDate: string): Promise<AnomalyCheckResult> {
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days: BASELINE_LOOKBACK_DAYS,
+    });
     const rows = await executeWithSchema(
       this.#db,
       anomalyCheckRowSchema,
       sql`WITH target_date AS (
 	          SELECT ${dateWindowEnd(endDate)}::date AS date
 	        ),
-          ${restingHeartRatePostgresCte(
-            this.#userId,
-            dateWindowStart(endDate, BASELINE_LOOKBACK_DAYS),
-            dateWindowEnd(endDate),
-          )},
+          ${restingHeartRateCte},
 	        baseline AS (
 	          SELECT
 	            date,
@@ -327,12 +339,20 @@ export class AnomalyDetectionRepository {
    * Historical anomalies: check each day over a period for deviations.
    * Returns resting HR and HRV anomalies (no sleep) for dashboard markers.
    */
-  async getHistory(days: number, _endDate: string): Promise<AnomalyRow[]> {
+  async getHistory(days: number, endDate: string): Promise<AnomalyRow[]> {
     const queryDays = days + BASELINE_WINDOW_DAYS;
+    const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: effectiveEndDate,
+      days: queryDays,
+    });
     const rows = await executeWithSchema(
       this.#db,
       anomalyHistoryRowSchema,
-      sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${queryDays}::int`)},
+      sql`WITH ${restingHeartRateCte},
           baseline AS (
 	          SELECT
 	            date,
@@ -465,6 +485,13 @@ export class AnomalyDetectionRepository {
 
     return anomalies;
   }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for anomaly detection");
+    }
+    return this.#sensorStore;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -480,8 +507,9 @@ export async function checkAnomalies(
   userId: string,
   timezone: string,
   endDate: string,
+  sensorStore?: Pick<ActivitySensorStore, "query">,
 ): Promise<AnomalyCheckResult> {
-  const repo = new AnomalyDetectionRepository(db, userId, timezone);
+  const repo = new AnomalyDetectionRepository(db, userId, timezone, sensorStore);
   return repo.check(endDate);
 }
 

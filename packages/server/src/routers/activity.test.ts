@@ -109,6 +109,7 @@ function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
 
 function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    query: vi.fn().mockResolvedValue([{ date: "2026-04-01", resting_hr: 55 }]),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -391,6 +392,7 @@ describe("activityRouter", () => {
     it("uses the configured sensor store for stream points", async () => {
       const postgresExecute = vi.fn().mockResolvedValue([]);
       const sensorStore = {
+        query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 55 }]),
         getActivitySummaries: vi.fn().mockResolvedValue([]),
         getStream: vi.fn().mockResolvedValue([
           {
@@ -435,6 +437,7 @@ describe("activityRouter", () => {
 
     it("returns mapped stream points", async () => {
       const sensorStore = {
+        query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 55 }]),
         getActivitySummaries: vi.fn().mockResolvedValue([]),
         getStream: vi.fn().mockResolvedValue([
           {
@@ -627,6 +630,7 @@ describe("activityRouter", () => {
 
     it("returns 5 zones with labels", async () => {
       const sensorStore = {
+        query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 55 }]),
         getActivitySummaries: vi.fn().mockResolvedValue([]),
         getStream: vi.fn(),
         getHeartRateZoneSeconds: vi.fn().mockResolvedValue([
@@ -674,6 +678,7 @@ describe("activityRouter", () => {
 
     it("defaults missing zones to 0 seconds", async () => {
       const sensorStore = {
+        query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 55 }]),
         getActivitySummaries: vi.fn().mockResolvedValue([]),
         getStream: vi.fn(),
         getHeartRateZoneSeconds: vi.fn().mockResolvedValue([{ zone: 2, seconds: 500 }]),

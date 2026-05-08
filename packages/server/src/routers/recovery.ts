@@ -20,9 +20,10 @@ import {
   endDateSchema,
   timestampWindowStart,
 } from "../lib/date-window.ts";
-import { restingHeartRatePostgresCte, sleepNightDate } from "../lib/sql-fragments.ts";
+import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -460,14 +461,18 @@ export const recoveryRouter = router({
         rr_sd_30d: z.coerce.number().nullable(),
         efficiency_pct: z.coerce.number().nullable(),
       });
+      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.readinessScore");
+      const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate: input.endDate,
+        days: queryDays,
+      });
       const combinedRows = await executeWithSchema(
         ctx.db,
         readinessRowSchema,
-        sql`WITH ${restingHeartRatePostgresCte(
-          ctx.userId,
-          dateWindowStart(input.endDate, queryDays),
-          dateWindowEnd(input.endDate),
-        )},
+        sql`WITH ${restingHeartRateCte},
           metrics_with_baselines AS (
               SELECT
                 dm.date::text AS date,
@@ -600,6 +605,14 @@ export const recoveryRouter = router({
   strainTarget: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
+      const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate: input.endDate,
+        days: input.days,
+      });
       // Get readiness score
       const readinessRows = await executeWithSchema(
         ctx.db,
@@ -611,11 +624,7 @@ export const recoveryRouter = router({
           respiratory_rate_avg: z.number().nullable(),
         }),
         sql`
-	          WITH ${restingHeartRatePostgresCte(
-              ctx.userId,
-              dateWindowStart(input.endDate, input.days),
-              dateWindowEnd(input.endDate),
-            )},
+	          WITH ${restingHeartRateCte},
             metric_dates AS (
             SELECT dm.date
             FROM fitness.v_daily_metrics dm
@@ -643,7 +652,6 @@ export const recoveryRouter = router({
       );
 
       // Get daily loads for ACWR (from ClickHouse analytics.activity_summary)
-      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
       const loads = await sensorStore.query(
         z.object({
           date: z.string(),

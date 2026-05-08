@@ -1,6 +1,6 @@
 import type { SQL } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { dateWindowStart, timestampWindowStart } from "./date-window.ts";
+import { timestampWindowStart } from "./date-window.ts";
 
 // ---------------------------------------------------------------------------
 // Sleep night date
@@ -132,147 +132,6 @@ export function bodyWeightDedupCte(
 }
 
 // ---------------------------------------------------------------------------
-// Vitals baseline window CTE
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable CTE that computes daily resting heart rate directly from raw
- * sleep-window heart-rate samples.
- *
- * Returns a single CTE named `resting_heart_rate` with:
- *   user_id, date, resting_hr
- */
-export function restingHeartRatePostgresCte(
-  userId: string | SQL,
-  startDate: SQL,
-  endDate?: SQL,
-): SQL {
-  return sql`resting_heart_rate AS (
-    WITH sleep_windows AS (
-      SELECT
-        user_id,
-        (ended_at AT TIME ZONE 'UTC')::date AS date,
-        started_at,
-        ended_at
-      FROM fitness.v_sleep
-      WHERE user_id = ${userId}
-        AND is_nap = false
-        AND ended_at IS NOT NULL
-        AND (ended_at AT TIME ZONE 'UTC')::date > ${startDate}
-        ${endDate ? sql`AND (ended_at AT TIME ZONE 'UTC')::date <= ${endDate}` : sql``}
-    ),
-    raw_samples AS (
-      SELECT
-        sw.user_id,
-        sw.date,
-        ms.provider_id,
-        ms.scalar AS heart_rate
-      FROM sleep_windows sw
-      JOIN fitness.metric_stream ms
-        ON ms.user_id = sw.user_id
-       AND ms.channel = 'heart_rate'
-       AND ms.recorded_at >= sw.started_at
-       AND ms.recorded_at <= sw.ended_at
-       AND ms.scalar IS NOT NULL
-    ),
-    best_provider AS (
-      SELECT DISTINCT ON (user_id, date)
-        user_id,
-        date,
-        provider_id
-      FROM (
-        SELECT
-          user_id,
-          date,
-          provider_id,
-          count(*) AS sample_count
-        FROM raw_samples
-        GROUP BY user_id, date, provider_id
-      ) provider_counts
-      ORDER BY user_id, date, sample_count DESC, provider_id ASC
-    ),
-    samples AS (
-      SELECT
-        raw_samples.user_id,
-        raw_samples.date,
-        raw_samples.heart_rate,
-        row_number() OVER (
-          PARTITION BY raw_samples.user_id, raw_samples.date
-          ORDER BY raw_samples.heart_rate ASC
-        ) AS ascending_rank,
-        count(*) OVER (PARTITION BY raw_samples.user_id, raw_samples.date) AS sample_count
-      FROM raw_samples
-      JOIN best_provider
-        ON best_provider.user_id = raw_samples.user_id
-       AND best_provider.date = raw_samples.date
-       AND best_provider.provider_id = raw_samples.provider_id
-    )
-    SELECT
-      user_id,
-      date,
-      round(avg(heart_rate))::int AS resting_hr
-    FROM samples
-    WHERE sample_count >= 30
-      AND ascending_rank <= greatest(ceil(sample_count * 0.10)::int, 1)
-    GROUP BY user_id, date
-  )`;
-}
-
-/**
- * Reusable CTE that computes rolling AVG and STDDEV_POP window statistics
- * for daily vitals (HRV, derived resting HR, respiratory rate).
- *
- * Returns a single CTE named `vitals_baseline` with the raw metrics plus
- * rolling statistics columns named `{metric}_mean_{windowSize}d` and
- * `{metric}_stddev_{windowSize}d`.
- *
- * Always includes: date, hrv, resting_hr, respiratory_rate_avg.
- * Rolling stats columns depend on `windowSize`:
- *   hrv_mean_{N}d, hrv_stddev_{N}d,
- *   resting_hr_mean_{N}d, resting_hr_stddev_{N}d,
- *   respiratory_rate_mean_{N}d, respiratory_rate_stddev_{N}d
- *
- * @param windowSize - Number of preceding rows for the rolling window (e.g., 30 or 60).
- */
-export function vitalsBaselineCte(
-  userId: string,
-  endDate: string,
-  days: number,
-  windowSize: number,
-): SQL {
-  const queryDays = days + windowSize;
-  const preceding = windowSize - 1;
-  return sql`${restingHeartRatePostgresCte(
-    userId,
-    dateWindowStart(endDate, queryDays),
-    sql`${endDate}::date`,
-  )},
-  vitals_baseline AS (
-    SELECT
-      base.date,
-      base.hrv,
-      drhr.resting_hr,
-      base.respiratory_rate_avg,
-      AVG(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_mean_${windowSize}d`)},
-      STDDEV_POP(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_stddev_${windowSize}d`)},
-      AVG(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_mean_${windowSize}d`)},
-      STDDEV_POP(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_stddev_${windowSize}d`)},
-      AVG(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_mean_${windowSize}d`)},
-      STDDEV_POP(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_stddev_${windowSize}d`)}
-    FROM (
-      SELECT date, user_id, hrv, respiratory_rate_avg
-      FROM fitness.v_daily_metrics
-      WHERE user_id = ${userId}
-        AND date > ${dateWindowStart(endDate, queryDays)}
-    ) base
-    LEFT JOIN resting_heart_rate drhr
-      ON drhr.user_id = base.user_id
-     AND drhr.date = base.date
-    ORDER BY base.date ASC
-  )`;
-}
-
-// ---------------------------------------------------------------------------
 // Heart rate zone classification
 // ---------------------------------------------------------------------------
 
@@ -307,28 +166,4 @@ export function heartRateZoneColumns(
   const zone5 = sql`COUNT(*) FILTER (WHERE ${heartRate} >= ${restingHr} + (${maxHr} - ${restingHr}) * ${boundaries[3]}::numeric)::int`;
 
   return { zone1, zone2, zone3, zone4, zone5 };
-}
-
-// ---------------------------------------------------------------------------
-// Resting HR lateral join
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable LATERAL subquery to find the most recent resting heart rate
- * for a given user on or before a given date expression.
- *
- * Returns a SQL fragment suitable for use in a `JOIN LATERAL (...) rhr ON true`.
- * The result has a single column: `resting_hr`.
- *
- * @param userIdExpression - SQL expression for the user ID (e.g., `sql\`up.id\``)
- * @param dateExpression   - SQL expression for the date upper bound
- */
-export function restingHeartRateLateral(userIdExpression: SQL, dateExpression: SQL): SQL {
-  return sql`LATERAL (
-    WITH ${restingHeartRatePostgresCte(userIdExpression, sql`'1900-01-01'::date`, dateExpression)}
-    SELECT resting_hr
-    FROM resting_heart_rate
-    ORDER BY date DESC
-    LIMIT 1
-  ) rhr ON true`;
 }

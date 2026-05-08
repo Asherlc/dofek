@@ -3,7 +3,6 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { joinByDate } from "../insights/data-join.ts";
 import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
-import { restingHeartRatePostgresCte } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
@@ -18,6 +17,7 @@ import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -151,15 +151,17 @@ type ExerciseMinutesRow = z.infer<typeof exerciseMinutesRowSchema>;
 export class PredictionsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
   constructor(
     db: Pick<Database, "execute">,
     userId: string,
-    _timezone: string,
+    timezone: string,
     sensorStore: ActivitySensorStore,
   ) {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
     this.#sensorStore = sensorStore;
   }
 
@@ -345,10 +347,18 @@ export class PredictionsRepository {
   // ── Private: shared data fetchers ─────────────────────────────────────
 
   async #fetchDailyMetrics(days: number): Promise<DailyRow[]> {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days,
+    });
     return executeWithSchema(
       this.#db,
       dailyRowSchema,
-      sql`WITH ${restingHeartRatePostgresCte(this.#userId, sql`CURRENT_DATE - ${days}::int`)},
+      sql`WITH ${restingHeartRateCte},
           metric_dates AS (
 	            SELECT dm.date
 	            FROM fitness.v_daily_metrics dm

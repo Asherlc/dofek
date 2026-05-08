@@ -23,7 +23,12 @@ export const anomalyDetectionRouter = router({
   check: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<AnomalyCheckResult> => {
-      const repo = new AnomalyDetectionRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new AnomalyDetectionRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+      );
       return repo.check(input.endDate);
     }),
 
@@ -34,7 +39,12 @@ export const anomalyDetectionRouter = router({
   history: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<AnomalyRow[]> => {
-      const repo = new AnomalyDetectionRepository(ctx.db, ctx.userId, ctx.timezone);
-      return repo.getHistory(input.days, "today");
+      const repo = new AnomalyDetectionRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+      );
+      return repo.getHistory(input.days, new Date().toISOString().slice(0, 10));
     }),
 });
