@@ -617,6 +617,8 @@ describe("Router transformation logic", () => {
       );
 
       await refreshViews();
+      await syncClickHouseTestActivitySensorStore(testCtx);
+      await queryCache.invalidateAll();
     }, 30_000);
 
     it("returns composite score with metric breakdowns", async () => {
