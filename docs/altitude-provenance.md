@@ -101,6 +101,12 @@ new location metadata field, keep Core Location/Expo horizontal accuracy
 separate from FIT GPS accuracy unless a provider gives a stronger field-level
 definition.
 
+During the PostGIS location migration, legacy `lat`, `lng`, and `gps_accuracy`
+metric-stream rows are removed after `location` rows are backfilled. Matched FIT
+`gps_accuracy` values move to `location.metadata.gps_accuracy_m`; unmatched
+legacy `gps_accuracy` rows are discarded because they cannot be attached to a
+valid point-valued location sample.
+
 If altitude provenance becomes product-relevant, add an explicit nullable field
 or channel metadata value with a small enum such as:
 

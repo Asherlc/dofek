@@ -145,7 +145,7 @@ BEGIN
         WITH deleted_rows AS (
           SELECT ctid
           FROM fitness.metric_stream
-          WHERE channel IN ('lat', 'lng')
+          WHERE channel IN ('lat', 'lng', 'gps_accuracy')
           LIMIT batch_size
         )
         DELETE FROM fitness.metric_stream
@@ -166,7 +166,7 @@ BEGIN
       'SELECT EXISTS (
          SELECT 1
          FROM %s
-         WHERE channel IN (''lat'', ''lng'')
+         WHERE channel IN (''lat'', ''lng'', ''gps_accuracy'')
            AND scalar IS NOT NULL
        )',
       current_chunk_regclass
@@ -275,7 +275,7 @@ BEGIN
         'WITH deleted_rows AS (
            SELECT ctid
            FROM %1$s
-           WHERE channel IN (''lat'', ''lng'')
+           WHERE channel IN (''lat'', ''lng'', ''gps_accuracy'')
            LIMIT $1
          )
          DELETE FROM %1$s

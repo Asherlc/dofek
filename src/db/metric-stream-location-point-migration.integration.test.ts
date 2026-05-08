@@ -88,7 +88,8 @@ describe("metric_stream location point migration", () => {
           ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'lng', $2, -122.4194),
           ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'gps_accuracy', $2, 6),
           ('2026-01-01T00:00:01Z', $1, 'fit', 'watch', 'file', 'lat', $2, 37.7750),
-          ('2026-01-01T00:00:01Z', $1, 'fit', 'watch', 'file', 'lng', $2, -122.4195)
+          ('2026-01-01T00:00:01Z', $1, 'fit', 'watch', 'file', 'lng', $2, -122.4195),
+          ('2026-01-01T00:00:02Z', $1, 'fit', 'watch', 'file', 'gps_accuracy', $2, 9)
         `,
         [userId, activityId],
       );
@@ -153,7 +154,7 @@ describe("metric_stream location point migration", () => {
         FROM fitness.metric_stream
         WHERE channel = 'gps_accuracy'
       `);
-      expect(legacyAccuracyRowsResult.rows).toEqual([{ count: "1" }]);
+      expect(legacyAccuracyRowsResult.rows).toEqual([{ count: "0" }]);
     } finally {
       if (temporaryDirectory) {
         rmSync(temporaryDirectory, { recursive: true, force: true });
