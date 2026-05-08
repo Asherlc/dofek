@@ -10,6 +10,7 @@ ignore: |
   pnpm-lock.yaml
   packages/**/dist/
   packages/**/build/
+  docs/whoop-api.openapi.yaml
 
 rules:
   line-length:

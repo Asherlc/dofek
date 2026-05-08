@@ -2,23 +2,13 @@
 dialect = postgres
 templater = raw
 max_line_length = 120
-exclude_rules = LT05, ST06
+
+# Disabled for practicality with Drizzle output and Postgres conventions:
+#   LT05  line too long (governed by max_line_length warning)
+#   ST06  select wildcards (acceptable in views and read models)
+#   RF04  keywords as identifiers (false positives on common columns: name, type, etc.)
+exclude_rules = LT05, ST06, RF04
 
 [sqlfluff:indentation]
 tab_space_size = 2
 indent_unit = space
-
-[sqlfluff:rules:capitalisation.keywords]
-capitalisation_policy = upper
-
-[sqlfluff:rules:capitalisation.identifiers]
-capitalisation_policy = lower
-
-[sqlfluff:rules:capitalisation.functions]
-capitalisation_policy = upper
-
-[sqlfluff:rules:capitalisation.literals]
-capitalisation_policy = upper
-
-[sqlfluff:rules:capitalisation.types]
-capitalisation_policy = upper
