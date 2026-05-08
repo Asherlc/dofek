@@ -391,29 +391,19 @@ function buildBodyMeasurementReadModelSql(): string {
     "(user_id, recorded_at, id)",
   )}
 WITH RECURSIVE
-active_body AS (
+body_measurement_samples AS (
   SELECT
-    min(id) AS id,
+    id,
     provider_id,
     user_id,
+    recorded_at,
+    device_id,
+    channel,
+    scalar,
     ifNull(
       external_id,
       concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
-    ) AS external_id,
-    recorded_at,
-    device_id AS source_name,
-    maxIf(scalar, channel = 'body_weight') AS weight_kg,
-    maxIf(scalar, channel = 'body_fat_percentage') AS body_fat_pct,
-    maxIf(scalar, channel = 'muscle_mass') AS muscle_mass_kg,
-    maxIf(scalar, channel = 'bone_mass') AS bone_mass_kg,
-    maxIf(scalar, channel = 'body_water_percentage') AS water_pct,
-    maxIf(scalar, channel = 'body_mass_index') AS bmi,
-    maxIf(scalar, channel = 'height') AS height_cm,
-    maxIf(scalar, channel = 'waist_circumference') AS waist_circumference_cm,
-    maxIf(scalar, channel = 'systolic_blood_pressure') AS systolic_bp,
-    maxIf(scalar, channel = 'diastolic_blood_pressure') AS diastolic_bp,
-    maxIf(scalar, channel = 'heart_pulse') AS heart_pulse,
-    maxIf(scalar, channel = 'body_temperature') AS temperature_c
+    ) AS measurement_key
   FROM postgres_fitness.metric_stream FINAL
   WHERE _peerdb_is_deleted = 0
     AND channel IN (
@@ -430,13 +420,32 @@ active_body AS (
       'heart_pulse',
       'body_temperature'
     )
+),
+active_body AS (
+  SELECT
+    min(id) AS id,
+    provider_id,
+    user_id,
+    measurement_key AS external_id,
+    recorded_at,
+    device_id AS source_name,
+    maxIf(scalar, channel = 'body_weight') AS weight_kg,
+    maxIf(scalar, channel = 'body_fat_percentage') AS body_fat_pct,
+    maxIf(scalar, channel = 'muscle_mass') AS muscle_mass_kg,
+    maxIf(scalar, channel = 'bone_mass') AS bone_mass_kg,
+    maxIf(scalar, channel = 'body_water_percentage') AS water_pct,
+    maxIf(scalar, channel = 'body_mass_index') AS bmi,
+    maxIf(scalar, channel = 'height') AS height_cm,
+    maxIf(scalar, channel = 'waist_circumference') AS waist_circumference_cm,
+    maxIf(scalar, channel = 'systolic_blood_pressure') AS systolic_bp,
+    maxIf(scalar, channel = 'diastolic_blood_pressure') AS diastolic_bp,
+    maxIf(scalar, channel = 'heart_pulse') AS heart_pulse,
+    maxIf(scalar, channel = 'body_temperature') AS temperature_c
+  FROM body_measurement_samples
   GROUP BY
     provider_id,
     user_id,
-    ifNull(
-      external_id,
-      concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
-    ),
+    measurement_key,
     recorded_at,
     device_id
 ),

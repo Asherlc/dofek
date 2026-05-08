@@ -171,6 +171,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain(
       "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
     );
+    expect(sql).toContain("body_measurement_samples AS");
+    expect(sql).toContain("measurement_key AS external_id");
+    expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
     expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
