@@ -264,7 +264,7 @@ describe("FitbitProvider.sync() (integration)", () => {
       .select()
       .from(metricStream)
       .where(eq(metricStream.providerId, "fitbit"));
-    const bodyRows = weightRows.filter((row) => row.externalId === "55555");
+    const bodyRows = weightRows.filter((row) => row.externalId === "7001");
     expect(bodyRows).toHaveLength(2);
 
     const weight = bodyRows.find((row) => row.channel === "body_weight");
