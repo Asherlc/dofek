@@ -103,14 +103,22 @@ describe("DerivedCardioRepository", () => {
     });
   });
 
-  it("maps resting HR rows from SQL", async () => {
-    const repo = new DerivedCardioRepository(makeDb([{ date: "2026-04-27", resting_hr: "52" }]), {
-      userId: "user-1",
-      timezone: "America/Los_Angeles",
-    });
+  it("maps resting HR rows from ClickHouse", async () => {
+    const sensorStore = {
+      query: vi.fn().mockResolvedValue([{ date: "2026-04-27", resting_hr: "52" }]),
+    } satisfies Pick<ActivitySensorStore, "query">;
+    const repo = new DerivedCardioRepository(
+      makeDb([]),
+      {
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      },
+      sensorStore,
+    );
 
     await expect(repo.getDailyRestingHeartRates("2026-04-28", 7)).resolves.toEqual([
       { date: "2026-04-27", restingHr: 52 },
     ]);
+    expect(sensorStore.query).toHaveBeenCalledOnce();
   });
 });

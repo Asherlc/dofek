@@ -3,8 +3,15 @@ import { LifeEventsRepository } from "./life-events-repository.ts";
 
 function makeRepository(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const repo = new LifeEventsRepository({ execute }, "user-1", "America/New_York");
-  return { repo, execute };
+  const sensorStore = makeSensorStore();
+  const repo = new LifeEventsRepository({ execute }, "user-1", "America/New_York", sensorStore);
+  return { repo, execute, sensorStore };
+}
+
+function makeSensorStore() {
+  return {
+    query: vi.fn().mockResolvedValue([{ date: "2025-05-01", resting_hr: 52 }]),
+  };
 }
 
 describe("LifeEventsRepository", () => {
@@ -220,7 +227,12 @@ describe("LifeEventsRepository", () => {
           },
         ]);
 
-      const repo = new LifeEventsRepository({ execute }, "user-1", "America/New_York");
+      const repo = new LifeEventsRepository(
+        { execute },
+        "user-1",
+        "America/New_York",
+        makeSensorStore(),
+      );
       const result = await repo.analyze("evt-1", 30);
 
       expect(result).not.toBeNull();
@@ -239,7 +251,7 @@ describe("LifeEventsRepository", () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
 
-      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC");
+      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC", makeSensorStore());
       const result = await repo.analyze("evt-ongoing", 14);
 
       expect(result).not.toBeNull();
@@ -277,7 +289,7 @@ describe("LifeEventsRepository", () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
 
-      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC");
+      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC", makeSensorStore());
       const result = await repo.analyze("evt-ranged", 30);
 
       expect(result).not.toBeNull();

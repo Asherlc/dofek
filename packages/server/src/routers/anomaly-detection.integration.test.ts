@@ -8,6 +8,12 @@ import { type AnomalyRow, checkAnomalies, sendAnomalyAlertToSlack } from "./anom
 
 const mswServer = setupServer();
 
+function makeSensorStore() {
+  return {
+    query: async () => [],
+  };
+}
+
 /**
  * Unit tests for the anomaly detection logic (checkAnomalies)
  * and the Slack notification function (sendAnomalyAlertToSlack).
@@ -35,7 +41,13 @@ describe("Anomaly detection", () => {
 
   describe("checkAnomalies", () => {
     it("returns empty anomalies and checkedMetrics on empty database", async () => {
-      const result = await checkAnomalies(testCtx.db, TEST_USER_ID, "UTC", "2026-03-13");
+      const result = await checkAnomalies(
+        testCtx.db,
+        TEST_USER_ID,
+        "UTC",
+        "2026-03-13",
+        makeSensorStore(),
+      );
 
       expect(result.anomalies).toEqual([]);
       expect(result.checkedMetrics).toEqual([]);
@@ -79,7 +91,13 @@ describe("Anomaly detection", () => {
       });
       await testCtx.db.insert(dailyMetrics).values(rows).onConflictDoNothing();
 
-      const result = await checkAnomalies(testCtx.db, TEST_USER_ID, "UTC", "2026-02-02");
+      const result = await checkAnomalies(
+        testCtx.db,
+        TEST_USER_ID,
+        "UTC",
+        "2026-02-02",
+        makeSensorStore(),
+      );
 
       expect(result.checkedMetrics).toContain("hrv");
       expect(result.anomalies).toEqual([]);

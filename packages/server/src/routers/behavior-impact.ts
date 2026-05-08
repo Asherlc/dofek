@@ -15,7 +15,7 @@ export const behaviorImpactRouter = router({
   impactSummary: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }): Promise<BehaviorImpact[]> => {
-      const repo = new BehaviorImpactRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repo = new BehaviorImpactRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       const impacts = await repo.getImpactSummary(input.days);
       return impacts.map((impact) => impact.toDetail());
     }),

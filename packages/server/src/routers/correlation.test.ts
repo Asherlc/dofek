@@ -404,7 +404,14 @@ describe("emptyStats", () => {
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{
+      db: unknown;
+      userId: string | null;
+      timezone?: string;
+      sensorStore?: { query: (...args: unknown[]) => Promise<unknown[]> };
+    }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -433,12 +440,20 @@ const { createTestCallerFactory } = await import("./test-helpers.ts");
 
 const createCaller = createTestCallerFactory(correlationRouter);
 
+function makeSensorStore() {
+  return {
+    query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+  };
+}
+
 describe("correlationRouter", () => {
   describe("metrics", () => {
     it("returns available correlation metrics", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       const result = await caller.metrics();
 
@@ -454,6 +469,8 @@ describe("correlationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       const result = await caller.compute({
         metricX: "resting_hr",
@@ -471,6 +488,8 @@ describe("correlationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       // Should not throw — defaults should apply
       const result = await caller.compute({
@@ -484,6 +503,8 @@ describe("correlationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       await expect(
         caller.compute({ metricX: "resting_hr", metricY: "hrv", lag: -1 }),
@@ -494,6 +515,8 @@ describe("correlationRouter", () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeSensorStore(),
       });
       await expect(
         caller.compute({ metricX: "resting_hr", metricY: "hrv", lag: 8 }),

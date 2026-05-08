@@ -9,8 +9,10 @@ import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
@@ -89,6 +91,13 @@ const polarizationRowSchema = z.object({
   z3_seconds: z.coerce.number(),
 });
 
+const aerobicEfficiencyDiagnosticSchema = z.object({
+  max_hr: z.coerce.number().nullable(),
+  endurance_activities: z.coerce.number(),
+  activities_with_power: z.coerce.number(),
+  activities_with_hr: z.coerce.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -114,9 +123,11 @@ export class EfficiencyRepository extends BaseRepository {
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
    */
   async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
+    const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
       efficiencyRowSchema,
-      `WITH activity_meta AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      activity_meta AS (
         SELECT
           asum.activity_id AS id,
           asum.started_at AS started_at,
@@ -128,9 +139,8 @@ export class EfficiencyRepository extends BaseRepository {
         FROM analytics.activity_summary asum
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN analytics.derived_resting_heart_rate drhr
-          ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(asum.started_at)
+        LEFT JOIN resting_heart_rate drhr
+          ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
@@ -165,16 +175,20 @@ export class EfficiencyRepository extends BaseRepository {
         enduranceTypes: ENDURANCE_TYPES,
         b1: ZONE_BOUNDARIES_HRR[0],
         b2: ZONE_BOUNDARIES_HRR[1],
+        rhrEndDate: today,
+        rhrWindowStart: dateWindowStartString(today, days),
       },
     );
 
+    let emptyResultMaxHr: number | null = null;
     if (rows.length === 0) {
-      this.#logEmptyAerobicEfficiency(days).catch((error) => {
+      emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(days).catch((error) => {
         Sentry.captureException(error);
+        return null;
       });
     }
 
-    const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : null;
+    const maxHr = rows.length > 0 ? Number(rows[0]?.max_hr) : emptyResultMaxHr;
 
     return {
       maxHr,
@@ -191,16 +205,9 @@ export class EfficiencyRepository extends BaseRepository {
   }
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
-  async #logEmptyAerobicEfficiency(days: number): Promise<void> {
-    const diagSchema = z.object({
-      max_hr: z.coerce.number().nullable(),
-      endurance_activities: z.coerce.number(),
-      activities_with_power: z.coerce.number(),
-      activities_with_hr: z.coerce.number(),
-    });
-
+  async #loadAerobicEfficiencyDiagnostics(days: number): Promise<number | null> {
     const rows = await this.#sensorStore.query(
-      diagSchema,
+      aerobicEfficiencyDiagnosticSchema,
       `WITH endurance_activities AS (
         SELECT asum.activity_id AS id
         FROM analytics.activity_summary asum
@@ -230,7 +237,9 @@ export class EfficiencyRepository extends BaseRepository {
           `max_hr=${diag.max_hr}, endurance_activities=${diag.endurance_activities}, ` +
           `with_power=${diag.activities_with_power}, with_hr=${diag.activities_with_hr}`,
       );
+      return diag.max_hr;
     }
+    return null;
   }
 
   /**

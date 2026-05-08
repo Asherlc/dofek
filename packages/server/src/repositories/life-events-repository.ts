@@ -3,6 +3,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -101,11 +103,18 @@ export class LifeEventsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore?: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore?: Pick<ActivitySensorStore, "query">,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /** List all life events for the user, ordered by start date descending. */
@@ -185,32 +194,44 @@ export class LifeEventsRepository {
     const endDate = event.ended_at ?? (event.ongoing ? "NOW()" : null);
 
     const afterEndDate = endDate === "NOW()" ? sql`CURRENT_DATE` : sql`${endDate}::date`;
+    const metricsEndDate = endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`;
+    const metricsEndDateString =
+      endDate === "NOW()"
+        ? new Date().toISOString().slice(0, 10)
+        : (endDate ?? addDays(startDate, windowDays));
+    const restingHeartRateDays = daysBetween(addDays(startDate, -windowDays), metricsEndDateString);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#requireSensorStore(),
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: metricsEndDateString,
+      days: restingHeartRateDays,
+    });
 
     const metrics = await executeWithSchema(
       this.#db,
       metricsComparisonRowSchema,
       sql`
-			WITH before_dates AS (
+			WITH ${restingHeartRateCte},
+      before_dates AS (
 				SELECT dm.date
 				FROM fitness.v_daily_metrics dm
 				WHERE dm.user_id = ${this.#userId}
 				  AND dm.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
 				UNION
 				SELECT drhr.date
-				FROM fitness.derived_resting_heart_rate drhr
-				WHERE drhr.user_id = ${this.#userId}
-				  AND drhr.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
+				FROM resting_heart_rate drhr
+				WHERE drhr.date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
 			),
 			after_dates AS (
 				SELECT dm.date
 				FROM fitness.v_daily_metrics dm
 				WHERE dm.user_id = ${this.#userId}
-				  AND dm.date BETWEEN ${startDate}::date AND ${endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`}
+				  AND dm.date BETWEEN ${startDate}::date AND ${metricsEndDate}
 				UNION
 				SELECT drhr.date
-				FROM fitness.derived_resting_heart_rate drhr
-				WHERE drhr.user_id = ${this.#userId}
-				  AND drhr.date BETWEEN ${startDate}::date AND ${endDate ? afterEndDate : sql`(${startDate}::date + ${windowDays}::int)`}
+				FROM resting_heart_rate drhr
+				WHERE drhr.date BETWEEN ${startDate}::date AND ${metricsEndDate}
 			),
 			before_period AS (
 				SELECT 'before' as period, dm.hrv, dm.steps, dm.active_energy_kcal, drhr.resting_hr
@@ -218,9 +239,8 @@ export class LifeEventsRepository {
 				LEFT JOIN fitness.v_daily_metrics dm
 				  ON dm.user_id = ${this.#userId}
 				 AND dm.date = dates.date
-				LEFT JOIN fitness.derived_resting_heart_rate drhr
-				  ON drhr.user_id = ${this.#userId}
-				 AND drhr.date = dates.date
+				LEFT JOIN resting_heart_rate drhr
+				  ON drhr.date = dates.date
 			),
 			after_period AS (
 				SELECT 'after' as period, dm.hrv, dm.steps, dm.active_energy_kcal, drhr.resting_hr
@@ -228,9 +248,8 @@ export class LifeEventsRepository {
 				LEFT JOIN fitness.v_daily_metrics dm
 				  ON dm.user_id = ${this.#userId}
 				 AND dm.date = dates.date
-				LEFT JOIN fitness.derived_resting_heart_rate drhr
-				  ON drhr.user_id = ${this.#userId}
-				 AND drhr.date = dates.date
+				LEFT JOIN resting_heart_rate drhr
+				  ON drhr.date = dates.date
 			),
 			combined AS (
 				SELECT * FROM before_period
@@ -347,4 +366,24 @@ export class LifeEventsRepository {
 
     return { event, metrics, sleep, bodyComp };
   }
+
+  #requireSensorStore(): Pick<ActivitySensorStore, "query"> {
+    if (!this.#sensorStore) {
+      throw new Error("ClickHouse activity analytics store is required for life event analysis");
+    }
+    return this.#sensorStore;
+  }
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  const startTime = new Date(`${startDate}T00:00:00.000Z`).getTime();
+  const endTime = new Date(`${endDate}T00:00:00.000Z`).getTime();
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.ceil((endTime - startTime) / millisecondsPerDay));
 }

@@ -11,9 +11,13 @@ import {
   timestampWindowStartString,
 } from "../lib/date-window.ts";
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
-import { vitalsBaselineCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  fetchRestingHeartRateRows,
+  restingHeartRateClickHouseCte,
+  restingHeartRateValuesCte,
+} from "./resting-heart-rate-query.ts";
 import {
   buildNextWorkoutRecommendation,
   type NextWorkoutRecommendation,
@@ -197,9 +201,11 @@ export class TrainingRepository extends BaseRepository {
 
   /** HR zone distribution per week using 5-zone Karvonen model. */
   async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
+    const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
       hrZoneRowSchema,
-      `WITH activity_meta AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      activity_meta AS (
         SELECT
           asum.activity_id AS id,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
@@ -208,9 +214,8 @@ export class TrainingRepository extends BaseRepository {
         FROM analytics.activity_summary asum
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN analytics.derived_resting_heart_rate drhr
-          ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(asum.started_at)
+        LEFT JOIN resting_heart_rate drhr
+          ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
@@ -248,6 +253,8 @@ export class TrainingRepository extends BaseRepository {
         userId: this.userId,
         timezone: this.timezone,
         days,
+        rhrWindowStart: dateWindowStartString(today, days),
+        rhrEndDate: today,
         enduranceTypes: ENDURANCE_TYPES,
         b1: ZONE_BOUNDARIES_HRR[0],
         b2: ZONE_BOUNDARIES_HRR[1],
@@ -338,9 +345,41 @@ export class TrainingRepository extends BaseRepository {
   }
 
   async #fetchLatestMetrics(): Promise<ReadinessMetricRow[]> {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const restingHeartRateRows = await fetchRestingHeartRateRows({
+      sensorStore: this.#sensorStore,
+      userId: this.userId,
+      timezone: this.timezone,
+      endDate,
+      days: 31,
+    });
+    const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
+
     return this.query(
       readinessMetricSchema,
-      sql`WITH ${vitalsBaselineCte(this.userId, "now", 1, 30)}
+      sql`WITH ${restingHeartRateCte},
+        vitals_baseline AS (
+          SELECT
+            base.date,
+            base.hrv,
+            drhr.resting_hr,
+            base.respiratory_rate_avg,
+            AVG(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
+            STDDEV_POP(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_stddev_30d,
+            AVG(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS resting_hr_mean_30d,
+            STDDEV_POP(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS resting_hr_stddev_30d,
+            AVG(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS respiratory_rate_mean_30d,
+            STDDEV_POP(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS respiratory_rate_stddev_30d
+          FROM (
+            SELECT date, user_id, hrv, respiratory_rate_avg
+            FROM fitness.v_daily_metrics
+            WHERE user_id = ${this.userId}
+              AND date > ${dateWindowStartString(endDate, 31)}::date
+          ) base
+          LEFT JOIN resting_heart_rate drhr
+            ON drhr.date = base.date
+          ORDER BY base.date ASC
+        )
         SELECT
           vb.date::text AS date,
           vb.hrv,
@@ -469,7 +508,8 @@ export class TrainingRepository extends BaseRepository {
   async #fetchZoneTotals(endDate: string): Promise<ZoneTotalsRow[]> {
     return this.#sensorStore.query(
       zoneTotalsSchema,
-      `WITH activity_meta AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      activity_meta AS (
         SELECT
           asum.activity_id AS id,
           up.max_hr AS max_hr,
@@ -477,9 +517,8 @@ export class TrainingRepository extends BaseRepository {
         FROM analytics.activity_summary asum
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN analytics.derived_resting_heart_rate drhr
-          ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(asum.started_at)
+        LEFT JOIN resting_heart_rate drhr
+          ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > toDateTime({windowStart:String})
@@ -501,6 +540,8 @@ export class TrainingRepository extends BaseRepository {
         userId: this.userId,
         timezone: this.timezone,
         windowStart: timestampWindowStartString(endDate, 14),
+        rhrWindowStart: dateWindowStartString(endDate, 14),
+        rhrEndDate: endDate,
         enduranceTypes: ENDURANCE_TYPES,
         b1: ZONE_BOUNDARIES_HRR[0],
         b2: ZONE_BOUNDARIES_HRR[1],
@@ -513,7 +554,8 @@ export class TrainingRepository extends BaseRepository {
   async #fetchHiitLoad(endDate: string): Promise<HiitLoadRow[]> {
     return this.#sensorStore.query(
       hiitLoadSchema,
-      `WITH activity_meta AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      activity_meta AS (
         SELECT
           asum.activity_id AS id,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
@@ -522,9 +564,8 @@ export class TrainingRepository extends BaseRepository {
         FROM analytics.activity_summary asum
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN analytics.derived_resting_heart_rate drhr
-          ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(asum.started_at)
+        LEFT JOIN resting_heart_rate drhr
+          ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > toDateTime({windowStart:String})
@@ -549,6 +590,8 @@ export class TrainingRepository extends BaseRepository {
         userId: this.userId,
         timezone: this.timezone,
         windowStart: timestampWindowStartString(endDate, 21),
+        rhrWindowStart: dateWindowStartString(endDate, 21),
+        rhrEndDate: endDate,
         sevenDayStart: dateWindowStartString(endDate, 7),
         enduranceTypes: ENDURANCE_TYPES,
         hiitThreshold: ZONE_BOUNDARIES_HRR[2],

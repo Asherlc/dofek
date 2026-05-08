@@ -23,12 +23,18 @@ function makeDb(metricsRows: Record<string, unknown>[] = []) {
   return { execute };
 }
 
+function makeSensorStore() {
+  return {
+    query: vi.fn().mockResolvedValue([{ date: "2024-01-14", resting_hr: 52 }]),
+  };
+}
+
 describe("StressRepository", () => {
   describe("getStressScores", () => {
     // ── Empty data ────────────────────────────────────────────────
     it("returns empty result when no data", async () => {
       const db = makeDb([]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily).toEqual([]);
       expect(result.weekly).toEqual([]);
@@ -39,7 +45,7 @@ describe("StressRepository", () => {
     // ── HRV deviation computation ────────────────────────────────
     it("computes HRV deviation as z-score", async () => {
       const db = makeDb([makeRow({ hrv: 50, hrv_mean_60d: 60, hrv_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       // (50 - 60) / 5 = -2.0
       expect(result.daily[0]?.hrvDeviation).toBe(-2.0);
@@ -47,35 +53,35 @@ describe("StressRepository", () => {
 
     it("returns null hrvDeviation when hrv is null", async () => {
       const db = makeDb([makeRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBeNull();
     });
 
     it("returns null hrvDeviation when hrv_mean_60d is null", async () => {
       const db = makeDb([makeRow({ hrv: 50, hrv_mean_60d: null, hrv_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBeNull();
     });
 
     it("returns null hrvDeviation when hrv_sd_60d is null", async () => {
       const db = makeDb([makeRow({ hrv: 50, hrv_mean_60d: 60, hrv_sd_60d: null })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBeNull();
     });
 
     it("returns null hrvDeviation when hrv_sd_60d is zero (division by zero guard)", async () => {
       const db = makeDb([makeRow({ hrv: 60, hrv_mean_60d: 60, hrv_sd_60d: 0 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBeNull();
     });
 
     it("returns null hrvDeviation when hrv_sd_60d is negative", async () => {
       const db = makeDb([makeRow({ hrv: 50, hrv_mean_60d: 60, hrv_sd_60d: -1 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBeNull();
     });
@@ -83,7 +89,7 @@ describe("StressRepository", () => {
     it("rounds HRV deviation to 2 decimal places", async () => {
       // (45 - 60) / 7 = -2.142857... → -2.14
       const db = makeDb([makeRow({ hrv: 45, hrv_mean_60d: 60, hrv_sd_60d: 7 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBe(-2.14);
     });
@@ -91,7 +97,7 @@ describe("StressRepository", () => {
     it("computes positive HRV deviation when hrv is above baseline", async () => {
       // (70 - 60) / 5 = 2.0
       const db = makeDb([makeRow({ hrv: 70, hrv_mean_60d: 60, hrv_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBe(2.0);
     });
@@ -100,42 +106,42 @@ describe("StressRepository", () => {
     it("computes resting HR deviation as z-score", async () => {
       // (70 - 60) / 5 = 2.0
       const db = makeDb([makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBe(2.0);
     });
 
     it("returns null restingHrDeviation when resting_hr is null", async () => {
       const db = makeDb([makeRow({ resting_hr: null, rhr_mean_60d: 60, rhr_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBeNull();
     });
 
     it("returns null restingHrDeviation when rhr_mean_60d is null", async () => {
       const db = makeDb([makeRow({ resting_hr: 70, rhr_mean_60d: null, rhr_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBeNull();
     });
 
     it("returns null restingHrDeviation when rhr_sd_60d is null", async () => {
       const db = makeDb([makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: null })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBeNull();
     });
 
     it("returns null restingHrDeviation when rhr_sd_60d is zero", async () => {
       const db = makeDb([makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 0 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBeNull();
     });
 
     it("returns null restingHrDeviation when rhr_sd_60d is negative", async () => {
       const db = makeDb([makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: -2 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBeNull();
     });
@@ -143,7 +149,7 @@ describe("StressRepository", () => {
     it("rounds resting HR deviation to 2 decimal places", async () => {
       // (67 - 60) / 3 = 2.33333... → 2.33
       const db = makeDb([makeRow({ resting_hr: 67, rhr_mean_60d: 60, rhr_sd_60d: 3 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBe(2.33);
     });
@@ -151,7 +157,7 @@ describe("StressRepository", () => {
     it("computes negative resting HR deviation when HR is below baseline", async () => {
       // (55 - 60) / 5 = -1.0
       const db = makeDb([makeRow({ resting_hr: 55, rhr_mean_60d: 60, rhr_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.restingHrDeviation).toBe(-1.0);
     });
@@ -159,21 +165,21 @@ describe("StressRepository", () => {
     // ── Sleep efficiency ────────────────────────────────────────
     it("rounds sleep efficiency to 1 decimal", async () => {
       const db = makeDb([makeRow({ efficiency_pct: 87.456 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.sleepEfficiency).toBe(87.5);
     });
 
     it("returns null sleepEfficiency when efficiency_pct is null", async () => {
       const db = makeDb([makeRow({ efficiency_pct: null })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.sleepEfficiency).toBeNull();
     });
 
     it("passes through integer sleep efficiency unchanged", async () => {
       const db = makeDb([makeRow({ efficiency_pct: 90 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.sleepEfficiency).toBe(90);
     });
@@ -181,7 +187,7 @@ describe("StressRepository", () => {
     // ── Date passthrough ────────────────────────────────────────
     it("preserves the date from the row in daily output", async () => {
       const db = makeDb([makeRow({ date: "2024-03-10" })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-03-10");
       expect(result.daily[0]?.date).toBe("2024-03-10");
     });
@@ -204,35 +210,35 @@ describe("StressRepository", () => {
           efficiency_pct: 75,
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.stressScore).toBe(2.8);
     });
 
     it("returns zero stress score when all metrics are null", async () => {
       const db = makeDb([makeRow()]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.stressScore).toBe(0);
     });
 
     it("returns zero stress when HRV is above baseline (positive deviation)", async () => {
       const db = makeDb([makeRow({ hrv: 70, hrv_mean_60d: 60, hrv_sd_60d: 10 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.stressScore).toBe(0);
     });
 
     it("returns zero stress when RHR is below baseline (negative deviation)", async () => {
       const db = makeDb([makeRow({ resting_hr: 55, rhr_mean_60d: 60, rhr_sd_60d: 5 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.stressScore).toBe(0);
     });
 
     it("returns zero stress when sleep efficiency is good (>= 85%)", async () => {
       const db = makeDb([makeRow({ efficiency_pct: 90 })]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.stressScore).toBe(0);
     });
@@ -253,7 +259,7 @@ describe("StressRepository", () => {
           efficiency_pct: 50,
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.stressScore).toBe(3);
     });
@@ -282,7 +288,7 @@ describe("StressRepository", () => {
           efficiency_pct: 75,
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.latestScore).toBe(result.daily[result.daily.length - 1]?.stressScore);
       // Verify it's specifically the LAST entry, not the first
@@ -291,7 +297,7 @@ describe("StressRepository", () => {
 
     it("returns null latestScore when daily is empty", async () => {
       const db = makeDb([]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.latestScore).toBeNull();
     });
@@ -305,7 +311,7 @@ describe("StressRepository", () => {
           hrv_sd_60d: 10,
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.latestScore).toBe(result.daily[0]?.stressScore);
       expect(result.latestScore).toBeTypeOf("number");
@@ -323,7 +329,7 @@ describe("StressRepository", () => {
         }),
       );
       const db = makeDb(rows);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.weekly.length).toBeGreaterThan(0);
       expect(result.weekly[0]).toHaveProperty("weekStart");
@@ -338,7 +344,7 @@ describe("StressRepository", () => {
         makeRow({ date: `2024-01-${String(11 + index).padStart(2, "0")}` }),
       );
       const db = makeDb(rows);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.trend).toBe("stable");
     });
@@ -366,7 +372,7 @@ describe("StressRepository", () => {
         ),
       ];
       const db = makeDb(rows);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.trend).toBe("improving");
     });
@@ -394,7 +400,7 @@ describe("StressRepository", () => {
         ),
       ];
       const db = makeDb(rows);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.trend).toBe("worsening");
     });
@@ -402,7 +408,7 @@ describe("StressRepository", () => {
     // ── Return object structure ─────────────────────────────────
     it("returns all four properties in the result object", async () => {
       const db = makeDb([makeRow()]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result).toHaveProperty("daily");
       expect(result).toHaveProperty("weekly");
@@ -424,7 +430,7 @@ describe("StressRepository", () => {
           efficiency_pct: 85,
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       const row = result.daily[0];
       expect(row).toHaveProperty("date");
@@ -439,7 +445,7 @@ describe("StressRepository", () => {
     // ── Database call count ─────────────────────────────────────
     it("calls execute twice (metrics + params)", async () => {
       const db = makeDb([]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       await repo.getStressScores(90, "2024-01-15");
       expect(db.execute).toHaveBeenCalledTimes(2);
     });
@@ -450,7 +456,7 @@ describe("StressRepository", () => {
         makeRow({ date: "2024-01-14", hrv: 50, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
         makeRow({ date: "2024-01-15", hrv: 55, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily).toHaveLength(2);
       expect(result.daily[0]?.date).toBe("2024-01-14");
@@ -469,7 +475,7 @@ describe("StressRepository", () => {
           rhr_sd_60d: 5,
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       // HRV: (50-60)/10 = -1.0
       expect(result.daily[0]?.hrvDeviation).toBe(-1.0);
@@ -490,7 +496,7 @@ describe("StressRepository", () => {
           efficiency_pct: "85.5",
         }),
       ]);
-      const repo = new StressRepository(db, "user-1", "UTC");
+      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.getStressScores(90, "2024-01-15");
       expect(result.daily[0]?.hrvDeviation).toBe(-1.5);
       expect(result.daily[0]?.restingHrDeviation).toBe(1.0);

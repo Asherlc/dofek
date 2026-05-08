@@ -613,83 +613,6 @@ FROM ranked
 GROUP BY date, user_id`;
 }
 
-function buildDerivedRestingHeartRateReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader(
-    "analytics.derived_resting_heart_rate",
-    "(user_id, date)",
-  )}
-WITH
-sleep_windows AS (
-  SELECT
-    user_id,
-    toDate(ended_at) AS date,
-    started_at,
-    ended_at
-  FROM analytics.v_sleep
-  WHERE NOT is_nap
-    AND ended_at IS NOT NULL
-),
-raw_samples AS (
-  SELECT
-    sleep_windows.user_id AS user_id,
-    sleep_windows.date AS date,
-    metric_stream.provider_id AS provider_id,
-    metric_stream.scalar AS heart_rate
-  FROM sleep_windows
-  INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL
-    ON metric_stream.user_id = sleep_windows.user_id
-   AND metric_stream.channel = 'heart_rate'
-   AND metric_stream.recorded_at >= sleep_windows.started_at
-   AND metric_stream.recorded_at <= sleep_windows.ended_at
-   AND metric_stream.scalar IS NOT NULL
-   AND metric_stream._peerdb_is_deleted = 0
-),
-provider_counts AS (
-  SELECT user_id, date, provider_id, count() AS sample_count
-  FROM raw_samples
-  GROUP BY user_id, date, provider_id
-),
-best_provider AS (
-  SELECT user_id, date, provider_id
-  FROM (
-    SELECT
-      user_id,
-      date,
-      provider_id,
-      row_number() OVER (
-        PARTITION BY user_id, date
-        ORDER BY sample_count DESC, provider_id ASC
-      ) AS row_number
-    FROM provider_counts
-  )
-  WHERE row_number = 1
-),
-samples AS (
-  SELECT
-    raw_samples.user_id AS user_id,
-    raw_samples.date AS date,
-    raw_samples.heart_rate AS heart_rate,
-    row_number() OVER (
-      PARTITION BY raw_samples.user_id, raw_samples.date
-      ORDER BY raw_samples.heart_rate ASC
-    ) AS ascending_rank,
-    count() OVER (PARTITION BY raw_samples.user_id, raw_samples.date) AS sample_count
-  FROM raw_samples
-  INNER JOIN best_provider
-    ON best_provider.user_id = raw_samples.user_id
-   AND best_provider.date = raw_samples.date
-   AND best_provider.provider_id = raw_samples.provider_id
-)
-SELECT
-  user_id,
-  date,
-  CAST(round(avg(heart_rate)), 'Int32') AS resting_hr
-FROM samples
-WHERE sample_count >= 30
-  AND ascending_rank <= greatest(ceil(sample_count * 0.10), 1)
-GROUP BY user_id, date`;
-}
-
 function buildProviderStatsReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader("analytics.provider_stats", "(user_id, provider_id)")}
 WITH
@@ -887,9 +810,6 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildDailyMetricsReadModelSql(),
     "SYSTEM REFRESH VIEW analytics.v_daily_metrics",
     "SYSTEM WAIT VIEW analytics.v_daily_metrics",
-    buildDerivedRestingHeartRateReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.derived_resting_heart_rate",
-    "SYSTEM WAIT VIEW analytics.derived_resting_heart_rate",
     ...buildProviderStatsCreateReadModelStatements(),
   ];
 }

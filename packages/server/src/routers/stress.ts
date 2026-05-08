@@ -4,6 +4,7 @@ import {
   computeStressTrend,
   type WeeklyStressRow,
 } from "@dofek/recovery/stress";
+import { TRPCError } from "@trpc/server";
 
 export type { WeeklyStressRow };
 
@@ -15,6 +16,10 @@ import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitl
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  fetchRestingHeartRateRows,
+  restingHeartRateValuesCte,
+} from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export interface DailyStressRow {
@@ -38,9 +43,25 @@ export const stressRouter = router({
    * Mirrors Whoop's 0-3 stress scale with cumulative weekly tracking.
    */
   scores: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
+    .input(z.object({ days: z.number().min(1).max(365).default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StressResult> => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "stress.scores requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+
       const queryDays = input.days + 60; // extra for baseline windows
+      const restingHeartRateRows = await fetchRestingHeartRateRows({
+        sensorStore: ctx.sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate: input.endDate,
+        days: queryDays,
+      });
+      const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
 
       const rawRowSchema = z.object({
         date: dateStringSchema,
@@ -55,7 +76,8 @@ export const stressRouter = router({
       const rows = await executeWithSchema(
         ctx.db,
         rawRowSchema,
-        sql`WITH metrics AS (
+        sql`WITH ${restingHeartRateCte},
+            metrics AS (
               SELECT
                 dm.date,
                 dm.hrv,
@@ -65,9 +87,8 @@ export const stressRouter = router({
                 AVG(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_mean_60d,
                 STDDEV_POP(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS rhr_sd_60d
               FROM fitness.v_daily_metrics dm
-              LEFT JOIN fitness.derived_resting_heart_rate drhr
-                ON drhr.user_id = dm.user_id
-               AND drhr.date = dm.date
+              LEFT JOIN resting_heart_rate drhr
+                ON drhr.date = dm.date
               WHERE dm.user_id = ${ctx.userId}
                 AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
                 ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}

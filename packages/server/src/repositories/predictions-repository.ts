@@ -17,6 +17,7 @@ import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -150,15 +151,17 @@ type ExerciseMinutesRow = z.infer<typeof exerciseMinutesRowSchema>;
 export class PredictionsRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
   constructor(
     db: Pick<Database, "execute">,
     userId: string,
-    _timezone: string,
+    timezone: string,
     sensorStore: ActivitySensorStore,
   ) {
     this.#db = db;
     this.#userId = userId;
+    this.#timezone = timezone;
     this.#sensorStore = sensorStore;
   }
 
@@ -344,20 +347,28 @@ export class PredictionsRepository {
   // ── Private: shared data fetchers ─────────────────────────────────────
 
   async #fetchDailyMetrics(days: number): Promise<DailyRow[]> {
+    const endDate = localDateString(new Date(), this.#timezone);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days,
+    });
     return executeWithSchema(
       this.#db,
       dailyRowSchema,
-      sql`WITH metric_dates AS (
-            SELECT dm.date
-            FROM fitness.v_daily_metrics dm
-            WHERE dm.user_id = ${this.#userId}
-              AND dm.date > CURRENT_DATE - ${days}::int
-            UNION
-            SELECT drhr.date
-            FROM fitness.derived_resting_heart_rate drhr
-            WHERE drhr.user_id = ${this.#userId}
-              AND drhr.date > CURRENT_DATE - ${days}::int
-          )
+      sql`WITH ${restingHeartRateCte},
+          metric_dates AS (
+		            SELECT dm.date
+		            FROM fitness.v_daily_metrics dm
+		            WHERE dm.user_id = ${this.#userId}
+		              AND dm.date > ${endDate}::date - ${days}::int
+		              AND dm.date <= ${endDate}::date
+		            UNION
+	            SELECT drhr.date
+	            FROM resting_heart_rate drhr
+	          )
           SELECT
             dates.date,
             drhr.resting_hr,
@@ -370,9 +381,8 @@ export class PredictionsRepository {
           LEFT JOIN fitness.v_daily_metrics dm
             ON dm.user_id = ${this.#userId}
            AND dm.date = dates.date
-          LEFT JOIN fitness.derived_resting_heart_rate drhr
-            ON drhr.user_id = ${this.#userId}
-           AND drhr.date = dates.date
+	          LEFT JOIN resting_heart_rate drhr
+	            ON drhr.date = dates.date
           ORDER BY dates.date ASC`,
     );
   }

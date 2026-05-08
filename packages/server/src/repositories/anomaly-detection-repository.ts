@@ -2,10 +2,12 @@ import type { Database } from "dofek/db";
 import { decryptCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { dateWindowEnd, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -129,11 +131,18 @@ export class AnomalyDetectionRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: Pick<ActivitySensorStore, "query">;
 
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: Pick<ActivitySensorStore, "query">,
+  ) {
     this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
   }
 
   /**
@@ -141,24 +150,30 @@ export class AnomalyDetectionRepository {
    * a rolling 30-day baseline. Flags deviations beyond 2 standard deviations.
    */
   async check(endDate: string): Promise<AnomalyCheckResult> {
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days: BASELINE_LOOKBACK_DAYS,
+    });
     const rows = await executeWithSchema(
       this.#db,
       anomalyCheckRowSchema,
       sql`WITH target_date AS (
-          SELECT ${dateWindowEnd(endDate)}::date AS date
-        ),
-        baseline AS (
-          SELECT
-            date,
-            resting_hr,
+	          SELECT ${dateWindowEnd(endDate)}::date AS date
+	        ),
+          ${restingHeartRateCte},
+	        baseline AS (
+	          SELECT
+	            date,
+	            resting_hr,
             AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
             STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
             COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
-            FROM fitness.derived_resting_heart_rate
-            WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(endDate, BASELINE_LOOKBACK_DAYS)}
-            ORDER BY date ASC
-          ),
+	            FROM resting_heart_rate
+	            ORDER BY date ASC
+	          ),
           ranked_daily AS (
             SELECT
               d.*,
@@ -324,23 +339,30 @@ export class AnomalyDetectionRepository {
    * Historical anomalies: check each day over a period for deviations.
    * Returns resting HR and HRV anomalies (no sleep) for dashboard markers.
    */
-  async getHistory(days: number, _endDate: string): Promise<AnomalyRow[]> {
+  async getHistory(days: number, endDate: string): Promise<AnomalyRow[]> {
     const queryDays = days + BASELINE_WINDOW_DAYS;
+    const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
+    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: effectiveEndDate,
+      days: queryDays,
+    });
     const rows = await executeWithSchema(
       this.#db,
       anomalyHistoryRowSchema,
-      sql`WITH baseline AS (
-          SELECT
-            date,
-            resting_hr,
+      sql`WITH ${restingHeartRateCte},
+          baseline AS (
+	          SELECT
+	            date,
+	            resting_hr,
             AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_mean,
             STDDEV_POP(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_sd,
             COUNT(resting_hr) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS rhr_count
-            FROM fitness.derived_resting_heart_rate
-            WHERE user_id = ${this.#userId}
-              AND date > CURRENT_DATE - ${queryDays}::int
-            ORDER BY date ASC
-          ),
+	            FROM resting_heart_rate
+	            ORDER BY date ASC
+	          ),
           ranked_daily AS (
             SELECT
               d.*,
@@ -363,7 +385,7 @@ export class AnomalyDetectionRepository {
             ) dp ON true
             WHERE d.user_id = ${this.#userId}
               AND d.hrv IS NOT NULL
-              AND d.date > CURRENT_DATE - ${queryDays}::int
+              AND d.date > ${dateWindowEnd(effectiveEndDate)}::date - ${queryDays}::int
           ),
           hrv_baseline AS (
             SELECT
@@ -405,7 +427,7 @@ export class AnomalyDetectionRepository {
           FROM dates
           LEFT JOIN baseline b ON b.date = dates.date
           LEFT JOIN hrv_baseline h ON h.date = dates.date
-          WHERE dates.date > CURRENT_DATE - ${days}::int
+          WHERE dates.date > ${dateWindowEnd(effectiveEndDate)}::date - ${days}::int
           ORDER BY dates.date ASC`,
     );
 
@@ -478,8 +500,9 @@ export async function checkAnomalies(
   userId: string,
   timezone: string,
   endDate: string,
+  sensorStore: Pick<ActivitySensorStore, "query">,
 ): Promise<AnomalyCheckResult> {
-  const repo = new AnomalyDetectionRepository(db, userId, timezone);
+  const repo = new AnomalyDetectionRepository(db, userId, timezone, sensorStore);
   return repo.check(endDate);
 }
 

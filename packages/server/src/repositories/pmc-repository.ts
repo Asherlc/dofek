@@ -6,7 +6,9 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -62,22 +64,24 @@ export class PmcRepository extends BaseRepository {
     // Fetch enough history for EWMA convergence, regardless of display range.
     const minHistoryDays = 365;
     const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
+    const today = new Date().toISOString().slice(0, 10);
 
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
-    // user_profile and derived_resting_heart_rate are accessed via ClickHouse read models.
+    // user_profile is accessed via ClickHouse read models.
     // Sample counts come from analytics.deduped_sensor since CH activity_summary
     // doesn't carry per-channel sample counts.
     const activityRows = await this.#sensorStore.query(
       combinedActivityRowSchema,
-      `WITH user_baseline AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      user_baseline AS (
         SELECT
           coalesce(up.max_hr, (
             SELECT max(max_hr) FROM analytics.activity_summary
             WHERE user_id = {userId:UUID} AND max_hr IS NOT NULL
           )) AS global_max_hr,
           coalesce(up.resting_hr, (
-            SELECT resting_hr FROM analytics.derived_resting_heart_rate
-            WHERE user_id = {userId:UUID} AND resting_hr IS NOT NULL
+            SELECT resting_hr FROM resting_heart_rate
+            WHERE resting_hr IS NOT NULL
             ORDER BY date DESC LIMIT 1
           ), 60) AS resting_hr
         FROM postgres_fitness.user_profile_current up
@@ -110,7 +114,13 @@ export class PmcRepository extends BaseRepository {
         AND asum.started_at > now() - INTERVAL {queryDays:Int32} DAY
         AND asum.ended_at IS NOT NULL
         AND coalesce(sc.hr_samples, 0) > 0`,
-      { userId: this.userId, timezone: this.timezone, queryDays },
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        queryDays,
+        rhrEndDate: today,
+        rhrWindowStart: dateWindowStartString(today, queryDays),
+      },
     );
 
     const globalMaxHr = activityRows.length > 0 ? Number(activityRows[0]?.global_max_hr) : null;

@@ -1,6 +1,6 @@
 import type { SQL } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { dateWindowStart, timestampWindowStart } from "./date-window.ts";
+import { timestampWindowStart } from "./date-window.ts";
 
 // ---------------------------------------------------------------------------
 // Sleep night date
@@ -132,59 +132,6 @@ export function bodyWeightDedupCte(
 }
 
 // ---------------------------------------------------------------------------
-// Vitals baseline window CTE
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable CTE that computes rolling AVG and STDDEV_POP window statistics
- * for daily vitals (HRV, derived resting HR, respiratory rate).
- *
- * Returns a single CTE named `vitals_baseline` with the raw metrics plus
- * rolling statistics columns named `{metric}_mean_{windowSize}d` and
- * `{metric}_stddev_{windowSize}d`.
- *
- * Always includes: date, hrv, resting_hr, respiratory_rate_avg.
- * Rolling stats columns depend on `windowSize`:
- *   hrv_mean_{N}d, hrv_stddev_{N}d,
- *   resting_hr_mean_{N}d, resting_hr_stddev_{N}d,
- *   respiratory_rate_mean_{N}d, respiratory_rate_stddev_{N}d
- *
- * @param windowSize - Number of preceding rows for the rolling window (e.g., 30 or 60).
- */
-export function vitalsBaselineCte(
-  userId: string,
-  endDate: string,
-  days: number,
-  windowSize: number,
-): SQL {
-  const queryDays = days + windowSize;
-  const preceding = windowSize - 1;
-  return sql`vitals_baseline AS (
-    SELECT
-      base.date,
-      base.hrv,
-      drhr.resting_hr,
-      base.respiratory_rate_avg,
-      AVG(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_mean_${windowSize}d`)},
-      STDDEV_POP(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`hrv_stddev_${windowSize}d`)},
-      AVG(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_mean_${windowSize}d`)},
-      STDDEV_POP(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`resting_hr_stddev_${windowSize}d`)},
-      AVG(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_mean_${windowSize}d`)},
-      STDDEV_POP(base.respiratory_rate_avg) OVER (ORDER BY base.date ROWS BETWEEN ${sql.raw(String(preceding))} PRECEDING AND CURRENT ROW) AS ${sql.raw(`respiratory_rate_stddev_${windowSize}d`)}
-    FROM (
-      SELECT date, user_id, hrv, respiratory_rate_avg
-      FROM fitness.v_daily_metrics
-      WHERE user_id = ${userId}
-        AND date > ${dateWindowStart(endDate, queryDays)}
-    ) base
-    LEFT JOIN fitness.derived_resting_heart_rate drhr
-      ON drhr.user_id = base.user_id
-     AND drhr.date = base.date
-    ORDER BY base.date ASC
-  )`;
-}
-
-// ---------------------------------------------------------------------------
 // Heart rate zone classification
 // ---------------------------------------------------------------------------
 
@@ -219,29 +166,4 @@ export function heartRateZoneColumns(
   const zone5 = sql`COUNT(*) FILTER (WHERE ${heartRate} >= ${restingHr} + (${maxHr} - ${restingHr}) * ${boundaries[3]}::numeric)::int`;
 
   return { zone1, zone2, zone3, zone4, zone5 };
-}
-
-// ---------------------------------------------------------------------------
-// Resting HR lateral join
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable LATERAL subquery to find the most recent resting heart rate
- * for a given user on or before a given date expression.
- *
- * Returns a SQL fragment suitable for use in a `JOIN LATERAL (...) rhr ON true`.
- * The result has a single column: `resting_hr`.
- *
- * @param userIdExpression - SQL expression for the user ID (e.g., `sql\`up.id\``)
- * @param dateExpression   - SQL expression for the date upper bound
- */
-export function restingHeartRateLateral(userIdExpression: SQL, dateExpression: SQL): SQL {
-  return sql`LATERAL (
-    SELECT drhr.resting_hr
-    FROM fitness.derived_resting_heart_rate drhr
-    WHERE drhr.user_id = ${userIdExpression}
-      AND drhr.date <= ${dateExpression}
-    ORDER BY drhr.date DESC
-    LIMIT 1
-  ) rhr ON true`;
 }

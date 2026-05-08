@@ -128,7 +128,11 @@ export async function setupTestDatabase(): Promise<TestContext> {
     }
   }
 
-  for (const file of ["0008_clickhouse_activity_views.sql", "0015_clickhouse_proxy_views.sql"]) {
+  for (const file of [
+    "0008_clickhouse_activity_views.sql",
+    "0015_clickhouse_proxy_views.sql",
+    "0017_drop_derived_resting_heart_rate.sql",
+  ]) {
     const content = readFileSync(resolve(drizzleDir, file), "utf-8");
     const statements = content
       .split("--> statement-breakpoint")

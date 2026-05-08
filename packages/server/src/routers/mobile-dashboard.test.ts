@@ -33,6 +33,7 @@ function makeSensorStore(
   const query = vi.fn();
   query.mockResolvedValueOnce(dailyLoads);
   query.mockResolvedValueOnce([{ load: yesterdayLoad }]);
+  query.mockResolvedValueOnce([]);
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),

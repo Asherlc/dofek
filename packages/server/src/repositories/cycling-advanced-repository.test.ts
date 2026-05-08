@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ActivityVariabilityModel,
   PedalDynamicsModel,
@@ -246,6 +246,15 @@ describe("CyclingAdvancedRepository", () => {
   }
 
   describe("getRampRate", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-07T12:00:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it("returns no-data result when no daily loads", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getRampRate(90);

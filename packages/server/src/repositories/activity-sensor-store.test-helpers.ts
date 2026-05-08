@@ -278,6 +278,15 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
                 sql`, `,
               )})
           ),
+          resting_heart_rate AS (
+            SELECT DISTINCT
+              activities.activity_date AS date,
+              user_profile.resting_hr::real AS resting_hr
+            FROM activities
+            JOIN fitness.user_profile user_profile
+              ON user_profile.id = ${userId}::uuid
+            WHERE user_profile.resting_hr IS NOT NULL
+          ),
           latest_weight AS (
             SELECT body.weight_kg
             FROM fitness.v_body_measurement body
@@ -400,9 +409,8 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
               ON user_profile.id = ${userId}::uuid
             JOIN LATERAL (
               SELECT drhr.resting_hr
-              FROM fitness.derived_resting_heart_rate drhr
-              WHERE drhr.user_id = ${userId}::uuid
-                AND drhr.date <= acsm_segments.activity_date
+              FROM resting_heart_rate drhr
+              WHERE drhr.date <= acsm_segments.activity_date
                 AND drhr.resting_hr IS NOT NULL
               ORDER BY drhr.date DESC
               LIMIT 1

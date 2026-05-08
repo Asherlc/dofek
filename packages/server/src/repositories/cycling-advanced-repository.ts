@@ -1,6 +1,7 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
@@ -11,6 +12,7 @@ import {
   TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
+import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
@@ -79,9 +81,11 @@ export class CyclingAdvancedRepository {
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
   async getRampRate(days: number): Promise<RampRateResultData> {
+    const today = new Date().toISOString().slice(0, 10);
     const dailyLoads = await this.#sensorStore.query(
       dailyLoadSchema,
-      `WITH activity_meta AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      activity_meta AS (
         SELECT
           asum.activity_id AS id,
           asum.started_at AS started_at,
@@ -92,9 +96,8 @@ export class CyclingAdvancedRepository {
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN analytics.derived_resting_heart_rate drhr
-          ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(asum.started_at)
+        LEFT JOIN resting_heart_rate drhr
+          ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
@@ -121,6 +124,8 @@ export class CyclingAdvancedRepository {
         timezone: this.#timezone,
         days,
         enduranceTypes: ENDURANCE_TYPES,
+        rhrEndDate: today,
+        rhrWindowStart: dateWindowStartString(today, days + 42),
       },
     );
 
@@ -218,9 +223,11 @@ export class CyclingAdvancedRepository {
 
   /** Training monotony: weekly monotony (mean daily load / stdev) and strain. */
   async getTrainingMonotony(days: number): Promise<TrainingMonotonyWeekModel[]> {
+    const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
       monotonyRowSchema,
-      `WITH activity_meta AS (
+      `WITH ${restingHeartRateClickHouseCte()},
+      activity_meta AS (
         SELECT
           asum.activity_id AS id,
           asum.started_at AS started_at,
@@ -231,9 +238,8 @@ export class CyclingAdvancedRepository {
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN analytics.derived_resting_heart_rate drhr
-          ON drhr.user_id = asum.user_id
-         AND drhr.date = toDate(asum.started_at)
+        LEFT JOIN resting_heart_rate drhr
+          ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
@@ -278,6 +284,8 @@ export class CyclingAdvancedRepository {
         timezone: this.#timezone,
         days,
         enduranceTypes: ENDURANCE_TYPES,
+        rhrEndDate: today,
+        rhrWindowStart: dateWindowStartString(today, days),
       },
     );
 

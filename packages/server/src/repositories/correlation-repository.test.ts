@@ -197,11 +197,17 @@ function makeDb() {
   return { execute };
 }
 
+function makeSensorStore() {
+  return {
+    query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+  };
+}
+
 describe("CorrelationRepository", () => {
   describe("getMetrics", () => {
     it("returns correlation metrics with id, label, unit, domain, description", () => {
       const db = makeDb();
-      const repo = new CorrelationRepository(db, "user-1");
+      const repo = new CorrelationRepository(db, "user-1", "UTC", makeSensorStore());
       const metrics = repo.getMetrics();
       expect(metrics.length).toBeGreaterThan(0);
       for (const metric of metrics) {
@@ -217,14 +223,14 @@ describe("CorrelationRepository", () => {
   describe("compute", () => {
     it("executes 5 queries (one per dataset)", async () => {
       const db = makeDb();
-      const repo = new CorrelationRepository(db, "user-1");
+      const repo = new CorrelationRepository(db, "user-1", "UTC", makeSensorStore());
       await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01");
       expect(db.execute).toHaveBeenCalledTimes(5);
     });
 
     it("returns insufficient result for empty data", async () => {
       const db = makeDb();
-      const repo = new CorrelationRepository(db, "user-1");
+      const repo = new CorrelationRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01");
       expect(result.sampleCount).toBe(0);
       expect(result.confidenceLevel).toBe("insufficient");

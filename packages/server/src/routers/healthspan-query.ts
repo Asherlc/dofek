@@ -5,6 +5,11 @@ import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  fetchRestingHeartRateRows,
+  type RestingHeartRateRow,
+  restingHeartRateValuesCte,
+} from "../repositories/resting-heart-rate-query.ts";
 import type { AuthenticatedContext } from "../trpc.ts";
 
 const historyRowSchema = z.object({
@@ -34,12 +39,13 @@ type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
 
 /**
  * Compute total aerobic and high-intensity minutes from analytics.deduped_sensor.
- * Joins user_profile and derived_resting_heart_rate via the native ClickHouse read models.
+ * Uses user_profile plus bounded helper-provided resting heart-rate rows.
  */
 async function fetchHrZoneTime(
   ctx: AuthenticatedContext,
   endDate: string,
   totalDays: number,
+  restingHeartRateRows: RestingHeartRateRow[],
 ): Promise<{ aerobic_minutes: number; high_intensity_minutes: number }> {
   const sensorStore = ctx.sensorStore;
   if (!sensorStore) return { aerobic_minutes: 0, high_intensity_minutes: 0 };
@@ -64,13 +70,20 @@ async function fetchHrZoneTime(
         dateDiff('second', asum.started_at, asum.ended_at) / 60.0 AS duration_minutes,
         up.max_hr AS max_hr,
         up.ftp AS ftp,
-        coalesce(drhr.resting_hr, up.resting_hr) AS resting_hr
+        coalesce(
+          if(
+            indexOf({restingHeartRateDates:Array(String)}, toString(toDate(asum.started_at))) > 0,
+            arrayElement(
+              {restingHeartRates:Array(Float64)},
+              indexOf({restingHeartRateDates:Array(String)}, toString(toDate(asum.started_at)))
+            ),
+            NULL
+          ),
+          up.resting_hr
+        ) AS resting_hr
       FROM analytics.activity_summary AS asum
       INNER JOIN postgres_fitness.user_profile_current AS up
         ON up.id = asum.user_id
-      LEFT JOIN analytics.derived_resting_heart_rate AS drhr
-        ON drhr.user_id = asum.user_id
-       AND drhr.date = toDate(asum.started_at)
       WHERE asum.user_id = {userId:UUID}
         AND asum.started_at > toDateTime({windowStart:String})
         AND asum.ended_at IS NOT NULL
@@ -118,6 +131,8 @@ async function fetchHrZoneTime(
       timezone: ctx.timezone,
       windowStart: windowStartTimestamp,
       powerThreshold: ZONE_BOUNDARIES_FTP[2],
+      restingHeartRateDates: restingHeartRateRows.map((row) => row.date),
+      restingHeartRates: restingHeartRateRows.map((row) => row.resting_hr),
     },
   );
 
@@ -137,7 +152,17 @@ export async function fetchHealthspanRawData(
   endDate: string,
   totalDays: number,
 ): Promise<HealthspanRawRow | null> {
-  const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays);
+  const restingHeartRateRows = ctx.sensorStore
+    ? await fetchRestingHeartRateRows({
+        sensorStore: ctx.sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate,
+        days: totalDays,
+      })
+    : [];
+  const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
+  const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays, restingHeartRateRows);
   const weeklyDivisor = Math.max(totalDays / 7, 1);
   const weeklyAerobicMin = hrZoneTime.aerobic_minutes / weeklyDivisor;
   const weeklyHighIntensityMin = hrZoneTime.high_intensity_minutes / weeklyDivisor;
@@ -145,7 +170,8 @@ export async function fetchHealthspanRawData(
   const rows = await executeWithSchema(
     ctx.db,
     rawRowSchema,
-    sql`WITH sleep_raw AS (
+    sql`WITH ${restingHeartRateCte},
+        sleep_raw AS (
           SELECT
             ${sleepNightDate(ctx.timezone)} AS date,
             duration_minutes,
@@ -176,9 +202,8 @@ export async function fetchHealthspanRawData(
         metrics_agg AS (
           SELECT
             (SELECT AVG(resting_hr)
-             FROM fitness.derived_resting_heart_rate
-             WHERE user_id = ${ctx.userId}
-               AND date > ${dateWindowStart(endDate, totalDays)}) AS avg_resting_hr,
+             FROM resting_heart_rate
+             WHERE date > ${dateWindowStart(endDate, totalDays)}) AS avg_resting_hr,
             (SELECT AVG(steps)
              FROM fitness.v_daily_metrics
              WHERE user_id = ${ctx.userId}
@@ -204,9 +229,8 @@ export async function fetchHealthspanRawData(
           SELECT
             date_trunc('week', date)::date AS week_start,
             AVG(resting_hr) AS avg_rhr
-          FROM fitness.derived_resting_heart_rate
-          WHERE user_id = ${ctx.userId}
-            AND date > ${dateWindowStart(endDate, totalDays)}
+          FROM resting_heart_rate
+          WHERE date > ${dateWindowStart(endDate, totalDays)}
           GROUP BY date_trunc('week', date)
         ),
         weekly_steps AS (

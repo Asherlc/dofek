@@ -14,10 +14,14 @@ afterEach(async () => {
 describe("DerivedCardioRepository integration", () => {
   it("derives resting HR from sleep-window heart-rate samples", async () => {
     testContext = await setupTestDatabase();
-    const repo = new DerivedCardioRepository(testContext.db, {
-      userId: TEST_USER_ID,
-      timezone: "UTC",
-    });
+    const repo = new DerivedCardioRepository(
+      testContext.db,
+      {
+        userId: TEST_USER_ID,
+        timezone: "UTC",
+      },
+      { query: async () => [{ date: "2026-04-28", resting_hr: 50 }] },
+    );
 
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
       VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
@@ -41,10 +45,14 @@ describe("DerivedCardioRepository integration", () => {
 
   it("returns null when resting HR has fewer than 30 sleep-window samples", async () => {
     testContext = await setupTestDatabase();
-    const repo = new DerivedCardioRepository(testContext.db, {
-      userId: TEST_USER_ID,
-      timezone: "UTC",
-    });
+    const repo = new DerivedCardioRepository(
+      testContext.db,
+      {
+        userId: TEST_USER_ID,
+        timezone: "UTC",
+      },
+      { query: async () => [] },
+    );
 
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
       VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})

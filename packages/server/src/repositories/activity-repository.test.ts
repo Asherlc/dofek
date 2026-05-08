@@ -89,6 +89,7 @@ describe("ActivityRepository", () => {
     const execute = vi.fn().mockResolvedValue(postgresRows);
     const database = { execute };
     const sensorStore = {
+      query: vi.fn().mockResolvedValue([{ date: "2024-01-14", resting_hr: 55 }]),
       getActivitySummaries: vi.fn().mockResolvedValue([]),
       getStream: vi.fn().mockResolvedValue([
         {

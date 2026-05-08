@@ -262,9 +262,7 @@ describe("TrainingRepository", () => {
     });
 
     it("returns data from non-empty queries", async () => {
-      const execute = vi.fn();
-      // PG queries (in fetch order): latestMetrics, sleep, muscleFreshness, balance, trainingDays
-      execute.mockResolvedValueOnce([
+      const latestMetricsRows = [
         {
           date: "2024-01-14",
           hrv: 65.3,
@@ -277,24 +275,31 @@ describe("TrainingRepository", () => {
           rr_mean_30d: 15.0,
           rr_sd_30d: 1.0,
         },
-      ]);
-      execute.mockResolvedValueOnce([{ efficiency_pct: 88.5 }]);
-      execute.mockResolvedValueOnce([{ muscle_group: "chest", last_trained_date: "2024-01-12" }]);
-      execute.mockResolvedValueOnce([
+      ];
+      const sleepRows = [{ efficiency_pct: 88.5 }];
+      const muscleRows = [{ muscle_group: "chest", last_trained_date: "2024-01-12" }];
+      const balanceRows = [
         {
           strength_7d: 3,
           endurance_7d: 4,
           last_strength_date: "2024-01-13",
           last_endurance_date: "2024-01-14",
         },
-      ]);
-      execute.mockResolvedValueOnce([
-        { training_date: "2024-01-14" },
-        { training_date: "2024-01-12" },
-      ]);
+      ];
+      const trainingRows = [{ training_date: "2024-01-14" }, { training_date: "2024-01-12" }];
+      const execute = vi.fn().mockImplementation(async (query: unknown) => {
+        const queryText = JSON.stringify(query);
+        if (queryText.includes("vitals_baseline")) return latestMetricsRows;
+        if (queryText.includes("efficiency_pct")) return sleepRows;
+        if (queryText.includes("muscle_group")) return muscleRows;
+        if (queryText.includes("strength_data")) return balanceRows;
+        if (queryText.includes("training_date")) return trainingRows;
+        return [];
+      });
 
-      // CH queries (in fetch order): acwr, zoneTotals, hiitLoad
+      // CH queries (in fetch order): helper RHR, acwr, zoneTotals, hiitLoad.
       const sensorQuery = vi.fn();
+      sensorQuery.mockResolvedValueOnce([]);
       sensorQuery.mockResolvedValueOnce([{ acwr: 1.15 }]);
       sensorQuery.mockResolvedValueOnce([
         { zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 },
@@ -338,9 +343,9 @@ describe("TrainingRepository", () => {
       const { repo, execute, sensorStore } = makeRepository([]);
       await repo.getNextWorkoutData("2024-01-15");
       // 5 PG queries: latestMetrics, sleep, muscleFreshness, balance, trainingDays.
-      // 3 CH queries: acwr, zoneTotals, hiitLoad.
+      // 4 CH queries: helper RHR, acwr, zoneTotals, hiitLoad.
       expect(execute).toHaveBeenCalledTimes(5);
-      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledTimes(4);
     });
   });
 

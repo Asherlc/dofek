@@ -1082,25 +1082,56 @@ describe("PredictionsRepository getTargets mapping", () => {
 });
 
 describe("PredictionsRepository predict dispatching to activity subtypes", () => {
-  it("predict for cardio_power fetches activity-specific query (4 PG + 2 CH calls)", async () => {
+  it("predict for cardio_power fetches activity-specific query (4 PG + 3 CH calls)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     await repo.predict("cardio_power", 365);
     // Activity pipeline: 4 PG context queries (sleep, daily, nutrition, body_comp) +
-    // 2 CH queries (exercise minutes from activity_summary, cardio activity_summary)
+    // 3 CH queries (resting HR, exercise minutes, cardio activity_summary)
     expect(execute).toHaveBeenCalledTimes(4);
-    expect(localSensorStore.query).toHaveBeenCalledTimes(2);
+    expect(localSensorStore.query).toHaveBeenCalledTimes(3);
   });
 
-  it("predict for strength_volume fetches strength-specific query (5 PG + 1 CH call)", async () => {
+  it("predict for strength_volume fetches strength-specific query (5 PG + 2 CH calls)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     await repo.predict("strength_volume", 365);
-    // 4 PG context queries + 1 PG strength query + 1 CH exercise_minutes query
+    // 4 PG context queries + 1 PG strength query + 2 CH queries (resting HR, exercise minutes)
     expect(execute).toHaveBeenCalledTimes(5);
-    expect(localSensorStore.query).toHaveBeenCalledTimes(1);
+    expect(localSensorStore.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("fetches resting heart rate using the repository timezone date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-08T01:30:00.000Z"));
+    try {
+      const execute = vi.fn().mockResolvedValue([]);
+      const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
+      const repo = new PredictionsRepository(
+        { execute },
+        "user-1",
+        "America/Los_Angeles",
+        localSensorStore,
+      );
+
+      await repo.predict("hrv", 30);
+
+      expect(localSensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.objectContaining({ rhrEndDate: "2026-05-07" }),
+      );
+      const dailyMetricsQueryText = execute.mock.calls
+        .map((call) => JSON.stringify(call[0]?.queryChunks ?? []))
+        .find((queryText) => queryText.includes("fitness.v_daily_metrics"));
+      expect(dailyMetricsQueryText).toBeDefined();
+      expect(dailyMetricsQueryText).toContain("2026-05-07");
+      expect(dailyMetricsQueryText).not.toContain("CURRENT_DATE");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("predict for daily target fetches exactly 5 data sources in parallel", async () => {
@@ -1397,7 +1428,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
 
   it("cardio predict maps activityRows to CardioActivityRow shape with all fields", async () => {
     // PG calls: daily metrics, sleep, nutrition, body comp (4)
-    // CH calls: exercise minutes, cardio activity summary (2)
+    // CH calls: resting HR, exercise minutes, cardio activity summary (3)
     const cardioRow = {
       activity_id: "act-1",
       activity_type: "cycling",
@@ -1412,11 +1443,11 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     };
     const { repo, execute, sensorQuery } = makeSequentialRepository(
       [[], [], [], []],
-      [[], [cardioRow]],
+      [[], [], [cardioRow]],
     );
     const result = await repo.predict("cardio_power", 90);
     expect(execute.mock.calls.length).toBe(4);
-    expect(sensorQuery.mock.calls.length).toBe(2);
+    expect(sensorQuery.mock.calls.length).toBe(3);
     expect(result).toBeNull();
   });
 
@@ -1433,7 +1464,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       avg_cadence: 175,
       duration_min: null,
     };
-    const { repo } = makeSequentialRepository([[], [], [], []], [[], [cardioRow]]);
+    const { repo } = makeSequentialRepository([[], [], [], []], [[], [], [cardioRow]]);
     const result = await repo.predict("cardio_power", 90);
     expect(result).toBeNull();
   });
@@ -1448,14 +1479,14 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       avg_rpe: 7.5,
     };
     // PG calls: daily metrics, sleep, nutrition, body comp, strength workouts (5)
-    // CH calls: exercise minutes (1)
+    // CH calls: resting HR, exercise minutes (2)
     const { repo, execute, sensorQuery } = makeSequentialRepository(
       [[], [], [], [], [strengthRow]],
-      [[]],
+      [[], []],
     );
     const result = await repo.predict("strength_volume", 90);
     expect(execute.mock.calls.length).toBe(5);
-    expect(sensorQuery.mock.calls.length).toBe(1);
+    expect(sensorQuery.mock.calls.length).toBe(2);
     expect(result).toBeNull();
   });
 
@@ -1468,7 +1499,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       max_weight: 80,
       avg_rpe: 6,
     };
-    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRowNull]], [[]]);
+    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRowNull]], [[], []]);
     const result = await repo.predict("strength_volume", 90);
     expect(result).toBeNull();
   });
@@ -1482,7 +1513,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       max_weight: 50,
       avg_rpe: 5,
     };
-    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRowZero]], [[]]);
+    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRowZero]], [[], []]);
     const result = await repo.predict("strength_volume", 90);
     expect(result).toBeNull();
   });
@@ -1496,7 +1527,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       max_weight: 60,
       avg_rpe: null,
     };
-    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRow]], [[]]);
+    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRow]], [[], []]);
     const result = await repo.predict("strength_volume", 90);
     expect(result).toBeNull();
   });
@@ -1514,9 +1545,9 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     await cardioRepo.predict("cardio_power", 90);
     await strengthRepo.predict("strength_volume", 90);
 
-    // Cardio: 4 PG (daily, sleep, nutrition, body) + 2 CH (exercise minutes, activity_summary)
+    // Cardio: 4 PG (daily, sleep, nutrition, body) + 3 CH (resting HR, exercise minutes, activity_summary)
     expect(cardioExecute.mock.calls.length).toBe(4);
-    // Strength: 5 PG (daily, sleep, nutrition, body, strength) + 1 CH (exercise minutes)
+    // Strength: 5 PG (daily, sleep, nutrition, body, strength) + 2 CH (resting HR, exercise minutes)
     expect(strengthExecute.mock.calls.length).toBe(5);
   });
 
@@ -1524,9 +1555,9 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     // This tests the final `return null` in #trainActivityPrediction
     // Since all real targets are either cardio or strength, this path
     // can't be hit through normal predict(), but the logic exists
-    // Cardio: 4 PG + 2 CH; Strength: 5 PG + 1 CH. Empty mocks suffice.
-    const cardioRepo = makeSequentialRepository([[], [], [], []], [[], []]).repo;
-    const strengthRepo = makeSequentialRepository([[], [], [], [], []], [[]]).repo;
+    // Cardio: 4 PG + 3 CH; Strength: 5 PG + 2 CH. Empty mocks suffice.
+    const cardioRepo = makeSequentialRepository([[], [], [], []], [[], [], []]).repo;
+    const strengthRepo = makeSequentialRepository([[], [], [], [], []], [[], []]).repo;
     const cardioResult = await cardioRepo.predict("cardio_power", 90);
     const strengthResult = await strengthRepo.predict("strength_volume", 90);
     expect(cardioResult).toBeNull();
@@ -1546,7 +1577,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       avg_cadence: 90,
       duration_min: 45,
     };
-    const { repo } = makeSequentialRepository([[], [], [], []], [[], [cardioRow]]);
+    const { repo } = makeSequentialRepository([[], [], [], []], [[], [], [cardioRow]]);
     const result = await repo.predict("cardio_power", 90);
     expect(result).toBeNull();
   });
@@ -1561,7 +1592,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       max_weight: null,
       avg_rpe: null,
     };
-    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRow]], [[]]);
+    const { repo } = makeSequentialRepository([[], [], [], [], [strengthRow]], [[], []]);
     const result = await repo.predict("strength_volume", 90);
     expect(result).toBeNull();
   });

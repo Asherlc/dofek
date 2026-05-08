@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dateWindowStartString, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { restingHeartRateClickHouseCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -89,7 +90,8 @@ export const weeklyReportRouter = router({
 
       const rows = await sensorStore.query(
         weeklyReportRowSchema,
-        `WITH per_activity AS (
+        `WITH ${restingHeartRateClickHouseCte()},
+        per_activity AS (
           SELECT
             toDate(toTimeZone(started_at, {timezone:String})) AS date,
             dateDiff('second', started_at, ended_at) / 3600.0 AS hours,
@@ -126,8 +128,8 @@ export const weeklyReportRouter = router({
             drhr.resting_hr AS resting_hr,
             dm.hrv AS hrv
           FROM analytics.v_daily_metrics AS dm
-          LEFT JOIN analytics.derived_resting_heart_rate AS drhr
-            ON drhr.user_id = dm.user_id AND drhr.date = dm.date
+          LEFT JOIN resting_heart_rate AS drhr
+            ON drhr.date = toString(dm.date)
           WHERE dm.user_id = {userId:UUID}
             AND dm.date > toDate({windowStart:String})
         ),
@@ -175,6 +177,8 @@ export const weeklyReportRouter = router({
           timezone: ctx.timezone,
           windowStart,
           totalDays,
+          rhrEndDate: input.endDate,
+          rhrWindowStart: windowStart,
         },
       );
 

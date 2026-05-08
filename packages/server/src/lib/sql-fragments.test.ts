@@ -1,12 +1,6 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import {
-  bodyWeightDedupCte,
-  heartRateZoneColumns,
-  restingHeartRateLateral,
-  sleepDedupCte,
-  vitalsBaselineCte,
-} from "./sql-fragments.ts";
+import { bodyWeightDedupCte, heartRateZoneColumns, sleepDedupCte } from "./sql-fragments.ts";
 
 describe("sleepDedupCte", () => {
   it("returns a SQL object with queryChunks", () => {
@@ -66,40 +60,6 @@ describe("bodyWeightDedupCte", () => {
   });
 });
 
-describe("vitalsBaselineCte", () => {
-  it("returns a SQL object with queryChunks", () => {
-    const result = vitalsBaselineCte("user-1", "2026-03-23", 30, 30);
-    expect(result.queryChunks).toBeDefined();
-  });
-
-  it("embeds userId in query chunks", () => {
-    const result = vitalsBaselineCte("user-1", "2026-03-23", 30, 30);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("user-1");
-  });
-
-  it("includes vitals_baseline CTE name", () => {
-    const result = vitalsBaselineCte("user-1", "2026-03-23", 30, 30);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("vitals_baseline");
-  });
-
-  it("uses the correct window size in column names", () => {
-    const result = vitalsBaselineCte("user-1", "2026-03-23", 30, 60);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("hrv_mean_60d");
-    expect(chunks).toContain("hrv_stddev_60d");
-    expect(chunks).toContain("resting_hr_mean_60d");
-    expect(chunks).toContain("resting_hr_stddev_60d");
-  });
-
-  it("produces different SQL for different window sizes", () => {
-    const fragmentA = vitalsBaselineCte("user-1", "2026-03-23", 30, 30);
-    const fragmentB = vitalsBaselineCte("user-1", "2026-03-23", 30, 60);
-    expect(fragmentA).not.toEqual(fragmentB);
-  });
-});
-
 describe("heartRateZoneColumns", () => {
   const heartRate = sql`ms.heart_rate`;
   const maxHr = sql`up.max_hr`;
@@ -126,19 +86,5 @@ describe("heartRateZoneColumns", () => {
     const zonesA = heartRateZoneColumns(heartRate, maxHr, restingHr, [0.5, 0.6, 0.7, 0.8, 0.9]);
     const zonesB = heartRateZoneColumns(heartRate, maxHr, restingHr, [0.4, 0.55, 0.7, 0.85, 0.95]);
     expect(zonesA.zone1).not.toEqual(zonesB.zone1);
-  });
-});
-
-describe("restingHeartRateLateral", () => {
-  it("returns a SQL object with queryChunks", () => {
-    const result = restingHeartRateLateral(sql`up.id`, sql`a.started_at::date`);
-    expect(result.queryChunks).toBeDefined();
-  });
-
-  it("includes LATERAL and rhr alias", () => {
-    const result = restingHeartRateLateral(sql`up.id`, sql`a.started_at::date`);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("LATERAL");
-    expect(chunks).toContain("rhr");
   });
 });

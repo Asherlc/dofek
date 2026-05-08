@@ -144,6 +144,40 @@ ambient_best_source AS (
   ) AS best_source
   WHERE best_source.row_number = 1
 ),
+standalone_best_source AS (
+  SELECT
+    best_source.user_id AS user_id,
+    best_source.date AS date,
+    best_source.channel AS channel,
+    best_source.provider_id AS provider_id
+  FROM (
+    SELECT
+      metric_stream.metric_user_id AS user_id,
+      toDate(metric_stream.metric_recorded_at) AS date,
+      metric_stream.metric_channel AS channel,
+      metric_stream.metric_provider_id AS provider_id,
+      count() AS sample_count,
+      row_number() OVER (
+        PARTITION BY metric_stream.metric_user_id, toDate(metric_stream.metric_recorded_at), metric_stream.metric_channel
+        ORDER BY count() DESC, metric_stream.metric_provider_id ASC
+      ) AS row_number
+    FROM (
+      SELECT
+        activity_id AS metric_activity_id,
+        user_id AS metric_user_id,
+        recorded_at AS metric_recorded_at,
+        channel AS metric_channel,
+        provider_id AS metric_provider_id,
+        scalar AS metric_scalar
+      FROM postgres_fitness.metric_stream FINAL
+      WHERE _peerdb_is_deleted = 0
+    ) AS metric_stream
+    WHERE metric_stream.metric_activity_id IS NULL
+      AND metric_stream.metric_scalar IS NOT NULL
+    GROUP BY metric_stream.metric_user_id, toDate(metric_stream.metric_recorded_at), metric_stream.metric_channel, metric_stream.metric_provider_id
+  ) AS best_source
+  WHERE best_source.row_number = 1
+),
 linked_samples AS (
   SELECT
     activity_members.activity_id AS activity_id,
@@ -201,9 +235,36 @@ ambient_samples AS (
     AND metric_stream.metric_recorded_at <= fallback_windows.fallback_ended_at
     AND metric_stream.metric_scalar IS NOT NULL
   GROUP BY fallback_windows.activity_id, fallback_windows.user_id, metric_stream.metric_recorded_at, metric_stream.metric_channel
+),
+standalone_samples AS (
+  SELECT
+    CAST(NULL, 'Nullable(UUID)') AS activity_id,
+    metric_stream.metric_user_id AS user_id,
+    metric_stream.metric_recorded_at AS recorded_at,
+    metric_stream.metric_channel AS channel,
+    max(metric_stream.metric_scalar) AS scalar
+  FROM (
+    SELECT
+      activity_id AS metric_activity_id,
+      user_id AS metric_user_id,
+      recorded_at AS metric_recorded_at,
+      channel AS metric_channel,
+      provider_id AS metric_provider_id,
+      scalar AS metric_scalar
+    FROM postgres_fitness.metric_stream FINAL
+    WHERE _peerdb_is_deleted = 0
+  ) AS metric_stream
+  INNER JOIN standalone_best_source
+    ON standalone_best_source.user_id = metric_stream.metric_user_id
+   AND standalone_best_source.date = toDate(metric_stream.metric_recorded_at)
+   AND standalone_best_source.channel = metric_stream.metric_channel
+   AND standalone_best_source.provider_id = metric_stream.metric_provider_id
+  WHERE metric_stream.metric_activity_id IS NULL
+    AND metric_stream.metric_scalar IS NOT NULL
+  GROUP BY metric_stream.metric_user_id, metric_stream.metric_recorded_at, metric_stream.metric_channel
 )
 SELECT
-  linked_samples.activity_id AS activity_id,
+  CAST(linked_samples.activity_id, 'Nullable(UUID)') AS activity_id,
   linked_samples.user_id AS user_id,
   linked_samples.recorded_at AS recorded_at,
   linked_samples.channel AS channel,
@@ -211,12 +272,20 @@ SELECT
 FROM linked_samples
 UNION ALL
 SELECT
-  ambient_samples.activity_id AS activity_id,
+  CAST(ambient_samples.activity_id, 'Nullable(UUID)') AS activity_id,
   ambient_samples.user_id AS user_id,
   ambient_samples.recorded_at AS recorded_at,
   ambient_samples.channel AS channel,
   ambient_samples.scalar AS scalar
-FROM ambient_samples`,
+FROM ambient_samples
+UNION ALL
+SELECT
+  standalone_samples.activity_id AS activity_id,
+  standalone_samples.user_id AS user_id,
+  standalone_samples.recorded_at AS recorded_at,
+  standalone_samples.channel AS channel,
+  standalone_samples.scalar AS scalar
+FROM standalone_samples`,
     "SYSTEM REFRESH VIEW analytics.deduped_sensor",
     "SYSTEM WAIT VIEW analytics.deduped_sensor",
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary

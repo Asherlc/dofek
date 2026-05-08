@@ -80,8 +80,11 @@ describe("BehaviorImpact", () => {
 describe("BehaviorImpactRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new BehaviorImpactRepository({ execute }, "user-1", "UTC");
-    return { repo, execute };
+    const sensorStore = {
+      query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+    };
+    const repo = new BehaviorImpactRepository({ execute }, "user-1", "UTC", sensorStore);
+    return { repo, execute, sensorStore };
   }
 
   it("returns empty array when no data", async () => {

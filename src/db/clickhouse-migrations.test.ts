@@ -29,10 +29,10 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("DROP DATABASE IF EXISTS postgres_fitness SYNC");
     expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(1);
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
-    expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(3);
+    expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(4);
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
-    expect(sql).toContain("metric_stream._peerdb_is_deleted = 0");
+    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("ENGINE = MergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
@@ -40,11 +40,13 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor/g),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
+    expect(sql).toContain("standalone_samples AS");
+    expect(sql).toContain("CAST(NULL, 'Nullable(UUID)') AS activity_id");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary/g),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 
   it("creates remaining analytics read models in ClickHouse", () => {
@@ -74,16 +76,15 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
-    expect(sql).toContain(
+    expect(sql).not.toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );
-    expect(sql).toContain("INNER JOIN postgres_fitness.metric_stream AS metric_stream FINAL");
+    expect(sql).toContain("DROP TABLE IF EXISTS analytics.derived_resting_heart_rate");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_daily_metrics");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_sleep");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("connected_components AS");
-    expect(sql).toContain("WHERE NOT is_nap");
   });
 });
 
@@ -115,7 +116,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(8);
+    expect(count).toBe(10);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -158,7 +159,7 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(18);
+    expect(systemTableQueries).toHaveLength(22);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
