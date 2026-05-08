@@ -126,7 +126,7 @@ export function ActivityDetailPage() {
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
-  const showHrZones = hasHr || hrZones.isLoading || zones.length > 0;
+  const showHrZones = hasHr || hrZones.isLoading || hrZones.isError || zones.length > 0;
 
   return (
     <PageLayout>
@@ -200,7 +200,11 @@ export function ActivityDetailPage() {
             title="Heart Rate Zones"
             description="This chart shows how much time you spent in each heart rate zone."
           >
-            <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+            <HrZonesChart
+              zones={zones}
+              loading={hrZones.isLoading}
+              errorMessage={hrZones.error?.message}
+            />
           </Section>
         )}
 
@@ -748,6 +752,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   loading,
   height,
   emptyMessage,
+  errorMessage,
   zoneColors,
   tooltipDetails,
 }: {
@@ -755,10 +760,19 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   loading: boolean;
   height: number;
   emptyMessage: string;
+  errorMessage?: string;
   zoneColors: string[];
   tooltipDetails: (zone: ZoneItem) => string;
 }) {
   if (loading) return <ChartLoadingSkeleton height={height} />;
+
+  if (errorMessage) {
+    return (
+      <div className="flex items-center justify-center text-center px-4" style={{ height }}>
+        <span className="text-red-400 text-sm">{errorMessage}</span>
+      </div>
+    );
+  }
 
   const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
   if (totalSeconds === 0) {
@@ -816,13 +830,22 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   return <DofekChart option={option} height={height} />;
 }
 
-export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
+export function HrZonesChart({
+  zones,
+  loading,
+  errorMessage,
+}: {
+  zones: ActivityHrZone[];
+  loading: boolean;
+  errorMessage?: string;
+}) {
   return (
     <ZoneDistributionChart
       zones={zones}
       loading={loading}
       height={200}
       emptyMessage="No heart rate zone data"
+      errorMessage={errorMessage}
       zoneColors={HEART_RATE_ZONE_COLORS}
       tooltipDetails={(zoneItem) => `${zoneItem.minPct}–${zoneItem.maxPct}% HRR`}
     />

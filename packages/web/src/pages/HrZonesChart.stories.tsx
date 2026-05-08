@@ -71,3 +71,9 @@ export const Loading: Story = {
     loading: true,
   },
 };
+
+export const ErrorState: Story = {
+  args: {
+    errorMessage: "Unable to load heart rate zones",
+  },
+};

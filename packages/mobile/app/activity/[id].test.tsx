@@ -213,7 +213,7 @@ beforeEach(() => {
   mockStrengthExercisesQuery.mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
-  mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false });
+  mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
 });
@@ -256,6 +256,30 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByText("No heart rate zone data")).toBeTruthy();
+  });
+
+  it("shows the heart rate zones loading state while zones are loading", async () => {
+    mockHrZonesQuery.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByTestId("loading")).toBeTruthy();
+    expect(screen.queryByText("No heart rate zone data")).toBeNull();
+  });
+
+  it("shows the heart rate zones error instead of the empty state when loading zones fails", async () => {
+    mockHrZonesQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: { message: "Unable to load heart rate zones" },
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Unable to load heart rate zones")).toBeTruthy();
+    expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
 
   it("labels the power zone chart with zone numbers", async () => {

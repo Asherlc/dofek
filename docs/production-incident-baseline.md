@@ -3624,8 +3624,11 @@ deploy did not reach stack deployment or migrations.
 
 ### Evidence
 
-GitHub Actions reported: `SSH host key for 162.55.186.24 did not become
-available within 120s`.
+GitHub Actions reported:
+
+```text
+SSH host key for 162.55.186.24 did not become available within 120s
+```
 
 ### Root Cause
 

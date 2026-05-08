@@ -110,10 +110,21 @@ interface MockPowerZonesResult {
   zones: MockPowerZone[];
 }
 
-const mockHrZonesUseQuery = vi.fn((): { data: MockHrZone[]; isLoading: boolean } => ({
-  data: [],
-  isLoading: false,
-}));
+interface MockHrZonesResult {
+  data: MockHrZone[];
+  isLoading: boolean;
+  isError: boolean;
+  error: { message: string } | null;
+}
+
+const mockHrZonesUseQuery = vi.fn(
+  (): MockHrZonesResult => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+);
 const mockPowerZonesUseQuery = vi.fn(
   (
     _input?: unknown,
@@ -425,6 +436,8 @@ describe("ActivityDetailPage", () => {
           { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600 },
         ],
         isLoading: false,
+        isError: false,
+        error: null,
       });
 
       const ActivityDetailPage = await importPage();
@@ -437,7 +450,12 @@ describe("ActivityDetailPage", () => {
       }
       expect(getCategoryAxisData(heartRateZoneOption)).toEqual(["Zone 1", "Zone 2"]);
 
-      mockHrZonesUseQuery.mockReturnValue({ data: [], isLoading: false });
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      });
     });
 
     it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
@@ -445,6 +463,21 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
 
       expect(screen.getByText("No heart rate zone data")).toBeDefined();
+    });
+
+    it("shows the heart rate zones error instead of the empty state when loading zones fails", async () => {
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: true,
+        error: { message: "Unable to load heart rate zones" },
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Unable to load heart rate zones")).toBeDefined();
+      expect(screen.queryByText("No heart rate zone data")).toBeNull();
     });
 
     it("labels the power zone axis with zone numbers", async () => {

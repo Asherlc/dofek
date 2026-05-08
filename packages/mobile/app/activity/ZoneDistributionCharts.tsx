@@ -1,26 +1,10 @@
+import type { ActivityHrZone, ActivityPowerZone } from "@dofek/zones/zones";
 import { HEART_RATE_ZONE_COLORS, POWER_ZONE_COLORS } from "@dofek/zones/zones";
-import { StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { colors } from "../../theme";
-
-const CHART_WIDTH = 340;
-
-interface HrZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number;
-  seconds: number;
-}
-
-interface PowerZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number | null;
-  seconds: number;
-}
+import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 
 interface ZoneDistributionDatum {
   zone: number;
@@ -33,13 +17,47 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   description,
   zoneColors,
   emptyMessage,
+  loading = false,
+  errorMessage,
 }: {
   zones: ZoneItem[];
   title: string;
   description: string;
   zoneColors: string[];
   emptyMessage: string;
+  loading?: boolean;
+  errorMessage?: string;
 }) {
+  if (loading) {
+    return (
+      <View style={zoneChartStyles.container}>
+        <ChartTitleWithTooltip
+          title={title}
+          description={description}
+          textStyle={zoneChartStyles.title}
+        />
+        <View style={zoneChartStyles.emptyState}>
+          <ActivityIndicator color={colors.accent} size="small" />
+        </View>
+      </View>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <View style={zoneChartStyles.container}>
+        <ChartTitleWithTooltip
+          title={title}
+          description={description}
+          textStyle={zoneChartStyles.title}
+        />
+        <View style={zoneChartStyles.emptyState}>
+          <Text style={zoneChartStyles.errorStateText}>{errorMessage}</Text>
+        </View>
+      </View>
+    );
+  }
+
   const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
   if (totalSeconds === 0) {
     return (
@@ -60,7 +78,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   const gap = 6;
   const labelWidth = 64;
   const pctWidth = 44;
-  const barAreaWidth = CHART_WIDTH - labelWidth - pctWidth - 16;
+  const barAreaWidth = ACTIVITY_CHART_WIDTH - labelWidth - pctWidth - 16;
   const chartTotalHeight = zones.length * (barHeight + gap) - gap;
 
   return (
@@ -70,7 +88,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         description={description}
         textStyle={zoneChartStyles.title}
       />
-      <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
+      <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
         {zones.map((zoneItem, zoneIndex) => {
           const percentage = totalSeconds > 0 ? zoneItem.seconds / totalSeconds : 0;
           const barWidth = Math.max(percentage * barAreaWidth, 2);
@@ -115,7 +133,15 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   );
 }
 
-export function HrZonesChart({ zones }: { zones: HrZone[] }) {
+export function HrZonesChart({
+  zones,
+  loading,
+  errorMessage,
+}: {
+  zones: ActivityHrZone[];
+  loading?: boolean;
+  errorMessage?: string;
+}) {
   return (
     <ZoneDistributionChart
       zones={zones}
@@ -123,11 +149,13 @@ export function HrZonesChart({ zones }: { zones: HrZone[] }) {
       description="This chart shows how much time you spent in each heart rate zone during the activity."
       zoneColors={HEART_RATE_ZONE_COLORS}
       emptyMessage="No heart rate zone data"
+      loading={loading}
+      errorMessage={errorMessage}
     />
   );
 }
 
-export function PowerZonesChart({ zones }: { zones: PowerZone[] }) {
+export function PowerZonesChart({ zones }: { zones: ActivityPowerZone[] }) {
   return (
     <ZoneDistributionChart
       zones={zones}
@@ -161,5 +189,10 @@ const zoneChartStyles = StyleSheet.create({
   emptyStateText: {
     fontSize: 13,
     color: colors.textTertiary,
+  },
+  errorStateText: {
+    fontSize: 13,
+    color: colors.danger,
+    textAlign: "center",
   },
 });

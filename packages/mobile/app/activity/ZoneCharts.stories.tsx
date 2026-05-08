@@ -23,7 +23,13 @@ const powerZones = [
 function ZoneChartsStory({
   variant,
 }: {
-  variant: "heart-rate" | "power" | "heart-rate-empty" | "power-empty";
+  variant:
+    | "heart-rate"
+    | "power"
+    | "heart-rate-empty"
+    | "power-empty"
+    | "heart-rate-loading"
+    | "heart-rate-error";
 }) {
   const emptyHeartRateZones = heartRateZones.map((zone) => ({ ...zone, seconds: 0 }));
   const emptyPowerZones = powerZones.map((zone) => ({ ...zone, seconds: 0 }));
@@ -34,6 +40,10 @@ function ZoneChartsStory({
       {variant === "power" && <PowerZonesChart zones={powerZones} />}
       {variant === "heart-rate-empty" && <HrZonesChart zones={emptyHeartRateZones} />}
       {variant === "power-empty" && <PowerZonesChart zones={emptyPowerZones} />}
+      {variant === "heart-rate-loading" && <HrZonesChart zones={emptyHeartRateZones} loading />}
+      {variant === "heart-rate-error" && (
+        <HrZonesChart zones={emptyHeartRateZones} errorMessage="Unable to load heart rate zones" />
+      )}
     </View>
   );
 }
@@ -74,5 +84,17 @@ export const EmptyHeartRateZones: Story = {
 export const EmptyPowerZones: Story = {
   args: {
     variant: "power-empty",
+  },
+};
+
+export const HeartRateZonesLoading: Story = {
+  args: {
+    variant: "heart-rate-loading",
+  },
+};
+
+export const HeartRateZonesError: Story = {
+  args: {
+    variant: "heart-rate-error",
   },
 };

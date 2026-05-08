@@ -32,10 +32,11 @@ import { RouteMap } from "../../components/RouteMap";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
+import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 import { useChartScrub } from "./useChartScrub";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
-const CHART_WIDTH = 340;
+const CHART_WIDTH = ACTIVITY_CHART_WIDTH;
 const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
 
@@ -889,7 +890,13 @@ export default function ActivityDetailScreen() {
           )}
 
           {/* HR Zones */}
-          {(hasHr || zones.length > 0) && <HrZonesChart zones={zones} />}
+          {(hasHr || hrZones.isLoading || zones.length > 0) && (
+            <HrZonesChart
+              zones={zones}
+              loading={hrZones.isLoading}
+              errorMessage={hrZones.error?.message}
+            />
+          )}
 
           {/* Power Zones (cycling only, requires eFTP) */}
           {isCycling && hasPower && powerZones.data != null && (
