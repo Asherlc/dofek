@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
@@ -10,6 +10,7 @@ vi.mock("../trpc.ts", async () => {
   const trpc = initTRPC
     .context<{
       db: unknown;
+      sensorStore?: unknown;
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
@@ -44,6 +45,7 @@ const createCaller = createTestCallerFactory(bodyAnalyticsRouter);
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
+    sensorStore: makeMockSensorStore(rows),
     userId: "user-1",
     timezone: "UTC",
   });
@@ -213,6 +215,7 @@ describe("bodyAnalyticsRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeMockSensorStore([]),
         userId: "user-1",
         timezone: "UTC",
         accessWindow: {

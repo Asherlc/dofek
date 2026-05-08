@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import { runWithTokenUser } from "../../db/token-user-context.ts";
 import {
   ALL_ROUTED_TYPES,
   BODY_MEASUREMENT_TYPES,
@@ -1325,9 +1326,12 @@ describe("upsertWorkoutBatch", () => {
       horizontalAccuracy: 5.2,
     };
 
-    await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
+    await runWithTokenUser("user-1", () =>
+      upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
+    );
 
     // First insert is the activity, second is metric_stream rows.
+    // Latitude and longitude are written to fitness.location_sample.
     expect(capture.values).toHaveLength(2);
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
@@ -1364,7 +1368,9 @@ describe("upsertWorkoutBatch", () => {
       lng: -74.006,
     };
 
-    await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
+    await runWithTokenUser("user-1", () =>
+      upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
+    );
 
     const gpsAccuracyRow = capture.values[1]?.find((row) => row.channel === "gps_accuracy");
     expect(gpsAccuracyRow).toBeUndefined();

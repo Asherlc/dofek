@@ -358,7 +358,11 @@ describe("StravaProvider.sync — additional coverage", () => {
     const activityInsertPayloads: unknown[] = [];
     const upsertConfigs: unknown[] = [];
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
-      if (Array.isArray(payload)) return Promise.resolve();
+      if (Array.isArray(payload)) {
+        return {
+          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        };
+      }
       if (getProviderId(payload) === "strava") {
         activityInsertPayloads.push(payload);
       }
@@ -915,7 +919,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
       if (Array.isArray(payload)) {
         metricBatchSizes.push(payload.length);
-        return Promise.resolve();
+        return {
+          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        };
       }
       return {
         onConflictDoUpdate: vi.fn().mockReturnValue({
@@ -987,7 +993,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
       if (Array.isArray(payload)) {
         metricBatchSizes.push(payload.length);
-        return Promise.resolve();
+        return {
+          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        };
       }
       return {
         onConflictDoUpdate: vi.fn().mockReturnValue({

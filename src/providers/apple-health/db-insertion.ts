@@ -749,7 +749,7 @@ export async function upsertWorkoutBatch(
     }
   }
 
-  // GPS route points now write directly to metric_stream.
+  // GPS route points write coordinates to location_sample and remaining scalar samples to metric_stream.
   await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
 
   // Link HR rows for this batch's time window. A global reconciliation pass also

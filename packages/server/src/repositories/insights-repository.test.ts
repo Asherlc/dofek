@@ -33,8 +33,8 @@ describe("InsightsRepository", () => {
       const sensorStore = makeSensorStore();
       const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
       await repo.computeInsights(90, "2024-06-01");
-      expect(db.execute).toHaveBeenCalledTimes(4);
-      expect(sensorStore.query).toHaveBeenCalledTimes(2);
+      expect(db.execute).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
     });
 
     it("returns engine result for empty data", async () => {
@@ -81,7 +81,8 @@ describe("InsightsRepository", () => {
           .mockResolvedValueOnce([
             { date: "2024-05-30", resting_hr: 48 },
             { date: "2024-06-01", resting_hr: 51 },
-          ]),
+          ])
+          .mockResolvedValue([]),
       };
       const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
 

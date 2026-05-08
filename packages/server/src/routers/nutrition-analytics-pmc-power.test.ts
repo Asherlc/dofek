@@ -96,6 +96,7 @@ describe("nutritionAnalyticsRouter", () => {
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
+      sensorStore: makeSensorStore(rows),
       userId: "user-1",
       timezone: "UTC",
     });
