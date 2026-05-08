@@ -3609,3 +3609,41 @@ Infisical through `AUTHENTIK_OUTPOST_TOKEN`.
 ### Follow-Up Work
 
 - Recheck PR #1106 after push and confirm GitGuardian passes.
+
+## 2026-05-08: Staging Deploy SSH Host Key Timeout
+
+### Symptoms
+
+The `Deploy Web Staging / Deploy Web Stack` job in run `25569517018` failed
+during `Setup SSH`.
+
+### User Impact
+
+The production deploy path was still running, but the staging half of the web
+deploy did not reach stack deployment or migrations.
+
+### Evidence
+
+GitHub Actions reported: `SSH host key for 162.55.186.24 did not become
+available within 120s`.
+
+### Root Cause
+
+Unknown. The failure happened before secrets export, migrations, or stack
+deployment, so the immediate failing boundary is staging SSH reachability or
+host-key discovery for `162.55.186.24`.
+
+### Fix or Mitigation
+
+Unresolved. No deploy behavior was changed during the activity-page fix.
+
+### Remaining Risk
+
+Staging deploys may remain blocked until SSH reachability or host-key
+availability for the staging host is repaired.
+
+### Follow-Up Work
+
+- Check whether the staging host is booted and reachable on port 22.
+- Verify the staging DNS/IP mapping and the expected SSH host key.
+- Rerun the staging deploy only after the connectivity/root cause is confirmed.

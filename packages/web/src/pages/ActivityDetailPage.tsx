@@ -126,6 +126,7 @@ export function ActivityDetailPage() {
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
+  const showHrZones = hasHr || hrZones.isLoading || zones.length > 0;
 
   return (
     <PageLayout>
@@ -194,7 +195,7 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-        {zones.length > 0 && (
+        {showHrZones && (
           <Section
             title="Heart Rate Zones"
             description="This chart shows how much time you spent in each heart rate zone."

@@ -71,7 +71,8 @@ vi.mock("dofek/providers/registry", () => ({
         },
         wahoo: {
           name: "Wahoo",
-          activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+          activityUrl: (externalId: string) =>
+            `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
         },
         garmin: {
           name: "Garmin",
@@ -334,7 +335,11 @@ describe("activityRouter", () => {
       expect(result.subsource).toBeNull();
       expect(result.sourceLinks).toEqual([
         { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
-        { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
+        {
+          providerId: "wahoo",
+          label: "Wahoo",
+          url: "https://systm.wahoofitness.com/history/activity-details/42",
+        },
       ]);
     });
 
@@ -830,7 +835,8 @@ describe("Activity model (via router integration)", () => {
         },
         wahoo: {
           name: "Wahoo",
-          activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+          activityUrl: (externalId: string) =>
+            `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
         },
       };
     return providers[id];

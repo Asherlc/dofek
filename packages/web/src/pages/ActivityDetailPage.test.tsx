@@ -440,6 +440,13 @@ describe("ActivityDetailPage", () => {
       mockHrZonesUseQuery.mockReturnValue({ data: [], isLoading: false });
     });
 
+    it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("No heart rate zone data")).toBeDefined();
+    });
+
     it("labels the power zone axis with zone numbers", async () => {
       const originalActivity = { ...mockActivity };
       const originalStream = [...mockStreamPoints];

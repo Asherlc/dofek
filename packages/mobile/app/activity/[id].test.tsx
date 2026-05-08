@@ -251,6 +251,13 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Z1 Recovery")).toBeNull();
   });
 
+  it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("No heart rate zone data")).toBeTruthy();
+  });
+
   it("labels the power zone chart with zone numbers", async () => {
     mockPowerZonesQuery.mockReturnValue({
       data: {
