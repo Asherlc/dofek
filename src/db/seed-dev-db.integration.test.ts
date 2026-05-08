@@ -49,7 +49,7 @@ interface BareDatabaseContext {
 }
 
 async function setupBareDatabase(): Promise<BareDatabaseContext> {
-  const container = await new GenericContainer("timescale/timescaledb:latest-pg18")
+  const container = await new GenericContainer("timescale/timescaledb-ha:pg18.3-ts2.26.4-all")
     .withEnvironment({
       POSTGRES_DB: "test",
       POSTGRES_USER: "test",
