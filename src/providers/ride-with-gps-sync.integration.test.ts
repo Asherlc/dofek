@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream, oauthToken } from "../db/schema.ts";
+import { activity, locationSample, metricStream, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
@@ -184,14 +184,18 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     const cadenceSamples = metrics.filter((sample) => sample.channel === "cadence");
-    const latSamples = metrics.filter((sample) => sample.channel === "lat");
-    const lngSamples = metrics.filter((sample) => sample.channel === "lng");
 
     expect(heartRateSamples).toHaveLength(10);
     expect(powerSamples).toHaveLength(10);
     expect(cadenceSamples).toHaveLength(10);
-    expect(latSamples).toHaveLength(10);
-    expect(lngSamples).toHaveLength(10);
+
+    const locationSamples = await ctx.db
+      .select()
+      .from(locationSample)
+      .where(eq(locationSample.activityId, ride.id));
+    expect(locationSamples).toHaveLength(10);
+    expect(locationSamples[0]?.latitude).toBeCloseTo(40.7484);
+    expect(locationSamples[0]?.longitude).toBeCloseTo(-73.9857);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
