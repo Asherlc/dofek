@@ -63,15 +63,18 @@ function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
+interface ClickHouseMigrationBase {
+  id: string;
+  requiresPreviouslyAppliedMigrationId?: string;
+}
+
 type ClickHouseMigration =
-  | {
-      id: string;
+  | ({
       statements: string[];
-    }
-  | {
-      id: string;
+    } & ClickHouseMigrationBase)
+  | ({
       run: (client: ClickHouseCommandClient, postgresConnectionString: string) => Promise<void>;
-    };
+    } & ClickHouseMigrationBase);
 
 function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {
   return [
@@ -171,7 +174,12 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       statements: buildActivityTrendDailyReadModelStatements(),
     },
     {
-      id: "0012_metric_stream_location_point",
+      id: "0012_repair_metric_stream_backfill",
+      requiresPreviouslyAppliedMigrationId: "0006_backfill_native_metric_stream",
+      run: repairNativeMetricStreamBackfill,
+    },
+    {
+      id: "0013_metric_stream_location_point",
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         "DROP TABLE IF EXISTS analytics.activity_summary",
@@ -211,6 +219,7 @@ ORDER BY id`,
   });
 
   let appliedCount = 0;
+  const initiallyAppliedMigrationIds = new Set<string>();
   for (const migration of clickHouseMigrations(postgresConnectionString)) {
     const migrationId = clickHouseStringLiteral(migration.id);
     const result = await client.query<MigrationCountRow>({
@@ -218,12 +227,21 @@ ORDER BY id`,
       format: "JSONEachRow",
     });
     const rows = await result.json();
-    if (Number(rows[0]?.migration_count ?? 0) > 0) {
+    const wasAppliedBeforeThisRun = Number(rows[0]?.migration_count ?? 0) > 0;
+    if (wasAppliedBeforeThisRun) {
+      initiallyAppliedMigrationIds.add(migration.id);
       continue;
     }
 
     logger.info(`[migrate] Applying ClickHouse migration: ${migration.id}`);
-    if ("statements" in migration) {
+    if (
+      migration.requiresPreviouslyAppliedMigrationId &&
+      !initiallyAppliedMigrationIds.has(migration.requiresPreviouslyAppliedMigrationId)
+    ) {
+      logger.info(
+        `[migrate] Skipping ClickHouse migration body: ${migration.id} requires ${migration.requiresPreviouslyAppliedMigrationId} to have been applied before this run`,
+      );
+    } else if ("statements" in migration) {
       for (const statement of migration.statements) {
         await runClickHouseMigrationStatement(client, statement);
       }
@@ -272,6 +290,26 @@ async function replaceNativeMetricStreamAndBackfill(
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+}
+
+async function repairNativeMetricStreamBackfill(
+  client: ClickHouseCommandClient,
+  postgresConnectionString: string,
+): Promise<void> {
+  await runClickHouseMigrationStatement(
+    client,
+    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+  );
+  await backfillNativeMetricStream(client, postgresConnectionString);
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+  await runClickHouseMigrationStatement(
+    client,
+    "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
+  );
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_trend_daily");
 }
 
 async function shouldReplacePostgresFitnessDatabase(
@@ -535,7 +573,7 @@ SELECT
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
 LEFT JOIN (
-  SELECT id
+  SELECT CAST(id, 'Nullable(UUID)') AS id
   FROM postgres_fitness.metric_stream
   WHERE recorded_at >= ${lowerBound}
     AND recorded_at < ${upperBound}

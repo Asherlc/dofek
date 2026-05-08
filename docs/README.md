@@ -36,6 +36,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
+| Management UI auth | [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |
 | Peloton | [peloton.md](peloton.md) | Auth and workout sync notes. |
 | Ride with GPS | [ride-with-gps.md](ride-with-gps.md) | OAuth flow and activity import notes. |
 | TrainerRoad | [trainerroad.md](trainerroad.md) | Cookie auth, workouts, and parsing details. |
