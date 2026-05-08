@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { InsightsRepository } from "./insights-repository.ts";
 
@@ -23,6 +23,10 @@ function makeSensorStore(): Pick<ActivitySensorStore, "query"> {
 }
 
 describe("InsightsRepository", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("computeInsights", () => {
     it("executes Postgres queries only for non-vitals datasets", async () => {
       const db = makeDb();
@@ -46,6 +50,69 @@ describe("InsightsRepository", () => {
       const repo = new InsightsRepository(db, "user-1", "UTC", makeSensorStore());
       await repo.computeInsights(30, "2024-06-01");
       expect(computeInsights).toHaveBeenCalledWith([], [], [], [], []);
+    });
+
+    it("passes ClickHouse resting heart rate rows into same-date daily metrics", async () => {
+      const { computeInsights } = await import("../insights/engine.ts");
+      const db = makeDb();
+      const sensorStore: Pick<ActivitySensorStore, "query"> = {
+        query: vi
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              date: "2024-05-30",
+              resting_hr: null,
+              hrv: 62,
+              spo2_avg: 98,
+              steps: 8_000,
+              active_energy_kcal: 420,
+              skin_temp_c: 33.2,
+            },
+            {
+              date: "2024-05-31",
+              resting_hr: null,
+              hrv: 58,
+              spo2_avg: 97,
+              steps: 6_500,
+              active_energy_kcal: 360,
+              skin_temp_c: 33.4,
+            },
+          ])
+          .mockResolvedValueOnce([
+            { date: "2024-05-30", resting_hr: 48 },
+            { date: "2024-06-01", resting_hr: 51 },
+          ]),
+      };
+      const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
+
+      await repo.computeInsights(30, "2024-06-01");
+
+      expect(computeInsights).toHaveBeenCalledWith(
+        [
+          {
+            date: "2024-05-30",
+            resting_hr: 48,
+            hrv: 62,
+            spo2_avg: 98,
+            steps: 8_000,
+            active_energy_kcal: 420,
+            skin_temp_c: 33.2,
+          },
+          {
+            date: "2024-05-31",
+            resting_hr: null,
+            hrv: 58,
+            spo2_avg: 97,
+            steps: 6_500,
+            active_energy_kcal: 360,
+            skin_temp_c: 33.4,
+          },
+        ],
+        [],
+        [],
+        [],
+        [],
+      );
     });
 
     it("does not query derived resting heart rate views for vitals", async () => {
