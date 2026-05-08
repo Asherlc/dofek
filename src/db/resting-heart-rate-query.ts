@@ -73,9 +73,9 @@ export function restingHeartRateClickHouseCte(): string {
       FROM sleep_windows
       INNER JOIN analytics.deduped_sensor AS samples
         ON samples.user_id = sleep_windows.user_id
-       AND samples.recorded_at >= sleep_windows.started_at
-       AND samples.recorded_at <= sleep_windows.ended_at
       WHERE samples.channel = 'heart_rate'
+        AND samples.recorded_at >= sleep_windows.started_at
+        AND samples.recorded_at <= sleep_windows.ended_at
         AND samples.activity_id IS NULL
         AND samples.scalar IS NOT NULL
     ),
