@@ -1,6 +1,12 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { LocationSampleInsert } from "./location-sample-writer.ts";
-import { sourceRowToLocationSample, writeLocationSamples } from "./location-sample-writer.ts";
+import {
+  createLocationBatchInsert,
+  sourceRowToLocationSample,
+  writeLocationSamples,
+} from "./location-sample-writer.ts";
+import { runWithTokenUser } from "./token-user-context.ts";
 
 describe("sourceRowToLocationSample", () => {
   it("converts a coordinate-bearing source row into one location_sample row", () => {
@@ -91,5 +97,40 @@ describe("writeLocationSamples", () => {
     expect(insertedBatches[0]).toHaveLength(3);
     expect(insertedBatches[1]).toHaveLength(3);
     expect(insertedBatches[2]).toHaveLength(1);
+  });
+});
+
+describe("createLocationBatchInsert", () => {
+  it("uses the scoped user context when the source row has no user id", async () => {
+    const dialect = new PgDialect();
+    const execute = vi.fn(async (query) => {
+      const compiledQuery = dialect.sqlToQuery(query);
+      expect(compiledQuery.params[1]).toBe("user-1");
+      expect(compiledQuery.sql).toContain("$2");
+      return [];
+    });
+    const db = {
+      execute,
+    };
+    const insertBatch = createLocationBatchInsert(db);
+
+    await runWithTokenUser("user-1", () =>
+      insertBatch([
+        {
+          recordedAt: new Date("2026-03-30T12:00:00Z"),
+          providerId: "test",
+          activityId: null,
+          deviceId: null,
+          sourceType: "api",
+          latitude: 40.7128,
+          longitude: -74.006,
+          horizontalAccuracyM: null,
+          gpsAccuracyM: null,
+          raw: null,
+        },
+      ]),
+    );
+
+    expect(execute).toHaveBeenCalledOnce();
   });
 });

@@ -1,7 +1,6 @@
 import {
   bigint,
   boolean,
-  customType,
   date,
   doublePrecision,
   index,
@@ -20,12 +19,6 @@ import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
-
-const geometryPoint = customType<{ data: string; driverData: string }>({
-  dataType() {
-    return "geometry(Point, 4326)";
-  },
-});
 
 // Stable user ID used in integration tests and fixtures.
 export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -557,7 +550,6 @@ export const locationSample = fitness.table(
     deviceId: text("device_id"),
     sourceType: text("source_type").notNull(),
     activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
-    position: geometryPoint("position").notNull(),
     latitude: doublePrecision("latitude").notNull(),
     longitude: doublePrecision("longitude").notNull(),
     horizontalAccuracyM: real("horizontal_accuracy_m"),

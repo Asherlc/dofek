@@ -2,6 +2,42 @@ CREATE SCHEMA IF NOT EXISTS clickhouse;
 
 --> statement-breakpoint
 
+CREATE TABLE IF NOT EXISTS fitness.location_sample (
+  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  recorded_at timestamp with time zone NOT NULL,
+  user_id uuid NOT NULL REFERENCES fitness.user_profile(id),
+  provider_id text NOT NULL REFERENCES fitness.provider(id),
+  activity_id uuid REFERENCES fitness.activity(id) ON DELETE CASCADE,
+  device_id text,
+  source_type text NOT NULL,
+  latitude double precision NOT NULL,
+  longitude double precision NOT NULL,
+  horizontal_accuracy_m real,
+  gps_accuracy_m real,
+  raw jsonb,
+  CONSTRAINT location_sample_pkey PRIMARY KEY (id, recorded_at)
+);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS location_sample_activity_time_idx
+  ON fitness.location_sample (activity_id, recorded_at);
+
+--> statement-breakpoint
+
+CREATE INDEX IF NOT EXISTS location_sample_user_time_idx
+  ON fitness.location_sample (user_id, recorded_at);
+
+--> statement-breakpoint
+
+SELECT public.create_hypertable(
+  'fitness.location_sample'::regclass,
+  'recorded_at'::name,
+  if_not_exists => TRUE
+);
+
+--> statement-breakpoint
+
 CREATE OR REPLACE VIEW clickhouse.user_profile AS
 SELECT id, max_hr, resting_hr, ftp, birth_date
 FROM fitness.user_profile;

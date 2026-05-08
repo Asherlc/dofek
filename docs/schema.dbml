@@ -639,7 +639,6 @@ table fitness.location_sample {
   device_id text
   source_type text [not null]
   activity_id uuid
-  position "geometry(Point, 4326)" [not null]
   latitude "double precision" [not null]
   longitude "double precision" [not null]
   horizontal_accuracy_m real

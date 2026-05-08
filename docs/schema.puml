@@ -371,7 +371,6 @@ entity "location_sample" {
   device_id : text
   source_type : text
   activity_id : uuid <<FK>>
-  position : geometry(Point, 4326)
   latitude : double precision
   longitude : double precision
   horizontal_accuracy_m : real

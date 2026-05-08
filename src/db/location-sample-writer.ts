@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
+import { getTokenUserId } from "./token-user-context.ts";
 
 const DEFAULT_BATCH_SIZE = 1000;
 
@@ -31,6 +32,14 @@ export interface LocationSampleInsert {
 }
 
 export type LocationBatchInsertFn = (batch: LocationSampleInsert[]) => Promise<void>;
+
+function resolveLocationSampleUserId(userId: string | undefined): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("Missing user context for location_sample user_id");
+  }
+  return scopedUserId;
+}
 
 export function sourceRowToLocationSample(
   row: LocationSampleSourceRow,
@@ -72,18 +81,20 @@ export function createLocationBatchInsert(
   return async (batch) => {
     await db.execute(
       sql`INSERT INTO fitness.location_sample
-            (recorded_at, user_id, provider_id, activity_id, device_id, source_type, position,
+            (recorded_at, user_id, provider_id, activity_id, device_id, source_type, latitude,
+             longitude,
              horizontal_accuracy_m, gps_accuracy_m, raw)
           VALUES ${sql.join(
             batch.map(
               (row) => sql`(
                 ${row.recordedAt}::timestamptz,
-                ${row.userId},
+                ${resolveLocationSampleUserId(row.userId)},
                 ${row.providerId},
                 ${row.activityId ?? null}::uuid,
                 ${row.deviceId},
                 ${row.sourceType},
-                ST_SetSRID(ST_MakePoint(${row.longitude}, ${row.latitude}), 4326),
+                ${row.latitude}::double precision,
+                ${row.longitude}::double precision,
                 ${row.horizontalAccuracyM}::real,
                 ${row.gpsAccuracyM}::real,
                 ${row.raw == null ? null : JSON.stringify(row.raw)}::jsonb
