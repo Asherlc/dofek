@@ -3433,3 +3433,15 @@ The improved logging does not prevent DDL from waiting behind long-running app
 queries. Future destructive migrations should use expand/contract or
 post-deploy sequencing so old app versions stop referencing the object before
 the migration drops it.
+
+### Follow-Up Work
+
+- Owner: Asher. Merge the deploy workflow log-streaming and migration phase-log
+  fix by 2026-05-09.
+- Owner: Asher. Document the migration lock investigation steps and
+  expand/contract rule in the deploy runbook by 2026-05-15.
+- Owner: Asher. Review long-running dashboard and personalization queries that
+  still use Postgres read paths and move analytics-heavy work to ClickHouse
+  where the required read models already exist by 2026-05-22.
+- Owner: Asher. Add a workflow test or shellcheck-style coverage for detached
+  migration container log streaming by 2026-05-22.
