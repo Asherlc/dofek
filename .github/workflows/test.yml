@@ -151,7 +151,8 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm lint:css
+      - name: Run stylelint
+        run: pnpm lint:css
 
   yamllint:
     name: YAMLLint
@@ -171,6 +172,22 @@ jobs:
         with:
           reporter: github-check
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
+        with:
+          tflint_version: v0.62.0
+      - name: Initialize tflint plugins
+        run: tflint --init
+      - name: Run tflint
+        run: tflint --format compact
 
   sqlfluff:
     name: SQLFluff
@@ -347,7 +364,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, stylelint, yamllint, dotenv-lint, sqlfluff, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
+    needs: [actionlint, lint, stylelint, yamllint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -360,6 +377,7 @@ jobs:
             "${{ needs.yamllint.result }}" \
             "${{ needs.dotenv-lint.result }}" \
             "${{ needs.sqlfluff.result }}" \
+            "${{ needs.tflint.result }}" \
             "${{ needs.typecheck.result }}" \
             "${{ needs.sherif.result }}" \
             "${{ needs.knip.result }}" \

@@ -275,6 +275,10 @@ reviews:
     dotenvLint:
       enabled: true
 
+    # Terraform (deploy/).
+    tflint:
+      enabled: true
+
     # iOS / Swift module.
     swiftlint:
       enabled: true
@@ -316,8 +320,6 @@ reviews:
       enabled: false
     regal:
       enabled: false
-    tflint:
-      enabled: true
     luacheck:
       enabled: false
     shopifyThemeCheck:
