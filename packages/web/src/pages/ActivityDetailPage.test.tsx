@@ -4,7 +4,7 @@ import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -84,6 +84,7 @@ const mockStreamPoints: Array<{
     altitude: 400,
   },
 ];
+const initialMockStreamPoints = mockStreamPoints.map((point) => ({ ...point }));
 
 const mockStrengthExercisesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
@@ -119,14 +120,16 @@ interface MockHrZonesResult {
   error: { message: string } | null;
 }
 
-const mockHrZonesUseQuery = vi.fn(
-  (): MockHrZonesResult => ({
+function defaultMockHrZonesResult(): MockHrZonesResult {
+  return {
     data: [],
     isLoading: false,
     isError: false,
     error: null,
-  }),
-);
+  };
+}
+
+const mockHrZonesUseQuery = vi.fn(defaultMockHrZonesResult);
 const mockPowerZonesUseQuery = vi.fn(
   (
     _input?: unknown,
@@ -159,6 +162,16 @@ vi.mock("leaflet", () => ({
   polyline: () => ({ addTo: vi.fn() }),
   circleMarker: () => ({ addTo: vi.fn() }),
 }));
+
+afterEach(() => {
+  mockHrZonesUseQuery.mockReset();
+  mockHrZonesUseQuery.mockImplementation(defaultMockHrZonesResult);
+  mockStreamPoints.splice(
+    0,
+    mockStreamPoints.length,
+    ...initialMockStreamPoints.map((point) => ({ ...point })),
+  );
+});
 
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
