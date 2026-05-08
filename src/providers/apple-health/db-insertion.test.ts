@@ -1297,16 +1297,18 @@ describe("upsertWorkoutBatch", () => {
       expect.objectContaining({
         providerId: "p1",
         activityId: "act-1",
-        channel: "lat",
-        scalar: 40.7128,
+        channel: "location",
+        point: "SRID=4326;POINT(-74.006 40.7128)",
+        latitude: 40.7128,
+        longitude: -74.006,
       }),
     );
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId: "act-1",
-        channel: "gps_accuracy",
-        scalar: 5,
+        channel: "location",
+        metadata: { horizontal_accuracy_m: 5.2 },
       }),
     );
   });
@@ -1330,8 +1332,8 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
 
-    const gpsAccuracyRow = capture.values[1]?.find((row) => row.channel === "gps_accuracy");
-    expect(gpsAccuracyRow).toBeUndefined();
+    const locationRow = capture.values[1]?.find((row) => row.channel === "location");
+    expect(locationRow?.metadata).toBeNull();
   });
 
   it("populates raw JSONB with workout metrics", async () => {

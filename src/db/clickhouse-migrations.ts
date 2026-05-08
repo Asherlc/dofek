@@ -170,6 +170,18 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       id: "0011_activity_trend_daily_read_model",
       statements: buildActivityTrendDailyReadModelStatements(),
     },
+    {
+      id: "0012_metric_stream_location_point",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        "DROP VIEW IF EXISTS analytics.deduped_location",
+        "DROP TABLE IF EXISTS analytics.deduped_location",
+        "DROP VIEW IF EXISTS analytics.deduped_sensor",
+        "DROP TABLE IF EXISTS analytics.deduped_sensor",
+        ...buildClickHouseBootstrapStatements(postgresConnectionString),
+      ],
+    },
   ];
 }
 
@@ -505,6 +517,9 @@ function buildMetricStreamBackfillStatement(
   channel,
   activity_id,
   scalar,
+  latitude,
+  longitude,
+  metadata,
   id
 )
 SELECT
@@ -514,6 +529,9 @@ SELECT
   metric_stream.channel,
   metric_stream.activity_id,
   metric_stream.scalar,
+  metric_stream.latitude,
+  metric_stream.longitude,
+  metric_stream.metadata,
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
 LEFT JOIN (
@@ -543,6 +561,7 @@ async function runClickHouseMigrationStatement(
   }
   if (statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary")) {
     await waitForClickHouseTable(client, "analytics", "deduped_sensor");
+    await waitForClickHouseTable(client, "analytics", "deduped_location");
     await waitForClickHouseTable(client, "analytics", "v_activity");
   }
 

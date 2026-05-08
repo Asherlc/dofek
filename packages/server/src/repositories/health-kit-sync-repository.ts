@@ -25,7 +25,6 @@ const INTEGER_METRIC_STREAM_COLUMNS = new Set([
   "heart_rate",
   "power",
   "cadence",
-  "gps_accuracy",
   "accumulated_power",
   "stress",
 ]);

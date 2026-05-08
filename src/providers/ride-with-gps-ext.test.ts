@@ -900,21 +900,17 @@ describe("RideWithGpsProvider — sync", () => {
     if (!Array.isArray(sensorInsertArg)) {
       throw new Error("Expected metric_stream insert payload");
     }
-    // 2 points -> 8 channel rows in metric_stream (lat/lng/speed/hr/power + lat/lng/speed)
-    expect(sensorInsertArg).toHaveLength(8);
+    // 2 points -> 6 rows in metric_stream (location/speed/hr/power + location/speed)
+    expect(sensorInsertArg).toHaveLength(6);
     expect(sensorInsertArg).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           activityId: 7,
           providerId: "ride-with-gps",
-          channel: "lat",
-          scalar: 45.5,
-        }),
-        expect.objectContaining({
-          activityId: 7,
-          providerId: "ride-with-gps",
-          channel: "lng",
-          scalar: -122.6,
+          channel: "location",
+          point: "SRID=4326;POINT(-122.6 45.5)",
+          latitude: 45.5,
+          longitude: -122.6,
         }),
         expect.objectContaining({
           activityId: 7,
@@ -1047,7 +1043,7 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 503]);
+    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 2]);
   });
 
   it("handles deleted trip items", async () => {

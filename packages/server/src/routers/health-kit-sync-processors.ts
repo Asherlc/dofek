@@ -380,7 +380,7 @@ export async function processWorkouts(
   return inserted;
 }
 
-/** Process workout route locations — insert GPS data as metric_stream rows */
+/** Process workout route locations as location point metrics plus associated scalar metrics. */
 export async function processWorkoutRoutes(
   db: Database,
   userId: string,
@@ -431,13 +431,13 @@ export async function processWorkoutRoutes(
       continue;
     }
 
-    // Batch metric_stream inserts to reduce DB round-trips
+    // Batch metric_stream inserts to reduce DB round-trips.
     const pendingValues: ReturnType<typeof sql>[] = [];
     const flushPendingValues = async () => {
       if (pendingValues.length === 0) return;
       await db.execute(
         sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar)
+              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar, point, latitude, longitude, metadata)
             VALUES ${sql.join(pendingValues, sql`, `)}`,
       );
       inserted += pendingValues.length;
@@ -445,6 +445,31 @@ export async function processWorkoutRoutes(
     };
 
     for (const location of route.locations) {
+      const locationMetadata =
+        location.horizontalAccuracy == null
+          ? null
+          : JSON.stringify({ horizontal_accuracy_m: location.horizontalAccuracy });
+      pendingValues.push(
+        sql`(
+          ${location.date}::timestamptz,
+          ${userId},
+          ${PROVIDER_ID},
+          ${activityId}::uuid,
+          ${route.sourceName ?? null},
+          ${"api"},
+          ${"location"},
+          NULL::real,
+          ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326),
+          ${location.lat}::real,
+          ${location.lng}::real,
+          ${locationMetadata}::jsonb
+        )`,
+      );
+
+      if (pendingValues.length >= BATCH_SIZE) {
+        await flushPendingValues();
+      }
+
       for (const { channel, getValue, round } of ROUTE_CHANNELS) {
         const value = getValue(location);
         if (value == null) continue;
@@ -459,7 +484,11 @@ export async function processWorkoutRoutes(
             ${route.sourceName ?? null},
             ${"api"},
             ${channel},
-            ${scalar}::real
+            ${scalar}::real,
+            NULL,
+            NULL::real,
+            NULL::real,
+            NULL::jsonb
           )`,
         );
 

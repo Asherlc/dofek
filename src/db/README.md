@@ -4,7 +4,7 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 
 ## Architecture
 
-- **PostgreSQL + TimescaleDB**: The database is PostgreSQL with TimescaleDB extensions for efficient time-series data storage.
+- **PostgreSQL + TimescaleDB + PostGIS**: The database is PostgreSQL with TimescaleDB for time-series storage and PostGIS for geospatial metric data.
 - **Drizzle ORM**: Used for type-safe database access and migrations.
 - **Fitness Schema**: All tables live in the `fitness` schema.
 

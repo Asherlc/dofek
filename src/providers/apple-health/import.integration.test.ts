@@ -860,9 +860,9 @@ describe("importAppleHealthFile — full DB integration", () => {
 
     // Check GPS metric_stream rows linked to the activity
     const allMetrics = await ctx.db.select().from(schema.metricStream);
-    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "lat");
+    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "location");
     expect(gpsRows.length).toBe(2);
-    expect(gpsRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 40.7128) < 0.001)).toBe(
+    expect(gpsRows.some((r) => r.latitude !== null && Math.abs(r.latitude - 40.7128) < 0.001)).toBe(
       true,
     );
     const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");

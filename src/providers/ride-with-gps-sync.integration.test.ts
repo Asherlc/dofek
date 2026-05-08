@@ -184,14 +184,15 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     const cadenceSamples = metrics.filter((sample) => sample.channel === "cadence");
-    const latSamples = metrics.filter((sample) => sample.channel === "lat");
-    const lngSamples = metrics.filter((sample) => sample.channel === "lng");
+    const locationSamples = metrics.filter((sample) => sample.channel === "location");
 
     expect(heartRateSamples).toHaveLength(10);
     expect(powerSamples).toHaveLength(10);
     expect(cadenceSamples).toHaveLength(10);
-    expect(latSamples).toHaveLength(10);
-    expect(lngSamples).toHaveLength(10);
+    expect(locationSamples).toHaveLength(10);
+    expect(locationSamples.every((sample) => sample.point !== null)).toBe(true);
+    expect(locationSamples.every((sample) => sample.latitude !== null)).toBe(true);
+    expect(locationSamples.every((sample) => sample.longitude !== null)).toBe(true);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

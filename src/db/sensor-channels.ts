@@ -16,9 +16,11 @@ export const POWER = "power";
 export const CADENCE = "cadence";
 /** Speed in m/s */
 export const SPEED = "speed";
-/** Latitude in degrees */
+/** Location point stored in metric_stream.point. */
+export const LOCATION = "location";
+/** @deprecated Coordinates are stored as channel = 'location' in metric_stream.point. */
 export const LAT = "lat";
-/** Longitude in degrees */
+/** @deprecated Coordinates are stored as channel = 'location' in metric_stream.point. */
 export const LNG = "lng";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
@@ -32,7 +34,7 @@ export const VERTICAL_SPEED = "vertical_speed";
 export const SPO2 = "spo2";
 /** Respiratory rate in breaths/min */
 export const RESPIRATORY_RATE = "respiratory_rate";
-/** GPS accuracy in meters */
+/** @deprecated FIT gps_accuracy is stored with channel = 'location' metadata. */
 export const GPS_ACCURACY = "gps_accuracy";
 /** Cumulative power in watts */
 export const ACCUMULATED_POWER = "accumulated_power";
@@ -97,15 +99,12 @@ export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
   power: POWER,
   cadence: CADENCE,
   speed: SPEED,
-  lat: LAT,
-  lng: LNG,
   altitude: ALTITUDE,
   temperature: TEMPERATURE,
   grade: GRADE,
   verticalSpeed: VERTICAL_SPEED,
   spo2: SPO2,
   respiratoryRate: RESPIRATORY_RATE,
-  gpsAccuracy: GPS_ACCURACY,
   accumulatedPower: ACCUMULATED_POWER,
   stress: STRESS,
   leftRightBalance: LEFT_RIGHT_BALANCE,

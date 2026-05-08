@@ -127,7 +127,7 @@ services:
       - job_files:/app/job-files
 
   db:
-    image: timescale/timescaledb:2.26.2-pg18
+    image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
     command:
       - postgres
       - -c

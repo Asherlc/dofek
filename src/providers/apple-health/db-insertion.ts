@@ -777,8 +777,7 @@ export async function upsertWorkoutBatch(
           lng: loc.lng,
           altitude: loc.altitude,
           speed: isIndoorCycling(workout.activityType) ? undefined : loc.speed,
-          gpsAccuracy:
-            loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+          horizontalAccuracy: loc.horizontalAccuracy,
           sourceName: workout.sourceName,
         });
       }

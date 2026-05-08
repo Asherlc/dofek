@@ -234,21 +234,47 @@ export class IntervalsRepository {
 
     const samples = await this.#sensorStore.query(
       sensorPointRowSchema,
-      `SELECT
-        formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS recorded_at,
-        maxIf(scalar, channel = 'heart_rate') AS heart_rate,
-        maxIf(scalar, channel = 'power') AS power,
-        maxIf(scalar, channel = 'speed') AS speed,
-        maxIf(scalar, channel = 'cadence') AS cadence,
-        maxIf(scalar, channel = 'lat') AS lat,
-        maxIf(scalar, channel = 'lng') AS lng,
-        maxIf(scalar, channel = 'altitude') AS altitude
-      FROM analytics.deduped_sensor
-      WHERE activity_id = {activityId:UUID}
-        AND user_id = {userId:UUID}
-        AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'lat', 'lng', 'altitude')
-      GROUP BY recorded_at
-      ORDER BY recorded_at`,
+      `WITH
+      scalar_samples AS (
+        SELECT
+          recorded_at,
+          maxIf(scalar, channel = 'heart_rate') AS heart_rate,
+          maxIf(scalar, channel = 'power') AS power,
+          maxIf(scalar, channel = 'speed') AS speed,
+          maxIf(scalar, channel = 'cadence') AS cadence,
+          maxIf(scalar, channel = 'altitude') AS altitude
+        FROM analytics.deduped_sensor
+        WHERE activity_id = {activityId:UUID}
+          AND user_id = {userId:UUID}
+          AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
+        GROUP BY recorded_at
+      ),
+      location_samples AS (
+        SELECT recorded_at, lat, lng
+        FROM analytics.deduped_location
+        WHERE activity_id = {activityId:UUID}
+          AND user_id = {userId:UUID}
+      ),
+      sample_times AS (
+        SELECT recorded_at FROM scalar_samples
+        UNION DISTINCT
+        SELECT recorded_at FROM location_samples
+      )
+      SELECT
+        formatDateTime(sample_times.recorded_at, '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS recorded_at,
+        scalar_samples.heart_rate AS heart_rate,
+        scalar_samples.power AS power,
+        scalar_samples.speed AS speed,
+        scalar_samples.cadence AS cadence,
+        location_samples.lat AS lat,
+        location_samples.lng AS lng,
+        scalar_samples.altitude AS altitude
+      FROM sample_times
+      LEFT JOIN scalar_samples
+        ON scalar_samples.recorded_at = sample_times.recorded_at
+      LEFT JOIN location_samples
+        ON location_samples.recorded_at = sample_times.recorded_at
+      ORDER BY sample_times.recorded_at`,
       { activityId, userId: this.#userId },
     );
 

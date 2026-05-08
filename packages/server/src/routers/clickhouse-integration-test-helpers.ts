@@ -301,6 +301,7 @@ const analyticsRefreshOrder = [
   "analytics.v_daily_metrics",
   "analytics.provider_stats",
   "analytics.deduped_sensor",
+  "analytics.deduped_location",
   "analytics.activity_summary",
   "analytics.activity_trend_daily",
 ] as const;
@@ -424,6 +425,11 @@ user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
 channel String,
 scalar Nullable(Float32)`,
+    deduped_location: `activity_id UUID,
+user_id UUID,
+recorded_at DateTime64(6, 'UTC'),
+lat Nullable(Float32),
+lng Nullable(Float32)`,
     activity_summary: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -493,7 +499,7 @@ function rewriteClickHouseTestCommand(
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
   const materializedViewMatch = rewrittenQuery.match(
-    /^CREATE MATERIALIZED VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nREFRESH EVERY[^\n]*\nENGINE = MergeTree\nORDER BY [^\n]+\nSETTINGS allow_nullable_key = 1\nAS\n?([\s\S]*)$/,
+    /^CREATE MATERIALIZED VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nREFRESH EVERY[^\n]*\nENGINE = MergeTree\nORDER BY [^\n]+\n(?:SETTINGS allow_nullable_key = 1\n)?AS\n?([\s\S]*)$/,
   );
 
   if (materializedViewMatch) {

@@ -53,6 +53,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("fitness.metric_stream");
     expect(queryText).not.toContain("fitness.deduped_sensor");
     expect(queryText).toContain("activity_id = {activityId:UUID}");
+    expect(queryText).toContain("analytics.deduped_location");
   });
 
   it("queries activity summaries from the ClickHouse analytics schema", async () => {

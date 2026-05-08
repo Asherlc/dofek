@@ -544,7 +544,7 @@ For production deploy-time secret injection, the required Infisical `prod` keys,
 
 - **TypeScript** — sync scripts, provider plugins, and web + mobile apps (Node 22 native type stripping at runtime — no tsx in production)
 - **Drizzle ORM** — type-safe schema and migrations
-- **TimescaleDB** — Postgres with time-series extensions (hypertables, continuous aggregates, compression)
+- **TimescaleDB + PostGIS** — Postgres with time-series and geospatial extensions
 - **ClickHouse** — stored analytics read models for heavy activity stream and summary reads
 - **Vite + React** — web dashboard frontend
 - **Expo + React Native** — iOS mobile app with native HealthKit integration

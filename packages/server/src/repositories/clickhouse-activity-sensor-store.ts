@@ -323,39 +323,51 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
     const result = await this.#client.query<StreamPointRow>({
       query: `
-        ${dedupedSamplesSql(
-          "channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')",
-        )}
+        ${dedupedSamplesSql("channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')")}
+        , location_samples AS (
+          SELECT recorded_at, lat, lng
+          FROM analytics.deduped_location
+          WHERE user_id = {userId:UUID}
+            AND activity_id = {activityId:UUID}
+        ),
+        sample_times AS (
+          SELECT recorded_at FROM deduped_samples
+          UNION DISTINCT
+          SELECT recorded_at FROM location_samples
+        ),
+        scalar_points AS (
+          SELECT
+            recorded_at,
+            maxIf(scalar, channel = 'heart_rate') AS heart_rate,
+            maxIf(scalar, channel = 'power') AS power,
+            maxIf(scalar, channel = 'speed') AS speed,
+            maxIf(scalar, channel = 'cadence') AS cadence,
+            maxIf(scalar, channel = 'altitude') AS altitude
+          FROM deduped_samples
+          GROUP BY recorded_at
+        )
         SELECT
-          toString(recorded_at) AS recorded_at,
-          heart_rate,
-          power,
-          speed,
-          cadence,
-          altitude,
-          lat,
-          lng
+          toString(sample_times.recorded_at) AS recorded_at,
+          scalar_points.heart_rate AS heart_rate,
+          scalar_points.power AS power,
+          scalar_points.speed AS speed,
+          scalar_points.cadence AS cadence,
+          scalar_points.altitude AS altitude,
+          location_samples.lat AS lat,
+          location_samples.lng AS lng
         FROM (
           SELECT
-            *,
-            row_number() OVER (ORDER BY recorded_at) AS row_number,
+            sample_times.recorded_at AS recorded_at,
+            row_number() OVER (ORDER BY sample_times.recorded_at) AS row_number,
             count() OVER () AS total
-          FROM (
-            SELECT
-              recorded_at,
-              maxIf(scalar, channel = 'heart_rate') AS heart_rate,
-              maxIf(scalar, channel = 'power') AS power,
-              maxIf(scalar, channel = 'speed') AS speed,
-              maxIf(scalar, channel = 'cadence') AS cadence,
-              maxIf(scalar, channel = 'altitude') AS altitude,
-              maxIf(scalar, channel = 'lat') AS lat,
-              maxIf(scalar, channel = 'lng') AS lng
-            FROM deduped_samples
-            GROUP BY recorded_at
-          )
-        )
+          FROM sample_times
+        ) AS sample_times
+        LEFT JOIN scalar_points
+          ON scalar_points.recorded_at = sample_times.recorded_at
+        LEFT JOIN location_samples
+          ON location_samples.recorded_at = sample_times.recorded_at
         WHERE row_number % greatest(1, intDiv(total, {maxPoints:UInt32})) = 0
-        ORDER BY recorded_at
+        ORDER BY sample_times.recorded_at
       `,
       format: "JSONEachRow",
       query_params: queryParams(window, { maxPoints }),
