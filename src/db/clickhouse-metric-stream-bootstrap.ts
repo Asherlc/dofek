@@ -21,6 +21,9 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   recorded_at DateTime64(6, 'UTC'),
   channel String,
   provider_id String,
+  external_id Nullable(String),
+  device_id Nullable(String),
+  source_type Nullable(String),
   scalar Nullable(Float32),
 ${peerDbMetadataColumnDefinitions}
 )

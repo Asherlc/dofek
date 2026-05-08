@@ -2,14 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  bodyMeasurement,
-  dailyMetrics,
-  metricStream,
-  oauthToken,
-  sleepSession,
-  userProfile,
-} from "../db/schema.ts";
+import { dailyMetrics, metricStream, oauthToken, sleepSession, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -188,24 +181,25 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(daily1.hrv).toBeCloseTo(45);
     expect(daily1.respiratoryRateAvg).toBeCloseTo(15.5);
 
-    // Verify body temperature measurements
-    const bodyRows = await ctx.db
+    const temperatureRows = await ctx.db
       .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "eight-sleep"));
-    expect(bodyRows).toHaveLength(2);
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "eight-sleep"));
+    const bodyTemperatureRows = temperatureRows.filter((row) => row.channel === "body_temperature");
+    expect(bodyTemperatureRows).toHaveLength(2);
 
-    const temp1 = bodyRows.find((r) => r.externalId === "eightsleep-temp-2026-03-01");
+    const temp1 = bodyTemperatureRows.find((r) => r.externalId === "eightsleep-temp-2026-03-01");
     if (!temp1) throw new Error("expected body temp for 2026-03-01");
-    expect(temp1.temperatureC).toBeCloseTo(33.5);
+    expect(temp1.scalar).toBeCloseTo(33.5);
 
     // Verify HR metric stream
     const hrRows = await ctx.db
       .select()
       .from(metricStream)
       .where(eq(metricStream.providerId, "eight-sleep"));
-    expect(hrRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
-    expect(hrRows.every((r) => r.scalar !== null && r.scalar > 0)).toBe(true);
+    const heartRateRows = hrRows.filter((row) => row.channel === "heart_rate");
+    expect(heartRateRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
+    expect(heartRateRows.every((r) => r.scalar !== null && r.scalar > 0)).toBe(true);
   });
 
   it("skips processing days", async () => {
@@ -219,7 +213,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Clear existing data
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
     await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
@@ -299,7 +292,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Clear existing data
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(bodyMeasurement).where(eq(bodyMeasurement.providerId, "eight-sleep"));
     await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
@@ -368,12 +360,14 @@ describe("EightSleepProvider.sync() (integration)", () => {
       date: day,
       steps: 1234,
     });
-    await ctx.db.insert(bodyMeasurement).values({
+    await ctx.db.insert(metricStream).values({
       userId: secondUserId,
       providerId: "eight-sleep",
       externalId: temperatureExternalId,
       recordedAt: new Date("2026-03-28T23:00:00Z"),
-      temperatureC: 31.2,
+      sourceType: "api",
+      channel: "body_temperature",
+      scalar: 31.2,
     });
 
     server.use(
@@ -405,8 +399,8 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     const temperatureRows = await ctx.db
       .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.externalId, temperatureExternalId));
+      .from(metricStream)
+      .where(eq(metricStream.externalId, temperatureExternalId));
     expect(temperatureRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
     expect(temperatureRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
   });

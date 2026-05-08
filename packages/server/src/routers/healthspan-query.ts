@@ -5,6 +5,7 @@ import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { fetchLatestBodyMeasurement } from "../repositories/body-clickhouse.ts";
 import {
   fetchRestingHeartRateRows,
   type RestingHeartRateRow,
@@ -166,6 +167,11 @@ export async function fetchHealthspanRawData(
   const weeklyDivisor = Math.max(totalDays / 7, 1);
   const weeklyAerobicMin = hrZoneTime.aerobic_minutes / weeklyDivisor;
   const weeklyHighIntensityMin = hrZoneTime.high_intensity_minutes / weeklyDivisor;
+  const latestBodyMeasurement = ctx.sensorStore
+    ? await fetchLatestBodyMeasurement(ctx.sensorStore, ctx.userId)
+    : null;
+  const latestWeightKg = latestBodyMeasurement?.weight_kg ?? null;
+  const latestBodyFatPct = latestBodyMeasurement?.body_fat_pct ?? null;
 
   const rows = await executeWithSchema(
     ctx.db,
@@ -217,14 +223,6 @@ export async function fetchHealthspanRawData(
             AND activity_type = 'strength'
             AND started_at > ${timestampWindowStart(endDate, totalDays)}
         ),
-        body_latest AS (
-          SELECT weight_kg, body_fat_pct
-          FROM fitness.v_body_measurement
-          WHERE user_id = ${ctx.userId}
-            AND weight_kg IS NOT NULL
-          ORDER BY recorded_at DESC
-          LIMIT 1
-        ),
         weekly_rhr AS (
           SELECT
             date_trunc('week', date)::date AS week_start,
@@ -267,8 +265,8 @@ export async function fetchHealthspanRawData(
           ${weeklyAerobicMin}::real AS weekly_aerobic_min,
           ${weeklyHighIntensityMin}::real AS weekly_high_intensity_min,
           sf.sessions_per_week,
-          bl.weight_kg,
-          bl.body_fat_pct,
+          ${latestWeightKg}::real AS weight_kg,
+          ${latestBodyFatPct}::real AS body_fat_pct,
           (SELECT json_agg(json_build_object(
             'week_start', wm.week_start::text,
             'avg_rhr', wm.avg_rhr,
@@ -277,8 +275,7 @@ export async function fetchHealthspanRawData(
           ) ORDER BY wm.week_start ASC) FROM weekly_metrics wm) AS weekly_history
         FROM sleep_agg sa
         CROSS JOIN metrics_agg ma
-        CROSS JOIN strength_freq sf
-        LEFT JOIN body_latest bl ON true`,
+        CROSS JOIN strength_freq sf`,
   );
 
   const row = rows[0] ?? null;

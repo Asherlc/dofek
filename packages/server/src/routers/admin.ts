@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
 
 const trainingExportQueue = createTrainingExportQueue();
@@ -164,19 +165,27 @@ const paginationInput = z.object({
 
 const countSchema = z.object({ count: z.coerce.number() });
 
+function requireBodyMeasurementStore(sensorStore: ActivitySensorStore | undefined) {
+  if (!sensorStore) {
+    throw new Error("admin body measurements require the ClickHouse body measurement store");
+  }
+  return sensorStore;
+}
+
 export const adminRouter = router({
   /** High-level overview: row counts for all key tables */
   overview: adminProcedure.query(async ({ ctx }) => {
-    const rows = await executeWithSchema(
-      ctx.db,
-      overviewCountSchema,
-      sql`SELECT table_name, row_count FROM (
+    const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
+    const [rows, bodyRows] = await Promise.all([
+      executeWithSchema(
+        ctx.db,
+        overviewCountSchema,
+        sql`SELECT table_name, row_count FROM (
         SELECT 'user_profile' AS table_name, COUNT(*)::text AS row_count FROM fitness.user_profile
         UNION ALL SELECT 'activity', COUNT(*)::text FROM fitness.activity
         UNION ALL SELECT 'sleep_session', COUNT(*)::text FROM fitness.sleep_session
         UNION ALL SELECT 'food_entry', COUNT(*)::text FROM fitness.food_entry
         UNION ALL SELECT 'daily_metrics', COUNT(*)::text FROM fitness.daily_metrics
-        UNION ALL SELECT 'body_measurement', COUNT(*)::text FROM fitness.body_measurement
         UNION ALL SELECT 'sync_log', COUNT(*)::text FROM fitness.sync_log
         UNION ALL SELECT 'session', COUNT(*)::text FROM fitness.session
         UNION ALL SELECT 'auth_account', COUNT(*)::text FROM fitness.auth_account
@@ -192,8 +201,16 @@ export const adminRouter = router({
         UNION ALL SELECT 'supplement_nutrient', COUNT(*)::text FROM fitness.supplement_nutrient
         UNION ALL SELECT 'metric_stream', COUNT(*)::text FROM fitness.metric_stream
       ) counts ORDER BY row_count DESC`,
-    );
-    return rows;
+      ),
+      bodyStore.query(
+        overviewCountSchema,
+        `
+          SELECT 'body_metrics' AS table_name, count() AS row_count
+          FROM analytics.v_body_measurement
+        `,
+      ),
+    ]);
+    return [...rows, ...bodyRows].sort((left, right) => right.row_count - left.row_count);
   }),
 
   /** List all users with their profiles */
@@ -473,21 +490,33 @@ export const adminRouter = router({
 
   /** Paginated body measurements */
   bodyMeasurements: adminProcedure.input(paginationInput).query(async ({ ctx, input }) => {
+    const bodyStore = requireBodyMeasurementStore(ctx.sensorStore);
     const [rows, countRows] = await Promise.all([
-      executeWithSchema(
-        ctx.db,
+      bodyStore.query(
         bodyMeasurementRowSchema,
-        sql`SELECT bm.id, bm.user_id, up.name AS user_name,
-                   bm.recorded_at::text, bm.source_name, bm.provider_id
-            FROM fitness.body_measurement bm
-            LEFT JOIN fitness.user_profile up ON up.id = bm.user_id
-            ORDER BY bm.recorded_at DESC
-            LIMIT ${input.limit} OFFSET ${input.offset}`,
+        `
+          SELECT
+            toString(bm.id) AS id,
+            toString(bm.user_id) AS user_id,
+            up.name AS user_name,
+            toString(bm.recorded_at) AS recorded_at,
+            bm.source_name AS source_name,
+            bm.provider_id AS provider_id
+          FROM analytics.v_body_measurement AS bm
+          LEFT JOIN postgres_fitness.user_profile_current AS up
+            ON up.id = bm.user_id
+          ORDER BY bm.recorded_at DESC
+          LIMIT {limit:UInt32}
+          OFFSET {offset:UInt32}
+        `,
+        { limit: input.limit, offset: input.offset },
       ),
-      executeWithSchema(
-        ctx.db,
+      bodyStore.query(
         countSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.body_measurement`,
+        `
+          SELECT count() AS count
+          FROM analytics.v_body_measurement
+        `,
       ),
     ]);
     return { rows, total: countRows[0]?.count ?? 0 };

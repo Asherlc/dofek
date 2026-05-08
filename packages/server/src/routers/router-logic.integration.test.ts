@@ -594,12 +594,14 @@ describe("Router transformation logic", () => {
             WHERE id = ${TEST_USER_ID}`,
       );
 
-      // Insert body measurement for lean mass calculation
+      // Insert body metrics for lean mass calculation
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.body_measurement
-            (provider_id, user_id, recorded_at, weight_kg, body_fat_pct)
-            VALUES ('test-provider', ${TEST_USER_ID}, NOW() - INTERVAL '1 day', 75, 18)
-            ON CONFLICT DO NOTHING`,
+        sql`INSERT INTO fitness.metric_stream
+            (provider_id, user_id, external_id, recorded_at, source_type, channel, scalar)
+            VALUES
+              ('test-provider', ${TEST_USER_ID}, 'test-body-1', NOW() - INTERVAL '1 day', 'api', 'body_weight', 75),
+              ('test-provider', ${TEST_USER_ID}, 'test-body-1', NOW() - INTERVAL '1 day', 'api', 'body_fat_percentage', 18)
+            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING`,
       );
 
       // Insert a strength workout for strength frequency score

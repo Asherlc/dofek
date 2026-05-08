@@ -8,9 +8,13 @@ function makeRepository(rows: Record<string, unknown>[] = []) {
   return { repo, execute, sensorStore };
 }
 
-function makeSensorStore() {
+function makeSensorStore(bodyRows: Record<string, unknown>[] = []) {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2025-05-01", resting_hr: 52 }]),
+    query: vi.fn(async (_schema: unknown, query: string) =>
+      query.includes("analytics.v_body_measurement")
+        ? bodyRows
+        : [{ date: "2025-05-01", resting_hr: 52 }],
+    ),
   };
 }
 
@@ -217,21 +221,20 @@ describe("LifeEventsRepository", () => {
             avg_efficiency: 88.5,
           },
         ])
-        // Fourth call: body comp (parallel)
-        .mockResolvedValueOnce([
+        .mockResolvedValueOnce([]);
+
+      const repo = new LifeEventsRepository(
+        { execute },
+        "user-1",
+        "America/New_York",
+        makeSensorStore([
           {
             period: "before",
             measurements: 10,
             avg_weight: 80.5,
             avg_body_fat: 15.2,
           },
-        ]);
-
-      const repo = new LifeEventsRepository(
-        { execute },
-        "user-1",
-        "America/New_York",
-        makeSensorStore(),
+        ]),
       );
       const result = await repo.analyze("evt-1", 30);
 
@@ -258,8 +261,8 @@ describe("LifeEventsRepository", () => {
       expect(result?.metrics).toEqual([]);
       expect(result?.sleep).toEqual([]);
       expect(result?.bodyComp).toEqual([]);
-      // 4 calls: event lookup + metrics + sleep + body comp
-      expect(execute).toHaveBeenCalledTimes(4);
+      // 3 Postgres calls: event lookup, metrics, sleep. Body comparison is ClickHouse.
+      expect(execute).toHaveBeenCalledTimes(3);
     });
 
     it("handles ranged events with an end date", async () => {

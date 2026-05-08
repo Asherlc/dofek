@@ -3,7 +3,9 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, bodyMeasurement } from "../db/schema.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity } from "../db/schema.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type {
@@ -245,12 +247,12 @@ export class WgerProvider implements SyncProvider {
       });
     }
 
-    // Sync body weight → bodyMeasurement table
+    // Sync body weight into metric_stream body channels.
     try {
       const weightCount = await withSyncLog(
         db,
         this.id,
-        "bodyMeasurement",
+        "metricStream",
         async () => {
           let count = 0;
           let url: string | null =
@@ -281,25 +283,18 @@ export class WgerProvider implements SyncProvider {
 
               const parsed = parseWgerWeightEntry(raw);
               try {
-                await db
-                  .insert(bodyMeasurement)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    recordedAt: parsed.recordedAt,
-                    weightKg: parsed.weightKg,
-                  })
-                  .onConflictDoUpdate({
-                    target: [
-                      bodyMeasurement.userId,
-                      bodyMeasurement.providerId,
-                      bodyMeasurement.externalId,
-                    ],
-                    set: {
+                await writeMetricStreamBatch(
+                  db,
+                  [
+                    {
+                      providerId: this.id,
+                      externalId: parsed.externalId,
                       recordedAt: parsed.recordedAt,
                       weightKg: parsed.weightKg,
                     },
-                  });
+                  ],
+                  SOURCE_TYPE_API,
+                );
                 count++;
               } catch (err) {
                 errors.push({
@@ -322,7 +317,7 @@ export class WgerProvider implements SyncProvider {
       recordsSynced += weightCount;
     } catch (err) {
       errors.push({
-        message: `bodyMeasurement: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metricStream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

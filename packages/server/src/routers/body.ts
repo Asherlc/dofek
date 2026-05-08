@@ -8,7 +8,10 @@ export const bodyRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
-      const repo = new BodyRepository(ctx.db, ctx.userId, ctx.timezone);
+      if (!ctx.sensorStore) {
+        throw new Error("body.list requires the ClickHouse body measurement store");
+      }
+      const repo = new BodyRepository(ctx.sensorStore, ctx.userId, ctx.timezone);
       const measurements = await repo.list(input.days);
       return measurements.map((measurement) => measurement.toDetail());
     }),

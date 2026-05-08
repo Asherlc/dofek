@@ -44,7 +44,6 @@ const analyticsSourceTables = [
   "sleep_session",
   "sleep_stage",
   "daily_metrics",
-  "body_measurement",
   "food_entry",
   "health_event",
   "lab_panel",

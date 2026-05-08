@@ -42,7 +42,7 @@ export const nutritionRowSchema = z.object({
   water_ml: z.number().nullable(),
 });
 
-/** Zod schema for rows from fitness.v_body_measurement used by insights/correlation queries. */
+/** Zod schema for rows from analytics.v_body_measurement used by insights/correlation queries. */
 export const bodyCompRowSchema = z.object({
   recorded_at: timestampStringSchema,
   weight_kg: z.number().nullable(),

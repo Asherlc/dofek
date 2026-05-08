@@ -288,10 +288,11 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
             WHERE user_profile.resting_hr IS NOT NULL
           ),
           latest_weight AS (
-            SELECT body.weight_kg
-            FROM fitness.v_body_measurement body
+            SELECT body.scalar AS weight_kg
+            FROM fitness.metric_stream body
             WHERE body.user_id = ${userId}::uuid
-              AND body.weight_kg IS NOT NULL
+              AND body.channel = 'body_weight'
+              AND body.scalar IS NOT NULL
             ORDER BY body.recorded_at DESC
             LIMIT 1
           ),

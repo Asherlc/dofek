@@ -1,6 +1,120 @@
--- Canonical definition of the fitness.provider_stats materialized view.
--- This precomputes per-provider record counts so sync.providerStats can do a
--- fast user-scoped lookup instead of scanning many tables on demand.
+ALTER TABLE fitness.metric_stream ADD COLUMN IF NOT EXISTS external_id text;
+
+WITH body_values AS (
+  SELECT
+    b.id,
+    b.user_id,
+    b.provider_id,
+    COALESCE(b.external_id, 'legacy-body:' || b.id::text) AS external_id,
+    b.recorded_at,
+    b.source_name,
+    mapped.channel,
+    mapped.scalar
+  FROM fitness.body_measurement b
+  CROSS JOIN LATERAL (
+    VALUES
+      ('body_weight', b.weight_kg::real),
+      ('body_fat_percentage', b.body_fat_pct::real),
+      ('muscle_mass', b.muscle_mass_kg::real),
+      ('bone_mass', b.bone_mass_kg::real),
+      ('body_water_percentage', b.water_pct::real),
+      ('body_mass_index', b.bmi::real),
+      ('height', b.height_cm::real),
+      ('waist_circumference', b.waist_circumference_cm::real),
+      ('systolic_blood_pressure', b.systolic_bp::real),
+      ('diastolic_blood_pressure', b.diastolic_bp::real),
+      ('heart_pulse', b.heart_pulse::real),
+      ('body_temperature', b.temperature_c::real)
+  ) AS mapped(channel, scalar)
+  WHERE mapped.scalar IS NOT NULL
+)
+UPDATE fitness.metric_stream ms
+SET external_id = body_values.external_id
+FROM body_values
+WHERE ms.external_id IS NULL
+  AND ms.user_id = body_values.user_id
+  AND ms.provider_id = body_values.provider_id
+  AND ms.recorded_at = body_values.recorded_at
+  AND ms.device_id IS NOT DISTINCT FROM body_values.source_name
+  AND ms.channel = body_values.channel;
+
+WITH duplicate_body_stream_rows AS (
+  SELECT
+    id,
+    recorded_at,
+    row_number() OVER (
+      PARTITION BY user_id, provider_id, external_id, channel, recorded_at
+      ORDER BY id
+    ) AS row_number
+  FROM fitness.metric_stream
+  WHERE external_id IS NOT NULL
+    AND channel IN (
+      'body_weight',
+      'body_fat_percentage',
+      'muscle_mass',
+      'bone_mass',
+      'body_water_percentage',
+      'body_mass_index',
+      'height',
+      'waist_circumference',
+      'systolic_blood_pressure',
+      'diastolic_blood_pressure',
+      'heart_pulse',
+      'body_temperature'
+    )
+)
+DELETE FROM fitness.metric_stream ms
+USING duplicate_body_stream_rows duplicate_rows
+WHERE ms.id = duplicate_rows.id
+  AND ms.recorded_at = duplicate_rows.recorded_at
+  AND duplicate_rows.row_number > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS metric_stream_provider_external_channel_time_idx
+  ON fitness.metric_stream (user_id, provider_id, external_id, channel, recorded_at);
+
+INSERT INTO fitness.metric_stream (
+  recorded_at,
+  user_id,
+  provider_id,
+  external_id,
+  device_id,
+  source_type,
+  channel,
+  scalar
+)
+SELECT
+  b.recorded_at,
+  b.user_id,
+  b.provider_id,
+  COALESCE(b.external_id, 'legacy-body:' || b.id::text),
+  b.source_name,
+  'api',
+  mapped.channel,
+  mapped.scalar
+FROM fitness.body_measurement b
+CROSS JOIN LATERAL (
+  VALUES
+    ('body_weight', b.weight_kg::real),
+    ('body_fat_percentage', b.body_fat_pct::real),
+    ('muscle_mass', b.muscle_mass_kg::real),
+    ('bone_mass', b.bone_mass_kg::real),
+    ('body_water_percentage', b.water_pct::real),
+    ('body_mass_index', b.bmi::real),
+    ('height', b.height_cm::real),
+    ('waist_circumference', b.waist_circumference_cm::real),
+    ('systolic_blood_pressure', b.systolic_bp::real),
+    ('diastolic_blood_pressure', b.diastolic_bp::real),
+    ('heart_pulse', b.heart_pulse::real),
+    ('body_temperature', b.temperature_c::real)
+) AS mapped(channel, scalar)
+WHERE mapped.scalar IS NOT NULL
+ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+  SET scalar = excluded.scalar,
+      device_id = excluded.device_id,
+      source_type = excluded.source_type;
+
+DROP VIEW IF EXISTS clickhouse.v_body_measurement;
+DROP VIEW IF EXISTS fitness.v_body_measurement;
 
 CREATE OR REPLACE VIEW fitness.provider_stats AS
 WITH providers AS (
@@ -121,4 +235,6 @@ LEFT JOIN (
   GROUP BY user_id, provider_id
 ) je ON je.user_id = p.user_id AND je.provider_id = p.provider_id;
 
---> statement-breakpoint
+DROP TABLE IF EXISTS fitness.body_measurement_value;
+DROP TABLE IF EXISTS fitness.body_measurement;
+DROP TABLE IF EXISTS fitness.measurement_type;

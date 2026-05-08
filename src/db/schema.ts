@@ -1,7 +1,9 @@
 import {
   bigint,
   boolean,
+  customType,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -18,6 +20,12 @@ import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
+
+const geometryPoint = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "geometry(Point, 4326)";
+  },
+});
 
 // Stable user ID used in integration tests and fixtures.
 export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -354,79 +362,6 @@ export const webhookSubscription = fitness.table(
 );
 
 // ============================================================
-// Body composition
-// ============================================================
-
-export const bodyMeasurement = fitness.table(
-  "body_measurement",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    externalId: text("external_id"),
-    weightKg: real("weight_kg"),
-    bodyFatPct: real("body_fat_pct"),
-    muscleMassKg: real("muscle_mass_kg"),
-    boneMassKg: real("bone_mass_kg"),
-    waterPct: real("water_pct"),
-    bmi: real("bmi"),
-    heightCm: real("height_cm"),
-    waistCircumferenceCm: real("waist_circumference_cm"),
-    systolicBp: integer("systolic_bp"),
-    diastolicBp: integer("diastolic_bp"),
-    heartPulse: integer("heart_pulse"),
-    temperatureC: real("temperature_c"),
-    sourceName: text("source_name"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("body_measurement_provider_external_idx").on(
-      table.userId,
-      table.providerId,
-      table.externalId,
-    ),
-    index("body_measurement_user_provider_idx").on(table.userId, table.providerId),
-  ],
-);
-
-// ============================================================
-// Body measurement type catalog + junction table
-// ============================================================
-
-export const measurementType = fitness.table("measurement_type", {
-  id: text("id").primaryKey(),
-  displayName: text("display_name").notNull(),
-  unit: text("unit"),
-  category: text("category").notNull(),
-  sortOrder: integer("sort_order").notNull().default(0),
-  isInteger: boolean("is_integer").notNull().default(false),
-});
-
-export const bodyMeasurementValue = fitness.table(
-  "body_measurement_value",
-  {
-    bodyMeasurementId: uuid("body_measurement_id")
-      .notNull()
-      .references(() => bodyMeasurement.id, { onDelete: "cascade" }),
-    measurementTypeId: text("measurement_type_id")
-      .notNull()
-      .references(() => measurementType.id),
-    value: real("value").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.bodyMeasurementId, table.measurementTypeId] }),
-    index("body_measurement_value_entry_idx").on(table.bodyMeasurementId),
-    index("body_measurement_value_type_idx").on(table.measurementTypeId),
-  ],
-);
-
-// ============================================================
 // Strength training
 // ============================================================
 
@@ -573,6 +508,7 @@ export const metricStream = fitness.table(
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),
+    externalId: text("external_id"),
     deviceId: text("device_id"),
     sourceType: text("source_type").notNull(), // 'ble', 'file', 'api' (informational only)
     channel: text("channel").notNull(), // 'heart_rate', 'power', 'imu', 'orientation', etc.
@@ -587,7 +523,51 @@ export const metricStream = fitness.table(
       table.recordedAt,
     ),
     primaryKey({ columns: [table.id, table.recordedAt] }),
+    uniqueIndex("metric_stream_provider_external_channel_time_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+      table.channel,
+      table.recordedAt,
+    ),
     index("metric_stream_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
+  ],
+);
+
+// ============================================================
+// Location samples (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
+// A GPS fix is modeled as one Point with optional provenance-specific accuracy
+// fields. Altitude and speed remain metric_stream channels because providers do
+// not tell us whether they come from GNSS, barometer, map correction, or a
+// virtual route.
+// ============================================================
+
+export const locationSample = fitness.table(
+  "location_sample",
+  {
+    id: uuid("id").defaultRandom().notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    deviceId: text("device_id"),
+    sourceType: text("source_type").notNull(),
+    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
+    position: geometryPoint("position").notNull(),
+    latitude: doublePrecision("latitude").notNull(),
+    longitude: doublePrecision("longitude").notNull(),
+    horizontalAccuracyM: real("horizontal_accuracy_m"),
+    gpsAccuracyM: real("gps_accuracy_m"),
+    raw: jsonb("raw"),
+  },
+  (table) => [
+    index("location_sample_activity_time_idx").on(table.activityId, table.recordedAt),
+    index("location_sample_user_time_idx").on(table.userId, table.recordedAt),
+    primaryKey({ columns: [table.id, table.recordedAt] }),
   ],
 );
 

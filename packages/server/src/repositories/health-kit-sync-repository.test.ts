@@ -1066,6 +1066,9 @@ describe("HealthKitSyncRepository", () => {
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
       expect(execute).toHaveBeenCalledTimes(1);
+      const metricQueryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(metricQueryJson).toContain("metric_stream");
+      expect(metricQueryJson).toContain("body_weight");
     });
 
     it("skips samples with unknown type", async () => {

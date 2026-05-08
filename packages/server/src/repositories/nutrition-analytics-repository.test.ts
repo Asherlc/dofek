@@ -301,11 +301,15 @@ describe("estimateTdee", () => {
 // ---------------------------------------------------------------------------
 
 describe("NutritionAnalyticsRepository", () => {
-  function makeRepository(rows: Record<string, unknown>[] = []) {
+  function makeRepository(
+    rows: Record<string, unknown>[] = [],
+    bodyRows: Record<string, unknown>[] = [],
+  ) {
     const execute = vi.fn().mockResolvedValue(rows);
+    const query = vi.fn().mockResolvedValue(bodyRows);
     const db = { execute };
-    const repo = new NutritionAnalyticsRepository(db, "user-1", "UTC");
-    return { repo, execute };
+    const repo = new NutritionAnalyticsRepository(db, "user-1", "UTC", undefined, { query });
+    return { repo, execute, query };
   }
 
   describe("getMicronutrientAdequacy", () => {
@@ -392,7 +396,10 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("returns data points with weight", async () => {
-      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300, weight_kg: 80.5 }]);
+      const { repo } = makeRepository(
+        [{ date: "2024-01-01", calories_in: 2300 }],
+        [{ date: "2024-01-01", weight_kg: 80.5 }],
+      );
       const result = await repo.getAdaptiveTdeeData(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.caloriesIn).toBe(2300);
@@ -400,7 +407,7 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("handles null weight", async () => {
-      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300, weight_kg: null }]);
+      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2300 }], []);
       const result = await repo.getAdaptiveTdeeData(90);
       expect(result[0]?.weightKg).toBeNull();
     });
@@ -408,7 +415,10 @@ describe("NutritionAnalyticsRepository", () => {
 
   describe("getAdaptiveTdee", () => {
     it("returns AdaptiveTdeeEstimate", async () => {
-      const { repo } = makeRepository([{ date: "2024-01-01", calories_in: 2000, weight_kg: 80 }]);
+      const { repo } = makeRepository(
+        [{ date: "2024-01-01", calories_in: 2000 }],
+        [{ date: "2024-01-01", weight_kg: 80 }],
+      );
       const result = await repo.getAdaptiveTdee(90);
       expect(result).toBeInstanceOf(AdaptiveTdeeEstimate);
     });
@@ -422,16 +432,18 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("returns MacroRatioDay instances with computed percentages", async () => {
-      const { repo } = makeRepository([
-        {
-          date: "2024-03-15",
-          protein_g: 150,
-          carbs_g: 250,
-          fat_g: 70,
-          calories: 2230,
-          weight_kg: 80,
-        },
-      ]);
+      const { repo } = makeRepository(
+        [
+          {
+            date: "2024-03-15",
+            protein_g: 150,
+            carbs_g: 250,
+            fat_g: 70,
+            calories: 2230,
+          },
+        ],
+        [{ weight_kg: 80, body_fat_pct: null }],
+      );
       const result = await repo.getMacroRatios(30);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(MacroRatioDay);
@@ -446,16 +458,18 @@ describe("NutritionAnalyticsRepository", () => {
     });
 
     it("handles null weight for proteinPerKg", async () => {
-      const { repo } = makeRepository([
-        {
-          date: "2024-03-15",
-          protein_g: 150,
-          carbs_g: 250,
-          fat_g: 70,
-          calories: 2230,
-          weight_kg: null,
-        },
-      ]);
+      const { repo } = makeRepository(
+        [
+          {
+            date: "2024-03-15",
+            protein_g: 150,
+            carbs_g: 250,
+            fat_g: 70,
+            calories: 2230,
+          },
+        ],
+        [],
+      );
       const result = await repo.getMacroRatios(30);
       expect(result[0]?.toDetail().proteinPerKg).toBeNull();
     });

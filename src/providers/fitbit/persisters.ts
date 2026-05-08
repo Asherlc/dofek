@@ -1,13 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import {
-  activity,
-  bodyMeasurement,
-  dailyMetrics,
-  metricStream,
-  sleepSession,
-} from "../../db/schema.ts";
+import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
@@ -148,20 +142,17 @@ export async function persistBodyMeasurement(
   db: SyncDatabase,
   parsed: ParsedFitbitBodyMeasurement,
 ): Promise<void> {
-  await db
-    .insert(bodyMeasurement)
-    .values({
-      providerId: PROVIDER_ID,
-      externalId: parsed.externalId,
-      recordedAt: parsed.recordedAt,
-      weightKg: parsed.weightKg,
-      bodyFatPct: parsed.bodyFatPct,
-    })
-    .onConflictDoUpdate({
-      target: [bodyMeasurement.userId, bodyMeasurement.providerId, bodyMeasurement.externalId],
-      set: {
+  await writeMetricStreamBatch(
+    db,
+    [
+      {
+        providerId: PROVIDER_ID,
+        externalId: parsed.externalId,
+        recordedAt: parsed.recordedAt,
         weightKg: parsed.weightKg,
         bodyFatPct: parsed.bodyFatPct,
       },
-    });
+    ],
+    SOURCE_TYPE_API,
+  );
 }

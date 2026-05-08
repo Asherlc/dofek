@@ -57,6 +57,7 @@ export const nutritionAnalyticsRouter = router({
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const models = await repo.getMicronutrientAdequacy(input.days);
       return models.map((model) => model.toDetail());
@@ -70,6 +71,7 @@ export const nutritionAnalyticsRouter = router({
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const models = await repo.getCaloricBalance(input.days);
       return models.map((model) => model.toDetail());
@@ -83,6 +85,7 @@ export const nutritionAnalyticsRouter = router({
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const estimate = await repo.getAdaptiveTdee(input.days);
       return estimate.toDetail();
@@ -96,6 +99,7 @@ export const nutritionAnalyticsRouter = router({
         ctx.userId,
         ctx.timezone,
         ctx.accessWindow,
+        ctx.sensorStore,
       );
       const models = await repo.getMacroRatios(input.days);
       return models.map((model) => model.toDetail());

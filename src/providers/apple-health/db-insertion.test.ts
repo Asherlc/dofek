@@ -352,7 +352,25 @@ describe("upsertBodyMeasurementBatch", () => {
 
     const count = await upsertBodyMeasurementBatch(db, "p1", records);
     expect(count).toBe(1);
-    expect(capture.values[0]?.[0]).toMatchObject({ weightKg: 72.5 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "body_weight", scalar: 72.5 }),
+    );
+  });
+
+  it("mirrors body measurements to metric_stream channels", async () => {
+    const { db, capture } = createMockDb();
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierBodyMass", value: 72.5 })];
+
+    await upsertBodyMeasurementBatch(db, "p1", records);
+
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        sourceType: "file",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+    );
   });
 
   it("converts body fat percentage to percent (x100)", async () => {
@@ -362,7 +380,9 @@ describe("upsertBodyMeasurementBatch", () => {
     ];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ bodyFatPct: 21.5 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "body_fat_percentage", scalar: 21.5 }),
+    );
   });
 
   it("maps BMI", async () => {
@@ -370,7 +390,9 @@ describe("upsertBodyMeasurementBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierBodyMassIndex", value: 24.5 })];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ bmi: 24.5 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "body_mass_index", scalar: 24.5 }),
+    );
   });
 
   it("rounds BP values to integers", async () => {
@@ -390,7 +412,12 @@ describe("upsertBodyMeasurementBatch", () => {
     ];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ systolicBp: 120, diastolicBp: 79 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "systolic_blood_pressure", scalar: 120 }),
+    );
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "diastolic_blood_pressure", scalar: 79 }),
+    );
   });
 
   it("groups BP records with the same timestamp into one row", async () => {
@@ -418,7 +445,9 @@ describe("upsertBodyMeasurementBatch", () => {
     const records = [makeRecord({ type: "HKQuantityTypeIdentifierBodyTemperature", value: 36.6 })];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ temperatureC: 36.6 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "body_temperature", scalar: 36.6 }),
+    );
   });
 
   it("converts height from meters to cm", async () => {
@@ -428,7 +457,9 @@ describe("upsertBodyMeasurementBatch", () => {
     ];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ heightCm: 178 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "height", scalar: 178 }),
+    );
   });
 
   it("keeps height as-is when not in meters", async () => {
@@ -438,7 +469,9 @@ describe("upsertBodyMeasurementBatch", () => {
     ];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ heightCm: 178 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "height", scalar: 178 }),
+    );
   });
 
   it("converts waist circumference from meters to cm", async () => {
@@ -448,7 +481,9 @@ describe("upsertBodyMeasurementBatch", () => {
     ];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ waistCircumferenceCm: 85 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "waist_circumference", scalar: 85 }),
+    );
   });
 
   it("keeps waist circumference as-is when not in meters", async () => {
@@ -458,7 +493,9 @@ describe("upsertBodyMeasurementBatch", () => {
     ];
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ waistCircumferenceCm: 85 });
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({ channel: "waist_circumference", scalar: 85 }),
+    );
   });
 
   it("generates externalId from startDate", async () => {
@@ -519,9 +556,8 @@ describe("upsertBodyMeasurementBatch", () => {
     }
 
     await upsertBodyMeasurementBatch(db, "p1", records);
-    expect(capture.values).toHaveLength(2);
-    expect(capture.values[0]).toHaveLength(500);
-    expect(capture.values[1]).toHaveLength(100);
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toHaveLength(600);
   });
 });
 
@@ -1297,16 +1333,16 @@ describe("upsertWorkoutBatch", () => {
       expect.objectContaining({
         providerId: "p1",
         activityId: "act-1",
-        channel: "lat",
-        scalar: 40.7128,
+        channel: "altitude",
+        scalar: 10.5,
       }),
     );
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId: "act-1",
-        channel: "gps_accuracy",
-        scalar: 5,
+        channel: "speed",
+        scalar: 3.5,
       }),
     );
   });
@@ -1761,7 +1797,7 @@ describe("insertWithDuplicateDiag — upfront dedup", () => {
     });
 
     await insertWithDuplicateDiag(
-      "body_measurement",
+      "metric_stream",
       (row) => `${row.providerId}:${row.externalId}`,
       rows,
       doInsert,

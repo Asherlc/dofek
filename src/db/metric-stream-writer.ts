@@ -1,5 +1,6 @@
-import type { InferInsertModel } from "drizzle-orm";
+import { type InferInsertModel, sql } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
+import { writeLocationSamplesBatch } from "./location-sample-writer.ts";
 import type { metricStream } from "./schema.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL } from "./sensor-channels.ts";
 
@@ -8,6 +9,7 @@ export interface MetricStreamSourceRow {
   recordedAt: Date;
   userId?: string;
   providerId: string;
+  externalId?: string | null;
   activityId?: string | null;
   sourceName?: string | null;
   [key: string]: unknown;
@@ -28,7 +30,19 @@ export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
 export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsertFn {
   return async (batch) => {
     const { metricStream: table } = await import("./schema.ts");
-    await db.insert(table).values(batch);
+    await db
+      .insert(table)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt],
+        set: {
+          activityId: sql`excluded.activity_id`,
+          deviceId: sql`excluded.device_id`,
+          sourceType: sql`excluded.source_type`,
+          scalar: sql`excluded.scalar`,
+          vector: sql`excluded.vector`,
+        },
+      });
   };
 }
 
@@ -68,6 +82,7 @@ export function sourceRowToMetricStream(
       recordedAt: row.recordedAt,
       userId: row.userId,
       providerId: row.providerId,
+      externalId: row.externalId,
       activityId: row.activityId,
       deviceId: row.sourceName ?? null,
       sourceType,
@@ -84,14 +99,27 @@ export function sourceRowToMetricStream(
  * and batch-inserts them.
  */
 export async function writeMetricStreamBatch(
-  db: Pick<SyncDatabase, "insert">,
+  db: Pick<SyncDatabase, "insert"> & Partial<Pick<SyncDatabase, "execute">>,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   batchSize = DEFAULT_BATCH_SIZE,
 ): Promise<number> {
   const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
-  if (rows.length === 0) return 0;
+  let writtenRows = 0;
 
-  const insertBatch = createBatchInsert(db);
-  return writeMetricStream(insertBatch, rows, batchSize);
+  if (rows.length > 0) {
+    const insertBatch = createBatchInsert(db);
+    writtenRows += await writeMetricStream(insertBatch, rows, batchSize);
+  }
+
+  if (db.execute) {
+    writtenRows += await writeLocationSamplesBatch(
+      { execute: db.execute },
+      metricRows,
+      sourceType,
+      batchSize,
+    );
+  }
+
+  return writtenRows;
 }

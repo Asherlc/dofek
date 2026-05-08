@@ -15,7 +15,7 @@ vi.mock("../logger.ts", () => ({
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
   return {
     router: trpc.router,
@@ -45,8 +45,16 @@ import { adminRouter } from "./admin.ts";
 
 const createCaller = createTestCallerFactory(adminRouter);
 
-function makeCaller(execute: ReturnType<typeof vi.fn>) {
-  return createCaller({ db: { execute }, userId: "admin-1", timezone: "UTC" });
+function makeCaller(
+  execute: ReturnType<typeof vi.fn>,
+  sensorQuery = vi.fn().mockResolvedValue([]),
+) {
+  return createCaller({
+    db: { execute },
+    sensorStore: { query: sensorQuery },
+    userId: "admin-1",
+    timezone: "UTC",
+  });
 }
 
 function getSqlText(query: unknown): string {
@@ -88,7 +96,10 @@ describe("adminRouter", () => {
       ];
       const caller = makeCaller(vi.fn().mockResolvedValue(rows));
       const result = await caller.overview();
-      expect(result).toEqual(rows);
+      expect(result).toEqual([
+        { table_name: "activity", row_count: "1000" },
+        { table_name: "user_profile", row_count: "5" },
+      ]);
     });
   });
 
@@ -435,8 +446,9 @@ describe("adminRouter", () => {
 
   describe("bodyMeasurements", () => {
     it("returns paginated body measurements with total count", async () => {
-      const execute = mockPaginatedExecute(
-        [
+      const sensorQuery = vi
+        .fn()
+        .mockResolvedValueOnce([
           {
             id: "bm-1",
             user_id: "user-1",
@@ -445,19 +457,19 @@ describe("adminRouter", () => {
             source_name: "withings",
             provider_id: "withings",
           },
-        ],
-        [{ count: "300" }],
-      );
-      const caller = makeCaller(execute);
+        ])
+        .mockResolvedValueOnce([{ count: "300" }]);
+      const caller = makeCaller(vi.fn(), sensorQuery);
       const result = await caller.bodyMeasurements({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.provider_id).toBe("withings");
       expect(result.total).toBe("300");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("FROM analytics.v_body_measurement");
     });
 
     it("returns zero total when count query returns empty", async () => {
-      const execute = mockPaginatedExecute([], []);
-      const caller = makeCaller(execute);
+      const sensorQuery = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      const caller = makeCaller(vi.fn(), sensorQuery);
       const result = await caller.bodyMeasurements({ limit: 50, offset: 0 });
       expect(result.rows).toHaveLength(0);
       expect(result.total).toBe(0);

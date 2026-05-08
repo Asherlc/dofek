@@ -222,8 +222,9 @@ describe("ewmaSmooth", () => {
 
 function makeRepository(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC");
-  return { repo, execute };
+  const query = vi.fn().mockResolvedValue(rows);
+  const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", undefined, { query });
+  return { repo, execute, query };
 }
 
 describe("BodyAnalyticsRepository", () => {

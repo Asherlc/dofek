@@ -17,6 +17,7 @@ import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -105,12 +106,6 @@ const nutritionRowSchema = z.object({
   fat_g: coerceNum,
   fiber_g: coerceNum,
   water_ml: coerceNum,
-});
-
-const bodyCompRowSchema = z.object({
-  recorded_at: z.string(),
-  weight_kg: coerceNum,
-  body_fat_pct: coerceNum,
 });
 
 const activitySummaryRowSchema = z.object({
@@ -425,15 +420,7 @@ export class PredictionsRepository {
   }
 
   async #fetchBodyComp(days: number): Promise<BodyCompRow[]> {
-    return executeWithSchema(
-      this.#db,
-      bodyCompRowSchema,
-      sql`SELECT recorded_at, weight_kg, body_fat_pct
-          FROM fitness.v_body_measurement
-          WHERE user_id = ${this.#userId}
-            AND recorded_at > CURRENT_DATE - ${days}::int
-          ORDER BY recorded_at ASC`,
-    );
+    return fetchBodyCompRows(this.#sensorStore, this.#userId, "now", days);
   }
 
   async #fetchExerciseMinutes(days: number): Promise<ExerciseMinutesRow[]> {

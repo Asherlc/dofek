@@ -10,6 +10,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 - [../deploy/README.md](../deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
 - [clickhouse-metric-stream.md](clickhouse-metric-stream.md): ClickHouse deduped sensor read model, native backfill, and PeerDB CDC target.
 - [schema.md](schema.md): canonical database model and storage philosophy.
+- [altitude-provenance.md](altitude-provenance.md): what current providers reveal about altitude source, correction, and confidence.
 - [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 
@@ -18,6 +19,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | Doc | What it is for |
 |-----|----------------|
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
+| [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |
 | [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
 | [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |

@@ -1,8 +1,7 @@
-import { sql } from "drizzle-orm";
-import { z } from "zod";
+import type { Database } from "dofek/db";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { bodyWeightDedupCte } from "../lib/sql-fragments.ts";
-import { dateStringSchema } from "../lib/typed-sql.ts";
+import { type BodyClickHouseStore, fetchBodyWeightRows } from "./body-clickhouse.ts";
 // ── Types ───────────────────────────────────────────────────────────
 
 export interface SmoothedWeightRow {
@@ -54,19 +53,6 @@ export interface WeightPrediction {
   /** Projection line: future smoothed weight points for chart rendering */
   projectionLine: Array<{ date: string; projectedWeight: number }>;
 }
-
-// ── Zod schemas for raw DB rows ─────────────────────────────────────
-
-const weightRowSchema = z.object({
-  date: dateStringSchema,
-  weight_kg: z.coerce.number(),
-});
-
-const recompositionRowSchema = z.object({
-  date: dateStringSchema,
-  weight_kg: z.coerce.number(),
-  body_fat_pct: z.coerce.number(),
-});
 
 // ── Least-squares slope ─────────────────────────────────────────────
 
@@ -209,20 +195,35 @@ export function ewmaSmooth(values: number[], alpha: number): number[] {
 
 /** Data access and analytics for body weight/composition trends. */
 export class BodyAnalyticsRepository extends BaseRepository {
+  readonly #bodyStore: BodyClickHouseStore;
+
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    accessWindow?: AccessWindow,
+    bodyStore?: BodyClickHouseStore,
+  ) {
+    super(db, userId, timezone, accessWindow);
+    if (!bodyStore) {
+      throw new Error("body analytics require the ClickHouse body measurement store");
+    }
+    this.#bodyStore = bodyStore;
+  }
+
   /**
    * Smoothed weight trend using exponentially-weighted moving average.
    * Filters out daily fluctuations (water, food timing) to show the
    * real trend. Similar to MacroFactor / Happy Scale approach.
    */
   async getSmoothedWeight(days: number, endDate: string): Promise<SmoothedWeightRow[]> {
-    const rows = await this.query(
-      weightRowSchema,
-      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days)}
-          SELECT date, weight_kg
-          FROM weight_deduped
-          WHERE 1=1
-          ${this.dateAccessPredicate(sql`date`)}
-          ORDER BY date ASC`,
+    const rows = await fetchBodyWeightRows(
+      this.#bodyStore,
+      this.userId,
+      this.timezone,
+      endDate,
+      days,
+      { accessWindow: this.accessWindow },
     );
 
     const data = rows.map((row) => ({
@@ -239,14 +240,13 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * from measurements that have both weight and body fat data.
    */
   async getRecomposition(days: number, endDate: string): Promise<BodyRecompositionRow[]> {
-    const rows = await this.query(
-      recompositionRowSchema,
-      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days, sql`AND body_fat_pct IS NOT NULL`)}
-          SELECT date, weight_kg, body_fat_pct
-          FROM weight_deduped
-          WHERE 1=1
-          ${this.dateAccessPredicate(sql`date`)}
-          ORDER BY date ASC`,
+    const rows = await fetchBodyWeightRows(
+      this.#bodyStore,
+      this.userId,
+      this.timezone,
+      endDate,
+      days,
+      { requireBodyFat: true, accessWindow: this.accessWindow },
     );
 
     const data = rows.map((row) => ({
@@ -263,13 +263,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * Current weekly and 4-week rates, plus overall trend direction.
    */
   async getWeightTrend(): Promise<WeightRateOfChange> {
-    const rows = await this.query(
-      weightRowSchema,
-      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, "now", 35)}
-          SELECT date, weight_kg
-          FROM weight_deduped
-          ORDER BY date ASC`,
-    );
+    const rows = await fetchBodyWeightRows(this.#bodyStore, this.userId, this.timezone, "now", 35);
 
     const weights = rows.map((row) => Number(row.weight_kg));
     return this.#computeWeightTrend(weights);
@@ -284,14 +278,13 @@ export class BodyAnalyticsRepository extends BaseRepository {
     endDate: string,
     goalWeightKg: number | null,
   ): Promise<WeightPrediction> {
-    const rows = await this.query(
-      weightRowSchema,
-      sql`WITH ${bodyWeightDedupCte(this.userId, this.timezone, endDate, days)}
-          SELECT date, weight_kg
-          FROM weight_deduped
-          WHERE 1=1
-          ${this.dateAccessPredicate(sql`date`)}
-          ORDER BY date ASC`,
+    const rows = await fetchBodyWeightRows(
+      this.#bodyStore,
+      this.userId,
+      this.timezone,
+      endDate,
+      days,
+      { accessWindow: this.accessWindow },
     );
 
     const data = rows.map((row) => ({

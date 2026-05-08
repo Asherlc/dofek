@@ -4,6 +4,7 @@ import { z } from "zod";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchBodyComparisonRows } from "./body-clickhouse.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -325,42 +326,13 @@ export class LifeEventsRepository {
 				ORDER BY period
 				`,
       ),
-      executeWithSchema(
-        this.#db,
-        bodyComparisonRowSchema,
-        sql`
-				WITH before_body AS (
-					SELECT 'before' as period, *
-					FROM fitness.v_body_measurement
-					WHERE user_id = ${this.#userId}
-						AND (recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
-				),
-				after_body AS (
-					SELECT 'after' as period, *
-					FROM fitness.v_body_measurement
-					WHERE user_id = ${this.#userId}
-						AND ${
-              endDate
-                ? endDate === "NOW()"
-                  ? sql`(recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`(recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`(recorded_at AT TIME ZONE ${this.#timezone})::date BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
-            }
-				),
-				combined AS (
-					SELECT * FROM before_body
-					UNION ALL
-					SELECT * FROM after_body
-				)
-				SELECT
-					period,
-					COUNT(*) as measurements,
-					AVG(weight_kg)::numeric(10,2) as avg_weight,
-					AVG(body_fat_pct)::numeric(10,1) as avg_body_fat
-				FROM combined
-				GROUP BY period
-				ORDER BY period
-				`,
+      fetchBodyComparisonRows(
+        this.#requireSensorStore(),
+        this.#userId,
+        this.#timezone,
+        startDate,
+        endDate,
+        windowDays,
       ),
     ]);
 
