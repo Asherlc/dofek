@@ -140,13 +140,19 @@ export async function fetchBodyCompRows(
     bodyCompClickHouseSchema,
     `
       SELECT
-        toString(recorded_at) AS recorded_at,
+        toString(body_measurements.recorded_at) AS recorded_at,
         weight_kg,
         body_fat_pct
-      FROM analytics.v_body_measurement
-      WHERE user_id = {userId:UUID}
-        AND recorded_at > subtractDays(${endTimestampExpression(endDate)}, {days:UInt32})
-      ORDER BY recorded_at ASC
+      FROM (
+        SELECT
+          recorded_at,
+          weight_kg,
+          body_fat_pct
+        FROM analytics.v_body_measurement
+        WHERE user_id = {userId:UUID}
+          AND recorded_at > subtractDays(${endTimestampExpression(endDate)}, {days:UInt32})
+      ) AS body_measurements
+      ORDER BY body_measurements.recorded_at ASC
     `,
     { userId, endDate, days },
   );

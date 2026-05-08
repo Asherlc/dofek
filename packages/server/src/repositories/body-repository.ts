@@ -75,7 +75,7 @@ export class BodyRepository {
       `
         SELECT
           toString(id) AS id,
-          toString(recorded_at) AS recorded_at,
+          toString(body_measurements.recorded_at) AS recorded_at,
           provider_id,
           toString(user_id) AS user_id,
           external_id,
@@ -93,10 +93,32 @@ export class BodyRepository {
           temperature_c,
           source_name,
           toString(created_at) AS created_at
-        FROM analytics.v_body_measurement
-        WHERE user_id = {userId:UUID}
-          AND recorded_at > now() - toIntervalDay({days:UInt32})
-        ORDER BY recorded_at DESC
+        FROM (
+          SELECT
+            id,
+            recorded_at,
+            provider_id,
+            user_id,
+            external_id,
+            weight_kg,
+            body_fat_pct,
+            muscle_mass_kg,
+            bone_mass_kg,
+            water_pct,
+            bmi,
+            height_cm,
+            waist_circumference_cm,
+            systolic_bp,
+            diastolic_bp,
+            heart_pulse,
+            temperature_c,
+            source_name,
+            created_at
+          FROM analytics.v_body_measurement
+          WHERE user_id = {userId:UUID}
+            AND recorded_at > now() - toIntervalDay({days:UInt32})
+        ) AS body_measurements
+        ORDER BY body_measurements.recorded_at DESC
       `,
       { userId: this.#userId, days },
     );

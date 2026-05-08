@@ -113,7 +113,10 @@ describe("BodyRepository", () => {
       expect.stringContaining("FROM analytics.v_body_measurement"),
       { userId: "user-1", days: 30 },
     );
-    expect(query.mock.calls[0]?.[1]).not.toContain("fitness.v_body_measurement");
+    const queryText = query.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("toString(body_measurements.recorded_at) AS recorded_at");
+    expect(queryText).toContain("ORDER BY body_measurements.recorded_at DESC");
+    expect(queryText).not.toContain("fitness.v_body_measurement");
   });
 
   it("maps all snake_case DB fields to camelCase", async () => {
