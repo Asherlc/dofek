@@ -468,6 +468,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   }
 
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
+    // Test shim only: production stream reads use ClickHouse analytics.deduped_location.
     const rows = await executeWithSchema(
       this.#db,
       streamPointRowSchema,

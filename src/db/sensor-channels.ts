@@ -18,10 +18,6 @@ export const CADENCE = "cadence";
 export const SPEED = "speed";
 /** Location point stored in metric_stream.point. */
 export const LOCATION = "location";
-/** @deprecated Coordinates are stored as channel = 'location' in metric_stream.point. */
-export const LAT = "lat";
-/** @deprecated Coordinates are stored as channel = 'location' in metric_stream.point. */
-export const LNG = "lng";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
 /** Temperature in celsius */
@@ -34,8 +30,6 @@ export const VERTICAL_SPEED = "vertical_speed";
 export const SPO2 = "spo2";
 /** Respiratory rate in breaths/min */
 export const RESPIRATORY_RATE = "respiratory_rate";
-/** @deprecated FIT gps_accuracy is stored with channel = 'location' metadata. */
-export const GPS_ACCURACY = "gps_accuracy";
 /** Cumulative power in watts */
 export const ACCUMULATED_POWER = "accumulated_power";
 /** Stress score */

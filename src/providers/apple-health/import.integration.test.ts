@@ -860,13 +860,24 @@ describe("importAppleHealthFile — full DB integration", () => {
 
     // Check GPS metric_stream rows linked to the activity
     const allMetrics = await ctx.db.select().from(schema.metricStream);
-    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "location");
-    expect(gpsRows.length).toBe(2);
-    expect(gpsRows.some((r) => r.latitude !== null && Math.abs(r.latitude - 40.7128) < 0.001)).toBe(
-      true,
+    const gpsRows = allMetrics.filter(
+      (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "location",
     );
-    const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");
-    expect(speedRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 3.5) < 0.1)).toBe(true);
+    expect(gpsRows.length).toBe(2);
+    expect(
+      gpsRows.some(
+        (metricRow) =>
+          metricRow.latitude !== null && Math.abs(metricRow.latitude - 40.7128) < 0.001,
+      ),
+    ).toBe(true);
+    const speedRows = allMetrics.filter(
+      (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "speed",
+    );
+    expect(
+      speedRows.some(
+        (metricRow) => metricRow.scalar !== null && Math.abs(metricRow.scalar - 3.5) < 0.1,
+      ),
+    ).toBe(true);
   });
 
   it("creates health_event rows for category records (mindful session)", async () => {

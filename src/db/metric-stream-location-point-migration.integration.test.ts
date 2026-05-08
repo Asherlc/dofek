@@ -111,6 +111,7 @@ describe("metric_stream location point migration", () => {
         recorded_at: Date;
         latitude: number;
         longitude: number;
+        point_srid: number;
         point_latitude: number;
         point_longitude: number;
         metadata: { gps_accuracy_m?: number } | null;
@@ -119,6 +120,7 @@ describe("metric_stream location point migration", () => {
           recorded_at,
           latitude,
           longitude,
+          public.ST_SRID(point) AS point_srid,
           public.ST_Y(point)::double precision AS point_latitude,
           public.ST_X(point)::double precision AS point_longitude,
           metadata
@@ -131,6 +133,7 @@ describe("metric_stream location point migration", () => {
       expect(locationResult.rows[0]?.recorded_at).toEqual(new Date("2026-01-01T00:00:00.000Z"));
       expect(locationResult.rows[0]?.latitude).toBeCloseTo(37.7749, 4);
       expect(locationResult.rows[0]?.longitude).toBeCloseTo(-122.4194, 4);
+      expect(locationResult.rows[0]?.point_srid).toBe(4326);
       expect(locationResult.rows[0]?.point_latitude).toBeCloseTo(37.7749, 4);
       expect(locationResult.rows[0]?.point_longitude).toBeCloseTo(-122.4194, 4);
       expect(locationResult.rows[0]?.metadata).toEqual({ gps_accuracy_m: 6 });
@@ -138,6 +141,7 @@ describe("metric_stream location point migration", () => {
       expect(locationResult.rows[1]?.recorded_at).toEqual(new Date("2026-01-01T00:00:01.000Z"));
       expect(locationResult.rows[1]?.latitude).toBeCloseTo(37.775, 4);
       expect(locationResult.rows[1]?.longitude).toBeCloseTo(-122.4195, 4);
+      expect(locationResult.rows[1]?.point_srid).toBe(4326);
       expect(locationResult.rows[1]?.point_latitude).toBeCloseTo(37.775, 4);
       expect(locationResult.rows[1]?.point_longitude).toBeCloseTo(-122.4195, 4);
       expect(locationResult.rows[1]?.metadata).toBeNull();
@@ -149,12 +153,15 @@ describe("metric_stream location point migration", () => {
       `);
       expect(legacyCoordinateRowsResult.rows).toEqual([{ count: "0" }]);
 
-      const legacyAccuracyRowsResult = await client.query<{ count: string }>(`
-        SELECT count(*) AS count
+      const legacyAccuracyRowsResult = await client.query<{ recorded_at: Date; scalar: number }>(`
+        SELECT recorded_at, scalar
         FROM fitness.metric_stream
         WHERE channel = 'gps_accuracy'
+        ORDER BY recorded_at
       `);
-      expect(legacyAccuracyRowsResult.rows).toEqual([{ count: "0" }]);
+      expect(legacyAccuracyRowsResult.rows).toEqual([
+        { recorded_at: new Date("2026-01-01T00:00:02.000Z"), scalar: 9 },
+      ]);
     } finally {
       if (temporaryDirectory) {
         rmSync(temporaryDirectory, { recursive: true, force: true });

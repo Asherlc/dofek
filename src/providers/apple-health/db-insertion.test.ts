@@ -1280,7 +1280,7 @@ describe("upsertWorkoutBatch", () => {
 
   it("inserts GPS route locations for workouts", async () => {
     const { db, capture } = createMockDb([{ id: "act-1" }]);
-    const loc = {
+    const location = {
       date: new Date("2024-06-01T08:00:00Z"),
       lat: 40.7128,
       lng: -74.006,
@@ -1289,7 +1289,7 @@ describe("upsertWorkoutBatch", () => {
       horizontalAccuracy: 5.2,
     };
 
-    await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]);
+    await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })]);
 
     // First insert is the activity, second is metric_stream rows.
     expect(capture.values).toHaveLength(2);
@@ -1301,13 +1301,6 @@ describe("upsertWorkoutBatch", () => {
         point: "SRID=4326;POINT(-74.006 40.7128)",
         latitude: 40.7128,
         longitude: -74.006,
-      }),
-    );
-    expect(capture.values[1]).toContainEqual(
-      expect.objectContaining({
-        providerId: "p1",
-        activityId: "act-1",
-        channel: "location",
         metadata: { horizontal_accuracy_m: 5.2 },
       }),
     );

@@ -288,6 +288,8 @@ async function replaceNativeMetricStreamAndBackfill(
   await backfillNativeMetricStream(client, postgresConnectionString);
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
 }
@@ -303,6 +305,8 @@ async function repairNativeMetricStreamBackfill(
   await backfillNativeMetricStream(client, postgresConnectionString);
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(
@@ -364,6 +368,8 @@ async function replaceLegacyMetricStreamIfNeeded(
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.provider_stats");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
 }

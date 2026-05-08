@@ -65,6 +65,15 @@ function makeSample(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function serializeMetricStreamInsertCalls(execute: { mock: { calls: unknown[][] } }): string {
+  const metricStreamInsertCalls = execute.mock.calls.filter((call) => {
+    const serialized = JSON.stringify(call[0]);
+    return serialized.includes("INSERT INTO fitness.metric_stream");
+  });
+  expect(metricStreamInsertCalls.length).toBeGreaterThan(0);
+  return metricStreamInsertCalls.map((call) => JSON.stringify(call[0])).join("\n");
+}
+
 describe("healthKitSyncRouter", () => {
   beforeEach(() => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
@@ -1339,12 +1348,7 @@ describe("healthKitSyncRouter", () => {
 
       // One location point plus separate altitude and speed metrics.
       expect(result.inserted).toBe(3);
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("INSERT INTO fitness.metric_stream");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall);
+      const serialized = serializeMetricStreamInsertCalls(execute);
       expect(serialized).toContain('"location"');
       expect(serialized).toContain("ST_SetSRID");
       expect(serialized).toContain("horizontal_accuracy_m");
@@ -1398,12 +1402,7 @@ describe("healthKitSyncRouter", () => {
 
       // Only the location point should be inserted (no altitude or speed metrics).
       expect(result.inserted).toBe(1);
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("INSERT INTO fitness.metric_stream");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall);
+      const serialized = serializeMetricStreamInsertCalls(execute);
       expect(serialized).toContain('"location"');
       expect(serialized).not.toContain('"altitude"');
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -1455,12 +1454,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       // Find the batched insert and verify Core Location horizontal accuracy stays metadata.
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("INSERT INTO fitness.metric_stream");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall);
+      const serialized = serializeMetricStreamInsertCalls(execute);
       expect(serialized).toContain("horizontal_accuracy_m");
       expect(serialized).toContain("4.7");
       expect(serialized).not.toContain('"gps_accuracy"');

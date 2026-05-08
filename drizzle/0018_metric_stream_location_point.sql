@@ -68,6 +68,12 @@ BEGIN
             lat.device_id,
             lat.source_type,
             lat.activity_id,
+            lat.tableoid AS lat_tableoid,
+            lat.ctid AS lat_ctid,
+            lng.tableoid AS lng_tableoid,
+            lng.ctid AS lng_ctid,
+            gps.tableoid AS gps_tableoid,
+            gps.ctid AS gps_ctid,
             lat.scalar AS latitude,
             lng.scalar AS longitude,
             gps.scalar AS gps_accuracy_m
@@ -103,59 +109,66 @@ BEGIN
                 AND location.device_id IS NOT DISTINCT FROM lat.device_id
             )
           LIMIT batch_size
-        )
-        INSERT INTO fitness.metric_stream (
-          recorded_at,
-          user_id,
-          provider_id,
-          device_id,
-          source_type,
-          channel,
-          activity_id,
-          point,
-          latitude,
-          longitude,
-          metadata
+        ),
+        inserted_location_rows AS (
+          INSERT INTO fitness.metric_stream (
+            recorded_at,
+            user_id,
+            provider_id,
+            device_id,
+            source_type,
+            channel,
+            activity_id,
+            point,
+            latitude,
+            longitude,
+            metadata
+          )
+          SELECT
+            source_rows.recorded_at,
+            source_rows.user_id,
+            source_rows.provider_id,
+            source_rows.device_id,
+            source_rows.source_type,
+            'location',
+            source_rows.activity_id,
+            public.ST_SetSRID(
+              public.ST_MakePoint(source_rows.longitude::double precision, source_rows.latitude::double precision),
+              4326
+            ),
+            source_rows.latitude,
+            source_rows.longitude,
+            NULLIF(jsonb_strip_nulls(jsonb_build_object('gps_accuracy_m', source_rows.gps_accuracy_m)), '{}'::jsonb)
+          FROM source_rows
+          RETURNING 1
+        ),
+        legacy_rows_to_delete AS (
+          SELECT source_rows.lat_tableoid AS row_tableoid, source_rows.lat_ctid AS row_ctid
+          FROM source_rows
+          UNION ALL
+          SELECT source_rows.lng_tableoid, source_rows.lng_ctid
+          FROM source_rows
+          UNION ALL
+          SELECT source_rows.gps_tableoid, source_rows.gps_ctid
+          FROM source_rows
+          WHERE source_rows.gps_ctid IS NOT NULL
+        ),
+        deleted_legacy_rows AS (
+          DELETE FROM fitness.metric_stream AS legacy
+          USING legacy_rows_to_delete
+          WHERE legacy.tableoid = legacy_rows_to_delete.row_tableoid
+            AND legacy.ctid = legacy_rows_to_delete.row_ctid
+          RETURNING 1
         )
         SELECT
-          source_rows.recorded_at,
-          source_rows.user_id,
-          source_rows.provider_id,
-          source_rows.device_id,
-          source_rows.source_type,
-          'location',
-          source_rows.activity_id,
-          public.ST_SetSRID(
-            public.ST_MakePoint(source_rows.longitude::double precision, source_rows.latitude::double precision),
-            4326
-          ),
-          source_rows.latitude,
-          source_rows.longitude,
-          NULLIF(jsonb_strip_nulls(jsonb_build_object('gps_accuracy_m', source_rows.gps_accuracy_m)), '{}'::jsonb)
-        FROM source_rows;
+          (SELECT count(*)::integer FROM inserted_location_rows),
+          (SELECT count(*)::integer FROM deleted_legacy_rows)
+        INTO inserted_count, deleted_count;
 
-        GET DIAGNOSTICS inserted_count = ROW_COUNT;
-        RAISE NOTICE 'metric_stream location backfill table fallback chunk %/% inserted % rows', current_chunk_index, chunk_count, inserted_count;
+        RAISE NOTICE 'metric_stream location backfill table fallback chunk %/% inserted % rows and deleted % legacy rows', current_chunk_index, chunk_count, inserted_count, deleted_count;
         COMMIT;
 
         EXIT WHEN inserted_count = 0;
-      END LOOP;
-
-      LOOP
-        WITH deleted_rows AS (
-          SELECT ctid
-          FROM fitness.metric_stream
-          WHERE channel IN ('lat', 'lng', 'gps_accuracy')
-          LIMIT batch_size
-        )
-        DELETE FROM fitness.metric_stream
-        WHERE ctid IN (SELECT deleted_rows.ctid FROM deleted_rows);
-
-        GET DIAGNOSTICS deleted_count = ROW_COUNT;
-        RAISE NOTICE 'metric_stream legacy location cleanup table fallback chunk %/% deleted % rows', current_chunk_index, chunk_count, deleted_count;
-        COMMIT;
-
-        EXIT WHEN deleted_count = 0;
       END LOOP;
 
       current_chunk_index := current_chunk_index + 1;
@@ -194,11 +207,14 @@ BEGIN
              lat.device_id,
              lat.source_type,
              lat.activity_id,
+             lat.ctid AS lat_ctid,
+             lng.ctid AS lng_ctid,
+             gps.ctid AS gps_ctid,
              lat.scalar AS latitude,
              lng.scalar AS longitude,
              gps.scalar AS gps_accuracy_m
            FROM %1$s AS lat
-           INNER JOIN fitness.metric_stream AS lng
+           INNER JOIN %1$s AS lng
              ON lng.recorded_at = lat.recorded_at
             AND lng.user_id = lat.user_id
             AND lng.provider_id = lat.provider_id
@@ -206,7 +222,7 @@ BEGIN
             AND lng.channel = ''lng''
             AND lng.activity_id IS NOT DISTINCT FROM lat.activity_id
             AND lng.device_id IS NOT DISTINCT FROM lat.device_id
-           LEFT JOIN fitness.metric_stream AS gps
+           LEFT JOIN %1$s AS gps
              ON gps.recorded_at = lat.recorded_at
             AND gps.user_id = lat.user_id
             AND gps.provider_id = lat.provider_id
@@ -229,66 +245,68 @@ BEGIN
                  AND location.device_id IS NOT DISTINCT FROM lat.device_id
              )
            LIMIT $1
-         )
-         INSERT INTO fitness.metric_stream (
-           recorded_at,
-           user_id,
-           provider_id,
-           device_id,
-           source_type,
-           channel,
-           activity_id,
-           point,
-           latitude,
-           longitude,
-           metadata
+         ),
+         inserted_location_rows AS (
+           INSERT INTO fitness.metric_stream (
+             recorded_at,
+             user_id,
+             provider_id,
+             device_id,
+             source_type,
+             channel,
+             activity_id,
+             point,
+             latitude,
+             longitude,
+             metadata
+           )
+           SELECT
+             source_rows.recorded_at,
+             source_rows.user_id,
+             source_rows.provider_id,
+             source_rows.device_id,
+             source_rows.source_type,
+             ''location'',
+             source_rows.activity_id,
+             public.ST_SetSRID(
+               public.ST_MakePoint(source_rows.longitude::double precision, source_rows.latitude::double precision),
+               4326
+             ),
+             source_rows.latitude,
+             source_rows.longitude,
+             NULLIF(jsonb_strip_nulls(jsonb_build_object(''gps_accuracy_m'', source_rows.gps_accuracy_m)), ''{}''::jsonb)
+           FROM source_rows
+           RETURNING 1
+         ),
+         legacy_rows_to_delete AS (
+           SELECT source_rows.lat_ctid AS row_ctid
+           FROM source_rows
+           UNION ALL
+           SELECT source_rows.lng_ctid
+           FROM source_rows
+           UNION ALL
+           SELECT source_rows.gps_ctid
+           FROM source_rows
+           WHERE source_rows.gps_ctid IS NOT NULL
+         ),
+         deleted_legacy_rows AS (
+           DELETE FROM %1$s AS legacy
+           USING legacy_rows_to_delete
+           WHERE legacy.ctid = legacy_rows_to_delete.row_ctid
+           RETURNING 1
          )
          SELECT
-           source_rows.recorded_at,
-           source_rows.user_id,
-           source_rows.provider_id,
-           source_rows.device_id,
-           source_rows.source_type,
-           ''location'',
-           source_rows.activity_id,
-           public.ST_SetSRID(
-             public.ST_MakePoint(source_rows.longitude::double precision, source_rows.latitude::double precision),
-             4326
-           ),
-           source_rows.latitude,
-           source_rows.longitude,
-           NULLIF(jsonb_strip_nulls(jsonb_build_object(''gps_accuracy_m'', source_rows.gps_accuracy_m)), ''{}''::jsonb)
-         FROM source_rows',
+           (SELECT count(*)::integer FROM inserted_location_rows),
+           (SELECT count(*)::integer FROM deleted_legacy_rows)',
         current_chunk_regclass
       )
+      INTO inserted_count, deleted_count
       USING batch_size;
 
-      GET DIAGNOSTICS inserted_count = ROW_COUNT;
-      RAISE NOTICE 'metric_stream location backfill chunk %/% inserted % rows', current_chunk_index, chunk_count, inserted_count;
+      RAISE NOTICE 'metric_stream location backfill chunk %/% inserted % rows and deleted % legacy rows', current_chunk_index, chunk_count, inserted_count, deleted_count;
       COMMIT;
 
       EXIT WHEN inserted_count = 0;
-    END LOOP;
-
-    LOOP
-      EXECUTE format(
-        'WITH deleted_rows AS (
-           SELECT ctid
-           FROM %1$s
-           WHERE channel IN (''lat'', ''lng'', ''gps_accuracy'')
-           LIMIT $1
-         )
-         DELETE FROM %1$s
-         WHERE ctid IN (SELECT deleted_rows.ctid FROM deleted_rows)',
-        current_chunk_regclass
-      )
-      USING batch_size;
-
-      GET DIAGNOSTICS deleted_count = ROW_COUNT;
-      RAISE NOTICE 'metric_stream legacy location cleanup chunk %/% deleted % rows', current_chunk_index, chunk_count, deleted_count;
-      COMMIT;
-
-      EXIT WHEN deleted_count = 0;
     END LOOP;
 
     IF should_recompress THEN
