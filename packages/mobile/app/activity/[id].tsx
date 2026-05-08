@@ -890,7 +890,7 @@ export default function ActivityDetailScreen() {
           )}
 
           {/* HR Zones */}
-          {(hasHr || hrZones.isLoading || zones.length > 0) && (
+          {(hasHr || zones.length > 0) && (
             <HrZonesChart
               zones={zones}
               loading={hrZones.isLoading}

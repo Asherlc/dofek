@@ -90,7 +90,8 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
       />
       <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
         {zones.map((zoneItem, zoneIndex) => {
-          const barWidth = Math.max((zoneItem.percent / 100) * barAreaWidth, 2);
+          const rawBarWidth = (zoneItem.percent / 100) * barAreaWidth;
+          const barWidth = zoneItem.percent > 0 ? Math.max(rawBarWidth, 2) : 0;
           const rowY = zoneIndex * (barHeight + gap);
           const zoneColor = zoneColors[zoneIndex] ?? "#71717a";
 

@@ -251,6 +251,23 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Z1 Recovery")).toBeNull();
   });
 
+  it("keeps zero-percent heart rate zone bars at zero width", async () => {
+    mockHrZonesQuery.mockReturnValue({
+      data: [
+        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 0, percent: 0 },
+        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 100 },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { container } = render(React.createElement(ActivityDetailScreen));
+
+    const zeroPercentBar = container.querySelector('rect[fill="green"]');
+    expect(zeroPercentBar?.getAttribute("width")).toBe("0");
+  });
+
   it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
@@ -265,6 +282,20 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByTestId("loading")).toBeTruthy();
+    expect(screen.queryByText("No heart rate zone data")).toBeNull();
+  });
+
+  it("does not show heart rate zones for non-heart-rate streams while zones are loading", async () => {
+    mockStreamQuery.mockReturnValue({
+      data: streamPointsWithHrAndPower.map((point) => ({ ...point, heartRate: null })),
+      isLoading: false,
+    });
+    mockHrZonesQuery.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.queryByText("Heart Rate Zones")).toBeNull();
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
 

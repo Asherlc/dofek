@@ -47,7 +47,7 @@ const mockStreamPoints: Array<{
   recordedAt: string;
   lat: number;
   lng: number;
-  heartRate: number;
+  heartRate: number | null;
   power: number | null;
   speed: number;
   cadence: number | null;
@@ -480,6 +480,29 @@ describe("ActivityDetailPage", () => {
 
       expect(screen.getByText("Unable to load heart rate zones")).toBeDefined();
       expect(screen.queryByText("No heart rate zone data")).toBeNull();
+    });
+
+    it("does not show heart rate zones for non-heart-rate streams while zones are loading", async () => {
+      const originalStream = [...mockStreamPoints];
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...originalStream.map((point) => ({ ...point, heartRate: null })),
+      );
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [],
+        isLoading: true,
+        isError: false,
+        error: null,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.queryByText("Heart Rate Zones")).toBeNull();
+      expect(screen.queryByText("No heart rate zone data")).toBeNull();
+
+      mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
     });
 
     it("labels the power zone axis with zone numbers", async () => {

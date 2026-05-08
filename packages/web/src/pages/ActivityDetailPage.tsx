@@ -126,7 +126,7 @@ export function ActivityDetailPage() {
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
-  const showHrZones = hasHr || hrZones.isLoading || hrZones.isError || zones.length > 0;
+  const showHrZones = hasHr || zones.length > 0;
 
   return (
     <PageLayout>
