@@ -36,7 +36,7 @@ describe("activityUrl", () => {
     {
       name: "Wahoo",
       provider: new WahooProvider(),
-      expected: "https://cloud.wahoo.com/workouts/123",
+      expected: "https://systm.wahoofitness.com/history/activity-details/123",
     },
     {
       name: "Peloton",

@@ -10,7 +10,8 @@ const mockLookup: ProviderLookup = (id: string) => {
     },
     wahoo: {
       name: "Wahoo",
-      activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+      activityUrl: (externalId: string) =>
+        `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
     },
     garmin: {
       name: "Garmin",
@@ -79,7 +80,11 @@ describe("Activity", () => {
 
     expect(activity.sourceLinks).toEqual([
       { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
-      { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
+      {
+        providerId: "wahoo",
+        label: "Wahoo",
+        url: "https://systm.wahoofitness.com/history/activity-details/42",
+      },
     ]);
   });
 
@@ -176,7 +181,11 @@ describe("Activity", () => {
             label: "Strava",
             url: "https://www.strava.com/activities/99999",
           },
-          { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
+          {
+            providerId: "wahoo",
+            label: "Wahoo",
+            url: "https://systm.wahoofitness.com/history/activity-details/42",
+          },
         ],
         avgHr: 145,
         maxHr: 175,

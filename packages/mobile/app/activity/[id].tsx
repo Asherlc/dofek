@@ -4,7 +4,6 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
-import { HEART_RATE_ZONE_COLORS, POWER_ZONE_COLORS } from "@dofek/zones/zones";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -20,12 +19,10 @@ import {
 import Svg, {
   Circle,
   Defs,
-  G,
   Line,
   LinearGradient,
   Path,
   Polyline,
-  Rect,
   Stop,
   Text as SvgText,
 } from "react-native-svg";
@@ -35,9 +32,11 @@ import { RouteMap } from "../../components/RouteMap";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
+import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 import { useChartScrub } from "./useChartScrub";
+import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
-const CHART_WIDTH = 340;
+const CHART_WIDTH = ACTIVITY_CHART_WIDTH;
 const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
 
@@ -383,122 +382,6 @@ function AreaChart({
         </Svg>
       </View>
     </View>
-  );
-}
-
-interface HrZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number;
-  seconds: number;
-}
-
-interface PowerZone {
-  zone: number;
-  label: string;
-  minPct: number;
-  maxPct: number | null;
-  seconds: number;
-}
-
-interface ZoneDistributionDatum {
-  zone: number;
-  seconds: number;
-}
-
-function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
-  zones,
-  title,
-  description,
-  zoneColors,
-}: {
-  zones: ZoneItem[];
-  title: string;
-  description: string;
-  zoneColors: string[];
-}) {
-  const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
-  if (totalSeconds === 0) return null;
-
-  const barHeight = 22;
-  const gap = 6;
-  const labelWidth = 64;
-  const pctWidth = 44;
-  const barAreaWidth = CHART_WIDTH - labelWidth - pctWidth - 16;
-  const chartTotalHeight = zones.length * (barHeight + gap) - gap;
-
-  return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={title}
-        description={description}
-        textStyle={chartStyles.title}
-      />
-      <Svg width={CHART_WIDTH} height={chartTotalHeight + 8}>
-        {zones.map((zoneItem, zoneIndex) => {
-          const percentage = totalSeconds > 0 ? zoneItem.seconds / totalSeconds : 0;
-          const barWidth = Math.max(percentage * barAreaWidth, 2);
-          const rowY = zoneIndex * (barHeight + gap);
-          const zoneColor = zoneColors[zoneIndex] ?? "#71717a";
-
-          return (
-            <G key={zoneItem.zone}>
-              <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
-                {`Zone ${zoneItem.zone}`}
-              </SvgText>
-              <Rect
-                x={labelWidth}
-                y={rowY}
-                width={barAreaWidth}
-                height={barHeight}
-                rx={4}
-                fill={colors.surfaceSecondary}
-              />
-              <Rect
-                x={labelWidth}
-                y={rowY}
-                width={barWidth}
-                height={barHeight}
-                rx={4}
-                fill={zoneColor}
-              />
-              <SvgText
-                x={labelWidth + barAreaWidth + 8}
-                y={rowY + barHeight / 2 + 4}
-                fill={colors.text}
-                fontSize={12}
-                fontWeight="600"
-              >
-                {`${Math.round(percentage * 100)}%`}
-              </SvgText>
-            </G>
-          );
-        })}
-      </Svg>
-    </View>
-  );
-}
-
-export function HrZonesChart({ zones }: { zones: HrZone[] }) {
-  return (
-    <ZoneDistributionChart
-      zones={zones}
-      title="Heart Rate Zones"
-      description="This chart shows how much time you spent in each heart rate zone during the activity."
-      zoneColors={HEART_RATE_ZONE_COLORS}
-    />
-  );
-}
-
-export function PowerZonesChart({ zones }: { zones: PowerZone[] }) {
-  return (
-    <ZoneDistributionChart
-      zones={zones}
-      title="Power Zones"
-      description="This chart shows how much time you spent in each power zone."
-      zoneColors={POWER_ZONE_COLORS}
-    />
   );
 }
 
@@ -1007,7 +890,13 @@ export default function ActivityDetailScreen() {
           )}
 
           {/* HR Zones */}
-          {zones.length > 0 && <HrZonesChart zones={zones} />}
+          {(hasHr || zones.length > 0) && (
+            <HrZonesChart
+              zones={zones}
+              loading={hrZones.isLoading}
+              errorMessage={hrZones.error?.message}
+            />
+          )}
 
           {/* Power Zones (cycling only, requires eFTP) */}
           {isCycling && hasPower && powerZones.data != null && (

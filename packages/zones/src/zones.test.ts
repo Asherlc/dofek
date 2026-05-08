@@ -179,6 +179,7 @@ describe("mapHrZones", () => {
       minPct: 50,
       maxPct: 60,
       seconds: 120,
+      percent: 25,
     });
     // Zone 2 has no data → 0 seconds
     expect(result[1]).toEqual({
@@ -187,6 +188,7 @@ describe("mapHrZones", () => {
       minPct: 60,
       maxPct: 70,
       seconds: 0,
+      percent: 0,
     });
     expect(result[2]?.seconds).toBe(300);
     expect(result[4]?.seconds).toBe(60);
@@ -335,6 +337,7 @@ describe("mapPowerZones", () => {
       minPct: 55,
       maxPct: 75,
       seconds: 600,
+      percent: 83.3,
     });
     expect(result[0]?.seconds).toBe(0);
     expect(result[3]?.seconds).toBe(120);

@@ -16,7 +16,11 @@ const baseActivity: ActivityDetail = {
   subsource: null,
   sourceProviders: ["wahoo", "apple_health"],
   sourceLinks: [
-    { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
+    {
+      providerId: "wahoo",
+      label: "Wahoo",
+      url: "https://systm.wahoofitness.com/history/activity-details/42",
+    },
   ],
   avgHr: 145,
   maxHr: 175,
