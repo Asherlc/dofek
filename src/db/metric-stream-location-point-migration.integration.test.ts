@@ -141,12 +141,19 @@ describe("metric_stream location point migration", () => {
       expect(locationResult.rows[1]?.point_longitude).toBeCloseTo(-122.4195, 4);
       expect(locationResult.rows[1]?.metadata).toBeNull();
 
-      const legacyRowsResult = await client.query<{ count: string }>(`
+      const legacyCoordinateRowsResult = await client.query<{ count: string }>(`
         SELECT count(*) AS count
         FROM fitness.metric_stream
-        WHERE channel IN ('lat', 'lng', 'gps_accuracy')
+        WHERE channel IN ('lat', 'lng')
       `);
-      expect(legacyRowsResult.rows).toEqual([{ count: "5" }]);
+      expect(legacyCoordinateRowsResult.rows).toEqual([{ count: "0" }]);
+
+      const legacyAccuracyRowsResult = await client.query<{ count: string }>(`
+        SELECT count(*) AS count
+        FROM fitness.metric_stream
+        WHERE channel = 'gps_accuracy'
+      `);
+      expect(legacyAccuracyRowsResult.rows).toEqual([{ count: "1" }]);
     } finally {
       if (temporaryDirectory) {
         rmSync(temporaryDirectory, { recursive: true, force: true });

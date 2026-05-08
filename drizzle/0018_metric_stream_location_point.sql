@@ -20,8 +20,9 @@ DECLARE
   current_chunk_index integer := 1;
   current_chunk_regclass regclass;
   should_recompress boolean;
-  chunk_has_latitude boolean;
+  chunk_has_legacy_location boolean;
   inserted_count integer;
+  deleted_count integer;
 BEGIN
   IF batch_size < 1 THEN
     RAISE EXCEPTION 'batch_size must be greater than zero';
@@ -140,6 +141,23 @@ BEGIN
         EXIT WHEN inserted_count = 0;
       END LOOP;
 
+      LOOP
+        WITH deleted_rows AS (
+          SELECT ctid
+          FROM fitness.metric_stream
+          WHERE channel IN ('lat', 'lng')
+          LIMIT batch_size
+        )
+        DELETE FROM fitness.metric_stream
+        WHERE ctid IN (SELECT deleted_rows.ctid FROM deleted_rows);
+
+        GET DIAGNOSTICS deleted_count = ROW_COUNT;
+        RAISE NOTICE 'metric_stream legacy location cleanup table fallback chunk %/% deleted % rows', current_chunk_index, chunk_count, deleted_count;
+        COMMIT;
+
+        EXIT WHEN deleted_count = 0;
+      END LOOP;
+
       current_chunk_index := current_chunk_index + 1;
       CONTINUE;
     END IF;
@@ -148,15 +166,15 @@ BEGIN
       'SELECT EXISTS (
          SELECT 1
          FROM %s
-         WHERE channel = ''lat''
+         WHERE channel IN (''lat'', ''lng'')
            AND scalar IS NOT NULL
        )',
       current_chunk_regclass
     )
-    INTO chunk_has_latitude;
+    INTO chunk_has_legacy_location;
 
-    IF NOT chunk_has_latitude THEN
-      RAISE NOTICE 'metric_stream location backfill chunk %/% skipped: no latitude rows', current_chunk_index, chunk_count;
+    IF NOT chunk_has_legacy_location THEN
+      RAISE NOTICE 'metric_stream location backfill chunk %/% skipped: no legacy location rows', current_chunk_index, chunk_count;
       current_chunk_index := current_chunk_index + 1;
       CONTINUE;
     END IF;
@@ -250,6 +268,27 @@ BEGIN
       COMMIT;
 
       EXIT WHEN inserted_count = 0;
+    END LOOP;
+
+    LOOP
+      EXECUTE format(
+        'WITH deleted_rows AS (
+           SELECT ctid
+           FROM %1$s
+           WHERE channel IN (''lat'', ''lng'')
+           LIMIT $1
+         )
+         DELETE FROM %1$s
+         WHERE ctid IN (SELECT deleted_rows.ctid FROM deleted_rows)',
+        current_chunk_regclass
+      )
+      USING batch_size;
+
+      GET DIAGNOSTICS deleted_count = ROW_COUNT;
+      RAISE NOTICE 'metric_stream legacy location cleanup chunk %/% deleted % rows', current_chunk_index, chunk_count, deleted_count;
+      COMMIT;
+
+      EXIT WHEN deleted_count = 0;
     END LOOP;
 
     IF should_recompress THEN
