@@ -119,7 +119,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(11);
+    expect(count).toBe(12);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -174,7 +174,7 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(22);
+    expect(systemTableQueries).toHaveLength(23);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
@@ -283,6 +283,8 @@ describe("runClickHouseMigrations", () => {
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
+    expect(backfillStatements[0]).toContain("SELECT CAST(id, 'Nullable(UUID)') AS id");
+    expect(backfillStatements[0]).toContain("AND existing_metric_stream.id IS NULL");
     expect(backfillStatements[1]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
