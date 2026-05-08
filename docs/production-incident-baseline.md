@@ -2706,17 +2706,18 @@ non-idempotent `DROP INDEX`.
 
 ### Fix or Mitigation
 
-The deploy workflow now performs a narrowly scoped preflight repair before
-`docker stack deploy`: if `temporal_visibility` is exactly in this partial
-`1.1`/`v1.2` bootstrap state, it recreates the legacy indexes that Temporal's
-official migration expects to drop. Temporal can then rerun its own migration
-and advance the schema normally. The preflight compares the Postgres state as
-`1.1|true|false`, because concatenated Postgres booleans render as
-`true`/`false`, not `t`/`f`.
+At the time, the deploy workflow performed a narrowly scoped preflight repair
+before `docker stack deploy`: if `temporal_visibility` was exactly in this
+partial `1.1`/`v1.2` bootstrap state, it recreated the legacy indexes that
+Temporal's official migration expected to drop. Temporal could then rerun its
+own migration and advance the schema normally. The preflight compared the
+Postgres state as `1.1|true|false`, because concatenated Postgres booleans
+render as `true`/`false`, not `t`/`f`. That one-off workflow repair was later
+removed after the affected catalog state had converged.
 
 ### Remaining Risk
 
-This repair only covers the observed interrupted `v1.2` visibility bootstrap
+This repair only covered the observed interrupted `v1.2` visibility bootstrap
 state. Future Temporal upgrade failures should still be diagnosed from the first
 fatal Temporal log line and the catalog `schema_version` tables before adding
 any new repair path.
