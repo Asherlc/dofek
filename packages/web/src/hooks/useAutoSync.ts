@@ -1,7 +1,11 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useRef } from "react";
+import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc";
 
-const autoSyncAttemptedLatestDateStorageKey = "dofek.dashboard.autoSyncAttemptedLatestDate";
+const autoSyncAttemptStorageKey = "dofek.dashboard.autoSyncAttempt";
+let fallbackAutoSyncAttemptKey: string | null = null;
+let reportedSessionStorageError = false;
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -10,17 +14,39 @@ export function isDataStale(latestDate: string | null | undefined): boolean {
 }
 
 function todayYmd(): string {
-  return new Date().toLocaleDateString("en-CA");
+  return formatDateYmd(new Date());
+}
+
+function autoSyncAttemptKey(latestDate: string): string {
+  return `${todayYmd()}:${latestDate}`;
+}
+
+function reportSessionStorageError(error: unknown): void {
+  if (reportedSessionStorageError) return;
+  reportedSessionStorageError = true;
+  captureException(error, { context: "dashboard-auto-sync-session-storage" });
 }
 
 function hasAttemptedAutoSyncForLatestDate(latestDate: string): boolean {
   if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(autoSyncAttemptedLatestDateStorageKey) === latestDate;
+  const expectedAttemptKey = autoSyncAttemptKey(latestDate);
+  try {
+    return window.sessionStorage.getItem(autoSyncAttemptStorageKey) === expectedAttemptKey;
+  } catch (error) {
+    reportSessionStorageError(error);
+    return fallbackAutoSyncAttemptKey === expectedAttemptKey;
+  }
 }
 
 function markAutoSyncAttemptedForLatestDate(latestDate: string): void {
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(autoSyncAttemptedLatestDateStorageKey, latestDate);
+  const attemptKey = autoSyncAttemptKey(latestDate);
+  fallbackAutoSyncAttemptKey = attemptKey;
+  try {
+    window.sessionStorage.setItem(autoSyncAttemptStorageKey, attemptKey);
+  } catch (error) {
+    reportSessionStorageError(error);
+  }
 }
 
 /**

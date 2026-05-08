@@ -12,19 +12,26 @@ type ActiveSyncsQueryOptions = {
   enabled: boolean;
 };
 
-const { mockActiveSyncs, mockMutate, mockUseQueryOptions } = vi.hoisted(() => {
-  const mockActiveSyncs: ActiveSyncsQuery = {
-    data: [],
-    isLoading: false,
-  };
-  const mockUseQueryOptions: ActiveSyncsQueryOptions[] = [];
+const { mockActiveSyncs, mockCaptureException, mockMutate, mockUseQueryOptions } = vi.hoisted(
+  () => {
+    const mockActiveSyncs: ActiveSyncsQuery = {
+      data: [],
+      isLoading: false,
+    };
+    const mockUseQueryOptions: ActiveSyncsQueryOptions[] = [];
 
-  return {
-    mockActiveSyncs,
-    mockMutate: vi.fn(),
-    mockUseQueryOptions,
-  };
-});
+    return {
+      mockActiveSyncs,
+      mockCaptureException: vi.fn(),
+      mockMutate: vi.fn(),
+      mockUseQueryOptions,
+    };
+  },
+);
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: mockCaptureException,
+}));
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -42,7 +49,7 @@ vi.mock("../lib/trpc", () => ({
   },
 }));
 
-const autoSyncAttemptedLatestDateStorageKey = "dofek.dashboard.autoSyncAttemptedLatestDate";
+const autoSyncAttemptStorageKey = "dofek.dashboard.autoSyncAttempt";
 
 describe("isDataStale", () => {
   afterEach(() => {
@@ -83,6 +90,7 @@ describe("useAutoSync", () => {
     sessionStorage.clear();
     mockActiveSyncs.data = [];
     mockActiveSyncs.isLoading = false;
+    mockCaptureException.mockClear();
     mockMutate.mockClear();
     mockUseQueryOptions.length = 0;
   });
@@ -99,6 +107,23 @@ describe("useAutoSync", () => {
     renderHook(() => useAutoSync("2026-03-21"));
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
+    expect(mockMutate).toHaveBeenCalledWith({ sinceDays: 1 });
+  });
+
+  it("triggers again when the calendar day changes for the same stale latest data date", async () => {
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+    expect(mockMutate).toHaveBeenCalledTimes(1);
+
+    mockMutate.mockClear();
+    vi.setSystemTime(new Date("2026-03-23T10:00:00"));
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(sessionStorage.getItem(autoSyncAttemptStorageKey)).toBe("2026-03-23:2026-03-21");
+    expect(mockMutate).toHaveBeenCalledTimes(1);
+    expect(mockMutate).toHaveBeenCalledWith({ sinceDays: 1 });
   });
 
   it("does not trigger when data is current", async () => {
@@ -135,12 +160,12 @@ describe("useAutoSync", () => {
 
     renderHook(() => useAutoSync("2026-03-21"));
 
-    expect(sessionStorage.getItem(autoSyncAttemptedLatestDateStorageKey)).toBe("2026-03-21");
+    expect(sessionStorage.getItem(autoSyncAttemptStorageKey)).toBe("2026-03-22:2026-03-21");
     expect(mockMutate).toHaveBeenCalledWith({ sinceDays: 1 });
   });
 
   it("does not query or trigger when the same stale latest data date was already attempted", async () => {
-    sessionStorage.setItem(autoSyncAttemptedLatestDateStorageKey, "2026-03-21");
+    sessionStorage.setItem(autoSyncAttemptStorageKey, "2026-03-22:2026-03-21");
     const { useAutoSync } = await import("./useAutoSync");
 
     renderHook(() => useAutoSync("2026-03-21"));
@@ -150,14 +175,35 @@ describe("useAutoSync", () => {
   });
 
   it("can trigger again when the latest data date changes on the same day", async () => {
-    sessionStorage.setItem(autoSyncAttemptedLatestDateStorageKey, "2026-03-20");
+    sessionStorage.setItem(autoSyncAttemptStorageKey, "2026-03-22:2026-03-20");
     const { useAutoSync } = await import("./useAutoSync");
 
     renderHook(() => useAutoSync("2026-03-21"));
 
     expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: true });
-    expect(sessionStorage.getItem(autoSyncAttemptedLatestDateStorageKey)).toBe("2026-03-21");
+    expect(sessionStorage.getItem(autoSyncAttemptStorageKey)).toBe("2026-03-22:2026-03-21");
     expect(mockMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses an in-memory fallback when sessionStorage writes fail", async () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem");
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    const { useAutoSync } = await import("./useAutoSync");
+
+    const firstRender = renderHook(() => useAutoSync("2026-03-21"));
+    firstRender.unmount();
+    getItem.mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(mockMutate).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+
+    getItem.mockRestore();
+    setItem.mockRestore();
   });
 
   it("triggers after rerendering from current data to stale data", async () => {
