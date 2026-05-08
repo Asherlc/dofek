@@ -50,8 +50,6 @@ reviews:
     - "!**/coverage/**"
     - "!**/.turbo/**"
     - "!**/storybook-static/**"
-    - "!**/pnpm-lock.yaml"
-    - "!**/*.lock"
     - "!**/*.snap"
     - "!**/*.min.js"
     - "!**/*.min.css"
@@ -368,8 +366,6 @@ knowledge_base:
     filePatterns:
       - "AGENTS.md"
       - "**/AGENTS.md"
-      - "docs/**/*.md"
-      - "README.md"
   learnings:
     scope: auto
   issues:
