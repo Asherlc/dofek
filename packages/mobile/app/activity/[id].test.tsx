@@ -237,8 +237,8 @@ describe("ActivityDetailScreen", () => {
   it("labels the heart rate zone chart with zone numbers", async () => {
     mockHrZonesQuery.mockReturnValue({
       data: [
-        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300 },
-        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600 },
+        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300, percent: 33.3 },
+        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 66.7 },
       ],
       isLoading: false,
     });
@@ -287,8 +287,8 @@ describe("ActivityDetailScreen", () => {
       data: {
         ftp: 250,
         zones: [
-          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300 },
-          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600 },
+          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
         ],
       },
       isLoading: false,

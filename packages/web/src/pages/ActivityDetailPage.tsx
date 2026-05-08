@@ -739,6 +739,7 @@ interface ZoneDistributionDatum {
   zone: number;
   label: string;
   seconds: number;
+  percent: number;
 }
 
 function formatZoneChartTime(secondsValue: number) {
@@ -774,8 +775,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
     );
   }
 
-  const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
-  if (totalSeconds === 0) {
+  if (!zones.some((zoneItem) => zoneItem.percent > 0)) {
     return (
       <div className="flex items-center justify-center" style={{ height }}>
         <span className="text-dim text-sm">{emptyMessage}</span>
@@ -792,10 +792,8 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         if (!firstParam) return "";
         const zoneItem = zones[firstParam.dataIndex];
         if (!zoneItem) return "";
-        const percentage =
-          totalSeconds > 0 ? formatNumber((zoneItem.seconds / totalSeconds) * 100) : "0";
         return `<b>${zoneItem.label}</b> (${tooltipDetails(zoneItem)})<br/>
-          ${formatZoneChartTime(zoneItem.seconds)} (${percentage}%)`;
+          ${formatZoneChartTime(zoneItem.seconds)} (${formatNumber(zoneItem.percent)}%)`;
       },
     }),
     xAxis: dofekAxis.value({
@@ -817,10 +815,9 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
           position: "right",
           color: chartThemeColors.axisLabel,
           fontSize: 11,
-          formatter: (params: { value: number }) => {
-            const percentage =
-              totalSeconds > 0 ? formatNumber((params.value / totalSeconds) * 100, 0) : "0";
-            return `${percentage}%`;
+          formatter: (params: { dataIndex: number }) => {
+            const zoneItem = zones[params.dataIndex];
+            return `${formatNumber(zoneItem?.percent ?? 0, 0)}%`;
           },
         },
       },

@@ -9,6 +9,7 @@ import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 interface ZoneDistributionDatum {
   zone: number;
   seconds: number;
+  percent: number;
 }
 
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
@@ -58,8 +59,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
     );
   }
 
-  const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
-  if (totalSeconds === 0) {
+  if (!zones.some((zoneItem) => zoneItem.percent > 0)) {
     return (
       <View style={zoneChartStyles.container}>
         <ChartTitleWithTooltip
@@ -90,8 +90,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
       />
       <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
         {zones.map((zoneItem, zoneIndex) => {
-          const percentage = totalSeconds > 0 ? zoneItem.seconds / totalSeconds : 0;
-          const barWidth = Math.max(percentage * barAreaWidth, 2);
+          const barWidth = Math.max((zoneItem.percent / 100) * barAreaWidth, 2);
           const rowY = zoneIndex * (barHeight + gap);
           const zoneColor = zoneColors[zoneIndex] ?? "#71717a";
 
@@ -123,7 +122,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
                 fontSize={12}
                 fontWeight="600"
               >
-                {`${Math.round(percentage * 100)}%`}
+                {`${Math.round(zoneItem.percent)}%`}
               </SvgText>
             </G>
           );
