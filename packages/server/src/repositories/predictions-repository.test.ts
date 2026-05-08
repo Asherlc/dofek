@@ -1123,6 +1123,12 @@ describe("PredictionsRepository predict dispatching to activity subtypes", () =>
         expect.any(String),
         expect.objectContaining({ rhrEndDate: "2026-05-07" }),
       );
+      const dailyMetricsQueryText = execute.mock.calls
+        .map((call) => JSON.stringify(call[0]?.queryChunks ?? []))
+        .find((queryText) => queryText.includes("fitness.v_daily_metrics"));
+      expect(dailyMetricsQueryText).toBeDefined();
+      expect(dailyMetricsQueryText).toContain("2026-05-07");
+      expect(dailyMetricsQueryText).not.toContain("CURRENT_DATE");
     } finally {
       vi.useRealTimers();
     }

@@ -360,11 +360,12 @@ export class PredictionsRepository {
       dailyRowSchema,
       sql`WITH ${restingHeartRateCte},
           metric_dates AS (
-	            SELECT dm.date
-	            FROM fitness.v_daily_metrics dm
-	            WHERE dm.user_id = ${this.#userId}
-	              AND dm.date > CURRENT_DATE - ${days}::int
-	            UNION
+		            SELECT dm.date
+		            FROM fitness.v_daily_metrics dm
+		            WHERE dm.user_id = ${this.#userId}
+		              AND dm.date > ${endDate}::date - ${days}::int
+		              AND dm.date <= ${endDate}::date
+		            UNION
 	            SELECT drhr.date
 	            FROM resting_heart_rate drhr
 	          )
