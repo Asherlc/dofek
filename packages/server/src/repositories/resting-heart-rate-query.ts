@@ -1,17 +1,17 @@
 import type { SQL } from "drizzle-orm";
 import {
   fetchRestingHeartRateRowsFromClickHouse,
+  type RestingHeartRateQueryStore,
   type RestingHeartRateRow,
   restingHeartRateClickHouseCte,
   restingHeartRateValuesCte,
 } from "../../../../src/db/resting-heart-rate-query.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
 
 export { restingHeartRateClickHouseCte, restingHeartRateValuesCte };
 export type { RestingHeartRateRow };
 
 interface FetchRestingHeartRateRowsInput {
-  sensorStore: Pick<ActivitySensorStore, "query">;
+  sensorStore: RestingHeartRateQueryStore;
   userId: string;
   timezone: string;
   endDate: string;
