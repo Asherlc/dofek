@@ -56,9 +56,12 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
   let lockAcquired = false;
 
   try {
+    logger.info("[migrate] Connecting to Postgres");
     await client.connect();
+    logger.info("[migrate] Waiting for Postgres migration advisory lock");
     await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK_KEY]);
     lockAcquired = true;
+    logger.info("[migrate] Acquired Postgres migration advisory lock");
 
     await client.query("CREATE SCHEMA IF NOT EXISTS health");
     await client.query("CREATE SCHEMA IF NOT EXISTS drizzle");
@@ -82,6 +85,9 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     );
     const applied = appliedResult.rows;
     const appliedSet = new Set(applied.map((row) => row.hash));
+    logger.info(
+      `[migrate] Found ${files.length} Postgres migration file(s), ${appliedSet.size} already applied`,
+    );
 
     // Detect in-place edits to already-applied migration files
     for (const row of applied) {
@@ -146,6 +152,7 @@ export async function runMigrations(databaseUrl: string, migrationsDir?: string)
     }
 
     let count = 0;
+    logger.info(`[migrate] ${pendingFiles.length} pending Postgres migration(s)`);
     for (const file of pendingFiles) {
       logger.info(`[migrate] Applying: ${file}`);
       const content = readFileSync(join(dir, file), "utf-8");

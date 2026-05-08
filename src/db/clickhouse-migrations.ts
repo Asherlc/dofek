@@ -1,5 +1,6 @@
 import { Client, escapeIdentifier } from "pg";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import {
   buildClickHouseBootstrapStatements,
   type ClickHouseCommandClient,
@@ -202,6 +203,7 @@ ORDER BY id`,
       continue;
     }
 
+    logger.info(`[migrate] Applying ClickHouse migration: ${migration.id}`);
     if ("statements" in migration) {
       for (const statement of migration.statements) {
         await runClickHouseMigrationStatement(client, statement);
@@ -212,6 +214,7 @@ ORDER BY id`,
     await client.command({
       query: `INSERT INTO analytics.schema_migrations (id) VALUES (${migrationId})`,
     });
+    logger.info(`[migrate] Applied ClickHouse migration: ${migration.id}`);
     appliedCount += 1;
   }
 
@@ -329,9 +332,13 @@ async function backfillNativeMetricStream(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
 ): Promise<void> {
+  logger.info("[migrate] Waiting for ClickHouse postgres_fitness.metric_stream table");
   await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
   const timescaleChunks = await fetchMetricStreamBackfillChunks(postgresConnectionString);
   const backfillRanges = timescaleChunks.flatMap(splitMetricStreamBackfillChunk);
+  logger.info(
+    `[migrate] ClickHouse metric_stream backfill has ${backfillRanges.length} range(s) from ${timescaleChunks.length} Timescale chunk(s)`,
+  );
   if (backfillRanges.length === 0) {
     return;
   }
@@ -348,7 +355,7 @@ ENGINE = MergeTree
 ORDER BY (lower_bound, upper_bound)`,
   });
 
-  for (const backfillRange of backfillRanges) {
+  for (const [rangeIndex, backfillRange] of backfillRanges.entries()) {
     if (
       await isMetricStreamBackfillChunkComplete(
         client,
@@ -358,6 +365,9 @@ ORDER BY (lower_bound, upper_bound)`,
     ) {
       continue;
     }
+    logger.info(
+      `[migrate] Backfilling ClickHouse metric_stream range ${rangeIndex + 1}/${backfillRanges.length}: ${backfillRange.lowerBound.toISOString()} to ${backfillRange.upperBound.toISOString()}`,
+    );
     await client.command({
       query: buildMetricStreamBackfillStatement(
         postgresMetricStreamSource,
@@ -370,6 +380,7 @@ ORDER BY (lower_bound, upper_bound)`,
 VALUES (${clickHouseDateTimeLiteral(backfillRange.lowerBound)}, ${clickHouseDateTimeLiteral(backfillRange.upperBound)})`,
     });
   }
+  logger.info("[migrate] ClickHouse metric_stream backfill complete");
 }
 
 function splitMetricStreamBackfillChunk(

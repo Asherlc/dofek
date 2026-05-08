@@ -3391,3 +3391,57 @@ documented late-data refresh strategy.
 - Evaluate a ClickHouse materialized view or scheduled read model if RHR query
   latency rises under dashboard load.
 - Assign an analytics owner and review the mitigation by 2026-05-21.
+
+## 2026-05-08: Production Migration Log Blind Spot
+
+### Symptoms
+
+The production deploy workflow reached `Run migrations` and printed only
+periodic status lines like `Migration still running after 219s...`.
+
+### User Impact
+
+The deploy was blocked before the swarm rollout. Operators could not tell from
+the GitHub Actions log whether the migration was making progress, waiting on a
+lock, or stuck in ClickHouse work.
+
+### Evidence
+
+The migration container `dofek_migrate_25537950441_1` was still running. Its
+logs showed the last visible migration step was
+`Applying: 0017_drop_derived_resting_heart_rate.sql`. Postgres activity showed
+`DROP VIEW IF EXISTS fitness.derived_resting_heart_rate;` waiting on a relation
+lock while three long-running old-web queries continued reading
+`fitness.derived_resting_heart_rate`.
+
+### Root Cause
+
+The workflow started the migration container in detached mode and only fetched
+container logs after completion or timeout. That hid useful live progress and
+lock-wait context during long-running migrations.
+
+### Fix or Mitigation
+
+Stream migration container logs with `docker logs --follow` while polling the
+container state. Add explicit Postgres and ClickHouse migration phase logs,
+including pending migration counts, advisory-lock acquisition, ClickHouse
+migration IDs, and metric-stream backfill ranges.
+
+### Remaining Risk
+
+The improved logging does not prevent DDL from waiting behind long-running app
+queries. Future destructive migrations should use expand/contract or
+post-deploy sequencing so old app versions stop referencing the object before
+the migration drops it.
+
+### Follow-Up Work
+
+- Owner: Asher. Merge the deploy workflow log-streaming and migration phase-log
+  fix by 2026-05-09.
+- Owner: Asher. Document the migration lock investigation steps and
+  expand/contract rule in the deploy runbook by 2026-05-15.
+- Owner: Asher. Review long-running dashboard and personalization queries that
+  still use Postgres read paths and move analytics-heavy work to ClickHouse
+  where the required read models already exist by 2026-05-22.
+- Owner: Asher. Add a workflow test or shellcheck-style coverage for detached
+  migration container log streaming by 2026-05-22.
