@@ -1,5 +1,7 @@
+import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
+import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import { analyzeNutrition, analyzeNutritionItems } from "../lib/ai-nutrition.ts";
 import { logger } from "../logger.ts";
@@ -41,6 +43,20 @@ function isAiStructuredOutputError(error: unknown): boolean {
     error.message.includes("No object generated") ||
     error.message.includes("Bad JSON character")
   );
+}
+
+async function invalidateFoodCaches(userId: string): Promise<void> {
+  const results = await Promise.allSettled([
+    queryCache.invalidateByPrefix(`${userId}:food.`),
+    queryCache.invalidateByPrefix(`${userId}:nutrition.`),
+  ]);
+
+  for (const result of results) {
+    if (result.status === "rejected") {
+      logger.warn(`[food] Failed to invalidate food cache for userId=${userId}: ${result.reason}`);
+      Sentry.captureException(result.reason);
+    }
+  }
 }
 
 const foodCategoryValues = [
@@ -163,13 +179,17 @@ export const foodRouter = router({
   /** Create a new food entry */
   create: protectedProcedure.input(createFoodEntrySchema).mutation(async ({ ctx, input }) => {
     const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-    return repo.create(input);
+    const result = await repo.create(input);
+    await invalidateFoodCaches(ctx.userId);
+    return result;
   }),
 
   /** Update an existing food entry by id */
   update: protectedProcedure.input(updateFoodEntrySchema).mutation(async ({ ctx, input }) => {
     const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-    return repo.update(input);
+    const result = await repo.update(input);
+    await invalidateFoodCaches(ctx.userId);
+    return result;
   }),
 
   /** Delete a food entry by id */
@@ -177,7 +197,9 @@ export const foodRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-      return repo.delete(input.id);
+      const result = await repo.delete(input.id);
+      await invalidateFoodCaches(ctx.userId);
+      return result;
     }),
 
   /** Analyze a food description with AI and return estimated nutrition data */
@@ -231,6 +253,8 @@ export const foodRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-      return repo.quickAdd(input);
+      const result = await repo.quickAdd(input);
+      await invalidateFoodCaches(ctx.userId);
+      return result;
     }),
 });

@@ -310,6 +310,27 @@ describe("Food router", () => {
       expect(remaining.some((entry) => entry.id === secondId)).toBe(true);
     });
 
+    it("returns fresh byDate data after deleting a previously loaded entry", async () => {
+      const created = await mutate("food.create", {
+        date: "2025-02-05",
+        meal: "lunch",
+        foodName: "Cached Delete Entry",
+        calories: 315,
+      });
+      const cachedEntryId: string = created.result.data.id;
+
+      const beforeDelete = await query("food.byDate", { date: "2025-02-05" });
+      const cachedEntries: Array<{ id: string }> = beforeDelete.result.data;
+      expect(cachedEntries.some((entry) => entry.id === cachedEntryId)).toBe(true);
+
+      const deleteResult = await mutate("food.delete", { id: cachedEntryId });
+      expect(deleteResult.result.data.success).toBe(true);
+
+      const afterDelete = await query("food.byDate", { date: "2025-02-05" });
+      const remainingEntries: Array<{ id: string }> = afterDelete.result.data;
+      expect(remainingEntries.some((entry) => entry.id === cachedEntryId)).toBe(false);
+    });
+
     it("cascades delete to food_entry_nutrient rows", async () => {
       const created = await mutate("food.create", {
         date: "2025-02-04",
