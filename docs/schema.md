@@ -124,6 +124,7 @@ tables through ClickHouse replication.
 |-------|---------|
 | `analytics.deduped_sensor` | Stored per-activity sensor sample selection for stream and zone reads. |
 | `analytics.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from deduped sensor samples. |
+| `analytics.activity_trend_daily` | Daily activity trend rollup from deduped sensor samples; weekly trend endpoints roll this up at query time. |
 | `analytics.activity_training_summary` | Per-activity training summary and histograms used by app analytics. |
 | `analytics.activity_rollup_dirty` | Work queue for activity projection refresh. |
 

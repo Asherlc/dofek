@@ -47,6 +47,9 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary/g),
     ).toHaveLength(4);
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
+    expect(sql).toContain("DROP TABLE IF EXISTS analytics.activity_trend_daily");
+    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
   });
 
   it("creates remaining analytics read models in ClickHouse", () => {
@@ -116,7 +119,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(10);
+    expect(count).toBe(11);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -149,6 +152,18 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining(
           "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
         ),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining(
+          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily",
+        ),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("countIf(channel = 'speed') AS speed_samples"),
       }),
     );
     expect(command).toHaveBeenCalledWith(

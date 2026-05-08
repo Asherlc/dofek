@@ -28,14 +28,18 @@ ClickHouse analytics.deduped_sensor
         v
 ClickHouse analytics.activity_summary
         |
+        | refreshable materialized view
         v
-Activity stream, zone, and summary reads
+ClickHouse analytics.activity_trend_daily
+        |
+        v
+Activity stream, zone, summary, and trend reads
 ```
 
-Runtime API queries must read `analytics.deduped_sensor` or
-`analytics.activity_summary`, not the raw metric stream. The raw ClickHouse table
-exists only as the source for ClickHouse refresh jobs. Derived rows are never
-synced back to Postgres.
+Runtime API queries must read `analytics.deduped_sensor`,
+`analytics.activity_summary`, or `analytics.activity_trend_daily`, not the raw
+metric stream. The raw ClickHouse table exists only as the source for
+ClickHouse refresh jobs. Derived rows are never synced back to Postgres.
 
 ## Local Development
 
@@ -64,6 +68,8 @@ Activity routes resolve authorization, access windows, and canonical activity
 membership in Postgres. Stream, heart-rate-zone, power-zone, and activity
 summary reads then query stored ClickHouse `analytics.*` materialized views. The
 app does not issue raw `metric_stream` analytical reads for those endpoints.
+Daily and weekly trend reads use `analytics.activity_trend_daily`; weekly rows
+are rolled up from daily rows at query time.
 
 Provider record inventory uses the ClickHouse `analytics.provider_stats` read
 model for all provider-owned record counts displayed by sync/provider detail:
@@ -96,6 +102,9 @@ ClickHouse migrations create and update the databases and read models:
   minute from the copied raw rows and activity membership.
 - `analytics.activity_summary`: a refreshable materialized view refreshed from
   `analytics.deduped_sensor`.
+- `analytics.activity_trend_daily`: a refreshable materialized view with one
+  activity-linked sensor trend row per user and UTC day. It is derived from
+  `analytics.deduped_sensor` and is safe to drop and rebuild.
 
 Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
 table rather than a table created by PeerDB, it must include PeerDB's CDC

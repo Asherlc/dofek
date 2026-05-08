@@ -1,5 +1,8 @@
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
-import { buildAnalyticsFitnessReadModelStatements } from "./clickhouse-read-models.ts";
+import {
+  buildActivityTrendDailyCreateReadModelStatements,
+  buildAnalyticsFitnessReadModelStatements,
+} from "./clickhouse-read-models.ts";
 import {
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
@@ -455,5 +458,6 @@ LEFT JOIN distance_per_activity
   ON distance_per_activity.activity_id = activity_bounds.activity_id`,
     "SYSTEM REFRESH VIEW analytics.activity_summary",
     "SYSTEM WAIT VIEW analytics.activity_summary",
+    ...buildActivityTrendDailyCreateReadModelStatements(),
   ];
 }

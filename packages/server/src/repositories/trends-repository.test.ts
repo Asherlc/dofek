@@ -198,8 +198,15 @@ describe("TrendRow", () => {
 describe("TrendsRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
-    const repo = new TrendsRepository({ execute }, "user-1");
-    return { repo, execute };
+    const sensorStore = {
+      query: vi
+        .fn()
+        .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) =>
+          rows.map((row) => schema.parse(row)),
+        ),
+    };
+    const repo = new TrendsRepository("user-1", sensorStore);
+    return { repo, execute, sensorStore };
   }
 
   const sampleDbRow = {
@@ -230,10 +237,17 @@ describe("TrendsRepository", () => {
       expect(result[0]?.period).toBe("2024-06-15");
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("reads from the ClickHouse daily trend read model", async () => {
+      const { repo, execute, sensorStore } = makeRepository([]);
       await repo.getDaily(30);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM analytics.activity_trend_daily"),
+        { userId: "user-1", days: 30 },
+      );
+      const query = sensorStore.query.mock.calls[0]?.[1];
+      expect(query).not.toContain("fitness.cagg_metric_daily");
     });
   });
 
@@ -251,10 +265,19 @@ describe("TrendsRepository", () => {
       expect(result[0]?.period).toBe("2024-06-15");
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepository([]);
+    it("rolls weekly rows up from the ClickHouse daily trend read model", async () => {
+      const { repo, execute, sensorStore } = makeRepository([]);
       await repo.getWeekly(12);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM analytics.activity_trend_daily"),
+        { userId: "user-1", days: 84 },
+      );
+      const query = sensorStore.query.mock.calls[0]?.[1];
+      expect(query).not.toContain("fitness.cagg_metric_weekly");
+      expect(query).toContain("avg_speed * speed_samples");
+      expect(query).toContain("weekly_speed_samples");
     });
 
     it("maps rows correctly to TrendRow", async () => {

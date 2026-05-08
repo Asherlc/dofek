@@ -777,6 +777,29 @@ LEFT JOIN journal_entry_counts
  AND journal_entry_counts.provider_id = providers.provider_id`;
 }
 
+function buildActivityTrendDailyReadModelSql(): string {
+  return `${refreshableMergeTreeViewHeader("analytics.activity_trend_daily", "(user_id, bucket_date)", "20 SECOND")}
+SELECT
+  user_id,
+  toDate(recorded_at) AS bucket_date,
+  CAST(avgIf(scalar, channel = 'heart_rate'), 'Nullable(Float64)') AS avg_hr,
+  CAST(maxIf(scalar, channel = 'heart_rate'), 'Nullable(Int16)') AS max_hr,
+  CAST(avgIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Float64)') AS avg_power,
+  CAST(maxIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Int16)') AS max_power,
+  CAST(avgIf(scalar, channel = 'cadence' AND scalar > 0), 'Nullable(Float64)') AS avg_cadence,
+  CAST(avgIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS avg_speed,
+  count() AS total_samples,
+  countIf(channel = 'heart_rate') AS hr_samples,
+  countIf(channel = 'power' AND scalar > 0) AS power_samples,
+  countIf(channel = 'cadence' AND scalar > 0) AS cadence_samples,
+  countIf(channel = 'speed') AS speed_samples,
+  uniqExact(activity_id) AS activity_count
+FROM analytics.deduped_sensor
+WHERE activity_id IS NOT NULL
+  AND scalar IS NOT NULL
+GROUP BY user_id, bucket_date`;
+}
+
 export function buildProviderStatsCreateReadModelStatements(): string[] {
   return [
     buildProviderStatsReadModelSql(),
@@ -790,6 +813,22 @@ export function buildProviderStatsReadModelStatements(): string[] {
     "DROP VIEW IF EXISTS analytics.provider_stats",
     "DROP TABLE IF EXISTS analytics.provider_stats",
     ...buildProviderStatsCreateReadModelStatements(),
+  ];
+}
+
+export function buildActivityTrendDailyCreateReadModelStatements(): string[] {
+  return [
+    buildActivityTrendDailyReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
+    "SYSTEM WAIT VIEW analytics.activity_trend_daily",
+  ];
+}
+
+export function buildActivityTrendDailyReadModelStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.activity_trend_daily",
+    "DROP TABLE IF EXISTS analytics.activity_trend_daily",
+    ...buildActivityTrendDailyCreateReadModelStatements(),
   ];
 }
 
