@@ -396,7 +396,10 @@ active_body AS (
     min(id) AS id,
     provider_id,
     user_id,
-    ifNull(external_id, toString(id)) AS external_id,
+    ifNull(
+      external_id,
+      concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
+    ) AS external_id,
     recorded_at,
     device_id AS source_name,
     maxIf(scalar, channel = 'body_weight') AS weight_kg,
@@ -430,7 +433,10 @@ active_body AS (
   GROUP BY
     provider_id,
     user_id,
-    ifNull(external_id, toString(id)),
+    ifNull(
+      external_id,
+      concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
+    ),
     recorded_at,
     device_id
 ),

@@ -168,6 +168,10 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
+    expect(sql).toContain(
+      "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
+    );
+    expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",
