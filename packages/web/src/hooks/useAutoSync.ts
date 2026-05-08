@@ -1,11 +1,26 @@
 import { useEffect, useRef } from "react";
 import { trpc } from "../lib/trpc";
 
+const autoSyncAttemptDateStorageKey = "dofek.dashboard.autoSyncAttemptDate";
+
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
   if (!latestDate) return false; // No data at all — nothing to refresh
-  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
-  return latestDate < today;
+  return latestDate < todayYmd();
+}
+
+function todayYmd(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function hasAttemptedAutoSyncToday(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(autoSyncAttemptDateStorageKey) === todayYmd();
+}
+
+function markAutoSyncAttemptedToday(): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(autoSyncAttemptDateStorageKey, todayYmd());
 }
 
 /**
@@ -18,18 +33,22 @@ export function isDataStale(latestDate: string | null | undefined): boolean {
  */
 export function useAutoSync(latestDate: string | null | undefined) {
   const triggered = useRef(false);
+  const dataIsStale = isDataStale(latestDate);
+  const attemptedToday = hasAttemptedAutoSyncToday();
   const triggerSync = trpc.sync.triggerSync.useMutation();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
-    enabled: isDataStale(latestDate),
+    enabled: dataIsStale && !attemptedToday,
   });
 
   useEffect(() => {
     if (triggered.current) return;
-    if (!isDataStale(latestDate)) return;
+    if (!dataIsStale) return;
+    if (hasAttemptedAutoSyncToday()) return;
     if (activeSyncs.isLoading) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return; // sync already in progress
 
     triggered.current = true;
+    markAutoSyncAttemptedToday();
     triggerSync.mutate({ sinceDays: 1 });
-  }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
+  }, [dataIsStale, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
 }
