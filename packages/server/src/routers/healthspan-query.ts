@@ -5,7 +5,7 @@ import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
-import { fetchLatestBodyMeasurement } from "../repositories/body-clickhouse.ts";
+import { fetchBodyCompRows } from "../repositories/body-clickhouse.ts";
 import {
   fetchRestingHeartRateRows,
   type RestingHeartRateRow,
@@ -167,11 +167,11 @@ export async function fetchHealthspanRawData(
   const weeklyDivisor = Math.max(totalDays / 7, 1);
   const weeklyAerobicMin = hrZoneTime.aerobic_minutes / weeklyDivisor;
   const weeklyHighIntensityMin = hrZoneTime.high_intensity_minutes / weeklyDivisor;
-  const latestBodyMeasurement = ctx.sensorStore
-    ? await fetchLatestBodyMeasurement(ctx.sensorStore, ctx.userId)
-    : null;
-  const latestWeightKg = latestBodyMeasurement?.weight_kg ?? null;
-  const latestBodyFatPct = latestBodyMeasurement?.body_fat_pct ?? null;
+  const bodyMeasurements = ctx.sensorStore
+    ? await fetchBodyCompRows(ctx.sensorStore, ctx.userId, endDate, totalDays)
+    : [];
+  const latestWeightKg = latestNonNullValue(bodyMeasurements, "weight_kg");
+  const latestBodyFatPct = latestNonNullValue(bodyMeasurements, "body_fat_pct");
 
   const rows = await executeWithSchema(
     ctx.db,
@@ -294,6 +294,19 @@ export async function fetchHealthspanRawData(
     latest_vo2max: averageVo2MaxEstimates(vo2MaxEstimates.map((estimate) => estimate.vo2max)),
     weekly_history: mergeWeeklyVo2Max(row.weekly_history, vo2MaxEstimates),
   };
+}
+
+function latestNonNullValue<TRow extends Record<TKey, number | null>, TKey extends string>(
+  rows: TRow[],
+  key: TKey,
+): number | null {
+  for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+    const value = rows[rowIndex]?.[key];
+    if (value != null) {
+      return Number(value);
+    }
+  }
+  return null;
 }
 
 function mergeWeeklyVo2Max(
