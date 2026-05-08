@@ -337,6 +337,7 @@ describe("Router transformation logic", () => {
       }
 
       await refreshViews();
+      await syncClickHouseTestActivitySensorStore(testCtx);
     }, 30_000);
 
     it("returns personalized sleep need with data", async () => {
