@@ -8,16 +8,21 @@ type ActiveSyncsQuery = {
   data: ActiveSync[];
   isLoading: boolean;
 };
+type ActiveSyncsQueryOptions = {
+  enabled: boolean;
+};
 
-const { mockActiveSyncs, mockMutate } = vi.hoisted(() => {
+const { mockActiveSyncs, mockMutate, mockUseQueryOptions } = vi.hoisted(() => {
   const mockActiveSyncs: ActiveSyncsQuery = {
     data: [],
     isLoading: false,
   };
+  const mockUseQueryOptions: ActiveSyncsQueryOptions[] = [];
 
   return {
     mockActiveSyncs,
     mockMutate: vi.fn(),
+    mockUseQueryOptions,
   };
 });
 
@@ -28,11 +33,16 @@ vi.mock("../lib/trpc", () => ({
         useMutation: () => ({ mutate: mockMutate }),
       },
       activeSyncs: {
-        useQuery: () => mockActiveSyncs,
+        useQuery: (_input: undefined, options: ActiveSyncsQueryOptions) => {
+          mockUseQueryOptions.push(options);
+          return mockActiveSyncs;
+        },
       },
     },
   },
 }));
+
+const autoSyncAttemptedLatestDateStorageKey = "dofek.dashboard.autoSyncAttemptedLatestDate";
 
 describe("isDataStale", () => {
   afterEach(() => {
@@ -74,6 +84,7 @@ describe("useAutoSync", () => {
     mockActiveSyncs.data = [];
     mockActiveSyncs.isLoading = false;
     mockMutate.mockClear();
+    mockUseQueryOptions.length = 0;
   });
 
   afterEach(() => {
@@ -86,6 +97,76 @@ describe("useAutoSync", () => {
     const firstRender = renderHook(() => useAutoSync("2026-03-21"));
     firstRender.unmount();
     renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(mockMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trigger when data is current", async () => {
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-22"));
+
+    expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: false });
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger while active syncs are still loading", async () => {
+    mockActiveSyncs.isLoading = true;
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: true });
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger when another sync is already active", async () => {
+    mockActiveSyncs.data = [{ jobId: "sync-1" }];
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: true });
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("marks the latest synced data date and requests one day of sync history", async () => {
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(sessionStorage.getItem(autoSyncAttemptedLatestDateStorageKey)).toBe("2026-03-21");
+    expect(mockMutate).toHaveBeenCalledWith({ sinceDays: 1 });
+  });
+
+  it("does not query or trigger when the same stale latest data date was already attempted", async () => {
+    sessionStorage.setItem(autoSyncAttemptedLatestDateStorageKey, "2026-03-21");
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: false });
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("can trigger again when the latest data date changes on the same day", async () => {
+    sessionStorage.setItem(autoSyncAttemptedLatestDateStorageKey, "2026-03-20");
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+
+    expect(mockUseQueryOptions.at(-1)).toEqual({ enabled: true });
+    expect(sessionStorage.getItem(autoSyncAttemptedLatestDateStorageKey)).toBe("2026-03-21");
+    expect(mockMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers after rerendering from current data to stale data", async () => {
+    const { useAutoSync } = await import("./useAutoSync");
+
+    const hook = renderHook(({ latestDate }) => useAutoSync(latestDate), {
+      initialProps: { latestDate: "2026-03-22" },
+    });
+    hook.rerender({ latestDate: "2026-03-21" });
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
   });

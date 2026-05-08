@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { trpc } from "../lib/trpc";
 
-const autoSyncAttemptDateStorageKey = "dofek.dashboard.autoSyncAttemptDate";
+const autoSyncAttemptedLatestDateStorageKey = "dofek.dashboard.autoSyncAttemptedLatestDate";
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -13,14 +13,14 @@ function todayYmd(): string {
   return new Date().toLocaleDateString("en-CA");
 }
 
-function hasAttemptedAutoSyncToday(): boolean {
+function hasAttemptedAutoSyncForLatestDate(latestDate: string): boolean {
   if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(autoSyncAttemptDateStorageKey) === todayYmd();
+  return window.sessionStorage.getItem(autoSyncAttemptedLatestDateStorageKey) === latestDate;
 }
 
-function markAutoSyncAttemptedToday(): void {
+function markAutoSyncAttemptedForLatestDate(latestDate: string): void {
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(autoSyncAttemptDateStorageKey, todayYmd());
+  window.sessionStorage.setItem(autoSyncAttemptedLatestDateStorageKey, latestDate);
 }
 
 /**
@@ -34,21 +34,22 @@ function markAutoSyncAttemptedToday(): void {
 export function useAutoSync(latestDate: string | null | undefined) {
   const triggered = useRef(false);
   const dataIsStale = isDataStale(latestDate);
-  const attemptedToday = hasAttemptedAutoSyncToday();
+  const attemptedForLatestDate = latestDate ? hasAttemptedAutoSyncForLatestDate(latestDate) : false;
   const triggerSync = trpc.sync.triggerSync.useMutation();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
-    enabled: dataIsStale && !attemptedToday,
+    enabled: dataIsStale && !attemptedForLatestDate,
   });
 
   useEffect(() => {
     if (triggered.current) return;
     if (!dataIsStale) return;
-    if (hasAttemptedAutoSyncToday()) return;
+    if (!latestDate) return;
+    if (hasAttemptedAutoSyncForLatestDate(latestDate)) return;
     if (activeSyncs.isLoading) return;
     if ((activeSyncs.data?.length ?? 0) > 0) return; // sync already in progress
 
     triggered.current = true;
-    markAutoSyncAttemptedToday();
+    markAutoSyncAttemptedForLatestDate(latestDate);
     triggerSync.mutate({ sinceDays: 1 });
-  }, [dataIsStale, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
+  }, [latestDate, dataIsStale, activeSyncs.isLoading, activeSyncs.data, triggerSync]);
 }
