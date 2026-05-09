@@ -37,6 +37,8 @@ export interface ActivityHrZone {
   /** Upper bound as integer percentage of HRR (e.g. 60) */
   maxPct: number;
   seconds: number;
+  /** Percentage of activity zone time spent in this zone. */
+  percent: number;
 }
 
 export interface PolarizationZoneDefinition {
@@ -131,14 +133,17 @@ export function computeHrRange(
  * Missing zones get 0 seconds. Used by activity and training routers.
  */
 export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityHrZone[] {
-  return HEART_RATE_ZONES.map((z) => {
-    const row = rows.find((r) => Number(r.zone) === z.zone);
+  const totalSeconds = rows.reduce((sum, row) => sum + Number(row.seconds), 0);
+  return HEART_RATE_ZONES.map((zoneDefinition) => {
+    const row = rows.find((candidateRow) => Number(candidateRow.zone) === zoneDefinition.zone);
+    const seconds = row ? Number(row.seconds) : 0;
     return {
-      zone: z.zone,
-      label: z.label,
-      minPct: Math.round(z.minPctHrr * 100),
-      maxPct: Math.round(z.maxPctHrr * 100),
-      seconds: row ? Number(row.seconds) : 0,
+      zone: zoneDefinition.zone,
+      label: zoneDefinition.label,
+      minPct: Math.round(zoneDefinition.minPctHrr * 100),
+      maxPct: Math.round(zoneDefinition.maxPctHrr * 100),
+      seconds,
+      percent: totalSeconds > 0 ? Math.round((seconds / totalSeconds) * 1000) / 10 : 0,
     };
   });
 }
@@ -209,6 +214,8 @@ export interface ActivityPowerZone {
   /** Upper bound as integer percentage of FTP. null for Z7 (open-ended). */
   maxPct: number | null;
   seconds: number;
+  /** Percentage of activity zone time spent in this zone. */
+  percent: number;
 }
 
 /**
@@ -272,14 +279,19 @@ export function classifyPowerZone(power: number, ftp: number): number {
  * Missing zones get 0 seconds.
  */
 export function mapPowerZones(rows: { zone: number; seconds: number }[]): ActivityPowerZone[] {
-  return POWER_ZONES.map((z) => {
-    const row = rows.find((r) => Number(r.zone) === z.zone);
+  const totalSeconds = rows.reduce((sum, row) => sum + Number(row.seconds), 0);
+  return POWER_ZONES.map((zoneDefinition) => {
+    const row = rows.find((candidateRow) => Number(candidateRow.zone) === zoneDefinition.zone);
+    const seconds = row ? Number(row.seconds) : 0;
     return {
-      zone: z.zone,
-      label: z.label,
-      minPct: Math.round(z.minPctFtp * 100),
-      maxPct: Number.isFinite(z.maxPctFtp) ? Math.round(z.maxPctFtp * 100) : null,
-      seconds: row ? Number(row.seconds) : 0,
+      zone: zoneDefinition.zone,
+      label: zoneDefinition.label,
+      minPct: Math.round(zoneDefinition.minPctFtp * 100),
+      maxPct: Number.isFinite(zoneDefinition.maxPctFtp)
+        ? Math.round(zoneDefinition.maxPctFtp * 100)
+        : null,
+      seconds,
+      percent: totalSeconds > 0 ? Math.round((seconds / totalSeconds) * 1000) / 10 : 0,
     };
   });
 }

@@ -57,7 +57,7 @@ export class WahooProvider implements WebhookProvider {
   }
 
   activityUrl(externalId: string): string {
-    return `https://cloud.wahoo.com/workouts/${externalId}`;
+    return `https://systm.wahoofitness.com/history/activity-details/${externalId}`;
   }
 
   // ── Webhook implementation ──

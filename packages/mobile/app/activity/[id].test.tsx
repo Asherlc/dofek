@@ -213,7 +213,7 @@ beforeEach(() => {
   mockStrengthExercisesQuery.mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
-  mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false });
+  mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
 });
@@ -237,8 +237,8 @@ describe("ActivityDetailScreen", () => {
   it("labels the heart rate zone chart with zone numbers", async () => {
     mockHrZonesQuery.mockReturnValue({
       data: [
-        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300 },
-        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600 },
+        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300, percent: 33.3 },
+        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 66.7 },
       ],
       isLoading: false,
     });
@@ -251,13 +251,75 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("Z1 Recovery")).toBeNull();
   });
 
+  it("keeps zero-percent heart rate zone bars at zero width", async () => {
+    mockHrZonesQuery.mockReturnValue({
+      data: [
+        { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 0, percent: 0 },
+        { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 100 },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    const { container } = render(React.createElement(ActivityDetailScreen));
+
+    const zeroPercentBar = container.querySelector('rect[fill="green"]');
+    expect(zeroPercentBar?.getAttribute("width")).toBe("0");
+  });
+
+  it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("No heart rate zone data")).toBeTruthy();
+  });
+
+  it("shows the heart rate zones loading state while zones are loading", async () => {
+    mockHrZonesQuery.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByTestId("loading")).toBeTruthy();
+    expect(screen.queryByText("No heart rate zone data")).toBeNull();
+  });
+
+  it("does not show heart rate zones for non-heart-rate streams while zones are loading", async () => {
+    mockStreamQuery.mockReturnValue({
+      data: streamPointsWithHrAndPower.map((point) => ({ ...point, heartRate: null })),
+      isLoading: false,
+    });
+    mockHrZonesQuery.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.queryByText("Heart Rate Zones")).toBeNull();
+    expect(screen.queryByText("No heart rate zone data")).toBeNull();
+  });
+
+  it("shows the heart rate zones error instead of the empty state when loading zones fails", async () => {
+    mockHrZonesQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: { message: "Unable to load heart rate zones" },
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Unable to load heart rate zones")).toBeTruthy();
+    expect(screen.queryByText("No heart rate zone data")).toBeNull();
+  });
+
   it("labels the power zone chart with zone numbers", async () => {
     mockPowerZonesQuery.mockReturnValue({
       data: {
         ftp: 250,
         zones: [
-          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300 },
-          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600 },
+          { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
         ],
       },
       isLoading: false,

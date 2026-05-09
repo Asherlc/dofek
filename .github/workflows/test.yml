@@ -145,6 +145,74 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm lint
 
+  stylelint:
+    name: Stylelint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Run stylelint
+        run: pnpm lint:css
+
+  yamllint:
+    name: YAMLLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - name: Run yamllint
+        run: uv tool run yamllint -c .yamllint.yml --no-warnings .
+
+  dotenv-lint:
+    name: Dotenv Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: dotenv-linter/action-dotenv-linter@6c39ca3e4c1f440bf1911b4169c2056ec86c3f99 # v3.0.0
+        with:
+          reporter: github-check
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
+        with:
+          tflint_version: v0.62.0
+      - name: Initialize tflint plugins
+        run: tflint --init
+      - name: Run tflint
+        run: tflint --format compact
+
+  sqlfluff:
+    name: SQLFluff
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - name: Lint new migration SQL
+        run: |
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- 'drizzle/*.sql' \
+            | grep -v '_baseline' \
+            || true)
+          if [ -z "$NEW_MIGRATIONS" ]; then
+            echo "No new migrations to lint"
+            exit 0
+          fi
+          echo "Linting migrations:"
+          echo "$NEW_MIGRATIONS"
+          echo "$NEW_MIGRATIONS" | xargs uv tool run sqlfluff lint
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -296,7 +364,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
+    needs: [actionlint, lint, stylelint, yamllint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -305,6 +373,11 @@ jobs:
           for result in \
             "${{ needs.actionlint.result }}" \
             "${{ needs.lint.result }}" \
+            "${{ needs.stylelint.result }}" \
+            "${{ needs.yamllint.result }}" \
+            "${{ needs.dotenv-lint.result }}" \
+            "${{ needs.sqlfluff.result }}" \
+            "${{ needs.tflint.result }}" \
             "${{ needs.typecheck.result }}" \
             "${{ needs.sherif.result }}" \
             "${{ needs.knip.result }}" \
