@@ -3690,3 +3690,58 @@ apps must be destroyed.
 
 - Document the disk cleanup threshold in the review app runbook and revisit the
   `cax11` server size if review app image growth keeps hitting the threshold.
+
+## 2026-05-09: Netdata Redirects To Authentik Library
+
+### Symptoms
+
+Opening `https://netdata.dofek.asherlc.com/` redirects through Authentik and
+lands at `https://authentik.asherlc.com/if/user/#/library` instead of returning
+to Netdata.
+
+### User Impact
+
+The production Netdata management UI is not reachable through the expected
+protected URL.
+
+### Evidence
+
+`curl -D - https://netdata.dofek.asherlc.com/` returned HTTP 302 with an
+Authenik authorize URL whose `redirect_uri` was
+`https://authentik.asherlc.com/outpost.goauthentik.io/callback...`.
+`https://netdata.dofek.asherlc.com/outpost.goauthentik.io/ping` also returned
+HTTP 302 instead of the expected outpost ping HTTP 204.
+
+Live Docker service inspection showed there is no `dofek_authentik-proxy`
+service, and `dofek_netdata` still has
+`traefik.http.middlewares.netdata-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik`.
+
+### Root Cause
+
+Production has not deployed the stack that added the local Authentik proxy
+outpost and shared `management-auth` middleware. The live Netdata route still
+forwards auth checks to the public Authentik hostname, so Authentik loses the
+original protected host and builds the callback for `authentik.asherlc.com`.
+
+### Fix or Mitigation
+
+Unresolved in production during this investigation. The code/config fix already
+exists on `main` from PR #1106, but production deploys have not reached
+`docker stack deploy`. The current unblock attempt is PR #1112, which fixes
+dotenv-linter key ordering so main CI can pass and trigger the normal deploy
+pipeline.
+
+### Remaining Risk
+
+Even after CI is unblocked, the next production deploy may still fail before
+stack deployment if ClickHouse migration `0012_repair_metric_stream_backfill`
+again exceeds the live ClickHouse memory limit.
+
+### Follow-Up Work
+
+- Merge PR #1112 after checks pass.
+- Confirm the subsequent main Deploy Web run reaches `docker stack deploy`.
+- Verify `dofek_authentik-proxy` exists and the Netdata outpost ping endpoint
+  returns HTTP 204.
+- If deployment fails in ClickHouse migrations again, investigate and fix the
+  migration memory usage root cause before adding resilience knobs.
