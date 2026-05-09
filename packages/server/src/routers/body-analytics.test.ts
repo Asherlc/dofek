@@ -51,6 +51,18 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   });
 }
 
+function makeCallerWithSettings(
+  bodyRows: Record<string, unknown>[],
+  settingRows: Record<string, unknown>[],
+) {
+  return createCaller({
+    db: { execute: vi.fn().mockResolvedValue(settingRows) },
+    sensorStore: makeMockSensorStore(bodyRows),
+    userId: "user-1",
+    timezone: "UTC",
+  });
+}
+
 describe("bodyAnalyticsRouter", () => {
   describe("smoothedWeight", () => {
     it("returns empty array when no data", async () => {
@@ -181,6 +193,29 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.ratePerWeek).toBeNull();
       expect(result.goal).toBeNull();
       expect(result.projectionLine).toEqual([]);
+    });
+
+    it("uses numeric goal weight setting in prediction", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCallerWithSettings(rows, [{ key: "goalWeight", value: 75 }]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal?.goalWeightKg).toBe(75);
+      expect(result.goal?.remainingKg).toBeLessThan(0);
+    });
+
+    it("ignores non-numeric goal weight setting", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCallerWithSettings(rows, [{ key: "goalWeight", value: "not-a-number" }]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal).toBeNull();
     });
   });
 

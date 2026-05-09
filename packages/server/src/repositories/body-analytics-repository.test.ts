@@ -231,11 +231,39 @@ function makeRepository(
 }
 
 describe("BodyAnalyticsRepository", () => {
+  it("requires a ClickHouse body measurement store", () => {
+    expect(() => new BodyAnalyticsRepository({ execute: vi.fn() }, "user-1")).toThrow(
+      "body analytics require the ClickHouse body measurement store",
+    );
+  });
+
   describe("getSmoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getSmoothedWeight(90, "2024-06-01");
       expect(result).toEqual([]);
+    });
+
+    it("passes access window parameters to the body weight query", async () => {
+      const accessWindow = {
+        kind: "limited" as const,
+        paid: false,
+        reason: "free_signup_week" as const,
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      };
+      const { repo, query } = makeRepository([], accessWindow);
+
+      await repo.getSmoothedWeight(90, "2024-06-01");
+
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("local_date >= toDate({accessStart:String})"),
+        expect.objectContaining({
+          accessStart: "2026-04-10",
+          accessEnd: "2026-04-17",
+        }),
+      );
     });
 
     it("computes EWMA smoothed weight correctly", async () => {
@@ -348,6 +376,18 @@ describe("BodyAnalyticsRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.getRecomposition(180, "2024-06-01");
       expect(result).toEqual([]);
+    });
+
+    it("requires body fat in the ClickHouse body query", async () => {
+      const { repo, query } = makeRepository([]);
+
+      await repo.getRecomposition(180, "2024-06-01");
+
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("AND body_fat_pct IS NOT NULL"),
+        expect.anything(),
+      );
     });
 
     it("computes fat and lean mass correctly", async () => {

@@ -276,6 +276,105 @@ describe("WgerProvider.sync() (integration)", () => {
     expect(callCount).toBe(2);
   });
 
+  it("sends bearer auth and JSON accept headers to Wger endpoints", async () => {
+    await saveTokens(ctx.db, "wger", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+
+    const seenHeaders: string[] = [];
+
+    server.use(
+      http.get("https://wger.de/api/v2/workoutsession/*", ({ request }) => {
+        seenHeaders.push(request.headers.get("authorization") ?? "");
+        seenHeaders.push(request.headers.get("accept") ?? "");
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+      http.get("https://wger.de/api/v2/weightentry/*", ({ request }) => {
+        seenHeaders.push(request.headers.get("authorization") ?? "");
+        seenHeaders.push(request.headers.get("accept") ?? "");
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+    );
+
+    const provider = new WgerProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(seenHeaders).toEqual([
+      "Bearer valid-token",
+      "application/json",
+      "Bearer valid-token",
+      "application/json",
+    ]);
+  });
+
+  it("reports workout API errors without syncing activity rows", async () => {
+    await saveTokens(ctx.db, "wger", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+    await ctx.db.delete(activity).where(eq(activity.providerId, "wger"));
+
+    server.use(
+      http.get("https://wger.de/api/v2/workoutsession/*", () => {
+        return HttpResponse.json({ detail: "down" }, { status: 503 });
+      }),
+      http.get("https://wger.de/api/v2/weightentry/*", () => {
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+    );
+
+    const provider = new WgerProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors.map((error) => error.message)).toContainEqual(
+      expect.stringContaining("activity: Wger API error (503)"),
+    );
+    const activityRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "wger"));
+    expect(activityRows).toHaveLength(0);
+  });
+
+  it("reports weight API errors without syncing body weight rows", async () => {
+    await saveTokens(ctx.db, "wger", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "wger"));
+
+    server.use(
+      http.get("https://wger.de/api/v2/workoutsession/*", () => {
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+      http.get("https://wger.de/api/v2/weightentry/*", () => {
+        return HttpResponse.json({ detail: "down" }, { status: 503 });
+      }),
+    );
+
+    const provider = new WgerProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors.map((error) => error.message)).toContainEqual(
+      expect.stringContaining("metric_stream: Wger API error (503)"),
+    );
+    const weightRows = await ctx.db
+      .select()
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "wger"));
+    expect(weightRows).toHaveLength(0);
+  });
+
   it("stops pagination when session date is before since", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",

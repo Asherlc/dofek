@@ -98,6 +98,21 @@ function eightSleepHandlers(trendDays: FakeTrendDay[]) {
 
 const server = setupServer();
 
+async function clearEightSleepRows(ctx: TestContext) {
+  await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
+  await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
+  await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
+}
+
+async function saveValidEightSleepTokens(ctx: TestContext) {
+  await saveTokens(ctx.db, "eight-sleep", {
+    accessToken: "valid-token",
+    refreshToken: null,
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: "userId:user-123",
+  });
+}
+
 describe("EightSleepProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
@@ -321,6 +336,172 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(sleepRows).toHaveLength(0);
 
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("skips sleep when either presence boundary is missing", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-21",
+          presenceStart: "",
+          presenceEnd: "2026-03-21T07:00:00Z",
+          sessions: [],
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    const sleepRows = await ctx.db
+      .select()
+      .from(sleepSession)
+      .where(eq(sleepSession.providerId, "eight-sleep"));
+    expect(sleepRows).toHaveLength(0);
+  });
+
+  it("syncs daily metrics when any supported quality metric is present", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-22",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            hrv: { score: 80, current: 44, average: 40 },
+          },
+        }),
+        fakeTrendDay({
+          day: "2026-03-23",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            respiratoryRate: { score: 90, current: 15.4, average: 15.1 },
+          },
+        }),
+        fakeTrendDay({
+          day: "2026-03-24",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            tempBedC: { average: 33.2 },
+          },
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "eight-sleep"));
+    expect(dailyRows).toHaveLength(3);
+    expect(dailyRows.map((row) => row.date).sort()).toEqual([
+      "2026-03-22",
+      "2026-03-23",
+      "2026-03-24",
+    ]);
+  });
+
+  it("skips daily metrics when every supported quality metric is absent", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-25",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: { total: 0 },
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "eight-sleep"));
+    expect(dailyRows).toHaveLength(0);
+  });
+
+  it("syncs bed temperature without room temperature and falls back to the day timestamp", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-26",
+          presenceStart: "",
+          presenceEnd: "",
+          sessions: [],
+          sleepQualityScore: {
+            total: 0,
+            tempBedC: { average: 33.4 },
+          },
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    const temperatureRows = await ctx.db
+      .select()
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "eight-sleep"));
+    expect(temperatureRows).toHaveLength(1);
+    expect(temperatureRows[0]?.channel).toBe("body_temperature");
+    expect(temperatureRows[0]?.scalar).toBeCloseTo(33.4);
+    expect(temperatureRows[0]?.recordedAt.toISOString()).toBe("2026-03-26T00:00:00.000Z");
+  });
+
+  it("skips temperature and heart-rate streams when optional source fields are absent", async () => {
+    await saveValidEightSleepTokens(ctx);
+    await clearEightSleepRows(ctx);
+
+    server.use(
+      ...eightSleepHandlers([
+        fakeTrendDay({
+          day: "2026-03-27",
+          sessions: undefined,
+          sleepQualityScore: undefined,
+        }),
+      ]),
+    );
+
+    const provider = new EightSleepProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    const streamRows = await ctx.db
+      .select()
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "eight-sleep"));
+    expect(streamRows).toHaveLength(0);
   });
 
   it("does not overwrite another user's rows with matching external identifiers", async () => {
