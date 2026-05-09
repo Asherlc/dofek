@@ -131,3 +131,18 @@ the server was provisioned, but Docker could not open its `ssh://` transport to
 the new host. The bootstrap gate verifies normal SSH, Docker, Docker Compose,
 and Docker's SSH transport before running `docker compose` so this fails during
 readiness instead of after the deploy begins.
+
+### Review Server Disk Exhaustion
+
+If `Deploy Review App` reaches `Deploy review stack` and fails while pulling or
+extracting images with:
+
+```text
+no space left on device
+```
+
+the PR review server's root disk ran out of Docker storage before the app image
+could be extracted. The deploy workflow prunes stopped containers, unused
+images, and build cache before image pulls, then fails loudly if less than
+8 GiB is still free. If the check still fails after cleanup, destroy the stale
+review app or move review apps to a larger server type.
