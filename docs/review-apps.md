@@ -31,8 +31,9 @@ does the following:
 4. Write the exact PR host route on the shared front door.
 5. Wait for Docker on the new Hetzner server.
 6. Export review env vars from Infisical.
-7. Start `db` and `redis`, run migrations, seed the preview DB with the
-   deterministic reviewer dataset, then start `web`.
+7. Reset Docker Compose services and volumes, start `db`, `clickhouse`, and
+   `redis`, run migrations, seed the preview DB with the deterministic reviewer
+   dataset, then start `web`.
 8. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
 9. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
 

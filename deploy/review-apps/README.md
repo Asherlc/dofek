@@ -27,6 +27,8 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   - applies the PR Terraform workspace
   - writes the exact PR host route on the shared front door
   - exports review env vars from Infisical
+  - resets Docker Compose services and volumes so each deploy starts from a
+    clean seeded database
   - runs migrations and the deterministic comprehensive seed script
   - starts the review stack
 - The destroy workflow tears down the PR workspace, which removes the server and

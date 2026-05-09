@@ -3609,3 +3609,47 @@ Infisical through `AUTHENTIK_OUTPOST_TOKEN`.
 ### Follow-Up Work
 
 - Recheck PR #1106 after push and confirm GitGuardian passes.
+
+## 2026-05-08: Review App Database Restart Loop After PostGIS Image Change
+
+### Symptoms
+
+PR #1111 review-app deployment failed while waiting for the review Postgres
+database to become ready.
+
+### User Impact
+
+The PR review app was unavailable, blocking preview validation for the GPS
+storage migration.
+
+### Evidence
+
+The `Deploy review stack` step repeatedly ran `pg_isready` against the review
+database and received `no response`. Docker also reported that the database
+container was restarting. The first fatal CI line was `Review app database did
+not become ready within 180s`.
+
+### Root Cause
+
+The PR changed review apps from the old TimescaleDB image to the PostGIS-enabled
+TimescaleDB HA image, while review-app deploys reused the same Docker Compose
+project volumes across pushes. The disposable review database could therefore
+restart against stale volume contents initialized by the previous image.
+
+### Fix or Mitigation
+
+The review-app workflow now runs `docker compose down --remove-orphans --volumes`
+before pulling and starting services. Review apps are seeded on each deploy, so
+resetting disposable service volumes preserves the intended lifecycle while
+removing stale database state.
+
+### Remaining Risk
+
+None known for review-app data persistence because review apps are ephemeral.
+If the database still fails after the reset, the next CI run should expose the
+next root cause rather than stale volume reuse.
+
+### Follow-Up Work
+
+- Add failure-path review-app service logs to the deploy workflow if readiness
+  failures remain hard to diagnose.

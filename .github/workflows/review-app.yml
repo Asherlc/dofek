@@ -360,6 +360,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml down --remove-orphans --volumes
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db clickhouse redis
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db clickhouse redis
 

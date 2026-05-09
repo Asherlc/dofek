@@ -180,15 +180,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     },
     {
       id: "0013_metric_stream_location_point",
-      statements: [
-        "DROP VIEW IF EXISTS analytics.activity_summary",
-        "DROP TABLE IF EXISTS analytics.activity_summary",
-        "DROP VIEW IF EXISTS analytics.deduped_location",
-        "DROP TABLE IF EXISTS analytics.deduped_location",
-        "DROP VIEW IF EXISTS analytics.deduped_sensor",
-        "DROP TABLE IF EXISTS analytics.deduped_sensor",
-        ...buildClickHouseBootstrapStatements(postgresConnectionString),
-      ],
+      run: rebuildMetricStreamLocationPoint,
     },
   ];
 }
@@ -314,6 +306,38 @@ async function repairNativeMetricStreamBackfill(
     "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
   );
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_trend_daily");
+}
+
+async function rebuildMetricStreamLocationPoint(
+  client: ClickHouseCommandClient,
+  postgresConnectionString: string,
+): Promise<void> {
+  const resetStatements = [
+    "DROP VIEW IF EXISTS analytics.activity_summary",
+    "DROP TABLE IF EXISTS analytics.activity_summary",
+    "DROP VIEW IF EXISTS analytics.deduped_location",
+    "DROP TABLE IF EXISTS analytics.deduped_location",
+    "DROP VIEW IF EXISTS analytics.deduped_sensor",
+    "DROP TABLE IF EXISTS analytics.deduped_sensor",
+    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+    "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+  ];
+
+  for (const statement of resetStatements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  await backfillNativeMetricStream(client, postgresConnectionString);
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
+  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
+  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
 }
 
 async function shouldReplacePostgresFitnessDatabase(
