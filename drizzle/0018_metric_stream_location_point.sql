@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public;
 --> statement-breakpoint
 ALTER TABLE fitness.metric_stream
-ADD COLUMN IF NOT EXISTS point public.geometry(Point, 4326);
+ADD COLUMN IF NOT EXISTS point public.GEOMETRY (POINT, 4326);
 --> statement-breakpoint
 ALTER TABLE fitness.metric_stream
 ADD COLUMN IF NOT EXISTS latitude real;
@@ -327,7 +327,7 @@ RESET lock_timeout;
 --> statement-breakpoint
 RESET statement_timeout;
 --> statement-breakpoint
-RESET timescaledb.max_tuples_decompressed_per_dml_transaction;
+RESET "timescaledb.max_tuples_decompressed_per_dml_transaction";
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS metric_stream_point_gist_idx
 ON fitness.metric_stream
