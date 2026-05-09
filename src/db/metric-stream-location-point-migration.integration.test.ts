@@ -87,6 +87,9 @@ describe("metric_stream location point migration", () => {
           ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'lat', $2, 37.7749),
           ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'lng', $2, -122.4194),
           ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'gps_accuracy', $2, 6),
+          ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'lat', $2, 37.7751),
+          ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'lng', $2, -122.4196),
+          ('2026-01-01T00:00:00Z', $1, 'fit', 'watch', 'file', 'gps_accuracy', $2, 7),
           ('2026-01-01T00:00:01Z', $1, 'fit', 'watch', 'file', 'lat', $2, 37.7750),
           ('2026-01-01T00:00:01Z', $1, 'fit', 'watch', 'file', 'lng', $2, -122.4195),
           ('2026-01-01T00:00:02Z', $1, 'fit', 'watch', 'file', 'gps_accuracy', $2, 9)
@@ -126,10 +129,10 @@ describe("metric_stream location point migration", () => {
           metadata
         FROM fitness.metric_stream
         WHERE channel = 'location'
-        ORDER BY recorded_at
+        ORDER BY recorded_at, latitude, longitude
       `);
 
-      expect(locationResult.rows).toHaveLength(2);
+      expect(locationResult.rows).toHaveLength(3);
       expect(locationResult.rows[0]?.recorded_at).toEqual(new Date("2026-01-01T00:00:00.000Z"));
       expect(locationResult.rows[0]?.latitude).toBeCloseTo(37.7749, 4);
       expect(locationResult.rows[0]?.longitude).toBeCloseTo(-122.4194, 4);
@@ -138,13 +141,21 @@ describe("metric_stream location point migration", () => {
       expect(locationResult.rows[0]?.point_longitude).toBeCloseTo(-122.4194, 4);
       expect(locationResult.rows[0]?.metadata).toEqual({ gps_accuracy_m: 6 });
 
-      expect(locationResult.rows[1]?.recorded_at).toEqual(new Date("2026-01-01T00:00:01.000Z"));
-      expect(locationResult.rows[1]?.latitude).toBeCloseTo(37.775, 4);
-      expect(locationResult.rows[1]?.longitude).toBeCloseTo(-122.4195, 4);
+      expect(locationResult.rows[1]?.recorded_at).toEqual(new Date("2026-01-01T00:00:00.000Z"));
+      expect(locationResult.rows[1]?.latitude).toBeCloseTo(37.7751, 4);
+      expect(locationResult.rows[1]?.longitude).toBeCloseTo(-122.4196, 4);
       expect(locationResult.rows[1]?.point_srid).toBe(4326);
-      expect(locationResult.rows[1]?.point_latitude).toBeCloseTo(37.775, 4);
-      expect(locationResult.rows[1]?.point_longitude).toBeCloseTo(-122.4195, 4);
-      expect(locationResult.rows[1]?.metadata).toBeNull();
+      expect(locationResult.rows[1]?.point_latitude).toBeCloseTo(37.7751, 4);
+      expect(locationResult.rows[1]?.point_longitude).toBeCloseTo(-122.4196, 4);
+      expect(locationResult.rows[1]?.metadata).toEqual({ gps_accuracy_m: 7 });
+
+      expect(locationResult.rows[2]?.recorded_at).toEqual(new Date("2026-01-01T00:00:01.000Z"));
+      expect(locationResult.rows[2]?.latitude).toBeCloseTo(37.775, 4);
+      expect(locationResult.rows[2]?.longitude).toBeCloseTo(-122.4195, 4);
+      expect(locationResult.rows[2]?.point_srid).toBe(4326);
+      expect(locationResult.rows[2]?.point_latitude).toBeCloseTo(37.775, 4);
+      expect(locationResult.rows[2]?.point_longitude).toBeCloseTo(-122.4195, 4);
+      expect(locationResult.rows[2]?.metadata).toBeNull();
 
       const legacyCoordinateRowsResult = await client.query<{ count: string }>(`
         SELECT count(*) AS count

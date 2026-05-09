@@ -60,7 +60,64 @@ BEGIN
 
     IF current_chunk_regclass IS NULL THEN
       LOOP
-        WITH source_rows AS (
+        WITH lat_rows AS (
+          SELECT
+            recorded_at,
+            user_id,
+            provider_id,
+            device_id,
+            source_type,
+            activity_id,
+            tableoid AS lat_tableoid,
+            ctid AS lat_ctid,
+            scalar AS latitude,
+            row_number() OVER (
+              PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
+              ORDER BY ctid
+            ) AS location_sample_index
+          FROM fitness.metric_stream
+          WHERE channel = 'lat'
+            AND scalar IS NOT NULL
+        ),
+        lng_rows AS (
+          SELECT
+            recorded_at,
+            user_id,
+            provider_id,
+            device_id,
+            source_type,
+            activity_id,
+            tableoid AS lng_tableoid,
+            ctid AS lng_ctid,
+            scalar AS longitude,
+            row_number() OVER (
+              PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
+              ORDER BY ctid
+            ) AS location_sample_index
+          FROM fitness.metric_stream
+          WHERE channel = 'lng'
+            AND scalar IS NOT NULL
+        ),
+        gps_rows AS (
+          SELECT
+            recorded_at,
+            user_id,
+            provider_id,
+            device_id,
+            source_type,
+            activity_id,
+            tableoid AS gps_tableoid,
+            ctid AS gps_ctid,
+            scalar AS gps_accuracy_m,
+            row_number() OVER (
+              PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
+              ORDER BY ctid
+            ) AS location_sample_index
+          FROM fitness.metric_stream
+          WHERE channel = 'gps_accuracy'
+            AND scalar IS NOT NULL
+        ),
+        source_rows AS (
           SELECT
             lat.recorded_at,
             lat.user_id,
@@ -68,36 +125,33 @@ BEGIN
             lat.device_id,
             lat.source_type,
             lat.activity_id,
-            lat.tableoid AS lat_tableoid,
-            lat.ctid AS lat_ctid,
-            lng.tableoid AS lng_tableoid,
-            lng.ctid AS lng_ctid,
-            gps.tableoid AS gps_tableoid,
-            gps.ctid AS gps_ctid,
-            lat.scalar AS latitude,
-            lng.scalar AS longitude,
-            gps.scalar AS gps_accuracy_m
-          FROM fitness.metric_stream AS lat
-          INNER JOIN fitness.metric_stream AS lng
+            lat.lat_tableoid,
+            lat.lat_ctid,
+            lng.lng_tableoid,
+            lng.lng_ctid,
+            gps.gps_tableoid,
+            gps.gps_ctid,
+            lat.latitude,
+            lng.longitude,
+            gps.gps_accuracy_m
+          FROM lat_rows AS lat
+          INNER JOIN lng_rows AS lng
             ON lng.recorded_at = lat.recorded_at
            AND lng.user_id = lat.user_id
            AND lng.provider_id = lat.provider_id
            AND lng.source_type = lat.source_type
-           AND lng.channel = 'lng'
            AND lng.activity_id IS NOT DISTINCT FROM lat.activity_id
            AND lng.device_id IS NOT DISTINCT FROM lat.device_id
-          LEFT JOIN fitness.metric_stream AS gps
+           AND lng.location_sample_index = lat.location_sample_index
+          LEFT JOIN gps_rows AS gps
             ON gps.recorded_at = lat.recorded_at
            AND gps.user_id = lat.user_id
            AND gps.provider_id = lat.provider_id
            AND gps.source_type = lat.source_type
-           AND gps.channel = 'gps_accuracy'
            AND gps.activity_id IS NOT DISTINCT FROM lat.activity_id
            AND gps.device_id IS NOT DISTINCT FROM lat.device_id
-          WHERE lat.channel = 'lat'
-            AND lat.scalar IS NOT NULL
-            AND lng.scalar IS NOT NULL
-            AND NOT EXISTS (
+           AND gps.location_sample_index = lat.location_sample_index
+          WHERE NOT EXISTS (
               SELECT 1
               FROM fitness.metric_stream AS location
               WHERE location.recorded_at = lat.recorded_at
@@ -199,7 +253,61 @@ BEGIN
 
     LOOP
       EXECUTE format(
-        'WITH source_rows AS (
+        'WITH lat_rows AS (
+           SELECT
+             recorded_at,
+             user_id,
+             provider_id,
+             device_id,
+             source_type,
+             activity_id,
+             ctid AS lat_ctid,
+             scalar AS latitude,
+             row_number() OVER (
+               PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
+               ORDER BY ctid
+             ) AS location_sample_index
+           FROM %1$s
+           WHERE channel = ''lat''
+             AND scalar IS NOT NULL
+         ),
+         lng_rows AS (
+           SELECT
+             recorded_at,
+             user_id,
+             provider_id,
+             device_id,
+             source_type,
+             activity_id,
+             ctid AS lng_ctid,
+             scalar AS longitude,
+             row_number() OVER (
+               PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
+               ORDER BY ctid
+             ) AS location_sample_index
+           FROM %1$s
+           WHERE channel = ''lng''
+             AND scalar IS NOT NULL
+         ),
+         gps_rows AS (
+           SELECT
+             recorded_at,
+             user_id,
+             provider_id,
+             device_id,
+             source_type,
+             activity_id,
+             ctid AS gps_ctid,
+             scalar AS gps_accuracy_m,
+             row_number() OVER (
+               PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
+               ORDER BY ctid
+             ) AS location_sample_index
+           FROM %1$s
+           WHERE channel = ''gps_accuracy''
+             AND scalar IS NOT NULL
+         ),
+         source_rows AS (
            SELECT
              lat.recorded_at,
              lat.user_id,
@@ -207,33 +315,30 @@ BEGIN
              lat.device_id,
              lat.source_type,
              lat.activity_id,
-             lat.ctid AS lat_ctid,
-             lng.ctid AS lng_ctid,
-             gps.ctid AS gps_ctid,
-             lat.scalar AS latitude,
-             lng.scalar AS longitude,
-             gps.scalar AS gps_accuracy_m
-           FROM %1$s AS lat
-           INNER JOIN %1$s AS lng
+             lat.lat_ctid,
+             lng.lng_ctid,
+             gps.gps_ctid,
+             lat.latitude,
+             lng.longitude,
+             gps.gps_accuracy_m
+           FROM lat_rows AS lat
+           INNER JOIN lng_rows AS lng
              ON lng.recorded_at = lat.recorded_at
             AND lng.user_id = lat.user_id
             AND lng.provider_id = lat.provider_id
             AND lng.source_type = lat.source_type
-            AND lng.channel = ''lng''
             AND lng.activity_id IS NOT DISTINCT FROM lat.activity_id
             AND lng.device_id IS NOT DISTINCT FROM lat.device_id
-           LEFT JOIN %1$s AS gps
+            AND lng.location_sample_index = lat.location_sample_index
+           LEFT JOIN gps_rows AS gps
              ON gps.recorded_at = lat.recorded_at
             AND gps.user_id = lat.user_id
             AND gps.provider_id = lat.provider_id
             AND gps.source_type = lat.source_type
-            AND gps.channel = ''gps_accuracy''
             AND gps.activity_id IS NOT DISTINCT FROM lat.activity_id
             AND gps.device_id IS NOT DISTINCT FROM lat.device_id
-           WHERE lat.channel = ''lat''
-             AND lat.scalar IS NOT NULL
-             AND lng.scalar IS NOT NULL
-             AND NOT EXISTS (
+            AND gps.location_sample_index = lat.location_sample_index
+           WHERE NOT EXISTS (
                SELECT 1
                FROM fitness.metric_stream AS location
                WHERE location.recorded_at = lat.recorded_at
