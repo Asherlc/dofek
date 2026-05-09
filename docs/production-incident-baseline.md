@@ -3740,3 +3740,43 @@ availability for the staging host is repaired.
 - Check whether the staging host is booted and reachable on port 22.
 - Verify the staging DNS/IP mapping and the expected SSH host key.
 - Rerun the staging deploy only after the connectivity/root cause is confirmed.
+
+## 2026-05-08: Review App Docker Disk Exhaustion
+
+### Symptoms
+
+The PR `Deploy Review App` job failed during the `Deploy review stack` step
+while pulling the app image onto the review server.
+
+### User Impact
+
+The PR review app was unavailable, although the image build and regular test
+jobs continued independently.
+
+### Evidence
+
+The first fatal log line was:
+`failed to extract layer ... /app/node_modules/expo/src/winter/__tests__: no space left on device`.
+The failure happened before migrations, seeding, or app startup.
+
+### Root Cause
+
+The review server root filesystem did not have enough Docker storage headroom to
+extract the new app image layer.
+
+### Fix or Mitigation
+
+The review-app deploy workflow now prunes stopped containers, unused images, and
+build cache on the review server before image pulls, then hard-fails before the
+pull if less than 8 GiB remains free.
+
+### Remaining Risk
+
+If the live review stack plus required images still exceed the `cax11` root
+disk after cleanup, the review app server type must be increased or stale review
+apps must be destroyed.
+
+### Follow-Up Work
+
+- Document the disk cleanup threshold in the review app runbook and revisit the
+  `cax11` server size if review app image growth keeps hitting the threshold.

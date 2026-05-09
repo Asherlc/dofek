@@ -9,7 +9,6 @@ import {
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import {
   activity,
-  bodyMeasurement,
   dailyMetrics,
   foodEntry,
   foodEntryNutrient,
@@ -70,7 +69,7 @@ export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierElectrodermalActivity: "electrodermalActivity",
 };
 
-// Records that map to body_measurement
+// Records that map to metric_stream body channels.
 export const BODY_MEASUREMENT_TYPES = new Set([
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -225,12 +224,12 @@ export async function upsertBodyMeasurementBatch(
     byTime.set(key, group);
   }
 
-  const rows: (typeof bodyMeasurement.$inferInsert)[] = [];
+  const rows: MetricStreamSourceRow[] = [];
   for (const [, group] of byTime) {
     const first = group[0];
     if (!first) continue;
     const externalId = `ah:body:${first.startDate.toISOString()}`;
-    const row: typeof bodyMeasurement.$inferInsert = {
+    const row: MetricStreamSourceRow = {
       providerId,
       externalId,
       recordedAt: first.startDate,
@@ -272,48 +271,13 @@ export async function upsertBodyMeasurementBatch(
   // from multiple sources (Apple Watch + iPhone) with the same timestamp.
   // PostgreSQL rejects ON CONFLICT DO UPDATE when the same row appears twice
   // in a single INSERT statement.
-  const dedupMap = new Map<string, typeof bodyMeasurement.$inferInsert>();
+  const dedupMap = new Map<string, MetricStreamSourceRow>();
   for (const row of rows) {
     if (row.externalId) dedupMap.set(row.externalId, row);
   }
   const uniqueRows = [...dedupMap.values()];
 
-  // Multi-row upsert with COALESCE to preserve existing non-null values
-  for (let i = 0; i < uniqueRows.length; i += 500) {
-    const batch = uniqueRows.slice(i, i + 500);
-    await insertWithDuplicateDiag(
-      "body_measurement",
-      (row) => `${row.providerId}:${row.externalId}`,
-      batch,
-      (b) =>
-        db
-          .insert(bodyMeasurement)
-          .values(b)
-          .onConflictDoUpdate({
-            target: [
-              bodyMeasurement.userId,
-              bodyMeasurement.providerId,
-              bodyMeasurement.externalId,
-            ],
-            set: {
-              recordedAt: sql`excluded.recorded_at`,
-              weightKg: sql`coalesce(excluded.weight_kg, ${bodyMeasurement.weightKg})`,
-              bodyFatPct: sql`coalesce(excluded.body_fat_pct, ${bodyMeasurement.bodyFatPct})`,
-              muscleMassKg: sql`coalesce(excluded.muscle_mass_kg, ${bodyMeasurement.muscleMassKg})`,
-              boneMassKg: sql`coalesce(excluded.bone_mass_kg, ${bodyMeasurement.boneMassKg})`,
-              waterPct: sql`coalesce(excluded.water_pct, ${bodyMeasurement.waterPct})`,
-              bmi: sql`coalesce(excluded.bmi, ${bodyMeasurement.bmi})`,
-              heightCm: sql`coalesce(excluded.height_cm, ${bodyMeasurement.heightCm})`,
-              waistCircumferenceCm: sql`coalesce(excluded.waist_circumference_cm, ${bodyMeasurement.waistCircumferenceCm})`,
-              systolicBp: sql`coalesce(excluded.systolic_bp, ${bodyMeasurement.systolicBp})`,
-              diastolicBp: sql`coalesce(excluded.diastolic_bp, ${bodyMeasurement.diastolicBp})`,
-              heartPulse: sql`coalesce(excluded.heart_pulse, ${bodyMeasurement.heartPulse})`,
-              temperatureC: sql`coalesce(excluded.temperature_c, ${bodyMeasurement.temperatureC})`,
-              sourceName: sql`coalesce(excluded.source_name, ${bodyMeasurement.sourceName})`,
-            },
-          }),
-    );
-  }
+  await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE);
   return uniqueRows.length;
 }
 
@@ -784,7 +748,7 @@ export async function upsertWorkoutBatch(
     }
   }
 
-  // GPS route points now write directly to metric_stream.
+  // GPS route points write coordinates to location_sample and remaining scalar samples to metric_stream.
   await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
 
   // Link HR rows for this batch's time window. A global reconciliation pass also

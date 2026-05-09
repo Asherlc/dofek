@@ -127,7 +127,7 @@ async function verifySeed() {
     [
       "body measurements",
       50,
-      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${USER_ID}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${USER_ID}' AND channel = 'body_weight'`,
     ],
     [
       "lab results",

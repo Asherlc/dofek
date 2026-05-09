@@ -91,29 +91,6 @@ ${replacingMergeTreeTable("(session_id, started_at, id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.body_measurement (
-  id UUID,
-  recorded_at DateTime64(6, 'UTC'),
-  provider_id String,
-  user_id UUID,
-  external_id Nullable(String),
-  weight_kg Nullable(Float32),
-  body_fat_pct Nullable(Float32),
-  muscle_mass_kg Nullable(Float32),
-  bone_mass_kg Nullable(Float32),
-  water_pct Nullable(Float32),
-  bmi Nullable(Float32),
-  height_cm Nullable(Float32),
-  waist_circumference_cm Nullable(Float32),
-  systolic_bp Nullable(Int32),
-  diastolic_bp Nullable(Int32),
-  heart_pulse Nullable(Int32),
-  temperature_c Nullable(Float32),
-  source_name Nullable(String),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, recorded_at, id)")}`,
     `CREATE TABLE IF NOT EXISTS postgres_fitness.food_entry (
   id UUID,
   provider_id String,

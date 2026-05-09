@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { activity, bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -262,14 +262,15 @@ describe("FitbitProvider.sync() (integration)", () => {
     // Verify weight
     const weightRows = await ctx.db
       .select()
-      .from(bodyMeasurement)
-      .where(eq(bodyMeasurement.providerId, "fitbit"));
-    expect(weightRows).toHaveLength(1);
+      .from(metricStream)
+      .where(eq(metricStream.providerId, "fitbit"));
+    const bodyRows = weightRows.filter((row) => row.externalId === "7001");
+    expect(bodyRows).toHaveLength(2);
 
-    const weight = weightRows[0];
+    const weight = bodyRows.find((row) => row.channel === "body_weight");
     if (!weight) throw new Error("expected body measurement");
-    expect(weight.weightKg).toBeCloseTo(82.5);
-    expect(weight.bodyFatPct).toBeCloseTo(18.3);
+    expect(weight.scalar).toBeCloseTo(82.5);
+    expect(bodyRows.find((row) => row.channel === "body_fat_percentage")?.scalar).toBeCloseTo(18.3);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

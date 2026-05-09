@@ -30,8 +30,7 @@ The `export.xml` can be 1GB+ for users with years of data. We use a SAX streamin
 ```
 
 We parse records into:
-- **body_measurement**: Weight, body fat, BMI, blood pressure, temperature
-- **metric_stream**: Heart rate, respiratory rate, SpO2, HRV
+- **metric_stream**: Heart rate, respiratory rate, SpO2, HRV, weight, body fat, BMI, blood pressure, temperature
 - **daily_metrics**: Steps, active/basal energy, resting HR, VO2max
 
 ### ClinicalRecord Elements

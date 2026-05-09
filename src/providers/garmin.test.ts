@@ -571,6 +571,8 @@ describe("GarminProvider.sync()", () => {
       true,
     );
     expect(sensorRows.length).toBeGreaterThan(0);
+    expect(sensorRows).not.toContainEqual(expect.objectContaining({ channel: "lat" }));
+    expect(sensorRows).not.toContainEqual(expect.objectContaining({ channel: "lng" }));
     expect(sensorRows).toContainEqual(
       expect.objectContaining({ channel: "heart_rate", scalar: 150 }),
     );

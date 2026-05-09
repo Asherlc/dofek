@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
   DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
@@ -15,7 +16,7 @@ describe("tableInfo", () => {
     ["activities", "fitness.activity", "started_at", "id"],
     ["dailyMetrics", "fitness.daily_metrics", "date", "date"],
     ["sleepSessions", "fitness.sleep_session", "started_at", "id"],
-    ["bodyMeasurements", "fitness.body_measurement", "recorded_at", "id"],
+    ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
     ["metricStream", "fitness.metric_stream", "recorded_at", "id"],
@@ -72,14 +73,14 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 14 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(14);
+  it("contains 13 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(13);
   });
 
   it("includes all required child tables", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
     expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
+    expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sleep_session");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.nutrition_daily");
@@ -140,6 +141,14 @@ describe("ProviderDetailRepository", () => {
     return { repo, execute, transaction, db };
   }
 
+  function makeBodyStore(rows: Record<string, unknown>[] = []) {
+    const queryImplementation: BodyClickHouseStore["query"] = async (schema) =>
+      rows.map((row) => schema.parse(row));
+    const query = vi.fn(queryImplementation);
+    const bodyStore: BodyClickHouseStore = { query };
+    return { bodyStore, query };
+  }
+
   // ── getRecords ──
 
   describe("getRecords", () => {
@@ -162,6 +171,33 @@ describe("ProviderDetailRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getRecords("strava", "activities", 50, 0);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("requires a ClickHouse body store for body measurements", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getRecords("withings", "bodyMeasurements", 10, 0)).rejects.toThrow(
+        "providerDetail body measurements require the ClickHouse body measurement store",
+      );
+    });
+
+    it("passes body measurement query parameters to ClickHouse", async () => {
+      const { bodyStore, query } = makeBodyStore([]);
+      const { db } = makeRepository([]);
+      const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
+
+      await repo.getRecords("withings", "bodyMeasurements", 10, 5);
+
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query.mock.calls[0]?.[1]).toContain("analytics.v_body_measurement");
+      expect(query.mock.calls[0]?.[1]).toContain("ORDER BY recorded_at DESC");
+      expect(query.mock.calls[0]?.[2]).toStrictEqual({
+        userId: "user-1",
+        providerId: "withings",
+        recordId: "",
+        limit: 10,
+        offset: 5,
+      });
     });
   });
 
@@ -193,6 +229,25 @@ describe("ProviderDetailRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getRecordDetail("strava", "activities", "act-1");
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("filters body measurement detail by record ID in ClickHouse", async () => {
+      const bodyRow = { id: "body-1", provider_id: "withings", user_id: "user-1" };
+      const { bodyStore, query } = makeBodyStore([bodyRow]);
+      const { db } = makeRepository([]);
+      const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
+
+      const result = await repo.getRecordDetail("withings", "bodyMeasurements", "body-1");
+
+      expect(result).toStrictEqual(bodyRow);
+      expect(query.mock.calls[0]?.[1]).toContain("AND toString(id) = {recordId:String}");
+      expect(query.mock.calls[0]?.[2]).toStrictEqual({
+        userId: "user-1",
+        providerId: "withings",
+        recordId: "body-1",
+        limit: 1,
+        offset: 0,
+      });
     });
   });
 
@@ -276,6 +331,36 @@ describe("ProviderDetailRepository", () => {
       }
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
     });
+
+    it("continues when a provider child table does not exist", async () => {
+      const txExecute = vi
+        .fn()
+        .mockRejectedValueOnce({ code: "42P01" })
+        .mockRejectedValueOnce(new Error('relation "fitness.old_table" does not exist'))
+        .mockResolvedValue([]);
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const { repo } = makeRepository([], mockTransaction);
+
+      await expect(repo.deleteProviderData("strava")).resolves.toBeUndefined();
+      expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
+    });
+
+    it("rethrows delete failures that are not missing-table errors", async () => {
+      const txExecute = vi.fn().mockRejectedValueOnce(new Error("permission denied"));
+      const mockTransaction = vi
+        .fn()
+        .mockImplementation(async (fn: (tx: { execute: typeof txExecute }) => Promise<void>) => {
+          await fn({ execute: txExecute });
+        });
+      const { repo } = makeRepository([], mockTransaction);
+
+      await expect(repo.deleteProviderData("strava")).rejects.toThrow("permission denied");
+      expect(txExecute).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── getRecordDetail precise value mapping ──
@@ -333,7 +418,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "id",
       });
       expect(tableInfo("bodyMeasurements")).toStrictEqual({
-        table: "fitness.body_measurement",
+        table: "analytics.v_body_measurement",
         orderColumn: "recorded_at",
         idColumn: "id",
       });
@@ -433,13 +518,13 @@ describe("ProviderDetailRepository", () => {
 
       await repo.deleteProviderData("test-provider");
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(14);
+      expect(txExecute).toHaveBeenCalledTimes(13);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(14);
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(13);
       expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
-      expect(DISCONNECT_CHILD_TABLES[13]).toBe("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES[12]).toBe("fitness.oauth_token");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {

@@ -2,6 +2,10 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
+  SOURCE_TYPE_API,
+} from "../../../../src/db/sensor-channels.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { workoutActivityTypeMap } from "../routers/health-kit-sync-schemas.ts";
 
@@ -426,12 +430,30 @@ export class HealthKitSyncRepository {
         if (!mapping) continue;
         const value = mapping.transform ? mapping.transform(sample.value) : sample.value;
         const externalId = `hk:${sample.uuid}`;
+        const channel = BODY_MEASUREMENT_COLUMN_TO_CHANNEL[mapping.column];
+        if (!channel) {
+          throw new Error(
+            `Missing metric_stream channel mapping for body column: ${mapping.column}`,
+          );
+        }
 
         await this.#db.execute(
-          sql`INSERT INTO fitness.body_measurement (user_id, provider_id, external_id, recorded_at, ${sql.identifier(mapping.column)})
-              VALUES (${this.#userId}, ${PROVIDER_ID}, ${externalId}, ${sample.startDate}::timestamptz, ${value})
-              ON CONFLICT (user_id, provider_id, external_id) DO UPDATE
-                SET ${sql.identifier(mapping.column)} = ${value}`,
+          sql`INSERT INTO fitness.metric_stream
+                (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
+              VALUES (
+                ${sample.startDate}::timestamptz,
+                ${this.#userId},
+                ${PROVIDER_ID},
+                ${externalId},
+                ${sample.sourceName},
+                ${SOURCE_TYPE_API},
+                ${channel},
+                ${value}
+              )
+              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+                SET scalar = excluded.scalar,
+                    device_id = excluded.device_id,
+                    source_type = excluded.source_type`,
         );
         inserted++;
       }

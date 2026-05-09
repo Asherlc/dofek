@@ -13,8 +13,6 @@ WITH providers AS (
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.sleep_session
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.body_measurement
-  UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.food_entry
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.health_event
@@ -61,7 +59,32 @@ LEFT JOIN (
 ) ss ON ss.user_id = p.user_id AND ss.provider_id = p.provider_id
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.body_measurement
+  FROM (
+    SELECT DISTINCT
+      user_id,
+      provider_id,
+      COALESCE(
+        external_id,
+        concat(provider_id, ':', user_id::text, ':', recorded_at::text, ':', COALESCE(device_id, ''))
+      ) AS sample_id,
+      recorded_at,
+      device_id
+    FROM fitness.metric_stream
+    WHERE channel IN (
+      'body_weight',
+      'body_fat_percentage',
+      'muscle_mass',
+      'bone_mass',
+      'body_water_percentage',
+      'body_mass_index',
+      'height',
+      'waist_circumference',
+      'systolic_blood_pressure',
+      'diastolic_blood_pressure',
+      'heart_pulse',
+      'body_temperature'
+    )
+  ) body_samples
   GROUP BY user_id, provider_id
 ) bm ON bm.user_id = p.user_id AND bm.provider_id = p.provider_id
 LEFT JOIN (
@@ -102,4 +125,3 @@ LEFT JOIN (
 ) je ON je.user_id = p.user_id AND je.provider_id = p.provider_id;
 
 --> statement-breakpoint
-

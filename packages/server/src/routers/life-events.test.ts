@@ -46,9 +46,13 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   });
 }
 
-function makeSensorStore() {
+function makeSensorStore(bodyRows: Record<string, unknown>[] = []) {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2026-01-01", resting_hr: 52 }]),
+    query: vi
+      .fn()
+      .mockResolvedValueOnce([{ date: "2026-01-01", resting_hr: 52 }])
+      .mockResolvedValueOnce(bodyRows)
+      .mockResolvedValue([]),
   };
 }
 
@@ -256,7 +260,10 @@ describe("lifeEventsRouter", () => {
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore(),
+        sensorStore: makeSensorStore([
+          { period: "before", measurements: 4, avg_weight: 75, avg_body_fat: 15 },
+          { period: "after", measurements: 4, avg_weight: 74, avg_body_fat: 14.5 },
+        ]),
       });
 
       const result = await caller.analyze({

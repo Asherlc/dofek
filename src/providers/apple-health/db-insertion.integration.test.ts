@@ -112,41 +112,50 @@ describe("db-insertion deduplication (integration)", () => {
       const time1 = new Date("2025-01-15T08:00:00Z");
       const time2 = new Date("2025-01-15T08:00:00Z"); // same timestamp = same externalId
 
-      const rows: (typeof schema.bodyMeasurement.$inferInsert)[] = [
+      const rows: (typeof schema.metricStream.$inferInsert)[] = [
         {
+          userId: schema.TEST_USER_ID,
           providerId: PROVIDER_ID,
           externalId: "dup-test-key",
           recordedAt: time1,
-          weightKg: 80,
-          sourceName: "Scale A",
+          channel: "body_weight",
+          sourceType: "file",
+          scalar: 80,
+          deviceId: "Scale A",
         },
         {
+          userId: schema.TEST_USER_ID,
           providerId: PROVIDER_ID,
           externalId: "dup-test-key", // duplicate conflict key
           recordedAt: time2,
-          weightKg: 81,
-          sourceName: "Scale B",
+          channel: "body_weight",
+          sourceType: "file",
+          scalar: 81,
+          deviceId: "Scale B",
         },
       ];
 
       // insertWithDuplicateDiag should deduplicate and retry instead of crashing
       await insertWithDuplicateDiag(
-        "body_measurement",
-        (row) => `${row.providerId}:${row.externalId}`,
+        "metric_stream",
+        (row) =>
+          `${row.userId}:${row.providerId}:${row.externalId}:${row.channel}:${row.recordedAt?.toISOString()}`,
         rows,
         (batch) =>
           ctx.db
-            .insert(schema.bodyMeasurement)
+            .insert(schema.metricStream)
             .values(batch)
             .onConflictDoUpdate({
               target: [
-                schema.bodyMeasurement.userId,
-                schema.bodyMeasurement.providerId,
-                schema.bodyMeasurement.externalId,
+                schema.metricStream.userId,
+                schema.metricStream.providerId,
+                schema.metricStream.externalId,
+                schema.metricStream.channel,
+                schema.metricStream.recordedAt,
               ],
               set: {
-                weightKg: sql`excluded.weight_kg`,
-                sourceName: sql`excluded.source_name`,
+                scalar: sql`excluded.scalar`,
+                deviceId: sql`excluded.device_id`,
               },
             }),
       );
@@ -154,11 +163,11 @@ describe("db-insertion deduplication (integration)", () => {
       // Should have inserted the deduplicated row (last one wins)
       const result = await ctx.db
         .select()
-        .from(schema.bodyMeasurement)
-        .where(eq(schema.bodyMeasurement.externalId, "dup-test-key"));
+        .from(schema.metricStream)
+        .where(eq(schema.metricStream.externalId, "dup-test-key"));
 
       expect(result).toHaveLength(1);
-      expect(Number(result[0]?.weightKg)).toBe(81); // last duplicate wins
+      expect(Number(result[0]?.scalar)).toBe(81); // last duplicate wins
     });
   });
 

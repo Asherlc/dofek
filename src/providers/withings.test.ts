@@ -348,7 +348,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const provider = new WithingsProvider(mockFetch);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("body_measurement");
+    expect(result.errors[0]?.message).toContain("metric_stream");
   });
 
   it("refreshes expired token during resolveTokens", async () => {

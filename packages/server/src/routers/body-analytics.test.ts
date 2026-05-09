@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
@@ -10,6 +10,7 @@ vi.mock("../trpc.ts", async () => {
   const trpc = initTRPC
     .context<{
       db: unknown;
+      sensorStore?: unknown;
       userId: string | null;
       timezone: string;
       accessWindow?: import("../billing/entitlement.ts").AccessWindow;
@@ -44,6 +45,19 @@ const createCaller = createTestCallerFactory(bodyAnalyticsRouter);
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
     db: { execute: vi.fn().mockResolvedValue(rows) },
+    sensorStore: makeMockSensorStore(rows),
+    userId: "user-1",
+    timezone: "UTC",
+  });
+}
+
+function makeCallerWithSettings(
+  bodyRows: Record<string, unknown>[],
+  settingRows: Record<string, unknown>[],
+) {
+  return createCaller({
+    db: { execute: vi.fn().mockResolvedValue(settingRows) },
+    sensorStore: makeMockSensorStore(bodyRows),
     userId: "user-1",
     timezone: "UTC",
   });
@@ -180,6 +194,29 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.goal).toBeNull();
       expect(result.projectionLine).toEqual([]);
     });
+
+    it("uses numeric goal weight setting in prediction", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCallerWithSettings(rows, [{ key: "goalWeight", value: 75 }]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal?.goalWeightKg).toBe(75);
+      expect(result.goal?.remainingKg).toBeLessThan(0);
+    });
+
+    it("ignores non-numeric goal weight setting", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCallerWithSettings(rows, [{ key: "goalWeight", value: "not-a-number" }]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal).toBeNull();
+    });
   });
 
   describe("setGoalWeight", () => {
@@ -213,6 +250,7 @@ describe("bodyAnalyticsRouter", () => {
       const execute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute },
+        sensorStore: makeMockSensorStore([]),
         userId: "user-1",
         timezone: "UTC",
         accessWindow: {

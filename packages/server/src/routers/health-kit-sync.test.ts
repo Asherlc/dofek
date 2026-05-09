@@ -206,7 +206,7 @@ describe("healthKitSyncRouter", () => {
 
       const sqlCall = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("body_measurement") && serialized.includes("body_fat_pct");
+        return serialized.includes("metric_stream") && serialized.includes("body_fat_percentage");
       });
       expect(sqlCall).toBeDefined();
       const serialized = JSON.stringify(sqlCall?.[0]);
@@ -3083,11 +3083,13 @@ describe("healthKitSyncRouter", () => {
 
       const bodyInsert = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("body_measurement") && serialized.includes("INSERT");
+        return serialized.includes("metric_stream") && serialized.includes("INSERT");
       });
       expect(bodyInsert).toBeDefined();
       const serialized = JSON.stringify(bodyInsert?.[0]);
       expect(serialized).toContain("hk:body-ext-id");
+      expect(serialized).toContain("body_weight");
+      expect(serialized).not.toContain("body_measurement");
     });
 
     it("processes BMI sample type (kills mapping guard)", async () => {
@@ -3111,7 +3113,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
       const bodyInsert = execute.mock.calls.find((call: unknown[]) => {
         const serialized = JSON.stringify(call[0]);
-        return serialized.includes("body_measurement") && serialized.includes("bmi");
+        return serialized.includes("metric_stream") && serialized.includes("body_mass_index");
       });
       expect(bodyInsert).toBeDefined();
     });

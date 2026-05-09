@@ -132,7 +132,7 @@ tables through ClickHouse replication.
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.body_measurement` | Weight, body fat %, muscle mass, BMI |
+| `fitness.metric_stream` | Time-series metric samples, including body composition channels such as weight, body fat %, muscle mass, and BMI |
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |

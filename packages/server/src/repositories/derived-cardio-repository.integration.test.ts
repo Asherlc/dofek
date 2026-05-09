@@ -107,9 +107,9 @@ describe("DerivedCardioRepository integration", () => {
     await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
       VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
       ON CONFLICT (id) DO NOTHING`);
-    await testContext.db.execute(sql`INSERT INTO fitness.body_measurement
-      (provider_id, user_id, external_id, recorded_at, weight_kg)
-      VALUES ('test_provider', ${TEST_USER_ID}, 'weight-1', '2026-04-01T00:00:00Z', 75)`);
+    await testContext.db.execute(sql`INSERT INTO fitness.metric_stream
+      (provider_id, user_id, external_id, recorded_at, source_type, channel, scalar)
+      VALUES ('test_provider', ${TEST_USER_ID}, 'weight-1', '2026-04-01T00:00:00Z', 'api', 'body_weight', 75)`);
 
     for (const [activityId, startedAt, power] of [
       ["00000000-0000-4000-8000-000000000101", "2026-04-10T12:00:00Z", 300],

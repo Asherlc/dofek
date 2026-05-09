@@ -1,4 +1,4 @@
-import type { InferInsertModel } from "drizzle-orm";
+import { type InferInsertModel, sql } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
 import type { metricStream } from "./schema.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
@@ -8,6 +8,7 @@ export interface MetricStreamSourceRow {
   recordedAt: Date;
   userId?: string;
   providerId: string;
+  externalId?: string | null;
   activityId?: string | null;
   sourceName?: string | null;
   [key: string]: unknown;
@@ -48,7 +49,19 @@ export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
 export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsertFn {
   return async (batch) => {
     const { metricStream: table } = await import("./schema.ts");
-    await db.insert(table).values(batch);
+    await db
+      .insert(table)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt],
+        set: {
+          activityId: sql`excluded.activity_id`,
+          deviceId: sql`excluded.device_id`,
+          sourceType: sql`excluded.source_type`,
+          scalar: sql`excluded.scalar`,
+          vector: sql`excluded.vector`,
+        },
+      });
   };
 }
 
@@ -88,6 +101,7 @@ export function sourceRowToMetricStream(
       recordedAt: row.recordedAt,
       userId: row.userId,
       providerId: row.providerId,
+      externalId: row.externalId,
       activityId: row.activityId,
       deviceId: row.sourceName ?? null,
       sourceType,

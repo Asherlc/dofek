@@ -391,10 +391,65 @@ function buildBodyMeasurementReadModelSql(): string {
     "(user_id, recorded_at, id)",
   )}
 WITH RECURSIVE
-active_body AS (
-  SELECT *
-  FROM postgres_fitness.body_measurement FINAL
+body_measurement_samples AS (
+  SELECT
+    id,
+    provider_id,
+    user_id,
+    recorded_at,
+    _peerdb_synced_at AS created_at,
+    device_id,
+    channel,
+    scalar,
+    ifNull(
+      external_id,
+      concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
+    ) AS measurement_key
+  FROM postgres_fitness.metric_stream FINAL
   WHERE _peerdb_is_deleted = 0
+    AND channel IN (
+      'body_weight',
+      'body_fat_percentage',
+      'muscle_mass',
+      'bone_mass',
+      'body_water_percentage',
+      'body_mass_index',
+      'height',
+      'waist_circumference',
+      'systolic_blood_pressure',
+      'diastolic_blood_pressure',
+      'heart_pulse',
+      'body_temperature'
+    )
+),
+active_body AS (
+  SELECT
+    min(id) AS id,
+    provider_id,
+    user_id,
+    measurement_key AS external_id,
+    recorded_at,
+    min(created_at) AS created_at,
+    device_id AS source_name,
+    maxIf(scalar, channel = 'body_weight') AS weight_kg,
+    maxIf(scalar, channel = 'body_fat_percentage') AS body_fat_pct,
+    maxIf(scalar, channel = 'muscle_mass') AS muscle_mass_kg,
+    maxIf(scalar, channel = 'bone_mass') AS bone_mass_kg,
+    maxIf(scalar, channel = 'body_water_percentage') AS water_pct,
+    maxIf(scalar, channel = 'body_mass_index') AS bmi,
+    maxIf(scalar, channel = 'height') AS height_cm,
+    maxIf(scalar, channel = 'waist_circumference') AS waist_circumference_cm,
+    maxIf(scalar, channel = 'systolic_blood_pressure') AS systolic_bp,
+    maxIf(scalar, channel = 'diastolic_blood_pressure') AS diastolic_bp,
+    maxIf(scalar, channel = 'heart_pulse') AS heart_pulse,
+    maxIf(scalar, channel = 'body_temperature') AS temperature_c
+  FROM body_measurement_samples
+  GROUP BY
+    provider_id,
+    user_id,
+    measurement_key,
+    recorded_at,
+    device_id
 ),
 active_provider_priority AS (
   SELECT *
@@ -429,15 +484,22 @@ ranked AS (
     active_body.id AS id,
     active_body.provider_id AS provider_id,
     active_body.user_id AS user_id,
+    active_body.external_id AS external_id,
     active_body.recorded_at AS recorded_at,
+    active_body.created_at AS created_at,
     active_body.weight_kg AS weight_kg,
     active_body.body_fat_pct AS body_fat_pct,
     active_body.muscle_mass_kg AS muscle_mass_kg,
+    active_body.bone_mass_kg AS bone_mass_kg,
+    active_body.water_pct AS water_pct,
     active_body.bmi AS bmi,
+    active_body.height_cm AS height_cm,
+    active_body.waist_circumference_cm AS waist_circumference_cm,
     active_body.systolic_bp AS systolic_bp,
     active_body.diastolic_bp AS diastolic_bp,
+    active_body.heart_pulse AS heart_pulse,
     active_body.temperature_c AS temperature_c,
-    active_body.height_cm AS height_cm,
+    active_body.source_name AS source_name,
     coalesce(device_priority_match.body_priority, active_provider_priority.body_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority
   FROM active_body
   LEFT JOIN active_provider_priority
@@ -489,7 +551,10 @@ best AS (
       ranked.id AS id,
       ranked.provider_id AS provider_id,
       ranked.user_id AS user_id,
+      ranked.external_id AS external_id,
       ranked.recorded_at AS recorded_at,
+      ranked.created_at AS created_at,
+      ranked.source_name AS source_name,
       ranked.priority AS priority,
       row_number() OVER (
         PARTITION BY final_groups.group_id
@@ -505,22 +570,29 @@ SELECT
   best.id AS id,
   best.provider_id AS provider_id,
   best.user_id AS user_id,
+  best.external_id AS external_id,
   best.recorded_at AS recorded_at,
+  best.created_at AS created_at,
   argMinIf(ranked.weight_kg, ranked.priority, ranked.weight_kg IS NOT NULL) AS weight_kg,
   argMinIf(ranked.body_fat_pct, ranked.priority, ranked.body_fat_pct IS NOT NULL) AS body_fat_pct,
   argMinIf(ranked.muscle_mass_kg, ranked.priority, ranked.muscle_mass_kg IS NOT NULL) AS muscle_mass_kg,
+  argMinIf(ranked.bone_mass_kg, ranked.priority, ranked.bone_mass_kg IS NOT NULL) AS bone_mass_kg,
+  argMinIf(ranked.water_pct, ranked.priority, ranked.water_pct IS NOT NULL) AS water_pct,
   argMinIf(ranked.bmi, ranked.priority, ranked.bmi IS NOT NULL) AS bmi,
+  argMinIf(ranked.height_cm, ranked.priority, ranked.height_cm IS NOT NULL) AS height_cm,
+  argMinIf(ranked.waist_circumference_cm, ranked.priority, ranked.waist_circumference_cm IS NOT NULL) AS waist_circumference_cm,
   argMinIf(ranked.systolic_bp, ranked.priority, ranked.systolic_bp IS NOT NULL) AS systolic_bp,
   argMinIf(ranked.diastolic_bp, ranked.priority, ranked.diastolic_bp IS NOT NULL) AS diastolic_bp,
+  argMinIf(ranked.heart_pulse, ranked.priority, ranked.heart_pulse IS NOT NULL) AS heart_pulse,
   argMinIf(ranked.temperature_c, ranked.priority, ranked.temperature_c IS NOT NULL) AS temperature_c,
-  argMinIf(ranked.height_cm, ranked.priority, ranked.height_cm IS NOT NULL) AS height_cm,
+  best.source_name AS source_name,
   arraySort(groupUniqArray(ranked.provider_id)) AS source_providers
 FROM best
 INNER JOIN final_groups
   ON final_groups.group_id = best.group_id
 INNER JOIN ranked
   ON ranked.id = final_groups.measurement_id
-GROUP BY best.id, best.provider_id, best.user_id, best.recorded_at`;
+GROUP BY best.id, best.provider_id, best.user_id, best.external_id, best.recorded_at, best.created_at, best.source_name`;
 }
 
 function buildDailyMetricsReadModelSql(): string {
@@ -634,10 +706,6 @@ providers AS (
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.body_measurement FINAL
-  WHERE _peerdb_is_deleted = 0
-  UNION DISTINCT
-  SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.metric_stream FINAL
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
@@ -680,9 +748,29 @@ sleep_session_counts AS (
   GROUP BY user_id, provider_id
 ),
 body_measurement_counts AS (
-  SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.body_measurement FINAL
+  SELECT
+    user_id,
+    provider_id,
+    uniqExact(ifNull(
+      external_id,
+      concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
+    )) AS count
+  FROM postgres_fitness.metric_stream FINAL
   WHERE _peerdb_is_deleted = 0
+    AND channel IN (
+      'body_weight',
+      'body_fat_percentage',
+      'muscle_mass',
+      'bone_mass',
+      'body_water_percentage',
+      'body_mass_index',
+      'height',
+      'waist_circumference',
+      'systolic_blood_pressure',
+      'diastolic_blood_pressure',
+      'heart_pulse',
+      'body_temperature'
+    )
   GROUP BY user_id, provider_id
 ),
 metric_stream_counts AS (

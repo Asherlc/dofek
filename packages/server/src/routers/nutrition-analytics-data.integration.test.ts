@@ -5,6 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 import type {
   AdaptiveTdeeResult,
   CaloricBalanceRow,
@@ -80,16 +81,16 @@ describe("Nutrition analytics data coverage", () => {
       );
     }
 
-    // ── Insert 50 days of body_measurement (weight data for adaptiveTdee EWMA + macroRatios proteinPerKg) ──
+    // ── Insert 50 days of body weight metrics (for adaptiveTdee EWMA + macroRatios proteinPerKg) ──
     // Simulate gradual weight loss from 80kg to ~79kg over 50 days
     for (let i = 49; i >= 0; i--) {
       const weightKg = 80 - (49 - i) * 0.02 + Math.sin(i * 0.7) * 0.3;
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.body_measurement (
-              recorded_at, provider_id, user_id, weight_kg
+        sql`INSERT INTO fitness.metric_stream (
+              recorded_at, provider_id, user_id, external_id, source_type, channel, scalar
             ) VALUES (
               (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '8 hours',
-              'test_provider', ${TEST_USER_ID}, ${weightKg}
+              'test_provider', ${TEST_USER_ID}, ${`test-body-${i}`}, 'api', 'body_weight', ${weightKg}
             )`,
       );
     }
@@ -247,10 +248,9 @@ describe("Nutrition analytics data coverage", () => {
       }
     }
 
-    // ── Refresh materialized views ──
-
     // Start server
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

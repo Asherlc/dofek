@@ -229,13 +229,13 @@ describe("Router coverage", () => {
       );
     }
 
-    // ── Body measurement ──
+    // ── Body metrics ──
     await testCtx.db.execute(
-      sql`INSERT INTO fitness.body_measurement (
-            recorded_at, provider_id, user_id, weight_kg, body_fat_pct
-          ) VALUES (
-            NOW() - INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, 75, 18
-          )`,
+      sql`INSERT INTO fitness.metric_stream (
+            recorded_at, provider_id, user_id, external_id, source_type, channel, scalar
+          ) VALUES
+            (NOW() - INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, 'test-body-1', 'api', 'body_weight', 75),
+            (NOW() - INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, 'test-body-1', 'api', 'body_fat_percentage', 18)`,
     );
 
     // ── Food entries for nutrition analytics ──

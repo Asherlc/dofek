@@ -1,7 +1,4 @@
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
-import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { type BodyClickHouseStore, bodyMeasurementClickHouseSchema } from "./body-clickhouse.ts";
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -62,50 +59,72 @@ export class BodyMeasurement {
 // Zod schema for raw DB rows
 // ---------------------------------------------------------------------------
 
-const bodyMeasurementDbSchema = z.object({
-  id: z.string(),
-  recorded_at: z.string(),
-  provider_id: z.string(),
-  user_id: z.string(),
-  external_id: z.string().nullable(),
-  weight_kg: z.coerce.number().nullable(),
-  body_fat_pct: z.coerce.number().nullable(),
-  muscle_mass_kg: z.coerce.number().nullable(),
-  bone_mass_kg: z.coerce.number().nullable(),
-  water_pct: z.coerce.number().nullable(),
-  bmi: z.coerce.number().nullable(),
-  height_cm: z.coerce.number().nullable(),
-  waist_circumference_cm: z.coerce.number().nullable(),
-  systolic_bp: z.coerce.number().nullable(),
-  diastolic_bp: z.coerce.number().nullable(),
-  heart_pulse: z.coerce.number().nullable(),
-  temperature_c: z.coerce.number().nullable(),
-  source_name: z.string().nullable(),
-  created_at: z.string(),
-});
-
-// ---------------------------------------------------------------------------
-// Repository
-// ---------------------------------------------------------------------------
-
 /** Data access for body measurement records. */
 export class BodyRepository {
-  readonly #db: Pick<Database, "execute">;
+  readonly #store: BodyClickHouseStore;
   readonly #userId: string;
-  constructor(db: Pick<Database, "execute">, userId: string, _timezone: string) {
-    this.#db = db;
+  constructor(store: BodyClickHouseStore, userId: string, _timezone: string) {
+    this.#store = store;
     this.#userId = userId;
   }
 
   /** All body measurements within the given day window, newest first. */
   async list(days: number): Promise<BodyMeasurement[]> {
-    const rows = await executeWithSchema(
-      this.#db,
-      bodyMeasurementDbSchema,
-      sql`SELECT * FROM fitness.v_body_measurement
-          WHERE user_id = ${this.#userId}
-            AND recorded_at > NOW() - ${days}::int * INTERVAL '1 day'
-          ORDER BY recorded_at DESC`,
+    if (!Number.isInteger(days) || days < 0) {
+      throw new Error("days must be a non-negative integer");
+    }
+
+    const rows = await this.#store.query(
+      bodyMeasurementClickHouseSchema,
+      `
+        SELECT
+          toString(id) AS id,
+          toString(body_measurements.recorded_at) AS recorded_at,
+          provider_id,
+          toString(user_id) AS user_id,
+          external_id,
+          weight_kg,
+          body_fat_pct,
+          muscle_mass_kg,
+          bone_mass_kg,
+          water_pct,
+          bmi,
+          height_cm,
+          waist_circumference_cm,
+          systolic_bp,
+          diastolic_bp,
+          heart_pulse,
+          temperature_c,
+          source_name,
+          toString(created_at) AS created_at
+        FROM (
+          SELECT
+            id,
+            recorded_at,
+            provider_id,
+            user_id,
+            external_id,
+            weight_kg,
+            body_fat_pct,
+            muscle_mass_kg,
+            bone_mass_kg,
+            water_pct,
+            bmi,
+            height_cm,
+            waist_circumference_cm,
+            systolic_bp,
+            diastolic_bp,
+            heart_pulse,
+            temperature_c,
+            source_name,
+            created_at
+          FROM analytics.v_body_measurement
+          WHERE user_id = {userId:UUID}
+            AND recorded_at > now() - toIntervalDay({days:UInt32})
+        ) AS body_measurements
+        ORDER BY body_measurements.recorded_at DESC
+      `,
+      { userId: this.#userId, days },
     );
 
     return rows.map(

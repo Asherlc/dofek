@@ -341,7 +341,7 @@ export class FitbitProvider implements WebhookProvider {
       const weightCount = await withSyncLog(
         db,
         this.id,
-        "body_measurement",
+        "metric_stream",
         async () => {
           let count = 0;
           const today = new Date();
@@ -382,7 +382,7 @@ export class FitbitProvider implements WebhookProvider {
       recordsSynced += weightCount;
     } catch (err) {
       errors.push({
-        message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }
@@ -531,7 +531,7 @@ export class FitbitProvider implements WebhookProvider {
           const weightCount = await withSyncLog(
             db,
             this.id,
-            "body_measurement",
+            "metric_stream",
             async () => {
               let count = 0;
               const response = await client.getWeightLogs(eventDate);
@@ -557,7 +557,7 @@ export class FitbitProvider implements WebhookProvider {
           recordsSynced += weightCount;
         } catch (err) {
           errors.push({
-            message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+            message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
             cause: err,
           });
         }

@@ -10,7 +10,6 @@ import type { JoinedDay } from "../insights/data-join.ts";
 import { joinByDate } from "../insights/data-join.ts";
 import {
   activityRowSchema,
-  bodyCompRowSchema,
   dailyRowSchema,
   nutritionRowSchema,
   sleepRowSchema,
@@ -19,6 +18,7 @@ import { spearmanCorrelation } from "../insights/stats.ts";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ── Metric extraction ───────────────────────────────────────────────────
@@ -265,15 +265,7 @@ export class CorrelationRepository {
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),
-      executeWithSchema(
-        this.#db,
-        bodyCompRowSchema,
-        sql`SELECT recorded_at, weight_kg, body_fat_pct
-            FROM fitness.v_body_measurement
-            WHERE user_id = ${this.#userId}
-              AND recorded_at > ${timestampWindowStart(effectiveEndDate, days)}
-            ORDER BY recorded_at ASC`,
-      ),
+      fetchBodyCompRows(this.#requireSensorStore(), this.#userId, effectiveEndDate, days),
     ]);
 
     const joined = joinByDate(metrics, sleep, activities, nutrition, bodyComp, {

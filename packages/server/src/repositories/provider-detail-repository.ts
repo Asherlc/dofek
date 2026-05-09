@@ -2,6 +2,7 @@ import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 
 // ---------------------------------------------------------------------------
 // Data type mapping
@@ -37,7 +38,7 @@ export function tableInfo(dataType: DataType): {
     case "sleepSessions":
       return { table: "fitness.sleep_session", orderColumn: "started_at", idColumn: "id" };
     case "bodyMeasurements":
-      return { table: "fitness.body_measurement", orderColumn: "recorded_at", idColumn: "id" };
+      return { table: "analytics.v_body_measurement", orderColumn: "recorded_at", idColumn: "id" };
     case "foodEntries":
       return { table: "fitness.food_entry", orderColumn: "date", idColumn: "id" };
     case "healthEvents":
@@ -66,7 +67,6 @@ export function tableInfo(dataType: DataType): {
 /** Tables to cascade-delete when disconnecting a provider, in deletion order. */
 export const DISCONNECT_CHILD_TABLES = [
   "fitness.metric_stream",
-  "fitness.body_measurement",
   "fitness.daily_metrics",
   "fitness.sleep_session",
   "fitness.nutrition_daily",
@@ -111,10 +111,16 @@ function isUndefinedTableError(error: unknown): boolean {
 export class ProviderDetailRepository {
   readonly #db: Pick<Database, "execute" | "transaction">;
   readonly #userId: string;
+  readonly #bodyStore: BodyClickHouseStore | undefined;
 
-  constructor(db: Pick<Database, "execute" | "transaction">, userId: string) {
+  constructor(
+    db: Pick<Database, "execute" | "transaction">,
+    userId: string,
+    bodyStore?: BodyClickHouseStore,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#bodyStore = bodyStore;
   }
 
   /** Paginated records for a provider by data type. */
@@ -125,6 +131,10 @@ export class ProviderDetailRepository {
     offset: number,
   ): Promise<Record<string, unknown>[]> {
     const info = tableInfo(dataType);
+
+    if (dataType === "bodyMeasurements") {
+      return this.#queryBodyRecords(providerId, info, limit, offset);
+    }
 
     const query = sql`SELECT * FROM ${sql.raw(info.table)}
               WHERE user_id = ${this.#userId}
@@ -144,6 +154,11 @@ export class ProviderDetailRepository {
   ): Promise<Record<string, unknown> | null> {
     const info = tableInfo(dataType);
 
+    if (dataType === "bodyMeasurements") {
+      const rows = await this.#queryBodyRecords(providerId, info, 1, 0, recordId);
+      return rows[0] ?? null;
+    }
+
     const query = sql`SELECT * FROM ${sql.raw(info.table)}
               WHERE user_id = ${this.#userId}
                 AND provider_id = ${providerId}
@@ -152,6 +167,41 @@ export class ProviderDetailRepository {
 
     const rows = await executeWithSchema(this.#db, genericRowSchema, query);
     return rows[0] ?? null;
+  }
+
+  async #queryBodyRecords(
+    providerId: string,
+    info: ReturnType<typeof tableInfo>,
+    limit: number,
+    offset: number,
+    recordId?: string,
+  ): Promise<Record<string, unknown>[]> {
+    if (!this.#bodyStore) {
+      throw new Error(
+        "providerDetail body measurements require the ClickHouse body measurement store",
+      );
+    }
+    const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
+    return this.#bodyStore.query(
+      genericRowSchema,
+      `
+        SELECT *
+        FROM ${info.table}
+        WHERE user_id = {userId:UUID}
+          AND provider_id = {providerId:String}
+          ${recordFilter}
+        ORDER BY ${info.orderColumn} DESC
+        LIMIT {limit:UInt32}
+        OFFSET {offset:UInt32}
+      `,
+      {
+        userId: this.#userId,
+        providerId,
+        recordId: recordId ?? "",
+        limit,
+        offset,
+      },
+    );
   }
 
   /** Verify provider ownership. Returns true if the provider belongs to the user. */

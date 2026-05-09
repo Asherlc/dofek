@@ -255,7 +255,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     bodyMeasurements: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${userId}' AND channel = 'body_weight'`,
     ),
     labPanels: await readCount(
       sql,
@@ -295,7 +295,7 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     ),
     vBodyMeasurement: await readCount(
       sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.body_measurement WHERE user_id = '${userId}'`,
+      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${userId}' AND channel = 'body_weight'`,
     ),
   };
 }

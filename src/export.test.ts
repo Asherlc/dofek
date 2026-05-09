@@ -55,6 +55,26 @@ function findArchiveEntry(name: string): unknown[] | undefined {
   );
 }
 
+function extractSqlParams(sqlObj: unknown): unknown[] {
+  if (typeof sqlObj !== "object" || sqlObj === null) return [];
+  const queryChunks = Reflect.get(sqlObj, "queryChunks");
+  if (!Array.isArray(queryChunks)) return [];
+
+  return queryChunks.flatMap((chunk) => {
+    if (typeof chunk === "object" && chunk !== null && Array.isArray(Reflect.get(chunk, "value"))) {
+      return [];
+    }
+    if (
+      typeof chunk === "object" &&
+      chunk !== null &&
+      Array.isArray(Reflect.get(chunk, "queryChunks"))
+    ) {
+      return extractSqlParams(chunk);
+    }
+    return [chunk];
+  });
+}
+
 describe("generateExport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,6 +155,26 @@ describe("generateExport", () => {
     const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
 
     expect(result.tableCount).toBe(17);
+    expect(result.totalRecords).toBe(0);
+  });
+
+  it("treats a missing metric-stream count row as zero", async () => {
+    const executeResults: Record<string, unknown>[][] = [];
+    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([]);
+    executeResults.push([]);
+
+    setupMockDb(executeResults);
+    mockArchive.append.mockImplementation((content: unknown) => {
+      if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    const result = await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
     expect(result.totalRecords).toBe(0);
   });
 
@@ -338,6 +378,42 @@ describe("generateExport", () => {
     );
   });
 
+  it("streams an empty metric stream as an empty CSV body", async () => {
+    const executeResults: Record<string, unknown>[][] = [];
+    for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
+      executeResults.push([]);
+    }
+    executeResults.push([{ count: "0" }]);
+    executeResults.push([]);
+
+    setupMockDb(executeResults);
+    let metricStreamContent: Promise<string> | undefined;
+    mockArchive.append.mockImplementation((content: unknown, options: unknown) => {
+      if (
+        content instanceof Readable &&
+        options != null &&
+        typeof options === "object" &&
+        "name" in options &&
+        options.name === "metric-streams.csv"
+      ) {
+        const chunks: string[] = [];
+        metricStreamContent = new Promise((resolve, reject) => {
+          content.on("data", (chunk) => chunks.push(String(chunk)));
+          content.on("end", () => resolve(chunks.join("")));
+          content.on("error", reject);
+        });
+      } else if (content instanceof Readable) {
+        content.on("data", () => {});
+      }
+    });
+
+    await generateExport(mockDb, "user-1", "/tmp/test.zip", () => {});
+
+    expect(metricStreamContent).toBeDefined();
+    if (!metricStreamContent) throw new Error("Expected metric-streams.csv stream");
+    await expect(metricStreamContent).resolves.toBe("");
+  });
+
   it("streams metric streams across multiple cursor batches", async () => {
     const executeResults: Record<string, unknown>[][] = [];
     for (let tableIndex = 0; tableIndex < 16; tableIndex++) {
@@ -390,5 +466,17 @@ describe("generateExport", () => {
     expect(metricStreamContent).toContain(",0\n");
     expect(metricStreamContent.endsWith(",50000")).toBe(true);
     expect(vi.mocked(mockDb.execute)).toHaveBeenCalledTimes(19);
+
+    const finalFirstBatchTimestamp = new Date(1_704_108_000_000 + 49_999 * 1000).toISOString();
+    const secondBatchQuery = vi.mocked(mockDb.execute).mock.calls[18]?.[0];
+    expect(extractSqlParams(secondBatchQuery)).toEqual(
+      expect.arrayContaining([
+        "user-1",
+        finalFirstBatchTimestamp,
+        "test-provider",
+        "api",
+        "heart_rate",
+      ]),
+    );
   });
 });

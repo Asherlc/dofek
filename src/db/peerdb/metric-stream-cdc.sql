@@ -89,10 +89,6 @@ WITH TABLE MAPPING
     to: daily_metrics
   },
   {
-    from: fitness.body_measurement,
-    to: body_measurement
-  },
-  {
     from: fitness.provider,
     to: provider
   },

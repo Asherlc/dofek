@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { bodyMeasurement } from "../db/schema.ts";
+import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
@@ -409,7 +410,7 @@ export class WithingsProvider implements WebhookProvider {
       const measCount = await withSyncLog(
         db,
         this.id,
-        "body_measurement",
+        "metric_stream",
         async () => {
           let count = 0;
           let offset = 0;
@@ -431,28 +432,13 @@ export class WithingsProvider implements WebhookProvider {
               }
 
               try {
-                await db
-                  .insert(bodyMeasurement)
-                  .values({
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    recordedAt: parsed.recordedAt,
-                    weightKg: parsed.weightKg,
-                    bodyFatPct: parsed.bodyFatPct,
-                    muscleMassKg: parsed.muscleMassKg,
-                    boneMassKg: parsed.boneMassKg,
-                    systolicBp: parsed.systolicBp,
-                    diastolicBp: parsed.diastolicBp,
-                    heartPulse: parsed.heartPulse,
-                    temperatureC: parsed.temperatureC,
-                  })
-                  .onConflictDoUpdate({
-                    target: [
-                      bodyMeasurement.userId,
-                      bodyMeasurement.providerId,
-                      bodyMeasurement.externalId,
-                    ],
-                    set: {
+                await writeMetricStreamBatch(
+                  db,
+                  [
+                    {
+                      providerId: this.id,
+                      externalId: parsed.externalId,
+                      recordedAt: parsed.recordedAt,
                       weightKg: parsed.weightKg,
                       bodyFatPct: parsed.bodyFatPct,
                       muscleMassKg: parsed.muscleMassKg,
@@ -462,7 +448,9 @@ export class WithingsProvider implements WebhookProvider {
                       heartPulse: parsed.heartPulse,
                       temperatureC: parsed.temperatureC,
                     },
-                  });
+                  ],
+                  SOURCE_TYPE_API,
+                );
                 count++;
               } catch (err) {
                 errors.push({
@@ -484,7 +472,7 @@ export class WithingsProvider implements WebhookProvider {
       recordsSynced += measCount;
     } catch (err) {
       errors.push({
-        message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

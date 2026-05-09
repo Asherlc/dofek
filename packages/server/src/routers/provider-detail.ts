@@ -128,7 +128,7 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
       const rows = await repo.getRecords(
         input.providerId,
         input.dataType,
@@ -148,7 +148,7 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
       return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
     }),
 
