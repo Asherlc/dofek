@@ -63,7 +63,10 @@ LEFT JOIN (
     SELECT DISTINCT
       user_id,
       provider_id,
-      COALESCE(external_id, id::text) AS sample_id,
+      COALESCE(
+        external_id,
+        concat(provider_id, ':', user_id::text, ':', recorded_at::text, ':', COALESCE(device_id, ''))
+      ) AS sample_id,
       recorded_at,
       device_id
     FROM fitness.metric_stream

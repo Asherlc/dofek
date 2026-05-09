@@ -73,6 +73,14 @@ describe("BodyRepository", () => {
     expect(await repo.list(90)).toEqual([]);
   });
 
+  it("rejects invalid day windows before querying ClickHouse", async () => {
+    const { repo, query } = makeRepository([]);
+
+    await expect(repo.list(-1)).rejects.toThrow("days must be a non-negative integer");
+    await expect(repo.list(1.5)).rejects.toThrow("days must be a non-negative integer");
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("returns BodyMeasurement instances", async () => {
     const { repo } = makeRepository([
       {

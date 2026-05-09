@@ -114,6 +114,7 @@ describe("db-insertion deduplication (integration)", () => {
 
       const rows: (typeof schema.metricStream.$inferInsert)[] = [
         {
+          userId: schema.TEST_USER_ID,
           providerId: PROVIDER_ID,
           externalId: "dup-test-key",
           recordedAt: time1,
@@ -123,6 +124,7 @@ describe("db-insertion deduplication (integration)", () => {
           deviceId: "Scale A",
         },
         {
+          userId: schema.TEST_USER_ID,
           providerId: PROVIDER_ID,
           externalId: "dup-test-key", // duplicate conflict key
           recordedAt: time2,
@@ -137,7 +139,7 @@ describe("db-insertion deduplication (integration)", () => {
       await insertWithDuplicateDiag(
         "metric_stream",
         (row) =>
-          `${row.providerId}:${row.externalId}:${row.channel}:${row.recordedAt?.toISOString()}`,
+          `${row.userId}:${row.providerId}:${row.externalId}:${row.channel}:${row.recordedAt?.toISOString()}`,
         rows,
         (batch) =>
           ctx.db

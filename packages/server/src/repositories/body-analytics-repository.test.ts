@@ -220,10 +220,13 @@ describe("ewmaSmooth", () => {
 
 // ── Repository ──────────────────────────────────────────────────────
 
-function makeRepository(rows: Record<string, unknown>[] = []) {
+function makeRepository(
+  rows: Record<string, unknown>[] = [],
+  accessWindow?: ConstructorParameters<typeof BodyAnalyticsRepository>[3],
+) {
   const execute = vi.fn().mockResolvedValue(rows);
   const query = vi.fn().mockResolvedValue(rows);
-  const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", undefined, { query });
+  const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", accessWindow, { query });
   return { repo, execute, query };
 }
 
@@ -425,6 +428,25 @@ describe("BodyAnalyticsRepository", () => {
       const { repo } = makeRepository([]);
       const result = await repo.getWeightTrend();
       expect(result.trend).toBe("insufficient");
+    });
+
+    it("threads the entitlement access window into the trend query", async () => {
+      const accessWindow = {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-01-01",
+        endDateExclusive: "2026-02-01",
+      } as const;
+      const { repo, query } = makeRepository([], accessWindow);
+
+      await repo.getWeightTrend();
+
+      expect(query.mock.calls[0]?.[2]).toMatchObject({
+        accessStart: "2026-01-01",
+        accessEnd: "2026-02-01",
+      });
+      expect(query.mock.calls[0]?.[1]).toContain("local_date >= toDate({accessStart:String})");
     });
 
     it("classifies gaining trend when weight increasing", async () => {

@@ -648,6 +648,7 @@ table fitness.location_sample {
   indexes {
     (activity_id, recorded_at) [name: 'location_sample_activity_time_idx']
     (user_id, recorded_at) [name: 'location_sample_user_time_idx']
+    (user_id, provider_id, activity_id, recorded_at, latitude, longitude, source_type, device_id) [name: 'location_sample_natural_key_idx', unique]
     (id, recorded_at) [pk]
   }
 }

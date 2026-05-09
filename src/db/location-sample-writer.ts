@@ -101,7 +101,12 @@ export function createLocationBatchInsert(
               )`,
             ),
             sql`, `,
-          )}`,
+          )}
+          ON CONFLICT (user_id, provider_id, activity_id, recorded_at, latitude, longitude, source_type, device_id)
+          DO UPDATE SET
+            horizontal_accuracy_m = excluded.horizontal_accuracy_m,
+            gps_accuracy_m = excluded.gps_accuracy_m,
+            raw = excluded.raw`,
     );
   };
 }

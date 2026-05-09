@@ -107,6 +107,9 @@ describe("createLocationBatchInsert", () => {
       const compiledQuery = dialect.sqlToQuery(query);
       expect(compiledQuery.params[1]).toBe("user-1");
       expect(compiledQuery.sql).toContain("$2");
+      expect(compiledQuery.sql).toContain(
+        "ON CONFLICT (user_id, provider_id, activity_id, recorded_at, latitude, longitude, source_type, device_id)",
+      );
       return [];
     });
     const db = {

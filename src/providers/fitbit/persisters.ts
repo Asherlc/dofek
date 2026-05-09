@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.ts";
@@ -15,6 +15,7 @@ import type {
 } from "./parsers.ts";
 
 const PROVIDER_ID = "fitbit";
+const FITBIT_BODY_CHANNELS = ["body_weight", "body_fat_percentage"] as const;
 
 export async function persistActivity(
   db: SyncDatabase,
@@ -142,6 +143,16 @@ export async function persistBodyMeasurement(
   db: SyncDatabase,
   parsed: ParsedFitbitBodyMeasurement,
 ): Promise<void> {
+  await db
+    .delete(metricStream)
+    .where(
+      and(
+        eq(metricStream.providerId, PROVIDER_ID),
+        eq(metricStream.externalId, parsed.externalId),
+        inArray(metricStream.channel, FITBIT_BODY_CHANNELS),
+      ),
+    );
+
   await writeMetricStreamBatch(
     db,
     [

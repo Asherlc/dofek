@@ -263,7 +263,9 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * Current weekly and 4-week rates, plus overall trend direction.
    */
   async getWeightTrend(): Promise<WeightRateOfChange> {
-    const rows = await fetchBodyWeightRows(this.#bodyStore, this.userId, this.timezone, "now", 35);
+    const rows = await fetchBodyWeightRows(this.#bodyStore, this.userId, this.timezone, "now", 35, {
+      accessWindow: this.accessWindow,
+    });
 
     const weights = rows.map((row) => Number(row.weight_kg));
     return this.#computeWeightTrend(weights);

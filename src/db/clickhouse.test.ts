@@ -171,6 +171,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain(
       "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
     );
+    expect(sql).not.toContain("uniqExact(ifNull(external_id, toString(id))");
     expect(sql).toContain("body_measurement_samples AS");
     expect(sql).toContain("measurement_key AS external_id");
     expect(sql).toContain("_peerdb_synced_at AS created_at");

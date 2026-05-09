@@ -748,7 +748,13 @@ sleep_session_counts AS (
   GROUP BY user_id, provider_id
 ),
 body_measurement_counts AS (
-  SELECT user_id, provider_id, uniqExact(ifNull(external_id, toString(id)), recorded_at, device_id) AS count
+  SELECT
+    user_id,
+    provider_id,
+    uniqExact(ifNull(
+      external_id,
+      concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
+    )) AS count
   FROM postgres_fitness.metric_stream FINAL
   WHERE _peerdb_is_deleted = 0
     AND channel IN (

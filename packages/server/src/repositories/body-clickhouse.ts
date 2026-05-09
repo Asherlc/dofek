@@ -185,10 +185,11 @@ export async function fetchBodyComparisonRows(
   endDate: string | null,
   windowDays: number,
 ): Promise<z.infer<typeof bodyComparisonClickHouseSchema>[]> {
+  const normalizedEndDate = endDate?.toLowerCase();
   const afterEndClause =
     endDate === null
       ? "AND local_date <= addDays(toDate({startDate:String}), {windowDays:UInt32})"
-      : endDate === "NOW()"
+      : normalizedEndDate === "now" || normalizedEndDate === "now()"
         ? "AND local_date <= today()"
         : "AND local_date <= toDate({endDate:String})";
 

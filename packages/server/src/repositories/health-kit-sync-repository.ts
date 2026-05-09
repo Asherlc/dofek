@@ -432,7 +432,11 @@ export class HealthKitSyncRepository {
         const value = mapping.transform ? mapping.transform(sample.value) : sample.value;
         const externalId = `hk:${sample.uuid}`;
         const channel = BODY_MEASUREMENT_COLUMN_TO_CHANNEL[mapping.column];
-        if (!channel) continue;
+        if (!channel) {
+          throw new Error(
+            `Missing metric_stream channel mapping for body column: ${mapping.column}`,
+          );
+        }
 
         await this.#db.execute(
           sql`INSERT INTO fitness.metric_stream

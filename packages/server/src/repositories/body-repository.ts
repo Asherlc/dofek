@@ -70,6 +70,10 @@ export class BodyRepository {
 
   /** All body measurements within the given day window, newest first. */
   async list(days: number): Promise<BodyMeasurement[]> {
+    if (!Number.isInteger(days) || days < 0) {
+      throw new Error("days must be a non-negative integer");
+    }
+
     const rows = await this.#store.query(
       bodyMeasurementClickHouseSchema,
       `

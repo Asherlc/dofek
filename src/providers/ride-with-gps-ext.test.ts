@@ -990,7 +990,7 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    const trackPoints = Array.from({ length: 501 }, (_, i) => ({
+    const trackPoints = Array.from({ length: 1001 }, (_, i) => ({
       x: -122.6 - i * 0.0001,
       y: 45.5 + i * 0.0001,
       d: i * 10,
@@ -1036,8 +1036,8 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([501]);
-    expect(db.execute).toHaveBeenCalledOnce();
+    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 1]);
+    expect(db.execute).toHaveBeenCalledTimes(2);
   });
 
   it("handles deleted trip items", async () => {

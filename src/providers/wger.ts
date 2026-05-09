@@ -252,7 +252,7 @@ export class WgerProvider implements SyncProvider {
       const weightCount = await withSyncLog(
         db,
         this.id,
-        "metricStream",
+        "metric_stream",
         async () => {
           let count = 0;
           let url: string | null =
@@ -317,7 +317,7 @@ export class WgerProvider implements SyncProvider {
       recordsSynced += weightCount;
     } catch (err) {
       errors.push({
-        message: `metricStream: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

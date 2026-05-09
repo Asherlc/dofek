@@ -1131,6 +1131,8 @@ describe("FitbitProvider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expectReasonableDuration(result.duration);
+      expect(db.delete).toHaveBeenCalledWith(metricStreamTable);
+      expect(db.where).toHaveBeenCalled();
 
       const weightValues = findValuesCall(
         db,

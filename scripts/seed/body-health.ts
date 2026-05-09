@@ -16,6 +16,13 @@ export async function seedBodyHealth(sql: Sql, random: SeedRandom): Promise<void
 
 async function seedBodyMeasurements(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
   let weightKg = 82.4;
+  await sql`
+    DELETE FROM fitness.metric_stream
+    WHERE provider_id = 'apple_health'
+      AND user_id = ${USER_ID}
+      AND external_id LIKE 'seed-body-%'
+  `;
+
   for (let daysAgo = 180; daysAgo >= 0; daysAgo -= 3) {
     if (daysAgo % 39 === 0) continue;
     const date = daysBefore(today, daysAgo);

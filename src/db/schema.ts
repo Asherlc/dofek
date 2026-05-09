@@ -559,6 +559,16 @@ export const locationSample = fitness.table(
   (table) => [
     index("location_sample_activity_time_idx").on(table.activityId, table.recordedAt),
     index("location_sample_user_time_idx").on(table.userId, table.recordedAt),
+    uniqueIndex("location_sample_natural_key_idx").on(
+      table.userId,
+      table.providerId,
+      table.activityId,
+      table.recordedAt,
+      table.latitude,
+      table.longitude,
+      table.sourceType,
+      table.deviceId,
+    ),
     primaryKey({ columns: [table.id, table.recordedAt] }),
   ],
 );
