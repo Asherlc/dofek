@@ -3654,6 +3654,52 @@ next root cause rather than stale volume reuse.
 - Add failure-path review-app service logs to the deploy workflow if readiness
   failures remain hard to diagnose.
 
+## 2026-05-09: Review App Fresh Database Init Permission Failure
+
+### Symptoms
+
+PR #1111 review-app deployment again failed in the `Deploy review stack` step
+while waiting for the review Postgres database to become ready.
+
+### User Impact
+
+The PR review app was unavailable, blocking live preview validation.
+
+### Evidence
+
+The attached CI log showed a fresh `dofek-review-pr-1111_db_data` Docker volume
+being created, followed by repeated `pg_isready` output:
+`/var/run/postgresql:5432 - no response`. The first fatal CI line was
+`Review app database did not become ready within 180s`. A local reproduction
+with the same review compose file and a fresh named volume showed the underlying
+database log line: `initdb: error: could not change permissions of directory
+"/var/lib/postgresql/data": Operation not permitted`.
+
+### Root Cause
+
+The review compose file overrode the TimescaleDB HA image's default `PGDATA` and
+mounted the disposable Docker volume directly at `/var/lib/postgresql/data`.
+During fresh initialization, the image runs as the `postgres` user and could not
+change ownership or permissions on the mounted volume root, causing `initdb` to
+fail and the container to restart.
+
+### Fix or Mitigation
+
+The review database now uses the image's default data layout by mounting the
+volume at `/home/postgres/pgdata` and letting `PGDATA` remain
+`/home/postgres/pgdata/data`. A local fresh-volume review DB startup reached
+`pg_isready` successfully and the container became healthy.
+
+### Remaining Risk
+
+None known for fresh review database initialization. The production stack still
+uses its existing bind-mounted data path and was not changed by this review-app
+fix.
+
+### Follow-Up Work
+
+- Keep the review-app docs explicit about the TimescaleDB HA data mount layout.
+
 ## 2026-05-08: Staging Deploy SSH Host Key Timeout
 
 ### Symptoms

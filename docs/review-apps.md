@@ -11,7 +11,8 @@ it at `pr-<number>.dofek.asherlc.com`.
   Cloudflare record so Traefik can serve the wildcard TLS certificate directly.
 - Routing: the review-app deploy workflow writes one Traefik dynamic-config
   file for the PR's exact host, forwarding traffic to that PR server's `:3000`.
-- Review stack: `web`, `db`, and `redis` via Docker Compose on the PR server.
+- Review stack: `web`, `db`, `clickhouse`, and `redis` via Docker Compose on
+  the PR server.
 
 Exact DNS records still win over the wildcard. Management hosts such as
 `portainer.dofek.asherlc.com` and `pgadmin.dofek.asherlc.com` keep using their
@@ -72,6 +73,10 @@ Use:
 - The shared front door must already have the wildcard DNS record and Traefik
   file provider enabled. Those changes live in the main `deploy/` Terraform and
   swarm stack, not in the PR workspace itself.
+- The review database uses the TimescaleDB HA image's default PostgreSQL data
+  parent (`/home/postgres/pgdata`). Do not mount the disposable Docker volume
+  directly on `PGDATA`; the image must be able to create and own the nested
+  `data` directory during first initialization.
 
 ## Troubleshooting
 
