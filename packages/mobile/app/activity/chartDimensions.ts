@@ -1,0 +1,1 @@
+export const ACTIVITY_CHART_WIDTH = 340;

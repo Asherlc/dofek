@@ -1,0 +1,13 @@
+# dotenv-linter configuration
+# https://dotenv-linter.github.io/
+
+# Skip vendored / generated env files.
+exclude = [
+  "node_modules/**/.env*",
+  "dist/**/.env*",
+  "build/**/.env*",
+  "coverage/**/.env*",
+]
+
+# Don't enforce ordering — env files are grouped by concern, not alphabetically.
+skip = ["UnorderedKey"]

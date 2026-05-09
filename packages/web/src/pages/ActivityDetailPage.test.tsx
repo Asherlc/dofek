@@ -4,7 +4,7 @@ import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -47,7 +47,7 @@ const mockStreamPoints: Array<{
   recordedAt: string;
   lat: number;
   lng: number;
-  heartRate: number;
+  heartRate: number | null;
   power: number | null;
   speed: number;
   cadence: number | null;
@@ -84,6 +84,7 @@ const mockStreamPoints: Array<{
     altitude: 400,
   },
 ];
+const initialMockStreamPoints = mockStreamPoints.map((point) => ({ ...point }));
 
 const mockStrengthExercisesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }) => ({ data: [], isLoading: false }),
@@ -95,6 +96,7 @@ interface MockHrZone {
   minPct: number;
   maxPct: number;
   seconds: number;
+  percent: number;
 }
 
 interface MockPowerZone {
@@ -103,6 +105,7 @@ interface MockPowerZone {
   minPct: number;
   maxPct: number | null;
   seconds: number;
+  percent: number;
 }
 
 interface MockPowerZonesResult {
@@ -110,10 +113,23 @@ interface MockPowerZonesResult {
   zones: MockPowerZone[];
 }
 
-const mockHrZonesUseQuery = vi.fn((): { data: MockHrZone[]; isLoading: boolean } => ({
-  data: [],
-  isLoading: false,
-}));
+interface MockHrZonesResult {
+  data: MockHrZone[];
+  isLoading: boolean;
+  isError: boolean;
+  error: { message: string } | null;
+}
+
+function defaultMockHrZonesResult(): MockHrZonesResult {
+  return {
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  };
+}
+
+const mockHrZonesUseQuery = vi.fn(defaultMockHrZonesResult);
 const mockPowerZonesUseQuery = vi.fn(
   (
     _input?: unknown,
@@ -146,6 +162,16 @@ vi.mock("leaflet", () => ({
   polyline: () => ({ addTo: vi.fn() }),
   circleMarker: () => ({ addTo: vi.fn() }),
 }));
+
+afterEach(() => {
+  mockHrZonesUseQuery.mockReset();
+  mockHrZonesUseQuery.mockImplementation(defaultMockHrZonesResult);
+  mockStreamPoints.splice(
+    0,
+    mockStreamPoints.length,
+    ...initialMockStreamPoints.map((point) => ({ ...point })),
+  );
+});
 
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
@@ -421,10 +447,12 @@ describe("ActivityDetailPage", () => {
     it("labels the heart rate zone axis with zone numbers", async () => {
       mockHrZonesUseQuery.mockReturnValue({
         data: [
-          { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300 },
-          { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600 },
+          { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 66.7 },
         ],
         isLoading: false,
+        isError: false,
+        error: null,
       });
 
       const ActivityDetailPage = await importPage();
@@ -437,7 +465,57 @@ describe("ActivityDetailPage", () => {
       }
       expect(getCategoryAxisData(heartRateZoneOption)).toEqual(["Zone 1", "Zone 2"]);
 
-      mockHrZonesUseQuery.mockReturnValue({ data: [], isLoading: false });
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      });
+    });
+
+    it("shows an empty state when heart rate zones are unavailable for an activity with heart rate", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("No heart rate zone data")).toBeDefined();
+    });
+
+    it("shows the heart rate zones error instead of the empty state when loading zones fails", async () => {
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: true,
+        error: { message: "Unable to load heart rate zones" },
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Unable to load heart rate zones")).toBeDefined();
+      expect(screen.queryByText("No heart rate zone data")).toBeNull();
+    });
+
+    it("does not show heart rate zones for non-heart-rate streams while zones are loading", async () => {
+      const originalStream = [...mockStreamPoints];
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...originalStream.map((point) => ({ ...point, heartRate: null })),
+      );
+      mockHrZonesUseQuery.mockReturnValue({
+        data: [],
+        isLoading: true,
+        isError: false,
+        error: null,
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.queryByText("Heart Rate Zones")).toBeNull();
+      expect(screen.queryByText("No heart rate zone data")).toBeNull();
+
+      mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
     });
 
     it("labels the power zone axis with zone numbers", async () => {
@@ -454,8 +532,8 @@ describe("ActivityDetailPage", () => {
         data: {
           ftp: 250,
           zones: [
-            { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300 },
-            { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600 },
+            { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
+            { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
           ],
         },
         isLoading: false,

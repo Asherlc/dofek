@@ -126,6 +126,7 @@ export function ActivityDetailPage() {
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
+  const showHrZones = hasHr || zones.length > 0;
 
   return (
     <PageLayout>
@@ -194,12 +195,16 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-        {zones.length > 0 && (
+        {showHrZones && (
           <Section
             title="Heart Rate Zones"
             description="This chart shows how much time you spent in each heart rate zone."
           >
-            <HrZonesChart zones={zones} loading={hrZones.isLoading} />
+            <HrZonesChart
+              zones={zones}
+              loading={hrZones.isLoading}
+              errorMessage={hrZones.error?.message}
+            />
           </Section>
         )}
 
@@ -734,6 +739,7 @@ interface ZoneDistributionDatum {
   zone: number;
   label: string;
   seconds: number;
+  percent: number;
 }
 
 function formatZoneChartTime(secondsValue: number) {
@@ -747,6 +753,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   loading,
   height,
   emptyMessage,
+  errorMessage,
   zoneColors,
   tooltipDetails,
 }: {
@@ -754,13 +761,21 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   loading: boolean;
   height: number;
   emptyMessage: string;
+  errorMessage?: string;
   zoneColors: string[];
   tooltipDetails: (zone: ZoneItem) => string;
 }) {
   if (loading) return <ChartLoadingSkeleton height={height} />;
 
-  const totalSeconds = zones.reduce((sum, zoneItem) => sum + zoneItem.seconds, 0);
-  if (totalSeconds === 0) {
+  if (errorMessage) {
+    return (
+      <div className="flex items-center justify-center text-center px-4" style={{ height }}>
+        <span className="text-red-400 text-sm">{errorMessage}</span>
+      </div>
+    );
+  }
+
+  if (!zones.some((zoneItem) => zoneItem.percent > 0)) {
     return (
       <div className="flex items-center justify-center" style={{ height }}>
         <span className="text-dim text-sm">{emptyMessage}</span>
@@ -777,10 +792,8 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         if (!firstParam) return "";
         const zoneItem = zones[firstParam.dataIndex];
         if (!zoneItem) return "";
-        const percentage =
-          totalSeconds > 0 ? formatNumber((zoneItem.seconds / totalSeconds) * 100) : "0";
         return `<b>${zoneItem.label}</b> (${tooltipDetails(zoneItem)})<br/>
-          ${formatZoneChartTime(zoneItem.seconds)} (${percentage}%)`;
+          ${formatZoneChartTime(zoneItem.seconds)} (${formatNumber(zoneItem.percent)}%)`;
       },
     }),
     xAxis: dofekAxis.value({
@@ -802,10 +815,9 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
           position: "right",
           color: chartThemeColors.axisLabel,
           fontSize: 11,
-          formatter: (params: { value: number }) => {
-            const percentage =
-              totalSeconds > 0 ? formatNumber((params.value / totalSeconds) * 100, 0) : "0";
-            return `${percentage}%`;
+          formatter: (params: { dataIndex: number }) => {
+            const zoneItem = zones[params.dataIndex];
+            return `${formatNumber(zoneItem?.percent ?? 0, 0)}%`;
           },
         },
       },
@@ -815,13 +827,22 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   return <DofekChart option={option} height={height} />;
 }
 
-export function HrZonesChart({ zones, loading }: { zones: ActivityHrZone[]; loading: boolean }) {
+export function HrZonesChart({
+  zones,
+  loading,
+  errorMessage,
+}: {
+  zones: ActivityHrZone[];
+  loading: boolean;
+  errorMessage?: string;
+}) {
   return (
     <ZoneDistributionChart
       zones={zones}
       loading={loading}
       height={200}
       emptyMessage="No heart rate zone data"
+      errorMessage={errorMessage}
       zoneColors={HEART_RATE_ZONE_COLORS}
       tooltipDetails={(zoneItem) => `${zoneItem.minPct}–${zoneItem.maxPct}% HRR`}
     />

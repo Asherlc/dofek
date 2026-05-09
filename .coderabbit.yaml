@@ -1,0 +1,418 @@
+# CodeRabbit configuration
+# Reference: https://docs.coderabbit.ai/reference/configuration
+# Schema:    https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+language: en-US
+tone_instructions: >-
+  Be direct and technical. Cite the specific rule from AGENTS.md when flagging
+  a violation. Skip filler praise. Match the project's preference for
+  root-cause fixes over workarounds.
+early_access: false
+enable_free_tier: true
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  high_level_summary_in_walkthrough: false
+  auto_title_placeholder: "@coderabbitai"
+  auto_title_instructions: ""
+  review_status: true
+  review_details: false
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  enable_prompt_for_ai_agents: true
+  abort_on_close: true
+  disable_cache: false
+
+  # Skip vendored/generated/binary content
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/.next/**"
+    - "!**/coverage/**"
+    - "!**/.turbo/**"
+    - "!**/storybook-static/**"
+    - "!**/*.snap"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/*.svg"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.gif"
+    - "!**/*.ico"
+    - "!**/*.woff"
+    - "!**/*.woff2"
+    - "!**/*.ttf"
+
+  # Per-path review guidance derived from AGENTS.md
+  path_instructions:
+    - path: "**/*.ts"
+      instructions: >-
+        TypeScript rules from AGENTS.md: never use `any`; avoid `as` casts (use
+        type narrowing, generics, or `satisfies`); never use `as any`,
+        `as never`, or double-cast `as unknown as X`. Prefer `null`/`undefined`
+        over empty strings for absent values. No barrel files (no `index.ts`
+        re-export shims). Files must stay under 1000 lines. No single-letter
+        variables; no unexplained acronyms.
+    - path: "**/*.{ts,tsx}"
+      instructions: >-
+        Use Zod to parse data crossing runtime boundaries (API responses, DB
+        results, webhooks, postMessage). Prefer `executeWithSchema()` over
+        `db.execute<T>()` generics. Never silently swallow errors — every
+        unexpected `catch` must call `captureException()`. Surface specific
+        TRPCError messages to clients; do not hide errors behind generic
+        copy.
+    - path: "**/*.{test,integration.test}.ts"
+      instructions: >-
+        Tests live next to the source they cover (no `__tests__/` dirs).
+        Unit tests (`*.test.ts`) must not hit external services. Integration
+        tests (`*.integration.test.ts`) must not use `vi.mock`; mock at the
+        network level with MSW. Never export production symbols solely for
+        testability. Shared mock helpers go in a colocated `test-helpers.ts`,
+        never imported from another `*.test.ts`.
+    - path: "packages/server/**/*.ts"
+      instructions: >-
+        All metric values must be computed server-side — never push
+        derivation/aggregation to web or mobile clients. Activity sensor
+        analytics must read deduped ClickHouse data
+        (`analytics.deduped_sensor` / `analytics.activity_summary`), not raw
+        `fitness.metric_stream`. Do not backfill canonical Postgres app state
+        from sensor-derived analytics.
+    - path: "packages/{web,mobile}/**/*.{ts,tsx}"
+      instructions: >-
+        Dual-platform parity: any feature/bug fix touching one platform must
+        ship on the other in the same PR. Shared logic belongs in
+        `@dofek/format`, `@dofek/scoring`, `@dofek/nutrition`,
+        `@dofek/training`, `@dofek/stats`, `@dofek/onboarding`,
+        `@dofek/providers`, `@dofek/zones`, etc. — import from there
+        instead of duplicating.
+    - path: "packages/{web,mobile}/**/components/**/*.{tsx,ts}"
+      instructions: >-
+        Every component needs a colocated `*.stories.tsx` covering default,
+        loading, empty/no-data, and meaningful variants. Do not name
+        components with a `View` suffix — use domain-specific names
+        (`Content`, `Panel`, `Body`, `Card`, etc.). UI text must be
+        layman-readable: spell out acronyms (CTL/ATL/TSB/HRV/FTP/etc.) or
+        place them in parens after a readable name.
+    - path: "src/providers/**/*.ts"
+      instructions: >-
+        Each provider is self-contained: implement the `Provider` interface
+        from `src/providers/types.ts`, keep all provider-specific types,
+        parsing, API client code, and sync logic in the provider's own file.
+        Providers must not depend on each other.
+    - path: "src/db/schema.ts"
+      instructions: >-
+        Raw data only. Never store computed/aggregate values that can be
+        derived (totals, averages, durations, start/end times). Do not add
+        wide nutrient columns or duplicate daily-nutrient tables — nutrients
+        are stored as rows in `fitness.food_entry_nutrient` /
+        `fitness.supplement_nutrient`. Never use empty-string `NOT NULL
+        DEFAULT ''` columns; use nullable columns instead.
+    - path: "drizzle/**/*.sql"
+      instructions: >-
+        Manual migrations should be sequentially numbered. Avoid destructive
+        changes without explicit user approval. Deduplication happens at
+        query/view time, not at insert time — preserve raw per-source rows.
+    - path: "deploy/**/*.{tf,yml,yaml}"
+      instructions: >-
+        Infrastructure-as-code only. No SSH-edited config, no commented-out
+        workflow jobs, and no resilience knobs (longer waits, more retries,
+        broader timeouts) without a documented root cause. New env vars must
+        already exist in Infisical for the relevant environment.
+    - path: ".github/workflows/**/*.yml"
+      instructions: >-
+        Keep CI steps small and explicitly named so failures pinpoint the
+        broken stage. Don't add `continue-on-error` or warn-and-continue
+        behavior to mask failures. Don't bump `size-limit` thresholds —
+        reduce the bundle instead. Don't disable lint rules to make CI green.
+    - path: "Dockerfile"
+      instructions: >-
+        Pin specific versions (e.g. `timescale/timescaledb:2.26.2-pg18`),
+        not `latest`, but those pinned versions should be the newest stable
+        release. Verify image builds and the server boots end-to-end against
+        a real DB before merging.
+    - path: "**/*.md"
+      instructions: >-
+        `AGENTS.md` is the source of truth; `CLAUDE.md`/`GEMINI.md` must be
+        symlinks to it. Human docs (`README.md`, `docs/`) must stand alone
+        without depending on agent skills. Don't leave commented-out blocks
+        or TODO-disabled paths.
+
+  labeling_instructions:
+    - label: "area/server"
+      instructions: "Apply when changes touch packages/server."
+    - label: "area/web"
+      instructions: "Apply when changes touch packages/web."
+    - label: "area/mobile"
+      instructions: "Apply when changes touch packages/mobile or packages/ios."
+    - label: "area/providers"
+      instructions: "Apply when changes touch src/providers/** or any RE'd provider client package."
+    - label: "area/db"
+      instructions: "Apply when changes touch drizzle/, src/db/schema.ts, or any migration."
+    - label: "area/infra"
+      instructions: "Apply when changes touch deploy/, Dockerfile, docker-compose*.yml, or .github/workflows."
+    - label: "type/bug"
+      instructions: "Apply when the PR fixes a bug — look for failing-test-first commits or 'fix' wording."
+    - label: "type/feature"
+      instructions: "Apply when the PR adds new user-facing capability."
+    - label: "type/refactor"
+      instructions: "Apply when the PR restructures code without changing behavior."
+    - label: "needs-tests"
+      instructions: "Apply when the PR changes runtime behavior but no tests were added or updated."
+    - label: "breaking-change"
+      instructions: "Apply when the PR changes a public API, DB schema, or env-var contract in a non-backward-compatible way."
+
+  slop_detection:
+    enabled: true
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    ignore_title_keywords:
+      - "WIP"
+      - "[WIP]"
+      - "DO NOT MERGE"
+      - "DRAFT"
+    drafts: false
+    base_branches:
+      - "main"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+
+  pre_merge_checks:
+    override_requested_reviewers_only: false
+    docstrings:
+      mode: "off"
+    title:
+      mode: "warning"
+      requirements: >-
+        Imperative mood, under 70 chars, prefixed by area when relevant
+        (e.g. `[server]`, `[web]`, `[mobile]`, `[deploy]`). No trailing
+        punctuation.
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "off"
+
+  tools:
+    # Repo already configures these — let CodeRabbit reuse the configs.
+    biome:
+      enabled: true
+    eslint:
+      enabled: false  # Biome is the canonical JS/TS linter (AGENTS.md "no duplicate tools")
+    semgrep:
+      enabled: true
+      config_file: ".semgrep/"
+    gitleaks:
+      enabled: true
+    hadolint:
+      enabled: true
+    sqlfluff:
+      enabled: true
+    yamllint:
+      enabled: true
+    actionlint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    languagetool:
+      enabled: true
+      level: "default"
+    github-checks:
+      enabled: true
+      timeout_ms: 90000
+
+    # Secret + supply-chain scanning.
+    trufflehog:
+      enabled: true
+    trivy:
+      enabled: true
+    osvScanner:
+      enabled: true
+    checkov:
+      enabled: true
+
+    # JS/TS ecosystem extras.
+    oxc:
+      enabled: false  # Biome covers JS/TS linting
+    htmlhint:
+      enabled: false  # no HTML in this stack (Vite + React)
+    stylelint:
+      enabled: true
+    dotenvLint:
+      enabled: true
+
+    # Terraform (deploy/).
+    tflint:
+      enabled: true
+
+    # iOS / Swift module.
+    swiftlint:
+      enabled: true
+
+    # Python (packages/ml).
+    ruff:
+      enabled: true
+    pylint:
+      enabled: false  # Ruff is the canonical Python linter here
+    flake8:
+      enabled: false  # ruff covers this
+    fortitudeLint:
+      enabled: false
+
+    # Languages not used here — disable to cut noise.
+    phpstan:
+      enabled: false
+    phpmd:
+      enabled: false
+    phpcs:
+      enabled: false
+    golangci-lint:
+      enabled: false
+    rubocop:
+      enabled: false
+    brakeman:
+      enabled: false
+    detekt:
+      enabled: false
+    pmd:
+      enabled: false
+    clang:
+      enabled: false
+    cppcheck:
+      enabled: false
+    clippy:
+      enabled: false
+    buf:
+      enabled: false
+    regal:
+      enabled: false
+    luacheck:
+      enabled: false
+    shopifyThemeCheck:
+      enabled: false
+    smartyLint:
+      enabled: false
+    emberTemplateLint:
+      enabled: false
+    psscriptanalyzer:
+      enabled: false
+    checkmake:
+      enabled: false
+    blinter:
+      enabled: false
+    presidio:
+      enabled: false
+    opengrep:
+      enabled: false  # semgrep already enabled above
+    prismaLint:
+      enabled: false  # using Drizzle, not Prisma
+    circleci:
+      enabled: false  # using GitHub Actions
+
+    ast-grep:
+      essential_rules: true
+      rule_dirs: []
+      util_dirs: []
+      packages: []
+
+chat:
+  art: false
+  allow_non_org_members: false
+  auto_reply: true
+  integrations:
+    jira:
+      usage: auto
+    linear:
+      usage: auto
+
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "**/AGENTS.md"
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto
+  jira:
+    usage: auto
+  linear:
+    usage: auto
+  mcp:
+    usage: auto
+    disabled_servers: []
+  linked_repositories: []
+
+code_generation:
+  docstrings:
+    language: en-US
+    path_instructions:
+      - path: "**/*.{ts,tsx}"
+        instructions: >-
+          Use TSDoc. Document the WHY (non-obvious invariants, hidden
+          constraints, surprising behavior), not the WHAT. Skip docstrings on
+          self-explanatory functions. Never reference current task numbers,
+          callers, or PR/issue IDs in docstrings.
+  unit_tests:
+    path_instructions:
+      - path: "**/*.{ts,tsx}"
+        instructions: >-
+          Use Vitest. Place unit tests at `<source>.test.ts` next to the
+          source — never in `__tests__/`. Don't mock the module under test;
+          test through the public API. For runtime data shape, prefer Zod
+          assertions over hand-rolled checks.
+      - path: "packages/server/**/*.ts"
+        instructions: >-
+          Server integration tests use `*.integration.test.ts` and mock 3rd
+          parties at the network level via MSW (`setupServer` from
+          `msw/node`). Don't use `vi.mock` in integration tests. Don't add
+          test-only exports to production modules.
+
+issue_enrichment:
+  auto_enrich:
+    enabled: false
+  planning:
+    enabled: true
+    auto_planning:
+      enabled: false
+      labels: []
+  labeling:
+    auto_apply_labels: false

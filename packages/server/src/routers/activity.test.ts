@@ -71,7 +71,8 @@ vi.mock("dofek/providers/registry", () => ({
         },
         wahoo: {
           name: "Wahoo",
-          activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+          activityUrl: (externalId: string) =>
+            `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
         },
         garmin: {
           name: "Garmin",
@@ -334,7 +335,11 @@ describe("activityRouter", () => {
       expect(result.subsource).toBeNull();
       expect(result.sourceLinks).toEqual([
         { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
-        { providerId: "wahoo", label: "Wahoo", url: "https://cloud.wahoo.com/workouts/42" },
+        {
+          providerId: "wahoo",
+          label: "Wahoo",
+          url: "https://systm.wahoofitness.com/history/activity-details/42",
+        },
       ]);
     });
 
@@ -672,6 +677,7 @@ describe("activityRouter", () => {
         minPct: 50,
         maxPct: 60,
         seconds: 600,
+        percent: 19.6,
       });
       expect(result[4]).toMatchObject({ zone: 5, label: "VO2max" });
     });
@@ -771,8 +777,8 @@ describe("activityRouter", () => {
 
     it("returns zones and ftp for cycling activities with power data", async () => {
       const zones = [
-        { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60 },
-        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120 },
+        { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
+        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
       ];
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
@@ -830,7 +836,8 @@ describe("Activity model (via router integration)", () => {
         },
         wahoo: {
           name: "Wahoo",
-          activityUrl: (externalId: string) => `https://cloud.wahoo.com/workouts/${externalId}`,
+          activityUrl: (externalId: string) =>
+            `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
         },
       };
     return providers[id];
@@ -983,11 +990,11 @@ describe("mapHrZones", () => {
     ];
     const result = mapHrZones(rows);
     expect(result).toEqual([
-      { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 120 },
-      { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600 },
-      { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900 },
-      { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300 },
-      { zone: 5, label: "VO2max", minPct: 90, maxPct: 100, seconds: 60 },
+      { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 120, percent: 6.1 },
+      { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600, percent: 30.3 },
+      { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900, percent: 45.5 },
+      { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300, percent: 15.2 },
+      { zone: 5, label: "VO2max", minPct: 90, maxPct: 100, seconds: 60, percent: 3 },
     ]);
   });
 
