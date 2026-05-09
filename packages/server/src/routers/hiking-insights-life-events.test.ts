@@ -256,8 +256,8 @@ describe("insightsRouter", () => {
     const result = await caller.compute({ days: 90, endDate: "2026-03-15" });
 
     expect(result).toEqual({ insights: ["test-insight"] });
-    // Sleep, activities, nutrition, and bodyComp stay in Postgres; metrics/RHR come from ClickHouse.
-    expect(execute).toHaveBeenCalledTimes(4);
+    // Sleep, activities, and nutrition stay in Postgres; metrics, resting HR, and body comp come from ClickHouse.
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 });
 

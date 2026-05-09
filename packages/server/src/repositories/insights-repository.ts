@@ -3,7 +3,6 @@ import { sql } from "drizzle-orm";
 import { computeInsights } from "../insights/engine.ts";
 import {
   activityRowSchema,
-  bodyCompRowSchema,
   dailyRowSchema,
   nutritionRowSchema,
   sleepRowSchema,
@@ -15,6 +14,7 @@ import {
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
 
 export class InsightsRepository {
@@ -92,15 +92,7 @@ export class InsightsRepository {
               AND date > ${dateWindowStart(endDate, days)}
             ORDER BY date ASC`,
         ),
-        executeWithSchema(
-          this.#db,
-          bodyCompRowSchema,
-          sql`SELECT recorded_at, weight_kg, body_fat_pct
-            FROM fitness.v_body_measurement
-            WHERE user_id = ${this.#userId}
-              AND recorded_at > ${timestampWindowStart(endDate, days)}
-            ORDER BY recorded_at ASC`,
-        ),
+        fetchBodyCompRows(this.#sensorStore, this.#userId, endDate, days),
       ]);
 
     const restingHeartRateByDate = new Map(

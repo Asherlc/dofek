@@ -51,6 +51,22 @@ describe("sourceRowToMetricStream", () => {
     expect(rows[0]?.deviceId).toBe("Wahoo TICKR");
   });
 
+  it("preserves provider external ids on every fanned-out channel", () => {
+    const rows = sourceRowToMetricStream(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        weightKg: 72.5,
+        bodyFatPct: 18.4,
+      },
+      "api",
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.externalId === "withings-measure-1")).toBe(true);
+  });
+
   it("preserves all base fields", () => {
     const rows = sourceRowToMetricStream(
       {
@@ -72,6 +88,70 @@ describe("sourceRowToMetricStream", () => {
       channel: "heart_rate",
       scalar: 150,
     });
+  });
+
+  it("does not fan out coordinates as metric channels", () => {
+    const rows = sourceRowToMetricStream(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "wahoo",
+        activityId: "act-1",
+        lat: 40.7128,
+        lng: -74.006,
+        altitude: 10.5,
+        speed: 3.2,
+      },
+      "file",
+    );
+
+    expect(rows.map((row) => row.channel).sort()).toEqual(["altitude", "speed"]);
+  });
+
+  it("converts body measurement fields to metric_stream rows", () => {
+    const rows = sourceRowToMetricStream(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "withings",
+        sourceName: "Withings Body+",
+        weightKg: 72.5,
+        bodyFatPct: 18.4,
+        systolicBp: 118,
+      },
+      "api",
+    );
+
+    expect(rows).toEqual([
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: undefined,
+        providerId: "withings",
+        activityId: undefined,
+        deviceId: "Withings Body+",
+        sourceType: "api",
+        channel: "body_weight",
+        scalar: 72.5,
+      },
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: undefined,
+        providerId: "withings",
+        activityId: undefined,
+        deviceId: "Withings Body+",
+        sourceType: "api",
+        channel: "body_fat_percentage",
+        scalar: 18.4,
+      },
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: undefined,
+        providerId: "withings",
+        activityId: undefined,
+        deviceId: "Withings Body+",
+        sourceType: "api",
+        channel: "systolic_blood_pressure",
+        scalar: 118,
+      },
+    ]);
   });
 });
 

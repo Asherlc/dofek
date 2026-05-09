@@ -63,35 +63,6 @@ entity "auth_account" {
   created_at : timestamp
 }
 
-entity "body_measurement" {
-  * id : uuid <<PK>>
-  --
-  recorded_at : timestamp
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  external_id : text
-  weight_kg : real
-  body_fat_pct : real
-  muscle_mass_kg : real
-  bone_mass_kg : real
-  water_pct : real
-  bmi : real
-  height_cm : real
-  waist_circumference_cm : real
-  systolic_bp : integer
-  diastolic_bp : integer
-  heart_pulse : integer
-  temperature_c : real
-  source_name : text
-  created_at : timestamp
-}
-
-entity "body_measurement_value" {
-  body_measurement_id : uuid <<FK>>
-  measurement_type_id : text <<FK>>
-  value : real
-}
-
 entity "breathwork_session" {
   * id : uuid <<PK>>
   --
@@ -392,14 +363,19 @@ entity "life_events" {
   created_at : timestamp
 }
 
-entity "measurement_type" {
-  * id : text <<PK>>
-  --
-  display_name : text
-  unit : text
-  category : text
-  sort_order : integer
-  is_integer : boolean
+entity "location_sample" {
+  id : uuid
+  recorded_at : timestamp
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  device_id : text
+  source_type : text
+  activity_id : uuid <<FK>>
+  latitude : double precision
+  longitude : double precision
+  horizontal_accuracy_m : real
+  gps_accuracy_m : real
+  raw : jsonb
 }
 
 entity "medication" {
@@ -451,10 +427,11 @@ entity "menstrual_period" {
 }
 
 entity "metric_stream" {
-  id : uuid <<PK>>
-  recorded_at : timestamp <<PK>>
+  id : uuid
+  recorded_at : timestamp
   user_id : uuid <<FK>>
   provider_id : text <<FK>>
+  external_id : text
   device_id : text
   source_type : text
   channel : text
@@ -716,10 +693,6 @@ activity ||--o{ activity_interval
 provider ||--o{ allergy_intolerance
 user_profile ||--o{ allergy_intolerance
 user_profile ||--o{ auth_account
-provider ||--o{ body_measurement
-user_profile ||--o{ body_measurement
-body_measurement ||--o{ body_measurement_value
-measurement_type ||--o{ body_measurement_value
 user_profile ||--o{ breathwork_session
 provider ||--o{ condition
 user_profile ||--o{ condition
@@ -750,6 +723,9 @@ provider ||--o{ lab_result
 user_profile ||--o{ lab_result
 lab_panel ||--o{ lab_result
 user_profile ||--o{ life_events
+user_profile ||--o{ location_sample
+provider ||--o{ location_sample
+activity ||--o{ location_sample
 provider ||--o{ medication
 user_profile ||--o{ medication
 provider ||--o{ medication_dose_event

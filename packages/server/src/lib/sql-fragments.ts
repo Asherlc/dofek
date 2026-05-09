@@ -89,49 +89,6 @@ export function sleepDedupCte(
 }
 
 // ---------------------------------------------------------------------------
-// Body weight dedup CTE
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable CTE that deduplicates body measurements to one per calendar day.
- *
- * Picks the most recent measurement per local date from `v_body_measurement`.
- * Returns a single CTE named `weight_deduped`.
- *
- * Columns: date (text), weight_kg, body_fat_pct, recorded_at
- *
- * @param additionalFilter - Extra WHERE clause, e.g., `sql\`AND body_fat_pct IS NOT NULL\``
- */
-export function bodyWeightDedupCte(
-  userId: string,
-  timezone: string,
-  endDate: string,
-  days: number,
-  additionalFilter?: SQL,
-): SQL {
-  return sql`weight_deduped AS (
-    SELECT DISTINCT ON (local_date)
-      local_date::text AS date,
-      weight_kg,
-      body_fat_pct,
-      recorded_at
-    FROM (
-      SELECT
-        (recorded_at AT TIME ZONE ${timezone})::date AS local_date,
-        weight_kg,
-        body_fat_pct,
-        recorded_at
-      FROM fitness.v_body_measurement
-      WHERE user_id = ${userId}
-        AND weight_kg IS NOT NULL
-        AND recorded_at > ${timestampWindowStart(endDate, days)}
-        ${additionalFilter ?? sql``}
-    ) weight_sub
-    ORDER BY local_date, recorded_at DESC
-  )`;
-}
-
-// ---------------------------------------------------------------------------
 // Heart rate zone classification
 // ---------------------------------------------------------------------------
 

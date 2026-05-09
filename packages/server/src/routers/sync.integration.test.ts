@@ -30,7 +30,7 @@ describe("countProviderRecords SQL", () => {
         (SELECT count(*) FROM fitness.activity WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.daily_metrics WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.sleep_session WHERE provider_id = ${providerId}) +
-        (SELECT count(*) FROM fitness.body_measurement WHERE provider_id = ${providerId}) +
+        (SELECT count(*) FROM fitness.metric_stream WHERE provider_id = ${providerId} AND channel LIKE 'body_%') +
         (SELECT count(*) FROM fitness.food_entry WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.health_event WHERE provider_id = ${providerId})
       AS total

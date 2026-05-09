@@ -254,45 +254,6 @@ table fitness.auth_account {
   }
 }
 
-table fitness.body_measurement {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  recorded_at "timestamp with time zone" [not null]
-  provider_id text [not null]
-  user_id uuid [not null]
-  external_id text
-  weight_kg real
-  body_fat_pct real
-  muscle_mass_kg real
-  bone_mass_kg real
-  water_pct real
-  bmi real
-  height_cm real
-  waist_circumference_cm real
-  systolic_bp integer
-  diastolic_bp integer
-  heart_pulse integer
-  temperature_c real
-  source_name text
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, provider_id, external_id) [name: 'body_measurement_provider_external_idx', unique]
-    (user_id, provider_id) [name: 'body_measurement_user_provider_idx']
-  }
-}
-
-table fitness.body_measurement_value {
-  body_measurement_id uuid [not null]
-  measurement_type_id text [not null]
-  value real [not null]
-
-  indexes {
-    (body_measurement_id, measurement_type_id) [pk]
-    body_measurement_id [name: 'body_measurement_value_entry_idx']
-    measurement_type_id [name: 'body_measurement_value_type_idx']
-  }
-}
-
 table fitness.breathwork_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -670,13 +631,26 @@ table fitness.life_events {
   }
 }
 
-table fitness.measurement_type {
-  id text [pk, not null]
-  display_name text [not null]
-  unit text
-  category text [not null]
-  sort_order integer [not null, default: 0]
-  is_integer boolean [not null, default: false]
+table fitness.location_sample {
+  id uuid [not null, default: `gen_random_uuid()`]
+  recorded_at "timestamp with time zone" [not null]
+  user_id uuid [not null]
+  provider_id text [not null]
+  device_id text
+  source_type text [not null]
+  activity_id uuid
+  latitude "double precision" [not null]
+  longitude "double precision" [not null]
+  horizontal_accuracy_m real
+  gps_accuracy_m real
+  raw jsonb
+
+  indexes {
+    (activity_id, recorded_at) [name: 'location_sample_activity_time_idx']
+    (user_id, recorded_at) [name: 'location_sample_user_time_idx']
+    (user_id, provider_id, activity_id, recorded_at, latitude, longitude, source_type, device_id) [name: 'location_sample_natural_key_idx', unique]
+    (id, recorded_at) [pk]
+  }
 }
 
 table fitness.medication {
@@ -745,6 +719,7 @@ table fitness.metric_stream {
   recorded_at "timestamp with time zone" [not null]
   user_id uuid [not null]
   provider_id text [not null]
+  external_id text
   device_id text
   source_type text [not null]
   channel text [not null]
@@ -755,6 +730,7 @@ table fitness.metric_stream {
   indexes {
     (activity_id, channel, recorded_at) [name: 'metric_stream_activity_channel_time_idx']
     (id, recorded_at) [pk]
+    (user_id, provider_id, external_id, channel, recorded_at) [name: 'metric_stream_provider_external_channel_time_idx', unique]
     (user_id, channel, recorded_at) [name: 'metric_stream_user_channel_time_idx']
   }
 }
@@ -1082,14 +1058,6 @@ ref allergy_intolerance_user_id_user_profile_id_fk: fitness.allergy_intolerance.
 
 ref auth_account_user_id_user_profile_id_fk: fitness.auth_account.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
-ref body_measurement_provider_id_provider_id_fk: fitness.body_measurement.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref body_measurement_user_id_user_profile_id_fk: fitness.body_measurement.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref body_measurement_value_body_measurement_id_body_measurement_id_fk: fitness.body_measurement_value.body_measurement_id > fitness.body_measurement.id [delete: cascade, update: no action]
-
-ref body_measurement_value_measurement_type_id_measurement_type_id_fk: fitness.body_measurement_value.measurement_type_id > fitness.measurement_type.id [delete: no action, update: no action]
-
 ref breathwork_session_user_id_user_profile_id_fk: fitness.breathwork_session.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref condition_provider_id_provider_id_fk: fitness.condition.provider_id > fitness.provider.id [delete: no action, update: no action]
@@ -1149,6 +1117,12 @@ ref lab_result_user_id_user_profile_id_fk: fitness.lab_result.user_id > fitness.
 ref lab_result_panel_id_lab_panel_id_fk: fitness.lab_result.panel_id > fitness.lab_panel.id [delete: no action, update: no action]
 
 ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref location_sample_user_id_user_profile_id_fk: fitness.location_sample.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref location_sample_provider_id_provider_id_fk: fitness.location_sample.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref location_sample_activity_id_activity_id_fk: fitness.location_sample.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref medication_provider_id_provider_id_fk: fitness.medication.provider_id > fitness.provider.id [delete: no action, update: no action]
 

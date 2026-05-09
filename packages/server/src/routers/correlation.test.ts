@@ -442,7 +442,7 @@ const createCaller = createTestCallerFactory(correlationRouter);
 
 function makeSensorStore() {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 52 }]),
+    query: vi.fn().mockResolvedValue([]),
   };
 }
 

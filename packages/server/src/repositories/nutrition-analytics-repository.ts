@@ -1,8 +1,14 @@
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { bodyWeightDedupCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  type BodyClickHouseStore,
+  fetchBodyWeightRows,
+  fetchLatestBodyMeasurement,
+} from "./body-clickhouse.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -200,12 +206,6 @@ const caloricBalanceRowSchema = z.object({
   rolling_avg_balance: z.coerce.number().nullable(),
 });
 
-const adaptiveTdeeRowSchema = z.object({
-  date: dateStringSchema,
-  calories_in: z.coerce.number(),
-  weight_kg: z.coerce.number().nullable(),
-});
-
 const macroRatioRowSchema = z.object({
   date: dateStringSchema,
   protein_g: z.coerce.number(),
@@ -304,6 +304,19 @@ export function estimateTdee(smoothedData: AdaptiveTdeeDailyRowData[]): Adaptive
 
 /** Data access for nutrition analytics (micronutrients, caloric balance, TDEE, macros). */
 export class NutritionAnalyticsRepository extends BaseRepository {
+  readonly #bodyStore: BodyClickHouseStore | undefined;
+
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone = "UTC",
+    accessWindow?: AccessWindow,
+    bodyStore?: BodyClickHouseStore,
+  ) {
+    super(db, userId, timezone, accessWindow);
+    this.#bodyStore = bodyStore;
+  }
+
   /** Micronutrient adequacy: average daily intake as % of RDA. */
   async getMicronutrientAdequacy(days: number): Promise<MicronutrientAdequacy[]> {
     const rows = await executeWithSchema(
@@ -424,25 +437,30 @@ export class NutritionAnalyticsRepository extends BaseRepository {
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */
   async getAdaptiveTdeeData(days: number): Promise<AdaptiveTdeeDataPoint[]> {
-    const rows = await this.query(
-      adaptiveTdeeRowSchema,
-      sql`WITH nutrition AS (
-            SELECT date, SUM(calories) AS calories_in
+    const [nutritionRows, weightRows] = await Promise.all([
+      this.query(
+        z.object({
+          date: dateStringSchema,
+          calories_in: z.coerce.number(),
+        }),
+        sql`SELECT date, SUM(calories) AS calories_in
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
               AND date > CURRENT_DATE - ${days}::int
               ${this.dateAccessPredicate(sql`date`)}
             GROUP BY date
-          ),
-          ${bodyWeightDedupCte(this.userId, this.timezone, "now", days)}
-          SELECT
-            n.date::text,
-            n.calories_in,
-            w.weight_kg
-          FROM nutrition n
-          LEFT JOIN weight_deduped w ON w.date = n.date::text
-          ORDER BY n.date ASC`,
-    );
+            ORDER BY date ASC`,
+      ),
+      fetchBodyWeightRows(this.#requireBodyStore(), this.userId, this.timezone, "now", days, {
+        accessWindow: this.accessWindow,
+      }),
+    ]);
+
+    const weightByDate = new Map(weightRows.map((row) => [row.date, row.weight_kg]));
+    const rows = nutritionRows.map((row) => ({
+      ...row,
+      weight_kg: weightByDate.get(row.date) ?? null,
+    }));
 
     return rows.map((row) => ({
       date: row.date,
@@ -461,40 +479,35 @@ export class NutritionAnalyticsRepository extends BaseRepository {
 
   /** Macro ratio trends: daily protein/carbs/fat split as percentages. */
   async getMacroRatios(days: number): Promise<MacroRatioDay[]> {
-    const rows = await this.query(
-      macroRatioRowSchema,
-      sql`WITH daily AS (
+    const [rows, latestBodyMeasurement] = await Promise.all([
+      this.query(
+        macroRatioRowSchema.omit({ weight_kg: true }),
+        sql`WITH daily AS (
+              SELECT
+                nd.date,
+                nd.calories,
+                nd.protein_g,
+                nd.carbs_g,
+                nd.fat_g
+              FROM fitness.v_nutrition_daily nd
+              WHERE nd.user_id = ${this.userId}
+                AND nd.date > CURRENT_DATE - ${days}::int
+                AND nd.calories > 0
+                ${this.dateAccessPredicate(sql`nd.date`)}
+            )
             SELECT
-              nd.date,
-              nd.calories,
-              nd.protein_g,
-              nd.carbs_g,
-              nd.fat_g
-            FROM fitness.v_nutrition_daily nd
-            WHERE nd.user_id = ${this.userId}
-              AND nd.date > CURRENT_DATE - ${days}::int
-              AND nd.calories > 0
-              ${this.dateAccessPredicate(sql`nd.date`)}
-          ),
-          latest_weight AS (
-            SELECT weight_kg
-            FROM fitness.v_body_measurement
-            WHERE user_id = ${this.userId}
-              AND weight_kg IS NOT NULL
-            ORDER BY recorded_at DESC
-            LIMIT 1
-          )
-          SELECT
-            d.date::text,
-            d.protein_g,
-            d.carbs_g,
-            d.fat_g,
-            d.calories,
-            lw.weight_kg
-          FROM daily d
-          CROSS JOIN latest_weight lw
-          ORDER BY d.date ASC`,
-    );
+              d.date::text,
+              d.protein_g,
+              d.carbs_g,
+              d.fat_g,
+              d.calories
+            FROM daily d
+            ORDER BY d.date ASC`,
+      ),
+      fetchLatestBodyMeasurement(this.#requireBodyStore(), this.userId),
+    ]);
+    const weightKg =
+      latestBodyMeasurement?.weight_kg != null ? Number(latestBodyMeasurement.weight_kg) : null;
 
     return rows.map((row) => {
       const proteinCal = Number(row.protein_g) * 4;
@@ -502,7 +515,6 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       const fatCal = Number(row.fat_g) * 9;
       const totalMacroCal = proteinCal + carbsCal + fatCal;
       const divisor = totalMacroCal > 0 ? totalMacroCal : 1;
-      const weightKg = row.weight_kg != null ? Number(row.weight_kg) : null;
 
       return new MacroRatioDay({
         date: row.date,
@@ -515,5 +527,14 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             : null,
       });
     });
+  }
+
+  #requireBodyStore(): BodyClickHouseStore {
+    if (!this.#bodyStore) {
+      throw new Error(
+        "nutrition analytics body metrics require the ClickHouse body measurement store",
+      );
+    }
+    return this.#bodyStore;
   }
 }

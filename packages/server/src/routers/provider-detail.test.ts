@@ -5,7 +5,7 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
   return {
     router: trpc.router,
@@ -142,7 +142,7 @@ describe("providerDetailRouter", () => {
       ["activities", "fitness.activity", "started_at", "id"],
       ["dailyMetrics", "fitness.daily_metrics", "date", "date"],
       ["sleepSessions", "fitness.sleep_session", "started_at", "id"],
-      ["bodyMeasurements", "fitness.body_measurement", "recorded_at", "id"],
+      ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
       ["metricStream", "fitness.metric_stream", "recorded_at", "id"],
@@ -195,14 +195,14 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 14 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(14);
+    it("contains 13 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(13);
     });
 
     it("includes all required child tables", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.body_measurement");
+      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sleep_session");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.nutrition_daily");
@@ -391,7 +391,9 @@ describe("providerDetailRouter", () => {
       expect(result.rows[0]?.name).toBe("Morning Run");
     });
 
-    it.each(dataTypeEnum.options)("generates SQL with correct table for %s", async (dataType) => {
+    it.each(
+      dataTypeEnum.options.filter((dataType) => dataType !== "bodyMeasurements"),
+    )("generates SQL with correct table for %s", async (dataType) => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute: mockExecute },
@@ -412,6 +414,22 @@ describe("providerDetailRouter", () => {
       expect(sqlText).toContain("ORDER BY");
       expect(sqlText).toContain("LIMIT");
       expect(sqlText).toContain("OFFSET");
+    });
+
+    it("queries body measurement records through ClickHouse", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const sensorQuery = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore: { query: sensorQuery },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.records({ providerId: "test-provider", dataType: "bodyMeasurements" });
+
+      expect(mockExecute).not.toHaveBeenCalled();
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("analytics.v_body_measurement");
     });
 
     it("passes user ID and provider ID as parameters", async () => {
@@ -514,7 +532,7 @@ describe("providerDetailRouter", () => {
     });
 
     it.each(
-      dataTypeEnum.options,
+      dataTypeEnum.options.filter((dataType) => dataType !== "bodyMeasurements"),
     )("generates SQL with correct table and id column for %s", async (dataType) => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({

@@ -11,7 +11,7 @@ import {
 import type { EightSleepTrendDay } from "eight-sleep-client/types";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { bodyMeasurement, dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
@@ -241,12 +241,12 @@ export class EightSleepProvider implements SyncProvider {
       });
     }
 
-    // 3. Sync body temperature as body measurements
+    // 3. Sync temperature samples into metric_stream.
     try {
       const bodyCount = await withSyncLog(
         db,
         this.id,
-        "body_measurement",
+        "metric_stream",
         async () => {
           let count = 0;
           for (const day of trendDays) {
@@ -256,22 +256,18 @@ export class EightSleepProvider implements SyncProvider {
 
             const externalId = `eightsleep-temp-${day.day}`;
             try {
-              await db
-                .insert(bodyMeasurement)
-                .values({
-                  providerId: this.id,
-                  externalId,
-                  recordedAt: new Date(day.presenceStart || `${day.day}T00:00:00Z`),
-                  temperatureC: bedTemp,
-                })
-                .onConflictDoUpdate({
-                  target: [
-                    bodyMeasurement.userId,
-                    bodyMeasurement.providerId,
-                    bodyMeasurement.externalId,
-                  ],
-                  set: { temperatureC: bedTemp },
-                });
+              await writeMetricStreamBatch(
+                db,
+                [
+                  {
+                    providerId: this.id,
+                    externalId,
+                    recordedAt: new Date(day.presenceStart || `${day.day}T00:00:00Z`),
+                    temperatureC: bedTemp,
+                  },
+                ],
+                SOURCE_TYPE_API,
+              );
               count++;
             } catch (err) {
               errors.push({
@@ -288,7 +284,7 @@ export class EightSleepProvider implements SyncProvider {
       recordsSynced += bodyCount;
     } catch (err) {
       errors.push({
-        message: `body_measurement: ${err instanceof Error ? err.message : String(err)}`,
+        message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
     }

@@ -900,22 +900,10 @@ describe("RideWithGpsProvider — sync", () => {
     if (!Array.isArray(sensorInsertArg)) {
       throw new Error("Expected metric_stream insert payload");
     }
-    // 2 points -> 8 channel rows in metric_stream (lat/lng/speed/hr/power + lat/lng/speed)
-    expect(sensorInsertArg).toHaveLength(8);
+    // Coordinates are stored in fitness.location_sample; metric_stream keeps scalar samples only.
+    expect(sensorInsertArg).toHaveLength(4);
     expect(sensorInsertArg).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          activityId: 7,
-          providerId: "ride-with-gps",
-          channel: "lat",
-          scalar: 45.5,
-        }),
-        expect.objectContaining({
-          activityId: 7,
-          providerId: "ride-with-gps",
-          channel: "lng",
-          scalar: -122.6,
-        }),
         expect.objectContaining({
           activityId: 7,
           providerId: "ride-with-gps",
@@ -941,6 +929,7 @@ describe("RideWithGpsProvider — sync", () => {
       providerId: "ride-with-gps",
       sourceType: "api",
     });
+    expect(db.execute).toHaveBeenCalledOnce();
   });
 
   it("skips metric inserts when activity upsert returns no id", async () => {
@@ -1001,7 +990,7 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    const trackPoints = Array.from({ length: 501 }, (_, i) => ({
+    const trackPoints = Array.from({ length: 1001 }, (_, i) => ({
       x: -122.6 - i * 0.0001,
       y: 45.5 + i * 0.0001,
       d: i * 10,
@@ -1047,7 +1036,8 @@ describe("RideWithGpsProvider — sync", () => {
       .map((call: unknown[]) => call[0])
       .filter((value: unknown) => Array.isArray(value));
 
-    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 503]);
+    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 1]);
+    expect(db.execute).toHaveBeenCalledTimes(2);
   });
 
   it("handles deleted trip items", async () => {

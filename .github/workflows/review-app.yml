@@ -355,10 +355,27 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: dofek-review-pr-${{ github.event.pull_request.number }}
           DOCKER_HOST: ssh://root@${{ steps.terraform.outputs.review_server_ip }}
+          REVIEW_SERVER_IP: ${{ steps.terraform.outputs.review_server_ip }}
           REVIEW_ENV_FILE: ${{ github.workspace }}/.env.review
           REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
         run: |
           set -euo pipefail
+
+          ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" 'df -h /'
+          docker system df || true
+          docker container prune --force
+          docker image prune --all --force
+          docker builder prune --all --force || true
+          ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" 'df -h /'
+          available_kb="$(
+            ssh -o ConnectTimeout=5 "root@${REVIEW_SERVER_IP}" \
+              "df --output=avail -k / | tail -n 1 | tr -d ' '"
+          )"
+          minimum_kb=$((8 * 1024 * 1024))
+          if [ "$available_kb" -lt "$minimum_kb" ]; then
+            echo "::error::Review app server root filesystem has less than 8 GiB free after Docker cleanup; aborting before image pulls."
+            exit 1
+          fi
 
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml pull web db clickhouse redis
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d db clickhouse redis

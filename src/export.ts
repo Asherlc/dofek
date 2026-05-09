@@ -75,15 +75,6 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "body-measurements.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.body_measurement WHERE user_id = ${userId} ORDER BY recorded_at`,
-      ),
-  },
-  {
     name: "nutrition-daily.csv",
     query: (db, userId) =>
       executeWithSchema(
@@ -187,6 +178,15 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         db,
         exportRowSchema,
         sql`SELECT * FROM fitness.sport_settings WHERE user_id = ${userId} ORDER BY sport, effective_from`,
+      ),
+  },
+  {
+    name: "location-samples.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.location_sample WHERE user_id = ${userId} ORDER BY recorded_at`,
       ),
   },
   {

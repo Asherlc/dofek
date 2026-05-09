@@ -94,13 +94,6 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
-          command.endsWith(".body_measurement"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
           command.endsWith(".provider_priority"),
       ),
     ).toBe(true);

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
   return {
     router: trpc.router,
@@ -40,6 +40,7 @@ function makeCaller<T extends ReturnType<typeof import("../trpc.ts").router>>(
   const factory = createTestCallerFactory(routerDef);
   return factory({
     db: { execute: vi.fn().mockResolvedValue(rows) },
+    sensorStore: makeMockSensorStore(rows),
     userId: "user-1",
   });
 }

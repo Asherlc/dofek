@@ -96,7 +96,6 @@ describe("buildClickHouseBootstrapStatements", () => {
       "sleep_session",
       "sleep_stage",
       "daily_metrics",
-      "body_measurement",
       "food_entry",
       "health_event",
       "lab_panel",
@@ -169,6 +168,16 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("min(toString(connected_activity_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_sleep_id)) AS group_id");
     expect(sql).toContain("min(toString(connected_measurement_id)) AS group_id");
+    expect(sql).toContain(
+      "concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))",
+    );
+    expect(sql).not.toContain("uniqExact(ifNull(external_id, toString(id))");
+    expect(sql).toContain("body_measurement_samples AS");
+    expect(sql).toContain("measurement_key AS external_id");
+    expect(sql).toContain("_peerdb_synced_at AS created_at");
+    expect(sql).toContain("best.created_at AS created_at");
+    expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
+    expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
     expect(sql).toContain("FROM analytics.deduped_sensor");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",

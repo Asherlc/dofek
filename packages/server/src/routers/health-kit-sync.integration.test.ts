@@ -48,7 +48,7 @@ describe("HealthKit sync router", () => {
   }
 
   describe("pushQuantitySamples - body measurements", () => {
-    it("routes body mass samples to body_measurement table", async () => {
+    it("routes body mass samples to metric_stream", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
           {
@@ -69,12 +69,13 @@ describe("HealthKit sync router", () => {
 
       // Verify in DB
       const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.body_measurement
+        sql`SELECT * FROM fitness.metric_stream
             WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:body-mass-uuid-1'`,
+              AND external_id = 'hk:body-mass-uuid-1'
+              AND channel = 'body_weight'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0]?.weight_kg).toBeCloseTo(82.5, 1);
+      expect(rows[0]?.scalar).toBeCloseTo(82.5, 1);
     });
 
     it("routes body fat percentage and multiplies by 100", async () => {
@@ -96,12 +97,13 @@ describe("HealthKit sync router", () => {
       expect(result.result.data.inserted).toBe(1);
 
       const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.body_measurement
+        sql`SELECT * FROM fitness.metric_stream
             WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:body-fat-uuid-1'`,
+              AND external_id = 'hk:body-fat-uuid-1'
+              AND channel = 'body_fat_percentage'`,
       );
       expect(rows.length).toBe(1);
-      expect(rows[0]?.body_fat_pct).toBeCloseTo(18, 1);
+      expect(rows[0]?.scalar).toBeCloseTo(18, 1);
     });
   });
 
@@ -557,7 +559,7 @@ describe("HealthKit sync router", () => {
   });
 
   describe("deduplication", () => {
-    it("does not create duplicate body measurements on re-push", async () => {
+    it("does not create duplicate body metric rows on re-push", async () => {
       const samples = [
         {
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -575,9 +577,10 @@ describe("HealthKit sync router", () => {
       await mutate("healthKitSync.pushQuantitySamples", { samples });
 
       const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.body_measurement
+        sql`SELECT * FROM fitness.metric_stream
             WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:dedup-body-uuid-1'`,
+              AND external_id = 'hk:dedup-body-uuid-1'
+              AND channel = 'body_weight'`,
       );
       expect(rows.length).toBe(1);
     });

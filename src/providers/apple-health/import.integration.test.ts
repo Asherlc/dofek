@@ -757,7 +757,7 @@ describe("importAppleHealthFile — full DB integration", () => {
 
     expect(result.provider).toBe("apple_health");
     expect(result.recordsSynced).toBeGreaterThan(0);
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors.map((error) => error.message)).toEqual([]);
   }, 60_000);
 
   it("creates metric_stream rows for HR, SpO2, and blood glucose", async () => {
@@ -776,19 +776,22 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(bgRows[0]?.scalar).toBeCloseTo(5.4);
   });
 
-  it("creates body_measurement rows with weight, body fat, and BP", async () => {
-    const rows = await ctx.db.select().from(schema.bodyMeasurement);
+  it("creates metric_stream body channels with weight, body fat, and BP", async () => {
+    const rows = await ctx.db.select().from(schema.metricStream);
     // Weight+body fat share a timestamp so should be grouped
-    const weightRow = rows.find((r) => r.weightKg !== null);
+    const weightRow = rows.find((row) => row.channel === "body_weight");
     expect(weightRow).toBeDefined();
-    expect(weightRow?.weightKg).toBeCloseTo(72.5);
-    expect(weightRow?.bodyFatPct).toBeCloseTo(21.5); // 0.215 * 100
+    expect(weightRow?.scalar).toBeCloseTo(72.5);
+    const bodyFatRow = rows.find((row) => row.channel === "body_fat_percentage");
+    expect(bodyFatRow?.scalar).toBeCloseTo(21.5); // 0.215 * 100
+    expect(bodyFatRow?.externalId).toBe(weightRow?.externalId);
 
     // BP at 09:00
-    const bpRow = rows.find((r) => r.systolicBp !== null);
-    expect(bpRow).toBeDefined();
-    expect(bpRow?.systolicBp).toBe(120);
-    expect(bpRow?.diastolicBp).toBe(80);
+    const systolicRow = rows.find((row) => row.channel === "systolic_blood_pressure");
+    expect(systolicRow?.scalar).toBe(120);
+    const diastolicRow = rows.find((row) => row.channel === "diastolic_blood_pressure");
+    expect(diastolicRow?.scalar).toBe(80);
+    expect(diastolicRow?.externalId).toBe(systolicRow?.externalId);
   });
 
   it("creates per-source daily_metrics rows with steps and distance", async () => {
@@ -845,7 +848,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.sleepType).toBeNull();
   });
 
-  it("creates activity rows for workouts with GPS in metric_stream", async () => {
+  it("creates activity rows for workouts with GPS in location_sample", async () => {
     const activities = await ctx.db.select().from(schema.activity);
     const run = activities.find((a) => a.activityType === "running");
     expect(run).toBeDefined();
@@ -858,13 +861,13 @@ describe("importAppleHealthFile — full DB integration", () => {
       maxHeartRate: 175,
     });
 
-    // Check GPS metric_stream rows linked to the activity
+    // GPS fixes live in location_sample; speed remains a scalar sensor channel.
+    const locationRows = await ctx.db.select().from(schema.locationSample);
+    const workoutLocations = locationRows.filter((row) => row.activityId === run?.id);
+    expect(workoutLocations.length).toBe(2);
+    expect(workoutLocations.some((row) => Math.abs(row.latitude - 40.7128) < 0.001)).toBe(true);
+
     const allMetrics = await ctx.db.select().from(schema.metricStream);
-    const gpsRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "lat");
-    expect(gpsRows.length).toBe(2);
-    expect(gpsRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 40.7128) < 0.001)).toBe(
-      true,
-    );
     const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");
     expect(speedRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 3.5) < 0.1)).toBe(true);
   });
@@ -883,7 +886,9 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count before
     const sleepBefore = await ctx.db.select().from(schema.sleepSession);
     const activitiesBefore = await ctx.db.select().from(schema.activity);
-    const bodyBefore = await ctx.db.select().from(schema.bodyMeasurement);
+    const bodyBefore = (await ctx.db.select().from(schema.metricStream)).filter(
+      (row) => row.channel.startsWith("body_") || row.channel.includes("blood_pressure"),
+    );
 
     // Re-import with an XML file (non-zip path to avoid clinical records branch)
     const xmlPath = join(tmpDir, "export.xml");
@@ -892,7 +897,9 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count after — should be same due to upsert/conflict handling
     const sleepAfter = await ctx.db.select().from(schema.sleepSession);
     const activitiesAfter = await ctx.db.select().from(schema.activity);
-    const bodyAfter = await ctx.db.select().from(schema.bodyMeasurement);
+    const bodyAfter = (await ctx.db.select().from(schema.metricStream)).filter(
+      (row) => row.channel.startsWith("body_") || row.channel.includes("blood_pressure"),
+    );
 
     expect(sleepAfter.length).toBe(sleepBefore.length);
     expect(activitiesAfter.length).toBe(activitiesBefore.length);

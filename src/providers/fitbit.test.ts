@@ -4,8 +4,8 @@ import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   activity as activityTable,
-  bodyMeasurement as bodyMeasurementTable,
   dailyMetrics as dailyMetricsTable,
+  metricStream as metricStreamTable,
   sleepSession as sleepSessionTable,
 } from "../db/schema.ts";
 import {
@@ -178,6 +178,12 @@ function findValuesCall(
   for (const c of db.values.mock.calls) {
     const parsed = recordSchema.safeParse(c[0]);
     if (parsed.success && predicate(parsed.data)) return parsed.data;
+    if (Array.isArray(c[0])) {
+      for (const value of c[0]) {
+        const arrayItemParsed = recordSchema.safeParse(value);
+        if (arrayItemParsed.success && predicate(arrayItemParsed.data)) return arrayItemParsed.data;
+      }
+    }
   }
   throw new Error("No matching values call found");
 }
@@ -869,18 +875,22 @@ describe("FitbitProvider", () => {
         "steps",
       );
       expectConflictTarget(db, [
-        bodyMeasurementTable.userId,
-        bodyMeasurementTable.providerId,
-        bodyMeasurementTable.externalId,
+        metricStreamTable.userId,
+        metricStreamTable.providerId,
+        metricStreamTable.externalId,
+        metricStreamTable.channel,
+        metricStreamTable.recordedAt,
       ]);
       expectConflictSetContainsKey(
         db,
         [
-          bodyMeasurementTable.userId,
-          bodyMeasurementTable.providerId,
-          bodyMeasurementTable.externalId,
+          metricStreamTable.userId,
+          metricStreamTable.providerId,
+          metricStreamTable.externalId,
+          metricStreamTable.channel,
+          metricStreamTable.recordedAt,
         ],
-        "weightKg",
+        "scalar",
       );
     });
 
@@ -931,9 +941,12 @@ describe("FitbitProvider", () => {
 
       const weightRow = findValuesCall(
         db,
-        (value) => value.providerId === "fitbit" && value.externalId === "55555",
+        (value) =>
+          value.providerId === "fitbit" &&
+          value.externalId === "55555" &&
+          value.channel === "body_weight",
       );
-      expect(weightRow.weightKg).toBe(82.5);
+      expect(weightRow.scalar).toBe(82.5);
     });
 
     it("paginates activity sync by increasing offset", async () => {
@@ -1118,26 +1131,39 @@ describe("FitbitProvider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expectReasonableDuration(result.duration);
+      expect(db.delete).toHaveBeenCalledWith(metricStreamTable);
+      expect(db.where).toHaveBeenCalled();
 
       const weightValues = findValuesCall(
         db,
-        (v) => v.externalId === "55555" && v.providerId === "fitbit",
+        (v) => v.externalId === "55555" && v.providerId === "fitbit" && v.channel === "body_weight",
       );
-      expect(weightValues.weightKg).toBe(82.5);
-      expect(weightValues.bodyFatPct).toBe(18.5);
+      expect(weightValues.scalar).toBe(82.5);
+      const bodyFatValues = findValuesCall(
+        db,
+        (v) =>
+          v.externalId === "55555" &&
+          v.providerId === "fitbit" &&
+          v.channel === "body_fat_percentage",
+      );
+      expect(bodyFatValues.scalar).toBe(18.5);
       expectConflictTarget(db, [
-        bodyMeasurementTable.userId,
-        bodyMeasurementTable.providerId,
-        bodyMeasurementTable.externalId,
+        metricStreamTable.userId,
+        metricStreamTable.providerId,
+        metricStreamTable.externalId,
+        metricStreamTable.channel,
+        metricStreamTable.recordedAt,
       ]);
       expectConflictSetContainsKey(
         db,
         [
-          bodyMeasurementTable.userId,
-          bodyMeasurementTable.providerId,
-          bodyMeasurementTable.externalId,
+          metricStreamTable.userId,
+          metricStreamTable.providerId,
+          metricStreamTable.externalId,
+          metricStreamTable.channel,
+          metricStreamTable.recordedAt,
         ],
-        "weightKg",
+        "scalar",
       );
     });
 

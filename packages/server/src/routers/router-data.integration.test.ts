@@ -209,17 +209,17 @@ describe("Router data coverage", () => {
       );
     }
 
-    // ── Insert body measurements for 35 days (needed for body-analytics branches) ──
+    // ── Insert body metrics for 35 days (needed for body-analytics branches) ──
     // Slight upward trend to cover "gaining" branch in weightTrend
     for (let i = 34; i >= 0; i--) {
       const weight = 73 + (34 - i) * 0.08 + Math.sin(i) * 0.3; // upward trend ~0.08 kg/day
       const bodyFat = 17 + (34 - i) * 0.02;
       await testCtx.db.execute(
-        sql`INSERT INTO fitness.body_measurement (
-              recorded_at, provider_id, user_id, weight_kg, body_fat_pct
-            ) VALUES (
-              NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${weight}, ${bodyFat}
-            )`,
+        sql`INSERT INTO fitness.metric_stream (
+              recorded_at, provider_id, user_id, external_id, source_type, channel, scalar
+            ) VALUES
+              (NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${`test-body-${i}`}, 'api', 'body_weight', ${weight}),
+              (NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${`test-body-${i}`}, 'api', 'body_fat_percentage', ${bodyFat})`,
       );
     }
 

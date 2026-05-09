@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { bodyWeightDedupCte, heartRateZoneColumns, sleepDedupCte } from "./sql-fragments.ts";
+import { heartRateZoneColumns, sleepDedupCte } from "./sql-fragments.ts";
 
 describe("sleepDedupCte", () => {
   it("returns a SQL object with queryChunks", () => {
@@ -26,37 +26,6 @@ describe("sleepDedupCte", () => {
     const chunks = JSON.stringify(result.queryChunks);
     expect(chunks).toContain("sleep_raw");
     expect(chunks).toContain("sleep_deduped");
-  });
-});
-
-describe("bodyWeightDedupCte", () => {
-  it("returns a SQL object with queryChunks", () => {
-    const result = bodyWeightDedupCte("user-1", "UTC", "2026-03-23", 90);
-    expect(result.queryChunks).toBeDefined();
-  });
-
-  it("embeds userId in query chunks", () => {
-    const result = bodyWeightDedupCte("user-1", "UTC", "2026-03-23", 90);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("user-1");
-  });
-
-  it("includes the additional filter when provided", () => {
-    const withFilter = bodyWeightDedupCte(
-      "user-1",
-      "UTC",
-      "2026-03-23",
-      90,
-      sql`AND body_fat_pct IS NOT NULL`,
-    );
-    const without = bodyWeightDedupCte("user-1", "UTC", "2026-03-23", 90);
-    expect(withFilter).not.toEqual(without);
-  });
-
-  it("includes weight_deduped CTE name", () => {
-    const result = bodyWeightDedupCte("user-1", "UTC", "2026-03-23", 90);
-    const chunks = JSON.stringify(result.queryChunks);
-    expect(chunks).toContain("weight_deduped");
   });
 });
 

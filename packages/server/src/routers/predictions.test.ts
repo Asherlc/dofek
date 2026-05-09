@@ -86,8 +86,7 @@ describe("predictionsRouter", () => {
       const result = await caller.predict({ target: "hrv", days: 365 });
 
       expect(result).not.toBeNull();
-      // Should call execute 5 times for the 5 parallel queries
-      expect(execute).toHaveBeenCalledTimes(5);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
     it("returns null for unknown target", async () => {
