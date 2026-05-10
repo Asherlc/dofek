@@ -1,0 +1,81 @@
+name: Diagnose Server Disk Usage
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_host:
+        description: SSH host to inspect (defaults to SERVER_HOST secret)
+        required: false
+        default: ''
+
+jobs:
+  diag:
+    name: Diagnose disk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Run diagnostics over SSH
+        env:
+          SSH_HOST: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+        run: |
+          ssh -o ServerAliveInterval=30 "root@${SSH_HOST}" bash -s <<'EOF'
+          set +e
+          echo "===== df -h ====="
+          df -h
+          echo
+          echo "===== df -hi (inodes) ====="
+          df -hi
+          echo
+          echo "===== docker system df ====="
+          docker system df
+          echo
+          echo "===== docker system df -v (top excerpt) ====="
+          docker system df -v 2>/dev/null | head -120
+          echo
+          echo "===== Top dirs under / (xdev, depth 1) ====="
+          du -h -d 1 -x / 2>/dev/null | sort -hr | head -20
+          echo
+          echo "===== /var/lib breakdown ====="
+          du -h -d 1 -x /var/lib 2>/dev/null | sort -hr | head -20
+          echo
+          echo "===== /var/lib/docker breakdown ====="
+          du -h -d 1 -x /var/lib/docker 2>/dev/null | sort -hr | head -20
+          echo
+          echo "===== /var/lib/containerd breakdown ====="
+          du -h -d 2 -x /var/lib/containerd 2>/dev/null | sort -hr | head -25
+          echo
+          echo "===== Docker volumes (top 15) ====="
+          du -sh /var/lib/docker/volumes/* 2>/dev/null | sort -hr | head -15
+          echo
+          echo "===== Container json log sizes (top 15) ====="
+          du -h /var/lib/docker/containers/*/*-json.log 2>/dev/null | sort -hr | head -15
+          echo
+          echo "===== Top images by size ====="
+          docker images --format '{{.Size}}\t{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}' | sort -hr | head -25
+          echo
+          echo "===== Dangling/unused images count ====="
+          echo "dangling: $(docker images -f dangling=true -q | wc -l)"
+          echo "all: $(docker images -q | wc -l)"
+          echo
+          echo "===== journald disk usage ====="
+          journalctl --disk-usage 2>/dev/null
+          echo
+          echo "===== /var/log top files ====="
+          du -ah /var/log 2>/dev/null | sort -hr | head -15
+          echo
+          echo "===== /tmp and /home top ====="
+          du -h -d 1 -x /tmp 2>/dev/null | sort -hr | head -10
+          du -h -d 1 -x /home 2>/dev/null | sort -hr | head -10
+          echo
+          echo "===== Mounts ====="
+          mount | grep -E 'overlay|ext4|xfs|zfs|btrfs' | head -30
+          EOF
