@@ -562,6 +562,12 @@ jobs:
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
 
+      - name: Prune obsolete images post-deploy
+        if: success()
+        run: |
+          docker image prune -af
+          docker system df
+
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
