@@ -245,6 +245,11 @@ jobs:
           )"
           echo "CLICKHOUSE_PASSWORD_ENCODED=$encoded_clickhouse_password" >> "$GITHUB_ENV"
 
+      - name: Validate rendered stack files
+        run: |
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            docker stack config $STACK_FILE_FLAGS >/dev/null
+
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
