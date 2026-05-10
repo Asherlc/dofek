@@ -412,7 +412,12 @@ jobs:
           docker logs --follow "$migration_container" &
           migration_log_pid=$!
 
-          migration_timeout_seconds=3300
+          # Heavy data migrations (e.g. hypertable backfills moving body
+          # measurements into fitness.metric_stream) can legitimately run for
+          # hours on prod. Sized to fit the slowest known migration with
+          # headroom; if a future migration would exceed this, restructure it
+          # rather than bumping again.
+          migration_timeout_seconds=14400
           migration_start_seconds=$SECONDS
           while true; do
             inspect_error_file="$RUNNER_TEMP/migrate-inspect.log"

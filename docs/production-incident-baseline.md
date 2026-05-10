@@ -7,6 +7,67 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-09: Production deploy timed out applying body-measurement hypertable migration
+
+### Impact
+
+Deploy Web run `25609852303` from `main` (commit `f17e27d`) failed: the prod
+job's `Run migrations` step was killed at `3300s` while applying
+`drizzle/0018_migrate_body_measurements_to_metric_stream.sql`. The migration
+ran inside a transaction with no statement breakpoints, so the force-killed
+container rolled back; prod DB stayed in the pre-migration state and code did
+not roll. Staging deploy in the same workflow run failed independently with an
+SSH banner timeout to `162.55.186.24` (separate incident, handled out of
+band).
+
+### Evidence That Mattered
+
+- Job: `Deploy Web Production / Deploy Web Stack / Deploy Web Stack`.
+- Step: `Run migrations`, last log lines:
+  `info: [migrate] Applying: 0018_migrate_body_measurements_to_metric_stream.sql`
+  → repeated `Migration still running after Ns...` (no progress within-step
+  visibility) → `##[error]Migration exceeded 3300s` at `2026-05-09T20:36:59Z`.
+- The migration is a single transactional block over `fitness.metric_stream`
+  (TimescaleDB hypertable): UPDATE backfilling `external_id`, DELETE of
+  duplicate channel rows, `CREATE UNIQUE INDEX`, and `INSERT … SELECT` from
+  `fitness.body_measurement` covering 12 body channels. No
+  `--no-transaction` / `statement-breakpoint` markers, so all-or-nothing.
+- Prod host (`157.90.25.125`) was healthy throughout: SSH banner returned in
+  `~2s`, `dofek.asherlc.com/healthz` returned `200` directly against the
+  origin during and after the failure. The migration was making progress and
+  hit the deploy-level guard, not a DB error.
+
+### Root Cause
+
+`migration_timeout_seconds=3300` in `.github/workflows/deploy-web-stack.yml`
+was sized for routine schema migrations and is too small for a one-shot
+hypertable backfill that copies all `fitness.body_measurement` rows into
+`fitness.metric_stream` and rebuilds dependent indexes/views in the same
+transaction.
+
+### Fix Or Mitigation
+
+- Bumped `migration_timeout_seconds` from `3300` (55min) to `14400` (4h) in
+  `.github/workflows/deploy-web-stack.yml` so the migration has room to
+  complete on the next deploy attempt.
+- Added a comment at the constant explaining that future migrations exceeding
+  this budget should be restructured (split, batched with
+  `--no-transaction`, or moved to an out-of-band backfill job) rather than
+  bumping the timeout again.
+
+### Remaining Risk
+
+We do not have direct evidence of how long `0018` actually needs to run to
+completion on prod — only that it was still progressing at 55min. If 4h is
+also insufficient, the migration is likely unbounded and must be
+restructured: split into `ADD COLUMN` (fast) + chunked, non-transactional
+UPDATE/DELETE/INSERT batches keyed on TimescaleDB chunk boundaries +
+post-backfill DDL (`CREATE UNIQUE INDEX`, view rebuilds, `DROP TABLE`).
+Splitting cleanly also requires app code in
+`packages/server/src/repositories/body-*.ts` to read from both
+`fitness.body_measurement` and the `metric_stream` body channels during the
+backfill window, which is a multi-deploy refactor.
+
 ## 2026-05-06: Branch deploy validation exceeded migration timeout
 
 ### Impact
