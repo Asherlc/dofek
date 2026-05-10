@@ -7,6 +7,95 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-10: Disk full from inactive PeerDB replication slots retaining 26GB of WAL
+
+### Impact
+
+Same wedged-host symptoms as the earlier 2026-05-10 entry below — but the
+underlying cause turned out to be a 100% full data volume, not stack
+oversubscription. `df -h` on `/mnt/dofek-data` showed `99G 94G 0 100%`,
+and `pg_wal/` alone was 26 GB. Postgres was hitting `PANIC: could not
+write to file "pg_wal/xlogtemp.NN": No space left on device` and
+restarting; every other service writing to the same volume (Traefik logs,
+sshd session records, ClickHouse merges) blocked in `D` state, which
+manifests as the "TCP accepts but no banner" pattern we'd been chasing
+all day.
+
+### Evidence That Mattered
+
+- Postgres logs:
+  `PANIC: could not write to file "pg_wal/xlogtemp.27": No space left on device`
+  → `WAL writer process (PID 27) was terminated by signal 6: Aborted`
+  → `all server processes terminated; reinitializing`.
+- `pg_replication_slots` showed three inactive logical slots:
+  `peerflow_slot_dofek_metric_stream_analytics` (active=false, retained_wal
+  = 25 GB), `peerflow_slot_dofek_fitness_raw_analytics` (1056 MB), and
+  `peerflow_slot_dofek_provider_inventory_raw_analytics` (240 MB). Each was
+  anchoring WAL since its last `restart_lsn` because no consumer was
+  draining them.
+- `pg_wal/` directory on disk: 26 GB. Total volume usage: 94 GB / 99 GB.
+- Sample of recent metric_stream activity showed 92% of inserts were
+  `imu` channel rows from `apple_motion` and `WHOOP Strap` — high-frequency
+  (~100Hz × 6 axes) sensor data that fills the table fast and feeds
+  the slots their churn.
+
+### Root Cause
+
+PeerDB's flow workers stopped consuming the source-side logical
+replication slots at some point (root cause of the consumer outage not
+yet diagnosed — could be peerdb-flow-worker crash, ClickHouse rejecting
+writes, peerdb-temporal losing workflow state). Postgres was forced to
+retain every WAL segment past each slot's `restart_lsn`, and over time
+that grew until it consumed the entire 100 GB data volume. Once the
+volume hit 100%, postgres could not write WAL → PANIC → cascade through
+every service touching the volume.
+
+There was no `max_slot_wal_keep_size` configured, so an inactive slot
+could grow unbounded.
+
+### Fix Or Mitigation
+
+Recovery (executed against prod):
+
+1. Wiped `/mnt/dofek-data/peerdb-minio` to free 9 GB so postgres could
+   start (PeerDB was already scaled to 0 and its mirrors will be
+   recreated).
+2. Brought db up, executed `SELECT pg_drop_replication_slot(...)` for all
+   three inactive slots, then `CHECKPOINT;` to recycle WAL. Postgres
+   immediately freed 25 GB by recycling the unanchored WAL segments.
+3. Tightened TimescaleDB compression policy on `fitness.metric_stream`
+   from `compress_after: 7 days` → `1 day` to reduce ongoing footprint
+   of recent IMU data, and manually compressed catch-up chunks.
+4. Brought back `dofek_db` on the new postgis-capable image
+   `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` (chowned the data dir
+   from 70:70 → 1000:1000 to match the HA image's UID).
+
+Durable guardrail (this PR):
+
+- Added `max_slot_wal_keep_size=4GB` to `dofek_db` service command
+  args in `deploy/stack.yml`. Bounds the per-slot WAL retention so a
+  future inactive consumer cannot fill the volume — the slot is
+  invalidated instead, and postgres reports it as lost the next time
+  the consumer reconnects (forcing a resync, which is recoverable).
+
+### Remaining Risk
+
+- ClickHouse mirror is now ~16+ hours behind real-time on
+  `postgres_fitness.metric_stream` (last_mod was 01:03:19 UTC when the
+  slot stopped consuming). To bring it current, PeerDB must be brought
+  back up and the mirrors recreated with `do_initial_snapshot=true`.
+  Doing that re-adds 7+ services to the box and is deferred until the
+  app is verified stable.
+- The underlying reason PeerDB's consumers stopped draining is not yet
+  diagnosed. Just recreating the mirrors without that diagnosis risks
+  the same consumer-stall recurring — though now bounded by
+  `max_slot_wal_keep_size` so it cannot fill the volume again.
+- One uncompressed 18 GB chunk (`_hyper_1_386_chunk`, weekly chunk
+  Apr 30 - May 7) remains on the box. Manual compression of a 2.4 GB
+  chunk wedged sshd for 5 minutes; the 18 GB version would be much
+  worse. Left for the daily compression policy to handle when it next
+  runs.
+
 ## 2026-05-10: Prod host wedged after rescue-mode reboot during deploy unblock attempt
 
 ### Impact

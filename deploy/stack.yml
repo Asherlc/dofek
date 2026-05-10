@@ -143,6 +143,13 @@ services:
       - max_replication_slots=4
       - -c
       - max_wal_senders=4
+      - -c
+      # Cap WAL retained for any single replication slot at 4GB. If a
+      # consumer (PeerDB) falls further behind than this, postgres
+      # invalidates the slot rather than retaining unbounded WAL.
+      # Without this, an inactive logical slot once filled the entire
+      # data volume to 100% (2026-05-10 incident).
+      - max_slot_wal_keep_size=4GB
     ports:
       - "127.0.0.1:5432:5432"
     environment:
