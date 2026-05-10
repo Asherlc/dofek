@@ -1351,6 +1351,7 @@ describe("healthKitSyncRouter", () => {
       const serialized = serializeMetricStreamInsertCalls(execute);
       expect(serialized).toContain('"location"');
       expect(serialized).toContain("ST_SetSRID");
+      expect(serialized).toContain("Apple Watch");
       expect(serialized).toContain("horizontal_accuracy_m");
       expect(serialized).not.toContain('"lat"');
       expect(serialized).not.toContain('"lng"');
