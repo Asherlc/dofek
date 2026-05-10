@@ -288,7 +288,6 @@ services:
     volumes:
       - /mnt/dofek-data/databasus:/databasus-data
     deploy:
-      replicas: ${DATABASUS_REPLICAS:-1}
       labels:
         - traefik.enable=true
         - traefik.http.routers.databasus.rule=${DATABASUS_HOST_RULE:-Host(`databasus.dofek.asherlc.com`)}
@@ -303,7 +302,6 @@ services:
     volumes:
       - /mnt/dofek-data/cloudbeaver:/opt/cloudbeaver/workspace
     deploy:
-      replicas: ${CLOUDBEAVER_REPLICAS:-1}
       labels:
         - traefik.enable=true
         - traefik.http.routers.cloudbeaver.rule=${CLOUDBEAVER_HOST_RULE:-Host(`cloudbeaver.dofek.asherlc.com`)}
@@ -323,7 +321,6 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     deploy:
-      replicas: ${PGADMIN_REPLICAS:-1}
       labels:
         - traefik.enable=true
         - traefik.http.routers.pgadmin.rule=${PGADMIN_HOST_RULE:-Host(`pgadmin.dofek.asherlc.com`)}
@@ -389,7 +386,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     deploy:
-      replicas: ${PORTAINER_REPLICAS:-1}
       labels:
         - traefik.enable=true
         - traefik.http.routers.portainer.rule=${PORTAINER_HOST_RULE:-Host(`portainer.dofek.asherlc.com`)}
@@ -448,7 +444,6 @@ services:
       - /etc/os-release:/host/etc/os-release:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     deploy:
-      replicas: ${NETDATA_REPLICAS:-1}
       labels:
         - traefik.enable=true
         - traefik.http.routers.netdata.rule=${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)}

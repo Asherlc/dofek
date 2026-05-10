@@ -158,25 +158,22 @@ jobs:
           CLOUDBEAVER_HOST_RULE_INPUT: ${{ inputs.cloudbeaver_host_rule }}
           PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
         run: |
+          # deploy/stack.staging.yml overlays staging-only adjustments
+          # (e.g. scaling heavy dev/ops UIs to zero on the 4 GB box).
+          if [ "$DEPLOY_ENVIRONMENT" = "staging" ]; then
+            STACK_FILE_FLAGS="-c deploy/stack.yml -c deploy/stack.staging.yml"
+          else
+            STACK_FILE_FLAGS="-c deploy/stack.yml"
+          fi
+
           {
             echo "INFISICAL_ENV_FILE=$INFISICAL_ENV_FILE_PATH"
             echo "DEPLOY_ENVIRONMENT=$DEPLOY_ENVIRONMENT"
             echo "STACK_NAME=$STACK_NAME"
             echo "PUBLIC_URL=$PUBLIC_URL_INPUT"
             echo "OTA_BASE_URL=$OTA_BASE_URL_INPUT"
+            echo "STACK_FILE_FLAGS=$STACK_FILE_FLAGS"
           } >> "$GITHUB_ENV"
-
-          # Staging runs on a 4 GB cax11; drop heavy dev/ops UIs and netdata to fit.
-          # These services still deploy to production with their default replicas.
-          if [ "$DEPLOY_ENVIRONMENT" = "staging" ]; then
-            {
-              echo "CLOUDBEAVER_REPLICAS=0"
-              echo "PGADMIN_REPLICAS=0"
-              echo "PORTAINER_REPLICAS=0"
-              echo "DATABASUS_REPLICAS=0"
-              echo "NETDATA_REPLICAS=0"
-            } >> "$GITHUB_ENV"
-          fi
 
           write_multiline_env() {
             local name="$1"
@@ -317,7 +314,7 @@ jobs:
             echo "Swarm DB and ClickHouse services exist with running tasks; skipping bootstrap deploy."
           else
             echo "Swarm DB or ClickHouse service is missing or not running; running bootstrap stack deploy."
-            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth "$STACK_NAME"
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth "$STACK_NAME"
           fi
 
       - name: Wait for Postgres writable
@@ -482,7 +479,7 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=false "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
