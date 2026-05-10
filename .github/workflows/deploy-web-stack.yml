@@ -481,6 +481,7 @@ jobs:
           fi
 
       - name: Deploy stack
+        id: deploy_stack
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
@@ -514,6 +515,14 @@ jobs:
                 ;;
             esac
           done
+
+      - name: Prune obsolete images post-deploy
+        if: ${{ steps.deploy_stack.outcome == 'success' }}
+        run: docker image prune -af
+
+      - name: Report Docker disk usage post-prune
+        if: ${{ steps.deploy_stack.outcome == 'success' }}
+        run: docker system df
 
       - name: Wait for PeerDB
         run: |
