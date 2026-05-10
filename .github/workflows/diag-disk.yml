@@ -1,12 +1,11 @@
 name: Diagnose Server Disk Usage
 
 on:
-  workflow_dispatch:
-    inputs:
-      server_host:
-        description: SSH host to inspect (defaults to SERVER_HOST secret)
-        required: false
-        default: ''
+  push:
+    branches:
+      - Asherlc/ci-no-space-left
+    paths:
+      - .github/workflows/diag-disk.yml
 
 jobs:
   diag:
@@ -20,12 +19,12 @@ jobs:
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host
         with:
-          host: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          host: ${{ secrets.SERVER_HOST }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Run diagnostics over SSH
         env:
-          SSH_HOST: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          SSH_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           ssh -o ServerAliveInterval=30 "root@${SSH_HOST}" bash -s <<'EOF'
           set +e
