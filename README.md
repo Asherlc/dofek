@@ -56,10 +56,31 @@ docker compose up -d db clickhouse redis
 # Install dependencies
 pnpm install
 
-# Log in to Infisical (see "Secrets" section below), then run with secrets:
-infisical run --env=prod -- pnpm migrate
+# Configure local-only env vars (gitignored). Connection strings live here
+# rather than .env because they target your Docker host.
+cat > .env.local <<'EOF'
+CLICKHOUSE_URL=http://default:health@localhost:8123
+REDIS_URL=redis://localhost:6379
+POSTGRES_PASSWORD=health
+CLICKHOUSE_PASSWORD=health
+EOF
+
+# Log in to Infisical (see "Secrets" section below) and store the credential
+# encryption key — required for boot, see "Credential encryption at rest":
+infisical secrets set --env=prod \
+  CREDENTIAL_ENCRYPTION_KEY_BASE64=$(openssl rand -base64 32)
+
+# Apply Postgres + ClickHouse migrations (idempotent — safe to re-run):
+infisical run --env=prod -- pnpm setup-db
+
+# Optional: run a one-shot sync if you have provider credentials configured.
 infisical run --env=prod -- pnpm sync
 ```
+
+`pnpm setup-db` is the canonical fresh-DB bootstrap and matches what
+`entrypoint.sh migrate` runs in production: it applies SQL files in `drizzle/`
+to Postgres, then runs the ClickHouse-side migrations. Use `pnpm migrate`
+(drizzle-kit) only for incremental schema work after a `pnpm generate`.
 
 ## Adding a Provider
 
@@ -114,10 +135,19 @@ The server imports shared code from the root package via `dofek` workspace depen
 ## Development
 
 ```bash
-docker compose up -d db clickhouse redis   # required for integration tests, projections, and local workers
-# Optional local CDC stack (required for real-time Postgres -> ClickHouse metric_stream replication)
+# Postgres + ClickHouse + Redis (required for any dev workflow)
+docker compose up -d db clickhouse redis
+
+# PeerDB CDC stack — required for the API server, since its boot path waits
+# for postgres_fitness.metric_stream and analytics views in ClickHouse.
 docker compose -f docker-compose.yml -f docker-compose.peerdb.yml up -d
-pnpm clickhouse-cdc                   # configure PeerDB CDC mirror for peerdb.metric_stream
+# (The peerdb-temporal-init container auto-registers the MirrorName Temporal
+# search attribute that PeerDB workflows depend on. It exits after running.)
+
+# Apply Postgres + ClickHouse migrations to a fresh DB (idempotent).
+pnpm setup-db
+# Configure the PeerDB metric_stream mirror (postgres_fitness.metric_stream).
+pnpm clickhouse-cdc
 
 pnpm test                       # run tests
 pnpm test:watch                 # run tests in watch mode
