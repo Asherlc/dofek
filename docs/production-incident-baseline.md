@@ -7,6 +7,101 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-10: Prod host wedged after rescue-mode reboot during deploy unblock attempt
+
+### Impact
+
+`dofek.asherlc.com` went fully unreachable from the internet. Both prod
+(`dofek` / 157.90.25.125) and `dofek-staging` (162.55.186.24) now exhibit
+the same wedged-host pattern: TCP accepts on `:22` and `:443`, but neither
+sshd nor Traefik return a response. Multiple soft reboots and a hard
+`hcloud server reset` did not produce a stable host — each boot yields ~1–3
+minutes of SSH responsiveness, then the host becomes unresponsive again.
+
+The originally-intended action was a one-shot `docker service update --image
+timescale/timescaledb-ha:pg18.3-ts2.26.4-all dofek_db` to give the prod DB
+container the postgis extension that the new
+`drizzle/0018_metric_stream_location_point.sql` migration (from PR #1111)
+requires. Whether that swap completed before the host wedged is unknown —
+the SSH session ran the command but never returned output.
+
+### Evidence That Mattered
+
+- During the brief windows of SSH responsiveness post-reboot:
+  - `uptime` reported 1-min load average climbing from `5.47` (right after
+    boot) to `111.23` on a 2-core (`cax11`) ARM instance within ~9 minutes.
+  - `docker stack services dofek` listed ~20 services starting concurrently:
+    TimescaleDB, ClickHouse, Redis, Traefik, web, training-export-worker, ml,
+    otel-collector, netdata, portainer, cloudbeaver, databasus, pgadmin, the
+    PeerDB cluster (`peerdb`, `flow-api`, `flow-snapshot-worker`,
+    `flow-worker`, `temporal`, `temporal-admin-tools`, `minio`, `catalog`),
+    ota, docuum.
+  - Several services (`db`, `redis`, all `peerdb-*-worker`, `peerdb-temporal`,
+    `pgadmin`, `netdata`, `docuum`) were stuck at `0/1` replicas, never
+    reaching healthy.
+- hcloud metrics during wedged windows: CPU baseline (no saturation pattern
+  visible in the chart), disk IOPS in `1–5` range, network sub-1 MB/s. Low
+  metrics combined with high load average indicates many processes blocked
+  in `D` state (uninterruptible IO wait) on the network-attached `dofek-data`
+  volume — not active CPU/IO consumption.
+- Identical symptom on `dofek-staging` from the start of the session,
+  predating any of today's actions.
+
+### Root Cause
+
+Provisional, not fully confirmed because the host stays unreachable long
+enough only for shallow inspection: the dofek swarm stack appears to be
+oversubscribed for the `cax11` instance class. Boot triggers a thundering
+herd of ~20 services starting concurrently, all contending for the
+network-attached data volume. Load average climbs to >100 on a 2-core box,
+sshd cannot get scheduled for new pre-auth forks, Traefik likewise stops
+serving, and the host remains in this state until something gives. Soft
+reboots simply restart the same cascade.
+
+The PeerDB cluster (8 services including a full Temporal control plane) is
+the most likely structural contributor — it adds substantial steady-state
+RAM and IO load that is independent of the actual app workload.
+
+The deploy-unblock action (`docker service update` to swap the db image)
+was not the cause — the host already exhibits this pattern on staging
+without any deploy intervention. But the rescue → reboot dance did move
+prod from "responsive" into the same wedged state staging was already in.
+
+### Fix Or Mitigation
+
+Unresolved at time of writing. Realistic paths:
+
+1. **Resize the host**: `hcloud server change-type dofek cax21` (4 vCPU /
+   8 GB) or `cax31` (8 vCPU / 16 GB). Requires a stop+start. Apply to
+   `dofek-staging` likewise.
+2. **Trim the stack**: scale non-essential services to 0 while the host
+   recovers, e.g. `docker service scale dofek_peerdb-flow-worker=0
+   dofek_peerdb-flow-snapshot-worker=0 dofek_peerdb-temporal=0
+   dofek_peerdb-temporal-admin-tools=0 dofek_peerdb-flow-api=0
+   dofek_docuum=0 dofek_pgadmin=0 dofek_netdata=0`. Bring them back
+   incrementally after the host stabilizes. Requires SSH access during a
+   responsive window.
+3. **Both**, in series: resize first (gets a steady-state box), then
+   investigate whether all PeerDB / observability services are still needed.
+
+The previously-merged `migration_timeout_seconds=14400` bump and
+`pg_stat_activity` instrumentation in PR #1113 are unaffected and remain
+valid groundwork — but cannot be exercised until the host is stable.
+
+### Remaining Risk
+
+- We do not yet know whether the post-reboot wedge is a deterministic
+  consequence of the stack composition, or whether something specific to
+  the data volume (slow IO, near-full, corruption, etc.) is the proximate
+  cause. Resizing the host treats the symptom; if the underlying issue is
+  the volume, resize alone will not durably help.
+- Staging has been wedged through the entire incident, so the deploy-time
+  validation surface is also down. Any fix attempted on prod cannot be
+  rehearsed on staging until staging is recovered.
+- The pending `0018_metric_stream_location_point.sql` and
+  `0018_migrate_body_measurements_to_metric_stream.sql` migrations are
+  still blocked from applying. The deploy queue is effectively frozen.
+
 ## 2026-05-09: Production deploy timed out applying body-measurement hypertable migration
 
 ### Impact
