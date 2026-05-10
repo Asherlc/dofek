@@ -25,6 +25,9 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   device_id Nullable(String),
   source_type Nullable(String),
   scalar Nullable(Float32),
+  latitude Nullable(Float32),
+  longitude Nullable(Float32),
+  metadata Nullable(String),
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
@@ -294,6 +297,68 @@ SELECT
 FROM standalone_samples`,
     "SYSTEM REFRESH VIEW analytics.deduped_sensor",
     "SYSTEM WAIT VIEW analytics.deduped_sensor",
+    `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location
+REFRESH EVERY 1 MINUTE
+ENGINE = MergeTree
+ORDER BY (user_id, activity_id, recorded_at)
+AS
+WITH
+activity_members AS (
+  SELECT
+    activity_id,
+    user_id,
+    member_activity_id
+  FROM analytics.v_activity_members
+),
+linked_best_source AS (
+  SELECT
+    best_source.activity_id AS activity_id,
+    best_source.provider_id AS provider_id
+  FROM (
+    SELECT
+      activity_members.activity_id AS activity_id,
+      metric_stream.provider_id AS provider_id,
+      count() AS sample_count,
+      row_number() OVER (
+        PARTITION BY activity_members.activity_id
+        ORDER BY count() DESC, metric_stream.provider_id ASC
+      ) AS row_number
+    FROM (
+      SELECT *
+      FROM postgres_fitness.metric_stream FINAL
+    ) AS metric_stream
+    INNER JOIN activity_members
+      ON metric_stream.activity_id = activity_members.member_activity_id
+    WHERE metric_stream._peerdb_is_deleted = 0
+      AND metric_stream.channel = 'location'
+      AND metric_stream.latitude IS NOT NULL
+      AND metric_stream.longitude IS NOT NULL
+    GROUP BY activity_members.activity_id, metric_stream.provider_id
+  ) AS best_source
+  WHERE best_source.row_number = 1
+)
+SELECT
+  activity_members.activity_id AS activity_id,
+  activity_members.user_id AS user_id,
+  metric_stream.recorded_at AS recorded_at,
+  max(metric_stream.latitude) AS lat,
+  max(metric_stream.longitude) AS lng
+FROM (
+  SELECT *
+  FROM postgres_fitness.metric_stream FINAL
+) AS metric_stream
+INNER JOIN activity_members
+  ON metric_stream.activity_id = activity_members.member_activity_id
+INNER JOIN linked_best_source
+  ON linked_best_source.activity_id = activity_members.activity_id
+ AND linked_best_source.provider_id = metric_stream.provider_id
+WHERE metric_stream._peerdb_is_deleted = 0
+  AND metric_stream.channel = 'location'
+  AND metric_stream.latitude IS NOT NULL
+  AND metric_stream.longitude IS NOT NULL
+GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.recorded_at`,
+    "SYSTEM REFRESH VIEW analytics.deduped_location",
+    "SYSTEM WAIT VIEW analytics.deduped_location",
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary
 REFRESH EVERY 1 MINUTE OFFSET 10 SECOND
 ENGINE = MergeTree
@@ -338,16 +403,11 @@ elevation_per_activity AS (
 ),
 gps_points AS (
   SELECT
-    lat_samples.activity_id AS activity_id,
-    lat_samples.recorded_at AS recorded_at,
-    lat_samples.scalar AS lat,
-    lng_samples.scalar AS lng
-  FROM deduped_samples AS lat_samples
-  INNER JOIN deduped_samples AS lng_samples
-    ON lat_samples.activity_id = lng_samples.activity_id
-   AND lat_samples.recorded_at = lng_samples.recorded_at
-   AND lng_samples.channel = 'lng'
-  WHERE lat_samples.channel = 'lat'
+    activity_id,
+    recorded_at,
+    lat,
+    lng
+  FROM analytics.deduped_location
 ),
 gps_deltas AS (
   SELECT

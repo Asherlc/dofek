@@ -104,7 +104,50 @@ describe("sourceRowToMetricStream", () => {
       "file",
     );
 
-    expect(rows.map((row) => row.channel).sort()).toEqual(["altitude", "speed"]);
+    expect(rows.map((row) => row.channel).sort()).toEqual(["altitude", "location", "speed"]);
+    expect(rows.find((row) => row.channel === "location")).toMatchObject({
+      scalar: null,
+      vector: null,
+      point: "SRID=4326;POINT(-74.006 40.7128)",
+    });
+  });
+
+  it("keeps GPS accuracy metadata on the location metric", () => {
+    const rows = sourceRowToMetricStream(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "wahoo",
+        lat: 40.7128,
+        lng: -74.006,
+        gpsAccuracy: 3,
+      },
+      "file",
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      channel: "location",
+      metadata: { gps_accuracy_m: 3 },
+    });
+  });
+
+  it("keeps Core Location horizontal accuracy distinct from FIT GPS accuracy", () => {
+    const rows = sourceRowToMetricStream(
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "apple_health",
+        lat: 40.7128,
+        lng: -74.006,
+        horizontalAccuracy: 5.2,
+        gpsAccuracy: 3,
+      },
+      "api",
+    );
+
+    expect(rows[0]?.metadata).toEqual({
+      horizontal_accuracy_m: 5.2,
+      gps_accuracy_m: 3,
+    });
   });
 
   it("converts body measurement fields to metric_stream rows", () => {

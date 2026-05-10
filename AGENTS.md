@@ -24,7 +24,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Mirror agent config files with symlinks**: Every directory that contains an `AGENTS.md` file must also contain `CLAUDE.md` and `GEMINI.md` symlinked to `AGENTS.md` (same directory). Keep these in sync whenever adding or moving agent guidance files.
 - **No commented-out dead code/config**: Do not leave commented-out code, workflow jobs, config blocks, or TODO-disabled paths unless the user explicitly asks for that. If something is being removed, delete it fully.
 - **"I can't see a provider" means it's broken**: When the user says they can't see a provider in the UI, it means the provider is failing validation and being hidden. The fix is to debug **why** the provider's `validate()` fails (missing env vars, bad config, etc.) — not to show disabled providers. Disabled providers are intentionally hidden from users. Use the `/fix-provider` skill to diagnose and fix.
-- **Always use latest versions**: When adding or updating any dependency, Docker image, service, artifact, or tool, always use the latest stable version available. Check for the current latest version rather than copying an older version from elsewhere in the codebase. Pin to specific versions in production (e.g., `timescale/timescaledb:2.26.2-pg18`, not `latest`), but those pinned versions should be the newest stable release at the time of the change.
+- **Always use latest versions**: When adding or updating any dependency, Docker image, service, artifact, or tool, always use the latest stable version available. Check for the current latest version rather than copying an older version from elsewhere in the codebase. Pin to specific versions in production (e.g., `timescale/timescaledb-ha:pg18.3-ts2.26.4-all`, not `latest`), but those pinned versions should be the newest stable release at the time of the change.
 - **Use TypeScript for repository scripts**: New or updated repository automation scripts must be written in TypeScript (`.ts`) and run with `pnpm tsx`. Do not add new Python scripts for repo tooling unless the work is explicitly inside the Python ML package (`packages/ml`).
 
 ## Agent Documentation
@@ -106,7 +106,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
   docker network create dofek-test
   docker run -d --name dofek-test-db --network dofek-test 
     -e POSTGRES_DB=health -e POSTGRES_USER=health -e POSTGRES_PASSWORD=test 
-    timescale/timescaledb:2.26.2-pg18
+    timescale/timescaledb-ha:pg18.3-ts2.26.4-all
   sleep 5
   docker run -d --name dofek-test-web --network dofek-test -p 3000:3000 
     -e DATABASE_URL=postgres://health:test@dofek-test-db:5432/health -e PORT=3000 

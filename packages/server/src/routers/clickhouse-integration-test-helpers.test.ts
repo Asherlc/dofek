@@ -30,6 +30,7 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.v_daily_metrics",
         "analytics.provider_stats",
         "analytics.deduped_sensor",
+        "analytics.deduped_location",
         "analytics.activity_summary",
         "analytics.activity_trend_daily",
       ]) {
@@ -139,9 +140,15 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") && command.includes(".deduped_location"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(9);
+    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(10);
   });
 });

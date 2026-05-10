@@ -77,17 +77,19 @@ describe("ActivityRecordingRepository", () => {
       const { repository, execute } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-456" }], // INSERT RETURNING
-        [], // metric_stream: lat
-        [], // metric_stream: lng
-        [], // metric_stream: gps_accuracy
+        [], // metric_stream: location
         [], // metric_stream: altitude
         [], // metric_stream: speed
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-456");
-      // ensureProvider + INSERT activity + 5 metric_stream channels
-      expect(execute).toHaveBeenCalledTimes(7);
+      // ensureProvider + INSERT activity + location, altitude, speed metric_stream batches
+      expect(execute).toHaveBeenCalledTimes(5);
+      const serialized = JSON.stringify(execute.mock.calls);
+      expect(serialized).toContain("location");
+      expect(serialized).toContain("ST_SetSRID");
+      expect(serialized).toContain("horizontal_accuracy_m");
     });
 
     it("handles samples exceeding batch size with multiple batches", async () => {
@@ -104,22 +106,18 @@ describe("ActivityRecordingRepository", () => {
       const { repository, execute } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-789" }], // INSERT RETURNING
-        [], // batch 1: metric_stream lat
-        [], // batch 1: metric_stream lng
-        [], // batch 1: metric_stream gps_accuracy
+        [], // batch 1: metric_stream location
         [], // batch 1: metric_stream altitude
         [], // batch 1: metric_stream speed
-        [], // batch 2: metric_stream lat
-        [], // batch 2: metric_stream lng
-        [], // batch 2: metric_stream gps_accuracy
+        [], // batch 2: metric_stream location
         [], // batch 2: metric_stream altitude
         [], // batch 2: metric_stream speed
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-789");
-      // ensureProvider + INSERT activity + 2 batches × 5 metric_stream channels
-      expect(execute).toHaveBeenCalledTimes(12);
+      // ensureProvider + INSERT activity + 2 batches × 3 metric_stream value groups
+      expect(execute).toHaveBeenCalledTimes(8);
     });
 
     it("creates exactly 1 batch for 500 samples (boundary)", async () => {
@@ -135,16 +133,14 @@ describe("ActivityRecordingRepository", () => {
       const { repository, execute } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-batch" }], // INSERT RETURNING
-        [], // metric_stream: lat
-        [], // metric_stream: lng
-        [], // metric_stream: gps_accuracy
+        [], // metric_stream: location
         [], // metric_stream: altitude
         [], // metric_stream: speed
       ]);
 
       await repository.saveActivity(makeInput({ samples }));
-      // ensureProvider + INSERT activity + 5 metric_stream channels
-      expect(execute).toHaveBeenCalledTimes(7);
+      // ensureProvider + INSERT activity + location, altitude, speed metric_stream batches
+      expect(execute).toHaveBeenCalledTimes(5);
     });
 
     it("handles samples with null values", async () => {

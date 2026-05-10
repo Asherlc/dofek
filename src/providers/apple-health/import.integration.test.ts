@@ -848,7 +848,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.sleepType).toBeNull();
   });
 
-  it("creates activity rows for workouts with GPS in location_sample", async () => {
+  it("creates activity rows for workouts with GPS in metric_stream", async () => {
     const activities = await ctx.db.select().from(schema.activity);
     const run = activities.find((a) => a.activityType === "running");
     expect(run).toBeDefined();
@@ -861,15 +861,25 @@ describe("importAppleHealthFile — full DB integration", () => {
       maxHeartRate: 175,
     });
 
-    // GPS fixes live in location_sample; speed remains a scalar sensor channel.
-    const locationRows = await ctx.db.select().from(schema.locationSample);
-    const workoutLocations = locationRows.filter((row) => row.activityId === run?.id);
-    expect(workoutLocations.length).toBe(2);
-    expect(workoutLocations.some((row) => Math.abs(row.latitude - 40.7128) < 0.001)).toBe(true);
-
     const allMetrics = await ctx.db.select().from(schema.metricStream);
-    const speedRows = allMetrics.filter((r) => r.activityId === run?.id && r.channel === "speed");
-    expect(speedRows.some((r) => r.scalar !== null && Math.abs(r.scalar - 3.5) < 0.1)).toBe(true);
+    const gpsRows = allMetrics.filter(
+      (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "location",
+    );
+    expect(gpsRows.length).toBe(2);
+    expect(
+      gpsRows.some(
+        (metricRow) =>
+          metricRow.latitude !== null && Math.abs(metricRow.latitude - 40.7128) < 0.001,
+      ),
+    ).toBe(true);
+    const speedRows = allMetrics.filter(
+      (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "speed",
+    );
+    expect(
+      speedRows.some(
+        (metricRow) => metricRow.scalar !== null && Math.abs(metricRow.scalar - 3.5) < 0.1,
+      ),
+    ).toBe(true);
   });
 
   it("creates health_event rows for category records (mindful session)", async () => {

@@ -16,6 +16,8 @@ export const POWER = "power";
 export const CADENCE = "cadence";
 /** Speed in m/s */
 export const SPEED = "speed";
+/** Location point stored in metric_stream.point. */
+export const LOCATION = "location";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
 /** Temperature in celsius */

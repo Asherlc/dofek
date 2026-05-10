@@ -566,8 +566,10 @@ describe("GarminProvider.sync()", () => {
       .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
       .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
 
-    expect(sensorRows).toHaveLength(7);
-    expect(sensorRows.every((row) => row?.scalar != null)).toBe(true);
+    expect(sensorRows).toHaveLength(8);
+    expect(sensorRows.every((row) => row?.channel === "location" || row?.scalar != null)).toBe(
+      true,
+    );
     expect(sensorRows.length).toBeGreaterThan(0);
     expect(sensorRows).not.toContainEqual(expect.objectContaining({ channel: "lat" }));
     expect(sensorRows).not.toContainEqual(expect.objectContaining({ channel: "lng" }));
@@ -579,6 +581,14 @@ describe("GarminProvider.sync()", () => {
     expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "speed", scalar: 3.5 }));
     expect(sensorRows).toContainEqual(
       expect.objectContaining({ channel: "altitude", scalar: 100 }),
+    );
+    expect(sensorRows).toContainEqual(
+      expect.objectContaining({
+        channel: "location",
+        point: "SRID=4326;POINT(-122.4194 37.7749)",
+        latitude: 37.7749,
+        longitude: -122.4194,
+      }),
     );
     expect(sensorRows).toContainEqual(
       expect.objectContaining({ channel: "temperature", scalar: 18 }),

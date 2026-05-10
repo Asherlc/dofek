@@ -469,24 +469,56 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
   }
 
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
+    // Test shim only: production stream reads use ClickHouse analytics.deduped_location.
     const rows = await executeWithSchema(
       this.#db,
       streamPointRowSchema,
-      sql`SELECT
-            recorded_at::text AS recorded_at,
-            MAX(scalar) FILTER (WHERE channel = 'heart_rate')::real AS heart_rate,
-            MAX(scalar) FILTER (WHERE channel = 'power')::real AS power,
-            MAX(scalar) FILTER (WHERE channel = 'speed')::real AS speed,
-            MAX(scalar) FILTER (WHERE channel = 'cadence')::real AS cadence,
-            MAX(scalar) FILTER (WHERE channel = 'altitude')::real AS altitude,
-            MAX(scalar) FILTER (WHERE channel = 'lat')::real AS lat,
-            MAX(scalar) FILTER (WHERE channel = 'lng')::real AS lng
-          FROM fitness.metric_stream
-          WHERE user_id = ${window.userId}::uuid
-            AND activity_id = ${window.activityId}::uuid
-            AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude', 'lat', 'lng')
-          GROUP BY recorded_at
-          ORDER BY recorded_at`,
+      sql`WITH
+          scalar_samples AS (
+            SELECT
+              recorded_at,
+              MAX(scalar) FILTER (WHERE channel = 'heart_rate')::real AS heart_rate,
+              MAX(scalar) FILTER (WHERE channel = 'power')::real AS power,
+              MAX(scalar) FILTER (WHERE channel = 'speed')::real AS speed,
+              MAX(scalar) FILTER (WHERE channel = 'cadence')::real AS cadence,
+              MAX(scalar) FILTER (WHERE channel = 'altitude')::real AS altitude
+            FROM fitness.metric_stream
+            WHERE user_id = ${window.userId}::uuid
+              AND activity_id = ${window.activityId}::uuid
+              AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
+            GROUP BY recorded_at
+          ),
+          location_samples AS (
+            SELECT
+              recorded_at,
+              MAX(latitude)::real AS lat,
+              MAX(longitude)::real AS lng
+            FROM fitness.metric_stream
+            WHERE user_id = ${window.userId}::uuid
+              AND activity_id = ${window.activityId}::uuid
+              AND channel = 'location'
+            GROUP BY recorded_at
+          ),
+          sample_times AS (
+            SELECT recorded_at FROM scalar_samples
+            UNION
+            SELECT recorded_at FROM location_samples
+          )
+          SELECT
+            sample_times.recorded_at::text AS recorded_at,
+            scalar_samples.heart_rate,
+            scalar_samples.power,
+            scalar_samples.speed,
+            scalar_samples.cadence,
+            scalar_samples.altitude,
+            location_samples.lat,
+            location_samples.lng
+          FROM sample_times
+          LEFT JOIN scalar_samples
+            ON scalar_samples.recorded_at = sample_times.recorded_at
+          LEFT JOIN location_samples
+            ON location_samples.recorded_at = sample_times.recorded_at
+          ORDER BY sample_times.recorded_at`,
     );
 
     const stride = Math.max(1, Math.floor(rows.length / maxPoints));

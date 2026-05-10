@@ -1,0 +1,25 @@
+# Staging-only overrides applied on top of stack.yml.
+# Staging runs on a 4 GB Hetzner cax11; the heavier dev/ops UIs and
+# Netdata don't fit alongside the core app + PeerDB stack and are
+# disabled here to keep the box from OOM-thrashing. They continue to
+# deploy with their default replica count in production.
+services:
+  cloudbeaver:
+    deploy:
+      replicas: 0
+
+  databasus:
+    deploy:
+      replicas: 0
+
+  netdata:
+    deploy:
+      replicas: 0
+
+  pgadmin:
+    deploy:
+      replicas: 0
+
+  portainer:
+    deploy:
+      replicas: 0

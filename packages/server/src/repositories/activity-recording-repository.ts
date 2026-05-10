@@ -92,11 +92,36 @@ export class ActivityRecordingRepository {
 
       if (batch.length === 0) continue;
 
-      // Dual-write GPS samples to metric_stream (one row per channel per sample)
+      const locationValues = batch
+        .filter((sample) => sample.lat != null && sample.lng != null)
+        .map((sample) => {
+          const metadata =
+            sample.gpsAccuracy == null
+              ? null
+              : JSON.stringify({ horizontal_accuracy_m: sample.gpsAccuracy });
+          return sql`(
+            ${sample.recordedAt}::timestamptz,
+            ${this.#userId}::uuid,
+            ${activityId}::uuid,
+            ${PROVIDER_ID},
+            ${input.sourceName},
+            ${"api"},
+            ${"location"},
+            ST_SetSRID(ST_MakePoint(${sample.lng}, ${sample.lat}), 4326),
+            ${sample.lat}::real,
+            ${sample.lng}::real,
+            ${metadata}::jsonb
+          )`;
+        });
+      if (locationValues.length > 0) {
+        await this.#db.execute(
+          sql`INSERT INTO fitness.metric_stream
+              (recorded_at, user_id, activity_id, provider_id, device_id, source_type, channel, point, latitude, longitude, metadata)
+              VALUES ${sql.join(locationValues, sql`, `)}`,
+        );
+      }
+
       const channelMapping: Array<{ channel: string; key: keyof GpsSample }> = [
-        { channel: "lat", key: "lat" },
-        { channel: "lng", key: "lng" },
-        { channel: "gps_accuracy", key: "gpsAccuracy" },
         { channel: "altitude", key: "altitude" },
         { channel: "speed", key: "speed" },
       ];
