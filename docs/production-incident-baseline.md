@@ -149,11 +149,13 @@ transaction.
   this budget should be restructured (split, batched with
   `--no-transaction`, or moved to an out-of-band backfill job) rather than
   bumping the timeout again.
-- Added periodic `pg_stat_activity` snapshots (every 60s of elapsed
-  migration time, plus a final snapshot on timeout) to the workflow log so
-  the next failure produces direct evidence of which SQL statement is
-  running and whether it is progressing or stuck on a `wait_event` (lock,
-  IO, etc.) — without waiting for the timeout to fire.
+- Reverted the periodic `pg_stat_activity` snapshot block that was briefly
+  added to the workflow polling loop — too much custom shell + heredoc'd
+  psql for what `pg_stat_statements` (already in
+  `shared_preload_libraries` per `deploy/stack.yml`) and
+  `pg_stat_progress_create_index` already give us natively. SQL-level
+  visibility belongs in a query against the live db service, not rebuilt
+  in the deploy workflow.
 
 ### Remaining Risk
 
