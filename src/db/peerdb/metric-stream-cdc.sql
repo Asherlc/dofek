@@ -50,6 +50,21 @@ WITH (
   soft_delete = true
 );
 
+-- The analytics CDC mirror uses a dedicated publication with a row filter
+-- that drops `imu` channel events at the source. IMU samples (~100Hz × 6
+-- axes per device) make up >90% of metric_stream write volume but aren't
+-- consumed by analytics; routing them through PeerDB → MinIO staging →
+-- ClickHouse fills disk and gets the slot stuck. The 2026-05-10 incident
+-- root cause was exactly this kind of slot-stall filling the volume to
+-- 100%. Setup notes:
+--   * `publish_via_partition_root = true` lets one publication entry on
+--     fitness.metric_stream apply the row filter to all TimescaleDB chunks.
+--   * Bootstrap this publication BEFORE running the analytics mirror's
+--     CREATE MIRROR, since PeerDB will look it up by name.
+CREATE PUBLICATION IF NOT EXISTS peerdb_metric_stream_no_imu
+FOR TABLE fitness.metric_stream WHERE (channel <> 'imu')
+WITH (publish_via_partition_root = true);
+
 CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics
 FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
 WITH TABLE MAPPING
@@ -64,7 +79,7 @@ WITH (
   do_initial_copy = false,
   max_batch_size = 1000000,
   sync_interval = 60,
-  publication_name = 'peerdb_metric_stream_publication',
+  publication_name = 'peerdb_metric_stream_no_imu',
   soft_delete = true
 );
 

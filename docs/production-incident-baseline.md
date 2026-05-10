@@ -78,23 +78,60 @@ Durable guardrail (this PR):
   invalidated instead, and postgres reports it as lost the next time
   the consumer reconnects (forcing a resync, which is recoverable).
 
+### Recovery Continuation (2026-05-10 evening)
+
+After the immediate WAL-retention fix, the box was resized cax11 → cax21
+(2 vCPU/4 GB → 4 vCPU/8 GB) so the full PeerDB stack could come up
+without the cold-start thundering herd wedging sshd, ClickHouse, etc.
+The trim-to-zero of 14 services that was used as triage during the
+disk-full crisis was unwound — they are not the cause of the wedging
+and have been restored to `replicas=1`.
+
+PeerDB diagnosis revealed the consumer-stall root cause: when the data
+volume hit 100%, peerdb-minio returned HTTP 507 ("Insufficient
+Storage"), PeerDB's flow workers stopped pushing, and the slots went
+inactive. Not a PeerDB bug — downstream of the disk-full.
+
+ClickHouse was rebuilt from scratch:
+- Dropped all 3 broken PeerDB mirrors (their slots were already gone).
+- Created a dedicated `peerdb_metric_stream_no_imu` publication with a
+  row filter `(channel != 'imu')` and `publish_via_partition_root = true`
+  so the IMU firehose is dropped at the postgres source instead of
+  being decoded, transferred, and discarded by every consumer.
+- Recreated the metric_stream CDC mirror against the no-IMU publication
+  with `do_initial_copy = false`.
+- Recreated the two small mirrors (fitness_raw, provider_inventory)
+  using the original publication (no IMU concerns there).
+- Backfilled ~211M historical non-IMU rows into `postgres_fitness.metric_stream`
+  via ClickHouse's built-in `postgresql()` table function, chunked
+  per-year (per-quarter for 2021's 168M-row spike). Took ~12 minutes
+  end-to-end. The destination's `ReplacingMergeTree(_peerdb_version)`
+  engine handled dedup against streaming CDC events automatically.
+- Cleaned up 40 residual IMU rows in CH with `ALTER TABLE … DELETE
+  WHERE channel='imu'` (background mutation).
+
+The publication change (`peerdb_metric_stream_no_imu`) was committed to
+`src/db/peerdb/metric-stream-cdc.sql` so a fresh bootstrap reproduces
+this state.
+
 ### Remaining Risk
 
-- ClickHouse mirror is now ~16+ hours behind real-time on
-  `postgres_fitness.metric_stream` (last_mod was 01:03:19 UTC when the
-  slot stopped consuming). To bring it current, PeerDB must be brought
-  back up and the mirrors recreated with `do_initial_snapshot=true`.
-  Doing that re-adds 7+ services to the box and is deferred until the
-  app is verified stable.
-- The underlying reason PeerDB's consumers stopped draining is not yet
-  diagnosed. Just recreating the mirrors without that diagnosis risks
-  the same consumer-stall recurring — though now bounded by
-  `max_slot_wal_keep_size` so it cannot fill the volume again.
+- The cax21 resize is technically reversible (`hcloud server change-type
+  dofek cax11 --keep-disk` requires a brief stop+start), but today's
+  evidence suggests cax11 cannot host the full PeerDB cluster + heavy
+  IMU write load without periodic load-induced wedges. Leaving on cax21
+  unless cost becomes a problem.
 - One uncompressed 18 GB chunk (`_hyper_1_386_chunk`, weekly chunk
   Apr 30 - May 7) remains on the box. Manual compression of a 2.4 GB
-  chunk wedged sshd for 5 minutes; the 18 GB version would be much
-  worse. Left for the daily compression policy to handle when it next
-  runs.
+  chunk wedged sshd for 5 minutes earlier in the day; the 18 GB version
+  would be much worse. Left for the daily compression policy to handle.
+- PeerDB's QREP `CREATE MIRROR` flow has a catalog-corruption bug in
+  stable-v0.36.18 — it inserts a `flows` row before workflow registration
+  succeeds, leaving a half-created entry that blocks subsequent retries
+  with a unique-constraint violation. We sidestepped by using a direct
+  ClickHouse `INSERT … SELECT FROM postgresql(...)` for the backfill.
+  If a future backfill is needed, prefer this pattern over QREP until
+  the upstream issue is fixed.
 
 ## 2026-05-10: Prod host wedged after rescue-mode reboot during deploy unblock attempt
 
