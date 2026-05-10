@@ -166,6 +166,18 @@ jobs:
             echo "OTA_BASE_URL=$OTA_BASE_URL_INPUT"
           } >> "$GITHUB_ENV"
 
+          # Staging runs on a 4 GB cax11; drop heavy dev/ops UIs and netdata to fit.
+          # These services still deploy to production with their default replicas.
+          if [ "$DEPLOY_ENVIRONMENT" = "staging" ]; then
+            {
+              echo "CLOUDBEAVER_REPLICAS=0"
+              echo "PGADMIN_REPLICAS=0"
+              echo "PORTAINER_REPLICAS=0"
+              echo "DATABASUS_REPLICAS=0"
+              echo "NETDATA_REPLICAS=0"
+            } >> "$GITHUB_ENV"
+          fi
+
           write_multiline_env() {
             local name="$1"
             local value="$2"
