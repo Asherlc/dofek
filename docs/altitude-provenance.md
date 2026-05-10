@@ -8,9 +8,11 @@ format gives explicit provenance for that specific sample or stream.
 ## Current Storage
 
 The canonical time-series table stores altitude as `metric_stream` rows with
-`channel = 'altitude'` and `scalar` in meters. GPS coordinates are separate
-`lat` and `lng` scalar channels. Elevation gain/loss is not stored as canonical
-raw data; ClickHouse read models derive it from deduped altitude deltas.
+`channel = 'altitude'` and `scalar` in meters. Horizontal GPS position is stored
+as a `metric_stream` row with `channel = 'location'`, `point` as
+`geometry(Point, 4326)`, and same-row `latitude`/`longitude` projections for
+analytics replication. Elevation gain/loss is not stored as canonical raw data;
+ClickHouse read models derive it from deduped altitude deltas.
 
 This means the database currently preserves the altitude value, provider, source
 type, activity, timestamp, and optional device/source name. It does not preserve
@@ -21,9 +23,9 @@ or `sensor_fusion`.
 
 | Source | Ingest path | What we store | What provenance we can know |
 |---|---|---|---|
-| Apple Health workout routes | Health export `Location` elements and mobile HealthKit route sync | `altitude`, `speed`, and `horizontalAccuracy` from route locations | Unknown. Apple/Core Location models a location as coordinate plus altitude and accuracy values, but our route payload does not include `CLLocationSourceInformation` or a source-specific altitude origin. Treat as Apple-provided location altitude, not necessarily GNSS. |
-| In-app mobile recording | `expo-location` watch updates | `coords.altitude`, `coords.speed`, `coords.accuracy` | Unknown. Expo exposes altitude and altitude accuracy but not whether altitude came from GNSS, barometer, network location, or platform fusion. |
-| FIT files: Wahoo, COROS, Suunto | Download provider FIT file, parse `enhanced_altitude ?? altitude`; parse `gps_accuracy` when present | FIT record altitude in meters, preferring `enhanced_altitude`; FIT GPS accuracy as `channel = 'gps_accuracy'` in meters | File-level altitude source unknown. FIT is a transport format for device data; `enhanced_altitude` is a higher-resolution altitude field, not a provenance field. FIT `gps_accuracy` is explicitly a meter-valued `uint8` field in the official profile, but the profile does not define whether it is a horizontal radius, CEP, one-sigma error, or another vendor-specific confidence metric. Device/vendor docs may tell us likely behavior for a given device family, but the record itself does not prove source. |
+| Apple Health workout routes | Health export `Location` elements and mobile HealthKit route sync | Location as `channel = 'location'`; altitude and speed as separate metric rows; `horizontalAccuracy` as location metadata `horizontal_accuracy_m` | Unknown. Apple/Core Location models a location as coordinate plus altitude and accuracy values, but our route payload does not include `CLLocationSourceInformation` or a source-specific altitude origin. Treat as Apple-provided location altitude, not necessarily GNSS. |
+| In-app mobile recording | `expo-location` watch updates | Location as `channel = 'location'`; altitude and speed as separate metric rows; `coords.accuracy` as location metadata `horizontal_accuracy_m` | Unknown. Expo exposes altitude and altitude accuracy but not whether altitude came from GNSS, barometer, network location, or platform fusion. |
+| FIT files: Wahoo, COROS, Suunto | Download provider FIT file, parse `enhanced_altitude ?? altitude`; parse `gps_accuracy` when present | FIT record altitude in meters, preferring `enhanced_altitude`; FIT GPS accuracy as location metadata `gps_accuracy_m` | File-level altitude source unknown. FIT is a transport format for device data; `enhanced_altitude` is a higher-resolution altitude field, not a provenance field. FIT `gps_accuracy` is explicitly a meter-valued `uint8` field in the official profile, but the profile does not define whether it is a horizontal radius, CEP, one-sigma error, or another vendor-specific confidence metric. Device/vendor docs may tell us likely behavior for a given device family, but the record itself does not prove source. |
 | Wahoo ELEMNT FIT files | Same FIT path | Altitude from FIT record | Likely GPS-adjusted barometric for ELEMNT/BOLT/ROAM recordings. Wahoo documents those devices as primarily using a barometric altimeter and using GPS to adjust drift. Still store as unknown unless we add device-aware provenance. |
 | COROS FIT files | Same FIT path | Altitude from FIT record | Likely barometer plus GPS calibration/fusion for COROS devices that support elevation. COROS documents barometer readings with periodic GPS calibration and possible GPS override. The FIT record we ingest does not expose the per-sample decision. |
 | Suunto FIT files | Same FIT path | Altitude from FIT record | Device-dependent. Suunto documents FIT export as containing measured altitude and says some barometric products combine GPS and barometer through FusedAlti. The exported record does not tell us whether a given sample is GPS-only, barometric, or fused. |
@@ -88,15 +90,22 @@ or `sensor_fusion`.
 ## Modeling Implications
 
 Altitude should be treated as an associated vertical measurement, not as an
-intrinsic part of a 2D GPS point. A future spatial model should keep horizontal
-position as `geometry(Point, 4326)` or derived activity `LineString` geometry and
-store altitude separately unless there is a concrete need for 3D GIS operations.
+intrinsic part of a 2D GPS point. Horizontal position is a point-valued metric in
+`metric_stream`, while altitude remains a scalar metric unless there is a
+concrete need for 3D GIS operations.
 
 Do not automatically map FIT `gps_accuracy` into a field named
 `horizontal_accuracy_m`. FIT gives us a meter-valued GPS accuracy number, but not
 the same semantics as Apple/Core Location `horizontalAccuracy`. If we introduce a
-dedicated GPS sample table, keep Core Location/Expo horizontal accuracy separate
-from FIT GPS accuracy unless a provider gives a stronger field-level definition.
+new location metadata field, keep Core Location/Expo horizontal accuracy
+separate from FIT GPS accuracy unless a provider gives a stronger field-level
+definition.
+
+During the PostGIS location migration, legacy `lat`, `lng`, and `gps_accuracy`
+metric-stream rows are removed after `location` rows are backfilled. Matched FIT
+`gps_accuracy` values move to `location.metadata.gps_accuracy_m`; unmatched
+legacy `gps_accuracy` rows are discarded because they cannot be attached to a
+valid point-valued location sample.
 
 If altitude provenance becomes product-relevant, add an explicit nullable field
 or channel metadata value with a small enum such as:

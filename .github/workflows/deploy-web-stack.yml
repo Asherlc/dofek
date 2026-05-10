@@ -263,6 +263,7 @@ jobs:
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
+          docker pull "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"
           docker pull "postgres:18-alpine"
           docker pull "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18"
           docker pull "ghcr.io/peerdb-io/flow-api:stable-v0.36.18"

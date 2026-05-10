@@ -3610,6 +3610,96 @@ Infisical through `AUTHENTIK_OUTPOST_TOKEN`.
 
 - Recheck PR #1106 after push and confirm GitGuardian passes.
 
+## 2026-05-08: Review App Database Restart Loop After PostGIS Image Change
+
+### Symptoms
+
+PR #1111 review-app deployment failed while waiting for the review Postgres
+database to become ready.
+
+### User Impact
+
+The PR review app was unavailable, blocking preview validation for the GPS
+storage migration.
+
+### Evidence
+
+The `Deploy review stack` step repeatedly ran `pg_isready` against the review
+database and received `no response`. Docker also reported that the database
+container was restarting. The first fatal CI line was `Review app database did
+not become ready within 180s`.
+
+### Root Cause
+
+The PR changed review apps from the old TimescaleDB image to the PostGIS-enabled
+TimescaleDB HA image, while review-app deploys reused the same Docker Compose
+project volumes across pushes. The disposable review database could therefore
+restart against stale volume contents initialized by the previous image.
+
+### Fix or Mitigation
+
+The review-app workflow now runs `docker compose down --remove-orphans --volumes`
+before pulling and starting services. Review apps are seeded on each deploy, so
+resetting disposable service volumes preserves the intended lifecycle while
+removing stale database state.
+
+### Remaining Risk
+
+None known for review-app data persistence because review apps are ephemeral.
+If the database still fails after the reset, the next CI run should expose the
+next root cause rather than stale volume reuse.
+
+### Follow-Up Work
+
+- Add failure-path review-app service logs to the deploy workflow if readiness
+  failures remain hard to diagnose.
+
+## 2026-05-09: Review App Fresh Database Init Permission Failure
+
+### Symptoms
+
+PR #1111 review-app deployment again failed in the `Deploy review stack` step
+while waiting for the review Postgres database to become ready.
+
+### User Impact
+
+The PR review app was unavailable, blocking live preview validation.
+
+### Evidence
+
+The attached CI log showed a fresh `dofek-review-pr-1111_db_data` Docker volume
+being created, followed by repeated `pg_isready` output:
+`/var/run/postgresql:5432 - no response`. The first fatal CI line was
+`Review app database did not become ready within 180s`. A local reproduction
+with the same review compose file and a fresh named volume showed the underlying
+database log line: `initdb: error: could not change permissions of directory
+"/var/lib/postgresql/data": Operation not permitted`.
+
+### Root Cause
+
+The review compose file overrode the TimescaleDB HA image's default `PGDATA` and
+mounted the disposable Docker volume directly at `/var/lib/postgresql/data`.
+During fresh initialization, the image runs as the `postgres` user and could not
+change ownership or permissions on the mounted volume root, causing `initdb` to
+fail and the container to restart.
+
+### Fix or Mitigation
+
+The review database now uses the image's default data layout by mounting the
+volume at `/home/postgres/pgdata` and letting `PGDATA` remain
+`/home/postgres/pgdata/data`. A local fresh-volume review DB startup reached
+`pg_isready` successfully and the container became healthy.
+
+### Remaining Risk
+
+None known for fresh review database initialization. The production stack still
+uses its existing bind-mounted data path and was not changed by this review-app
+fix.
+
+### Follow-Up Work
+
+- Keep the review-app docs explicit about the TimescaleDB HA data mount layout.
+
 ## 2026-05-08: Staging Deploy SSH Host Key Timeout
 
 ### Symptoms

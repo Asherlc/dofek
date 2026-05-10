@@ -1317,7 +1317,7 @@ describe("upsertWorkoutBatch", () => {
 
   it("inserts GPS route locations for workouts", async () => {
     const { db, capture } = createMockDb([{ id: "act-1" }]);
-    const loc = {
+    const location = {
       date: new Date("2024-06-01T08:00:00Z"),
       lat: 40.7128,
       lng: -74.006,
@@ -1327,12 +1327,22 @@ describe("upsertWorkoutBatch", () => {
     };
 
     await runWithTokenUser("user-1", () =>
-      upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
+      upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })]),
     );
 
     // First insert is the activity, second is metric_stream rows.
-    // Latitude and longitude are written to fitness.location_sample.
     expect(capture.values).toHaveLength(2);
+    expect(capture.values[1]).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        activityId: "act-1",
+        channel: "location",
+        point: "SRID=4326;POINT(-74.006 40.7128)",
+        latitude: 40.7128,
+        longitude: -74.006,
+        metadata: { horizontal_accuracy_m: 5.2 },
+      }),
+    );
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
@@ -1372,8 +1382,8 @@ describe("upsertWorkoutBatch", () => {
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
     );
 
-    const gpsAccuracyRow = capture.values[1]?.find((row) => row.channel === "gps_accuracy");
-    expect(gpsAccuracyRow).toBeUndefined();
+    const locationRow = capture.values[1]?.find((row) => row.channel === "location");
+    expect(locationRow?.metadata).toBeNull();
   });
 
   it("populates raw JSONB with workout metrics", async () => {

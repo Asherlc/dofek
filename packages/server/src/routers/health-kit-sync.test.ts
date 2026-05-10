@@ -65,6 +65,15 @@ function makeSample(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function serializeMetricStreamInsertCalls(execute: { mock: { calls: unknown[][] } }): string {
+  const metricStreamInsertCalls = execute.mock.calls.filter((call) => {
+    const serialized = JSON.stringify(call[0]);
+    return serialized.includes("INSERT INTO fitness.metric_stream");
+  });
+  expect(metricStreamInsertCalls.length).toBeGreaterThan(0);
+  return metricStreamInsertCalls.map((call) => JSON.stringify(call[0])).join("\n");
+}
+
 describe("healthKitSyncRouter", () => {
   beforeEach(() => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
@@ -1295,7 +1304,7 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushWorkoutRoutes", () => {
-    it("inserts metric_stream rows for each GPS channel in route locations", async () => {
+    it("inserts route location as a point metric with associated altitude and speed metrics", async () => {
       const execute = vi.fn().mockImplementation((query: unknown) => {
         const serialized = JSON.stringify(query);
         if (serialized.includes("SELECT id, external_id")) {
@@ -1337,13 +1346,16 @@ describe("healthKitSyncRouter", () => {
       });
       expect(lookupCall).toBeDefined();
 
-      // Should have inserted all 5 channels (lat, lng, altitude, speed, gps_accuracy) in a batched INSERT
-      expect(result.inserted).toBe(5);
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("INSERT INTO fitness.metric_stream");
-      });
-      expect(insertCall).toBeDefined();
+      // One location point plus separate altitude and speed metrics.
+      expect(result.inserted).toBe(3);
+      const serialized = serializeMetricStreamInsertCalls(execute);
+      expect(serialized).toContain('"location"');
+      expect(serialized).toContain("ST_SetSRID");
+      expect(serialized).toContain("Apple Watch");
+      expect(serialized).toContain("horizontal_accuracy_m");
+      expect(serialized).not.toContain('"lat"');
+      expect(serialized).not.toContain('"lng"');
+      expect(serialized).not.toContain('"gps_accuracy"');
     });
 
     it("skips routes when no matching activity exists", async () => {
@@ -1389,16 +1401,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Only lat and lng should be inserted (no altitude, speed, or gps_accuracy)
-      expect(result.inserted).toBe(2);
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("INSERT INTO fitness.metric_stream");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall);
-      expect(serialized).toContain('"lat"');
-      expect(serialized).toContain('"lng"');
+      // Only the location point should be inserted (no altitude or speed metrics).
+      expect(result.inserted).toBe(1);
+      const serialized = serializeMetricStreamInsertCalls(execute);
+      expect(serialized).toContain('"location"');
       expect(serialized).not.toContain('"altitude"');
       expect(serialized).not.toContain('"gps_accuracy"');
     });
@@ -1418,7 +1424,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(0);
     });
 
-    it("rounds gps_accuracy to integer", async () => {
+    it("stores horizontal accuracy as location metadata", async () => {
       const execute = vi.fn().mockImplementation((query: unknown) => {
         const serialized = JSON.stringify(query);
         if (serialized.includes("SELECT id, external_id")) {
@@ -1448,20 +1454,11 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Find the batched insert and verify gps_accuracy value is rounded (5, not 4.7)
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("INSERT INTO fitness.metric_stream") &&
-          serialized.includes("gps_accuracy")
-        );
-      });
-      expect(insertCall).toBeDefined();
-      // The SQL template bindings include the rounded scalar value
-      const serialized = JSON.stringify(insertCall);
-      expect(serialized).toContain('"gps_accuracy"');
-      // 4.7 rounded to 5 — verify the rounded value appears and the original doesn't
-      expect(serialized).not.toContain("4.7");
+      // Find the batched insert and verify Core Location horizontal accuracy stays metadata.
+      const serialized = serializeMetricStreamInsertCalls(execute);
+      expect(serialized).toContain("horizontal_accuracy_m");
+      expect(serialized).toContain("4.7");
+      expect(serialized).not.toContain('"gps_accuracy"');
     });
   });
 

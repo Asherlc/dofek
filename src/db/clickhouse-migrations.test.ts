@@ -38,6 +38,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location");
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor/g),
     ).toHaveLength(4);
@@ -119,7 +120,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(12);
+    expect(count).toBe(13);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -174,7 +175,7 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(22);
+    expect(systemTableQueries).toHaveLength(33);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
@@ -419,6 +420,87 @@ describe("runClickHouseMigrations", () => {
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
+      }),
+    );
+  });
+
+  it("rebuilds native metric stream when applying the location point migration", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "2026-04-22 00:00:00+00",
+            upper_bound: "2026-04-22 01:00:00+00",
+          },
+        ],
+      });
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("system.databases")
+              ? [{ engine: "Atomic" }]
+              : queryText.includes("0013_metric_stream_location_point")
+                ? [{ migration_count: 0 }]
+                : queryText.includes("metric_stream_backfill_chunks")
+                  ? [{ chunk_count: 0 }]
+                  : [{ migration_count: 1 }],
+        ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "SYSTEM REFRESH VIEW analytics.deduped_sensor",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "SYSTEM REFRESH VIEW analytics.deduped_location",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "SYSTEM REFRESH VIEW analytics.activity_summary",
       }),
     );
   });

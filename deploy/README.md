@@ -8,7 +8,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 
 - **Compute**: Hetzner Cloud `cax11` ARM64 servers running Ubuntu 24.04. Production uses `dofek`; staging uses `dofek-staging`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
-  - **PostgreSQL**: Managed via TimescaleDB (running in the swarm).
+  - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
   - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw scalar `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. Its first `metric_stream` mirror writes to `peerdb.metric_stream`; production analytics keep reading the migrated native copy until that initial snapshot is verified.
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
@@ -49,7 +49,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
-- PostgreSQL is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, and logical replication settings needed by ClickHouse change-data capture.
+- PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, and logical replication settings needed by ClickHouse change-data capture.
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.

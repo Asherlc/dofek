@@ -17,7 +17,6 @@ export const INTEGER_METRIC_STREAM_COLUMNS = new Set([
   "heart_rate",
   "power",
   "cadence",
-  "gps_accuracy",
   "accumulated_power",
   "stress",
 ]);
@@ -247,21 +246,14 @@ export const HEALTHKIT_STAGE_MAP: Record<string, string> = {
   awake: "awake",
 };
 
-/** GPS channel names for route data */
+/** Scalar metric channel names for route-associated data. */
 export const ROUTE_CHANNELS: Array<{
   channel: string;
   getValue: (location: RouteLocation) => number | null | undefined;
   round?: boolean;
 }> = [
-  { channel: "lat", getValue: (location) => location.lat },
-  { channel: "lng", getValue: (location) => location.lng },
   { channel: "altitude", getValue: (location) => location.altitude },
   { channel: "speed", getValue: (location) => location.speed },
-  {
-    channel: "gps_accuracy",
-    getValue: (location) => location.horizontalAccuracy,
-    round: true,
-  },
 ];
 
 /** Aggregated daily metric values for a single date */

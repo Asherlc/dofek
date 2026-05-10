@@ -558,6 +558,54 @@ describe("HealthKit sync router", () => {
     });
   });
 
+  describe("pushWorkoutRoutes", () => {
+    it("preserves the route source name on location metric rows", async () => {
+      await mutate("healthKitSync.pushWorkouts", {
+        workouts: [
+          {
+            uuid: "route-source-workout-1",
+            workoutType: "37",
+            startDate: "2025-06-09T06:00:00Z",
+            endDate: "2025-06-09T06:30:00Z",
+            duration: 1800,
+            totalEnergyBurned: 250,
+            totalDistance: 4000,
+            sourceName: "Route Watch",
+            sourceBundle: "com.apple.health",
+          },
+        ],
+      });
+
+      const result = await mutate("healthKitSync.pushWorkoutRoutes", {
+        routes: [
+          {
+            workoutUuid: "route-source-workout-1",
+            sourceName: "Route Watch",
+            locations: [
+              {
+                date: "2025-06-09T06:10:00Z",
+                lat: 40.7128,
+                lng: -74.006,
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result.result.data.inserted).toBe(1);
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT ms.device_id
+            FROM fitness.metric_stream ms
+            INNER JOIN fitness.activity a ON a.id = ms.activity_id
+            WHERE a.external_id = 'hk:workout:route-source-workout-1'
+              AND ms.provider_id = 'apple_health'
+              AND ms.channel = 'location'`,
+      );
+      expect(rows).toEqual([{ device_id: "Route Watch" }]);
+    });
+  });
+
   describe("deduplication", () => {
     it("does not create duplicate body metric rows on re-push", async () => {
       const samples = [

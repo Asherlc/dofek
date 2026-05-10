@@ -741,15 +741,14 @@ export async function upsertWorkoutBatch(
           lng: loc.lng,
           altitude: loc.altitude,
           speed: isIndoorCycling(workout.activityType) ? undefined : loc.speed,
-          gpsAccuracy:
-            loc.horizontalAccuracy != null ? Math.round(loc.horizontalAccuracy) : undefined,
+          horizontalAccuracy: loc.horizontalAccuracy,
           sourceName: workout.sourceName,
         });
       }
     }
   }
 
-  // GPS route points write coordinates to location_sample and remaining scalar samples to metric_stream.
+  // GPS route points are stored as metric_stream location samples with scalar metadata.
   await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
 
   // Link HR rows for this batch's time window. A global reconciliation pass also
