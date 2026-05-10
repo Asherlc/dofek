@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-describe("DRIZZLE_FIELD_TO_CHANNEL", () => {
-  it("maps every Drizzle metric field to the canonical metric_stream channel", async () => {
-    const { DRIZZLE_FIELD_TO_CHANNEL } = await import("./sensor-channels.ts");
+describe("sensor channel mappings", () => {
+  it("maps every known source field to the canonical metric_stream channel", async () => {
+    const { BODY_MEASUREMENT_COLUMN_TO_CHANNEL, DRIZZLE_FIELD_TO_CHANNEL } = await import(
+      "./sensor-channels.ts"
+    );
 
     expect(DRIZZLE_FIELD_TO_CHANNEL).toEqual({
       accumulatedPower: "accumulated_power",
@@ -50,6 +52,21 @@ describe("DRIZZLE_FIELD_TO_CHANNEL", () => {
       waistCircumferenceCm: "waist_circumference",
       waterPct: "body_water_percentage",
       weightKg: "body_weight",
+    });
+
+    expect(BODY_MEASUREMENT_COLUMN_TO_CHANNEL).toEqual({
+      bmi: "body_mass_index",
+      body_fat_pct: "body_fat_percentage",
+      bone_mass_kg: "bone_mass",
+      diastolic_bp: "diastolic_blood_pressure",
+      heart_pulse: "heart_pulse",
+      height_cm: "height",
+      muscle_mass_kg: "muscle_mass",
+      systolic_bp: "systolic_blood_pressure",
+      temperature_c: "body_temperature",
+      waist_circumference_cm: "waist_circumference",
+      water_pct: "body_water_percentage",
+      weight_kg: "body_weight",
     });
   });
 });
