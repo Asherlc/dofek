@@ -38,13 +38,13 @@ runs:
           if [ -s "$keyscan_stderr" ]; then
             sed 's/^/  keyscan: /' "$keyscan_stderr"
           fi
-          if nc -z -w "$keyscan_timeout" "$SSH_HOST" 22 2>/dev/null; then
+          if timeout "$keyscan_timeout" bash -c "exec 3<>/dev/tcp/$SSH_HOST/22" 2>/dev/null; then
             echo "  tcp/22: reachable (no SSH banner yet)"
           else
             echo "  tcp/22: not reachable"
           fi
           if [ "$attempt" -eq "$attempts" ]; then
-            total_seconds=$((attempts * (keyscan_timeout + sleep_between)))
+            total_seconds=$((attempts * keyscan_timeout + (attempts - 1) * sleep_between))
             echo "::error::SSH host key for $SSH_HOST did not become available within ${total_seconds}s"
             exit 1
           fi
