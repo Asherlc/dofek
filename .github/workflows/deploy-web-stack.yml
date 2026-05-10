@@ -416,9 +416,33 @@ jobs:
           # measurements into fitness.metric_stream) can legitimately run for
           # hours on prod. Sized to fit the slowest known migration with
           # headroom; if a future migration would exceed this, restructure it
-          # rather than bumping again.
+          # rather than bumping again. The pg_stat_activity snapshots below
+          # produce direct evidence of which statement is running so a long
+          # runtime can be distinguished from lock contention without waiting
+          # for the timeout to fire.
           migration_timeout_seconds=14400
           migration_start_seconds=$SECONDS
+          next_pg_snapshot_seconds=0
+          snapshot_pg_activity() {
+            local label="$1"
+            echo "--- pg_stat_activity snapshot (${label}) ---"
+            timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=db --username=health --dbname=health --expanded \
+              --command \"SELECT pid, state, wait_event_type, wait_event, \
+                           now() - xact_start AS xact_age, \
+                           now() - query_start AS query_age, \
+                           left(query, 400) AS query \
+                         FROM pg_stat_activity \
+                         WHERE state IS DISTINCT FROM 'idle' \
+                           AND backend_type = 'client backend' \
+                           AND pid <> pg_backend_pid() \
+                         ORDER BY query_start;\"" \
+              2>&1 || echo "(pg_stat_activity snapshot failed; continuing)"
+            echo "--- end snapshot ---"
+          }
           while true; do
             inspect_error_file="$RUNNER_TEMP/migrate-inspect.log"
             set +e
@@ -445,6 +469,7 @@ jobs:
             elapsed_seconds=$((SECONDS - migration_start_seconds))
             if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
               echo "::error::Migration exceeded ${migration_timeout_seconds}s"
+              snapshot_pg_activity "at timeout, ${elapsed_seconds}s"
               echo "Migration output before timeout (last 120 lines):"
               timeout 60s docker logs --tail 120 "$migration_container" || true
               cleanup_migration_container
@@ -452,6 +477,10 @@ jobs:
             fi
 
             echo "Migration still running after ${elapsed_seconds}s..."
+            if [ "$elapsed_seconds" -ge "$next_pg_snapshot_seconds" ]; then
+              snapshot_pg_activity "${elapsed_seconds}s elapsed"
+              next_pg_snapshot_seconds=$((elapsed_seconds + 60))
+            fi
             sleep 15
           done
 

@@ -54,6 +54,11 @@ transaction.
   this budget should be restructured (split, batched with
   `--no-transaction`, or moved to an out-of-band backfill job) rather than
   bumping the timeout again.
+- Added periodic `pg_stat_activity` snapshots (every 60s of elapsed
+  migration time, plus a final snapshot on timeout) to the workflow log so
+  the next failure produces direct evidence of which SQL statement is
+  running and whether it is progressing or stuck on a `wait_event` (lock,
+  IO, etc.) — without waiting for the timeout to fire.
 
 ### Remaining Risk
 
