@@ -24,14 +24,16 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PWD: ${POSTGRES_PASSWORD:-health}
       POSTGRES_SEEDS: peerdb-catalog
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/docker.yaml
       TEMPORAL_BROADCAST_HOST: "127.0.0.1"
     restart: unless-stopped
     depends_on:
       peerdb-catalog:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "tctl", "--address", "127.0.0.1:7233", "workflow", "list"]
+      # tctl honors TEMPORAL_CLI_ADDRESS; use the service hostname rather than
+      # 127.0.0.1 since Temporal does not bind loopback inside the container.
+      test: ["CMD", "tctl", "--address", "peerdb-temporal:7233", "workflow", "list"]
       interval: 10s
       timeout: 10s
       retries: 12
@@ -44,11 +46,31 @@ services:
       TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_SHOW_STACKS: "1"
 
+  # Registers the MirrorName search attribute that PeerDB workflows require.
+  # Runs once after Temporal is healthy, then exits.
+  peerdb-temporal-init:
+    image: temporalio/admin-tools:1.29
+    environment:
+      TEMPORAL_ADDRESS: peerdb-temporal:7233
+      TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
+    depends_on:
+      peerdb-temporal:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        printf 'Y\n' | tctl admin cluster add-search-attributes \
+          --name MirrorName --type Keyword || true
+
   peerdb-minio:
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     environment:
       MINIO_ROOT_USER: peerdb
-      MINIO_ROOT_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      # MinIO requires a root password of at least 8 characters; do not reuse
+      # POSTGRES_PASSWORD here since the local default ("health") is too short.
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
     volumes:
       - peerdb_minio_data:/data
@@ -83,7 +105,7 @@ services:
       PEERDB_TEMPORAL_NAMESPACE: default
       PEERDB_ALLOWED_TARGETS: ""
       PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ACCESS_KEY_ID: peerdb
-      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:-health}
+      PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
       PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_REGION: us-east-1
       PEERDB_CLICKHOUSE_AWS_CREDENTIALS_AWS_ENDPOINT_URL_S3: http://peerdb-minio:9000
       PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME: peerdbbucket
@@ -97,6 +119,8 @@ services:
         condition: service_healthy
       peerdb-temporal:
         condition: service_started
+      peerdb-temporal-init:
+        condition: service_completed_successfully
       peerdb-minio:
         condition: service_started
 
