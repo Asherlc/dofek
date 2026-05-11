@@ -7,6 +7,60 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-11: Production VM powered off by failed Terraform downsize during Deploy Web
+
+### Impact
+
+Production was unreachable from `2026-05-11 01:48:51 UTC` until manual
+power-on at `2026-05-11 15:58:38 UTC`. Slackbot did not respond because
+the whole production origin was off. Public `https://dofek.fit/healthz`
+timed out, SSH to `dofek-server` timed out, and Hetzner reported
+`dofek` status `off`.
+
+### Evidence That Mattered
+
+- Hetzner action history for server `126583040` showed
+  `stop_server` started at `2026-05-11T01:48:51Z` and finished at
+  `2026-05-11T01:49:01Z`.
+- GitHub run `25646099922` (`Deploy Web`) started at
+  `2026-05-11T01:48:26Z`. Its Terraform apply planned an in-place
+  update to `hcloud_server.dofek`, then began modifying the server at
+  `2026-05-11T01:48:51Z`.
+- First fatal CI line:
+  `Error: cannot change type because the selected server_type has not sufficient disk space (invalid_server_type, 2e0f8639d3b6f7c210f51764ba50e4ec)`.
+- The retry run `25646486098` failed the same way at `2026-05-11T02:03:51Z`.
+- After power-on, `docker service ls` converged to `dofek_web 2/2`,
+  `dofek_db 1/1`, `dofek_redis 1/1`, `dofek_clickhouse 1/1`, and
+  `https://dofek.fit/healthz` returned `{"status":"ok"}`.
+- Slack HTTP receiver logs showed:
+  `[slack] Configured in HTTP mode (multi-workspace, OAuth via /auth/provider/slack)`
+  and `[slack] Slack bot mounted at /api/slack/events (HTTP mode)`.
+
+### Root Cause
+
+Terraform declared production `hcloud_server.dofek.server_type = "cax11"`
+while the live production server had already been resized to `cax21` after
+the 2026-05-10 resource incidents. Deploy Web runs Terraform before the stack
+deploy, so Terraform attempted to reconcile the drift by downsizing the live
+server. Hetzner stopped the server to perform the resize, then rejected the
+resize because the smaller `cax11` type did not have enough disk space. The
+failed apply left the production VM powered off.
+
+### Fix Or Mitigation
+
+- Powered the production server back on with Hetzner Cloud.
+- Updated `deploy/server.tf` so production is declared as `cax21`, matching
+  the live server and the documented sizing decision that `cax21` is the
+  structural minimum for this stack.
+- Updated `deploy/README.md` to document production on `cax21` and staging
+  on `cax11`.
+
+### Remaining Risk
+
+Terraform can still perform stop/start operations for future server-type
+drift. Before any future manual resize, update `deploy/server.tf` in the same
+change so CI does not later reconcile the server back to the old size.
+
 ## 2026-05-10: Disk full from inactive PeerDB replication slots retaining 26GB of WAL
 
 ### Impact
