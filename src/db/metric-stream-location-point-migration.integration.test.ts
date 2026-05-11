@@ -48,7 +48,7 @@ describe("metric_stream location point migration", () => {
     }
   });
 
-  it("backfills lat/lng scalar rows into point-valued location rows", async () => {
+  it("adds location point storage without running the legacy coordinate backfill inline", async () => {
     const client = new Client({ connectionString });
     let temporaryDirectory: string | undefined;
     await client.connect();
@@ -110,68 +110,40 @@ describe("metric_stream location point migration", () => {
       const migrationCount = await runMigrations(connectionString, temporaryDirectory);
       expect(migrationCount).toBe(1);
 
-      const locationResult = await client.query<{
-        recorded_at: Date;
-        latitude: number;
-        longitude: number;
-        point_srid: number;
-        point_latitude: number;
-        point_longitude: number;
-        metadata: { gps_accuracy_m?: number } | null;
-      }>(`
-        SELECT
-          recorded_at,
-          latitude,
-          longitude,
-          public.ST_SRID(point) AS point_srid,
-          public.ST_Y(point)::double precision AS point_latitude,
-          public.ST_X(point)::double precision AS point_longitude,
-          metadata
-        FROM fitness.metric_stream
-        WHERE channel = 'location'
-        ORDER BY recorded_at, latitude, longitude
+      const columnsResult = await client.query<{ column_name: string }>(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'fitness'
+          AND table_name = 'metric_stream'
+          AND column_name IN ('point', 'latitude', 'longitude', 'metadata')
+        ORDER BY column_name
       `);
+      expect(columnsResult.rows).toEqual([
+        { column_name: "latitude" },
+        { column_name: "longitude" },
+        { column_name: "metadata" },
+        { column_name: "point" },
+      ]);
 
-      expect(locationResult.rows).toHaveLength(3);
-      expect(locationResult.rows[0]?.recorded_at).toEqual(new Date("2026-01-01T00:00:00.000Z"));
-      expect(locationResult.rows[0]?.latitude).toBeCloseTo(37.7749, 4);
-      expect(locationResult.rows[0]?.longitude).toBeCloseTo(-122.4194, 4);
-      expect(locationResult.rows[0]?.point_srid).toBe(4326);
-      expect(locationResult.rows[0]?.point_latitude).toBeCloseTo(37.7749, 4);
-      expect(locationResult.rows[0]?.point_longitude).toBeCloseTo(-122.4194, 4);
-      expect(locationResult.rows[0]?.metadata).toEqual({ gps_accuracy_m: 6 });
-
-      expect(locationResult.rows[1]?.recorded_at).toEqual(new Date("2026-01-01T00:00:00.000Z"));
-      expect(locationResult.rows[1]?.latitude).toBeCloseTo(37.7751, 4);
-      expect(locationResult.rows[1]?.longitude).toBeCloseTo(-122.4196, 4);
-      expect(locationResult.rows[1]?.point_srid).toBe(4326);
-      expect(locationResult.rows[1]?.point_latitude).toBeCloseTo(37.7751, 4);
-      expect(locationResult.rows[1]?.point_longitude).toBeCloseTo(-122.4196, 4);
-      expect(locationResult.rows[1]?.metadata).toEqual({ gps_accuracy_m: 7 });
-
-      expect(locationResult.rows[2]?.recorded_at).toEqual(new Date("2026-01-01T00:00:01.000Z"));
-      expect(locationResult.rows[2]?.latitude).toBeCloseTo(37.775, 4);
-      expect(locationResult.rows[2]?.longitude).toBeCloseTo(-122.4195, 4);
-      expect(locationResult.rows[2]?.point_srid).toBe(4326);
-      expect(locationResult.rows[2]?.point_latitude).toBeCloseTo(37.775, 4);
-      expect(locationResult.rows[2]?.point_longitude).toBeCloseTo(-122.4195, 4);
-      expect(locationResult.rows[2]?.metadata).toBeNull();
-
-      const legacyCoordinateRowsResult = await client.query<{ count: string }>(`
-        SELECT count(*) AS count
-        FROM fitness.metric_stream
-        WHERE channel IN ('lat', 'lng')
+      const pointIndexResult = await client.query<{ indexname: string }>(`
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = 'fitness'
+          AND tablename = 'metric_stream'
+          AND indexname = 'metric_stream_point_gist_idx'
       `);
-      expect(legacyCoordinateRowsResult.rows).toEqual([{ count: "0" }]);
+      expect(pointIndexResult.rows).toEqual([{ indexname: "metric_stream_point_gist_idx" }]);
 
-      const legacyAccuracyRowsResult = await client.query<{ recorded_at: Date; scalar: number }>(`
-        SELECT recorded_at, scalar
+      const channelCountsResult = await client.query<{ channel: string; count: string }>(`
+        SELECT channel, count(*) AS count
         FROM fitness.metric_stream
-        WHERE channel = 'gps_accuracy'
-        ORDER BY recorded_at
+        GROUP BY channel
+        ORDER BY channel
       `);
-      expect(legacyAccuracyRowsResult.rows).toEqual([
-        { recorded_at: new Date("2026-01-01T00:00:02.000Z"), scalar: 9 },
+      expect(channelCountsResult.rows).toEqual([
+        { channel: "gps_accuracy", count: "3" },
+        { channel: "lat", count: "3" },
+        { channel: "lng", count: "3" },
       ]);
     } finally {
       if (temporaryDirectory) {

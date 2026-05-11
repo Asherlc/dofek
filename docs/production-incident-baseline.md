@@ -7,6 +7,94 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-11: Deploy migration wedged on inline GPS location backfill
+
+### Impact
+
+Deploy Web run `25694900826` could not complete. Staging failed during
+`Run migrations`; production remained stuck in `Run migrations`, so the
+new web stack was not released. The production app kept serving the previous
+image while the one-shot migration container waited behind an earlier
+migration session.
+
+### Evidence That Mattered
+
+- Production `pg_stat_activity` showed PID `14277` holding advisory lock
+  `728370291` while running
+  `CALL fitness.backfill_metric_stream_location_points(50000);`.
+- The active backend was not dead: `ps` showed roughly one CPU of work, and
+  `/proc/14277/io` showed continued reads/writes.
+- The current deploy migration PID `27660` was blocked on
+  `SELECT pg_advisory_lock($1)`.
+- No useful migration progress notices reached container logs.
+- Visible progress stalled at `671,310` committed `location` rows overall and
+  `50,000` `location` rows in active chunk `_hyper_1_158_chunk`.
+- `_hyper_1_158_chunk` contained about `1,446,057` `lat` rows and `1,446,057`
+  `lng` rows, but only the first `50,000` location rows had committed.
+- `EXPLAIN` showed each batch sorting/window-ranking about 1.5M `lat` rows
+  and 1.56M `lng` rows, then doing a nested-loop anti-join against an
+  `Append` over all 203 hypertable chunks for existing `location` rows.
+- Staging had a separate first fatal error:
+  `error: [migrate] error: extension "postgis" is not available`.
+
+### Root Cause
+
+Migration `0018_metric_stream_location_point.sql` mixed quick schema changes
+with a large historical data rewrite. Its `LIMIT 50000` applied after the
+expensive windowing and anti-join work, so each batch still scanned/sorted a
+large chunk and checked existing location rows across the whole hypertable.
+The first batch committed, but the second visible batch ran for over an hour
+without committing.
+
+### Fix Or Mitigation
+
+- Cancelled Deploy Web run `25694900826`.
+- Terminated/cleared the stuck migration path; by verification time, no
+  backend held or waited on advisory lock `728370291`, and the orphan
+  migration container was gone.
+- Replaced the migration with schema-only operations: create PostGIS, add
+  `point`, `latitude`, `longitude`, and `metadata`, drop the leftover helper
+  procedure if present, and create the point GiST index.
+- Ran the patched SQL directly against production to verify it completes
+  quickly. It no-op'd the already-present columns, dropped the leftover helper
+  procedure, created `metric_stream_point_gist_idx`, and left the Drizzle
+  migration row unmarked so the next deploy can record it normally.
+- Updated the location migration integration test to assert that deploy
+  migrations do not inline-convert or delete legacy coordinate rows.
+- Added `scripts/backfill-location-points.ts`, an insert-only TypeScript
+  maintenance script with dry-run default, bounded date windows, a 15-minute
+  statement timeout, and no advisory lock or deletes.
+- Ran the backfill against production in committed windows. The live-safe
+  pass increased total `location` rows from `671,310` at incident time to
+  `1,217,175`. Normal lock monitoring stayed clean after decompression,
+  insert, and recompression were split into separate transactions and live
+  runs defaulted to no recompression.
+- Cancelled two production backfill windows when safety checks failed: one
+  31-day window that blocked a normal `metric_stream` update, and one
+  2026-04-23 chunk decompression that produced a lock waiter. In both cases,
+  earlier committed windows remained committed and the active transaction was
+  rolled back.
+
+### Remaining Risk
+
+The backfill is partially complete. Production is backfilled through
+`2026-04-23` plus the explicit `2026-05-10` one-day run, but the compressed
+chunks from `2026-04-23` through `2026-05-10` and the high-volume historical
+months in 2021-2022 still need an off-hours pass. Several chunks were left
+decompressed by the live-safe no-recompress run and should be recompressed
+during the same maintenance window. Staging also needs its PostGIS
+availability issue fixed before staging deploys can pass.
+
+### Follow-Up
+
+- Add a long-migration triage runbook with advisory-lock holder queries,
+  chunk-level progress checks, and an `EXPLAIN` step for batch backfills.
+- Finish the location backfill during a low-traffic maintenance window, with
+  lock-wait monitoring and a separate recompression pass for chunks left
+  decompressed by live-safe runs.
+- Add deploy-time diagnostics that print the advisory-lock holder query when
+  a migration waits too long on `pg_advisory_lock`.
+
 ## 2026-05-11: Production VM powered off by failed Terraform downsize during Deploy Web
 
 ### Impact
