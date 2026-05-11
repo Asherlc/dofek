@@ -50,6 +50,16 @@ WITH (
   soft_delete = true
 );
 
+-- The analytics CDC mirror uses a dedicated publication with a row filter
+-- that drops imu channel events at the source. IMU samples (~100Hz × 6
+-- axes per device) make up >90% of metric_stream write volume and are not
+-- consumed by analytics. Routing them through PeerDB to MinIO staging to
+-- ClickHouse fills disk and gets the slot stuck (2026-05-10 incident).
+-- The publication itself is bootstrapped on the source postgres by
+-- ensureMetricStreamNoImuPublication in clickhouse-cdc.ts since that
+-- file owns all publication DDL (publications live on postgres, not
+-- on PeerDB). Avoid apostrophes and semicolons in this comment — the
+-- naive splitter in clickhouse-cdc.ts does not strip line comments.
 CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics
 FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
 WITH TABLE MAPPING
@@ -64,7 +74,7 @@ WITH (
   do_initial_copy = false,
   max_batch_size = 1000000,
   sync_interval = 60,
-  publication_name = 'peerdb_metric_stream_publication',
+  publication_name = 'peerdb_metric_stream_no_imu',
   soft_delete = true
 );
 

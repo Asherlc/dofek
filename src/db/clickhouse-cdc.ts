@@ -327,6 +327,28 @@ async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise
   `);
 }
 
+async function ensureMetricStreamNoImuPublication(client: SourcePostgresClient): Promise<void> {
+  // Dedicated publication for the metric_stream analytics CDC mirror, with
+  // a row filter that drops IMU samples at the source. IMU is ~92% of
+  // metric_stream write volume and isn't consumed by analytics; filtering
+  // at the publication keeps PeerDB from decoding/staging/discarding events
+  // it doesn't want. `publish_via_partition_root = true` applies the row
+  // filter to every TimescaleDB chunk via a single publication entry.
+  await client.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'peerdb_metric_stream_no_imu'
+      ) THEN
+        CREATE PUBLICATION peerdb_metric_stream_no_imu
+        FOR TABLE fitness.metric_stream WHERE (channel <> 'imu')
+        WITH (publish_via_partition_root = true);
+      END IF;
+    END
+    $$;
+  `);
+}
+
 async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Promise<void> {
   for (const tableName of analyticsSourceTables) {
     for (const metadataColumn of peerDbMetadataColumns) {
@@ -341,6 +363,7 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
+  await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);

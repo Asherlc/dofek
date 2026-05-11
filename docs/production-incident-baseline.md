@@ -7,6 +7,362 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-10: Disk full from inactive PeerDB replication slots retaining 26GB of WAL
+
+### Impact
+
+Same wedged-host symptoms as the earlier 2026-05-10 entry below — but the
+underlying cause turned out to be a 100% full data volume, not stack
+oversubscription. `df -h` on `/mnt/dofek-data` showed `99G 94G 0 100%`,
+and `pg_wal/` alone was 26 GB. Postgres was hitting `PANIC: could not
+write to file "pg_wal/xlogtemp.NN": No space left on device` and
+restarting; every other service writing to the same volume (Traefik logs,
+sshd session records, ClickHouse merges) blocked in `D` state, which
+manifests as the "TCP accepts but no banner" pattern we'd been chasing
+all day.
+
+### Evidence That Mattered
+
+- Postgres logs:
+  `PANIC: could not write to file "pg_wal/xlogtemp.27": No space left on device`
+  → `WAL writer process (PID 27) was terminated by signal 6: Aborted`
+  → `all server processes terminated; reinitializing`.
+- `pg_replication_slots` showed three inactive logical slots:
+  `peerflow_slot_dofek_metric_stream_analytics` (active=false, retained_wal
+  = 25 GB), `peerflow_slot_dofek_fitness_raw_analytics` (1056 MB), and
+  `peerflow_slot_dofek_provider_inventory_raw_analytics` (240 MB). Each was
+  anchoring WAL since its last `restart_lsn` because no consumer was
+  draining them.
+- `pg_wal/` directory on disk: 26 GB. Total volume usage: 94 GB / 99 GB.
+- Sample of recent metric_stream activity showed 92% of inserts were
+  `imu` channel rows from `apple_motion` and `WHOOP Strap` — high-frequency
+  (~100Hz × 6 axes) sensor data that fills the table fast and feeds
+  the slots their churn.
+
+### Root Cause
+
+PeerDB's flow workers stopped consuming the source-side logical
+replication slots at some point (root cause of the consumer outage not
+yet diagnosed — could be peerdb-flow-worker crash, ClickHouse rejecting
+writes, peerdb-temporal losing workflow state). Postgres was forced to
+retain every WAL segment past each slot's `restart_lsn`, and over time
+that grew until it consumed the entire 100 GB data volume. Once the
+volume hit 100%, postgres could not write WAL → PANIC → cascade through
+every service touching the volume.
+
+There was no `max_slot_wal_keep_size` configured, so an inactive slot
+could grow unbounded.
+
+### Fix Or Mitigation
+
+Recovery (executed against prod):
+
+1. Wiped `/mnt/dofek-data/peerdb-minio` to free 9 GB so postgres could
+   start (PeerDB was already scaled to 0 and its mirrors will be
+   recreated).
+2. Brought db up, executed `SELECT pg_drop_replication_slot(...)` for all
+   three inactive slots, then `CHECKPOINT;` to recycle WAL. Postgres
+   immediately freed 25 GB by recycling the unanchored WAL segments.
+3. Tightened TimescaleDB compression policy on `fitness.metric_stream`
+   from `compress_after: 7 days` → `1 day` to reduce ongoing footprint
+   of recent IMU data, and manually compressed catch-up chunks.
+4. Brought back `dofek_db` on the new postgis-capable image
+   `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` (chowned the data dir
+   from 70:70 → 1000:1000 to match the HA image's UID).
+
+Durable guardrail (this PR):
+
+- Added `max_slot_wal_keep_size=4GB` to `dofek_db` service command
+  args in `deploy/stack.yml`. Bounds the per-slot WAL retention so a
+  future inactive consumer cannot fill the volume — the slot is
+  invalidated instead, and postgres reports it as lost the next time
+  the consumer reconnects (forcing a resync, which is recoverable).
+
+### Late-evening sequel: system-wide OOM, real memory tuning
+
+A few hours after the initial recovery the host went *off* (not wedged
+— actually powered down by the kernel after a `global_oom`).
+`journalctl -k --grep oom` showed:
+
+```
+May 10 22:13:29 dofek kernel: traefik invoked oom-killer: ...
+   constraint=CONSTRAINT_NONE, global_oom
+   Out of memory: Killed process 310381 (clickhouse-serv)
+                   total-vm:12608368kB, anon-rss:3487072kB
+```
+
+`CONSTRAINT_NONE / global_oom` (not `CONSTRAINT_MEMCG`) means the entire
+host's RAM was exhausted — not a single container hitting its cgroup
+cap. ClickHouse was using 3.5 GB RSS at the time; we'd earlier bumped
+its container limit to 4 GB to unblock the PeerDB initial-snapshot OOMs,
+but that turned out to be too generous for an 8 GB host once every other
+service was also resident.
+
+Per-container RSS at a clean post-boot steady state (no migrations, no
+backfill):
+
+```
+clickhouse        1.8 GB      (limit 4 GB)
+db                644 MB      (limit 2 GB)
+netdata           328 MB      no limit
+pgadmin           282 MB      no limit
+cloudbeaver       248 MB      no limit
+worker            208 MB      no limit
+web (x2)          410 MB tot. no limit
+peerdb-flow-worker  178 MB    no limit
+peerdb-catalog    157 MB      no limit
+peerdb-temporal   126 MB      no limit
+others combined   ~500 MB     no limit
+─────────────────────────────────
+≈ 4.9 GB containers + dockerd + kernel = ~5.7 GB idle
+```
+
+Under load (CH merges, backfill, IMU traffic decode) the unbounded
+services + the over-permissive CH limit easily push past the 8 GB host.
+
+### Fix Or Mitigation (sequel)
+
+- Set `deploy.resources.limits.memory` on every long-running service
+  in `deploy/stack.yml`. Sized off measured idle RSS with growth
+  headroom. Total bounded ceiling ≈ 8 GB; sum of typical actuals on a
+  quiet box ≈ 4.5 GB; under load with limits in place, any runaway
+  process now gets cgroup-OOM'd inside its container (Swarm restarts
+  it) instead of the kernel killing arbitrary processes host-wide.
+- Lowered ClickHouse limit from 4 GB → 3 GB (covers measured 1.8 GB
+  idle + ~1 GB merge headroom).
+- Removed the now-redundant `Ensure ClickHouse resource limits`
+  step from `.github/workflows/deploy-web-stack.yml`: the limit is now
+  declared in `stack.yml` and applied by the normal stack deploy. The
+  step's only original purpose was to enforce the limit before
+  migrations ran, which `stack deploy` does on its own.
+
+### Sizing Decision
+
+cax21 (4 vCPU / 8 GB) is the structural minimum for this stack.
+cax11 (2 vCPU / 4 GB) cannot host db (2 GB) + ClickHouse (3 GB) +
+everything else simultaneously. The ~€7-8/month uplift is the price of
+co-hosting Postgres + ClickHouse + PeerDB cluster + observability +
+admin UIs on one box. Splitting the stack across two cax11s would cost
+more.
+
+### Recovery Continuation (2026-05-10 evening)
+
+After the immediate WAL-retention fix, the box was resized cax11 → cax21
+(2 vCPU/4 GB → 4 vCPU/8 GB) so the full PeerDB stack could come up
+without the cold-start thundering herd wedging sshd, ClickHouse, etc.
+The trim-to-zero of 14 services that was used as triage during the
+disk-full crisis was unwound — they are not the cause of the wedging
+and have been restored to `replicas=1`.
+
+PeerDB diagnosis revealed the consumer-stall root cause: when the data
+volume hit 100%, peerdb-minio returned HTTP 507 ("Insufficient
+Storage"), PeerDB's flow workers stopped pushing, and the slots went
+inactive. Not a PeerDB bug — downstream of the disk-full.
+
+ClickHouse was rebuilt from scratch:
+- Dropped all 3 broken PeerDB mirrors (their slots were already gone).
+- Created a dedicated `peerdb_metric_stream_no_imu` publication with a
+  row filter `(channel != 'imu')` and `publish_via_partition_root = true`
+  so the IMU firehose is dropped at the postgres source instead of
+  being decoded, transferred, and discarded by every consumer.
+- Recreated the metric_stream CDC mirror against the no-IMU publication
+  with `do_initial_copy = false`.
+- Recreated the two small mirrors (fitness_raw, provider_inventory)
+  using the original publication (no IMU concerns there).
+- Backfilled ~211M historical non-IMU rows into `postgres_fitness.metric_stream`
+  via ClickHouse's built-in `postgresql()` table function, chunked
+  per-year (per-quarter for 2021's 168M-row spike). Took ~12 minutes
+  end-to-end. The destination's `ReplacingMergeTree(_peerdb_version)`
+  engine handled dedup against streaming CDC events automatically.
+- Cleaned up 40 residual IMU rows in CH with `ALTER TABLE … DELETE
+  WHERE channel='imu'` (background mutation).
+
+The publication change (`peerdb_metric_stream_no_imu`) was committed to
+`src/db/peerdb/metric-stream-cdc.sql` so a fresh bootstrap reproduces
+this state.
+
+### Remaining Risk
+
+- The cax21 resize is technically reversible (`hcloud server change-type
+  dofek cax11 --keep-disk` requires a brief stop+start), but today's
+  evidence suggests cax11 cannot host the full PeerDB cluster + heavy
+  IMU write load without periodic load-induced wedges. Leaving on cax21
+  unless cost becomes a problem.
+- One uncompressed 18 GB chunk (`_hyper_1_386_chunk`, weekly chunk
+  Apr 30 - May 7) remains on the box. Manual compression of a 2.4 GB
+  chunk wedged sshd for 5 minutes earlier in the day; the 18 GB version
+  would be much worse. Left for the daily compression policy to handle.
+- PeerDB's QREP `CREATE MIRROR` flow has a catalog-corruption bug in
+  stable-v0.36.18 — it inserts a `flows` row before workflow registration
+  succeeds, leaving a half-created entry that blocks subsequent retries
+  with a unique-constraint violation. We sidestepped by using a direct
+  ClickHouse `INSERT … SELECT FROM postgresql(...)` for the backfill.
+  If a future backfill is needed, prefer this pattern over QREP until
+  the upstream issue is fixed.
+
+## 2026-05-10: Prod host wedged after rescue-mode reboot during deploy unblock attempt
+
+### Impact
+
+`dofek.asherlc.com` went fully unreachable from the internet. Both prod
+(`dofek` / 157.90.25.125) and `dofek-staging` (162.55.186.24) now exhibit
+the same wedged-host pattern: TCP accepts on `:22` and `:443`, but neither
+sshd nor Traefik return a response. Multiple soft reboots and a hard
+`hcloud server reset` did not produce a stable host — each boot yields ~1–3
+minutes of SSH responsiveness, then the host becomes unresponsive again.
+
+The originally-intended action was a one-shot `docker service update --image
+timescale/timescaledb-ha:pg18.3-ts2.26.4-all dofek_db` to give the prod DB
+container the postgis extension that the new
+`drizzle/0018_metric_stream_location_point.sql` migration (from PR #1111)
+requires. Whether that swap completed before the host wedged is unknown —
+the SSH session ran the command but never returned output.
+
+### Evidence That Mattered
+
+- During the brief windows of SSH responsiveness post-reboot:
+  - `uptime` reported 1-min load average climbing from `5.47` (right after
+    boot) to `111.23` on a 2-core (`cax11`) ARM instance within ~9 minutes.
+  - `docker stack services dofek` listed ~20 services starting concurrently:
+    TimescaleDB, ClickHouse, Redis, Traefik, web, training-export-worker, ml,
+    otel-collector, netdata, portainer, cloudbeaver, databasus, pgadmin, the
+    PeerDB cluster (`peerdb`, `flow-api`, `flow-snapshot-worker`,
+    `flow-worker`, `temporal`, `temporal-admin-tools`, `minio`, `catalog`),
+    ota, docuum.
+  - Several services (`db`, `redis`, all `peerdb-*-worker`, `peerdb-temporal`,
+    `pgadmin`, `netdata`, `docuum`) were stuck at `0/1` replicas, never
+    reaching healthy.
+- hcloud metrics during wedged windows: CPU baseline (no saturation pattern
+  visible in the chart), disk IOPS in `1–5` range, network sub-1 MB/s. Low
+  metrics combined with high load average indicates many processes blocked
+  in `D` state (uninterruptible IO wait) on the network-attached `dofek-data`
+  volume — not active CPU/IO consumption.
+- Identical symptom on `dofek-staging` from the start of the session,
+  predating any of today's actions.
+
+### Root Cause
+
+Provisional, not fully confirmed because the host stays unreachable long
+enough only for shallow inspection: the dofek swarm stack appears to be
+oversubscribed for the `cax11` instance class. Boot triggers a thundering
+herd of ~20 services starting concurrently, all contending for the
+network-attached data volume. Load average climbs to >100 on a 2-core box,
+sshd cannot get scheduled for new pre-auth forks, Traefik likewise stops
+serving, and the host remains in this state until something gives. Soft
+reboots simply restart the same cascade.
+
+The PeerDB cluster (8 services including a full Temporal control plane) is
+the most likely structural contributor — it adds substantial steady-state
+RAM and IO load that is independent of the actual app workload.
+
+The deploy-unblock action (`docker service update` to swap the db image)
+was not the cause — the host already exhibits this pattern on staging
+without any deploy intervention. But the rescue → reboot dance did move
+prod from "responsive" into the same wedged state staging was already in.
+
+### Fix Or Mitigation
+
+Unresolved at time of writing. Realistic paths:
+
+1. **Resize the host**: `hcloud server change-type dofek cax21` (4 vCPU /
+   8 GB) or `cax31` (8 vCPU / 16 GB). Requires a stop+start. Apply to
+   `dofek-staging` likewise.
+2. **Trim the stack**: scale non-essential services to 0 while the host
+   recovers, e.g. `docker service scale dofek_peerdb-flow-worker=0
+   dofek_peerdb-flow-snapshot-worker=0 dofek_peerdb-temporal=0
+   dofek_peerdb-temporal-admin-tools=0 dofek_peerdb-flow-api=0
+   dofek_docuum=0 dofek_pgadmin=0 dofek_netdata=0`. Bring them back
+   incrementally after the host stabilizes. Requires SSH access during a
+   responsive window.
+3. **Both**, in series: resize first (gets a steady-state box), then
+   investigate whether all PeerDB / observability services are still needed.
+
+The previously-merged `migration_timeout_seconds=14400` bump and
+`pg_stat_activity` instrumentation in PR #1113 are unaffected and remain
+valid groundwork — but cannot be exercised until the host is stable.
+
+### Remaining Risk
+
+- We do not yet know whether the post-reboot wedge is a deterministic
+  consequence of the stack composition, or whether something specific to
+  the data volume (slow IO, near-full, corruption, etc.) is the proximate
+  cause. Resizing the host treats the symptom; if the underlying issue is
+  the volume, resize alone will not durably help.
+- Staging has been wedged through the entire incident, so the deploy-time
+  validation surface is also down. Any fix attempted on prod cannot be
+  rehearsed on staging until staging is recovered.
+- The pending `0018_metric_stream_location_point.sql` and
+  `0018_migrate_body_measurements_to_metric_stream.sql` migrations are
+  still blocked from applying. The deploy queue is effectively frozen.
+
+## 2026-05-09: Production deploy timed out applying body-measurement hypertable migration
+
+### Impact
+
+Deploy Web run `25609852303` from `main` (commit `f17e27d`) failed: the prod
+job's `Run migrations` step was killed at `3300s` while applying
+`drizzle/0018_migrate_body_measurements_to_metric_stream.sql`. The migration
+ran inside a transaction with no statement breakpoints, so the force-killed
+container rolled back; prod DB stayed in the pre-migration state and code did
+not roll. Staging deploy in the same workflow run failed independently with an
+SSH banner timeout to `162.55.186.24` (separate incident, handled out of
+band).
+
+### Evidence That Mattered
+
+- Job: `Deploy Web Production / Deploy Web Stack / Deploy Web Stack`.
+- Step: `Run migrations`, last log lines:
+  `info: [migrate] Applying: 0018_migrate_body_measurements_to_metric_stream.sql`
+  → repeated `Migration still running after Ns...` (no progress within-step
+  visibility) → `##[error]Migration exceeded 3300s` at `2026-05-09T20:36:59Z`.
+- The migration is a single transactional block over `fitness.metric_stream`
+  (TimescaleDB hypertable): UPDATE backfilling `external_id`, DELETE of
+  duplicate channel rows, `CREATE UNIQUE INDEX`, and `INSERT … SELECT` from
+  `fitness.body_measurement` covering 12 body channels. No
+  `--no-transaction` / `statement-breakpoint` markers, so all-or-nothing.
+- Prod host (`157.90.25.125`) was healthy throughout: SSH banner returned in
+  `~2s`, `dofek.asherlc.com/healthz` returned `200` directly against the
+  origin during and after the failure. The migration was making progress and
+  hit the deploy-level guard, not a DB error.
+
+### Root Cause
+
+`migration_timeout_seconds=3300` in `.github/workflows/deploy-web-stack.yml`
+was sized for routine schema migrations and is too small for a one-shot
+hypertable backfill that copies all `fitness.body_measurement` rows into
+`fitness.metric_stream` and rebuilds dependent indexes/views in the same
+transaction.
+
+### Fix Or Mitigation
+
+- Bumped `migration_timeout_seconds` from `3300` (55min) to `14400` (4h) in
+  `.github/workflows/deploy-web-stack.yml` so the migration has room to
+  complete on the next deploy attempt.
+- Added a comment at the constant explaining that future migrations exceeding
+  this budget should be restructured (split, batched with
+  `--no-transaction`, or moved to an out-of-band backfill job) rather than
+  bumping the timeout again.
+- Reverted the periodic `pg_stat_activity` snapshot block that was briefly
+  added to the workflow polling loop — too much custom shell + heredoc'd
+  psql for what `pg_stat_statements` (already in
+  `shared_preload_libraries` per `deploy/stack.yml`) and
+  `pg_stat_progress_create_index` already give us natively. SQL-level
+  visibility belongs in a query against the live db service, not rebuilt
+  in the deploy workflow.
+
+### Remaining Risk
+
+We do not have direct evidence of how long `0018` actually needs to run to
+completion on prod — only that it was still progressing at 55min. If 4h is
+also insufficient, the migration is likely unbounded and must be
+restructured: split into `ADD COLUMN` (fast) + chunked, non-transactional
+UPDATE/DELETE/INSERT batches keyed on TimescaleDB chunk boundaries +
+post-backfill DDL (`CREATE UNIQUE INDEX`, view rebuilds, `DROP TABLE`).
+Splitting cleanly also requires app code in
+`packages/server/src/repositories/body-*.ts` to read from both
+`fitness.body_measurement` and the `metric_stream` body channels during the
+backfill window, which is a multi-deploy refactor.
+
 ## 2026-05-06: Branch deploy validation exceeded migration timeout
 
 ### Impact
