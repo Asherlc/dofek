@@ -3,10 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 // cspell:ignore pkey relkind relname relnamespace relreplident nspname
+
+const tableNameRowsSchema = z.array(z.object({ table_name: z.string() }));
+const relationExistsRowsSchema = z.array(z.object({ relation_exists: z.boolean() }));
+const replicaIdentityRowsSchema = z.array(z.object({ replica_identity: z.string() }));
+const nullableRowsSchema = z.array(z.object({ is_nullable: z.enum(["YES", "NO"]) }));
+const primaryKeyRowsSchema = z.array(z.object({ columns: z.string() }));
 
 describe("runMigrations", () => {
   let ctx: TestContext;
@@ -38,7 +45,7 @@ describe("runMigrations", () => {
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'fitness' AND table_name = 'migrate_test'`,
     );
-    expect(result.rows.length).toBe(1);
+    expect(tableNameRowsSchema.parse(result.rows).length).toBe(1);
     await client.end();
   });
 
@@ -79,7 +86,7 @@ describe("runMigrations", () => {
        AND table_name IN ('multi_a', 'multi_b')
        ORDER BY table_name`,
     );
-    expect(result.rows.length).toBe(2);
+    expect(tableNameRowsSchema.parse(result.rows).length).toBe(2);
     await client.end();
   });
 
@@ -143,10 +150,12 @@ describe("runMigrations", () => {
     const verificationClient = new Client({ connectionString: ctx.connectionString });
     await verificationClient.connect();
     try {
-      const relationResult = await verificationClient.query<{ relation_exists: boolean }>(`
+      const relationResult = await verificationClient.query(`
         SELECT to_regclass('fitness.derived_resting_heart_rate') IS NOT NULL AS relation_exists
       `);
-      expect(relationResult.rows).toEqual([{ relation_exists: false }]);
+      expect(relationExistsRowsSchema.parse(relationResult.rows)).toEqual([
+        { relation_exists: false },
+      ]);
     } finally {
       await verificationClient.end();
     }
@@ -156,27 +165,27 @@ describe("runMigrations", () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
-      const replicaIdentityResult = await client.query<{
-        replica_identity: string;
-      }>(
+      const replicaIdentityResult = await client.query(
         `SELECT class.relreplident AS replica_identity
          FROM pg_class class
          JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
          WHERE namespace.nspname = 'fitness'
            AND class.relname = 'metric_stream'`,
       );
-      expect(replicaIdentityResult.rows).toEqual([{ replica_identity: "f" }]);
+      expect(replicaIdentityRowsSchema.parse(replicaIdentityResult.rows)).toEqual([
+        { replica_identity: "f" },
+      ]);
 
-      const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+      const nullableResult = await client.query(`
         SELECT is_nullable
         FROM information_schema.columns
         WHERE table_schema = 'fitness'
           AND table_name = 'metric_stream'
           AND column_name = 'id'
       `);
-      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+      expect(nullableRowsSchema.parse(nullableResult.rows)).toEqual([{ is_nullable: "NO" }]);
 
-      const primaryKeyResult = await client.query<{ columns: string }>(`
+      const primaryKeyResult = await client.query(`
         SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
         FROM information_schema.key_column_usage
         WHERE table_schema = 'fitness'
@@ -184,7 +193,9 @@ describe("runMigrations", () => {
           AND constraint_name = 'metric_stream_pkey'
         GROUP BY constraint_name
       `);
-      expect(primaryKeyResult.rows).toEqual([{ columns: "id,recorded_at" }]);
+      expect(primaryKeyRowsSchema.parse(primaryKeyResult.rows)).toEqual([
+        { columns: "id,recorded_at" },
+      ]);
     } finally {
       await client.end();
     }
@@ -194,16 +205,16 @@ describe("runMigrations", () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
-      const nullableResult = await client.query<{ is_nullable: "YES" | "NO" }>(`
+      const nullableResult = await client.query(`
         SELECT is_nullable
         FROM information_schema.columns
         WHERE table_schema = 'fitness'
           AND table_name = 'oauth_token'
           AND column_name = 'user_id'
       `);
-      expect(nullableResult.rows).toEqual([{ is_nullable: "NO" }]);
+      expect(nullableRowsSchema.parse(nullableResult.rows)).toEqual([{ is_nullable: "NO" }]);
 
-      const primaryKeyResult = await client.query<{ columns: string }>(`
+      const primaryKeyResult = await client.query(`
         SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
         FROM information_schema.key_column_usage
         WHERE table_schema = 'fitness'
@@ -211,7 +222,9 @@ describe("runMigrations", () => {
           AND constraint_name = 'oauth_token_pkey'
         GROUP BY constraint_name
       `);
-      expect(primaryKeyResult.rows).toEqual([{ columns: "user_id,provider_id" }]);
+      expect(primaryKeyRowsSchema.parse(primaryKeyResult.rows)).toEqual([
+        { columns: "user_id,provider_id" },
+      ]);
     } finally {
       await client.end();
     }
