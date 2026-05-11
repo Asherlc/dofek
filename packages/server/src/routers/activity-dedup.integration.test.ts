@@ -117,14 +117,15 @@ describe("Activity summary deduplication", () => {
   }
 
   it("v_activity is a regular view so activity inserts are visible without refresh", async () => {
-    const result = await testCtx.db.execute<{ relkind: string }>(
-      sql`SELECT c.relkind
-          FROM pg_class c
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE n.nspname = 'fitness'
-            AND c.relname = 'v_activity'`,
+    const result = await testCtx.db.execute<{ exists: boolean }>(
+      sql`SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.views
+            WHERE table_schema = 'fitness'
+              AND table_name = 'v_activity'
+          ) AS "exists"`,
     );
-    expect(result[0]?.relkind).toBe("v");
+    expect(result[0]?.exists).toBe(true);
   });
 
   it("v_activity contains only one canonical row per overlapping activity pair", async () => {
