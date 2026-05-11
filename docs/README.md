@@ -33,6 +33,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
+| AllTrails | [alltrails.md](alltrails.md) | Export formats, private endpoint findings, and import-only recommendation. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
