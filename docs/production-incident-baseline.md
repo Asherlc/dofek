@@ -4292,3 +4292,112 @@ expanding the same approach to larger activity read paths or to `fitness.v_sleep
 - Re-benchmark `fitness.v_activity` after activity row volume grows materially.
 - Benchmark `fitness.v_sleep` separately before deciding whether to convert it
   from a materialized view.
+
+## 2026-05-11: Deploy Web Blocked By Missing Authentik Outpost Token
+
+### Symptoms
+
+The Deploy Web workflow failed for both staging and production during the
+`Validate rendered stack files` step.
+
+### User Impact
+
+The web stack did not deploy commit `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
+The live production stack still has not received the local Authentik proxy
+outpost configuration.
+
+### Evidence
+
+The failing command was:
+
+```bash
+node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack config $STACK_FILE_FLAGS >/dev/null
+```
+
+Both staging job `75414642621` and production job `75414716269` failed with:
+
+```text
+invalid interpolation format for services.authentik-proxy.environment.AUTHENTIK_TOKEN: "required variable AUTHENTIK_OUTPOST_TOKEN is missing a value: AUTHENTIK_OUTPOST_TOKEN is required"
+```
+
+### Root Cause
+
+`deploy/stack.yml` requires `AUTHENTIK_OUTPOST_TOKEN` for the
+`authentik-proxy` service, but the Infisical dotenv exported in CI did not
+contain that key for the deploy environments.
+
+### Fix or Mitigation
+
+Set `AUTHENTIK_OUTPOST_TOKEN` in both the `prod` and `staging` Infisical
+environments using the generated Authentik embedded outpost service-account API
+token from the homelab Authentik database.
+
+### Remaining Risk
+
+Fresh staging run `25690902218` passed stack-file rendering after the secret was
+set, proving the Infisical/Authentik prerequisite was fixed. The remaining risk
+moved to later deploy steps, starting with migrations.
+
+### Follow-Up Work
+
+- Rerun Deploy Web for commit `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
+- Verify the deploy reaches `docker stack deploy`, creates
+  `dofek_authentik-proxy`, and protected management hosts return HTTP 204 from
+  `/outpost.goauthentik.io/ping`.
+
+## 2026-05-11: Staging Deploy Blocked By Resting Heart Rate Migration Type Mismatch
+
+### Symptoms
+
+Fresh staging Deploy Web run `25690902218` passed stack rendering, image pull,
+host bind-path validation, bootstrap, and database readiness, then failed during
+`Run migrations`.
+
+### User Impact
+
+The staging web stack did not deploy commit
+`c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`. Production Deploy Web run
+`25687367151` ended cancelled while it was also in the migration phase, so
+production still has not received this deploy.
+
+### Evidence
+
+The failing step was the deploy workflow's migration container. The first fatal
+log line in staging job `75426830612` was:
+
+```text
+error: [migrate] error: "derived_resting_heart_rate" is not a view
+```
+
+The workflow had already passed `Validate rendered stack files`, so this was a
+new failure after the missing `AUTHENTIK_OUTPOST_TOKEN` issue was fixed.
+
+### Root Cause
+
+Migration `0017_drop_derived_resting_heart_rate.sql` ran
+`DROP VIEW IF EXISTS fitness.derived_resting_heart_rate` before
+`DROP MATERIALIZED VIEW IF EXISTS fitness.derived_resting_heart_rate`. Postgres
+still errors when `DROP VIEW IF EXISTS` targets an existing materialized view, and
+staging had `fitness.derived_resting_heart_rate` as a materialized view.
+
+### Fix or Mitigation
+
+Changed migration `0017_drop_derived_resting_heart_rate.sql` to inspect
+`pg_class.relkind` and drop `fitness.derived_resting_heart_rate` as either a
+materialized view or a normal view. It still raises if the relation exists as any
+unsupported relation kind. Added an integration test that creates the relation as
+a materialized view and verifies the migration drops it.
+
+### Remaining Risk
+
+Production had already applied migration `0017`, so it may warn that the local
+migration hash changed, but it should not rerun the migration there. Staging still
+needs a new image tag containing this fix and a deploy rerun; later pending
+migrations may still expose separate deploy failures.
+
+### Follow-Up Work
+
+- Push the migration fix and rerun the staging deploy for commit
+  `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
+- After staging migrations pass, rerun or resume production deploy and verify it
+  reaches `docker stack deploy`.
