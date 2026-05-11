@@ -68,6 +68,9 @@ services:
       start_period: 60s
     deploy:
       replicas: 2
+      resources:
+        limits:
+          memory: 500M
       update_config:
         order: start-first
         failure_action: rollback
@@ -109,6 +112,9 @@ services:
       retries: 3
       start_period: 15s
     deploy:
+      resources:
+        limits:
+          memory: 400M
       update_config:
         order: start-first
         failure_action: rollback
@@ -181,7 +187,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 3G
 
   peerdb-catalog:
     image: postgres:18-alpine
@@ -198,6 +204,10 @@ services:
       timeout: 30s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   peerdb-temporal:
     image: temporalio/auto-setup:1.29
@@ -213,6 +223,10 @@ services:
       timeout: 10s
       retries: 12
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 400M
 
   peerdb-temporal-admin-tools:
     image: temporalio/admin-tools:1.29
@@ -220,6 +234,10 @@ services:
       TEMPORAL_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_ADDRESS: peerdb-temporal:7233
       TEMPORAL_CLI_SHOW_STACKS: "1"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
   peerdb-minio:
     image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
@@ -244,6 +262,10 @@ services:
       mc mb --ignore-existing peerdb-minio/$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME;
       wait
       "
+    deploy:
+      resources:
+        limits:
+          memory: 200M
 
   peerdb-flow-api:
     image: ghcr.io/peerdb-io/flow-api:stable-v0.36.18
@@ -267,14 +289,26 @@ services:
       AWS_SECRET_ACCESS_KEY: ""
       AWS_REGION: ""
       AWS_ENDPOINT: ""
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   peerdb-flow-snapshot-worker:
     image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.18
     environment: *peerdb-flow-environment
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   peerdb-flow-worker:
     image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.18
     environment: *peerdb-flow-environment
+    deploy:
+      resources:
+        limits:
+          memory: 500M
 
   peerdb:
     image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18
@@ -289,12 +323,19 @@ services:
       PEERDB_FLOW_SERVER_ADDRESS: grpc://peerdb-flow-api:8112
       RUST_LOG: info
       RUST_BACKTRACE: "1"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   databasus:
     image: databasus/databasus:v3.32.1
     volumes:
       - /mnt/dofek-data/databasus:/databasus-data
     deploy:
+      resources:
+        limits:
+          memory: 200M
       labels:
         - traefik.enable=true
         - traefik.http.routers.databasus.rule=${DATABASUS_HOST_RULE:-Host(`databasus.dofek.asherlc.com`)}
@@ -309,6 +350,9 @@ services:
     volumes:
       - /mnt/dofek-data/cloudbeaver:/opt/cloudbeaver/workspace
     deploy:
+      resources:
+        limits:
+          memory: 300M
       labels:
         - traefik.enable=true
         - traefik.http.routers.cloudbeaver.rule=${CLOUDBEAVER_HOST_RULE:-Host(`cloudbeaver.dofek.asherlc.com`)}
@@ -328,6 +372,9 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     deploy:
+      resources:
+        limits:
+          memory: 350M
       labels:
         - traefik.enable=true
         - traefik.http.routers.pgadmin.rule=${PGADMIN_HOST_RULE:-Host(`pgadmin.dofek.asherlc.com`)}
@@ -451,6 +498,9 @@ services:
       - /etc/os-release:/host/etc/os-release:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     deploy:
+      resources:
+        limits:
+          memory: 400M
       labels:
         - traefik.enable=true
         - traefik.http.routers.netdata.rule=${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)}

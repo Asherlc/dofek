@@ -363,37 +363,6 @@ jobs:
             sleep 5
           done
 
-      - name: Ensure ClickHouse resource limits
-        run: |
-          desired_limit_bytes=2147483648
-          current_limit_bytes="$(
-            docker service inspect "${STACK_NAME}_clickhouse" \
-              --format '{{.Spec.TaskTemplate.Resources.Limits.MemoryBytes}}'
-          )"
-          if [ "$current_limit_bytes" = "$desired_limit_bytes" ]; then
-            echo "ClickHouse memory limit is already 2G."
-          else
-            docker service update --limit-memory 2G "${STACK_NAME}_clickhouse"
-          fi
-
-      - name: Wait for ClickHouse after resource update
-        run: |
-          for attempt in $(seq 1 36); do
-            clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              postgres:18-alpine sh -euc \
-              "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
-            if [ "$clickhouse_output" = "Ok." ]; then
-              echo "ClickHouse is reachable after resource update."
-              break
-            fi
-            if [ "$attempt" -eq 36 ]; then
-              echo "::error::ClickHouse did not become reachable within 180s after resource update"
-              exit 1
-            fi
-            echo "ClickHouse post-update readiness attempt ${attempt}/36: retrying in 5s..."
-            sleep 5
-          done
-
       - name: Run migrations
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}

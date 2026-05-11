@@ -78,6 +78,73 @@ Durable guardrail (this PR):
   invalidated instead, and postgres reports it as lost the next time
   the consumer reconnects (forcing a resync, which is recoverable).
 
+### Late-evening sequel: system-wide OOM, real memory tuning
+
+A few hours after the initial recovery the host went *off* (not wedged
+— actually powered down by the kernel after a `global_oom`).
+`journalctl -k --grep oom` showed:
+
+```
+May 10 22:13:29 dofek kernel: traefik invoked oom-killer: ...
+   constraint=CONSTRAINT_NONE, global_oom
+   Out of memory: Killed process 310381 (clickhouse-serv)
+                   total-vm:12608368kB, anon-rss:3487072kB
+```
+
+`CONSTRAINT_NONE / global_oom` (not `CONSTRAINT_MEMCG`) means the entire
+host's RAM was exhausted — not a single container hitting its cgroup
+cap. ClickHouse was using 3.5 GB RSS at the time; we'd earlier bumped
+its container limit to 4 GB to unblock the PeerDB initial-snapshot OOMs,
+but that turned out to be too generous for an 8 GB host once every other
+service was also resident.
+
+Per-container RSS at a clean post-boot steady state (no migrations, no
+backfill):
+
+```
+clickhouse        1.8 GB      (limit 4 GB)
+db                644 MB      (limit 2 GB)
+netdata           328 MB      no limit
+pgadmin           282 MB      no limit
+cloudbeaver       248 MB      no limit
+worker            208 MB      no limit
+web (x2)          410 MB tot. no limit
+peerdb-flow-worker  178 MB    no limit
+peerdb-catalog    157 MB      no limit
+peerdb-temporal   126 MB      no limit
+others combined   ~500 MB     no limit
+─────────────────────────────────
+≈ 4.9 GB containers + dockerd + kernel = ~5.7 GB idle
+```
+
+Under load (CH merges, backfill, IMU traffic decode) the unbounded
+services + the over-permissive CH limit easily push past the 8 GB host.
+
+### Fix Or Mitigation (sequel)
+
+- Set `deploy.resources.limits.memory` on every long-running service
+  in `deploy/stack.yml`. Sized off measured idle RSS with growth
+  headroom. Total bounded ceiling ≈ 8 GB; sum of typical actuals on a
+  quiet box ≈ 4.5 GB; under load with limits in place, any runaway
+  process now gets cgroup-OOM'd inside its container (Swarm restarts
+  it) instead of the kernel killing arbitrary processes host-wide.
+- Lowered ClickHouse limit from 4 GB → 3 GB (covers measured 1.8 GB
+  idle + ~1 GB merge headroom).
+- Removed the now-redundant `Ensure ClickHouse resource limits`
+  step from `.github/workflows/deploy-web-stack.yml`: the limit is now
+  declared in `stack.yml` and applied by the normal stack deploy. The
+  step's only original purpose was to enforce the limit before
+  migrations ran, which `stack deploy` does on its own.
+
+### Sizing Decision
+
+cax21 (4 vCPU / 8 GB) is the structural minimum for this stack.
+cax11 (2 vCPU / 4 GB) cannot host db (2 GB) + ClickHouse (3 GB) +
+everything else simultaneously. The ~€7-8/month uplift is the price of
+co-hosting Postgres + ClickHouse + PeerDB cluster + observability +
+admin UIs on one box. Splitting the stack across two cax11s would cost
+more.
+
 ### Recovery Continuation (2026-05-10 evening)
 
 After the immediate WAL-retention fix, the box was resized cax11 → cax21
