@@ -67,7 +67,7 @@ export const activityRouter = router({
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message:
-              "Activity data is temporarily unavailable — materialized views are being rebuilt. Try again in a few minutes.",
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
           });
         }
         throw error;

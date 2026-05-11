@@ -350,7 +350,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
 - [x] WHOOP strength trainer sync (exercise-level sets/reps/weight from `weightlifting-service` internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
-- [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
+- [x] Cross-provider deduplication via read-time views and analytics read models (recursive CTE overlap clustering, per-field merge by provider priority)
 - [x] Strong CSV import (strength training history — CSV upload with unit conversion)
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
 - [x] WHOOP raw IMU/accelerometer data investigation — **not feasible**: data is in a private S3 bucket with no download API; app only uploads, never reads back. Load-velocity profiles (derived from accelerometer) may be accessible once enough training data is collected. See `docs/whoop.md`.
@@ -377,7 +377,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 ### Resilience
 - [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.
 - [ ] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout.
-- [ ] Convert `fitness.v_activity` and `fitness.v_sleep` from materialized views to plain views once we can prove the recursive-CTE dedup query is fast enough on production-scale data. These two are the last remaining matviews; everything else has been converted. Removing them would also let us delete `admin.refreshViews`, the activity self-heal in `BaseRepository.queryWithViewRefresh`, the HealthKit sync `refreshIngestView` helper, and the e2e `/api/internal/materialized-views/refresh` wait, leaving a fully read-time-fresh schema with no refresh maintenance.
+- [ ] Convert `fitness.v_sleep` from a materialized view to a plain view once we can prove the recursive-CTE dedup query is fast enough on production-scale data. `fitness.v_activity` is already a plain view, so activity reads are fresh without refresh maintenance.
 
 ### Authentication Follow-ups
 - [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking
