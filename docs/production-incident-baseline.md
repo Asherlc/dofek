@@ -3835,3 +3835,50 @@ again exceeds the live ClickHouse memory limit.
   returns HTTP 204.
 - If deployment fails in ClickHouse migrations again, investigate and fix the
   migration memory usage root cause before adding resilience knobs.
+
+## 2026-05-11: Strava Activity Missing From Recent Activities
+
+### Symptoms
+
+A newly synced Strava activity was visible in the Strava details section but did
+not appear in the `Recent Activities` section on `/training`.
+
+### User Impact
+
+Recent activity data could be stale after provider syncs, so users might not see
+newly imported workouts until the activity materialized view refreshed.
+
+### Evidence
+
+Production inspection showed `fitness.v_activity` was a Postgres materialized
+view. The recent activity query read from that relation, while provider detail
+data read from raw provider-backed rows. Read-only production benchmarks showed
+the current materialized read was about 3.4 ms, a scoped live dedup query was
+about 45.5 ms, and the unscoped plain-view-equivalent query was about 206 ms on
+697 raw activity rows.
+
+### Root Cause
+
+`Recent Activities` depended on `fitness.v_activity`, so newly inserted activity
+rows were not visible until the materialized view was refreshed.
+
+### Fix or Mitigation
+
+Converted `fitness.v_activity` from a materialized view to a regular Postgres
+view via migration `0021_convert_v_activity_to_view.sql`, removed active test
+refresh calls for `v_activity`, and kept the dependent ClickHouse proxy views
+pointing at the new regular view.
+
+### Remaining Risk
+
+The plain view is slower than the materialized read but was still acceptable at
+current production scale in the scoped benchmark. Re-check query plans before
+expanding the same approach to larger activity read paths or to `fitness.v_sleep`.
+
+### Follow-Up Work
+
+- Deploy the migration and verify the newly synced Strava activity appears on
+  `/training` without an activity view refresh.
+- Re-benchmark `fitness.v_activity` after activity row volume grows materially.
+- Benchmark `fitness.v_sleep` separately before deciding whether to convert it
+  from a materialized view.

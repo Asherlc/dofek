@@ -1,12 +1,38 @@
--- Canonical definition of the fitness.v_activity view.
--- This file is the single source of truth — the migration runner recreates
--- the view from this definition after every migration run (only if changed).
---
--- To change v_activity: edit THIS file and add a forward migration when the
--- deployed view definition must change.
--- Git merge conflicts here force developers to reconcile concurrent changes.
+DROP VIEW IF EXISTS clickhouse.v_activity_members;
 
-CREATE OR REPLACE VIEW fitness.v_activity AS
+--> statement-breakpoint
+
+DROP VIEW IF EXISTS clickhouse.v_activity;
+
+--> statement-breakpoint
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'fitness'
+      AND c.relname = 'v_activity'
+      AND c.relkind = 'm'
+  ) THEN
+    DROP MATERIALIZED VIEW fitness.v_activity CASCADE;
+  ELSIF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'fitness'
+      AND c.relname = 'v_activity'
+      AND c.relkind = 'v'
+  ) THEN
+    DROP VIEW fitness.v_activity CASCADE;
+  END IF;
+END
+$$;
+
+--> statement-breakpoint
+
+CREATE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
   SELECT
     a.*,
@@ -132,3 +158,30 @@ SELECT
   m.member_activity_ids
 FROM merged m
 ORDER BY m.started_at DESC;
+
+--> statement-breakpoint
+
+CREATE SCHEMA IF NOT EXISTS clickhouse;
+
+--> statement-breakpoint
+
+CREATE OR REPLACE VIEW clickhouse.v_activity AS
+SELECT
+  id,
+  user_id,
+  activity_type,
+  name,
+  started_at,
+  ended_at
+FROM fitness.v_activity;
+
+--> statement-breakpoint
+
+CREATE OR REPLACE VIEW clickhouse.v_activity_members AS
+SELECT
+  id AS activity_id,
+  user_id,
+  started_at,
+  ended_at,
+  unnest(member_activity_ids) AS member_activity_id
+FROM fitness.v_activity;

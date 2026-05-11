@@ -79,8 +79,6 @@ describe("Activity summary deduplication", () => {
       }
     }
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
-
     const app = createApp(
       testCtx.db,
       makeMockSensorStore([
@@ -117,6 +115,17 @@ describe("Activity summary deduplication", () => {
     const data = await res.json();
     return { status: res.status, result: data[0] };
   }
+
+  it("v_activity is a regular view so activity inserts are visible without refresh", async () => {
+    const result = await testCtx.db.execute<{ relkind: string }>(
+      sql`SELECT c.relkind
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'fitness'
+            AND c.relname = 'v_activity'`,
+    );
+    expect(result[0]?.relkind).toBe("v");
+  });
 
   it("v_activity contains only one canonical row per overlapping activity pair", async () => {
     const result = await testCtx.db.execute<{ count: string }>(

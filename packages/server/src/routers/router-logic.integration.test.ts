@@ -80,10 +80,9 @@ describe("Router transformation logic", () => {
     return { status: res.status, result: data[0] };
   }
 
-  /** Refresh all materialized views so inserted data is visible to queries */
+  /** Refresh materialized views so inserted sleep data is visible to queries */
   async function refreshViews() {
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -1032,8 +1031,6 @@ describe("Router transformation logic", () => {
           ) VALUES ${sensorValues.join(",")}`),
       );
 
-      // Refresh views so v_activity includes the newly inserted activity data
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
       await syncClickHouseTestActivitySensorStore(testCtx);
     }, 30_000);
 

@@ -87,7 +87,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     }
   }
 
-  // Recreate materialized views from canonical definitions (same as production runner)
+  // Recreate canonical fitness views from their checked-in definitions.
   const viewsDir = join(drizzleDir, "_views");
   if (existsSync(viewsDir)) {
     const viewFiles = readdirSync(viewsDir)
@@ -115,8 +115,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
       );
     }
 
-    // Recreate in filename order so base matviews exist before plain views
-    // that read from them.
+    // Recreate in filename order so base views exist before dependents.
     for (const { content } of parsedViews) {
       const statements = content
         .split("--> statement-breakpoint")
