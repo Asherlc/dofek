@@ -1,6 +1,6 @@
 -- Canonical definition of the fitness.v_activity view.
--- This file is the single source of truth — the migration runner recreates
--- the view from this definition after every migration run (only if changed).
+-- This file is the source definition for fresh databases, local test schemas,
+-- and future forward migrations that need to update the deployed view.
 --
 -- To change v_activity: edit THIS file and add a forward migration when the
 -- deployed view definition must change.

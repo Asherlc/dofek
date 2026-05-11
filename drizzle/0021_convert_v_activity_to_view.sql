@@ -1,3 +1,7 @@
+BEGIN;
+
+--> statement-breakpoint
+
 DROP VIEW IF EXISTS clickhouse.v_activity_members;
 
 --> statement-breakpoint
@@ -16,7 +20,7 @@ BEGIN
       AND c.relname = 'v_activity'
       AND c.relkind = 'm'
   ) THEN
-    DROP MATERIALIZED VIEW fitness.v_activity CASCADE;
+    DROP MATERIALIZED VIEW fitness.v_activity;
   ELSIF EXISTS (
     SELECT 1
     FROM pg_class c
@@ -25,7 +29,7 @@ BEGIN
       AND c.relname = 'v_activity'
       AND c.relkind = 'v'
   ) THEN
-    DROP VIEW fitness.v_activity CASCADE;
+    DROP VIEW fitness.v_activity;
   END IF;
 END
 $$;
@@ -231,3 +235,7 @@ SELECT
   ended_at,
   UNNEST(member_activity_ids) AS member_activity_id
 FROM fitness.v_activity;
+
+--> statement-breakpoint
+
+COMMIT;

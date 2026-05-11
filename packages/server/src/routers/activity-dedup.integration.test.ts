@@ -126,6 +126,34 @@ describe("Activity summary deduplication", () => {
           ) AS "exists"`,
     );
     expect(result[0]?.exists).toBe(true);
+
+    const inserted = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES (
+            'wahoo', ${TEST_USER_ID}, 'cycling',
+            CURRENT_TIMESTAMP + INTERVAL '1 day',
+            CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '30 minutes',
+            'Fresh Ride'
+          )
+          RETURNING id`,
+    );
+    const activityId = inserted[0]?.id;
+
+    if (!activityId) {
+      throw new Error("Expected fresh activity insert to return id");
+    }
+
+    try {
+      const viewResult = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.v_activity
+            WHERE id = ${activityId}`,
+      );
+      expect(Number(viewResult[0]?.count)).toBe(1);
+    } finally {
+      await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ${activityId}`);
+    }
   });
 
   it("v_activity contains only one canonical row per overlapping activity pair", async () => {
