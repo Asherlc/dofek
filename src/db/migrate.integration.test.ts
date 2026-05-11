@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
-// cspell:ignore pkey relname relnamespace relreplident nspname
+// cspell:ignore pkey relkind relname relnamespace relreplident nspname
 
 describe("runMigrations", () => {
   let ctx: TestContext;
@@ -94,6 +94,62 @@ describe("runMigrations", () => {
     const count = await runMigrations(ctx.connectionString, tmpDir);
 
     expect(count).toBe(1);
+  });
+
+  it("drops derived resting heart rate when it exists as a materialized view", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    await client.connect();
+    try {
+      await client.query(`
+        DO $$
+        DECLARE
+          relation_kind "char";
+        BEGIN
+          SELECT pg_class.relkind
+            INTO relation_kind
+          FROM pg_class
+          INNER JOIN pg_namespace
+            ON pg_namespace.oid = pg_class.relnamespace
+          WHERE pg_namespace.nspname = 'fitness'
+            AND pg_class.relname = 'derived_resting_heart_rate';
+
+          IF relation_kind = 'm' THEN
+            DROP MATERIALIZED VIEW fitness.derived_resting_heart_rate;
+          ELSIF relation_kind = 'v' THEN
+            DROP VIEW fitness.derived_resting_heart_rate;
+          ELSIF relation_kind IS NOT NULL THEN
+            RAISE EXCEPTION 'fitness.derived_resting_heart_rate has unsupported relation kind %', relation_kind;
+          END IF;
+        END;
+        $$;
+      `);
+      await client.query(
+        "CREATE MATERIALIZED VIEW fitness.derived_resting_heart_rate AS SELECT 52::real AS resting_hr",
+      );
+    } finally {
+      await client.end();
+    }
+
+    const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-derived-rhr-"));
+    const migration = readFileSync(
+      join(import.meta.dirname, "../../drizzle/0017_drop_derived_resting_heart_rate.sql"),
+      "utf-8",
+    );
+    writeFileSync(join(tmpDir, "9999_drop_derived_resting_heart_rate.sql"), migration);
+
+    const count = await runMigrations(ctx.connectionString, tmpDir);
+
+    expect(count).toBe(1);
+    const verificationClient = new Client({ connectionString: ctx.connectionString });
+    await verificationClient.connect();
+    try {
+      const relationResult = await verificationClient.query<{ relation_exists: boolean }>(`
+        SELECT to_regclass('fitness.derived_resting_heart_rate') IS NOT NULL AS relation_exists
+      `);
+      expect(relationResult.rows).toEqual([{ relation_exists: false }]);
+    } finally {
+      await verificationClient.end();
+    }
   });
 
   it("gives metric_stream full replica identity and a Timescale-compatible primary key", async () => {
