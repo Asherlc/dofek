@@ -181,15 +181,6 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "location-samples.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.location_sample WHERE user_id = ${userId} ORDER BY recorded_at`,
-      ),
-  },
-  {
     name: "metric-streams.csv",
     batched: true,
     query: (db, userId) =>

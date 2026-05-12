@@ -3,7 +3,6 @@ import {
   boolean,
   customType,
   date,
-  doublePrecision,
   index,
   integer,
   jsonb,
@@ -539,97 +538,6 @@ export const metricStream = fitness.table(
 );
 
 // ============================================================
-// Location samples (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
-// A GPS fix is modeled as one Point with optional provenance-specific accuracy
-// fields. Altitude and speed remain metric_stream channels because providers do
-// not tell us whether they come from GNSS, barometer, map correction, or a
-// virtual route.
-// ============================================================
-
-export const locationSample = fitness.table(
-  "location_sample",
-  {
-    id: uuid("id").defaultRandom().notNull(),
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    deviceId: text("device_id"),
-    sourceType: text("source_type").notNull(),
-    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
-    latitude: doublePrecision("latitude").notNull(),
-    longitude: doublePrecision("longitude").notNull(),
-    horizontalAccuracyM: real("horizontal_accuracy_m"),
-    gpsAccuracyM: real("gps_accuracy_m"),
-    raw: jsonb("raw"),
-  },
-  (table) => [
-    index("location_sample_activity_time_idx").on(table.activityId, table.recordedAt),
-    index("location_sample_user_time_idx").on(table.userId, table.recordedAt),
-    uniqueIndex("location_sample_natural_key_idx").on(
-      table.userId,
-      table.providerId,
-      table.activityId,
-      table.recordedAt,
-      table.latitude,
-      table.longitude,
-      table.sourceType,
-      table.deviceId,
-    ),
-    primaryKey({ columns: [table.id, table.recordedAt] }),
-  ],
-);
-
-/** @deprecated Legacy table — retained for reference only, dropped in production. */
-export const inertialMeasurementUnitSample = fitness.table(
-  "inertial_measurement_unit_sample",
-  {
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    deviceId: text("device_id").notNull(),
-    deviceType: text("device_type").notNull(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    x: real("x").notNull(),
-    y: real("y").notNull(),
-    z: real("z").notNull(),
-    gyroscopeX: real("gyroscope_x"),
-    gyroscopeY: real("gyroscope_y"),
-    gyroscopeZ: real("gyroscope_z"),
-  },
-  (table) => [index("inertial_measurement_unit_user_time_idx").on(table.userId, table.recordedAt)],
-);
-
-/** @deprecated Legacy table — retained for reference only, dropped in production. */
-export const orientationSample = fitness.table(
-  "orientation_sample",
-  {
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    deviceId: text("device_id").notNull(),
-    quaternionW: real("quaternion_w").notNull(),
-    quaternionX: real("quaternion_x").notNull(),
-    quaternionY: real("quaternion_y").notNull(),
-    quaternionZ: real("quaternion_z").notNull(),
-  },
-  (table) => [index("orientation_sample_user_time_idx").on(table.userId, table.recordedAt)],
-);
-
-// ============================================================
 // Daily fitness metrics
 // ============================================================
 
@@ -847,26 +755,6 @@ export const supplementNutrient = fitness.table(
 // ============================================================
 // Nutrition
 // ============================================================
-
-export const nutritionDaily = fitness.table(
-  "nutrition_daily",
-  {
-    date: date("date").notNull(),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    waterMl: integer("water_ml"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.userId, table.date, table.providerId] }),
-    index("nutrition_daily_user_provider_idx").on(table.userId, table.providerId),
-  ],
-);
 
 export const foodEntry = fitness.table(
   "food_entry",
@@ -1557,16 +1445,3 @@ export const dexaScanRegion = fitness.table(
     index("dexa_scan_region_scan_idx").on(table.scanId),
   ],
 );
-
-// ============================================================
-// Training export watermark — tracks last export time per table
-// ============================================================
-
-export const trainingExportWatermark = fitness.table("training_export_watermark", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tableName: text("table_name").notNull().unique(),
-  lastExportedAt: timestamp("last_exported_at", { withTimezone: true }).notNull(),
-  rowCount: bigint("row_count", { mode: "number" }).notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});

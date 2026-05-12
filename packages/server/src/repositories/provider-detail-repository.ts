@@ -69,7 +69,6 @@ export const DISCONNECT_CHILD_TABLES = [
   "fitness.metric_stream",
   "fitness.daily_metrics",
   "fitness.sleep_session",
-  "fitness.nutrition_daily",
   "fitness.food_entry",
   "fitness.lab_result",
   "fitness.lab_panel",

@@ -195,17 +195,17 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 13 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(13);
+    it("contains 12 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(12);
     });
 
     it("includes all required child tables", () => {
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
       expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
+      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.nutrition_daily");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.daily_metrics");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.sleep_session");
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.nutrition_daily");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.food_entry");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
       expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
