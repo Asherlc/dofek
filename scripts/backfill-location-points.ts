@@ -135,6 +135,10 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = ${statementTimeoutLiteral};
 
+DROP TABLE IF EXISTS pg_temp.location_source_rows;
+DROP TABLE IF EXISTS pg_temp.existing_location_rows;
+
+CREATE TEMPORARY TABLE pg_temp.location_source_rows ON COMMIT DROP AS
 WITH lat_rows AS MATERIALIZED (
   SELECT
     recorded_at,
@@ -192,23 +196,6 @@ gps_rows AS MATERIALIZED (
     AND recorded_at >= ${startDateLiteral}::timestamptz
     AND recorded_at < ${endDateLiteral}::timestamptz
 ),
-existing_location_rows AS MATERIALIZED (
-  SELECT
-    recorded_at,
-    user_id,
-    provider_id,
-    device_id,
-    source_type,
-    activity_id,
-    latitude,
-    longitude
-  FROM fitness.metric_stream
-  WHERE channel = 'location'
-    AND latitude IS NOT NULL
-    AND longitude IS NOT NULL
-    AND recorded_at >= ${startDateLiteral}::timestamptz
-    AND recorded_at < ${endDateLiteral}::timestamptz
-),
 source_rows AS MATERIALIZED (
   SELECT
     lat.recorded_at,
@@ -237,56 +224,93 @@ source_rows AS MATERIALIZED (
    AND gps.activity_id IS NOT DISTINCT FROM lat.activity_id
    AND gps.device_id IS NOT DISTINCT FROM lat.device_id
    AND gps.location_sample_index = lat.location_sample_index
-),
-inserted_location_rows AS (
-  INSERT INTO fitness.metric_stream (
-    recorded_at,
-    user_id,
-    provider_id,
-    device_id,
-    source_type,
-    channel,
-    activity_id,
-    point,
-    latitude,
-    longitude,
-    metadata
-  )
-  SELECT
-    source_rows.recorded_at,
-    source_rows.user_id,
-    source_rows.provider_id,
-    source_rows.device_id,
-    source_rows.source_type,
-    'location',
-    source_rows.activity_id,
-    public.ST_SetSRID(
-      public.ST_MakePoint(
-        source_rows.longitude::double precision,
-        source_rows.latitude::double precision
-      ),
-      4326
+)
+SELECT *
+FROM source_rows;
+
+CREATE TEMPORARY TABLE pg_temp.existing_location_rows ON COMMIT DROP AS
+SELECT
+  recorded_at,
+  user_id,
+  provider_id,
+  device_id,
+  source_type,
+  activity_id,
+  latitude,
+  longitude
+FROM fitness.metric_stream
+WHERE channel = 'location'
+  AND latitude IS NOT NULL
+  AND longitude IS NOT NULL
+  AND recorded_at >= ${startDateLiteral}::timestamptz
+  AND recorded_at < ${endDateLiteral}::timestamptz;
+
+CREATE INDEX existing_location_rows_lookup_idx
+ON pg_temp.existing_location_rows (
+  recorded_at,
+  user_id,
+  provider_id,
+  source_type,
+  COALESCE(activity_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  COALESCE(device_id, '__NULL_DEVICE__'),
+  latitude,
+  longitude
+);
+
+ANALYZE pg_temp.location_source_rows;
+ANALYZE pg_temp.existing_location_rows;
+
+WITH inserted_location_rows AS (
+INSERT INTO fitness.metric_stream (
+  recorded_at,
+  user_id,
+  provider_id,
+  device_id,
+  source_type,
+  channel,
+  activity_id,
+  point,
+  latitude,
+  longitude,
+  metadata
+)
+SELECT
+  source_rows.recorded_at,
+  source_rows.user_id,
+  source_rows.provider_id,
+  source_rows.device_id,
+  source_rows.source_type,
+  'location',
+  source_rows.activity_id,
+  public.ST_SetSRID(
+    public.ST_MakePoint(
+      source_rows.longitude::double precision,
+      source_rows.latitude::double precision
     ),
-    source_rows.latitude,
-    source_rows.longitude,
-    NULLIF(
-      jsonb_strip_nulls(jsonb_build_object('gps_accuracy_m', source_rows.gps_accuracy_m)),
-      '{}'::jsonb
-    )
-  FROM source_rows
-  WHERE NOT EXISTS (
-    SELECT 1
-    FROM existing_location_rows AS location
-    WHERE location.recorded_at = source_rows.recorded_at
-      AND location.user_id = source_rows.user_id
-      AND location.provider_id = source_rows.provider_id
-      AND location.source_type = source_rows.source_type
-      AND location.activity_id IS NOT DISTINCT FROM source_rows.activity_id
-      AND location.device_id IS NOT DISTINCT FROM source_rows.device_id
-      AND location.latitude = source_rows.latitude
-      AND location.longitude = source_rows.longitude
+    4326
+  ),
+  source_rows.latitude,
+  source_rows.longitude,
+  NULLIF(
+    jsonb_strip_nulls(jsonb_build_object('gps_accuracy_m', source_rows.gps_accuracy_m)),
+    '{}'::jsonb
   )
-  RETURNING 1
+FROM pg_temp.location_source_rows AS source_rows
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM pg_temp.existing_location_rows AS location
+  WHERE location.recorded_at = source_rows.recorded_at
+    AND location.user_id = source_rows.user_id
+    AND location.provider_id = source_rows.provider_id
+    AND location.source_type = source_rows.source_type
+    AND COALESCE(location.activity_id, '00000000-0000-0000-0000-000000000000'::uuid)
+      = COALESCE(source_rows.activity_id, '00000000-0000-0000-0000-000000000000'::uuid)
+    AND COALESCE(location.device_id, '__NULL_DEVICE__')
+      = COALESCE(source_rows.device_id, '__NULL_DEVICE__')
+    AND location.latitude = source_rows.latitude
+    AND location.longitude = source_rows.longitude
+)
+RETURNING 1
 )
 SELECT 'inserted_location_rows=' || count(*)::text
 FROM inserted_location_rows;

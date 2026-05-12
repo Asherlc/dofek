@@ -74,15 +74,26 @@ without committing.
   2026-04-23 chunk decompression that produced a lock waiter. In both cases,
   earlier committed windows remained committed and the active transaction was
   rolled back.
+- Optimized the backfill script for high-volume days by staging source rows
+  and existing `location` rows in temporary tables and indexing the duplicate
+  check. This changed a previously slow 2021-05-03 retry into a successful
+  `468,914` row insert and allowed additional 2021-05/2021-06 windows to
+  commit safely.
+- Continued the live-safe historical pass until the next compressed 2021
+  chunk decompression (`2021-06-03` through `2021-06-10`) created lock
+  waiters. At that stop point, production had `11,226,136` `location` rows,
+  approximately `28.17%` of the expected `39,847,579` lat/lng pairs.
 
 ### Remaining Risk
 
 The backfill is partially complete. Production is backfilled through
-`2026-04-23` plus the explicit `2026-05-10` one-day run, but the compressed
-chunks from `2026-04-23` through `2026-05-10` and the high-volume historical
-months in 2021-2022 still need an off-hours pass. Several chunks were left
-decompressed by the live-safe no-recompress run and should be recompressed
-during the same maintenance window. Staging also needs its PostGIS
+`2026-04-23`, the explicit `2026-05-10` one-day run, and part of the
+high-volume 2021 historical span through `2021-06-02`. The compressed chunks
+from `2026-04-23` through `2026-05-10`, the compressed 2021 chunks starting
+at `2021-06-03`, and other high-volume historical months in 2021-2022 still
+need an off-hours pass. Several chunks were left decompressed by the live-safe
+no-recompress run and should be recompressed during the same maintenance
+window. Staging also needs its PostGIS
 availability issue fixed before staging deploys can pass.
 
 ### Follow-Up

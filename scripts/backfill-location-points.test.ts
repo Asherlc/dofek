@@ -37,7 +37,8 @@ describe("backfill-location-points", () => {
     expect(sql).toContain("recorded_at >= '2026-05-09'::timestamptz");
     expect(sql).toContain("recorded_at < '2026-05-10'::timestamptz");
     expect(sql).toContain("INSERT INTO fitness.metric_stream");
-    expect(sql).toContain("existing_location_rows AS MATERIALIZED");
+    expect(sql).toContain("CREATE TEMPORARY TABLE pg_temp.existing_location_rows");
+    expect(sql).toContain("CREATE INDEX existing_location_rows_lookup_idx");
     expect(sql).toContain("WHERE NOT EXISTS");
     expect(sql).toContain("SELECT compress_chunk");
     expect(sql).not.toMatch(/\bDELETE\b/i);
