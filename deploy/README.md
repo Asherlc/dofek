@@ -109,6 +109,14 @@ If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you ar
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
 
+### Production Secrets
+
+Production secrets are stored in Infisical and rendered by CI into a temporary
+`.env.<env>` file for `docker stack deploy`; the file is not stored on the
+server. Required app, database, ClickHouse, PeerDB, export, Authentik, and
+mobile pipeline keys are listed in the deploy steps and mobile CI sections
+below. Missing required keys must fail the workflow before rollout.
+
 ### Flow Diagram
 
 ```text
