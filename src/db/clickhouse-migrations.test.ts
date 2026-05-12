@@ -30,6 +30,10 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(1);
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
     expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(4);
+    expect(sql).toContain("point Nullable(Point)");
+    expect(sql).not.toContain("latitude Nullable");
+    expect(sql).not.toContain("longitude Nullable");
+    expect(sql).not.toContain("metadata Nullable");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
@@ -181,6 +185,7 @@ describe("runClickHouseMigrations", () => {
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
       ),
       clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
         allow_experimental_refreshable_materialized_view: 1,
       },
     });
@@ -189,6 +194,7 @@ describe("runClickHouseMigrations", () => {
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary",
       ),
       clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
         allow_experimental_refreshable_materialized_view: 1,
       },
     });
@@ -285,6 +291,11 @@ describe("runClickHouseMigrations", () => {
       "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain("SELECT CAST(id, 'Nullable(UUID)') AS id");
+    expect(backfillStatements[0]).toContain("point,");
+    expect(backfillStatements[0]).toContain("CAST(NULL, 'Nullable(Point)')");
+    expect(backfillStatements[0]).toContain(
+      "CAST((toFloat64(metric_stream.longitude), toFloat64(metric_stream.latitude)), 'Nullable(Point)')",
+    );
     expect(backfillStatements[0]).toContain("AND existing_metric_stream.id IS NULL");
     expect(backfillStatements[1]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",

@@ -1,7 +1,7 @@
 # ClickHouse Metric Stream Projection
 
 `fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
-keeps a native `MergeTree` scalar copy of the raw stream and backfills it from
+keeps a native `MergeTree` copy of the raw stream and backfills it from
 Postgres by real Timescale chunk ranges. We do not use ClickHouse
 `MaterializedPostgreSQL` for this hypertable because the hypertable root does
 not contain the physical rows; the data live in Timescale chunk tables.
@@ -85,11 +85,18 @@ ClickHouse migrations run from the normal one-shot `migrate` container when
 ClickHouse read models or old custom sync tables, belongs there so API startup
 does not repeatedly delete analytical state.
 
+ClickHouse `Nullable(Point)` columns require
+`allow_experimental_nullable_tuple_type=1`. The app ClickHouse client sends
+that setting with its requests, and Docker deployments also load the checked-in
+server profile at
+`deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml`.
+
 ClickHouse migrations create and update the databases and read models:
 
-- `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` scalar copy
-  of the raw metric stream and the active PeerDB CDC sink for analytics
-  refreshers.
+- `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` copy of the
+  raw metric stream and the active PeerDB CDC sink for analytics refreshers. It
+  stores location rows as `point Nullable(Point)` and projects latitude and
+  longitude only in the location read model.
 - `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns. Besides the activity/sleep/body/daily/metric stream
@@ -127,9 +134,9 @@ connection values, and applies the declarative PeerDB peer and mirror
 definition. Provider inventory tables are mirrored by
 `dofek_provider_inventory_raw_analytics` so existing raw analytics mirrors do
 not need to be rebuilt when inventory coverage expands. The mirrors use a
-dedicated publication name, exclude `device_id`, `source_type`, and `vector`
-from the metric stream mirrors, and enable soft deletes so delete events are
-represented in ClickHouse.
+dedicated publication name, exclude `device_id`, `source_type`, `vector`,
+`latitude`, `longitude`, and `metadata` from the metric stream mirrors, and
+enable soft deletes so delete events are represented in ClickHouse.
 ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
 `metric_stream`.
 

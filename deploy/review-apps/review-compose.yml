@@ -68,6 +68,7 @@ services:
       CLICKHOUSE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+      - ../../deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
     restart: unless-stopped
     healthcheck:
       test:

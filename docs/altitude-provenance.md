@@ -11,8 +11,10 @@ The canonical time-series table stores altitude as `metric_stream` rows with
 `channel = 'altitude'` and `scalar` in meters. Horizontal GPS position is stored
 as a `metric_stream` row with `channel = 'location'`, `point` as
 `geometry(Point, 4326)`, and same-row `latitude`/`longitude` projections for
-analytics replication. Elevation gain/loss is not stored as canonical raw data;
-ClickHouse read models derive it from deduped altitude deltas.
+bounded Postgres backfills. ClickHouse mirrors the canonical point and projects
+latitude/longitude only in read models. Elevation gain/loss is not stored as
+canonical raw data; ClickHouse read models derive it from deduped altitude
+deltas.
 
 This means the database currently preserves the altitude value, provider, source
 type, activity, timestamp, and optional device/source name. It does not preserve

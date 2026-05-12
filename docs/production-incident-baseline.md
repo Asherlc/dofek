@@ -4500,3 +4500,104 @@ migrations may still expose separate deploy failures.
   `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
 - After staging migrations pass, rerun or resume production deploy and verify it
   reaches `docker stack deploy`.
+
+## 2026-05-12: Production Location Backfill Hit Data Volume ENOSPC
+
+### Symptoms
+
+The insert-only production location backfill advanced to 38,213,041 location
+rows before failing while processing the `2022-05-17..2022-05-18` window. The
+initial progress denominator used during the incident was too low; a later
+full-source count corrected the denominator to 42,041,240 source location rows.
+
+### User Impact
+
+The location-point backfill is incomplete. The production app remained healthy,
+but continuing the daily-window backfill without more disk headroom risks another
+database `No space left on device` failure.
+
+### Evidence
+
+The backfill script failed with:
+
+```text
+ERROR:  could not extend file "base/16384/t5_19513608" with FileFallocate(): No space left on device
+HINT:  Check free disk space.
+```
+
+After the script exited, production Postgres reported
+`pg_is_in_recovery() = false`, `/healthz` returned `{"status":"ok"}`, and there
+were no lock waiters. The production data volume
+`/mnt/HC_Volume_105292545` reached 100% used with about 190M free during
+triage.
+
+### Root Cause
+
+The data volume does not have enough free space for the current daily-window
+backfill strategy. The failed window attempted to build a large temporary table
+for location source rows, and Postgres could not extend the temporary file on the
+data volume.
+
+### Fix or Mitigation
+
+The backfill process stopped after the failed statement, leaving no active
+backfill transaction or lock waiters. An unreferenced 11G old Docker data
+directory at
+`/mnt/HC_Volume_105292545/docker-volumes/compose-copy-1080p-array-h8xws3_db_data`
+was verified as not mounted, not registered as a Docker volume, not referenced by
+any container, and not held open by any process before removal. After removal,
+the volume had about 9.6G free and production remained healthy.
+
+The resumed backfill used insert-only windows and recompressed affected chunks
+after each window. On the later `2026-04-16..2026-05-12` pass, it reached
+41,105,491 of 42,041,240 source rows, or 97.77%, with 27G free on the data
+volume. At that checkpoint it was still decompressing affected chunks and had
+three relation-lock waiters from normal metric-stream activity-link updates.
+
+### Remaining Risk
+
+The data volume still has limited headroom for large temporary-table builds.
+Continuing with one-day windows may succeed for remaining smaller windows, but a
+sub-day resume is safer if any remaining day is unusually dense.
+
+### Follow-Up Work
+
+- Prefer resizing the production data volume or moving non-Postgres services off
+  it before continuing large backfills.
+- If disk cannot be expanded immediately, patch the backfill script to support
+  smaller time windows and resume from `2022-05-17`.
+
+## 2026-05-12: ClickHouse Point Migration Needed Nullable Tuple Settings
+
+### Symptoms
+
+Moving the ClickHouse metric-stream mirror to `point Nullable(Point)` required
+ClickHouse's nullable tuple setting. Without that setting in both app requests
+and server configuration, migrations or PeerDB writes could fail when creating
+or writing nullable geospatial point columns.
+
+### User Impact
+
+No user-facing outage occurred during this code change, but deploying the
+point-first ClickHouse schema without the setting would block the analytics
+migration path.
+
+### Evidence
+
+ClickHouse documents `Point` as a tuple-backed geospatial type, and local syntax
+verification only succeeded for `Nullable(Point)` with
+`allow_experimental_nullable_tuple_type=1`.
+
+### Fix or Mitigation
+
+The ClickHouse client now sends `allow_experimental_nullable_tuple_type=1` on app
+and migration commands. Docker Compose, E2E Compose, review app Compose, and the
+production Swarm stack all mount the checked-in
+`deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml` profile so
+the setting is infrastructure-as-code rather than a manual server change.
+
+### Remaining Risk
+
+PeerDB's PostGIS-to-ClickHouse `Point` conversion still needs production CDC
+validation after deploy. The fallback, if PeerDB cannot write the native point
+cleanly, is to add explicit latitude/longitude mirror columns in a follow-up.
