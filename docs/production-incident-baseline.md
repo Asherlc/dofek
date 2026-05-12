@@ -4401,3 +4401,59 @@ migrations may still expose separate deploy failures.
   `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
 - After staging migrations pass, rerun or resume production deploy and verify it
   reaches `docker stack deploy`.
+
+## 2026-05-12: PR Dependency Audit Blocked By Broad TanStack History Malware Advisory
+
+### Symptoms
+
+PR #1121 failed the `Test / Dependency Audit` GitHub Actions job.
+
+### User Impact
+
+The docs-only PR could not merge while the dependency audit gate failed.
+
+### Evidence
+
+The failing command was:
+
+```text
+pnpm audit --prod --audit-level=critical --ignore-registry-errors
+```
+
+The first fatal finding in job `75480320849` was:
+
+```text
+critical Malware in @tanstack/history
+Paths packages__web>@tanstack/react-router>@tanstack/history
+Vulnerable versions >=0
+Patched versions <0.0.0
+```
+
+Local reproduction matched CI after dependency install.
+
+### Root Cause
+
+GitHub advisory `GHSA-rmmr-r34h-pfm5` is currently returned to `pnpm audit` as
+affecting every `@tanstack/history` version with no patched version. Public
+incident reporting identifies specific compromised TanStack releases; the
+branch was on older unaffected TanStack Router versions but the all-version
+advisory still failed the critical audit.
+
+### Fix or Mitigation
+
+Updated TanStack Router packages to current stable versions outside the known
+compromised version ranges and changed the dependency audit command to ignore
+only `GHSA-rmmr-r34h-pfm5`. The audit still fails for any other critical
+production advisory.
+
+### Remaining Risk
+
+This is an advisory-specific exception while the upstream GitHub/npm advisory
+range remains broad. Remove the exception once the advisory is narrowed or a
+non-`@tanstack/history` TanStack Router release is available.
+
+### Follow-Up Work
+
+- Re-run PR #1121 CI and verify `Test / Dependency Audit` passes.
+- Periodically check `GHSA-rmmr-r34h-pfm5`; remove the `--ignore` once upstream
+  no longer reports safe TanStack versions as vulnerable.
