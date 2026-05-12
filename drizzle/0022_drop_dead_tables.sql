@@ -2,12 +2,12 @@
 -- Audit details: all five tables are either empty on production or never
 -- existed on production. See git history for the audit that identified them.
 
--- Defensive: if a stale provider_stats matview still references
--- fitness.nutrition_daily (pre-0013 state), drop it. The canonical
--- definition in drizzle/_views/07_provider_stats.sql reads from
--- v_nutrition_daily and will be reinstalled on next view refresh.
-DROP MATERIALIZED VIEW IF EXISTS fitness.provider_stats;
---> statement-breakpoint
+-- Note: fitness.provider_stats was a materialized view that depended on
+-- fitness.nutrition_daily in the original baseline. Migration 0013 converted
+-- it to a regular view; migration 0018 redefined it to read from
+-- fitness.v_nutrition_daily (the view, not the table). So by the time this
+-- migration runs in any environment that has applied 0013-0018, the drop
+-- below succeeds with no dependency conflicts.
 
 DROP TABLE IF EXISTS fitness.nutrition_daily;
 --> statement-breakpoint
