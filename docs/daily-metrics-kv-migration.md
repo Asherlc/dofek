@@ -25,7 +25,7 @@ writers/readers in the codebase**. The migration plan below wires them up.
 
 ## Target architecture
 
-```
+```text
 fitness.daily_metrics              -- "row identity" only
     id, user_id, provider_id, date, source_name, created_at
 
@@ -161,7 +161,7 @@ not live prod.
 **Performance check:** measure `EXPLAIN ANALYZE` on the hottest query
 (`recovery.ts` reads). The pivot adds a `GROUP BY` over the KV join — if
 slow, consider:
-- Partial index on `daily_metric_value (metric_type_id, value)`.
+- Covering index on `daily_metric_value (daily_metrics_id, metric_type_id) INCLUDE (value)` — matches the view's `LEFT JOIN ... ON v.daily_metrics_id = dm.id` + `GROUP BY dm.id` pattern; `metric_type_id` filters per-column and `INCLUDE (value)` lets the planner stay index-only.
 - Materialized view variant for the dashboard's daily aggregates.
 - Keep `hrv` and `steps` as native columns (hybrid) since they're in every
   query — formally splits "hot path" vs. "long tail."
