@@ -42,6 +42,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="activities"
+        options={{
+          title: "Activities",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={getTabIconName("activities", focused)} size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="food"
         options={{
           title: "Nutrition",
