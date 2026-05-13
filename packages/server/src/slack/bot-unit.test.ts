@@ -1122,8 +1122,13 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 1,
           sodium_mg: 150,
           meal: "breakfast",
+          date: "2024-01-15",
         },
       ]);
+      // load calorie goal
+      mockExecute.mockResolvedValueOnce([{ value: 2000 }]);
+      // load confirmed calories for the entry date
+      mockExecute.mockResolvedValueOnce([{ calories_consumed: 80 }]);
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
 
@@ -1144,6 +1149,11 @@ describe("bot.ts — registerHandlers", () => {
           channel: "C123",
           ts: "1700000000.000000",
           text: expect.stringContaining("Toast: 80 cal"),
+        }),
+      );
+      expect(chatUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("1,920 cal remaining today"),
         }),
       );
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:food.");

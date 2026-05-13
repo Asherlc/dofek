@@ -519,7 +519,12 @@ export function registerHandlers(
         calories: row.calories ?? 0,
       }));
 
-      const savedMessage = formatSavedMessage(items);
+      const confirmedDate = rows[0]?.date ?? null;
+      const dailyCalorieProgress =
+        confirmation.userId && confirmedDate
+          ? await repository.loadDailyCalorieProgress(confirmation.userId, confirmedDate)
+          : null;
+      const savedMessage = formatSavedMessage(items, dailyCalorieProgress);
 
       if (body.channel?.id && body.message?.ts) {
         await client.chat.update({

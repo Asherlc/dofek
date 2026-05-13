@@ -99,6 +99,32 @@ describe("formatSavedMessage", () => {
     expect(text).toContain("Chicken Burrito");
     expect(text).toContain("Coca-Cola");
   });
+
+  it("shows calories remaining for the day when daily progress is provided", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 650,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Calories: 650 / 2,000 cal");
+    expect(text).toContain("[███░░░░░░░] 33%");
+    expect(text).toContain("1,350 cal remaining today");
+    expect(result.text).toContain("1,350 cal remaining today");
+  });
+
+  it("shows calories over goal when daily progress exceeds the goal", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 2150,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Calories: 2,150 / 2,000 cal");
+    expect(text).toContain("[██████████] 108%");
+    expect(text).toContain("150 cal over goal today");
+    expect(result.text).toContain("150 cal over goal today");
+  });
 });
 
 describe("formatMicroLine", () => {
