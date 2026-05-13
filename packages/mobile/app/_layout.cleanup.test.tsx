@@ -1,6 +1,6 @@
 import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCreateClient = vi.fn();
 const mockInitBackgroundHealthKitSync = vi.fn().mockResolvedValue(undefined);
@@ -136,14 +136,25 @@ mockCreateClient.mockImplementation(() => ({
   },
 }));
 
-import RootLayout from "./_layout";
+async function importRootLayout() {
+  vi.resetModules();
+  return (await import("./_layout")).default;
+}
 
 describe("RootLayout background cleanup", () => {
-  it("keeps the native splash screen visible until the root layout can render", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("keeps the native splash screen visible until the root layout can render", async () => {
+    await importRootLayout();
+
     expect(mockPreventAutoHideAsync).toHaveBeenCalledOnce();
   });
 
   it("hides the native splash screen after auth state is resolved", async () => {
+    const RootLayout = await importRootLayout();
+
     render(<RootLayout />);
 
     await waitFor(() => {
@@ -152,6 +163,8 @@ describe("RootLayout background cleanup", () => {
   });
 
   it("tears down background HealthKit sync on unmount", async () => {
+    const RootLayout = await importRootLayout();
+
     const rendered = render(<RootLayout />);
 
     await waitFor(() => {

@@ -10,6 +10,11 @@ describe("app bootstrap telemetry guard", () => {
       wrap: vi.fn((component: unknown) => component),
     }));
 
+    vi.doMock("expo-splash-screen", () => ({
+      preventAutoHideAsync: vi.fn(() => Promise.resolve()),
+      hideAsync: vi.fn(() => Promise.resolve()),
+    }));
+
     const captureExceptionMock = vi.fn();
 
     vi.doMock("../lib/telemetry", () => ({

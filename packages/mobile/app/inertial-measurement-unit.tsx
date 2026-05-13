@@ -28,7 +28,7 @@ import {
   getDataPathStats,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
-import { rootStackScreenOptions } from "./_layout";
+import { rootStackScreenOptions } from "./_layout-options";
 
 function formatDateForQuery(date: Date): string {
   return date.toISOString().slice(0, 10);

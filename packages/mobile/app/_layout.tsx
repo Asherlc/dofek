@@ -35,6 +35,7 @@ import {
   disconnect as whoopDisconnect,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
+import { rootStackScreenOptions } from "./_layout-options";
 import LoginScreen from "./login";
 
 try {
@@ -46,16 +47,6 @@ try {
 SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
   captureException(error, { source: "splash-screen-prevent-auto-hide" });
 });
-
-export const rootStackScreenOptions = {
-  headerStyle: { backgroundColor: colors.background },
-  headerTintColor: colors.text,
-  headerBackButtonDisplayMode: "minimal" as const,
-  headerBackTitle: "Back",
-  headerBackTitleVisible: false,
-  headerShadowVisible: false,
-  animation: "fade" as const,
-};
 
 /**
  * Headless component that manages WHOOP BLE accelerometer sync.

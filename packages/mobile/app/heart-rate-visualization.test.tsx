@@ -73,7 +73,7 @@ vi.mock("../theme", () => ({
   },
 }));
 
-vi.mock("./_layout", () => ({
+vi.mock("./_layout-options", () => ({
   rootStackScreenOptions: {},
 }));
 

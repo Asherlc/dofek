@@ -8,7 +8,7 @@ import {
 } from "../components/charts/MultiSourceHeartRateChart";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
-import { rootStackScreenOptions } from "./_layout";
+import { rootStackScreenOptions } from "./_layout-options";
 
 /** Parse YYYY-MM-DD as a local date (not UTC) to avoid off-by-one near midnight. */
 function parseLocalDate(dateString: string): Date {
