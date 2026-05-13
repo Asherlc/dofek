@@ -12,7 +12,7 @@ import {
   startImuStreaming,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
-import { rootStackScreenOptions } from "./_layout";
+import { rootStackScreenOptions } from "./_layout-options";
 
 type ConnectionStatus = "disconnected" | "searching" | "connecting" | "streaming" | "error";
 
