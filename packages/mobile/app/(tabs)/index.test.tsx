@@ -4,6 +4,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
+const mockDashboardRefetch = vi.fn(() => Promise.resolve());
+const mockInvalidate = vi.fn();
+const mockUseRefresh = vi.fn((_options: unknown) => ({
+  refreshing: false,
+  onRefresh: vi.fn(),
+}));
 let mockDashboardLoading = false;
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
@@ -21,6 +27,7 @@ vi.mock("../../lib/trpc", () => ({
           isLoading: mockDashboardLoading,
           isError: !!mockDashboardError,
           error: mockDashboardError,
+          refetch: mockDashboardRefetch,
         }),
       },
     },
@@ -36,12 +43,16 @@ vi.mock("../../lib/trpc", () => ({
     training: {
       nextWorkout: { useQuery: () => ({ data: undefined, isLoading: false }) },
     },
-    useUtils: () => ({ invalidate: vi.fn() }),
+    useUtils: () => ({ invalidate: mockInvalidate }),
   },
 }));
 
 vi.mock("../../lib/useAutoSync", () => ({
   useAutoSync: vi.fn(),
+}));
+
+vi.mock("../../lib/useRefresh", () => ({
+  useRefresh: (options: unknown) => mockUseRefresh(options),
 }));
 
 vi.mock("../../lib/useProviderGuide", () => ({
@@ -127,6 +138,9 @@ describe("TodayScreen independent loading states", () => {
     };
     mockDashboardError = null;
     mockRouterPush.mockClear();
+    mockDashboardRefetch.mockClear();
+    mockInvalidate.mockClear();
+    mockUseRefresh.mockClear();
   });
 
   afterEach(() => {
@@ -201,6 +215,24 @@ describe("TodayScreen independent loading states", () => {
     expect(mockRouterPush).toHaveBeenCalledWith(
       "/food/add?meal=snack&date=2026-03-21&mode=quickadd",
     );
+  });
+
+  it("refreshes only the dashboard query when pull-to-refresh runs", async () => {
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    const refreshOptions = mockUseRefresh.mock.calls.at(-1)?.[0];
+    expect(refreshOptions).toMatchObject({ invalidate: null });
+    if (typeof refreshOptions !== "object" || refreshOptions == null) {
+      throw new Error("Expected Today refresh options");
+    }
+    if (!("refresh" in refreshOptions) || typeof refreshOptions.refresh !== "function") {
+      throw new Error("Expected Today refresh callback");
+    }
+    await refreshOptions.refresh();
+
+    expect(mockDashboardRefetch).toHaveBeenCalledOnce();
+    expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
   it("shows a recovery error panel when the readiness query fails", async () => {
