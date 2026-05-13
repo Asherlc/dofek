@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import type { App as AppType, SayFn } from "@slack/bolt";
 import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
@@ -9,7 +10,11 @@ import {
   slackTimestampToDateString,
   slackTimestampToLocalTime,
 } from "./food-entry-repository.ts";
-import { formatConfirmationMessage, formatSavedMessage } from "./formatting.ts";
+import {
+  type DailyCalorieProgress,
+  formatConfirmationMessage,
+  formatSavedMessage,
+} from "./formatting.ts";
 
 type SayFunction = SayFn;
 const DEDUPE_TTL_MS = 10 * 60 * 1000;
@@ -40,6 +45,18 @@ interface ParsedMessageArgs {
   msgTs: string;
   msgChannel: string;
   msgThreadTs?: string;
+}
+
+function findSingleConfirmedDate(rows: Array<{ date: string }>): string | null {
+  const confirmedDates = new Set(rows.map((row) => row.date));
+  const confirmedDate = rows[0]?.date ?? null;
+  if (confirmedDates.size === 1) {
+    return confirmedDate;
+  }
+  logger.warn(
+    `[slack] confirm_food: skipping daily calorie progress for mixed confirmed dates: ${Array.from(confirmedDates).join(", ")}`,
+  );
+  return null;
 }
 
 function splitEntryIds(rawValue: string): string[] {
@@ -519,11 +536,25 @@ export function registerHandlers(
         calories: row.calories ?? 0,
       }));
 
-      const confirmedDate = rows[0]?.date ?? null;
-      const dailyCalorieProgress =
-        confirmation.userId && confirmedDate
-          ? await repository.loadDailyCalorieProgress(confirmation.userId, confirmedDate)
-          : null;
+      const confirmedDate = findSingleConfirmedDate(rows);
+      let dailyCalorieProgress: DailyCalorieProgress | null = null;
+      if (confirmation.userId && confirmedDate) {
+        try {
+          dailyCalorieProgress = await repository.loadDailyCalorieProgress(
+            confirmation.userId,
+            confirmedDate,
+          );
+        } catch (progressError) {
+          const progressErrorMessage =
+            progressError instanceof Error ? progressError.message : String(progressError);
+          logger.error(
+            `[slack] Failed to load daily calorie progress after confirm: ${progressErrorMessage}`,
+          );
+          Sentry.captureException(
+            progressError instanceof Error ? progressError : new Error(progressErrorMessage),
+          );
+        }
+      }
       const savedMessage = formatSavedMessage(items, dailyCalorieProgress);
 
       if (body.channel?.id && body.message?.ts) {

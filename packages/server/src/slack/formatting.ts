@@ -71,26 +71,19 @@ function formatCalories(value: number): string {
 }
 
 function formatCalorieProgressBar(progress: DailyCalorieProgress): string {
+  const rawPercentage =
+    progress.calorieGoal > 0 ? (progress.caloriesConsumed / progress.calorieGoal) * 100 : 0;
   const percentage =
-    progress.calorieGoal > 0
-      ? Math.round((progress.caloriesConsumed / progress.calorieGoal) * 100)
-      : 0;
-  const filledSegments = Math.min(Math.max(Math.round(percentage / 10), 0), 10);
+    rawPercentage >= 100 ? Math.round(rawPercentage) : Math.max(Math.floor(rawPercentage), 0);
+  const filledSegments = Math.min(Math.max(Math.floor(rawPercentage / 10), 0), 10);
   const emptySegments = 10 - filledSegments;
   return `[${"█".repeat(filledSegments)}${"░".repeat(emptySegments)}] ${percentage}%`;
 }
 
 function formatDailyCalorieProgress(progress: DailyCalorieProgress): string {
-  const caloriesRemaining = Math.round(progress.calorieGoal - progress.caloriesConsumed);
   const calorieLine = `Calories: ${formatCalories(progress.caloriesConsumed)} / ${formatCalories(progress.calorieGoal)} cal`;
   const progressBar = formatCalorieProgressBar(progress);
-  const status =
-    caloriesRemaining > 0
-      ? `${formatCalories(caloriesRemaining)} cal remaining today`
-      : caloriesRemaining < 0
-        ? `${formatCalories(Math.abs(caloriesRemaining))} cal over goal today`
-        : "Calorie goal reached today";
-  return `${calorieLine}\n${progressBar}\n${status}`;
+  return `${calorieLine}\n${progressBar}\n${formatDailyCalorieStatus(progress)}`;
 }
 
 function formatDailyCalorieStatus(progress: DailyCalorieProgress): string {

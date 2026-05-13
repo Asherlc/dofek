@@ -49,6 +49,11 @@ vi.mock("dofek/lib/cache", () => ({
   },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
+import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
@@ -1160,6 +1165,99 @@ describe("bot.ts — registerHandlers", () => {
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:nutrition.");
     });
 
+    it("keeps the saved response when daily calorie progress loading fails", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const progressError = new Error("progress unavailable");
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 1,
+        confirmedEntryIds: ["entry-1"],
+        userId: "user-123",
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
+      const loadProgressSpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadDailyCalorieProgress")
+        .mockRejectedValue(progressError);
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            actions: [{ action_id: "confirm_food", value: "entry-1" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalled();
+        expect(chatUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Toast: 80 cal"),
+          }),
+        );
+        expect(chatUpdate).not.toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Failed to save"),
+          }),
+        );
+        expect(Sentry.captureException).toHaveBeenCalledWith(progressError);
+      } finally {
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+        loadProgressSpy.mockRestore();
+      }
+    });
+
+    it("skips calorie progress when confirmed entries span multiple dates", async () => {
+      const db = createMockDb();
+      const { confirmHandler } = setupHandlers(db);
+      const confirmSpy = vi.spyOn(FoodEntryRepository.prototype, "confirm").mockResolvedValue({
+        confirmedCount: 2,
+        confirmedEntryIds: ["entry-1", "entry-2"],
+        userId: "user-123",
+      });
+      const loadSummarySpy = vi
+        .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
+        .mockResolvedValue([
+          { food_name: "Toast", calories: 80, date: "2024-01-15" },
+          { food_name: "Eggs", calories: 140, date: "2024-01-16" },
+        ]);
+      const loadProgressSpy = vi.spyOn(FoodEntryRepository.prototype, "loadDailyCalorieProgress");
+      const ack = vi.fn();
+      const chatUpdate = vi.fn().mockResolvedValue({});
+
+      try {
+        await confirmHandler({
+          ack,
+          body: {
+            type: "block_actions",
+            actions: [{ action_id: "confirm_food", value: "entry-1,entry-2" }],
+            channel: { id: "C123" },
+            message: { ts: "1700000000.000000" },
+          },
+          client: { chat: { update: chatUpdate } },
+        });
+
+        expect(ack).toHaveBeenCalled();
+        expect(loadProgressSpy).not.toHaveBeenCalled();
+        expect(chatUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("Toast: 80 cal"),
+          }),
+        );
+      } finally {
+        confirmSpy.mockRestore();
+        loadSummarySpy.mockRestore();
+        loadProgressSpy.mockRestore();
+      }
+    });
+
     it("shows success message when entries were already confirmed (idempotent retry)", async () => {
       const db = createMockDb();
       const mockExecute = getMockExecute(db);
@@ -1168,7 +1266,7 @@ describe("bot.ts — registerHandlers", () => {
 
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
       // SELECT items still returns data (entries exist, just already confirmed)
-      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1204,7 +1302,7 @@ describe("bot.ts — registerHandlers", () => {
       });
       const loadSummarySpy = vi
         .spyOn(FoodEntryRepository.prototype, "loadConfirmedSummary")
-        .mockResolvedValue([{ food_name: "Toast", calories: 80 }]);
+        .mockResolvedValue([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1258,7 +1356,7 @@ describe("bot.ts — registerHandlers", () => {
       const { confirmHandler } = setupHandlers(db);
 
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn().mockResolvedValue({});
@@ -1521,7 +1619,7 @@ describe("bot.ts — registerHandlers", () => {
       const { confirmHandler } = setupHandlers(db);
 
       mockExecute.mockResolvedValueOnce([{ user_id: "user-123" }]);
-      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80 }]);
+      mockExecute.mockResolvedValueOnce([{ food_name: "Toast", calories: 80, date: "2024-01-15" }]);
 
       const ack = vi.fn();
       const chatUpdate = vi.fn();
@@ -2196,6 +2294,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -2345,6 +2444,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: null,
           sodium_mg: null,
           meal: null,
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -2703,6 +2803,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3508,6 +3609,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3551,6 +3653,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 0,
           sodium_mg: 120,
           meal: "breakfast",
+          date: "2024-01-15",
         },
         {
           food_name: "Toast",
@@ -3565,6 +3668,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 1,
           sodium_mg: 150,
           meal: "breakfast",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -3643,6 +3747,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 19,
           sodium_mg: 2,
           meal: "snack",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -4278,6 +4383,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 0.2,
           sodium_mg: 75,
           meal: "dinner",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();
@@ -4592,6 +4698,7 @@ describe("bot.ts — registerHandlers", () => {
           sugar_g: 0.5,
           sodium_mg: 65,
           meal: "dinner",
+          date: "2024-01-15",
         },
       ]);
       const ack = vi.fn();

@@ -108,9 +108,20 @@ describe("formatSavedMessage", () => {
 
     const text = JSON.stringify(result.blocks);
     expect(text).toContain("Calories: 650 / 2,000 cal");
-    expect(text).toContain("[███░░░░░░░] 33%");
+    expect(text).toContain("[███░░░░░░░] 32%");
     expect(text).toContain("1,350 cal remaining today");
     expect(result.text).toContain("1,350 cal remaining today");
+  });
+
+  it("does not show a full progress bar before the calorie goal is reached", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 1999,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("[█████████░] 99%");
+    expect(text).toContain("1 cal remaining today");
   });
 
   it("shows calories over goal when daily progress exceeds the goal", () => {

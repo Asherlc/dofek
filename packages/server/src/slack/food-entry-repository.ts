@@ -60,7 +60,7 @@ const dailyCaloriesRowSchema = z.object({ calories_consumed: z.coerce.number() }
 const confirmedSummaryRowSchema = z.object({
   food_name: z.string(),
   calories: z.coerce.number().nullable(),
-  date: dateStringSchema.optional(),
+  date: dateStringSchema,
 });
 
 function parseCalorieGoal(rawValue: unknown): number {
@@ -374,13 +374,14 @@ export class FoodEntryRepository {
   /** Load food entries by IDs for display after confirmation */
   async loadConfirmedSummary(
     entryIds: string[],
-  ): Promise<Array<{ food_name: string; calories: number | null; date?: string }>> {
+  ): Promise<Array<{ food_name: string; calories: number | null; date: string }>> {
     return executeWithSchema(
       this.#db,
       confirmedSummaryRowSchema,
       sql`SELECT food_name, calories, date
           FROM fitness.v_food_entry_with_nutrition
-          WHERE id IN (${sqlIdList(entryIds)})`,
+          WHERE id IN (${sqlIdList(entryIds)})
+          ORDER BY date, food_name`,
     );
   }
 
