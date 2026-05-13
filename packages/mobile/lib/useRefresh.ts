@@ -10,12 +10,13 @@ interface UseRefreshOptions {
 }
 
 /**
- * Pull-to-refresh hook. Starts a background tRPC cache invalidation and
- * optionally runs an extra callback (e.g. trigger server sync).
+ * Pull-to-refresh hook. By default, starts a background tRPC cache invalidation.
+ * Callers can pass a refresh callback to await specific work, and can set
+ * invalidate to null when the refresh callback already targets the needed data.
  */
 export function useRefresh(input?: RefreshTask | UseRefreshOptions): {
   refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
 } {
   const utils = trpc.useUtils();
   const [refreshing, setRefreshing] = useState(false);
