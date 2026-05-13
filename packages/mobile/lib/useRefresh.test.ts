@@ -40,6 +40,45 @@ describe("useRefresh", () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it("stops refreshing after invalidation starts without waiting for refetches", async () => {
+    let resolveInvalidate: () => void = () => {};
+    mockInvalidate.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInvalidate = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useRefresh());
+    let refreshCompletion = Promise.resolve();
+
+    await act(async () => {
+      refreshCompletion = Promise.resolve(result.current.onRefresh());
+      await Promise.resolve();
+    });
+
+    expect(mockInvalidate).toHaveBeenCalledOnce();
+    expect(result.current.refreshing).toBe(false);
+
+    resolveInvalidate();
+    await act(async () => {
+      await refreshCompletion;
+    });
+  });
+
+  it("uses a scoped refresh callback without globally invalidating when invalidation is disabled", async () => {
+    const refresh = vi.fn(() => Promise.resolve());
+    const { result } = renderHook(() => useRefresh({ refresh, invalidate: null }));
+
+    await act(async () => {
+      await result.current.onRefresh();
+    });
+
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(result.current.refreshing).toBe(false);
+  });
+
   it("resets refreshing to false even if invalidate rejects", async () => {
     mockInvalidate.mockRejectedValueOnce(new Error("network error"));
 
