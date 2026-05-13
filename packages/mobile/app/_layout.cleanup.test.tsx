@@ -10,6 +10,10 @@ const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
 const mockRefreshRemove = vi.fn();
+const { mockPreventAutoHideAsync, mockHideAsync } = vi.hoisted(() => ({
+  mockPreventAutoHideAsync: vi.fn(() => Promise.resolve()),
+  mockHideAsync: vi.fn(() => Promise.resolve()),
+}));
 
 vi.mock("@sentry/react-native", () => ({
   init: vi.fn(),
@@ -28,6 +32,11 @@ vi.mock("expo-router", async () => {
     Stack,
   };
 });
+
+vi.mock("expo-splash-screen", () => ({
+  preventAutoHideAsync: (...args: unknown[]) => mockPreventAutoHideAsync(...args),
+  hideAsync: (...args: unknown[]) => mockHideAsync(...args),
+}));
 
 vi.mock("../lib/auth-context", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
@@ -130,6 +139,18 @@ mockCreateClient.mockImplementation(() => ({
 import RootLayout from "./_layout";
 
 describe("RootLayout background cleanup", () => {
+  it("keeps the native splash screen visible until the root layout can render", () => {
+    expect(mockPreventAutoHideAsync).toHaveBeenCalledOnce();
+  });
+
+  it("hides the native splash screen after auth state is resolved", async () => {
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockHideAsync).toHaveBeenCalledOnce();
+    });
+  });
+
   it("tears down background HealthKit sync on unmount", async () => {
     const rendered = render(<RootLayout />);
 
