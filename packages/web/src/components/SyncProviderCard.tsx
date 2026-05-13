@@ -29,6 +29,12 @@ export function SyncProviderCard({
     ? formatRelativeTime(provider.lastSyncedAt)
     : null;
   const primaryActionLabel = needsReauth ? "Reconnect" : needsAuth ? "Connect" : "Sync";
+  const primaryActionTitle = needsReauth
+    ? `Reconnect ${provider.name}`
+    : needsAuth
+      ? `Connect ${provider.name}`
+      : `Sync ${provider.name} from the last 7 days`;
+  const fullSyncTitle = `Sync all available ${provider.name} data`;
 
   return (
     <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
@@ -92,6 +98,8 @@ export function SyncProviderCard({
             <button
               type="button"
               onClick={onSync}
+              title={primaryActionTitle}
+              aria-label={primaryActionTitle}
               className="text-xs text-muted hover:text-foreground transition-colors"
             >
               {primaryActionLabel}
@@ -101,6 +109,8 @@ export function SyncProviderCard({
             <button
               type="button"
               onClick={onFullSync}
+              title={fullSyncTitle}
+              aria-label={fullSyncTitle}
               className="text-xs text-dim hover:text-muted transition-colors"
             >
               Full sync
