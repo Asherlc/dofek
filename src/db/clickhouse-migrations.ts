@@ -32,6 +32,11 @@ interface MetricStreamBackfillRange {
   upperBound: Date;
 }
 
+interface CompletedMetricStreamBackfillRange {
+  lowerBound: Date;
+  upperBound: Date;
+}
+
 interface TimescaleChunkRow {
   chunk_schema: string;
   chunk_name: string;
@@ -42,14 +47,16 @@ const metricStreamBackfillChunkRowSchema = z.object({
   upper_bound: z.string().nullable(),
 });
 
+const metricStreamBackfillChunkRangeSchema = z.object({
+  lower_bound: z.string(),
+  upper_bound: z.string(),
+});
+
 const timescaleChunkRowSchema = z.object({
   chunk_schema: z.string(),
   chunk_name: z.string(),
 });
 
-interface MetricStreamBackfillChunkCountRow {
-  chunk_count: number | string;
-}
 interface ClickHouseDatabaseEngineRow {
   engine: string;
 }
@@ -502,15 +509,38 @@ ENGINE = MergeTree
 ORDER BY (lower_bound, upper_bound)`,
   });
 
+  const completedRanges = await fetchCompletedMetricStreamBackfillRanges(client);
+  let completedRangeIndex = 0;
+  let completedThrough = new Date(0);
+  let skippedRanges = 0;
+
   for (const [rangeIndex, backfillRange] of backfillRanges.entries()) {
-    if (
-      await isMetricStreamBackfillChunkComplete(
-        client,
-        backfillRange.lowerBound,
-        backfillRange.upperBound,
-      )
-    ) {
+    while (completedRangeIndex < completedRanges.length) {
+      const completedRange = completedRanges[completedRangeIndex];
+      if (!completedRange || completedRange.lowerBound > backfillRange.lowerBound) {
+        break;
+      }
+      if (completedRange.upperBound > completedThrough) {
+        completedThrough = completedRange.upperBound;
+      }
+      completedRangeIndex += 1;
+    }
+
+    if (completedThrough >= backfillRange.upperBound) {
+      skippedRanges += 1;
+      if (skippedRanges % 1000 === 0) {
+        const percentComplete = (((rangeIndex + 1) / backfillRanges.length) * 100).toFixed(2);
+        logger.info(
+          `[migrate] Skipped ${skippedRanges} completed ClickHouse metric_stream range(s); scanned ${rangeIndex + 1}/${backfillRanges.length} (${percentComplete}%)`,
+        );
+      }
       continue;
+    }
+    if (skippedRanges > 0) {
+      logger.info(
+        `[migrate] Skipped ${skippedRanges} completed ClickHouse metric_stream range(s); resuming at range ${rangeIndex + 1}/${backfillRanges.length}`,
+      );
+      skippedRanges = 0;
     }
     logger.info(
       `[migrate] Backfilling ClickHouse metric_stream range ${rangeIndex + 1}/${backfillRanges.length}: ${backfillRange.lowerBound.toISOString()} to ${backfillRange.upperBound.toISOString()}`,
@@ -528,6 +558,36 @@ VALUES (${clickHouseDateTimeLiteral(backfillRange.lowerBound)}, ${clickHouseDate
     });
   }
   logger.info("[migrate] ClickHouse metric_stream backfill complete");
+}
+
+async function fetchCompletedMetricStreamBackfillRanges(
+  client: ClickHouseCommandClient,
+): Promise<CompletedMetricStreamBackfillRange[]> {
+  if (!client.query) {
+    throw new Error("ClickHouse metric stream backfill requires a query-capable client");
+  }
+  const result = await client.query<MetricStreamBackfillChunkRange>({
+    query: `SELECT
+  toString(lower_bound) AS lower_bound,
+  toString(upper_bound) AS upper_bound
+FROM analytics.metric_stream_backfill_chunks
+ORDER BY lower_bound ASC, upper_bound ASC`,
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  return rows.map((row) => {
+    const completedRange = metricStreamBackfillChunkRangeSchema.parse(row);
+    return {
+      lowerBound: parsePostgresTimestamp(
+        completedRange.lower_bound,
+        "ClickHouse metric_stream completed lower bound",
+      ),
+      upperBound: parsePostgresTimestamp(
+        completedRange.upper_bound,
+        "ClickHouse metric_stream completed upper bound",
+      ),
+    };
+  });
 }
 
 function splitMetricStreamBackfillChunk(
@@ -552,25 +612,6 @@ function splitMetricStreamBackfillChunk(
   }
 
   return ranges;
-}
-
-async function isMetricStreamBackfillChunkComplete(
-  client: ClickHouseCommandClient,
-  chunkStart: Date,
-  chunkEnd: Date,
-): Promise<boolean> {
-  if (!client.query) {
-    throw new Error("ClickHouse metric stream backfill requires a query-capable client");
-  }
-  const result = await client.query<MetricStreamBackfillChunkCountRow>({
-    query: `SELECT count() AS chunk_count
-FROM analytics.metric_stream_backfill_chunks
-WHERE lower_bound <= ${clickHouseDateTimeLiteral(chunkStart)}
-  AND upper_bound >= ${clickHouseDateTimeLiteral(chunkEnd)}`,
-    format: "JSONEachRow",
-  });
-  const rows = await result.json();
-  return Number(rows[0]?.chunk_count ?? 0) > 0;
 }
 
 async function fetchMetricStreamBackfillChunks(
@@ -624,7 +665,9 @@ function buildPostgresMetricStreamTableFunction(postgresConnectionString: string
 }
 
 function parsePostgresTimestamp(value: string, label: string): Date {
-  const parsed = new Date(value);
+  const hasTimeZone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value);
+  const normalizedValue = hasTimeZone ? value : `${value.replace(" ", "T")}Z`;
+  const parsed = new Date(normalizedValue);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error(`Invalid ${label}: ${value}`);
   }

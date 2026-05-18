@@ -253,7 +253,7 @@ describe("runClickHouseMigrations", () => {
                 : queryText.includes("0006_backfill_native_metric_stream")
                   ? [{ migration_count: 0 }]
                   : queryText.includes("metric_stream_backfill_chunks")
-                    ? [{ chunk_count: 0 }]
+                    ? []
                     : [{ migration_count: 1 }],
         ),
     }));
@@ -358,7 +358,7 @@ describe("runClickHouseMigrations", () => {
                     queryText.includes("0012_repair_metric_stream_backfill")
                   ? [{ migration_count: 0 }]
                   : queryText.includes("metric_stream_backfill_chunks")
-                    ? [{ chunk_count: 0 }]
+                    ? []
                     : [{ migration_count: 1 }],
         ),
     }));
@@ -414,7 +414,7 @@ describe("runClickHouseMigrations", () => {
                 : queryText.includes("0012_repair_metric_stream_backfill")
                   ? [{ migration_count: 0 }]
                   : queryText.includes("metric_stream_backfill_chunks")
-                    ? [{ chunk_count: 0 }]
+                    ? []
                     : [{ migration_count: 1 }],
         ),
     }));
@@ -515,7 +515,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0013_metric_stream_location_point")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -607,7 +607,7 @@ describe("runClickHouseMigrations", () => {
                 : queryText.includes("0013_metric_stream_location_point")
                   ? [{ migration_count: 0 }]
                   : queryText.includes("metric_stream_backfill_chunks")
-                    ? [{ chunk_count: 0 }]
+                    ? []
                     : [{ migration_count: 1 }],
         ),
     }));
@@ -677,7 +677,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0006_backfill_native_metric_stream")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -729,7 +729,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0006_backfill_native_metric_stream")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -820,7 +820,7 @@ describe("runClickHouseMigrations", () => {
         return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
       }
       if (queryText.includes("metric_stream_backfill_chunks")) {
-        return { json: vi.fn().mockResolvedValue([{ chunk_count: 0 }]) };
+        return { json: vi.fn().mockResolvedValue([]) };
       }
       return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
     });
@@ -926,7 +926,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0006_backfill_native_metric_stream")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -995,9 +995,8 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("metric_stream_backfill_chunks")
                 ? [
                     {
-                      chunk_count: queryText.includes("lower_bound <= toDateTime64('2026-04-22 00:")
-                        ? 1
-                        : 0,
+                      lower_bound: "2026-04-22 00:00:00.000000",
+                      upper_bound: "2026-04-22 01:00:00.000000",
                     },
                   ]
                 : [{ migration_count: 1 }],
@@ -1020,8 +1019,8 @@ describe("runClickHouseMigrations", () => {
     const completionQueries = query.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("analytics.metric_stream_backfill_chunks"));
-    expect(completionQueries[0]).toContain("lower_bound <=");
-    expect(completionQueries[0]).toContain("upper_bound >=");
+    expect(completionQueries).toHaveLength(1);
+    expect(completionQueries[0]).toContain("ORDER BY lower_bound ASC, upper_bound ASC");
   });
 
   it("does not create backfill tracking when Timescale has no metric stream chunks", async () => {

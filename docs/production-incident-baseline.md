@@ -5101,3 +5101,44 @@ remaining backfill ranges, refresh the dependent read models, and record
   one-off migrations that need to backfill large mirrors first.
 - Add ordering assertions for future ClickHouse migrations that rebuild
   backfilled source tables and refresh dependent materialized views.
+
+## 2026-05-18: ClickHouse Backfill Retry Spent Minutes Rechecking Completed Ranges
+
+### Symptoms
+
+The manual `0013_metric_stream_location_point` one-off logged a denominator of
+`67,730` five-minute ranges but stayed at `0.00%` for several minutes before
+printing the first backfill range.
+
+### User Impact
+
+The migration appeared stalled even though it was eventually able to resume.
+Any retry after a partial backfill would pay the same startup cost before useful
+progress logs appeared.
+
+### Evidence
+
+The code checked `analytics.metric_stream_backfill_chunks` once per generated
+five-minute range. Production had `335` completed checkpoint rows covering older
+large ranges, so the runner had to issue many small ClickHouse queries before it
+reached the first missing range and began logging progress.
+
+### Fix or Mitigation
+
+Changed the backfill runner to read completed checkpoint ranges once, parse
+ClickHouse timestamp strings as UTC, and skip covered five-minute ranges in
+memory with periodic skip-progress logs.
+
+### Remaining Risk
+
+The current production one-off had already moved past the startup scan before
+this optimization was deployed. The patch is for faster, more observable retry
+behavior if this run fails or a future large backfill resumes from partial
+progress.
+
+### Follow-Up Work
+
+- Prefer one bulk progress-query over per-range polling in all resumable
+  ClickHouse/Postgres one-off backfills.
+- Include skip-progress logging whenever a resumable backfill can spend more
+  than a few seconds scanning completed work before writing new rows.
