@@ -4871,3 +4871,43 @@ new-volume migration.
   volume and data migration, not a Terraform resize.
 - Add a post-swap guard or validation script that fails loudly if any
   `lat`/`lng`/`gps_accuracy` channels reappear.
+
+## 2026-05-18: Deploy Migration Blocked by Compressed Body-Stream Update
+
+### Symptoms
+
+The direct production stack deploy for the point-only writer failed during the
+`Run migrations` step before any service update occurred.
+
+### User Impact
+
+The production web service stayed on the previous image, and the worker stayed
+scaled to zero to avoid reintroducing legacy `lat`/`lng` rows.
+
+### Evidence
+
+The deploy log showed `Applying: 0018_migrate_body_measurements_to_metric_stream.sql`
+followed by `error: cannot update table "_hyper_4_806_chunk"`. Production
+inspection showed `fitness.metric_stream` had `0` body-measurement channel rows
+and `fitness.body_measurement` still had `2704` source rows, so the migration
+needed an insert backfill and did not need to update or delete existing
+compressed `metric_stream` rows.
+
+### Fix or Mitigation
+
+Changed the pending body-measurement migration to be insert-only for
+`metric_stream`: it inserts missing body rows from `fitness.body_measurement`
+and then creates the unique index, avoiding UPDATE/DELETE operations against
+compressed chunks.
+
+### Remaining Risk
+
+The patched image still needs to be built and deployed, then production must be
+verified for body-row backfill, point-only location rows, ClickHouse CDC setup,
+and restored worker writes.
+
+### Follow-Up Work
+
+- Keep hypertable backfill migrations insert-only when compressed chunks are
+  expected in production.
+- Add deployment validation for migrations that mutate compressed hypertables.
