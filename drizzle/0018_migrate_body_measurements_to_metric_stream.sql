@@ -18,44 +18,69 @@ ON fitness.metric_stream (
 );
 --> statement-breakpoint
 
-INSERT INTO fitness.metric_stream (
-  recorded_at,
-  user_id,
-  provider_id,
-  external_id,
-  device_id,
-  source_type,
-  channel,
-  scalar
-)
-SELECT
-  b.recorded_at,
-  b.user_id,
-  b.provider_id,
-  COALESCE(b.external_id, 'legacy-body:' || b.id::text) AS external_id,
-  b.source_name,
-  'api' AS source_type,
-  mapped.channel,
-  mapped.scalar
-FROM fitness.body_measurement AS b
-CROSS JOIN
-  LATERAL (
-    VALUES
-    ('body_weight', b.weight_kg::real),
-    ('body_fat_percentage', b.body_fat_pct::real),
-    ('muscle_mass', b.muscle_mass_kg::real),
-    ('bone_mass', b.bone_mass_kg::real),
-    ('body_water_percentage', b.water_pct::real),
-    ('body_mass_index', b.bmi::real),
-    ('height', b.height_cm::real),
-    ('waist_circumference', b.waist_circumference_cm::real),
-    ('systolic_blood_pressure', b.systolic_bp::real),
-    ('diastolic_blood_pressure', b.diastolic_bp::real),
-    ('heart_pulse', b.heart_pulse::real),
-    ('body_temperature', b.temperature_c::real)
-  ) AS mapped (channel, scalar)
-WHERE mapped.scalar IS NOT NULL
-ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING;
+CREATE OR REPLACE PROCEDURE fitness.backfill_body_measurements_to_metric_stream()
+LANGUAGE plpgsql AS $$
+DECLARE
+  range_start timestamptz;
+  final_range_end timestamptz;
+BEGIN
+  SELECT
+    date_trunc('month', min(recorded_at)),
+    date_trunc('month', max(recorded_at)) + interval '1 month'
+  INTO range_start, final_range_end
+  FROM fitness.body_measurement;
+
+  WHILE range_start IS NOT NULL AND range_start < final_range_end LOOP
+    INSERT INTO fitness.metric_stream (
+      recorded_at,
+      user_id,
+      provider_id,
+      external_id,
+      device_id,
+      source_type,
+      channel,
+      scalar
+    )
+    SELECT
+      b.recorded_at,
+      b.user_id,
+      b.provider_id,
+      COALESCE(b.external_id, 'legacy-body:' || b.id::text) AS external_id,
+      b.source_name,
+      'api' AS source_type,
+      mapped.channel,
+      mapped.scalar
+    FROM fitness.body_measurement AS b
+    CROSS JOIN
+      LATERAL (
+        VALUES
+        ('body_weight', b.weight_kg::real),
+        ('body_fat_percentage', b.body_fat_pct::real),
+        ('muscle_mass', b.muscle_mass_kg::real),
+        ('bone_mass', b.bone_mass_kg::real),
+        ('body_water_percentage', b.water_pct::real),
+        ('body_mass_index', b.bmi::real),
+        ('height', b.height_cm::real),
+        ('waist_circumference', b.waist_circumference_cm::real),
+        ('systolic_blood_pressure', b.systolic_bp::real),
+        ('diastolic_blood_pressure', b.diastolic_bp::real),
+        ('heart_pulse', b.heart_pulse::real),
+        ('body_temperature', b.temperature_c::real)
+      ) AS mapped (channel, scalar)
+    WHERE
+      mapped.scalar IS NOT NULL
+      AND b.recorded_at >= range_start
+      AND b.recorded_at < range_start + interval '1 month'
+    ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING;
+
+    range_start := range_start + interval '1 month';
+    COMMIT;
+  END LOOP;
+END $$;
+--> statement-breakpoint
+CALL fitness.backfill_body_measurements_to_metric_stream();
+--> statement-breakpoint
+DROP PROCEDURE fitness.backfill_body_measurements_to_metric_stream();
 --> statement-breakpoint
 
 DROP VIEW IF EXISTS clickhouse.v_body_measurement;

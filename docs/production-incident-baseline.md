@@ -4903,13 +4903,20 @@ rebuilt table already had the same unique index under its pre-swap
 would still build a duplicate full-table index because `IF NOT EXISTS` checks
 the index name, not equivalent indexed columns.
 
+After reusing the existing index, the next deploy failed with
+`error: out of shared memory` and the Postgres hint to increase
+`max_locks_per_transaction`; the logged statement was the body-row INSERT. The
+single INSERT spanned years of compressed hypertable chunks and exhausted the
+lock table.
+
 ### Fix or Mitigation
 
 Changed the pending body-measurement migration to avoid compressed writes and
 full-table duplicate-index work: it renames the existing rebuild-era unique
 index to the canonical name when present, creates the canonical unique index
 only when needed, and inserts missing body rows from `fitness.body_measurement`
-with `ON CONFLICT DO NOTHING`.
+with `ON CONFLICT DO NOTHING` in month-sized transactions so chunk locks are
+released between batches.
 
 ### Remaining Risk
 
