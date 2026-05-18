@@ -59,6 +59,13 @@ const clickHouseDatabaseEngineRowSchema = z.object({
 });
 
 const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 6 * 60 * 60 * 1_000;
+const CURRENT_METRIC_STREAM_REQUIRED_COLUMNS = [
+  "external_id",
+  "device_id",
+  "source_type",
+  "activity_id",
+  "point",
+];
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -291,6 +298,12 @@ async function repairNativeMetricStreamBackfill(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
 ): Promise<void> {
+  if (!(await metricStreamMirrorHasColumns(client, CURRENT_METRIC_STREAM_REQUIRED_COLUMNS))) {
+    logger.info(
+      "[migrate] Skipping ClickHouse metric_stream repair backfill because the mirror schema is older than the current metric_stream shape; a later migration will rebuild it",
+    );
+    return;
+  }
   await runClickHouseMigrationStatement(
     client,
     "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
@@ -307,6 +320,26 @@ async function repairNativeMetricStreamBackfill(
     "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
   );
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_trend_daily");
+}
+
+async function metricStreamMirrorHasColumns(
+  client: ClickHouseCommandClient,
+  columns: string[],
+): Promise<boolean> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
+  const columnNames = columns.map(clickHouseStringLiteral).join(", ");
+  const result = await client.query<MigrationCountRow>({
+    query: `SELECT count() AS migration_count
+FROM system.columns
+WHERE database = 'postgres_fitness'
+  AND table = 'metric_stream'
+  AND name IN (${columnNames})`,
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  return Number(rows[0]?.migration_count ?? 0) === columns.length;
 }
 
 async function rebuildMetricStreamLocationPoint(

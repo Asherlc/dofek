@@ -244,15 +244,17 @@ describe("runClickHouseMigrations", () => {
       json: vi
         .fn()
         .mockResolvedValue(
-          queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
-            : queryText.includes("system.databases")
-              ? [{ engine: "Atomic" }]
-              : queryText.includes("0006_backfill_native_metric_stream")
-                ? [{ migration_count: 0 }]
-                : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
-                  : [{ migration_count: 1 }],
+          queryText.includes("system.columns")
+            ? [{ migration_count: 5 }]
+            : queryText.includes("system.tables")
+              ? [{ table_count: 1 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0006_backfill_native_metric_stream")
+                  ? [{ migration_count: 0 }]
+                  : queryText.includes("metric_stream_backfill_chunks")
+                    ? [{ chunk_count: 0 }]
+                    : [{ migration_count: 1 }],
         ),
     }));
     const client = { command, query };
@@ -399,15 +401,17 @@ describe("runClickHouseMigrations", () => {
       json: vi
         .fn()
         .mockResolvedValue(
-          queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
-            : queryText.includes("system.databases")
-              ? [{ engine: "Atomic" }]
-              : queryText.includes("0012_repair_metric_stream_backfill")
-                ? [{ migration_count: 0 }]
-                : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
-                  : [{ migration_count: 1 }],
+          queryText.includes("system.columns")
+            ? [{ migration_count: 5 }]
+            : queryText.includes("system.tables")
+              ? [{ table_count: 1 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0012_repair_metric_stream_backfill")
+                  ? [{ migration_count: 0 }]
+                  : queryText.includes("metric_stream_backfill_chunks")
+                    ? [{ chunk_count: 0 }]
+                    : [{ migration_count: 1 }],
         ),
     }));
 
@@ -432,6 +436,46 @@ describe("runClickHouseMigrations", () => {
         query: "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
       }),
     );
+  });
+
+  it("skips metric stream repair backfill when the mirror has the old schema", async () => {
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.columns")
+            ? [{ migration_count: 0 }]
+            : queryText.includes("system.tables")
+              ? [{ table_count: 1 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0012_repair_metric_stream_backfill")
+                  ? [{ migration_count: 0 }]
+                  : [{ migration_count: 1 }],
+        ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith({
+      query:
+        "INSERT INTO analytics.schema_migrations (id) VALUES ('0012_repair_metric_stream_backfill')",
+    });
   });
 
   it("rebuilds native metric stream when applying the location point migration", async () => {

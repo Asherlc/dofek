@@ -4929,3 +4929,43 @@ and restored worker writes.
 - Keep hypertable backfill migrations insert-only when compressed chunks are
   expected in production.
 - Add deployment validation for migrations that mutate compressed hypertables.
+
+## 2026-05-18: ClickHouse Metric Stream Repair Blocked by Old Mirror Schema
+
+### Symptoms
+
+After Postgres cleanup migrations applied in production, the deploy still
+failed during ClickHouse migrations before the stack service update.
+
+### User Impact
+
+The point-only app image was still not deployed, so the scheduled worker
+remained scaled to zero.
+
+### Evidence
+
+The deploy log showed Postgres applied five pending migrations, then ClickHouse
+migration `0012_repair_metric_stream_backfill` failed on the first backfill
+range with `No such column external_id in table postgres_fitness.metric_stream`.
+Direct ClickHouse inspection showed the mirror still had the old narrow schema:
+`id`, `activity_id`, `user_id`, `recorded_at`, `channel`, `provider_id`, and
+`scalar`, without `external_id` or `point`.
+
+### Fix or Mitigation
+
+Changed the ClickHouse repair migration to inspect `system.columns` and skip
+its repair body when the mirror schema is older than the current
+`metric_stream` shape. The later `0013_metric_stream_location_point` migration
+is responsible for dropping and rebuilding the mirror with the current schema.
+
+### Remaining Risk
+
+The patched deploy still needs to run successfully through ClickHouse migration
+`0013`, CDC setup, and stack service update.
+
+### Follow-Up Work
+
+- Keep repair migrations schema-aware when they may run before a later rebuild
+  migration.
+- Consider ordering future ClickHouse migrations so destructive rebuilds happen
+  before data repair migrations that depend on the new table shape.
