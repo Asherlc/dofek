@@ -1,4 +1,22 @@
 ALTER TABLE fitness.metric_stream ADD COLUMN IF NOT EXISTS external_id text;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF
+    to_regclass('fitness.metric_stream_provider_external_channel_time_idx') IS NULL
+    AND to_regclass('fitness.metric_stream_rebuild_provider_external_channel_time_idx') IS NOT NULL
+  THEN
+    ALTER INDEX fitness.metric_stream_rebuild_provider_external_channel_time_idx
+    RENAME TO metric_stream_provider_external_channel_time_idx;
+  END IF;
+END $$;
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS
+metric_stream_provider_external_channel_time_idx
+ON fitness.metric_stream (
+  user_id, provider_id, external_id, channel, recorded_at
+);
+--> statement-breakpoint
 
 INSERT INTO fitness.metric_stream (
   recorded_at,
@@ -37,22 +55,8 @@ CROSS JOIN
     ('body_temperature', b.temperature_c::real)
   ) AS mapped (channel, scalar)
 WHERE mapped.scalar IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM fitness.metric_stream existing
-    WHERE
-      existing.user_id = b.user_id
-      AND existing.provider_id = b.provider_id
-      AND existing.external_id = COALESCE(b.external_id, 'legacy-body:' || b.id::text)
-      AND existing.channel = mapped.channel
-      AND existing.recorded_at = b.recorded_at
-  );
-
-CREATE UNIQUE INDEX IF NOT EXISTS
-metric_stream_provider_external_channel_time_idx
-ON fitness.metric_stream (
-  user_id, provider_id, external_id, channel, recorded_at
-);
+ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING;
+--> statement-breakpoint
 
 DROP VIEW IF EXISTS clickhouse.v_body_measurement;
 DROP VIEW IF EXISTS fitness.v_body_measurement;

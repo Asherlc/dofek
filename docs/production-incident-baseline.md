@@ -4886,19 +4886,30 @@ scaled to zero to avoid reintroducing legacy `lat`/`lng` rows.
 
 ### Evidence
 
-The deploy log showed `Applying: 0018_migrate_body_measurements_to_metric_stream.sql`
-followed by `error: cannot update table "_hyper_4_806_chunk"`. Production
-inspection showed `fitness.metric_stream` had `0` body-measurement channel rows
-and `fitness.body_measurement` still had `2704` source rows, so the migration
+The first deploy log showed
+`Applying: 0018_migrate_body_measurements_to_metric_stream.sql` followed by
+`error: cannot update table "_hyper_4_806_chunk"`. Production inspection showed
+`fitness.metric_stream` had `0` body-measurement channel rows and
+`fitness.body_measurement` still had `2704` source rows, so the migration
 needed an insert backfill and did not need to update or delete existing
 compressed `metric_stream` rows.
 
+After the first insert-only patch, the deploy failed with
+`Error: Connection terminated unexpectedly`. Postgres logs showed the migration
+backend was killed by signal 9 while running the body migration batch. The
+rebuilt table already had the same unique index under its pre-swap
+`metric_stream_rebuild_provider_external_channel_time_idx` name, so a plain
+`CREATE UNIQUE INDEX IF NOT EXISTS metric_stream_provider_external_channel_time_idx`
+would still build a duplicate full-table index because `IF NOT EXISTS` checks
+the index name, not equivalent indexed columns.
+
 ### Fix or Mitigation
 
-Changed the pending body-measurement migration to be insert-only for
-`metric_stream`: it inserts missing body rows from `fitness.body_measurement`
-and then creates the unique index, avoiding UPDATE/DELETE operations against
-compressed chunks.
+Changed the pending body-measurement migration to avoid compressed writes and
+full-table duplicate-index work: it renames the existing rebuild-era unique
+index to the canonical name when present, creates the canonical unique index
+only when needed, and inserts missing body rows from `fitness.body_measurement`
+with `ON CONFLICT DO NOTHING`.
 
 ### Remaining Risk
 
