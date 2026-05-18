@@ -58,7 +58,7 @@ const clickHouseDatabaseEngineRowSchema = z.object({
   engine: z.string(),
 });
 
-const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 60 * 60 * 1_000;
+const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 5 * 60 * 1_000;
 const CURRENT_METRIC_STREAM_REQUIRED_COLUMNS = [
   "external_id",
   "device_id",

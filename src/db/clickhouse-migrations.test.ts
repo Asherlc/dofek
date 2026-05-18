@@ -285,12 +285,12 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(2);
+    expect(backfillStatements).toHaveLength(24);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain("SELECT CAST(id, 'Nullable(UUID)') AS id");
     expect(backfillStatements[0]).toContain("point,");
@@ -302,10 +302,10 @@ describe("runClickHouseMigrations", () => {
     expect(backfillStatements[0]).not.toContain("metric_stream.latitude");
     expect(backfillStatements[0]).not.toContain("metric_stream.longitude");
     expect(backfillStatements[0]).toContain("AND existing_metric_stream.id IS NULL");
-    expect(backfillStatements[1]).toContain(
+    expect(backfillStatements[12]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[1]).toContain(
+    expect(backfillStatements[23]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC')",
     );
     const completedChunkStatements = command.mock.calls
@@ -313,12 +313,12 @@ describe("runClickHouseMigrations", () => {
       .filter((queryText) =>
         queryText.includes("INSERT INTO analytics.metric_stream_backfill_chunks"),
       );
-    expect(completedChunkStatements).toHaveLength(2);
+    expect(completedChunkStatements).toHaveLength(24);
     expect(completedChunkStatements[0]).toContain(
-      "VALUES (toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC'))",
+      "VALUES (toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC'))",
     );
-    expect(completedChunkStatements[1]).toContain(
-      "VALUES (toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC'))",
+    expect(completedChunkStatements[23]).toContain(
+      "VALUES (toDateTime64('2026-04-22 01:55:00.000', 6, 'UTC'), toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC'))",
     );
   });
 
@@ -372,7 +372,7 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(12);
     expect(command).toHaveBeenCalledWith({
       query:
         "INSERT INTO analytics.schema_migrations (id) VALUES ('0012_repair_metric_stream_backfill')",
@@ -678,16 +678,16 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(6);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 03:15:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2026-04-22 03:45:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 03:20:00.000', 6, 'UTC')",
     );
   });
 
-  it("splits large Timescale metric stream chunks into hourly backfill windows", async () => {
+  it("splits large Timescale metric stream chunks into five-minute backfill windows", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
         return Promise.resolve({
@@ -730,17 +730,17 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(3);
+    expect(backfillStatements).toHaveLength(30);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[2]).toContain(
-      "metric_stream.recorded_at >= toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC')",
+    expect(backfillStatements[29]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 02:25:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[2]).toContain(
+    expect(backfillStatements[29]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:30:00.000', 6, 'UTC')",
     );
   });
@@ -884,7 +884,7 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("splits long native metric stream chunks into hourly backfill ranges", async () => {
+  it("splits long native metric stream chunks into five-minute backfill ranges", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
         return Promise.resolve({
@@ -927,17 +927,17 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(24);
+    expect(backfillStatements).toHaveLength(288);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2021-04-29 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2021-04-29 01:00:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2021-04-29 00:05:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[23]).toContain(
-      "metric_stream.recorded_at >= toDateTime64('2021-04-29 23:00:00.000', 6, 'UTC')",
+    expect(backfillStatements[287]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2021-04-29 23:55:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[23]).toContain(
+    expect(backfillStatements[287]).toContain(
       "metric_stream.recorded_at < toDateTime64('2021-04-30 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain("LEFT JOIN (");
@@ -986,7 +986,9 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("metric_stream_backfill_chunks")
                 ? [
                     {
-                      chunk_count: queryText.includes("2026-04-22 00:00:00.000") ? 1 : 0,
+                      chunk_count: queryText.includes("lower_bound <= toDateTime64('2026-04-22 00:")
+                        ? 1
+                        : 0,
                     },
                   ]
                 : [{ migration_count: 1 }],
@@ -1002,7 +1004,7 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(12);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );

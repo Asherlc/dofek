@@ -5041,6 +5041,8 @@ Changed the ClickHouse point rebuild migration to preserve an existing
 current-schema partial `postgres_fitness.metric_stream` mirror and its
 backfill progress table on retry, and reduced metric stream backfill windows
 from six hours to one hour so dense ranges stay below ClickHouse's memory cap.
+The first hourly retry still exceeded memory on a dense hour with roughly
+`2.9M` rows, so the backfill window was reduced again to five minutes.
 
 ### Remaining Risk
 
