@@ -26,15 +26,11 @@ interface MetricStreamBackfillChunkRow {
 interface MetricStreamBackfillChunkRange {
   lower_bound: string;
   upper_bound: string;
-  chunk_schema: string;
-  chunk_name: string;
 }
 
 interface MetricStreamBackfillRange {
   lowerBound: Date;
   upperBound: Date;
-  sourceSchema: string;
-  sourceTable: string;
 }
 
 interface CompletedMetricStreamBackfillRange {
@@ -507,6 +503,8 @@ async function backfillNativeMetricStream(
     return;
   }
 
+  const postgresMetricStreamSource =
+    buildPostgresMetricStreamTableFunction(postgresConnectionString);
   await client.command({
     query: `CREATE TABLE IF NOT EXISTS analytics.metric_stream_backfill_chunks (
   lower_bound DateTime64(6, 'UTC'),
@@ -555,11 +553,7 @@ ORDER BY (lower_bound, upper_bound)`,
     );
     await client.command({
       query: buildMetricStreamBackfillStatement(
-        buildPostgresMetricStreamTableFunction(
-          postgresConnectionString,
-          backfillRange.sourceTable,
-          backfillRange.sourceSchema,
-        ),
+        postgresMetricStreamSource,
         backfillRange.lowerBound,
         backfillRange.upperBound,
       ),
@@ -620,12 +614,7 @@ function splitMetricStreamBackfillChunk(
         chunkEnd.getTime(),
       ),
     );
-    ranges.push({
-      lowerBound: rangeStart,
-      upperBound: nextRangeEnd,
-      sourceSchema: chunk.chunk_schema,
-      sourceTable: chunk.chunk_name,
-    });
+    ranges.push({ lowerBound: rangeStart, upperBound: nextRangeEnd });
   }
 
   return ranges;
@@ -663,8 +652,6 @@ async function fetchMetricStreamBackfillChunks(
         chunkBounds.push({
           lower_bound: bounds.lower_bound,
           upper_bound: bounds.upper_bound,
-          chunk_schema: chunk.chunk_schema,
-          chunk_name: chunk.chunk_name,
         });
       }
     }
@@ -674,17 +661,13 @@ async function fetchMetricStreamBackfillChunks(
   }
 }
 
-function buildPostgresMetricStreamTableFunction(
-  postgresConnectionString: string,
-  table = "metric_stream",
-  schema = "fitness",
-): string {
+function buildPostgresMetricStreamTableFunction(postgresConnectionString: string): string {
   const postgres = parsePostgresConnectionForClickHouse(postgresConnectionString);
   return `postgresql(${clickHouseStringLiteral(postgres.hostAndPort)}, ${clickHouseStringLiteral(
     postgres.database,
-  )}, ${clickHouseStringLiteral(table)}, ${clickHouseStringLiteral(
-    postgres.user,
-  )}, ${clickHouseStringLiteral(postgres.password)}, ${clickHouseStringLiteral(schema)})`;
+  )}, 'metric_stream', ${clickHouseStringLiteral(postgres.user)}, ${clickHouseStringLiteral(
+    postgres.password,
+  )}, 'fitness')`;
 }
 
 function parsePostgresTimestamp(value: string, label: string): Date {

@@ -289,7 +289,6 @@ describe("runClickHouseMigrations", () => {
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[0]).toContain("postgresql('db:5432', 'health', '_hyper_1_1_chunk'");
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC')",
     );
@@ -306,7 +305,6 @@ describe("runClickHouseMigrations", () => {
     expect(backfillStatements[12]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[12]).toContain("postgresql('db:5432', 'health', '_hyper_1_2_chunk'");
     expect(backfillStatements[23]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC')",
     );

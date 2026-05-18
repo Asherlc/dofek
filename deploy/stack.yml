@@ -144,6 +144,11 @@ services:
       - -c
       - maintenance_work_mem=64MB
       - -c
+      # Large ClickHouse one-off backfills read the Timescale metric_stream
+      # hypertable through PostgreSQL and can touch thousands of chunks in one
+      # transaction. Size the shared lock table for that operational path.
+      - max_locks_per_transaction=4096
+      - -c
       - wal_level=logical
       - -c
       - max_replication_slots=4

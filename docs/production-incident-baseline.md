@@ -5153,8 +5153,8 @@ to `16516/67730` ranges, then exited with `pqxx::out_of_memory`.
 ### User Impact
 
 The ClickHouse migration remained unapplied at about `24.36%` log progress. The
-Postgres service stayed healthy, but the one-off stopped and needed another
-code-level retry.
+Postgres service stayed healthy, but the one-off stopped and needed a Postgres
+lock-table sizing change before retrying.
 
 ### Evidence
 
@@ -5173,20 +5173,22 @@ lock memory.
 
 ### Fix or Mitigation
 
-Changed the backfill planner to carry the Timescale chunk schema/name into each
-five-minute range and read source rows from the exact chunk table for that
-range instead of the parent hypertable. This avoids broad hypertable locking
-without changing production Postgres lock sizing.
+Increased production Postgres `max_locks_per_transaction` in `deploy/stack.yml`
+from the default to `4096`, leaving the backfill source query on the parent
+hypertable. A direct chunk-table read was tested but rejected because compressed
+Timescale chunks expose internal storage columns rather than the parent
+hypertable schema, which ClickHouse could not introspect.
 
 ### Remaining Risk
 
-The patched image still needs to build and the one-off needs to be restarted
-from the existing checkpoint. The dependent ClickHouse read-model refreshes
-still need to run after the metric stream mirror finishes.
+The stack needs to be redeployed so Postgres restarts with the larger lock
+table, then the one-off needs to be restarted from the existing checkpoint. The
+dependent ClickHouse read-model refreshes still need to run after the metric
+stream mirror finishes.
 
 ### Follow-Up Work
 
-- For large Timescale-backed one-off backfills, prefer chunk table reads over
-  parent hypertable reads when the chunk boundaries are already known.
-- Add a migration test that asserts ClickHouse backfill source queries use
-  `_timescaledb_internal` chunk tables.
+- Keep `max_locks_per_transaction` sizing in the deployment docs alongside the
+  Timescale chunk-count guidance.
+- Avoid direct reads from compressed Timescale chunk tables unless the query
+  explicitly accounts for Timescale's internal compressed storage schema.
