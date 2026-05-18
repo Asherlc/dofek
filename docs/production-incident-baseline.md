@@ -4969,3 +4969,46 @@ The patched deploy still needs to run successfully through ClickHouse migration
   migration.
 - Consider ordering future ClickHouse migrations so destructive rebuilds happen
   before data repair migrations that depend on the new table shape.
+
+## 2026-05-18: ClickHouse Metric Stream Point Backfill Rejected EWKB
+
+### Symptoms
+
+The deploy progressed past Postgres migrations and the old-schema ClickHouse
+repair skip, but failed during ClickHouse migration
+`0013_metric_stream_location_point` while backfilling
+`postgres_fitness.metric_stream`.
+
+### User Impact
+
+The production web and worker services were still held on the old image while
+the migration job failed, so the scheduled worker remained stopped.
+
+### Evidence
+
+The deploy log failed at backfill range `81/1294` with ClickHouse reporting it
+could not parse source column `point` into destination column
+`Nullable(Point)`. The rejected value began
+`0101000020E6100000...`, which is PostGIS EWKB hex with the SRID flag and
+SRID 4326 header. A direct ClickHouse probe confirmed
+`readWKBPoint(unhex(...))` accepts the value after replacing the EWKB type/SRID
+header with a standard WKB point header.
+
+### Fix or Mitigation
+
+Changed the ClickHouse metric stream backfill to convert nullable Postgres EWKB
+hex strings into standard WKB before calling `readWKBPoint`, while preserving
+null points and already-standard WKB values.
+
+### Remaining Risk
+
+The patched deploy still needs to rebuild the ClickHouse mirror, complete CDC
+setup, update the stack services, restore the worker, and verify no legacy
+location rows are written.
+
+### Follow-Up Work
+
+- Treat PostGIS geometry values read through ClickHouse `postgresql(...)` as
+  encoded geometry strings, not directly castable native ClickHouse Points.
+- Add a small production-shaped ClickHouse fixture for PostGIS Point backfills
+  before future geospatial mirror migrations.

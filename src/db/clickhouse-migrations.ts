@@ -635,7 +635,23 @@ SELECT
   metric_stream.channel,
   metric_stream.activity_id,
   metric_stream.scalar,
-  metric_stream.point AS point,
+  if(
+    isNull(metric_stream.point),
+    NULL,
+    readWKBPoint(
+      unhex(
+        if(
+          startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
+          concat(
+            substring(assumeNotNull(metric_stream.point), 1, 2),
+            '01000000',
+            substring(assumeNotNull(metric_stream.point), 19)
+          ),
+          assumeNotNull(metric_stream.point)
+        )
+      )
+    )
+  ) AS point,
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
 LEFT JOIN (

@@ -294,7 +294,11 @@ describe("runClickHouseMigrations", () => {
     );
     expect(backfillStatements[0]).toContain("SELECT CAST(id, 'Nullable(UUID)') AS id");
     expect(backfillStatements[0]).toContain("point,");
-    expect(backfillStatements[0]).toContain("metric_stream.point AS point");
+    expect(backfillStatements[0]).toContain("readWKBPoint");
+    expect(backfillStatements[0]).toContain(
+      "startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020')",
+    );
+    expect(backfillStatements[0]).toContain("substring(assumeNotNull(metric_stream.point), 19)");
     expect(backfillStatements[0]).not.toContain("metric_stream.latitude");
     expect(backfillStatements[0]).not.toContain("metric_stream.longitude");
     expect(backfillStatements[0]).toContain("AND existing_metric_stream.id IS NULL");
