@@ -5012,3 +5012,44 @@ location rows are written.
   encoded geometry strings, not directly castable native ClickHouse Points.
 - Add a small production-shaped ClickHouse fixture for PostGIS Point backfills
   before future geospatial mirror migrations.
+
+## 2026-05-18: ClickHouse Metric Stream Point Backfill Hit Memory Limit
+
+### Symptoms
+
+After the EWKB parsing fix, ClickHouse migration
+`0013_metric_stream_location_point` progressed past the previous failure and
+then failed during the same backfill.
+
+### User Impact
+
+The production stack still did not roll forward to the point-only image, and
+the scheduled worker remained stopped.
+
+### Evidence
+
+The deploy failed in the migration step at range `336/1294`, around
+`2021-11-17`, with ClickHouse reporting `(total) memory limit exceeded`,
+attempting to allocate another `16.00 MiB` while current RSS was `2.69 GiB`
+against a `2.70 GiB` maximum. The partial ClickHouse mirror remained present
+with `63,717,778` rows through `2021-11-17`, and
+`analytics.metric_stream_backfill_chunks` showed `335` completed ranges.
+
+### Fix or Mitigation
+
+Changed the ClickHouse point rebuild migration to preserve an existing
+current-schema partial `postgres_fitness.metric_stream` mirror and its
+backfill progress table on retry, and reduced metric stream backfill windows
+from six hours to one hour so dense ranges stay below ClickHouse's memory cap.
+
+### Remaining Risk
+
+The retry still needs to complete the remaining ClickHouse backfill, refresh
+read models, configure CDC, and deploy the app services.
+
+### Follow-Up Work
+
+- Keep large ClickHouse backfills resumable by default; failed deploy retries
+  should not discard already-loaded mirror data when the schema is current.
+- Add operational guidance for sizing ClickHouse backfill windows against the
+  configured memory limit.

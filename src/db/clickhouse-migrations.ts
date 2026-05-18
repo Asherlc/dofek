@@ -58,7 +58,7 @@ const clickHouseDatabaseEngineRowSchema = z.object({
   engine: z.string(),
 });
 
-const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 6 * 60 * 60 * 1_000;
+const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 60 * 60 * 1_000;
 const CURRENT_METRIC_STREAM_REQUIRED_COLUMNS = [
   "external_id",
   "device_id",
@@ -353,12 +353,21 @@ async function rebuildMetricStreamLocationPoint(
     "DROP TABLE IF EXISTS analytics.deduped_location",
     "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
-    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
-    "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
   ];
 
   for (const statement of resetStatements) {
     await runClickHouseMigrationStatement(client, statement);
+  }
+
+  if (!(await metricStreamMirrorHasColumns(client, CURRENT_METRIC_STREAM_REQUIRED_COLUMNS))) {
+    await runClickHouseMigrationStatement(
+      client,
+      "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+    );
+    await runClickHouseMigrationStatement(
+      client,
+      "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+    );
   }
 
   for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {

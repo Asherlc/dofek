@@ -563,6 +563,69 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
+  it("resumes location point metric stream backfill when the mirror already has the current schema", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "2026-04-22 00:00:00+00",
+            upper_bound: "2026-04-22 01:00:00+00",
+          },
+        ],
+      });
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("system.columns")
+              ? [{ migration_count: 5 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0013_metric_stream_location_point")
+                  ? [{ migration_count: 0 }]
+                  : queryText.includes("metric_stream_backfill_chunks")
+                    ? [{ chunk_count: 0 }]
+                    : [{ migration_count: 1 }],
+        ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+  });
+
   it("skips Timescale metric stream chunks with no rows", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
@@ -624,7 +687,7 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("splits large Timescale metric stream chunks into bounded backfill windows", async () => {
+  it("splits large Timescale metric stream chunks into hourly backfill windows", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
         return Promise.resolve({
@@ -667,11 +730,17 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(3);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[2]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[2]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:30:00.000', 6, 'UTC')",
     );
   });
@@ -815,7 +884,7 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("splits long native metric stream chunks into six-hour backfill ranges", async () => {
+  it("splits long native metric stream chunks into hourly backfill ranges", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
         return Promise.resolve({
@@ -858,17 +927,17 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(4);
+    expect(backfillStatements).toHaveLength(24);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2021-04-29 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2021-04-29 06:00:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2021-04-29 01:00:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[3]).toContain(
-      "metric_stream.recorded_at >= toDateTime64('2021-04-29 18:00:00.000', 6, 'UTC')",
+    expect(backfillStatements[23]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2021-04-29 23:00:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[3]).toContain(
+    expect(backfillStatements[23]).toContain(
       "metric_stream.recorded_at < toDateTime64('2021-04-30 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain("LEFT JOIN (");
