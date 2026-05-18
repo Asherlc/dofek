@@ -281,7 +281,9 @@ async function replaceNativeMetricStreamAndBackfill(
     await runClickHouseMigrationStatement(client, "DROP DATABASE IF EXISTS postgres_fitness SYNC");
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
+    shouldRunBeforeMetricStreamBackfill,
+  )) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -370,7 +372,9 @@ async function rebuildMetricStreamLocationPoint(
     );
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
+    shouldRunBeforeMetricStreamBackfill,
+  )) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -381,6 +385,17 @@ async function rebuildMetricStreamLocationPoint(
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+}
+
+function shouldRunBeforeMetricStreamBackfill(statement: string): boolean {
+  return (
+    !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor") &&
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_sensor") &&
+    !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_location") &&
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_location") &&
+    !statement.startsWith("SYSTEM REFRESH VIEW analytics.activity_summary") &&
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.activity_summary")
+  );
 }
 
 async function shouldReplacePostgresFitnessDatabase(
@@ -426,7 +441,9 @@ async function replaceLegacyMetricStreamIfNeeded(
     await runClickHouseMigrationStatement(client, statement);
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
+    shouldRunBeforeMetricStreamBackfill,
+  )) {
     await runClickHouseMigrationStatement(client, statement);
   }
 

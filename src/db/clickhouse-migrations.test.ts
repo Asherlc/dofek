@@ -561,6 +561,15 @@ describe("runClickHouseMigrations", () => {
         query: "SYSTEM REFRESH VIEW analytics.activity_summary",
       }),
     );
+    const commandQueries = command.mock.calls.map(([options]) => String(options.query));
+    const firstBackfillIndex = commandQueries.findIndex((queryText) =>
+      queryText.includes("INSERT INTO postgres_fitness.metric_stream"),
+    );
+    const firstRefreshIndex = commandQueries.findIndex((queryText) =>
+      queryText.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor"),
+    );
+    expect(firstBackfillIndex).toBeGreaterThanOrEqual(0);
+    expect(firstRefreshIndex).toBeGreaterThan(firstBackfillIndex);
   });
 
   it("resumes location point metric stream backfill when the mirror already has the current schema", async () => {

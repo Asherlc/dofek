@@ -5055,3 +5055,49 @@ read models, configure CDC, and deploy the app services.
   should not discard already-loaded mirror data when the schema is current.
 - Add operational guidance for sizing ClickHouse backfill windows against the
   configured memory limit.
+
+## 2026-05-18: ClickHouse Point Migration Refreshed Read Models Before Backfill
+
+### Symptoms
+
+Manual retries of ClickHouse migration `0013_metric_stream_location_point`
+failed before printing any metric stream backfill progress.
+
+### User Impact
+
+The ClickHouse migration stayed pending, so the production deploy could not
+roll forward to the point-only metric stream schema and the scheduled worker
+remained stopped.
+
+### Evidence
+
+The one-off migration container logged `Applying ClickHouse migration:
+0013_metric_stream_location_point` and then failed with ClickHouse memory limit
+errors while executing `FillingRightJoinSide`. No
+`Waiting for ClickHouse postgres_fitness.metric_stream table` or backfill range
+log appeared, which showed the failure happened before
+`backfillNativeMetricStream`. Code inspection found that
+`buildClickHouseBootstrapStatements(...)` includes `SYSTEM REFRESH` and
+`SYSTEM WAIT` statements for dependent analytics read models, and
+`0013_metric_stream_location_point` ran that full bootstrap before starting the
+metric stream backfill.
+
+### Fix or Mitigation
+
+Changed metric stream rebuild paths to create ClickHouse objects before the
+backfill but defer dependent `deduped_sensor`, `deduped_location`, and
+`activity_summary` refreshes until after the resumable metric stream backfill
+finishes.
+
+### Remaining Risk
+
+The production one-off still needs to run with the patched image, finish the
+remaining backfill ranges, refresh the dependent read models, and record
+`0013_metric_stream_location_point` as applied.
+
+### Follow-Up Work
+
+- Keep bootstrap object creation separate from expensive refresh work for
+  one-off migrations that need to backfill large mirrors first.
+- Add ordering assertions for future ClickHouse migrations that rebuild
+  backfilled source tables and refresh dependent materialized views.
