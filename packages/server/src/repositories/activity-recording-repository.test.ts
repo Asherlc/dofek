@@ -90,6 +90,8 @@ describe("ActivityRecordingRepository", () => {
       expect(serialized).toContain("location");
       expect(serialized).toContain("ST_SetSRID");
       expect(serialized).toContain("horizontal_accuracy_m");
+      expect(serialized).not.toContain("latitude");
+      expect(serialized).not.toContain("longitude");
     });
 
     it("handles samples exceeding batch size with multiple batches", async () => {

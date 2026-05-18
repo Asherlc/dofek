@@ -602,11 +602,7 @@ SELECT
   metric_stream.channel,
   metric_stream.activity_id,
   metric_stream.scalar,
-  if(
-    metric_stream.latitude IS NULL OR metric_stream.longitude IS NULL,
-    CAST(NULL, 'Nullable(Point)'),
-    CAST((toFloat64(metric_stream.longitude), toFloat64(metric_stream.latitude)), 'Nullable(Point)')
-  ) AS point,
+  metric_stream.point AS point,
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
 LEFT JOIN (

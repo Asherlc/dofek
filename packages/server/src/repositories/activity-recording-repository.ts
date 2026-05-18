@@ -108,15 +108,13 @@ export class ActivityRecordingRepository {
             ${"api"},
             ${"location"},
             ST_SetSRID(ST_MakePoint(${sample.lng}, ${sample.lat}), 4326),
-            ${sample.lat}::real,
-            ${sample.lng}::real,
             ${metadata}::jsonb
           )`;
         });
       if (locationValues.length > 0) {
         await this.#db.execute(
           sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, activity_id, provider_id, device_id, source_type, channel, point, latitude, longitude, metadata)
+              (recorded_at, user_id, activity_id, provider_id, device_id, source_type, channel, point, metadata)
               VALUES ${sql.join(locationValues, sql`, `)}`,
         );
       }

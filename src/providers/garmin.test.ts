@@ -586,8 +586,6 @@ describe("GarminProvider.sync()", () => {
       expect.objectContaining({
         channel: "location",
         point: "SRID=4326;POINT(-122.4194 37.7749)",
-        latitude: 37.7749,
-        longitude: -122.4194,
       }),
     );
     expect(sensorRows).toContainEqual(

@@ -48,7 +48,7 @@ describe("metric_stream location point migration", () => {
     }
   });
 
-  it("adds location point storage without running the legacy coordinate backfill inline", async () => {
+  it("keeps only point storage after location point cleanup migrations", async () => {
     const client = new Client({ connectionString });
     let temporaryDirectory: string | undefined;
     await client.connect();
@@ -106,9 +106,20 @@ describe("metric_stream location point migration", () => {
         join(temporaryDirectory, "0018_metric_stream_location_point.sql"),
         migrationContent,
       );
+      const dropCoordinateProjectionMigrationContent = readFileSync(
+        join(
+          import.meta.dirname,
+          "../../drizzle/0022_drop_metric_stream_coordinate_projections.sql",
+        ),
+        "utf-8",
+      );
+      writeFileSync(
+        join(temporaryDirectory, "0022_drop_metric_stream_coordinate_projections.sql"),
+        dropCoordinateProjectionMigrationContent,
+      );
 
       const migrationCount = await runMigrations(connectionString, temporaryDirectory);
-      expect(migrationCount).toBe(1);
+      expect(migrationCount).toBe(2);
 
       const columnsResult = await client.query<{ column_name: string }>(`
         SELECT column_name
@@ -118,12 +129,7 @@ describe("metric_stream location point migration", () => {
           AND column_name IN ('point', 'latitude', 'longitude', 'metadata')
         ORDER BY column_name
       `);
-      expect(columnsResult.rows).toEqual([
-        { column_name: "latitude" },
-        { column_name: "longitude" },
-        { column_name: "metadata" },
-        { column_name: "point" },
-      ]);
+      expect(columnsResult.rows).toEqual([{ column_name: "metadata" }, { column_name: "point" }]);
 
       const pointIndexResult = await client.query<{ indexname: string }>(`
         SELECT indexname

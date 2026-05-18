@@ -457,7 +457,7 @@ export async function processWorkoutRoutes(
       if (pendingValues.length === 0) return;
       await db.execute(
         sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar, point, latitude, longitude, metadata)
+              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar, point, metadata)
             VALUES ${sql.join(pendingValues, sql`, `)}`,
       );
       inserted += pendingValues.length;
@@ -480,8 +480,6 @@ export async function processWorkoutRoutes(
           ${"location"},
           NULL::real,
           ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326),
-          ${location.lat}::real,
-          ${location.lng}::real,
           ${locationMetadata}::jsonb
         )`,
       );
@@ -503,13 +501,11 @@ export async function processWorkoutRoutes(
             ${activityId}::uuid,
             ${route.sourceName ?? null},
             ${"api"},
-            ${channel},
-            ${scalar}::real,
-            NULL,
-            NULL::real,
-            NULL::real,
-            NULL::jsonb
-          )`,
+          ${channel},
+          ${scalar}::real,
+          NULL,
+          NULL::jsonb
+        )`,
         );
 
         if (pendingValues.length >= BATCH_SIZE) {

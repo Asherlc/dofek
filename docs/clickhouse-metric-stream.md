@@ -134,9 +134,9 @@ connection values, and applies the declarative PeerDB peer and mirror
 definition. Provider inventory tables are mirrored by
 `dofek_provider_inventory_raw_analytics` so existing raw analytics mirrors do
 not need to be rebuilt when inventory coverage expands. The mirrors use a
-dedicated publication name, exclude `device_id`, `source_type`, `vector`,
-`latitude`, `longitude`, and `metadata` from the metric stream mirrors, and
-enable soft deletes so delete events are represented in ClickHouse.
+dedicated publication name, exclude `device_id`, `source_type`, `vector`, and
+`metadata` from the metric stream mirrors, and enable soft deletes so delete
+events are represented in ClickHouse.
 ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
 `metric_stream`.
 

@@ -1,31 +1,15 @@
 import { spawn } from "node:child_process";
+import { formatSqlLiteral } from "./backfill-location-points.ts";
 
-export type DateWindow = {
-  startDate: string;
-  endDate: string;
-};
-
-export type BuildWindowsInput = {
-  startDate: string;
-  endDate: string;
-  windowDays: number;
-};
-
-export type BackfillSqlInput = {
+export type ValidationSqlInput = {
   startDate: string;
   endDate: string;
   statementTimeout: string;
   recompress: boolean;
 };
 
-export type CliOptions = {
-  startDate: string;
-  endDate: string;
-  windowDays: number;
-  maxWindows: number;
+export type CliOptions = ValidationSqlInput & {
   sshHost: string;
-  statementTimeout: string;
-  recompress: boolean;
   execute: boolean;
   dryRun: boolean;
 };
@@ -37,11 +21,7 @@ type SpawnResult = {
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
-export function formatSqlLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
-function parseDate(dateValue: string): Date {
+function parseDate(dateValue: string): void {
   if (!datePattern.test(dateValue)) {
     throw new Error(`Expected YYYY-MM-DD date, received ${dateValue}`);
   }
@@ -50,53 +30,18 @@ function parseDate(dateValue: string): Date {
   if (Number.isNaN(parsedDate.getTime())) {
     throw new Error(`Invalid date: ${dateValue}`);
   }
-
-  return parsedDate;
 }
 
-function formatDate(dateValue: Date): string {
-  return dateValue.toISOString().slice(0, 10);
-}
-
-function addDays(dateValue: Date, days: number): Date {
-  const nextDate = new Date(dateValue);
-  nextDate.setUTCDate(nextDate.getUTCDate() + days);
-  return nextDate;
-}
-
-function requirePositiveInteger(name: string, value: number): void {
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-}
-
-export function buildWindows(input: BuildWindowsInput): DateWindow[] {
-  requirePositiveInteger("windowDays", input.windowDays);
-
-  const endDate = parseDate(input.endDate);
-  let currentStartDate = parseDate(input.startDate);
-  const windows: DateWindow[] = [];
-
-  if (currentStartDate >= endDate) {
-    throw new Error("start date must be before end date");
+function readOptionValue(args: string[], optionIndex: number, optionName: string): string {
+  const value = args[optionIndex + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${optionName} requires a value`);
   }
 
-  while (currentStartDate < endDate) {
-    const nextEndDate = addDays(currentStartDate, input.windowDays);
-    const currentEndDate = nextEndDate < endDate ? nextEndDate : endDate;
-
-    windows.push({
-      startDate: formatDate(currentStartDate),
-      endDate: formatDate(currentEndDate),
-    });
-
-    currentStartDate = currentEndDate;
-  }
-
-  return windows;
+  return value;
 }
 
-export function buildBackfillSql(input: BackfillSqlInput): string {
+export function buildValidationSql(input: ValidationSqlInput): string {
   const startDateLiteral = formatSqlLiteral(input.startDate);
   const endDateLiteral = formatSqlLiteral(input.endDate);
   const statementTimeoutLiteral = formatSqlLiteral(input.statementTimeout);
@@ -177,25 +122,6 @@ lng_rows AS MATERIALIZED (
     AND recorded_at >= ${startDateLiteral}::timestamptz
     AND recorded_at < ${endDateLiteral}::timestamptz
 ),
-gps_rows AS MATERIALIZED (
-  SELECT
-    recorded_at,
-    user_id,
-    provider_id,
-    device_id,
-    source_type,
-    activity_id,
-    scalar AS gps_accuracy_m,
-    row_number() OVER (
-      PARTITION BY recorded_at, user_id, provider_id, source_type, activity_id, device_id
-      ORDER BY tableoid::text, ctid
-    ) AS location_sample_index
-  FROM fitness.metric_stream
-  WHERE channel = 'gps_accuracy'
-    AND scalar IS NOT NULL
-    AND recorded_at >= ${startDateLiteral}::timestamptz
-    AND recorded_at < ${endDateLiteral}::timestamptz
-),
 source_rows AS MATERIALIZED (
   SELECT
     lat.recorded_at,
@@ -205,8 +131,7 @@ source_rows AS MATERIALIZED (
     lat.source_type,
     lat.activity_id,
     lat.latitude,
-    lng.longitude,
-    gps.gps_accuracy_m
+    lng.longitude
   FROM lat_rows AS lat
   INNER JOIN lng_rows AS lng
     ON lng.recorded_at = lat.recorded_at
@@ -216,14 +141,6 @@ source_rows AS MATERIALIZED (
    AND lng.activity_id IS NOT DISTINCT FROM lat.activity_id
    AND lng.device_id IS NOT DISTINCT FROM lat.device_id
    AND lng.location_sample_index = lat.location_sample_index
-  LEFT JOIN gps_rows AS gps
-    ON gps.recorded_at = lat.recorded_at
-   AND gps.user_id = lat.user_id
-   AND gps.provider_id = lat.provider_id
-   AND gps.source_type = lat.source_type
-   AND gps.activity_id IS NOT DISTINCT FROM lat.activity_id
-   AND gps.device_id IS NOT DISTINCT FROM lat.device_id
-   AND gps.location_sample_index = lat.location_sample_index
 )
 SELECT *
 FROM source_rows;
@@ -259,81 +176,44 @@ ON pg_temp.existing_location_rows (
 ANALYZE pg_temp.location_source_rows;
 ANALYZE pg_temp.existing_location_rows;
 
-WITH inserted_location_rows AS (
-INSERT INTO fitness.metric_stream (
-  recorded_at,
-  user_id,
-  provider_id,
-  device_id,
-  source_type,
-  channel,
-  activity_id,
-  point,
-  metadata
+WITH missing_location_rows AS (
+  SELECT 1
+  FROM pg_temp.location_source_rows AS source_rows
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_temp.existing_location_rows AS location
+    WHERE location.recorded_at = source_rows.recorded_at
+      AND location.user_id = source_rows.user_id
+      AND location.provider_id = source_rows.provider_id
+      AND location.source_type = source_rows.source_type
+      AND COALESCE(location.activity_id, '00000000-0000-0000-0000-000000000000'::uuid)
+        = COALESCE(source_rows.activity_id, '00000000-0000-0000-0000-000000000000'::uuid)
+      AND COALESCE(location.device_id, '__NULL_DEVICE__')
+        = COALESCE(source_rows.device_id, '__NULL_DEVICE__')
+      AND location.latitude = source_rows.latitude
+      AND location.longitude = source_rows.longitude
+  )
+),
+validation_counts AS (
+  SELECT
+    (SELECT count(*) FROM pg_temp.location_source_rows) AS source_pairs,
+    (SELECT count(*) FROM pg_temp.existing_location_rows) AS existing_location_rows,
+    (SELECT count(*) FROM missing_location_rows) AS exact_missing_rows
 )
 SELECT
-  source_rows.recorded_at,
-  source_rows.user_id,
-  source_rows.provider_id,
-  source_rows.device_id,
-  source_rows.source_type,
-  'location',
-  source_rows.activity_id,
-  public.ST_SetSRID(
-    public.ST_MakePoint(
-      source_rows.longitude::double precision,
-      source_rows.latitude::double precision
-    ),
-    4326
-  ),
-  NULLIF(
-    jsonb_strip_nulls(jsonb_build_object('gps_accuracy_m', source_rows.gps_accuracy_m)),
-    '{}'::jsonb
-  )
-FROM pg_temp.location_source_rows AS source_rows
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM pg_temp.existing_location_rows AS location
-  WHERE location.recorded_at = source_rows.recorded_at
-    AND location.user_id = source_rows.user_id
-    AND location.provider_id = source_rows.provider_id
-    AND location.source_type = source_rows.source_type
-    AND COALESCE(location.activity_id, '00000000-0000-0000-0000-000000000000'::uuid)
-      = COALESCE(source_rows.activity_id, '00000000-0000-0000-0000-000000000000'::uuid)
-    AND COALESCE(location.device_id, '__NULL_DEVICE__')
-      = COALESCE(source_rows.device_id, '__NULL_DEVICE__')
-    AND location.latitude = source_rows.latitude
-    AND location.longitude = source_rows.longitude
-)
-RETURNING 1
-)
-SELECT 'inserted_location_rows=' || count(*)::text
-FROM inserted_location_rows;
+  'window=${input.startDate}..${input.endDate}'
+  || '|source_pairs=' || source_pairs::text
+  || '|existing_location_rows=' || existing_location_rows::text
+  || '|exact_missing_rows=' || exact_missing_rows::text
+FROM validation_counts;
 
 COMMIT;${recompressSql}
 `;
 }
 
-function readOptionValue(args: string[], optionIndex: number, optionName: string): string {
-  const value = args[optionIndex + 1];
-  if (value === undefined || value.startsWith("--")) {
-    throw new Error(`${optionName} requires a value`);
-  }
-
-  return value;
-}
-
-function parseIntegerOption(args: string[], optionIndex: number, optionName: string): number {
-  const value = Number.parseInt(readOptionValue(args, optionIndex, optionName), 10);
-  requirePositiveInteger(optionName, value);
-  return value;
-}
-
 export function parseCliOptions(args: string[]): CliOptions {
   let startDate: string | undefined;
   let endDate: string | undefined;
-  let windowDays = 1;
-  let maxWindows = 1;
   let sshHost = "dofek-server";
   let statementTimeout = "15min";
   let recompress = false;
@@ -351,14 +231,6 @@ export function parseCliOptions(args: string[]): CliOptions {
         endDate = readOptionValue(args, argumentIndex, argument);
         argumentIndex += 1;
         break;
-      case "--window-days":
-        windowDays = parseIntegerOption(args, argumentIndex, argument);
-        argumentIndex += 1;
-        break;
-      case "--max-windows":
-        maxWindows = parseIntegerOption(args, argumentIndex, argument);
-        argumentIndex += 1;
-        break;
       case "--ssh-host":
         sshHost = readOptionValue(args, argumentIndex, argument);
         argumentIndex += 1;
@@ -367,11 +239,11 @@ export function parseCliOptions(args: string[]): CliOptions {
         statementTimeout = readOptionValue(args, argumentIndex, argument);
         argumentIndex += 1;
         break;
-      case "--no-recompress":
-        recompress = false;
-        break;
       case "--recompress":
         recompress = true;
+        break;
+      case "--no-recompress":
+        recompress = false;
         break;
       case "--execute":
         execute = true;
@@ -390,14 +262,10 @@ export function parseCliOptions(args: string[]): CliOptions {
 
   parseDate(startDate);
   parseDate(endDate);
-  requirePositiveInteger("windowDays", windowDays);
-  requirePositiveInteger("maxWindows", maxWindows);
 
   return {
     startDate,
     endDate,
-    windowDays,
-    maxWindows,
     sshHost,
     statementTimeout,
     recompress,
@@ -437,35 +305,25 @@ function runRemoteSql(sql: string, sshHost: string): Promise<SpawnResult> {
 
 export async function main(): Promise<void> {
   const options = parseCliOptions(process.argv.slice(2));
-  const plannedWindows = buildWindows(options).slice(0, options.maxWindows);
+  const sql = buildValidationSql({
+    startDate: options.startDate,
+    endDate: options.endDate,
+    statementTimeout: options.statementTimeout,
+    recompress: options.recompress,
+  });
 
-  console.log(
-    `[backfill-location] planned ${plannedWindows.length} window(s), execute=${String(options.execute)}`,
-  );
+  if (options.dryRun) {
+    console.log(sql);
+    return;
+  }
 
-  for (const dateWindow of plannedWindows) {
-    const sql = buildBackfillSql({
-      startDate: dateWindow.startDate,
-      endDate: dateWindow.endDate,
-      statementTimeout: options.statementTimeout,
-      recompress: options.recompress,
-    });
-
-    console.log(`[backfill-location] window ${dateWindow.startDate}..${dateWindow.endDate}`);
-
-    if (options.dryRun) {
-      console.log(sql);
-      continue;
-    }
-
-    const result = await runRemoteSql(sql, options.sshHost);
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `remote psql failed for ${dateWindow.startDate}..${dateWindow.endDate} with exit code ${String(
-          result.exitCode,
-        )} signal ${String(result.signal)}`,
-      );
-    }
+  const result = await runRemoteSql(sql, options.sshHost);
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `remote psql failed for ${options.startDate}..${options.endDate} with exit code ${String(
+        result.exitCode,
+      )} signal ${String(result.signal)}`,
+    );
   }
 }
 
@@ -475,7 +333,7 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   main().catch((error: unknown) => {
-    console.error(`[backfill-location] ${error}`);
+    console.error(`[validate-location-backfill] ${error}`);
     process.exit(1);
   });
 }

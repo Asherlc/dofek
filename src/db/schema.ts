@@ -516,8 +516,6 @@ export const metricStream = fitness.table(
     scalar: real("scalar"), // single numeric value
     vector: real("vector").array(), // multi-axis data (e.g., [x, y, z] for accel)
     point: geometryPoint("point"), // spatial value, currently used for channel = 'location'
-    latitude: real("latitude"), // same-row point projection for bounded Postgres backfills
-    longitude: real("longitude"), // same-row point projection for bounded Postgres backfills
     metadata: jsonb("metadata"), // channel-specific provenance/accuracy metadata
   },
   (table) => [

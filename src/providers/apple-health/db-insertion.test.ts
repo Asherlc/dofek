@@ -1338,8 +1338,6 @@ describe("upsertWorkoutBatch", () => {
         activityId: "act-1",
         channel: "location",
         point: "SRID=4326;POINT(-74.006 40.7128)",
-        latitude: 40.7128,
-        longitude: -74.006,
         metadata: { horizontal_accuracy_m: 5.2 },
       }),
     );

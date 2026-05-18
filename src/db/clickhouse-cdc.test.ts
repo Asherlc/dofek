@@ -273,9 +273,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries[3]).toContain("dofek_metric_stream_cdc");
     expect(peerDbQueries[4]).toContain("TO dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[4]).not.toContain("point]");
-    expect(peerDbQueries[4]).toContain(
-      "exclude: [device_id, source_type, vector, latitude, longitude, metadata]",
-    );
+    expect(peerDbQueries[4]).toContain("exclude: [device_id, source_type, vector, metadata]");
+    expect(peerDbQueries[4]).not.toContain("latitude");
+    expect(peerDbQueries[4]).not.toContain("longitude");
     expect(peerDbQueries[5]).toContain("TO dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[6]).toContain("TO dofek_clickhouse_postgres_fitness");
     const rawMirrorSql = `${peerDbQueries[5]}\n${peerDbQueries[6]}`;

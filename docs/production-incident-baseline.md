@@ -7,6 +7,52 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-12: Production volume expanded for metric_stream rebuild headroom
+
+### Impact
+
+The live location migration could not safely continue as a full replacement
+hypertable rebuild with only about `19-20GB` free on the production data
+volume. A 1:1 rebuild of the approximately `56GB` `fitness.metric_stream`
+hypertable would risk exhausting disk before the replacement table could be
+validated and swapped.
+
+### Evidence That Mattered
+
+- Before resizing, `/dev/sdb` was a `100G` Hetzner volume with a `99G` ext4
+  filesystem and about `19G` free (`80-81%` used).
+- Terraform plan showed exactly one in-place infrastructure change:
+  `hcloud_volume.dofek_data[0]` size `100 -> 300`, with no creates, destroys,
+  server replacement, or volume replacement.
+- After apply, `lsblk` showed `/dev/sdb` as `300G`, while `df` still showed the
+  filesystem at `99G`, confirming a filesystem grow step was still required.
+
+### Root Cause
+
+The previous `100GB` production data volume was sized for the compressed live
+database, not for a historical `metric_stream` rebuild that temporarily needs
+both source chunks and replacement chunks plus write/index overhead.
+
+### Fix Or Mitigation
+
+- Updated IaC so `data_volume_size_gb` defaults to `300`.
+- Applied Terraform with Infisical-provided secrets. The Hetzner volume
+  resized in place; resource ID `105292545` was preserved.
+- Grew the mounted ext4 filesystem online with `resize2fs /dev/sdb`.
+- Verified `/mnt/HC_Volume_105292545` is now a `295G` filesystem with about
+  `208G` free (`27%` used).
+- Re-ran Terraform plan and confirmed `No changes`.
+- Parsed `deploy/stack.yml` with prod Infisical environment variables and the
+  deploy-derived `CLICKHOUSE_PASSWORD_ENCODED`; stack config rendered
+  successfully.
+
+### Remaining Risk
+
+The extra space makes a rebuild migration feasible, but the migration still
+needs bounded chunk/task execution, immediate compression of replacement
+chunks, and progress/disk monitoring. The volume increase should be revisited
+after the migration is complete if long-term storage cost matters.
+
 ## 2026-05-11: Deploy migration wedged on inline GPS location backfill
 
 ### Impact
@@ -54,7 +100,9 @@ without committing.
   migration container was gone.
 - Replaced the migration with schema-only operations: create PostGIS, add
   `point`, `latitude`, `longitude`, and `metadata`, drop the leftover helper
-  procedure if present, and create the point GiST index.
+  procedure if present, and create the point GiST index. A follow-up migration
+  later removed the temporary `latitude` and `longitude` projections after the
+  point-only direction was chosen.
 - Ran the patched SQL directly against production to verify it completes
   quickly. It no-op'd the already-present columns, dropped the leftover helper
   procedure, created `metric_stream_point_gist_idx`, and left the Drizzle
@@ -4599,5 +4647,227 @@ the setting is infrastructure-as-code rather than a manual server change.
 ### Remaining Risk
 
 PeerDB's PostGIS-to-ClickHouse `Point` conversion still needs production CDC
-validation after deploy. The fallback, if PeerDB cannot write the native point
-cleanly, is to add explicit latitude/longitude mirror columns in a follow-up.
+validation after deploy. If PeerDB cannot write the native point cleanly, decide
+explicitly whether to revisit the point-only direction rather than reintroducing
+coordinate projections by default.
+
+## 2026-05-13: Location Rebuild Dense Chunk Monitoring
+
+### Symptoms
+
+The production `metric_stream` location rebuild appeared to stall while copying
+2021 Timescale chunks. Overall task progress stayed flat for long periods
+because each week-sized source chunk counts as one rebuild task.
+
+### User Impact
+
+No outage was observed. Normal production inserts continued while the rebuild
+ran, and status checks showed no lock waiters during the monitored windows.
+
+### Evidence
+
+`_hyper_1_147_chunk` completed with 10,567,554 source rows, 5,320,051
+passthrough rows, and 1,772,834 location rows. `_hyper_1_146_chunk` completed
+with 10,591,904 source rows, 5,335,150 passthrough rows, and 1,775,778 location
+rows. Both chunks had dense evening bands where 5-minute or 1-hour windows
+processed hundreds of thousands to millions of source rows. Progress advanced
+from 157/297 (52.86%) to 159/297 (53.54%). The data volume stayed healthy at
+about 19-20% used with 228-230G free.
+
+A later resume advanced `_hyper_1_145_chunk` to `2021-10-29 23:40:00+00`
+with 5,389,466 source rows copied, and `_hyper_1_144_chunk` to
+`2021-11-11 00:45:00+00` with zero rows copied. Overall progress remained
+159/297 (53.54%) because neither in-progress week-sized chunk had completed.
+The data volume remained healthy at about 20% used with 229G free and no lock
+waiters.
+
+### Fix or Mitigation
+
+Dense hours that completed inside the statement timeout were allowed to finish.
+Hours that timed out were retried from the unchanged cursor with 5-minute
+slices. Empty spans were skipped with hour-sized slices, and affected rebuild
+chunks were recompressed by the script as each range completed.
+
+### Remaining Risk
+
+The task-count percentage is still a coarse denominator. Future dense chunks can
+hold the percentage flat for a long time even while millions of rows are being
+copied. One-hour slices can still time out on dense bands, so the operator
+should fall back to 5-minute slices for those windows.
+
+### Follow-Up Work
+
+- Add a documented production runbook for switching slice sizes by observed row
+  density and timeout behavior.
+- Consider adding row-weighted progress reporting to the rebuild task table so
+  percent complete reflects rows copied, not only completed chunks.
+- Keep reporting both task percentage and current chunk cursor during
+  monitoring.
+
+## 2026-05-13: Location Rebuild Remaining Dense Band Analysis
+
+### Symptoms
+
+The production location rebuild was still spending long wall-clock periods in
+2022 despite reaching 160/297 tasks complete (53.87%). Several 5-minute windows
+inside `_hyper_1_143_chunk` approached or exceeded the 20-minute statement
+timeout, making it unclear whether the remaining migration could finish at the
+current rate.
+
+### User Impact
+
+No user-facing outage was observed. Normal production ingestion continued while
+the read-only density analysis and rebuild batches ran.
+
+### Evidence
+
+A full remaining-hour density scan over all pending tasks timed out after 20
+minutes, so the analysis switched to a cheaper chunk-size ranking followed by
+targeted hourly counts for the largest remaining chunks. There were 137
+remaining tasks spanning `2021-11-02 21:40:00+00` through
+`2026-05-13 00:00:00+00`, with about 13 GB of remaining source chunk footprint.
+
+The targeted scan found the expensive legacy location work concentrated in
+`_hyper_1_143_chunk`: remaining dense hours around `2022-05-17 16:00`,
+`17:00`, and `18:00` had about 2.93M, 3.33M, and 4.06M source rows,
+respectively, with substantial lat/lng/location-related rows. `_hyper_1_186_chunk`
+(`2026-04-23` through `2026-04-30`) had about 51.48M source rows and 126 hours
+over 250k rows, but sampled dense hours had zero location-related rows, so this
+appears to be passthrough-heavy copy work rather than legacy location
+transformation. `_hyper_1_688_chunk` (`2026-05-12`) had about 8.42M source rows
+and 22 hours over 250k rows, also with zero location-related rows.
+
+During follow-up copying, `_hyper_1_143_chunk` advanced through
+`2022-05-17 18:00:00+00`. Five-minute slices worked for most dense ranges, but
+`2022-05-17 17:50:00+00` through `17:55:00+00` timed out during the location
+insert and required 1-minute slices. Disk stayed healthy around 21-22% used with
+223-226 GB free, and rebuild status remained 160/297 (53.87%) because the
+current chunk had not completed.
+
+### Fix or Mitigation
+
+The rebuild continued with adaptive slice sizing: hour-sized slices for sparse
+windows, 5-minute slices for dense windows, and 1-minute slices when a 5-minute
+location insert timed out. Naive two-worker parallelism was tested earlier but
+caused lock-timeout contention when workers drifted into the same hot chunk, so
+the active mitigation remains single-worker adaptive slicing until chunk
+selection is made explicitly disjoint.
+
+### Remaining Risk
+
+The final legacy-location dense hour in `_hyper_1_143_chunk` still needs to be
+cleared. Later recent chunks contain tens of millions of passthrough-heavy rows,
+especially `_hyper_1_186_chunk`, so they may still take wall-clock time even
+though they should not pay the expensive lat/lng pairing cost.
+
+### Follow-Up Work
+
+- Patch worker selection so concurrent workers can claim disjoint chunks rather
+  than competing in the same hot chunk.
+- Add a read-only density-report command to the repository script so future
+  operators can see remaining dense hours without hand-written SQL.
+- Add adaptive slice-size selection to the rebuild script so it can
+  automatically step down from hourly to 5-minute or 1-minute slices after a
+  timeout.
+
+## 2026-05-18: Metric Stream Location Rebuild Completed
+
+### Symptoms
+
+The production `fitness.metric_stream` location rebuild was still open in the
+final recent chunks and needed continuous batch chaining to finish. The last
+task-count plateau was 296/297 (99.66%) while `_hyper_1_688_chunk` copied a
+large passthrough-only band for 2026-05-12.
+
+### User Impact
+
+No user-facing outage was observed during the final batch chain. Production disk
+space stayed healthy after the earlier volume increase.
+
+### Evidence
+
+The final task `_hyper_1_688_chunk` copied through
+`2026-05-12 23:30:00+00` to `2026-05-13 00:00:00+00` with 180,967 passthrough
+rows and zero location conversions. After the final commit, repeated runner
+iterations reported no pending task. The verification query returned
+`297/297 = 100.00%`, `open_tasks=0`, `errors=0`, `active_rebuilds=0`,
+`lock_waiters=0`, and disk at 34% used with 189 GB free.
+
+### Fix or Mitigation
+
+Continued the production rebuild with chained batches. Dense legacy-location
+windows used smaller 5-minute slices earlier; the final recent chunks used
+30-minute slices because they were passthrough-only and did not require
+lat/lng-to-point conversion.
+
+### Remaining Risk
+
+The rebuild task table is complete, but follow-up validation and any planned
+post-rebuild cleanup or recompression still need to be tracked separately.
+
+### Follow-Up Work
+
+- Run the post-rebuild validation queries before deleting legacy-only rows or
+  performing any cleanup.
+- Recompress affected chunks after validation if they are still decompressed.
+- Add row-weighted progress reporting so future status updates do not sit at
+  the same task percentage during large passthrough chunks.
+
+## 2026-05-18: Metric Stream Cleanup, Swap, and Legacy Table Drop
+
+### Symptoms
+
+After the rebuild completed, production still had the original
+`fitness.metric_stream` hypertable with legacy `lat`, `lng`, and
+`gps_accuracy` channel rows, plus the rebuilt `fitness.metric_stream_rebuild`
+hypertable using `location` points.
+
+### User Impact
+
+No app healthcheck outage was observed. The scheduled worker was temporarily
+scaled to zero after the swap because the deployed image was still writing
+legacy `lat`/`lng` rows into the new table.
+
+### Evidence
+
+Pre-swap validation showed the rebuild had no legacy channels, no null
+`location.point` rows, no non-location point rows, and all initial rebuild
+chunks compressed. The final locked delta copied and verified 5,650,344
+current/future passthrough rows and inserted 137,985 rows that were missing
+from the earlier tail copy. After the swap, verification caught 20,637 new
+`lat`/`lng` pairs written by the old worker into the new table. The worker was
+stopped, 14 affected 2021 chunks were decompressed, those pairs were converted
+chunk-by-chunk into `location` points, and the legacy rows were deleted.
+
+Final verification returned `legacy_total=0`, `location_null_points=0`,
+`non_location_points=0`, `489` chunks with `488` compressed and only the active
+`2026-05-18` chunk uncompressed. Dropping
+`fitness.metric_stream_legacy_drop` reduced the Hetzner data volume from about
+98 GB used before recompression to 84 GB used after recompression. The old table
+drop cascaded to obsolete Postgres views `fitness.v_metric_stream` and
+`fitness.provider_stats`; current server read paths use ClickHouse analytics
+read models instead.
+
+### Fix or Mitigation
+
+Swapped `fitness.metric_stream_rebuild` into `fitness.metric_stream`, added the
+new table to the PeerDB publications, dropped the legacy hypertable after
+validation, converted post-swap legacy rows in chunk-aware batches, and
+recompressed all non-current chunks. The Terraform default volume size was
+changed back to 100 GB in code, but the live Hetzner volume remains 300 GB
+because Hetzner Cloud Volumes cannot be shrunk in place.
+
+### Remaining Risk
+
+The scheduled worker must stay stopped until an image containing the point-only
+writer is deployed; otherwise it can write new legacy `lat`/`lng` rows into the
+clean table. The live volume cannot be reduced from 300 GB to 100 GB without a
+new-volume migration.
+
+### Follow-Up Work
+
+- Deploy the point-only writer before restoring the worker replica.
+- Keep the deployment runbook explicit that volume downsizing requires a new
+  volume and data migration, not a Terraform resize.
+- Add a post-swap guard or validation script that fails loudly if any
+  `lat`/`lng`/`gps_accuracy` channels reappear.
