@@ -26,15 +26,25 @@ interface MetricStreamBackfillChunkRow {
 interface MetricStreamBackfillChunkRange {
   lower_bound: string;
   upper_bound: string;
+  chunk_schema: string;
+  chunk_name: string;
 }
+
 interface MetricStreamBackfillRange {
   lowerBound: Date;
   upperBound: Date;
+  sourceSchema: string;
+  sourceTable: string;
 }
 
 interface CompletedMetricStreamBackfillRange {
   lowerBound: Date;
   upperBound: Date;
+}
+
+interface CompletedMetricStreamBackfillRangeRow {
+  lower_bound: string;
+  upper_bound: string;
 }
 
 interface TimescaleChunkRow {
@@ -47,7 +57,7 @@ const metricStreamBackfillChunkRowSchema = z.object({
   upper_bound: z.string().nullable(),
 });
 
-const metricStreamBackfillChunkRangeSchema = z.object({
+const completedMetricStreamBackfillRangeSchema = z.object({
   lower_bound: z.string(),
   upper_bound: z.string(),
 });
@@ -497,8 +507,6 @@ async function backfillNativeMetricStream(
     return;
   }
 
-  const postgresMetricStreamSource =
-    buildPostgresMetricStreamTableFunction(postgresConnectionString);
   await client.command({
     query: `CREATE TABLE IF NOT EXISTS analytics.metric_stream_backfill_chunks (
   lower_bound DateTime64(6, 'UTC'),
@@ -547,7 +555,11 @@ ORDER BY (lower_bound, upper_bound)`,
     );
     await client.command({
       query: buildMetricStreamBackfillStatement(
-        postgresMetricStreamSource,
+        buildPostgresMetricStreamTableFunction(
+          postgresConnectionString,
+          backfillRange.sourceTable,
+          backfillRange.sourceSchema,
+        ),
         backfillRange.lowerBound,
         backfillRange.upperBound,
       ),
@@ -566,7 +578,7 @@ async function fetchCompletedMetricStreamBackfillRanges(
   if (!client.query) {
     throw new Error("ClickHouse metric stream backfill requires a query-capable client");
   }
-  const result = await client.query<MetricStreamBackfillChunkRange>({
+  const result = await client.query<CompletedMetricStreamBackfillRangeRow>({
     query: `SELECT
   toString(lower_bound) AS lower_bound,
   toString(upper_bound) AS upper_bound
@@ -576,7 +588,7 @@ ORDER BY lower_bound ASC, upper_bound ASC`,
   });
   const rows = await result.json();
   return rows.map((row) => {
-    const completedRange = metricStreamBackfillChunkRangeSchema.parse(row);
+    const completedRange = completedMetricStreamBackfillRangeSchema.parse(row);
     return {
       lowerBound: parsePostgresTimestamp(
         completedRange.lower_bound,
@@ -608,7 +620,12 @@ function splitMetricStreamBackfillChunk(
         chunkEnd.getTime(),
       ),
     );
-    ranges.push({ lowerBound: rangeStart, upperBound: nextRangeEnd });
+    ranges.push({
+      lowerBound: rangeStart,
+      upperBound: nextRangeEnd,
+      sourceSchema: chunk.chunk_schema,
+      sourceTable: chunk.chunk_name,
+    });
   }
 
   return ranges;
@@ -646,6 +663,8 @@ async function fetchMetricStreamBackfillChunks(
         chunkBounds.push({
           lower_bound: bounds.lower_bound,
           upper_bound: bounds.upper_bound,
+          chunk_schema: chunk.chunk_schema,
+          chunk_name: chunk.chunk_name,
         });
       }
     }
@@ -655,13 +674,17 @@ async function fetchMetricStreamBackfillChunks(
   }
 }
 
-function buildPostgresMetricStreamTableFunction(postgresConnectionString: string): string {
+function buildPostgresMetricStreamTableFunction(
+  postgresConnectionString: string,
+  table = "metric_stream",
+  schema = "fitness",
+): string {
   const postgres = parsePostgresConnectionForClickHouse(postgresConnectionString);
   return `postgresql(${clickHouseStringLiteral(postgres.hostAndPort)}, ${clickHouseStringLiteral(
     postgres.database,
-  )}, 'metric_stream', ${clickHouseStringLiteral(postgres.user)}, ${clickHouseStringLiteral(
-    postgres.password,
-  )}, 'fitness')`;
+  )}, ${clickHouseStringLiteral(table)}, ${clickHouseStringLiteral(
+    postgres.user,
+  )}, ${clickHouseStringLiteral(postgres.password)}, ${clickHouseStringLiteral(schema)})`;
 }
 
 function parsePostgresTimestamp(value: string, label: string): Date {

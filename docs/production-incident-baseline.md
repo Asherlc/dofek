@@ -5142,3 +5142,51 @@ progress.
   ClickHouse/Postgres one-off backfills.
 - Include skip-progress logging whenever a resumable backfill can spend more
   than a few seconds scanning completed work before writing new rows.
+
+## 2026-05-18: ClickHouse Backfill Hit Postgres Shared Lock Memory
+
+### Symptoms
+
+The production `0013_metric_stream_location_point` one-off resumed and advanced
+to `16516/67730` ranges, then exited with `pqxx::out_of_memory`.
+
+### User Impact
+
+The ClickHouse migration remained unapplied at about `24.36%` log progress. The
+Postgres service stayed healthy, but the one-off stopped and needed another
+code-level retry.
+
+### Evidence
+
+The migration log ended with `ERROR: out of shared memory` and Postgres's hint
+to increase `max_locks_per_transaction`. Postgres was still healthy afterward:
+the DB container reported `healthy`, `pg_is_in_recovery()` returned `false`,
+and disk usage was `57%`. Production had `2,499` Timescale chunks for
+`fitness.metric_stream`, while `max_locks_per_transaction` was `128`.
+
+### Root Cause
+
+The ClickHouse backfill read source rows through the Timescale parent
+hypertable via the ClickHouse `postgresql()` table function. Some reads caused
+Postgres to lock too many chunk relations in one transaction and exhaust shared
+lock memory.
+
+### Fix or Mitigation
+
+Changed the backfill planner to carry the Timescale chunk schema/name into each
+five-minute range and read source rows from the exact chunk table for that
+range instead of the parent hypertable. This avoids broad hypertable locking
+without changing production Postgres lock sizing.
+
+### Remaining Risk
+
+The patched image still needs to build and the one-off needs to be restarted
+from the existing checkpoint. The dependent ClickHouse read-model refreshes
+still need to run after the metric stream mirror finishes.
+
+### Follow-Up Work
+
+- For large Timescale-backed one-off backfills, prefer chunk table reads over
+  parent hypertable reads when the chunk boundaries are already known.
+- Add a migration test that asserts ClickHouse backfill source queries use
+  `_timescaledb_internal` chunk tables.
