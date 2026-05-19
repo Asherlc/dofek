@@ -31,6 +31,8 @@ import psycopg
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from dofek_ml.parquet_io import close_writer, create_writer, write_batch
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -263,15 +265,15 @@ def export_to_parquet(
 
                 batch = rows_to_record_batch(rows)
                 if writer is None:
-                    writer = pq.ParquetWriter(str(parquet_path), PARQUET_SCHEMA)
-                writer.write_batch(batch)
+                    writer = create_writer(parquet_path, PARQUET_SCHEMA)
+                write_batch(writer, batch)
 
                 exported += len(rows)
                 percentage = min(90, 5 + round((exported / total_rows) * 85))
                 report(percentage, f"Exporting metric_stream: {exported}/{total_rows} rows")
     finally:
         if writer is not None:
-            writer.close()
+            close_writer(writer)
 
     # Write manifest
     report(95, "Writing manifest...")

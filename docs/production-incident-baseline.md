@@ -5654,3 +5654,91 @@ snapshot or migration work can restart it and temporarily interrupt PeerDB CDC.
 - Check ClickHouse memory usage during any future PeerDB snapshot.
 - If `exit 137` repeats, reduce concurrent migration pressure before raising
   service limits further.
+
+## 2026-05-19: Deploy Web Failed On ClickHouse Restart And Staging DB Image Drift
+
+### Symptoms
+
+Deploy Web run `26117750622` failed for both production and staging. Production
+completed migrations, then failed during `docker stack deploy` after Swarm
+rolled back `dofek_web`. Staging failed earlier during `Run migrations`.
+
+### User Impact
+
+Production stayed on the previous web image after Swarm rollback. Staging did
+not deploy the target image and remained unable to run the PostGIS-dependent
+migration.
+
+### Evidence
+
+Production job `76811535379` logged `dofek_web did not finish deployment
+cleanly; update_state=rollback_completed`. Live service logs for the failed
+new web task showed:
+
+```text
+[web] Failed to start: Error: connect ECONNREFUSED 10.0.1.8:8123
+```
+
+The stack deploy log updated `dofek_web` first and later updated
+`dofek_clickhouse` in the same release. Staging job `76811452037` failed with:
+
+```text
+[migrate] error: extension "postgis" is not available
+```
+
+Staging `dofek-staging_db` was still running
+`timescale/timescaledb:2.26.2-pg18`, and the container only had the
+TimescaleDB extension control file. Production was already running
+`timescale/timescaledb-ha:pg18.3-ts2.26.4-all`, which includes PostGIS.
+
+### Root Cause
+
+Production web startup treated a transient ClickHouse connection refusal as a
+fatal boot error. The startup table-verification loop retried missing tables but
+did not retry the transport failure produced while ClickHouse was restarting
+during the same Swarm stack update.
+
+Staging had separate environment drift: the DB service was still on the older
+TimescaleDB image without PostGIS, so the PostGIS migration could not run.
+After the staging data wipe, the HA image also required the fresh host bind
+directory `/mnt/dofek-data/postgres` to be owned by uid/gid `1000:1000`; the
+root-owned directory created by the wipe caused `initdb` to fail until ownership
+was corrected.
+
+### Fix or Mitigation
+
+Updated ClickHouse startup table verification to retry transient
+`ECONNREFUSED` errors within the existing wait window and added a unit
+regression test for that failure mode.
+
+Attempted to reconcile staging by updating only `dofek-staging_db` to the image
+declared in `deploy/stack.yml`, but the replacement HA image failed to start
+because it could not access the existing staging data directory permissions.
+Rolled the service update back; staging DB returned to the previous running
+image.
+
+After user approval to destroy staging state, removed the `dofek-staging` stack,
+deleted staging bind-mounted state under `/mnt/dofek-data`, removed
+stack-scoped Docker volumes, recreated the required bind directories, set
+`/mnt/dofek-data/postgres` to owner `1000:1000` with mode `700`, and redeployed
+staging with the existing Deploy Web workflow using image tag `sha-9af6a00`.
+Deploy run `26120368665` passed: Postgres became writable, ClickHouse became
+reachable, migrations ran successfully, the stack converged, and ClickHouse CDC
+configuration completed.
+
+### Remaining Risk
+
+Production still needs a fresh deploy of an image containing the startup retry
+fix. Staging is rebuilt on the HA image and the PostGIS-dependent migration now
+passes. The remaining staging risk is that Terraform currently creates
+`/mnt/dofek-data/postgres` as root-owned; a future staging wipe may need the
+same ownership correction unless the infrastructure provisioner is updated.
+
+### Follow-Up Work
+
+- Update the staging bind-directory provisioner or runbook so fresh
+  `timescale/timescaledb-ha` directories are created with owner `1000:1000` and
+  mode `700`.
+- Document the staging wipe/rebuild procedure, including the immutable image
+  tag, stack removal, bind-directory cleanup, Postgres ownership correction, and
+  Deploy Web staging rerun.
