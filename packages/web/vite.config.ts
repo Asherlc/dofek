@@ -14,6 +14,30 @@ function getCommitHash(): string {
   }
 }
 
+function isPackage(id: string, packageName: string): boolean {
+  return id.includes(`/node_modules/${packageName}/`);
+}
+
+function manualChunks(id: string): string | undefined {
+  if (isPackage(id, "echarts") || isPackage(id, "echarts-for-react")) {
+    return "echarts";
+  }
+
+  if (
+    isPackage(id, "@trpc/client") ||
+    isPackage(id, "@trpc/react-query") ||
+    isPackage(id, "@tanstack/react-query")
+  ) {
+    return "trpc";
+  }
+
+  if (isPackage(id, "react") || isPackage(id, "react-dom")) {
+    return "react";
+  }
+
+  return undefined;
+}
+
 export default defineConfig({
   define: {
     __COMMIT_HASH__: JSON.stringify(getCommitHash()),
@@ -40,11 +64,7 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          echarts: ["echarts", "echarts-for-react"],
-          react: ["react", "react-dom"],
-          trpc: ["@trpc/client", "@trpc/react-query", "@tanstack/react-query"],
-        },
+        manualChunks,
       },
     },
   },

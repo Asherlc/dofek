@@ -13,13 +13,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 from dofek_ml.data_loading import REQUIRED_PARQUET_COLUMNS, validate_parquet_schema
+from dofek_ml.parquet_io import read_schema, write_table
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def valid_parquet_file(tmp_path: Path) -> Path:
         }
     )
     filepath: Path = tmp_path / "valid.parquet"
-    pq.write_table(table, filepath)
+    write_table(table, filepath)
     return filepath
 
 
@@ -48,11 +48,11 @@ class TestParquetSchemaContract:
     """Tests that Parquet files conform to the sensor export contract."""
 
     def test_valid_schema_passes(self, valid_parquet_file: Path) -> None:
-        schema: pq.ParquetSchema = pq.read_schema(valid_parquet_file)
+        schema: pa.Schema = read_schema(valid_parquet_file)
         validate_parquet_schema(schema)  # should not raise
 
     def test_all_required_columns_are_present(self, valid_parquet_file: Path) -> None:
-        schema: pq.ParquetSchema = pq.read_schema(valid_parquet_file)
+        schema: pa.Schema = read_schema(valid_parquet_file)
         column_names: set[str] = set(schema.names)
         for required_col in REQUIRED_PARQUET_COLUMNS:
             assert required_col in column_names, f"Missing required column: {required_col}"
@@ -72,8 +72,8 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "missing_recorded_at.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)
 
@@ -92,8 +92,8 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "missing_channel.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)
 
@@ -112,8 +112,8 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "missing_vector.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)
 
@@ -125,8 +125,8 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "minimal.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns") as exc_info:
             validate_parquet_schema(schema)
         error_msg: str = str(exc_info.value)
@@ -152,13 +152,13 @@ class TestParquetSchemaContract:
         }
         table: pa.Table = pa.table(columns)
         filepath: Path = tmp_path / "extra_cols.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         validate_parquet_schema(schema)  # should not raise
 
     def test_vector_column_is_list_type(self, valid_parquet_file: Path) -> None:
         """The vector column should be stored as a list(float) type in Parquet."""
-        arrow_schema: pa.Schema = pq.read_schema(valid_parquet_file)
+        arrow_schema: pa.Schema = read_schema(valid_parquet_file)
         vector_field: pa.Field = arrow_schema.field("vector")
         assert pa.types.is_list(vector_field.type), (
             f"Expected vector column to be list type, got {vector_field.type}"
@@ -184,8 +184,8 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "scalar_row.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         validate_parquet_schema(schema)
 
     def test_vector_row_parquet(self, tmp_path: Path) -> None:
@@ -205,6 +205,6 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "vector_row.parquet"
-        pq.write_table(table, filepath)
-        schema: pq.ParquetSchema = pq.read_schema(filepath)
+        write_table(table, filepath)
+        schema: pa.Schema = read_schema(filepath)
         validate_parquet_schema(schema)

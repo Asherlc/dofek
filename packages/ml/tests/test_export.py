@@ -6,7 +6,6 @@ import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
-import pyarrow.parquet as pq
 import pytest
 
 from dofek_ml.export import (
@@ -18,6 +17,7 @@ from dofek_ml.export import (
     main,
     rows_to_record_batch,
 )
+from dofek_ml.parquet_io import read_table
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -291,7 +291,7 @@ class TestExportToParquet:
 
         parquet_files = list(tmp_path.rglob("*.parquet"))
         assert len(parquet_files) == 1
-        table = pq.read_table(parquet_files[0])
+        table = read_table(parquet_files[0])
         assert table.num_rows == 3
 
     def test_writes_manifest(self, tmp_path: Path) -> None:
@@ -351,7 +351,7 @@ class TestExportToParquet:
         export_to_parquet(conn, tmp_path)
 
         parquet_files = list(tmp_path.rglob("*.parquet"))
-        table = pq.read_table(parquet_files[0])
+        table = read_table(parquet_files[0])
         assert table.schema == PARQUET_SCHEMA
 
     def test_vector_column_preserved(self, tmp_path: Path) -> None:
@@ -359,7 +359,7 @@ class TestExportToParquet:
         export_to_parquet(conn, tmp_path)
 
         parquet_files = list(tmp_path.rglob("*.parquet"))
-        table = pq.read_table(parquet_files[0])
+        table = read_table(parquet_files[0])
         vectors = table.column("vector").to_pylist()
         # Third row has a vector
         assert vectors[2] == pytest.approx([0.1, 0.2, 9.8])
@@ -392,7 +392,7 @@ class TestExportToParquet:
         assert manifest["totalRows"] == 2
 
         parquet_files = list(tmp_path.rglob("*.parquet"))
-        table = pq.read_table(parquet_files[0])
+        table = read_table(parquet_files[0])
         assert table.num_rows == 2
 
 
