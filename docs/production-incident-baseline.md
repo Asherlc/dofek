@@ -5508,6 +5508,10 @@ during the same Swarm stack update.
 
 Staging had separate environment drift: the DB service was still on the older
 TimescaleDB image without PostGIS, so the PostGIS migration could not run.
+After the staging data wipe, the HA image also required the fresh host bind
+directory `/mnt/dofek-data/postgres` to be owned by uid/gid `1000:1000`; the
+root-owned directory created by the wipe caused `initdb` to fail until ownership
+was corrected.
 
 ### Fix or Mitigation
 
@@ -5521,16 +5525,28 @@ because it could not access the existing staging data directory permissions.
 Rolled the service update back; staging DB returned to the previous running
 image.
 
+After user approval to destroy staging state, removed the `dofek-staging` stack,
+deleted staging bind-mounted state under `/mnt/dofek-data`, removed
+stack-scoped Docker volumes, recreated the required bind directories, set
+`/mnt/dofek-data/postgres` to owner `1000:1000` with mode `700`, and redeployed
+staging with the existing Deploy Web workflow using image tag `sha-9af6a00`.
+Deploy run `26120368665` passed: Postgres became writable, ClickHouse became
+reachable, migrations ran successfully, the stack converged, and ClickHouse CDC
+configuration completed.
+
 ### Remaining Risk
 
 Production still needs a fresh deploy of an image containing the startup retry
-fix. Staging remains unable to run PostGIS-dependent migrations until its
-Postgres data directory ownership/layout is migrated to the HA image expected
-by `deploy/stack.yml`.
+fix. Staging is rebuilt on the HA image and the PostGIS-dependent migration now
+passes. The remaining staging risk is that Terraform currently creates
+`/mnt/dofek-data/postgres` as root-owned; a future staging wipe may need the
+same ownership correction unless the infrastructure provisioner is updated.
 
 ### Follow-Up Work
 
-- Plan and execute a staging DB image/data-directory migration through the
-  normal infrastructure path before rerunning staging migrations.
-- Document the DB image migration procedure, including the expected data
-  directory ownership for `timescale/timescaledb-ha`.
+- Update the staging bind-directory provisioner or runbook so fresh
+  `timescale/timescaledb-ha` directories are created with owner `1000:1000` and
+  mode `700`.
+- Document the staging wipe/rebuild procedure, including the immutable image
+  tag, stack removal, bind-directory cleanup, Postgres ownership correction, and
+  Deploy Web staging rerun.
