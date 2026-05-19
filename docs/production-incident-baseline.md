@@ -7,6 +7,57 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-19: ClickHouse System Logs Consumed Production Data Volume Space
+
+### Symptoms
+
+After the metric-stream rebuild and ClickHouse point migration finished,
+production data-volume usage still looked high at about `98GB` used even after
+the legacy Postgres hypertable was dropped.
+
+### User Impact
+
+No outage was observed. Production services remained healthy, but the elevated
+baseline made shrinking the Hetzner data volume back toward `100GB` unsafe.
+
+### Evidence
+
+Host-level disk analysis showed `/mnt/HC_Volume_105292545` was split roughly
+evenly between `postgres` and `clickhouse`, about `49GB` each. ClickHouse table
+sizes showed `system.text_log` alone using about `35.77GiB`, with
+`system.processors_profile_log`, `system.trace_log`, and other system log tables
+using several more GiB. Application ClickHouse data was much smaller:
+`postgres_fitness.metric_stream` was about `5.28GiB` for roughly `281M` rows.
+
+### Root Cause
+
+ClickHouse diagnostic system log tables had no bounded retention and retained
+large migration/backfill log volume from the production point migration work.
+
+### Fix or Mitigation
+
+Truncated ClickHouse diagnostic system logs and pruned unused Docker containers
+and images. The data volume dropped from about `98GB` used to about `55-56GB`
+used, and root disk usage dropped from about `44GB` to `37GB`. Added
+checked-in ClickHouse server config to apply seven-day TTL retention to system
+log tables via `deploy/clickhouse/config.d/system-log-ttl.xml`, mounted in
+production, local, E2E, and review-app ClickHouse configurations.
+
+### Remaining Risk
+
+TTL configuration takes effect after the ClickHouse service is redeployed with
+the new config. Future unusually verbose migrations can still generate short
+term log volume within the seven-day window, but it should no longer accumulate
+indefinitely.
+
+### Follow-Up Work
+
+- Deploy the ClickHouse TTL config through the normal stack release path.
+- Add a recurring storage audit or alert that reports top ClickHouse tables,
+  including `system.*` log tables.
+- Revisit the live 300GB Hetzner volume only after sustained usage and
+  operational headroom are clear.
+
 ## 2026-05-18: ClickHouse One-Off Backfill Hit Server Memory Ceiling
 
 ### Symptoms
@@ -5355,3 +5406,59 @@ ClickHouse read-model SQL before raising the single-node service cap further.
 - Consider chunked or narrower refresh strategies for the largest ClickHouse
   read models so schema migrations do not require full-table refreshes under a
   single query memory ceiling.
+
+## 2026-05-12: PR Dependency Audit Blocked By Broad TanStack History Malware Advisory
+
+### Symptoms
+
+PR #1121 failed the `Test / Dependency Audit` GitHub Actions job.
+
+### User Impact
+
+The docs-only PR could not merge while the dependency audit gate failed.
+
+### Evidence
+
+The failing command was:
+
+```text
+pnpm audit --prod --audit-level=critical --ignore-registry-errors
+```
+
+The first fatal finding in job `75480320849` was:
+
+```text
+critical Malware in @tanstack/history
+Paths packages__web>@tanstack/react-router>@tanstack/history
+Vulnerable versions >=0
+Patched versions <0.0.0
+```
+
+Local reproduction matched CI after dependency install.
+
+### Root Cause
+
+GitHub advisory `GHSA-rmmr-r34h-pfm5` is currently returned to `pnpm audit` as
+affecting every `@tanstack/history` version with no patched version. Public
+incident reporting identifies specific compromised TanStack releases; the
+branch was on older unaffected TanStack Router versions but the all-version
+advisory still failed the critical audit.
+
+### Fix or Mitigation
+
+Updated TanStack Router packages to current stable versions outside the known
+compromised version ranges and changed the dependency audit command to ignore
+only `GHSA-rmmr-r34h-pfm5`. The audit still fails for any other critical
+production advisory.
+
+### Remaining Risk
+
+This is an advisory-specific exception while the upstream GitHub/npm advisory
+range remains broad. Remove the exception once the advisory is narrowed or a
+non-`@tanstack/history` TanStack Router release is available.
+
+### Follow-Up Work
+
+- Re-run PR #1121 CI and verify `Test / Dependency Audit` passes.
+- Periodically check `GHSA-rmmr-r34h-pfm5`; remove the `--ignore` once upstream
+  no longer reports safe TanStack versions as vulnerable.

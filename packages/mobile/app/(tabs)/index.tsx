@@ -85,9 +85,11 @@ export default function TodayScreen() {
   const isLoading = dashboardQuery.isLoading;
   const isError = dashboardQuery.isError;
 
-  const triggerSync = trpc.sync.triggerSync.useMutation();
-  const { refreshing, onRefresh } = useRefresh(() => {
-    triggerSync.mutate({ sinceDays: 1 });
+  const { refreshing, onRefresh } = useRefresh({
+    refresh: async () => {
+      await dashboardQuery.refetch();
+    },
+    invalidate: null,
   });
 
   function handleLogFood() {

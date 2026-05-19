@@ -37,7 +37,6 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
-| Management UI auth | [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |
 | Peloton | [peloton.md](peloton.md) | Auth and workout sync notes. |
 | Ride with GPS | [ride-with-gps.md](ride-with-gps.md) | OAuth flow and activity import notes. |
 | TrainerRoad | [trainerroad.md](trainerroad.md) | Cookie auth, workouts, and parsing details. |
@@ -56,12 +55,15 @@ Cross-provider reverse-engineering references:
 | Doc | What it is for |
 |-----|----------------|
 | [ci-debugging.md](ci-debugging.md) | Debugging GitHub Actions failures with `gh` CLI. |
+| [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [production-incident-baseline.md](production-incident-baseline.md) | Baseline knowledge from production incidents and recurring failure patterns. |
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
 | [staging.md](staging.md) | Production-shaped staging environment and deploy workflow. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and zero-downtime Hetzner volume expansion plan. |
+| [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |
+| [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |
 | [bugsink.md](bugsink.md) | Investigating Bugsink issues and stack traces from terminal. |
 | [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Fixing management subdomains that return Traefik 404s. |
 

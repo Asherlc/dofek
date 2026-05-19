@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -34,6 +35,7 @@ import {
   disconnect as whoopDisconnect,
 } from "../modules/whoop-ble";
 import { colors } from "../theme";
+import { rootStackScreenOptions } from "./_layout-options";
 import LoginScreen from "./login";
 
 try {
@@ -42,15 +44,9 @@ try {
   captureException(error, { source: "bootstrap-telemetry-init" });
 }
 
-export const rootStackScreenOptions = {
-  headerStyle: { backgroundColor: colors.background },
-  headerTintColor: colors.text,
-  headerBackButtonDisplayMode: "minimal" as const,
-  headerBackTitle: "Back",
-  headerBackTitleVisible: false,
-  headerShadowVisible: false,
-  animation: "fade" as const,
-};
+SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
+  captureException(error, { source: "splash-screen-prevent-auto-hide" });
+});
 
 /**
  * Headless component that manages WHOOP BLE accelerometer sync.
@@ -146,6 +142,14 @@ function AuthGate() {
       ],
     });
   }, [serverUrl, sessionToken]);
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    SplashScreen.hideAsync().catch((error: unknown) => {
+      captureException(error, { source: "splash-screen-hide" });
+    });
+  }, [isLoading]);
 
   // Set up background HealthKit sync when authenticated
   useEffect(() => {

@@ -193,6 +193,9 @@ services:
       - source: clickhouse_nullable_tuple_settings
         target: /etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml
         mode: 0444
+      - source: clickhouse_system_log_ttl
+        target: /etc/clickhouse-server/config.d/system-log-ttl.xml
+        mode: 0444
     deploy:
       resources:
         limits:
@@ -538,3 +541,5 @@ networks:
 configs:
   clickhouse_nullable_tuple_settings:
     file: ./clickhouse/users.d/allow-experimental-nullable-tuple-type.xml
+  clickhouse_system_log_ttl:
+    file: ./clickhouse/config.d/system-log-ttl.xml

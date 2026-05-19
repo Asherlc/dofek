@@ -42,6 +42,13 @@ describe("formatConfirmationMessage", () => {
 
     expect(result.blocks).toBeDefined();
     expect(result.blocks.length).toBeGreaterThan(0);
+    expect(result.blocks[0]).toEqual({
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Parsed 1 item",
+      },
+    });
 
     const text = JSON.stringify(result.blocks);
     expect(text).toContain("Chicken Burrito");
@@ -51,10 +58,20 @@ describe("formatConfirmationMessage", () => {
 
     expect(text).toContain("confirm_food");
     expect(text).toContain("cancel_food");
+    expect(text).toContain("Confirm");
+    expect(text).toContain("Cancel");
   });
 
   it("formats multiple food items", () => {
     const result = formatConfirmationMessage([sampleItem, secondItem]);
+
+    expect(result.blocks[0]).toEqual({
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: "Parsed 2 items",
+      },
+    });
 
     const text = JSON.stringify(result.blocks);
     expect(text).toContain("Chicken Burrito");
@@ -63,6 +80,10 @@ describe("formatConfirmationMessage", () => {
 
     // Should show totals
     expect(text).toContain("790"); // 650 + 140 total calories
+    expect(text).toContain("P: 35.2g");
+    expect(text).toContain("C: 111.1g");
+    expect(text).toContain("F: 22.5g");
+    expect(text).toContain('"type":"divider"');
   });
 
   it("stores button value in confirm action for entry ID lookup", () => {
@@ -87,6 +108,16 @@ describe("formatSavedMessage", () => {
   it("shows a success message with item count", () => {
     const result = formatSavedMessage([sampleItem]);
 
+    expect(result.text).toBe("Logged: Chicken Burrito: 650 cal");
+    expect(result.blocks).toHaveLength(2);
+    expect(result.blocks[0]).toEqual({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "Logged 1 item:",
+      },
+    });
+
     const text = JSON.stringify(result.blocks);
     expect(text).toContain("Chicken Burrito");
     expect(text).toContain("650");
@@ -95,9 +126,80 @@ describe("formatSavedMessage", () => {
   it("shows multiple saved items", () => {
     const result = formatSavedMessage([sampleItem, secondItem]);
 
+    expect(result.blocks[0]).toEqual({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "Logged 2 items:",
+      },
+    });
+
     const text = JSON.stringify(result.blocks);
     expect(text).toContain("Chicken Burrito");
     expect(text).toContain("Coca-Cola");
+  });
+
+  it("shows calories remaining for the day when daily progress is provided", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 650,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Calories: 650 / 2,000 cal");
+    expect(text).toContain("[███░░░░░░░] 32%");
+    expect(text).toContain("1,350 cal remaining today");
+    expect(result.text).toContain("1,350 cal remaining today");
+  });
+
+  it("does not show a full progress bar before the calorie goal is reached", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 1999,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("[█████████░] 99%");
+    expect(text).toContain("1 cal remaining today");
+  });
+
+  it("shows the reached status at exactly the calorie goal", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 2000,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Calories: 2,000 / 2,000 cal");
+    expect(text).toContain("[██████████] 100%");
+    expect(text).toContain("Calorie goal reached today");
+    expect(result.text).toContain("Calorie goal reached today");
+  });
+
+  it("shows calories over goal when daily progress exceeds the goal", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 2000,
+      caloriesConsumed: 2150,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Calories: 2,150 / 2,000 cal");
+    expect(text).toContain("[██████████] 108%");
+    expect(text).toContain("150 cal over goal today");
+    expect(result.text).toContain("150 cal over goal today");
+  });
+
+  it("does not divide by zero when calorie goal is unavailable", () => {
+    const result = formatSavedMessage([sampleItem], {
+      calorieGoal: 0,
+      caloriesConsumed: 650,
+    });
+
+    const text = JSON.stringify(result.blocks);
+    expect(text).toContain("Calories: 650 / 0 cal");
+    expect(text).toContain("[░░░░░░░░░░] 0%");
+    expect(text).toContain("650 cal over goal today");
+    expect(text).not.toContain("Infinity");
   });
 });
 
@@ -131,6 +233,19 @@ describe("formatMicroLine", () => {
     const line = formatMicroLine(item);
     expect(line).toContain("Ca: 251mg");
     expect(line).toContain("Iron: 3.7mg");
+  });
+
+  it("omits zero values and formats the 10-unit boundary as an integer", () => {
+    const line = formatMicroLine({
+      calciumMg: 0,
+      ironMg: 10,
+      magnesiumMg: 9.5,
+    });
+
+    expect(line).not.toContain("Ca:");
+    expect(line).toContain("Iron: 10mg");
+    expect(line).not.toContain("Iron: 10.0mg");
+    expect(line).toContain("Mg: 9.5mg");
   });
 });
 
