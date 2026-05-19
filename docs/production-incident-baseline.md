@@ -5272,3 +5272,58 @@ stream mirror finishes.
   Timescale chunk-count guidance.
 - Avoid direct reads from compressed Timescale chunk tables unless the query
   explicitly accounts for Timescale's internal compressed storage schema.
+
+## 2026-05-19: ClickHouse Metric Stream Migration Needed Larger Refresh Memory
+
+### Symptoms
+
+The production `0013_metric_stream_location_point` one-off completed the
+resumable `metric_stream` backfill but repeatedly failed while refreshing
+dependent ClickHouse read models.
+
+### User Impact
+
+The ClickHouse migration was not recorded as applied until the dependent
+`analytics.deduped_sensor`, `analytics.deduped_location`, and
+`analytics.activity_summary` refreshes completed. During retries, the analytics
+read models stayed on the previous migration state.
+
+### Evidence
+
+The backfill reached `100.00%` and logged `ClickHouse metric_stream backfill
+complete`. The following `SYSTEM WAIT VIEW analytics.deduped_sensor` failed
+with ClickHouse memory-limit errors at the 3 GiB service limit and again at the
+4 GiB service limit. Active query inspection showed the refresh passing the old
+2.7 GiB internal ceiling under the 4 GiB service limit before later reaching
+the 3.6 GiB internal ceiling. After raising the service limit to 5 GiB, the
+same one-off logged `Applied ClickHouse migration:
+0013_metric_stream_location_point`, and `analytics.schema_migrations` contained
+that migration id.
+
+### Root Cause
+
+The post-backfill ClickHouse materialized-view refresh for
+`analytics.deduped_sensor` needed more memory than the previous production
+ClickHouse container limit allowed. ClickHouse enforces an internal memory cap
+below the Docker service limit, so the 3 GiB and 4 GiB service limits translated
+to lower effective query ceilings.
+
+### Fix or Mitigation
+
+Raised the ClickHouse service memory limit in `deploy/stack.yml` to 5 GiB and
+applied the same limit to the live `dofek_clickhouse` service. The migration was
+rerun from checkpoint and completed successfully.
+
+### Remaining Risk
+
+Future `metric_stream` growth can make full read-model refreshes exceed the 5
+GiB limit. If that happens, prefer reducing refresh memory pressure in the
+ClickHouse read-model SQL before raising the single-node service cap further.
+
+### Follow-Up Work
+
+- Add a runbook section for ClickHouse materialized-view refresh memory checks,
+  including `system.processes` and the service memory limit.
+- Consider chunked or narrower refresh strategies for the largest ClickHouse
+  read models so schema migrations do not require full-table refreshes under a
+  single query memory ceiling.
