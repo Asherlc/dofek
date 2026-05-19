@@ -126,7 +126,10 @@ describe("metric_stream location point migration", () => {
         FROM information_schema.columns
         WHERE table_schema = 'fitness'
           AND table_name = 'metric_stream'
-          AND column_name IN ('point', 'latitude', 'longitude', 'metadata')
+          AND (
+            column_name IN ('point', 'metadata', 'latitude', 'longitude')
+            OR column_name LIKE 'point_%'
+          )
         ORDER BY column_name
       `);
       expect(columnsResult.rows).toEqual([{ column_name: "metadata" }, { column_name: "point" }]);

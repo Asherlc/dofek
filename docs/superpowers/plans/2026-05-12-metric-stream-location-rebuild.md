@@ -1,6 +1,6 @@
 # Metric Stream Location Rebuild Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Optional implementation helpers include `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild `fitness.metric_stream` into a replacement hypertable that stores canonical `location` point rows and omits legacy `lat`/`lng` rows without mutating old compressed chunks in place.
 
@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Add Rebuild SQL Builder Tests
+## Task 1: Add Rebuild SQL Builder Tests
 
 **Files:**
 - Create: `scripts/rebuild-metric-stream-location.test.ts`
@@ -25,7 +25,7 @@ Test that setup SQL creates `fitness.metric_stream_rebuild`, configures Timescal
 Run: `pnpm vitest run scripts/rebuild-metric-stream-location.test.ts`
 Expected: FAIL because `scripts/rebuild-metric-stream-location.ts` does not exist.
 
-### Task 2: Implement Rebuild Script
+## Task 2: Implement Rebuild Script
 
 **Files:**
 - Create: `scripts/rebuild-metric-stream-location.ts`
@@ -46,7 +46,7 @@ For each task range, insert all non-legacy rows, insert canonical `location` row
 
 Lock old and replacement tables, copy the tail, validate no incomplete tasks, rename old table aside, rename replacement to `metric_stream`, restore indexes/FKs/replica identity, and leave the old table available for rollback until explicit cleanup.
 
-### Task 3: Validate Locally
+## Task 3: Validate Locally
 
 **Files:**
 - Test: `scripts/rebuild-metric-stream-location.test.ts`
@@ -61,7 +61,7 @@ Expected: PASS.
 Run: `pnpm tsc --noEmit`
 Expected: PASS.
 
-### Task 4: Start Production Backfill
+## Task 4: Start Production Backfill
 
 **Files:**
 - Run: `scripts/rebuild-metric-stream-location.ts`

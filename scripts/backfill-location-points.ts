@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { z } from "zod";
 
 export type DateWindow = {
   startDate: string;
@@ -37,21 +38,29 @@ type SpawnResult = {
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
+const dateStringSchema = z
+  .string()
+  .regex(datePattern, "Expected YYYY-MM-DD date")
+  .refine((dateValue) => {
+    const [yearText, monthText, dayText] = dateValue.split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const parsedDate = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsedDate.getUTCFullYear() === year &&
+      parsedDate.getUTCMonth() === month - 1 &&
+      parsedDate.getUTCDate() === day
+    );
+  }, "Invalid YYYY-MM-DD date");
+
 export function formatSqlLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
 function parseDate(dateValue: string): Date {
-  if (!datePattern.test(dateValue)) {
-    throw new Error(`Expected YYYY-MM-DD date, received ${dateValue}`);
-  }
-
-  const parsedDate = new Date(`${dateValue}T00:00:00.000Z`);
-  if (Number.isNaN(parsedDate.getTime())) {
-    throw new Error(`Invalid date: ${dateValue}`);
-  }
-
-  return parsedDate;
+  const validDateValue = dateStringSchema.parse(dateValue);
+  return new Date(`${validDateValue}T00:00:00.000Z`);
 }
 
 function formatDate(dateValue: Date): string {

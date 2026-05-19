@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { z } from "zod";
 import { formatSqlLiteral } from "./backfill-location-points.ts";
 
 export type ChunkListSqlInput = {
@@ -41,15 +42,24 @@ type SpawnResult = {
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
-function parseDate(dateValue: string): void {
-  if (!datePattern.test(dateValue)) {
-    throw new Error(`Expected YYYY-MM-DD date, received ${dateValue}`);
-  }
+const dateStringSchema = z
+  .string()
+  .regex(datePattern, "Expected YYYY-MM-DD date")
+  .refine((dateValue) => {
+    const [yearText, monthText, dayText] = dateValue.split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const parsedDate = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsedDate.getUTCFullYear() === year &&
+      parsedDate.getUTCMonth() === month - 1 &&
+      parsedDate.getUTCDate() === day
+    );
+  }, "Invalid YYYY-MM-DD date");
 
-  const parsedDate = new Date(`${dateValue}T00:00:00.000Z`);
-  if (Number.isNaN(parsedDate.getTime())) {
-    throw new Error(`Invalid date: ${dateValue}`);
-  }
+function parseDate(dateValue: string): void {
+  dateStringSchema.parse(dateValue);
 }
 
 function readOptionValue(args: string[], optionIndex: number, optionName: string): string {

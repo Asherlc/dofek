@@ -7,6 +7,64 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-18: ClickHouse One-Off Backfill Hit Server Memory Ceiling
+
+### Symptoms
+
+The production one-off ClickHouse `metric_stream` location-point migration
+advanced from about `24%` to about `44.5%`, then exited with a ClickHouse
+`memory limit exceeded` error. After restarting ClickHouse and resuming from the
+checkpoint, it advanced beyond `50%` and hit the same server memory ceiling
+again.
+
+### User Impact
+
+No user-facing outage was observed. The ClickHouse service stayed in Swarm and
+the app healthcheck remained OK, but the one-off migration required supervised
+restart/resume cycles.
+
+### Evidence
+
+- The migration container exited with
+  `OvercommitTracker decision: Memory overcommit has not freed enough memory:
+  While executing MergeTreeSelect(pool: ReadPool, algorithm: Thread)`.
+- The first failed run had `oom=false`, so Docker did not kill the container;
+  ClickHouse rejected the query at its own memory limit.
+- ClickHouse RSS was about `2.49GiB / 3GiB` after the first failure and dropped
+  to about `780MiB / 3GiB` after a service restart.
+- The checkpoint table preserved progress; after the first failure it showed
+  `completed_through = 2024-01-30 05:35:00.000000`.
+
+### Root Cause
+
+The long-running backfill repeatedly queries and anti-joins the ClickHouse
+`postgres_fitness.metric_stream` mirror. On dense ranges, ClickHouse process
+memory grows until the server-level memory cap rejects the next range query.
+
+### Fix or Mitigation
+
+Restarted the ClickHouse service to clear process RSS, waited for `/ping`, and
+resumed the one-off from `analytics.metric_stream_backfill_chunks`. The retry
+loop only treats the exact ClickHouse memory-limit failure and temporary
+post-restart `ECONNREFUSED` as retryable; other migration failures still stop.
+
+### Remaining Risk
+
+The remaining migration may need additional ClickHouse restart/resume cycles
+until the backfill completes. This is operationally safe because each completed
+five-minute range is checkpointed, but it is not a clean long-term migration
+pattern.
+
+### Follow-Up Work
+
+- After the migration completes, inspect ClickHouse query logs for the densest
+  ranges and confirm whether the anti-join or source-table read dominates
+  memory.
+- Consider lowering per-query memory pressure for future one-off backfills by
+  reducing range size or using a staging-table strategy with bounded joins.
+- Add a runbook note that checkpointed ClickHouse backfills may be resumed after
+  server memory-limit failures only when the checkpoint table confirms progress.
+
 ## 2026-05-12: Production volume expanded for metric_stream rebuild headroom
 
 ### Impact
@@ -52,6 +110,17 @@ The extra space makes a rebuild migration feasible, but the migration still
 needs bounded chunk/task execution, immediate compression of replacement
 chunks, and progress/disk monitoring. The volume increase should be revisited
 after the migration is complete if long-term storage cost matters.
+
+### Follow-Up Work
+
+- Run the remaining metric stream rebuild/backfill with bounded tasks and
+  immediate compression after each completed range.
+- Keep disk-space and migration-progress monitoring active until the rebuild is
+  validated and old storage is explicitly cleaned up.
+- Revisit the `300GB` production volume size after cleanup and document whether
+  it should remain the default.
+- Verify the backup/restore path and update the metric stream runbook with the
+  final production migration procedure.
 
 ## 2026-05-11: Deploy migration wedged on inline GPS location backfill
 
@@ -4650,6 +4719,17 @@ PeerDB's PostGIS-to-ClickHouse `Point` conversion still needs production CDC
 validation after deploy. If PeerDB cannot write the native point cleanly, decide
 explicitly whether to revisit the point-only direction rather than reintroducing
 coordinate projections by default.
+
+### Follow-Up Work
+
+- Validate production PeerDB CDC from PostGIS `Point` to ClickHouse `Point` after
+  the migration is applied.
+- Keep integration coverage for `Nullable(Point)` in the ClickHouse migration
+  path so schema drift fails in CI.
+- Monitor ClickHouse and PeerDB write failures during the first production sync
+  after deployment.
+- Document the rollback decision point if native `Point` replication proves
+  untenable.
 
 ## 2026-05-13: Location Rebuild Dense Chunk Monitoring
 

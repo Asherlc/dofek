@@ -63,4 +63,10 @@ describe("backfill-location-points", () => {
       windowDays: 1,
     });
   });
+
+  it("rejects impossible calendar dates", () => {
+    expect(() => parseCliOptions(["--start", "2026-02-31", "--end", "2026-03-02"])).toThrow(
+      "Invalid YYYY-MM-DD date",
+    );
+  });
 });
