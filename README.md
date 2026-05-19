@@ -130,7 +130,7 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
-├── deploy/                        # Terraform + Docker Compose (production stack) — see deploy/README.md
+├── deploy/                        # Terraform + Docker Swarm production stack — see deploy/README.md
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
 
@@ -234,7 +234,6 @@ docker run dofek:latest worker
 docker run dofek:latest sync
 ```
 
-All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. All modes run migrations before starting. In production, the `web` mode now waits for migrations to finish before accepting traffic (no background migration while serving).
 All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
 
 ## Deployment
@@ -374,7 +373,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] OTel Collector sidecar shipping app logs + Docker container logs to Axiom
 - [x] Infisical secrets management (migrated from SOPS + Age)
 - [x] GHA CI with Docker build + push to GHCR
-- [x] Watchtower auto-deploy with Slack notifications
+- [x] GitHub Actions deploys the Docker Swarm stack with shared app/ML image tags
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
 - [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB)
 
@@ -595,4 +594,4 @@ For production deploy-time secret injection, the required Infisical `prod` keys,
 - **Stryker** — mutation testing
 - **Biome** — linting and formatting
 - **Infisical** — secrets management (client secrets, API keys, tokens)
-- **Docker + GHCR** — deployment via GitHub Actions + Watchtower
+- **Docker + GHCR** — deployment via GitHub Actions to Docker Swarm

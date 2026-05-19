@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import {
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
@@ -49,6 +50,8 @@ SELECT 1 AS value`,
   ),
 }));
 
+const mockRunClickHouseMigrations = vi.mocked(runClickHouseMigrations);
+
 describe("clickhouse integration test helpers", () => {
   it("syncs raw mirrored tables and populates stored test read models", async () => {
     clickHouseMocks.command.mockReset().mockResolvedValue(undefined);
@@ -65,6 +68,19 @@ describe("clickhouse integration test helpers", () => {
     };
 
     await createClickHouseTestActivitySensorStore(testContext);
+
+    expect(mockRunClickHouseMigrations).not.toHaveBeenCalled();
+    const setupCommands = clickHouseMocks.command.mock.calls.map(([options]) =>
+      String(options.query),
+    );
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS postgres_fitness_test_") &&
+          command.includes(".metric_stream"),
+      ),
+    ).toBe(true);
+
     clickHouseMocks.command.mockClear();
 
     await syncClickHouseTestActivitySensorStore(testContext);

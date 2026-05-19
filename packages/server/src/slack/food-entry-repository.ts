@@ -3,7 +3,7 @@ import { nutrientAmountEntriesFromLegacyFields } from "dofek/db/nutrient-columns
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { createPendingEntryStore, type PendingEntryStore } from "./pending-entry-store.ts";
 
@@ -20,6 +20,7 @@ const slackBlockSchema = z.object({
 });
 
 const DOFEK_PROVIDER_ID = "dofek";
+const DEFAULT_CALORIE_GOAL = 2000;
 
 export const FALLBACK_TIMEZONE = process.env.TIMEZONE ?? "America/Los_Angeles";
 
@@ -47,6 +48,31 @@ export interface SlackEntryContext {
   threadTs: string;
   sourceMessageTs: string;
   slackUserId: string;
+}
+
+export interface DailyCalorieProgress {
+  calorieGoal: number;
+  caloriesConsumed: number;
+}
+
+const calorieGoalRowSchema = z.object({ value: z.unknown().nullable() });
+const dailyCaloriesRowSchema = z.object({ calories_consumed: z.coerce.number() });
+const confirmedSummaryRowSchema = z.object({
+  food_name: z.string(),
+  calories: z.coerce.number().nullable(),
+  date: dateStringSchema,
+});
+
+function parseCalorieGoal(rawValue: unknown): number {
+  const numericValue =
+    typeof rawValue === "number"
+      ? rawValue
+      : typeof rawValue === "string"
+        ? Number(rawValue)
+        : Number.NaN;
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? Math.round(numericValue)
+    : DEFAULT_CALORIE_GOAL;
 }
 
 /** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
@@ -348,14 +374,42 @@ export class FoodEntryRepository {
   /** Load food entries by IDs for display after confirmation */
   async loadConfirmedSummary(
     entryIds: string[],
-  ): Promise<Array<{ food_name: string; calories: number | null }>> {
+  ): Promise<Array<{ food_name: string; calories: number | null; date: string }>> {
     return executeWithSchema(
       this.#db,
-      z.object({ food_name: z.string(), calories: z.coerce.number().nullable() }),
-      sql`SELECT food_name, calories
+      confirmedSummaryRowSchema,
+      sql`SELECT food_name, calories, date
           FROM fitness.v_food_entry_with_nutrition
-          WHERE id IN (${sqlIdList(entryIds)})`,
+          WHERE id IN (${sqlIdList(entryIds)})
+          ORDER BY date, food_name`,
     );
+  }
+
+  async loadDailyCalorieProgress(userId: string, date: string): Promise<DailyCalorieProgress> {
+    const calorieGoalRows = await executeWithSchema(
+      this.#db,
+      calorieGoalRowSchema,
+      sql`SELECT value FROM fitness.user_settings
+          WHERE user_id = ${userId}
+            AND key = 'calorieGoal'
+          LIMIT 1`,
+    );
+    const calorieGoal = parseCalorieGoal(calorieGoalRows[0]?.value);
+
+    const dailyCaloriesRows = await executeWithSchema(
+      this.#db,
+      dailyCaloriesRowSchema,
+      sql`SELECT COALESCE(SUM(calories), 0)::integer AS calories_consumed
+          FROM fitness.v_food_entry_with_nutrition
+          WHERE user_id = ${userId}
+            AND confirmed = true
+            AND date = ${date}::date`,
+    );
+
+    return {
+      calorieGoal,
+      caloriesConsumed: Math.round(dailyCaloriesRows[0]?.calories_consumed ?? 0),
+    };
   }
 
   /** Load food entries for refinement (thread follow-up messages) */

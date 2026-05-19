@@ -3,6 +3,7 @@ import { z } from "zod";
 import { logger } from "../logger.ts";
 import {
   buildClickHouseBootstrapStatements,
+  CLICKHOUSE_DEFAULT_SETTINGS,
   type ClickHouseCommandClient,
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
@@ -26,9 +27,20 @@ interface MetricStreamBackfillChunkRange {
   lower_bound: string;
   upper_bound: string;
 }
+
 interface MetricStreamBackfillRange {
   lowerBound: Date;
   upperBound: Date;
+}
+
+interface CompletedMetricStreamBackfillRange {
+  lowerBound: Date;
+  upperBound: Date;
+}
+
+interface CompletedMetricStreamBackfillRangeRow {
+  lower_bound: string;
+  upper_bound: string;
 }
 
 interface TimescaleChunkRow {
@@ -41,14 +53,16 @@ const metricStreamBackfillChunkRowSchema = z.object({
   upper_bound: z.string().nullable(),
 });
 
+const completedMetricStreamBackfillRangeSchema = z.object({
+  lower_bound: z.string(),
+  upper_bound: z.string(),
+});
+
 const timescaleChunkRowSchema = z.object({
   chunk_schema: z.string(),
   chunk_name: z.string(),
 });
 
-interface MetricStreamBackfillChunkCountRow {
-  chunk_count: number | string;
-}
 interface ClickHouseDatabaseEngineRow {
   engine: string;
 }
@@ -57,7 +71,14 @@ const clickHouseDatabaseEngineRowSchema = z.object({
   engine: z.string(),
 });
 
-const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 6 * 60 * 60 * 1_000;
+const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 5 * 60 * 1_000;
+const CURRENT_METRIC_STREAM_REQUIRED_COLUMNS = [
+  "external_id",
+  "device_id",
+  "source_type",
+  "activity_id",
+  "point",
+];
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -273,7 +294,9 @@ async function replaceNativeMetricStreamAndBackfill(
     await runClickHouseMigrationStatement(client, "DROP DATABASE IF EXISTS postgres_fitness SYNC");
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
+    shouldRunBeforeMetricStreamBackfill,
+  )) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -290,6 +313,12 @@ async function repairNativeMetricStreamBackfill(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
 ): Promise<void> {
+  if (!(await metricStreamMirrorHasColumns(client, CURRENT_METRIC_STREAM_REQUIRED_COLUMNS))) {
+    logger.info(
+      "[migrate] Skipping ClickHouse metric_stream repair backfill because the mirror schema is older than the current metric_stream shape; a later migration will rebuild it",
+    );
+    return;
+  }
   await runClickHouseMigrationStatement(
     client,
     "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
@@ -308,6 +337,26 @@ async function repairNativeMetricStreamBackfill(
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_trend_daily");
 }
 
+async function metricStreamMirrorHasColumns(
+  client: ClickHouseCommandClient,
+  columns: string[],
+): Promise<boolean> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
+  const columnNames = columns.map(clickHouseStringLiteral).join(", ");
+  const result = await client.query<MigrationCountRow>({
+    query: `SELECT count() AS migration_count
+FROM system.columns
+WHERE database = 'postgres_fitness'
+  AND table = 'metric_stream'
+  AND name IN (${columnNames})`,
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  return Number(rows[0]?.migration_count ?? 0) === columns.length;
+}
+
 async function rebuildMetricStreamLocationPoint(
   client: ClickHouseCommandClient,
   postgresConnectionString: string,
@@ -319,15 +368,26 @@ async function rebuildMetricStreamLocationPoint(
     "DROP TABLE IF EXISTS analytics.deduped_location",
     "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
-    "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
-    "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
   ];
 
   for (const statement of resetStatements) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+  if (!(await metricStreamMirrorHasColumns(client, CURRENT_METRIC_STREAM_REQUIRED_COLUMNS))) {
+    await runClickHouseMigrationStatement(
+      client,
+      "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+    );
+    await runClickHouseMigrationStatement(
+      client,
+      "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+    );
+  }
+
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
+    shouldRunBeforeMetricStreamBackfill,
+  )) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -338,6 +398,17 @@ async function rebuildMetricStreamLocationPoint(
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
+}
+
+function shouldRunBeforeMetricStreamBackfill(statement: string): boolean {
+  return (
+    !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor") &&
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_sensor") &&
+    !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_location") &&
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_location") &&
+    !statement.startsWith("SYSTEM REFRESH VIEW analytics.activity_summary") &&
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.activity_summary")
+  );
 }
 
 async function shouldReplacePostgresFitnessDatabase(
@@ -383,7 +454,9 @@ async function replaceLegacyMetricStreamIfNeeded(
     await runClickHouseMigrationStatement(client, statement);
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
+    shouldRunBeforeMetricStreamBackfill,
+  )) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -442,15 +515,38 @@ ENGINE = MergeTree
 ORDER BY (lower_bound, upper_bound)`,
   });
 
+  const completedRanges = await fetchCompletedMetricStreamBackfillRanges(client);
+  let completedRangeIndex = 0;
+  let completedThrough = new Date(0);
+  let skippedRanges = 0;
+
   for (const [rangeIndex, backfillRange] of backfillRanges.entries()) {
-    if (
-      await isMetricStreamBackfillChunkComplete(
-        client,
-        backfillRange.lowerBound,
-        backfillRange.upperBound,
-      )
-    ) {
+    while (completedRangeIndex < completedRanges.length) {
+      const completedRange = completedRanges[completedRangeIndex];
+      if (!completedRange || completedRange.lowerBound > backfillRange.lowerBound) {
+        break;
+      }
+      if (completedRange.upperBound > completedThrough) {
+        completedThrough = completedRange.upperBound;
+      }
+      completedRangeIndex += 1;
+    }
+
+    if (completedThrough >= backfillRange.upperBound) {
+      skippedRanges += 1;
+      if (skippedRanges % 1000 === 0) {
+        const percentComplete = (((rangeIndex + 1) / backfillRanges.length) * 100).toFixed(2);
+        logger.info(
+          `[migrate] Skipped ${skippedRanges} completed ClickHouse metric_stream range(s); scanned ${rangeIndex + 1}/${backfillRanges.length} (${percentComplete}%)`,
+        );
+      }
       continue;
+    }
+    if (skippedRanges > 0) {
+      logger.info(
+        `[migrate] Skipped ${skippedRanges} completed ClickHouse metric_stream range(s); resuming at range ${rangeIndex + 1}/${backfillRanges.length}`,
+      );
+      skippedRanges = 0;
     }
     logger.info(
       `[migrate] Backfilling ClickHouse metric_stream range ${rangeIndex + 1}/${backfillRanges.length}: ${backfillRange.lowerBound.toISOString()} to ${backfillRange.upperBound.toISOString()}`,
@@ -468,6 +564,36 @@ VALUES (${clickHouseDateTimeLiteral(backfillRange.lowerBound)}, ${clickHouseDate
     });
   }
   logger.info("[migrate] ClickHouse metric_stream backfill complete");
+}
+
+async function fetchCompletedMetricStreamBackfillRanges(
+  client: ClickHouseCommandClient,
+): Promise<CompletedMetricStreamBackfillRange[]> {
+  if (!client.query) {
+    throw new Error("ClickHouse metric stream backfill requires a query-capable client");
+  }
+  const result = await client.query<CompletedMetricStreamBackfillRangeRow>({
+    query: `SELECT
+  toString(lower_bound) AS lower_bound,
+  toString(upper_bound) AS upper_bound
+FROM analytics.metric_stream_backfill_chunks
+ORDER BY lower_bound ASC, upper_bound ASC`,
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  return rows.map((row) => {
+    const completedRange = completedMetricStreamBackfillRangeSchema.parse(row);
+    return {
+      lowerBound: parsePostgresTimestamp(
+        completedRange.lower_bound,
+        "ClickHouse metric_stream completed lower bound",
+      ),
+      upperBound: parsePostgresTimestamp(
+        completedRange.upper_bound,
+        "ClickHouse metric_stream completed upper bound",
+      ),
+    };
+  });
 }
 
 function splitMetricStreamBackfillChunk(
@@ -492,25 +618,6 @@ function splitMetricStreamBackfillChunk(
   }
 
   return ranges;
-}
-
-async function isMetricStreamBackfillChunkComplete(
-  client: ClickHouseCommandClient,
-  chunkStart: Date,
-  chunkEnd: Date,
-): Promise<boolean> {
-  if (!client.query) {
-    throw new Error("ClickHouse metric stream backfill requires a query-capable client");
-  }
-  const result = await client.query<MetricStreamBackfillChunkCountRow>({
-    query: `SELECT count() AS chunk_count
-FROM analytics.metric_stream_backfill_chunks
-WHERE lower_bound <= ${clickHouseDateTimeLiteral(chunkStart)}
-  AND upper_bound >= ${clickHouseDateTimeLiteral(chunkEnd)}`,
-    format: "JSONEachRow",
-  });
-  const rows = await result.json();
-  return Number(rows[0]?.chunk_count ?? 0) > 0;
 }
 
 async function fetchMetricStreamBackfillChunks(
@@ -564,7 +671,9 @@ function buildPostgresMetricStreamTableFunction(postgresConnectionString: string
 }
 
 function parsePostgresTimestamp(value: string, label: string): Date {
-  const parsed = new Date(value);
+  const hasTimeZone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value);
+  const normalizedValue = hasTimeZone ? value : `${value.replace(" ", "T")}Z`;
+  const parsed = new Date(normalizedValue);
   if (Number.isNaN(parsed.getTime())) {
     throw new Error(`Invalid ${label}: ${value}`);
   }
@@ -588,9 +697,7 @@ function buildMetricStreamBackfillStatement(
   channel,
   activity_id,
   scalar,
-  latitude,
-  longitude,
-  metadata,
+  point,
   id
 )
 SELECT
@@ -603,9 +710,23 @@ SELECT
   metric_stream.channel,
   metric_stream.activity_id,
   metric_stream.scalar,
-  metric_stream.latitude,
-  metric_stream.longitude,
-  metric_stream.metadata,
+  if(
+    isNull(metric_stream.point),
+    NULL,
+    readWKBPoint(
+      unhex(
+        if(
+          startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
+          concat(
+            substring(assumeNotNull(metric_stream.point), 1, 2),
+            '01000000',
+            substring(assumeNotNull(metric_stream.point), 19)
+          ),
+          assumeNotNull(metric_stream.point)
+        )
+      )
+    )
+  ) AS point,
   metric_stream.id
 FROM ${postgresMetricStreamSource} AS metric_stream
 LEFT JOIN (
@@ -642,6 +763,7 @@ async function runClickHouseMigrationStatement(
   await client.command({
     query: statement,
     clickhouse_settings: {
+      ...CLICKHOUSE_DEFAULT_SETTINGS,
       allow_experimental_refreshable_materialized_view: 1,
     },
   });

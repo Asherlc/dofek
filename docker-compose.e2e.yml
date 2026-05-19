@@ -27,6 +27,9 @@ services:
       CLICKHOUSE_DB: fitness
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: health
+    volumes:
+      - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
+      - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
     healthcheck:
       test:
         [

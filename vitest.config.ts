@@ -18,6 +18,14 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
 };
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable is required`);
+  }
+  return value;
+}
+
 export default defineConfig({
   test: {
     ...sharedTestConfig,
@@ -53,7 +61,7 @@ export default defineConfig({
           exclude: ["**/packages/mobile/**"],
           env: {
             ...sharedTestEnv,
-            CLICKHOUSE_URL: "http://default:health@localhost:8123",
+            CLICKHOUSE_URL: requireEnv("CLICKHOUSE_URL"),
             TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
           },
         },

@@ -30,6 +30,10 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(1);
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
     expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(4);
+    expect(sql).toContain("point Nullable(Point)");
+    expect(sql).not.toContain("latitude Nullable");
+    expect(sql).not.toContain("longitude Nullable");
+    expect(sql).not.toContain("metadata Nullable");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
@@ -181,6 +185,7 @@ describe("runClickHouseMigrations", () => {
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
       ),
       clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
         allow_experimental_refreshable_materialized_view: 1,
       },
     });
@@ -189,6 +194,7 @@ describe("runClickHouseMigrations", () => {
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary",
       ),
       clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
         allow_experimental_refreshable_materialized_view: 1,
       },
     });
@@ -238,15 +244,17 @@ describe("runClickHouseMigrations", () => {
       json: vi
         .fn()
         .mockResolvedValue(
-          queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
-            : queryText.includes("system.databases")
-              ? [{ engine: "Atomic" }]
-              : queryText.includes("0006_backfill_native_metric_stream")
-                ? [{ migration_count: 0 }]
-                : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
-                  : [{ migration_count: 1 }],
+          queryText.includes("system.columns")
+            ? [{ migration_count: 5 }]
+            : queryText.includes("system.tables")
+              ? [{ table_count: 1 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0006_backfill_native_metric_stream")
+                  ? [{ migration_count: 0 }]
+                  : queryText.includes("metric_stream_backfill_chunks")
+                    ? []
+                    : [{ migration_count: 1 }],
         ),
     }));
     const client = { command, query };
@@ -277,19 +285,27 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(2);
+    expect(backfillStatements).toHaveLength(24);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain("SELECT CAST(id, 'Nullable(UUID)') AS id");
+    expect(backfillStatements[0]).toContain("point,");
+    expect(backfillStatements[0]).toContain("readWKBPoint");
+    expect(backfillStatements[0]).toContain(
+      "startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020')",
+    );
+    expect(backfillStatements[0]).toContain("substring(assumeNotNull(metric_stream.point), 19)");
+    expect(backfillStatements[0]).not.toContain("metric_stream.latitude");
+    expect(backfillStatements[0]).not.toContain("metric_stream.longitude");
     expect(backfillStatements[0]).toContain("AND existing_metric_stream.id IS NULL");
-    expect(backfillStatements[1]).toContain(
+    expect(backfillStatements[12]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[1]).toContain(
+    expect(backfillStatements[23]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC')",
     );
     const completedChunkStatements = command.mock.calls
@@ -297,12 +313,12 @@ describe("runClickHouseMigrations", () => {
       .filter((queryText) =>
         queryText.includes("INSERT INTO analytics.metric_stream_backfill_chunks"),
       );
-    expect(completedChunkStatements).toHaveLength(2);
+    expect(completedChunkStatements).toHaveLength(24);
     expect(completedChunkStatements[0]).toContain(
-      "VALUES (toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC'))",
+      "VALUES (toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC'))",
     );
-    expect(completedChunkStatements[1]).toContain(
-      "VALUES (toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC'), toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC'))",
+    expect(completedChunkStatements[23]).toContain(
+      "VALUES (toDateTime64('2026-04-22 01:55:00.000', 6, 'UTC'), toDateTime64('2026-04-22 02:00:00.000', 6, 'UTC'))",
     );
   });
 
@@ -342,7 +358,7 @@ describe("runClickHouseMigrations", () => {
                     queryText.includes("0012_repair_metric_stream_backfill")
                   ? [{ migration_count: 0 }]
                   : queryText.includes("metric_stream_backfill_chunks")
-                    ? [{ chunk_count: 0 }]
+                    ? []
                     : [{ migration_count: 1 }],
         ),
     }));
@@ -356,7 +372,7 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(12);
     expect(command).toHaveBeenCalledWith({
       query:
         "INSERT INTO analytics.schema_migrations (id) VALUES ('0012_repair_metric_stream_backfill')",
@@ -389,15 +405,17 @@ describe("runClickHouseMigrations", () => {
       json: vi
         .fn()
         .mockResolvedValue(
-          queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
-            : queryText.includes("system.databases")
-              ? [{ engine: "Atomic" }]
-              : queryText.includes("0012_repair_metric_stream_backfill")
-                ? [{ migration_count: 0 }]
-                : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
-                  : [{ migration_count: 1 }],
+          queryText.includes("system.columns")
+            ? [{ migration_count: 5 }]
+            : queryText.includes("system.tables")
+              ? [{ table_count: 1 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0012_repair_metric_stream_backfill")
+                  ? [{ migration_count: 0 }]
+                  : queryText.includes("metric_stream_backfill_chunks")
+                    ? []
+                    : [{ migration_count: 1 }],
         ),
     }));
 
@@ -422,6 +440,46 @@ describe("runClickHouseMigrations", () => {
         query: "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
       }),
     );
+  });
+
+  it("skips metric stream repair backfill when the mirror has the old schema", async () => {
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.columns")
+            ? [{ migration_count: 0 }]
+            : queryText.includes("system.tables")
+              ? [{ table_count: 1 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0012_repair_metric_stream_backfill")
+                  ? [{ migration_count: 0 }]
+                  : [{ migration_count: 1 }],
+        ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith({
+      query:
+        "INSERT INTO analytics.schema_migrations (id) VALUES ('0012_repair_metric_stream_backfill')",
+    });
   });
 
   it("rebuilds native metric stream when applying the location point migration", async () => {
@@ -457,7 +515,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0013_metric_stream_location_point")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -501,6 +559,78 @@ describe("runClickHouseMigrations", () => {
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SYSTEM REFRESH VIEW analytics.activity_summary",
+      }),
+    );
+    const commandQueries = command.mock.calls.map(([options]) => String(options.query));
+    const firstBackfillIndex = commandQueries.findIndex((queryText) =>
+      queryText.includes("INSERT INTO postgres_fitness.metric_stream"),
+    );
+    const firstRefreshIndex = commandQueries.findIndex((queryText) =>
+      queryText.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor"),
+    );
+    expect(firstBackfillIndex).toBeGreaterThanOrEqual(0);
+    expect(firstRefreshIndex).toBeGreaterThan(firstBackfillIndex);
+  });
+
+  it("resumes location point metric stream backfill when the mirror already has the current schema", async () => {
+    pgClientMocks.query.mockImplementation((queryText: string) => {
+      if (queryText.includes("timescaledb_information.chunks")) {
+        return Promise.resolve({
+          rows: [
+            {
+              chunk_schema: "_timescaledb_internal",
+              chunk_name: "_hyper_1_1_chunk",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        rows: [
+          {
+            lower_bound: "2026-04-22 00:00:00+00",
+            upper_bound: "2026-04-22 01:00:00+00",
+          },
+        ],
+      });
+    });
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          queryText.includes("system.tables")
+            ? [{ table_count: 1 }]
+            : queryText.includes("system.columns")
+              ? [{ migration_count: 5 }]
+              : queryText.includes("system.databases")
+                ? [{ engine: "Atomic" }]
+                : queryText.includes("0013_metric_stream_location_point")
+                  ? [{ migration_count: 0 }]
+                  : queryText.includes("metric_stream_backfill_chunks")
+                    ? []
+                    : [{ migration_count: 1 }],
+        ),
+    }));
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
+      }),
+    );
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
       }),
     );
   });
@@ -547,7 +677,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0006_backfill_native_metric_stream")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -557,16 +687,16 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(6);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 03:15:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2026-04-22 03:45:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 03:20:00.000', 6, 'UTC')",
     );
   });
 
-  it("splits large Timescale metric stream chunks into bounded backfill windows", async () => {
+  it("splits large Timescale metric stream chunks into five-minute backfill windows", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
         return Promise.resolve({
@@ -599,7 +729,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0006_backfill_native_metric_stream")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -609,11 +739,17 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(30);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
+      "metric_stream.recorded_at < toDateTime64('2026-04-22 00:05:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[29]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2026-04-22 02:25:00.000', 6, 'UTC')",
+    );
+    expect(backfillStatements[29]).toContain(
       "metric_stream.recorded_at < toDateTime64('2026-04-22 02:30:00.000', 6, 'UTC')",
     );
   });
@@ -684,7 +820,7 @@ describe("runClickHouseMigrations", () => {
         return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
       }
       if (queryText.includes("metric_stream_backfill_chunks")) {
-        return { json: vi.fn().mockResolvedValue([{ chunk_count: 0 }]) };
+        return { json: vi.fn().mockResolvedValue([]) };
       }
       return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
     });
@@ -757,7 +893,7 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
-  it("splits long native metric stream chunks into six-hour backfill ranges", async () => {
+  it("splits long native metric stream chunks into five-minute backfill ranges", async () => {
     pgClientMocks.query.mockImplementation((queryText: string) => {
       if (queryText.includes("timescaledb_information.chunks")) {
         return Promise.resolve({
@@ -790,7 +926,7 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("0006_backfill_native_metric_stream")
                 ? [{ migration_count: 0 }]
                 : queryText.includes("metric_stream_backfill_chunks")
-                  ? [{ chunk_count: 0 }]
+                  ? []
                   : [{ migration_count: 1 }],
         ),
     }));
@@ -800,17 +936,17 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(4);
+    expect(backfillStatements).toHaveLength(288);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2021-04-29 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain(
-      "metric_stream.recorded_at < toDateTime64('2021-04-29 06:00:00.000', 6, 'UTC')",
+      "metric_stream.recorded_at < toDateTime64('2021-04-29 00:05:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[3]).toContain(
-      "metric_stream.recorded_at >= toDateTime64('2021-04-29 18:00:00.000', 6, 'UTC')",
+    expect(backfillStatements[287]).toContain(
+      "metric_stream.recorded_at >= toDateTime64('2021-04-29 23:55:00.000', 6, 'UTC')",
     );
-    expect(backfillStatements[3]).toContain(
+    expect(backfillStatements[287]).toContain(
       "metric_stream.recorded_at < toDateTime64('2021-04-30 00:00:00.000', 6, 'UTC')",
     );
     expect(backfillStatements[0]).toContain("LEFT JOIN (");
@@ -859,7 +995,8 @@ describe("runClickHouseMigrations", () => {
               : queryText.includes("metric_stream_backfill_chunks")
                 ? [
                     {
-                      chunk_count: queryText.includes("2026-04-22 00:00:00.000") ? 1 : 0,
+                      lower_bound: "2026-04-22 00:00:00.000000",
+                      upper_bound: "2026-04-22 01:00:00.000000",
                     },
                   ]
                 : [{ migration_count: 1 }],
@@ -875,15 +1012,15 @@ describe("runClickHouseMigrations", () => {
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
-    expect(backfillStatements).toHaveLength(1);
+    expect(backfillStatements).toHaveLength(12);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
     );
     const completionQueries = query.mock.calls
       .map(([options]) => String(options.query))
       .filter((queryText) => queryText.includes("analytics.metric_stream_backfill_chunks"));
-    expect(completionQueries[0]).toContain("lower_bound <=");
-    expect(completionQueries[0]).toContain("upper_bound >=");
+    expect(completionQueries).toHaveLength(1);
+    expect(completionQueries[0]).toContain("ORDER BY lower_bound ASC, upper_bound ASC");
   });
 
   it("does not create backfill tracking when Timescale has no metric stream chunks", async () => {

@@ -15,6 +15,11 @@ export interface SavedFoodSummaryItem {
   calories: number;
 }
 
+export interface DailyCalorieProgress {
+  calorieGoal: number;
+  caloriesConsumed: number;
+}
+
 type MicroKey = keyof NutritionItemWithMeal & string;
 
 /** Object containing only micronutrient values, used for summing totals */
@@ -59,6 +64,37 @@ const MICRO_DISPLAY: Array<{ key: MicroKey; label: string; unit: string }> = [
 
 function formatMacroLine(item: NutritionItemWithMeal): string {
   return `*${item.calories} cal* | P: ${item.proteinG}g | C: ${item.carbsG}g | F: ${item.fatG}g`;
+}
+
+function formatCalories(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+function formatCalorieProgressBar(progress: DailyCalorieProgress): string {
+  const rawPercentage =
+    progress.calorieGoal > 0 ? (progress.caloriesConsumed / progress.calorieGoal) * 100 : 0;
+  const percentage =
+    rawPercentage >= 100 ? Math.round(rawPercentage) : Math.max(Math.floor(rawPercentage), 0);
+  const filledSegments = Math.min(Math.max(Math.floor(rawPercentage / 10), 0), 10);
+  const emptySegments = 10 - filledSegments;
+  return `[${"█".repeat(filledSegments)}${"░".repeat(emptySegments)}] ${percentage}%`;
+}
+
+function formatDailyCalorieProgress(progress: DailyCalorieProgress): string {
+  const calorieLine = `Calories: ${formatCalories(progress.caloriesConsumed)} / ${formatCalories(progress.calorieGoal)} cal`;
+  const progressBar = formatCalorieProgressBar(progress);
+  return `${calorieLine}\n${progressBar}\n${formatDailyCalorieStatus(progress)}`;
+}
+
+function formatDailyCalorieStatus(progress: DailyCalorieProgress): string {
+  const caloriesRemaining = Math.round(progress.calorieGoal - progress.caloriesConsumed);
+  if (caloriesRemaining > 0) {
+    return `${formatCalories(caloriesRemaining)} cal remaining today`;
+  }
+  if (caloriesRemaining < 0) {
+    return `${formatCalories(Math.abs(caloriesRemaining))} cal over goal today`;
+  }
+  return "Calorie goal reached today";
 }
 
 /** Format a condensed micronutrient line showing only non-zero values */
@@ -173,7 +209,10 @@ export function formatConfirmationMessage(
 }
 
 /** Format a success message after food entries are saved */
-export function formatSavedMessage(items: SavedFoodSummaryItem[]): SlackMessage {
+export function formatSavedMessage(
+  items: SavedFoodSummaryItem[],
+  dailyCalorieProgress?: DailyCalorieProgress | null,
+): SlackMessage {
   const blocks: SlackBlock[] = [
     {
       type: "section",
@@ -194,7 +233,28 @@ export function formatSavedMessage(items: SavedFoodSummaryItem[]): SlackMessage 
     });
   }
 
+  const dailyCalorieProgressText = dailyCalorieProgress
+    ? formatDailyCalorieProgress(dailyCalorieProgress)
+    : null;
+  const dailyCalorieStatusText = dailyCalorieProgress
+    ? formatDailyCalorieStatus(dailyCalorieProgress)
+    : null;
+  if (dailyCalorieProgressText) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: dailyCalorieProgressText,
+      },
+    });
+  }
+
   const fallbackText = items.map((i) => `${i.foodName}: ${i.calories} cal`).join(", ");
 
-  return { blocks, text: `Logged: ${fallbackText}` };
+  return {
+    blocks,
+    text: dailyCalorieStatusText
+      ? `Logged: ${fallbackText}. ${dailyCalorieStatusText}`
+      : `Logged: ${fallbackText}`,
+  };
 }

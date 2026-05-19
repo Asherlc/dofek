@@ -687,8 +687,6 @@ table fitness.metric_stream {
   scalar real
   vector real[]
   point "geometry(Point, 4326)"
-  latitude real
-  longitude real
   metadata jsonb
 
   indexes {

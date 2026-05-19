@@ -27,11 +27,10 @@ CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness FROM CLICKHOUSE WITH
   disable_tls = true
 );
 
--- validation and analytics mirrors keep only scalar fields needed by ClickHouse models.
--- device_id, source_type, vector, and PostGIS point are not queried by analytics transforms and
--- are excluded to reduce replicated payload size.
--- Location analytics use the same-row latitude/longitude projections for
--- channel = 'location', while point remains the canonical Postgres spatial value.
+-- validation and analytics mirrors keep only fields needed by ClickHouse models.
+-- device_id, source_type, vector, and metadata are excluded to reduce replicated
+-- payload size. Location analytics replicate the canonical PostGIS point into
+-- ClickHouse point columns and project latitude/longitude only inside read models.
 CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc
 FROM dofek_postgres TO dofek_clickhouse
 WITH TABLE MAPPING
@@ -39,7 +38,7 @@ WITH TABLE MAPPING
   {
     from: fitness.metric_stream,
     to: metric_stream,
-    exclude: [device_id, source_type, vector, point]
+    exclude: [device_id, source_type, vector, metadata]
   }
 )
 WITH (
@@ -67,7 +66,7 @@ WITH TABLE MAPPING
   {
     from: fitness.metric_stream,
     to: metric_stream,
-    exclude: [device_id, source_type, vector, point]
+    exclude: [device_id, source_type, vector, metadata]
   }
 )
 WITH (

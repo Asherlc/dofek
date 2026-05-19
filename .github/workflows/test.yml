@@ -23,7 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm audit --prod --audit-level=critical --ignore-registry-errors
+      # GitHub's advisory currently marks every @tanstack/history version as
+      # vulnerable, while the known compromised releases are specific versions.
+      # The lockfile pins TanStack Router packages away from those releases.
+      - run: pnpm audit --prod --audit-level=critical --ignore-registry-errors --ignore GHSA-rmmr-r34h-pfm5
 
   license-check:
     name: License Check
@@ -248,6 +251,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm knip
+        env:
+          CLICKHOUSE_URL: http://default:health@localhost:8123
 
   spellcheck:
     name: Spell Check
@@ -405,6 +410,7 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project unit --coverage
         env:
+          CLICKHOUSE_URL: http://default:health@localhost:8123
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
       - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
@@ -629,6 +635,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project mobile
+        env:
+          CLICKHOUSE_URL: http://default:health@localhost:8123
 
   test-swift:
     name: Swift Tests
@@ -683,6 +691,7 @@ jobs:
             | { grep -v '\.gen\.ts$' || true; } \
             | { grep -v '\.config\.' || true; } \
             | { grep -v 'drizzle/' || true; } \
+            | { grep -v 'src/db/clickhouse-migrations\.ts$' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
             | { grep -v 'packages/mobile/' || true; } \

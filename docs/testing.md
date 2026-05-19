@@ -11,9 +11,13 @@ pnpm exec vitest run --project integration
 ```
 
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
-test stores. The test helper isolates ClickHouse databases per test database, runs
-the tracked ClickHouse migrations after the test fixtures are seeded, and drops the
-isolated databases during test cleanup.
+test stores. The test helper isolates ClickHouse databases per test database, creates
+the current ClickHouse schema/read models directly, syncs the seeded Postgres fixtures,
+and drops the isolated databases during test cleanup.
+
+Do not make router integration setup call the tracked production ClickHouse migration
+runner. Historical one-off migrations and backfills should not be replayed by broad
+test suites; tests should validate application behavior against the current schema.
 
 ## Chain-Mock Assertions (`values(...)`)
 

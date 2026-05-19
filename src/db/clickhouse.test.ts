@@ -70,6 +70,9 @@ describe("createClickHouseClientFromEnv", () => {
     expect(createClientMock).toHaveBeenCalledWith({
       url: "http://clickhouse:8123",
       request_timeout: 120_000,
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+      },
     });
   });
 
@@ -82,6 +85,9 @@ describe("createClickHouseClientFromEnv", () => {
     expect(createClientMock).toHaveBeenCalledWith({
       url: "http://clickhouse:8123",
       request_timeout: 1_000,
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+      },
     });
   });
 });
@@ -111,6 +117,10 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("point Nullable(Point)");
+    expect(sql).not.toContain("latitude Nullable");
+    expect(sql).not.toContain("longitude Nullable");
+    expect(sql).not.toContain("metadata Nullable");
     for (const rawDependencyTable of rawDependencyTables) {
       expect(sql).toContain(`CREATE TABLE IF NOT EXISTS postgres_fitness.${rawDependencyTable}`);
     }
@@ -127,6 +137,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).toContain("tupleElement(metric_stream.point, 2)");
+    expect(sql).toContain("tupleElement(metric_stream.point, 1)");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");

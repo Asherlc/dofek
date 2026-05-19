@@ -7,6 +7,273 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-19: ClickHouse System Logs Consumed Production Data Volume Space
+
+### Symptoms
+
+After the metric-stream rebuild and ClickHouse point migration finished,
+production data-volume usage still looked high at about `98GB` used even after
+the legacy Postgres hypertable was dropped.
+
+### User Impact
+
+No outage was observed. Production services remained healthy, but the elevated
+baseline made shrinking the Hetzner data volume back toward `100GB` unsafe.
+
+### Evidence
+
+Host-level disk analysis showed `/mnt/HC_Volume_105292545` was split roughly
+evenly between `postgres` and `clickhouse`, about `49GB` each. ClickHouse table
+sizes showed `system.text_log` alone using about `35.77GiB`, with
+`system.processors_profile_log`, `system.trace_log`, and other system log tables
+using several more GiB. Application ClickHouse data was much smaller:
+`postgres_fitness.metric_stream` was about `5.28GiB` for roughly `281M` rows.
+
+### Root Cause
+
+ClickHouse diagnostic system log tables had no bounded retention and retained
+large migration/backfill log volume from the production point migration work.
+
+### Fix or Mitigation
+
+Truncated ClickHouse diagnostic system logs and pruned unused Docker containers
+and images. The data volume dropped from about `98GB` used to about `55-56GB`
+used, and root disk usage dropped from about `44GB` to `37GB`. Added
+checked-in ClickHouse server config to apply seven-day TTL retention to system
+log tables via `deploy/clickhouse/config.d/system-log-ttl.xml`, mounted in
+production, local, E2E, and review-app ClickHouse configurations.
+
+### Remaining Risk
+
+TTL configuration takes effect after the ClickHouse service is redeployed with
+the new config. Future unusually verbose migrations can still generate short
+term log volume within the seven-day window, but it should no longer accumulate
+indefinitely.
+
+### Follow-Up Work
+
+- Deploy the ClickHouse TTL config through the normal stack release path.
+- Add a recurring storage audit or alert that reports top ClickHouse tables,
+  including `system.*` log tables.
+- Revisit the live 300GB Hetzner volume only after sustained usage and
+  operational headroom are clear.
+
+## 2026-05-18: ClickHouse One-Off Backfill Hit Server Memory Ceiling
+
+### Symptoms
+
+The production one-off ClickHouse `metric_stream` location-point migration
+advanced from about `24%` to about `44.5%`, then exited with a ClickHouse
+`memory limit exceeded` error. After restarting ClickHouse and resuming from the
+checkpoint, it advanced beyond `50%` and hit the same server memory ceiling
+again.
+
+### User Impact
+
+No user-facing outage was observed. The ClickHouse service stayed in Swarm and
+the app healthcheck remained OK, but the one-off migration required supervised
+restart/resume cycles.
+
+### Evidence
+
+- The migration container exited with
+  `OvercommitTracker decision: Memory overcommit has not freed enough memory:
+  While executing MergeTreeSelect(pool: ReadPool, algorithm: Thread)`.
+- The first failed run had `oom=false`, so Docker did not kill the container;
+  ClickHouse rejected the query at its own memory limit.
+- ClickHouse RSS was about `2.49GiB / 3GiB` after the first failure and dropped
+  to about `780MiB / 3GiB` after a service restart.
+- The checkpoint table preserved progress; after the first failure it showed
+  `completed_through = 2024-01-30 05:35:00.000000`.
+
+### Root Cause
+
+The long-running backfill repeatedly queries and anti-joins the ClickHouse
+`postgres_fitness.metric_stream` mirror. On dense ranges, ClickHouse process
+memory grows until the server-level memory cap rejects the next range query.
+
+### Fix or Mitigation
+
+Restarted the ClickHouse service to clear process RSS, waited for `/ping`, and
+resumed the one-off from `analytics.metric_stream_backfill_chunks`. The retry
+loop only treats the exact ClickHouse memory-limit failure and temporary
+post-restart `ECONNREFUSED` as retryable; other migration failures still stop.
+
+### Remaining Risk
+
+The remaining migration may need additional ClickHouse restart/resume cycles
+until the backfill completes. This is operationally safe because each completed
+five-minute range is checkpointed, but it is not a clean long-term migration
+pattern.
+
+### Follow-Up Work
+
+- After the migration completes, inspect ClickHouse query logs for the densest
+  ranges and confirm whether the anti-join or source-table read dominates
+  memory.
+- Consider lowering per-query memory pressure for future one-off backfills by
+  reducing range size or using a staging-table strategy with bounded joins.
+- Add a runbook note that checkpointed ClickHouse backfills may be resumed after
+  server memory-limit failures only when the checkpoint table confirms progress.
+
+## 2026-05-12: Production volume expanded for metric_stream rebuild headroom
+
+### Impact
+
+The live location migration could not safely continue as a full replacement
+hypertable rebuild with only about `19-20GB` free on the production data
+volume. A 1:1 rebuild of the approximately `56GB` `fitness.metric_stream`
+hypertable would risk exhausting disk before the replacement table could be
+validated and swapped.
+
+### Evidence That Mattered
+
+- Before resizing, `/dev/sdb` was a `100G` Hetzner volume with a `99G` ext4
+  filesystem and about `19G` free (`80-81%` used).
+- Terraform plan showed exactly one in-place infrastructure change:
+  `hcloud_volume.dofek_data[0]` size `100 -> 300`, with no creates, destroys,
+  server replacement, or volume replacement.
+- After apply, `lsblk` showed `/dev/sdb` as `300G`, while `df` still showed the
+  filesystem at `99G`, confirming a filesystem grow step was still required.
+
+### Root Cause
+
+The previous `100GB` production data volume was sized for the compressed live
+database, not for a historical `metric_stream` rebuild that temporarily needs
+both source chunks and replacement chunks plus write/index overhead.
+
+### Fix Or Mitigation
+
+- Updated IaC so `data_volume_size_gb` defaults to `300`.
+- Applied Terraform with Infisical-provided secrets. The Hetzner volume
+  resized in place; resource ID `105292545` was preserved.
+- Grew the mounted ext4 filesystem online with `resize2fs /dev/sdb`.
+- Verified `/mnt/HC_Volume_105292545` is now a `295G` filesystem with about
+  `208G` free (`27%` used).
+- Re-ran Terraform plan and confirmed `No changes`.
+- Parsed `deploy/stack.yml` with prod Infisical environment variables and the
+  deploy-derived `CLICKHOUSE_PASSWORD_ENCODED`; stack config rendered
+  successfully.
+
+### Remaining Risk
+
+The extra space makes a rebuild migration feasible, but the migration still
+needs bounded chunk/task execution, immediate compression of replacement
+chunks, and progress/disk monitoring. The volume increase should be revisited
+after the migration is complete if long-term storage cost matters.
+
+### Follow-Up Work
+
+- Run the remaining metric stream rebuild/backfill with bounded tasks and
+  immediate compression after each completed range.
+- Keep disk-space and migration-progress monitoring active until the rebuild is
+  validated and old storage is explicitly cleaned up.
+- Revisit the `300GB` production volume size after cleanup and document whether
+  it should remain the default.
+- Verify the backup/restore path and update the metric stream runbook with the
+  final production migration procedure.
+
+## 2026-05-11: Deploy migration wedged on inline GPS location backfill
+
+### Impact
+
+Deploy Web run `25694900826` could not complete. Staging failed during
+`Run migrations`; production remained stuck in `Run migrations`, so the
+new web stack was not released. The production app kept serving the previous
+image while the one-shot migration container waited behind an earlier
+migration session.
+
+### Evidence That Mattered
+
+- Production `pg_stat_activity` showed PID `14277` holding advisory lock
+  `728370291` while running
+  `CALL fitness.backfill_metric_stream_location_points(50000);`.
+- The active backend was not dead: `ps` showed roughly one CPU of work, and
+  `/proc/14277/io` showed continued reads/writes.
+- The current deploy migration PID `27660` was blocked on
+  `SELECT pg_advisory_lock($1)`.
+- No useful migration progress notices reached container logs.
+- Visible progress stalled at `671,310` committed `location` rows overall and
+  `50,000` `location` rows in active chunk `_hyper_1_158_chunk`.
+- `_hyper_1_158_chunk` contained about `1,446,057` `lat` rows and `1,446,057`
+  `lng` rows, but only the first `50,000` location rows had committed.
+- `EXPLAIN` showed each batch sorting/window-ranking about 1.5M `lat` rows
+  and 1.56M `lng` rows, then doing a nested-loop anti-join against an
+  `Append` over all 203 hypertable chunks for existing `location` rows.
+- Staging had a separate first fatal error:
+  `error: [migrate] error: extension "postgis" is not available`.
+
+### Root Cause
+
+Migration `0018_metric_stream_location_point.sql` mixed quick schema changes
+with a large historical data rewrite. Its `LIMIT 50000` applied after the
+expensive windowing and anti-join work, so each batch still scanned/sorted a
+large chunk and checked existing location rows across the whole hypertable.
+The first batch committed, but the second visible batch ran for over an hour
+without committing.
+
+### Fix Or Mitigation
+
+- Cancelled Deploy Web run `25694900826`.
+- Terminated/cleared the stuck migration path; by verification time, no
+  backend held or waited on advisory lock `728370291`, and the orphan
+  migration container was gone.
+- Replaced the migration with schema-only operations: create PostGIS, add
+  `point`, `latitude`, `longitude`, and `metadata`, drop the leftover helper
+  procedure if present, and create the point GiST index. A follow-up migration
+  later removed the temporary `latitude` and `longitude` projections after the
+  point-only direction was chosen.
+- Ran the patched SQL directly against production to verify it completes
+  quickly. It no-op'd the already-present columns, dropped the leftover helper
+  procedure, created `metric_stream_point_gist_idx`, and left the Drizzle
+  migration row unmarked so the next deploy can record it normally.
+- Updated the location migration integration test to assert that deploy
+  migrations do not inline-convert or delete legacy coordinate rows.
+- Added `scripts/backfill-location-points.ts`, an insert-only TypeScript
+  maintenance script with dry-run default, bounded date windows, a 15-minute
+  statement timeout, and no advisory lock or deletes.
+- Ran the backfill against production in committed windows. The live-safe
+  pass increased total `location` rows from `671,310` at incident time to
+  `1,217,175`. Normal lock monitoring stayed clean after decompression,
+  insert, and recompression were split into separate transactions and live
+  runs defaulted to no recompression.
+- Cancelled two production backfill windows when safety checks failed: one
+  31-day window that blocked a normal `metric_stream` update, and one
+  2026-04-23 chunk decompression that produced a lock waiter. In both cases,
+  earlier committed windows remained committed and the active transaction was
+  rolled back.
+- Optimized the backfill script for high-volume days by staging source rows
+  and existing `location` rows in temporary tables and indexing the duplicate
+  check. This changed a previously slow 2021-05-03 retry into a successful
+  `468,914` row insert and allowed additional 2021-05/2021-06 windows to
+  commit safely.
+- Continued the live-safe historical pass until the next compressed 2021
+  chunk decompression (`2021-06-03` through `2021-06-10`) created lock
+  waiters. At that stop point, production had `11,226,136` `location` rows,
+  approximately `28.17%` of the expected `39,847,579` lat/lng pairs.
+
+### Remaining Risk
+
+The backfill is partially complete. Production is backfilled through
+`2026-04-23`, the explicit `2026-05-10` one-day run, and part of the
+high-volume 2021 historical span through `2021-06-02`. The compressed chunks
+from `2026-04-23` through `2026-05-10`, the compressed 2021 chunks starting
+at `2021-06-03`, and other high-volume historical months in 2021-2022 still
+need an off-hours pass. Several chunks were left decompressed by the live-safe
+no-recompress run and should be recompressed during the same maintenance
+window. Staging also needs its PostGIS
+availability issue fixed before staging deploys can pass.
+
+### Follow-Up
+
+- Add a long-migration triage runbook with advisory-lock holder queries,
+  chunk-level progress checks, and an `EXPLAIN` step for batch backfills.
+- Finish the location backfill during a low-traffic maintenance window, with
+  lock-wait monitoring and a separate recompression pass for chunks left
+  decompressed by live-safe runs.
+- Add deploy-time diagnostics that print the advisory-lock holder query when
+  a migration waits too long on `pg_advisory_lock`.
+
 ## 2026-05-11: Production VM powered off by failed Terraform downsize during Deploy Web
 
 ### Impact
@@ -4401,3 +4668,797 @@ migrations may still expose separate deploy failures.
   `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
 - After staging migrations pass, rerun or resume production deploy and verify it
   reaches `docker stack deploy`.
+
+## 2026-05-12: Production Location Backfill Hit Data Volume ENOSPC
+
+### Symptoms
+
+The insert-only production location backfill advanced to 38,213,041 location
+rows before failing while processing the `2022-05-17..2022-05-18` window. The
+initial progress denominator used during the incident was too low; a later
+full-source count corrected the denominator to 42,041,240 source location rows.
+
+### User Impact
+
+The location-point backfill is incomplete. The production app remained healthy,
+but continuing the daily-window backfill without more disk headroom risks another
+database `No space left on device` failure.
+
+### Evidence
+
+The backfill script failed with:
+
+```text
+ERROR:  could not extend file "base/16384/t5_19513608" with FileFallocate(): No space left on device
+HINT:  Check free disk space.
+```
+
+After the script exited, production Postgres reported
+`pg_is_in_recovery() = false`, `/healthz` returned `{"status":"ok"}`, and there
+were no lock waiters. The production data volume
+`/mnt/HC_Volume_105292545` reached 100% used with about 190M free during
+triage.
+
+### Root Cause
+
+The data volume does not have enough free space for the current daily-window
+backfill strategy. The failed window attempted to build a large temporary table
+for location source rows, and Postgres could not extend the temporary file on the
+data volume.
+
+### Fix or Mitigation
+
+The backfill process stopped after the failed statement, leaving no active
+backfill transaction or lock waiters. An unreferenced 11G old Docker data
+directory at
+`/mnt/HC_Volume_105292545/docker-volumes/compose-copy-1080p-array-h8xws3_db_data`
+was verified as not mounted, not registered as a Docker volume, not referenced by
+any container, and not held open by any process before removal. After removal,
+the volume had about 9.6G free and production remained healthy.
+
+The resumed backfill used insert-only windows and recompressed affected chunks
+after each window. On the later `2026-04-16..2026-05-12` pass, it reached
+41,105,491 of 42,041,240 source rows, or 97.77%, with 27G free on the data
+volume. At that checkpoint it was still decompressing affected chunks and had
+three relation-lock waiters from normal metric-stream activity-link updates.
+
+### Remaining Risk
+
+The data volume still has limited headroom for large temporary-table builds.
+Continuing with one-day windows may succeed for remaining smaller windows, but a
+sub-day resume is safer if any remaining day is unusually dense.
+
+### Follow-Up Work
+
+- Prefer resizing the production data volume or moving non-Postgres services off
+  it before continuing large backfills.
+- If disk cannot be expanded immediately, patch the backfill script to support
+  smaller time windows and resume from `2022-05-17`.
+
+## 2026-05-12: ClickHouse Point Migration Needed Nullable Tuple Settings
+
+### Symptoms
+
+Moving the ClickHouse metric-stream mirror to `point Nullable(Point)` required
+ClickHouse's nullable tuple setting. Without that setting in both app requests
+and server configuration, migrations or PeerDB writes could fail when creating
+or writing nullable geospatial point columns.
+
+### User Impact
+
+No user-facing outage occurred during this code change, but deploying the
+point-first ClickHouse schema without the setting would block the analytics
+migration path.
+
+### Evidence
+
+ClickHouse documents `Point` as a tuple-backed geospatial type, and local syntax
+verification only succeeded for `Nullable(Point)` with
+`allow_experimental_nullable_tuple_type=1`.
+
+### Fix or Mitigation
+
+The ClickHouse client now sends `allow_experimental_nullable_tuple_type=1` on app
+and migration commands. Docker Compose, E2E Compose, review app Compose, and the
+production Swarm stack all mount the checked-in
+`deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml` profile so
+the setting is infrastructure-as-code rather than a manual server change.
+
+### Remaining Risk
+
+PeerDB's PostGIS-to-ClickHouse `Point` conversion still needs production CDC
+validation after deploy. If PeerDB cannot write the native point cleanly, decide
+explicitly whether to revisit the point-only direction rather than reintroducing
+coordinate projections by default.
+
+### Follow-Up Work
+
+- Validate production PeerDB CDC from PostGIS `Point` to ClickHouse `Point` after
+  the migration is applied.
+- Keep integration coverage for `Nullable(Point)` in the ClickHouse migration
+  path so schema drift fails in CI.
+- Monitor ClickHouse and PeerDB write failures during the first production sync
+  after deployment.
+- Document the rollback decision point if native `Point` replication proves
+  untenable.
+
+## 2026-05-13: Location Rebuild Dense Chunk Monitoring
+
+### Symptoms
+
+The production `metric_stream` location rebuild appeared to stall while copying
+2021 Timescale chunks. Overall task progress stayed flat for long periods
+because each week-sized source chunk counts as one rebuild task.
+
+### User Impact
+
+No outage was observed. Normal production inserts continued while the rebuild
+ran, and status checks showed no lock waiters during the monitored windows.
+
+### Evidence
+
+`_hyper_1_147_chunk` completed with 10,567,554 source rows, 5,320,051
+passthrough rows, and 1,772,834 location rows. `_hyper_1_146_chunk` completed
+with 10,591,904 source rows, 5,335,150 passthrough rows, and 1,775,778 location
+rows. Both chunks had dense evening bands where 5-minute or 1-hour windows
+processed hundreds of thousands to millions of source rows. Progress advanced
+from 157/297 (52.86%) to 159/297 (53.54%). The data volume stayed healthy at
+about 19-20% used with 228-230G free.
+
+A later resume advanced `_hyper_1_145_chunk` to `2021-10-29 23:40:00+00`
+with 5,389,466 source rows copied, and `_hyper_1_144_chunk` to
+`2021-11-11 00:45:00+00` with zero rows copied. Overall progress remained
+159/297 (53.54%) because neither in-progress week-sized chunk had completed.
+The data volume remained healthy at about 20% used with 229G free and no lock
+waiters.
+
+### Fix or Mitigation
+
+Dense hours that completed inside the statement timeout were allowed to finish.
+Hours that timed out were retried from the unchanged cursor with 5-minute
+slices. Empty spans were skipped with hour-sized slices, and affected rebuild
+chunks were recompressed by the script as each range completed.
+
+### Remaining Risk
+
+The task-count percentage is still a coarse denominator. Future dense chunks can
+hold the percentage flat for a long time even while millions of rows are being
+copied. One-hour slices can still time out on dense bands, so the operator
+should fall back to 5-minute slices for those windows.
+
+### Follow-Up Work
+
+- Add a documented production runbook for switching slice sizes by observed row
+  density and timeout behavior.
+- Consider adding row-weighted progress reporting to the rebuild task table so
+  percent complete reflects rows copied, not only completed chunks.
+- Keep reporting both task percentage and current chunk cursor during
+  monitoring.
+
+## 2026-05-13: Location Rebuild Remaining Dense Band Analysis
+
+### Symptoms
+
+The production location rebuild was still spending long wall-clock periods in
+2022 despite reaching 160/297 tasks complete (53.87%). Several 5-minute windows
+inside `_hyper_1_143_chunk` approached or exceeded the 20-minute statement
+timeout, making it unclear whether the remaining migration could finish at the
+current rate.
+
+### User Impact
+
+No user-facing outage was observed. Normal production ingestion continued while
+the read-only density analysis and rebuild batches ran.
+
+### Evidence
+
+A full remaining-hour density scan over all pending tasks timed out after 20
+minutes, so the analysis switched to a cheaper chunk-size ranking followed by
+targeted hourly counts for the largest remaining chunks. There were 137
+remaining tasks spanning `2021-11-02 21:40:00+00` through
+`2026-05-13 00:00:00+00`, with about 13 GB of remaining source chunk footprint.
+
+The targeted scan found the expensive legacy location work concentrated in
+`_hyper_1_143_chunk`: remaining dense hours around `2022-05-17 16:00`,
+`17:00`, and `18:00` had about 2.93M, 3.33M, and 4.06M source rows,
+respectively, with substantial lat/lng/location-related rows. `_hyper_1_186_chunk`
+(`2026-04-23` through `2026-04-30`) had about 51.48M source rows and 126 hours
+over 250k rows, but sampled dense hours had zero location-related rows, so this
+appears to be passthrough-heavy copy work rather than legacy location
+transformation. `_hyper_1_688_chunk` (`2026-05-12`) had about 8.42M source rows
+and 22 hours over 250k rows, also with zero location-related rows.
+
+During follow-up copying, `_hyper_1_143_chunk` advanced through
+`2022-05-17 18:00:00+00`. Five-minute slices worked for most dense ranges, but
+`2022-05-17 17:50:00+00` through `17:55:00+00` timed out during the location
+insert and required 1-minute slices. Disk stayed healthy around 21-22% used with
+223-226 GB free, and rebuild status remained 160/297 (53.87%) because the
+current chunk had not completed.
+
+### Fix or Mitigation
+
+The rebuild continued with adaptive slice sizing: hour-sized slices for sparse
+windows, 5-minute slices for dense windows, and 1-minute slices when a 5-minute
+location insert timed out. Naive two-worker parallelism was tested earlier but
+caused lock-timeout contention when workers drifted into the same hot chunk, so
+the active mitigation remains single-worker adaptive slicing until chunk
+selection is made explicitly disjoint.
+
+### Remaining Risk
+
+The final legacy-location dense hour in `_hyper_1_143_chunk` still needs to be
+cleared. Later recent chunks contain tens of millions of passthrough-heavy rows,
+especially `_hyper_1_186_chunk`, so they may still take wall-clock time even
+though they should not pay the expensive lat/lng pairing cost.
+
+### Follow-Up Work
+
+- Patch worker selection so concurrent workers can claim disjoint chunks rather
+  than competing in the same hot chunk.
+- Add a read-only density-report command to the repository script so future
+  operators can see remaining dense hours without hand-written SQL.
+- Add adaptive slice-size selection to the rebuild script so it can
+  automatically step down from hourly to 5-minute or 1-minute slices after a
+  timeout.
+
+## 2026-05-18: Metric Stream Location Rebuild Completed
+
+### Symptoms
+
+The production `fitness.metric_stream` location rebuild was still open in the
+final recent chunks and needed continuous batch chaining to finish. The last
+task-count plateau was 296/297 (99.66%) while `_hyper_1_688_chunk` copied a
+large passthrough-only band for 2026-05-12.
+
+### User Impact
+
+No user-facing outage was observed during the final batch chain. Production disk
+space stayed healthy after the earlier volume increase.
+
+### Evidence
+
+The final task `_hyper_1_688_chunk` copied through
+`2026-05-12 23:30:00+00` to `2026-05-13 00:00:00+00` with 180,967 passthrough
+rows and zero location conversions. After the final commit, repeated runner
+iterations reported no pending task. The verification query returned
+`297/297 = 100.00%`, `open_tasks=0`, `errors=0`, `active_rebuilds=0`,
+`lock_waiters=0`, and disk at 34% used with 189 GB free.
+
+### Fix or Mitigation
+
+Continued the production rebuild with chained batches. Dense legacy-location
+windows used smaller 5-minute slices earlier; the final recent chunks used
+30-minute slices because they were passthrough-only and did not require
+lat/lng-to-point conversion.
+
+### Remaining Risk
+
+The rebuild task table is complete, but follow-up validation and any planned
+post-rebuild cleanup or recompression still need to be tracked separately.
+
+### Follow-Up Work
+
+- Run the post-rebuild validation queries before deleting legacy-only rows or
+  performing any cleanup.
+- Recompress affected chunks after validation if they are still decompressed.
+- Add row-weighted progress reporting so future status updates do not sit at
+  the same task percentage during large passthrough chunks.
+
+## 2026-05-18: Metric Stream Cleanup, Swap, and Legacy Table Drop
+
+### Symptoms
+
+After the rebuild completed, production still had the original
+`fitness.metric_stream` hypertable with legacy `lat`, `lng`, and
+`gps_accuracy` channel rows, plus the rebuilt `fitness.metric_stream_rebuild`
+hypertable using `location` points.
+
+### User Impact
+
+No app healthcheck outage was observed. The scheduled worker was temporarily
+scaled to zero after the swap because the deployed image was still writing
+legacy `lat`/`lng` rows into the new table.
+
+### Evidence
+
+Pre-swap validation showed the rebuild had no legacy channels, no null
+`location.point` rows, no non-location point rows, and all initial rebuild
+chunks compressed. The final locked delta copied and verified 5,650,344
+current/future passthrough rows and inserted 137,985 rows that were missing
+from the earlier tail copy. After the swap, verification caught 20,637 new
+`lat`/`lng` pairs written by the old worker into the new table. The worker was
+stopped, 14 affected 2021 chunks were decompressed, those pairs were converted
+chunk-by-chunk into `location` points, and the legacy rows were deleted.
+
+Final verification returned `legacy_total=0`, `location_null_points=0`,
+`non_location_points=0`, `489` chunks with `488` compressed and only the active
+`2026-05-18` chunk uncompressed. Dropping
+`fitness.metric_stream_legacy_drop` reduced the Hetzner data volume from about
+98 GB used before recompression to 84 GB used after recompression. The old table
+drop cascaded to obsolete Postgres views `fitness.v_metric_stream` and
+`fitness.provider_stats`; current server read paths use ClickHouse analytics
+read models instead.
+
+### Fix or Mitigation
+
+Swapped `fitness.metric_stream_rebuild` into `fitness.metric_stream`, added the
+new table to the PeerDB publications, dropped the legacy hypertable after
+validation, converted post-swap legacy rows in chunk-aware batches, and
+recompressed all non-current chunks. The Terraform default volume size was
+changed back to 100 GB in code, but the live Hetzner volume remains 300 GB
+because Hetzner Cloud Volumes cannot be shrunk in place.
+
+### Remaining Risk
+
+The scheduled worker must stay stopped until an image containing the point-only
+writer is deployed; otherwise it can write new legacy `lat`/`lng` rows into the
+clean table. The live volume cannot be reduced from 300 GB to 100 GB without a
+new-volume migration.
+
+### Follow-Up Work
+
+- Deploy the point-only writer before restoring the worker replica.
+- Keep the deployment runbook explicit that volume downsizing requires a new
+  volume and data migration, not a Terraform resize.
+- Add a post-swap guard or validation script that fails loudly if any
+  `lat`/`lng`/`gps_accuracy` channels reappear.
+
+## 2026-05-18: Deploy Migration Blocked by Compressed Body-Stream Update
+
+### Symptoms
+
+The direct production stack deploy for the point-only writer failed during the
+`Run migrations` step before any service update occurred.
+
+### User Impact
+
+The production web service stayed on the previous image, and the worker stayed
+scaled to zero to avoid reintroducing legacy `lat`/`lng` rows.
+
+### Evidence
+
+The first deploy log showed
+`Applying: 0018_migrate_body_measurements_to_metric_stream.sql` followed by
+`error: cannot update table "_hyper_4_806_chunk"`. Production inspection showed
+`fitness.metric_stream` had `0` body-measurement channel rows and
+`fitness.body_measurement` still had `2704` source rows, so the migration
+needed an insert backfill and did not need to update or delete existing
+compressed `metric_stream` rows.
+
+After the first insert-only patch, the deploy failed with
+`Error: Connection terminated unexpectedly`. Postgres logs showed the migration
+backend was killed by signal 9 while running the body migration batch. The
+rebuilt table already had the same unique index under its pre-swap
+`metric_stream_rebuild_provider_external_channel_time_idx` name, so a plain
+`CREATE UNIQUE INDEX IF NOT EXISTS metric_stream_provider_external_channel_time_idx`
+would still build a duplicate full-table index because `IF NOT EXISTS` checks
+the index name, not equivalent indexed columns.
+
+After reusing the existing index, the next deploy failed with
+`error: out of shared memory` and the Postgres hint to increase
+`max_locks_per_transaction`; the logged statement was the body-row INSERT. The
+single INSERT spanned years of compressed hypertable chunks and exhausted the
+lock table.
+
+### Fix or Mitigation
+
+Changed the pending body-measurement migration to avoid compressed writes and
+full-table duplicate-index work: it renames the existing rebuild-era unique
+index to the canonical name when present, creates the canonical unique index
+only when needed, and inserts missing body rows from `fitness.body_measurement`
+with `ON CONFLICT DO NOTHING` in month-sized transactions so chunk locks are
+released between batches.
+
+### Remaining Risk
+
+The patched image still needs to be built and deployed, then production must be
+verified for body-row backfill, point-only location rows, ClickHouse CDC setup,
+and restored worker writes.
+
+### Follow-Up Work
+
+- Keep hypertable backfill migrations insert-only when compressed chunks are
+  expected in production.
+- Add deployment validation for migrations that mutate compressed hypertables.
+
+## 2026-05-18: ClickHouse Metric Stream Repair Blocked by Old Mirror Schema
+
+### Symptoms
+
+After Postgres cleanup migrations applied in production, the deploy still
+failed during ClickHouse migrations before the stack service update.
+
+### User Impact
+
+The point-only app image was still not deployed, so the scheduled worker
+remained scaled to zero.
+
+### Evidence
+
+The deploy log showed Postgres applied five pending migrations, then ClickHouse
+migration `0012_repair_metric_stream_backfill` failed on the first backfill
+range with `No such column external_id in table postgres_fitness.metric_stream`.
+Direct ClickHouse inspection showed the mirror still had the old narrow schema:
+`id`, `activity_id`, `user_id`, `recorded_at`, `channel`, `provider_id`, and
+`scalar`, without `external_id` or `point`.
+
+### Root Cause
+
+The repair migration assumed the ClickHouse `metric_stream` mirror already had
+the new Postgres metric-stream shape, but production still had the older narrow
+mirror schema.
+
+### Fix or Mitigation
+
+Changed the ClickHouse repair migration to inspect `system.columns` and skip
+its repair body when the mirror schema is older than the current
+`metric_stream` shape. The later `0013_metric_stream_location_point` migration
+is responsible for dropping and rebuilding the mirror with the current schema.
+
+### Remaining Risk
+
+The patched deploy still needs to run successfully through ClickHouse migration
+`0013`, CDC setup, and stack service update.
+
+### Follow-Up Work
+
+- Keep repair migrations schema-aware when they may run before a later rebuild
+  migration.
+- Consider ordering future ClickHouse migrations so destructive rebuilds happen
+  before data repair migrations that depend on the new table shape.
+
+## 2026-05-18: ClickHouse Metric Stream Point Backfill Rejected EWKB
+
+### Symptoms
+
+The deploy progressed past Postgres migrations and the old-schema ClickHouse
+repair skip, but failed during ClickHouse migration
+`0013_metric_stream_location_point` while backfilling
+`postgres_fitness.metric_stream`.
+
+### User Impact
+
+The production web and worker services were still held on the old image while
+the migration job failed, so the scheduled worker remained stopped.
+
+### Evidence
+
+The deploy log failed at backfill range `81/1294` with ClickHouse reporting it
+could not parse source column `point` into destination column
+`Nullable(Point)`. The rejected value began
+`0101000020E6100000...`, which is PostGIS EWKB hex with the SRID flag and
+SRID 4326 header. A direct ClickHouse probe confirmed
+`readWKBPoint(unhex(...))` accepts the value after replacing the EWKB type/SRID
+header with a standard WKB point header.
+
+### Root Cause
+
+PostGIS values read through ClickHouse's PostgreSQL table function arrived as
+EWKB with SRID metadata, while the backfill attempted to parse them as standard
+WKB points.
+
+### Fix or Mitigation
+
+Changed the ClickHouse metric stream backfill to convert nullable Postgres EWKB
+hex strings into standard WKB before calling `readWKBPoint`, while preserving
+null points and already-standard WKB values.
+
+### Remaining Risk
+
+The patched deploy still needs to rebuild the ClickHouse mirror, complete CDC
+setup, update the stack services, restore the worker, and verify no legacy
+location rows are written.
+
+### Follow-Up Work
+
+- Treat PostGIS geometry values read through ClickHouse `postgresql(...)` as
+  encoded geometry strings, not directly castable native ClickHouse Points.
+- Add a small production-shaped ClickHouse fixture for PostGIS Point backfills
+  before future geospatial mirror migrations.
+
+## 2026-05-18: ClickHouse Metric Stream Point Backfill Hit Memory Limit
+
+### Symptoms
+
+After the EWKB parsing fix, ClickHouse migration
+`0013_metric_stream_location_point` progressed past the previous failure and
+then failed during the same backfill.
+
+### User Impact
+
+The production stack still did not roll forward to the point-only image, and
+the scheduled worker remained stopped.
+
+### Evidence
+
+The deploy failed in the migration step at range `336/1294`, around
+`2021-11-17`, with ClickHouse reporting `(total) memory limit exceeded`,
+attempting to allocate another `16.00 MiB` while current RSS was `2.69 GiB`
+against a `2.70 GiB` maximum. The partial ClickHouse mirror remained present
+with `63,717,778` rows through `2021-11-17`, and
+`analytics.metric_stream_backfill_chunks` showed `335` completed ranges.
+
+### Root Cause
+
+The ClickHouse point backfill window was too large for dense historical
+`metric_stream` ranges under the production ClickHouse memory limit.
+
+### Fix or Mitigation
+
+Changed the ClickHouse point rebuild migration to preserve an existing
+current-schema partial `postgres_fitness.metric_stream` mirror and its
+backfill progress table on retry, and reduced metric stream backfill windows
+from six hours to one hour so dense ranges stay below ClickHouse's memory cap.
+The first hourly retry still exceeded memory on a dense hour with roughly
+`2.9M` rows, so the backfill window was reduced again to five minutes.
+
+### Remaining Risk
+
+The retry still needs to complete the remaining ClickHouse backfill, refresh
+read models, configure CDC, and deploy the app services.
+
+### Follow-Up Work
+
+- Keep large ClickHouse backfills resumable by default; failed deploy retries
+  should not discard already-loaded mirror data when the schema is current.
+- Add operational guidance for sizing ClickHouse backfill windows against the
+  configured memory limit.
+
+## 2026-05-18: ClickHouse Point Migration Refreshed Read Models Before Backfill
+
+### Symptoms
+
+Manual retries of ClickHouse migration `0013_metric_stream_location_point`
+failed before printing any metric stream backfill progress.
+
+### User Impact
+
+The ClickHouse migration stayed pending, so the production deploy could not
+roll forward to the point-only metric stream schema and the scheduled worker
+remained stopped.
+
+### Evidence
+
+The one-off migration container logged `Applying ClickHouse migration:
+0013_metric_stream_location_point` and then failed with ClickHouse memory limit
+errors while executing `FillingRightJoinSide`. No
+`Waiting for ClickHouse postgres_fitness.metric_stream table` or backfill range
+log appeared, which showed the failure happened before
+`backfillNativeMetricStream`. Code inspection found that
+`buildClickHouseBootstrapStatements(...)` includes `SYSTEM REFRESH` and
+`SYSTEM WAIT` statements for dependent analytics read models, and
+`0013_metric_stream_location_point` ran that full bootstrap before starting the
+metric stream backfill.
+
+### Root Cause
+
+The migration refreshed dependent ClickHouse read models before completing the
+large resumable source-table backfill they depended on.
+
+### Fix or Mitigation
+
+Changed metric stream rebuild paths to create ClickHouse objects before the
+backfill but defer dependent `deduped_sensor`, `deduped_location`, and
+`activity_summary` refreshes until after the resumable metric stream backfill
+finishes.
+
+### Remaining Risk
+
+The production one-off still needs to run with the patched image, finish the
+remaining backfill ranges, refresh the dependent read models, and record
+`0013_metric_stream_location_point` as applied.
+
+### Follow-Up Work
+
+- Keep bootstrap object creation separate from expensive refresh work for
+  one-off migrations that need to backfill large mirrors first.
+- Add ordering assertions for future ClickHouse migrations that rebuild
+  backfilled source tables and refresh dependent materialized views.
+
+## 2026-05-18: ClickHouse Backfill Retry Spent Minutes Rechecking Completed Ranges
+
+### Symptoms
+
+The manual `0013_metric_stream_location_point` one-off logged a denominator of
+`67,730` five-minute ranges but stayed at `0.00%` for several minutes before
+printing the first backfill range.
+
+### User Impact
+
+The migration appeared stalled even though it was eventually able to resume.
+Any retry after a partial backfill would pay the same startup cost before useful
+progress logs appeared.
+
+### Evidence
+
+The code checked `analytics.metric_stream_backfill_chunks` once per generated
+five-minute range. Production had `335` completed checkpoint rows covering older
+large ranges, so the runner had to issue many small ClickHouse queries before it
+reached the first missing range and began logging progress.
+
+### Root Cause
+
+The resumable backfill checked completed work with one ClickHouse query per
+candidate range instead of loading checkpoint ranges once and skipping covered
+ranges in memory.
+
+### Fix or Mitigation
+
+Changed the backfill runner to read completed checkpoint ranges once, parse
+ClickHouse timestamp strings as UTC, and skip covered five-minute ranges in
+memory with periodic skip-progress logs.
+
+### Remaining Risk
+
+The current production one-off had already moved past the startup scan before
+this optimization was deployed. The patch is for faster, more observable retry
+behavior if this run fails or a future large backfill resumes from partial
+progress.
+
+### Follow-Up Work
+
+- Prefer one bulk progress-query over per-range polling in all resumable
+  ClickHouse/Postgres one-off backfills.
+- Include skip-progress logging whenever a resumable backfill can spend more
+  than a few seconds scanning completed work before writing new rows.
+
+## 2026-05-18: ClickHouse Backfill Hit Postgres Shared Lock Memory
+
+### Symptoms
+
+The production `0013_metric_stream_location_point` one-off resumed and advanced
+to `16516/67730` ranges, then exited with `pqxx::out_of_memory`.
+
+### User Impact
+
+The ClickHouse migration remained unapplied at about `24.36%` log progress. The
+Postgres service stayed healthy, but the one-off stopped and needed a Postgres
+lock-table sizing change before retrying.
+
+### Evidence
+
+The migration log ended with `ERROR: out of shared memory` and Postgres's hint
+to increase `max_locks_per_transaction`. Postgres was still healthy afterward:
+the DB container reported `healthy`, `pg_is_in_recovery()` returned `false`,
+and disk usage was `57%`. Production had `2,499` Timescale chunks for
+`fitness.metric_stream`, while `max_locks_per_transaction` was `128`.
+
+### Root Cause
+
+The ClickHouse backfill read source rows through the Timescale parent
+hypertable via the ClickHouse `postgresql()` table function. Some reads caused
+Postgres to lock too many chunk relations in one transaction and exhaust shared
+lock memory.
+
+### Fix or Mitigation
+
+Increased production Postgres `max_locks_per_transaction` in `deploy/stack.yml`
+from the default to `4096`, leaving the backfill source query on the parent
+hypertable. A direct chunk-table read was tested but rejected because compressed
+Timescale chunks expose internal storage columns rather than the parent
+hypertable schema, which ClickHouse could not introspect.
+
+### Remaining Risk
+
+The stack needs to be redeployed so Postgres restarts with the larger lock
+table, then the one-off needs to be restarted from the existing checkpoint. The
+dependent ClickHouse read-model refreshes still need to run after the metric
+stream mirror finishes.
+
+### Follow-Up Work
+
+- Keep `max_locks_per_transaction` sizing in the deployment docs alongside the
+  Timescale chunk-count guidance.
+- Avoid direct reads from compressed Timescale chunk tables unless the query
+  explicitly accounts for Timescale's internal compressed storage schema.
+
+## 2026-05-19: ClickHouse Metric Stream Migration Needed Larger Refresh Memory
+
+### Symptoms
+
+The production `0013_metric_stream_location_point` one-off completed the
+resumable `metric_stream` backfill but repeatedly failed while refreshing
+dependent ClickHouse read models.
+
+### User Impact
+
+The ClickHouse migration was not recorded as applied until the dependent
+`analytics.deduped_sensor`, `analytics.deduped_location`, and
+`analytics.activity_summary` refreshes completed. During retries, the analytics
+read models stayed on the previous migration state.
+
+### Evidence
+
+The backfill reached `100.00%` and logged `ClickHouse metric_stream backfill
+complete`. The following `SYSTEM WAIT VIEW analytics.deduped_sensor` failed
+with ClickHouse memory-limit errors at the 3 GiB service limit and again at the
+4 GiB service limit. Active query inspection showed the refresh passing the old
+2.7 GiB internal ceiling under the 4 GiB service limit before later reaching
+the 3.6 GiB internal ceiling. After raising the service limit to 5 GiB, the
+same one-off logged `Applied ClickHouse migration:
+0013_metric_stream_location_point`, and `analytics.schema_migrations` contained
+that migration id.
+
+### Root Cause
+
+The post-backfill ClickHouse materialized-view refresh for
+`analytics.deduped_sensor` needed more memory than the previous production
+ClickHouse container limit allowed. ClickHouse enforces an internal memory cap
+below the Docker service limit, so the 3 GiB and 4 GiB service limits translated
+to lower effective query ceilings.
+
+### Fix or Mitigation
+
+Raised the ClickHouse service memory limit in `deploy/stack.yml` to 5 GiB and
+applied the same limit to the live `dofek_clickhouse` service. The migration was
+rerun from checkpoint and completed successfully.
+
+### Remaining Risk
+
+Future `metric_stream` growth can make full read-model refreshes exceed the 5
+GiB limit. If that happens, prefer reducing refresh memory pressure in the
+ClickHouse read-model SQL before raising the single-node service cap further.
+
+### Follow-Up Work
+
+- Add a runbook section for ClickHouse materialized-view refresh memory checks,
+  including `system.processes` and the service memory limit.
+- Consider chunked or narrower refresh strategies for the largest ClickHouse
+  read models so schema migrations do not require full-table refreshes under a
+  single query memory ceiling.
+
+## 2026-05-12: PR Dependency Audit Blocked By Broad TanStack History Malware Advisory
+
+### Symptoms
+
+PR #1121 failed the `Test / Dependency Audit` GitHub Actions job.
+
+### User Impact
+
+The docs-only PR could not merge while the dependency audit gate failed.
+
+### Evidence
+
+The failing command was:
+
+```text
+pnpm audit --prod --audit-level=critical --ignore-registry-errors
+```
+
+The first fatal finding in job `75480320849` was:
+
+```text
+critical Malware in @tanstack/history
+Paths packages__web>@tanstack/react-router>@tanstack/history
+Vulnerable versions >=0
+Patched versions <0.0.0
+```
+
+Local reproduction matched CI after dependency install.
+
+### Root Cause
+
+GitHub advisory `GHSA-rmmr-r34h-pfm5` is currently returned to `pnpm audit` as
+affecting every `@tanstack/history` version with no patched version. Public
+incident reporting identifies specific compromised TanStack releases; the
+branch was on older unaffected TanStack Router versions but the all-version
+advisory still failed the critical audit.
+
+### Fix or Mitigation
+
+Updated TanStack Router packages to current stable versions outside the known
+compromised version ranges and changed the dependency audit command to ignore
+only `GHSA-rmmr-r34h-pfm5`. The audit still fails for any other critical
+production advisory.
+
+### Remaining Risk
+
+This is an advisory-specific exception while the upstream GitHub/npm advisory
+range remains broad. Remove the exception once the advisory is narrowed or a
+non-`@tanstack/history` TanStack Router release is available.
+
+### Follow-Up Work
+
+- Re-run PR #1121 CI and verify `Test / Dependency Audit` passes.
+- Periodically check `GHSA-rmmr-r34h-pfm5`; remove the `--ignore` once upstream
+  no longer reports safe TanStack versions as vulnerable.
