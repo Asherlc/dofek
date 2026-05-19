@@ -39,6 +39,22 @@ describe("migrate-location-legacy-chunk", () => {
     expect(sql).not.toContain("fitness.metric_stream\n  WHERE channel IN ('lat', 'lng')");
   });
 
+  it("does not decompress or recompress chunks for validation-only execution", () => {
+    const sql = buildChunkMigrationSql({
+      chunkSchema: "_timescaledb_internal",
+      chunkName: "_hyper_1_160_chunk",
+      statementTimeout: "360min",
+      write: false,
+      recompress: true,
+    });
+
+    expect(sql).not.toContain("decompress_chunk");
+    expect(sql).not.toContain("compress_chunk");
+    expect(sql).not.toContain("INSERT INTO fitness.metric_stream");
+    expect(sql).not.toContain("DELETE FROM ONLY");
+    expect(sql).toContain("exact_missing_before=");
+  });
+
   it("defaults to validation-only dry-run mode", () => {
     const options = parseCliOptions(["--start", "2021-07-01", "--end", "2021-08-01"]);
 

@@ -5031,6 +5031,12 @@ Direct ClickHouse inspection showed the mirror still had the old narrow schema:
 `id`, `activity_id`, `user_id`, `recorded_at`, `channel`, `provider_id`, and
 `scalar`, without `external_id` or `point`.
 
+### Root Cause
+
+The repair migration assumed the ClickHouse `metric_stream` mirror already had
+the new Postgres metric-stream shape, but production still had the older narrow
+mirror schema.
+
 ### Fix or Mitigation
 
 Changed the ClickHouse repair migration to inspect `system.columns` and skip
@@ -5074,6 +5080,12 @@ SRID 4326 header. A direct ClickHouse probe confirmed
 `readWKBPoint(unhex(...))` accepts the value after replacing the EWKB type/SRID
 header with a standard WKB point header.
 
+### Root Cause
+
+PostGIS values read through ClickHouse's PostgreSQL table function arrived as
+EWKB with SRID metadata, while the backfill attempted to parse them as standard
+WKB points.
+
 ### Fix or Mitigation
 
 Changed the ClickHouse metric stream backfill to convert nullable Postgres EWKB
@@ -5114,6 +5126,11 @@ attempting to allocate another `16.00 MiB` while current RSS was `2.69 GiB`
 against a `2.70 GiB` maximum. The partial ClickHouse mirror remained present
 with `63,717,778` rows through `2021-11-17`, and
 `analytics.metric_stream_backfill_chunks` showed `335` completed ranges.
+
+### Root Cause
+
+The ClickHouse point backfill window was too large for dense historical
+`metric_stream` ranges under the production ClickHouse memory limit.
 
 ### Fix or Mitigation
 
@@ -5162,6 +5179,11 @@ log appeared, which showed the failure happened before
 `0013_metric_stream_location_point` ran that full bootstrap before starting the
 metric stream backfill.
 
+### Root Cause
+
+The migration refreshed dependent ClickHouse read models before completing the
+large resumable source-table backfill they depended on.
+
 ### Fix or Mitigation
 
 Changed metric stream rebuild paths to create ClickHouse objects before the
@@ -5202,6 +5224,12 @@ The code checked `analytics.metric_stream_backfill_chunks` once per generated
 five-minute range. Production had `335` completed checkpoint rows covering older
 large ranges, so the runner had to issue many small ClickHouse queries before it
 reached the first missing range and began logging progress.
+
+### Root Cause
+
+The resumable backfill checked completed work with one ClickHouse query per
+candidate range instead of loading checkpoint ranges once and skipping covered
+ranges in memory.
 
 ### Fix or Mitigation
 

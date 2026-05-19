@@ -244,8 +244,20 @@ SELECT
   || '|deleted_gps_rows=' || (SELECT count(*) FROM deleted_gps_rows)::text;`
     : "SELECT 'exact_missing_after=' || (SELECT count(*) FROM pg_temp.missing_location_rows)::text || '|deleted_coordinate_rows=0|deleted_gps_rows=0';";
 
-  const recompressSql = input.recompress
+  const decompressSql = input.write
     ? `
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = ${statementTimeoutLiteral};
+
+SELECT decompress_chunk(${chunkRegclassLiteral}::regclass, if_compressed => true)::text;
+
+COMMIT;`
+    : "";
+
+  const recompressSql =
+    input.write && input.recompress
+      ? `
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = ${statementTimeoutLiteral};
@@ -253,16 +265,9 @@ SET LOCAL statement_timeout = ${statementTimeoutLiteral};
 SELECT compress_chunk(${chunkRegclassLiteral}::regclass, if_not_compressed => true)::text;
 
 COMMIT;`
-    : "";
+      : "";
 
-  return `BEGIN;
-SET LOCAL lock_timeout = '5s';
-SET LOCAL statement_timeout = ${statementTimeoutLiteral};
-
-SELECT decompress_chunk(${chunkRegclassLiteral}::regclass, if_compressed => true)::text;
-
-COMMIT;
-
+  return `${decompressSql}
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = ${statementTimeoutLiteral};

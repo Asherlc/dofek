@@ -4,9 +4,13 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { GenericContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
 
 const testDatabaseImage = "timescale/timescaledb-ha:pg18.3-ts2.26.4-all";
+const columnRowsSchema = z.array(z.object({ column_name: z.string() }));
+const indexRowsSchema = z.array(z.object({ indexname: z.string() }));
+const channelCountRowsSchema = z.array(z.object({ channel: z.string(), count: z.string() }));
 
 describe("metric_stream location point migration", () => {
   let connectionString: string;
@@ -132,7 +136,10 @@ describe("metric_stream location point migration", () => {
           )
         ORDER BY column_name
       `);
-      expect(columnsResult.rows).toEqual([{ column_name: "metadata" }, { column_name: "point" }]);
+      expect(columnRowsSchema.parse(columnsResult.rows)).toEqual([
+        { column_name: "metadata" },
+        { column_name: "point" },
+      ]);
 
       const pointIndexResult = await client.query<{ indexname: string }>(`
         SELECT indexname
@@ -141,7 +148,9 @@ describe("metric_stream location point migration", () => {
           AND tablename = 'metric_stream'
           AND indexname = 'metric_stream_point_gist_idx'
       `);
-      expect(pointIndexResult.rows).toEqual([{ indexname: "metric_stream_point_gist_idx" }]);
+      expect(indexRowsSchema.parse(pointIndexResult.rows)).toEqual([
+        { indexname: "metric_stream_point_gist_idx" },
+      ]);
 
       const channelCountsResult = await client.query<{ channel: string; count: string }>(`
         SELECT channel, count(*) AS count
@@ -149,7 +158,7 @@ describe("metric_stream location point migration", () => {
         GROUP BY channel
         ORDER BY channel
       `);
-      expect(channelCountsResult.rows).toEqual([
+      expect(channelCountRowsSchema.parse(channelCountsResult.rows)).toEqual([
         { channel: "gps_accuracy", count: "3" },
         { channel: "lat", count: "3" },
         { channel: "lng", count: "3" },
