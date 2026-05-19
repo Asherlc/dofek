@@ -18,6 +18,14 @@ overrides:
   protobufjs: 8.4.0
   yaml: 2.9.0
 
+patchedDependencies:
+  '@expo/plist@0.0.18':
+    hash: 36c34cedabd346f4ff3d0f855e931a3e36710b099d24c10f29b46a00e5ff1288
+    path: patches/@expo__plist@0.0.18.patch
+  '@expo/plist@0.5.3':
+    hash: e326bad2fe206ab53163fee6d802287190f00c402aa583338b55ec759af562bf
+    path: patches/@expo__plist@0.5.3.patch
+
 importers:
 
   .:
@@ -13652,7 +13660,7 @@ snapshots:
 
   '@bacons/xcode@1.0.0-alpha.32':
     dependencies:
-      '@expo/plist': 0.0.18
+      '@expo/plist': 0.0.18(patch_hash=36c34cedabd346f4ff3d0f855e931a3e36710b099d24c10f29b46a00e5ff1288)
       debug: 4.4.3(supports-color@8.1.1)
       uuid: 8.3.2
     transitivePeerDependencies:
@@ -14195,7 +14203,7 @@ snapshots:
       '@expo/metro-config': 55.0.22(expo@55.0.25)(typescript@5.9.3)
       '@expo/osascript': 2.4.3
       '@expo/package-manager': 1.10.5
-      '@expo/plist': 0.5.3
+      '@expo/plist': 0.5.3(patch_hash=e326bad2fe206ab53163fee6d802287190f00c402aa583338b55ec759af562bf)
       '@expo/prebuild-config': 55.0.18(expo@55.0.25)(typescript@5.9.3)
       '@expo/require-utils': 55.0.5(typescript@5.9.3)
       '@expo/router-server': 55.0.17(@expo/metro-runtime@55.0.11)(expo-constants@55.0.16)(expo-font@55.0.8)(expo-router@55.0.15)(expo-server@55.0.10)(expo@55.0.25)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -14265,7 +14273,7 @@ snapshots:
     dependencies:
       '@expo/config-types': 55.0.5
       '@expo/json-file': 10.0.14
-      '@expo/plist': 0.5.3
+      '@expo/plist': 0.5.3(patch_hash=e326bad2fe206ab53163fee6d802287190f00c402aa583338b55ec759af562bf)
       '@expo/sdk-runtime-versions': 1.0.0
       chalk: 4.1.2
       debug: 4.4.3(supports-color@8.1.1)
@@ -14454,13 +14462,13 @@ snapshots:
       ora: 3.4.0
       resolve-workspace-root: 2.0.1
 
-  '@expo/plist@0.0.18':
+  '@expo/plist@0.0.18(patch_hash=36c34cedabd346f4ff3d0f855e931a3e36710b099d24c10f29b46a00e5ff1288)':
     dependencies:
       '@xmldom/xmldom': 0.9.10
       base64-js: 1.5.1
       xmlbuilder: 14.0.0
 
-  '@expo/plist@0.5.3':
+  '@expo/plist@0.5.3(patch_hash=e326bad2fe206ab53163fee6d802287190f00c402aa583338b55ec759af562bf)':
     dependencies:
       '@xmldom/xmldom': 0.9.10
       base64-js: 1.5.1
@@ -22088,7 +22096,7 @@ snapshots:
     dependencies:
       '@expo/config-plugins': 55.0.9
       '@expo/config-types': 55.0.5
-      '@expo/plist': 0.5.3
+      '@expo/plist': 0.5.3(patch_hash=e326bad2fe206ab53163fee6d802287190f00c402aa583338b55ec759af562bf)
       expo: 55.0.25(@babel/core@7.29.0)(@expo/dom-webview@55.0.5)(@expo/metro-runtime@55.0.11)(expo-router@55.0.15)(react-dom@19.2.4(react@19.2.4))(react-native-worklets@0.8.1(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
       react: 19.2.4
       react-native: 0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4)
@@ -22121,7 +22129,7 @@ snapshots:
   expo-updates@55.0.23(expo@55.0.25)(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4):
     dependencies:
       '@expo/code-signing-certificates': 0.0.6
-      '@expo/plist': 0.5.3
+      '@expo/plist': 0.5.3(patch_hash=e326bad2fe206ab53163fee6d802287190f00c402aa583338b55ec759af562bf)
       '@expo/spawn-async': 1.8.0
       arg: 4.1.3
       chalk: 4.1.2
