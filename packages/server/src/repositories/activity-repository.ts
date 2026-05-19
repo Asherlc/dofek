@@ -336,7 +336,10 @@ export class ActivityRepository extends BaseRepository {
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
-    return hydratedRows[0] ?? null;
+    const firstRow = hydratedRows[0];
+    if (!firstRow) return null;
+    const { member_activity_ids: _, ...activity } = firstRow;
+    return activity;
   }
 
   async #withActivitySummaries<TRow extends { id: string; member_activity_ids?: string[] }>(

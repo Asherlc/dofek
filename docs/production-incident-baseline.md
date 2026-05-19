@@ -115,7 +115,7 @@ page.
 - Raise `max_slot_wal_keep_size` (or set `-1` for unlimited) on production
   Postgres before any future large backfill; revert after.
 - Add an alert that pages on `pg_replication_slots.wal_status IN ('lost', 'unreserved')`
-  or `pg_stat_replication_slot.confirmed_flush_lsn` lag past a threshold.
+  or `pg_replication_slots.confirmed_flush_lsn` lag past a threshold.
 - Add a heartbeat check comparing `count(*) FROM fitness.activity` (Postgres) to
   `count(*) FROM postgres_fitness.activity FINAL WHERE _peerdb_is_deleted = 0`
   (ClickHouse) and alarming if they diverge.

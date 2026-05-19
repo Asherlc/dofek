@@ -386,6 +386,39 @@ describe("ActivityRepository", () => {
       expect(result?.subsource).toBe("Strong");
     });
 
+    it("keeps member activity aliases internal", async () => {
+      const { repo } = makeRepositoryWithSensorStore([
+        {
+          id: "canonical-id",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T10:45:00.000Z",
+          name: "Easy Run",
+          notes: null,
+          provider_id: "garmin",
+          subsource: "Garmin Connect",
+          source_providers: ["garmin", "strava"],
+          source_external_ids: [{ providerId: "garmin", externalId: "ext-1" }],
+          member_activity_ids: ["canonical-id", "provider-id"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          elevation_loss_m: null,
+          sample_count: null,
+        },
+      ]);
+
+      const result = await repo.findById("provider-id");
+
+      expect(result).not.toHaveProperty("member_activity_ids");
+    });
+
     it("calls execute once", async () => {
       const { repo, execute } = makeRepositoryWithSensorStore([]);
       await repo.findById("some-id");
