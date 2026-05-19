@@ -134,19 +134,36 @@ export async function waitForClickHouseTable(
     throw new Error("ClickHouse table verification requires a query-capable client");
   }
 
+  let lastStartupError: Error | undefined;
   for (let attempt = 0; attempt < CLICKHOUSE_TABLE_WAIT_ATTEMPTS; attempt += 1) {
-    const result = await client.query<TableCountRow>({
-      query: `SELECT count() AS table_count FROM system.tables WHERE database = ${clickHouseStringLiteral(
-        database,
-      )} AND name = ${clickHouseStringLiteral(table)}`,
-      format: "JSONEachRow",
-    });
-    const rows = await result.json();
-    if (Number(rows[0]?.table_count ?? 0) > 0) {
-      return;
+    try {
+      const result = await client.query<TableCountRow>({
+        query: `SELECT count() AS table_count FROM system.tables WHERE database = ${clickHouseStringLiteral(
+          database,
+        )} AND name = ${clickHouseStringLiteral(table)}`,
+        format: "JSONEachRow",
+      });
+      const rows = await result.json();
+      if (Number(rows[0]?.table_count ?? 0) > 0) {
+        return;
+      }
+    } catch (error) {
+      if (!isTransientClickHouseStartupError(error)) {
+        throw error;
+      }
+      lastStartupError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
 
-  throw new Error(`Timed out waiting for ClickHouse table ${database}.${table}`);
+  const startupErrorMessage = lastStartupError
+    ? `; last startup error: ${lastStartupError.message}`
+    : "";
+  throw new Error(
+    `Timed out waiting for ClickHouse table ${database}.${table}${startupErrorMessage}`,
+  );
+}
+
+function isTransientClickHouseStartupError(error: unknown): error is Error {
+  return error instanceof Error && error.message.includes("ECONNREFUSED");
 }

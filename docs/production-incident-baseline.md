@@ -5462,3 +5462,75 @@ non-`@tanstack/history` TanStack Router release is available.
 - Re-run PR #1121 CI and verify `Test / Dependency Audit` passes.
 - Periodically check `GHSA-rmmr-r34h-pfm5`; remove the `--ignore` once upstream
   no longer reports safe TanStack versions as vulnerable.
+
+## 2026-05-19: Deploy Web Failed On ClickHouse Restart And Staging DB Image Drift
+
+### Symptoms
+
+Deploy Web run `26117750622` failed for both production and staging. Production
+completed migrations, then failed during `docker stack deploy` after Swarm
+rolled back `dofek_web`. Staging failed earlier during `Run migrations`.
+
+### User Impact
+
+Production stayed on the previous web image after Swarm rollback. Staging did
+not deploy the target image and remained unable to run the PostGIS-dependent
+migration.
+
+### Evidence
+
+Production job `76811535379` logged `dofek_web did not finish deployment
+cleanly; update_state=rollback_completed`. Live service logs for the failed
+new web task showed:
+
+```text
+[web] Failed to start: Error: connect ECONNREFUSED 10.0.1.8:8123
+```
+
+The stack deploy log updated `dofek_web` first and later updated
+`dofek_clickhouse` in the same release. Staging job `76811452037` failed with:
+
+```text
+[migrate] error: extension "postgis" is not available
+```
+
+Staging `dofek-staging_db` was still running
+`timescale/timescaledb:2.26.2-pg18`, and the container only had the
+TimescaleDB extension control file. Production was already running
+`timescale/timescaledb-ha:pg18.3-ts2.26.4-all`, which includes PostGIS.
+
+### Root Cause
+
+Production web startup treated a transient ClickHouse connection refusal as a
+fatal boot error. The startup table-verification loop retried missing tables but
+did not retry the transport failure produced while ClickHouse was restarting
+during the same Swarm stack update.
+
+Staging had separate environment drift: the DB service was still on the older
+TimescaleDB image without PostGIS, so the PostGIS migration could not run.
+
+### Fix or Mitigation
+
+Updated ClickHouse startup table verification to retry transient
+`ECONNREFUSED` errors within the existing wait window and added a unit
+regression test for that failure mode.
+
+Attempted to reconcile staging by updating only `dofek-staging_db` to the image
+declared in `deploy/stack.yml`, but the replacement HA image failed to start
+because it could not access the existing staging data directory permissions.
+Rolled the service update back; staging DB returned to the previous running
+image.
+
+### Remaining Risk
+
+Production still needs a fresh deploy of an image containing the startup retry
+fix. Staging remains unable to run PostGIS-dependent migrations until its
+Postgres data directory ownership/layout is migrated to the HA image expected
+by `deploy/stack.yml`.
+
+### Follow-Up Work
+
+- Plan and execute a staging DB image/data-directory migration through the
+  normal infrastructure path before rerunning staging migrations.
+- Document the DB image migration procedure, including the expected data
+  directory ownership for `timescale/timescaledb-ha`.
