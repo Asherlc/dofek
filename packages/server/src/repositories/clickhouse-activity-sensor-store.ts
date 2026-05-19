@@ -36,7 +36,7 @@ export interface ActivitySummaryReadModelRow {
 
 function queryParams(window: ActivitySensorWindow, extra: Record<string, unknown>) {
   return {
-    activityId: window.activityId,
+    activityIds: [...new Set([window.activityId, ...window.memberActivityIds])],
     userId: window.userId,
     ...extra,
   };
@@ -65,7 +65,7 @@ function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
         scalar
       FROM analytics.deduped_sensor
       WHERE user_id = {userId:UUID}
-        AND activity_id = {activityId:UUID}
+        AND activity_id IN {activityIds:Array(UUID)}
         AND ${channelPredicate}
     )
   `;
@@ -112,7 +112,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           elevation_loss_m,
           sample_count
         FROM analytics.activity_summary
-        WHERE toString(activity_id) IN {activityIds:Array(String)}
+        WHERE activity_id IN (
+          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))
+        )
       `,
       format: "JSONEachRow",
       query_params: { activityIds },
@@ -328,7 +330,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           SELECT recorded_at, lat, lng
           FROM analytics.deduped_location
           WHERE user_id = {userId:UUID}
-            AND activity_id = {activityId:UUID}
+            AND activity_id IN {activityIds:Array(UUID)}
         ),
         sample_times AS (
           SELECT recorded_at FROM deduped_samples

@@ -165,6 +165,67 @@ describe("ActivityRepository", () => {
       expect(result.items[0]).toHaveProperty("id", "abc-123");
     });
 
+    it("hydrates summaries from any member activity id", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "provider-row-id",
+          activity_type: "cycling",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Morning Ride",
+          provider_id: "strava",
+          source_providers: ["apple_health", "strava"],
+          member_activity_ids: ["clickhouse-row-id", "provider-row-id"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "clickhouse-row-id",
+          avg_hr: 145,
+          max_hr: 171,
+          avg_power: 220,
+          max_power: 450,
+          avg_speed: 8,
+          max_speed: 13,
+          avg_cadence: 82,
+          total_distance: 42000,
+          elevation_gain_m: 610,
+          elevation_loss_m: 590,
+          sample_count: 3600,
+        },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith([
+        "provider-row-id",
+        "clickhouse-row-id",
+      ]);
+      expect(result.items[0]).toMatchObject({
+        id: "provider-row-id",
+        avg_hr: 145,
+        max_hr: 171,
+        avg_power: 220,
+        distance_meters: 42000,
+      });
+      expect(result.items[0]).not.toHaveProperty("member_activity_ids");
+    });
+
+    it("selects member activity aliases for summary hydration", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+      await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("a.id");
+      expect(compiledQuery.sql).toContain("a.member_activity_ids");
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+    });
+
     it("returns empty first pages without stale-view self-healing", async () => {
       const { repo, execute } = makeRepositoryWithSensorStore([]);
       await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
@@ -330,6 +391,18 @@ describe("ActivityRepository", () => {
       await repo.findById("some-id");
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("looks up activities through the member alias view", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+      await repo.findById("member-id");
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members am");
+      expect(compiledQuery.sql).toContain("am.activity_id = a.id");
+      expect(compiledQuery.sql).toContain("am.member_activity_id = $1");
+      expect(compiledQuery.sql).not.toContain("ANY(a.member_activity_ids)");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id"]));
+    });
   });
 
   describe("getStream", () => {
@@ -381,6 +454,18 @@ describe("ActivityRepository", () => {
         },
         500,
       );
+    });
+
+    it("resolves stream windows through the member alias view", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+      await repo.getStream("member-id", 500);
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members am");
+      expect(compiledQuery.sql).toContain("am.activity_id = a.id");
+      expect(compiledQuery.sql).toContain("am.member_activity_id = $1");
+      expect(compiledQuery.sql).not.toContain("ANY(a.member_activity_ids)");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id"]));
     });
 
     it("does not query the sensor store when the activity is not visible", async () => {

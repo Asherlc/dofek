@@ -164,6 +164,14 @@ describe("TrainingRepository", () => {
       expect(result).toEqual([]);
     });
 
+    it("selects the activity view id into the UI row id", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getActivityStats(90);
+      const query = sensorStore.query.mock.calls[0]?.[1];
+      expect(query).toContain("toString(a.id) AS id");
+      expect(query).toContain("FROM analytics.v_activity a");
+    });
+
     it("returns activity stats rows", async () => {
       const { repo } = makeRepository([
         {

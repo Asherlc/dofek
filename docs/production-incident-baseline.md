@@ -7,6 +7,124 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-19: PeerDB Replication Slots Invalidated, Activity Pages Showed No Stats Or Map
+
+### Symptoms
+
+A freshly synced activity at `https://dofek.asherlc.com/activity/dced0c9e-78d3-4a43-8c17-aa4e61d061f2`
+("Morning Ride", `road_cycling`, started 2026-05-17 17:40 UTC) rendered only the
+activity name, type, source links, and a client-computed `Duration`. The Route
+Map section was missing entirely, the Performance chart was missing entirely,
+Heart Rate Zones rendered "No heart rate zone data", and every aggregate stat
+(distance, elevation gain, avg/max HR, avg/max power, avg cadence, avg speed)
+was absent.
+
+### User Impact
+
+All activities created after `2026-05-11 16:05 UTC` rendered without map, stream
+chart, HR/power zones, or any aggregate stat in the web UI. The activity row
+itself loaded normally (name, type, timestamps, source attribution) so the
+breakage looked partial and was easy to misread as a per-activity ingestion
+problem. The same activity opened fine on Strava, so external data was intact.
+
+### Evidence
+
+The web `/activity/:id` page issues four tRPC queries: `activity.byId`,
+`activity.stream`, `activity.hrZones`, `activity.powerZones`. `activity.byId`
+returned the row, but every aggregate field (`avgHr`, `maxHr`, `avgPower`,
+`maxPower`, `avgSpeed`, `maxSpeed`, `avgCadence`, `totalDistance`,
+`elevationGain`, `elevationLoss`, `sampleCount`) was `null`. `activity.stream`
+returned `[]`. `activity.hrZones` returned all zones with `seconds: 0`. All four
+endpoints read from ClickHouse read models (`analytics.activity_summary`,
+`analytics.deduped_sensor`, `analytics.deduped_location`) via
+`packages/server/src/repositories/clickhouse-activity-sensor-store.ts` and the
+`#withActivitySummaries` hydration step in
+`packages/server/src/repositories/activity-repository.ts`.
+
+ClickHouse counts:
+
+| Layer | This activity | Global |
+|---|---|---|
+| `postgres_fitness.metric_stream` (CDC mirror) | 177,696 × 5 channels | 281M rows |
+| `postgres_fitness.activity` (CDC mirror) | **0** | 697 |
+| `analytics.v_activity` (REFRESHABLE MV every 1 min) | 0 | 576 |
+| `analytics.v_activity_members` | 0 | — |
+| `analytics.deduped_sensor` | 0 | 5.10M |
+| `analytics.deduped_location` | 0 | 356K |
+| `analytics.activity_summary` | 0 | — |
+
+`postgres_fitness.activity` `_peerdb_synced_at` ranged only from
+`2026-05-10 19:03` to `2026-05-11 16:05`, despite Postgres `fitness.activity`
+holding 867 rows up to today. PeerDB worker logs showed:
+
+```text
+ERROR: can no longer access replication slot
+  "peerflow_slot_dofek_metric_stream_analytics" (SQLSTATE 55000)
+ERROR: can no longer access replication slot
+  "peerflow_slot_dofek_fitness_raw_analytics" (SQLSTATE 55000)
+ERROR: can no longer access replication slot
+  "peerflow_slot_dofek_provider_inventory_raw_analytics" (SQLSTATE 55000)
+```
+
+Postgres `pg_replication_slots` confirmed `wal_status = 'lost'` and
+`active = false` for all three PeerDB slots, with empty `restart_lsn`. The slots
+were unrecoverable from the Postgres side.
+
+### Root Cause
+
+PeerDB's three CDC logical replication slots
+(`peerflow_slot_dofek_metric_stream_analytics`,
+`peerflow_slot_dofek_fitness_raw_analytics`,
+`peerflow_slot_dofek_provider_inventory_raw_analytics`) were marked
+`wal_status = 'lost'` by Postgres, almost certainly because the metric-stream
+rebuild and location-point migration churned more WAL than `max_slot_wal_keep_size`
+allowed while the slots could not advance. Once Postgres dropped the required
+WAL segments, the slots could no longer be used.
+
+The migration's direct SQL backfill from Postgres to ClickHouse repopulated
+`postgres_fitness.metric_stream` (281M rows) independent of CDC, which masked
+the outage for sample data. There was no equivalent direct backfill for the
+`activity`, `provider_inventory`, or other `fitness_raw` tables, so every row
+written after the slot was lost became invisible to ClickHouse. All
+ClickHouse read models on the activity page (`deduped_sensor`, `deduped_location`,
+`activity_summary`) `INNER JOIN` `analytics.v_activity_members`, which depends
+on the `activity` mirror — so with no mirror row for the activity, even the
+already-replicated metric_stream samples were orphaned and filtered out.
+
+### Fix or Mitigation
+
+- (Pending) Drop the three invalid PG slots, recreate each PeerDB mirror with
+  an initial snapshot, and let CDC resume from a fresh slot.
+- (Pending) After the resync, verify that the refreshable MVs
+  (`analytics.v_activity`, `analytics.v_activity_members`,
+  `analytics.deduped_sensor`, `analytics.deduped_location`,
+  `analytics.activity_summary`) repopulate within their 1-minute refresh cycle.
+
+### Remaining Risk
+
+`max_slot_wal_keep_size` on Postgres remains at its current setting. Any future
+migration that churns more WAL than the configured retention will reproduce
+this outage. PeerDB worker errors are visible only in container logs; there is
+no alert for `pg_replication_slots.wal_status = 'lost'` or for a stale
+`max(_peerdb_synced_at)` on any CDC mirror, so the outage went unnoticed for
+eight days until a user noticed missing stream data on an individual activity
+page.
+
+### Follow-Up Work
+
+- Raise `max_slot_wal_keep_size` (or set `-1` for unlimited) on production
+  Postgres before any future large backfill; revert after.
+- Add an alert that pages on `pg_replication_slots.wal_status IN ('lost', 'unreserved')`
+  or `pg_stat_replication_slot.confirmed_flush_lsn` lag past a threshold.
+- Add a heartbeat check comparing `count(*) FROM fitness.activity` (Postgres) to
+  `count(*) FROM postgres_fitness.activity FINAL WHERE _peerdb_is_deleted = 0`
+  (ClickHouse) and alarming if they diverge.
+- Surface the user-facing failure mode: when `activity.stream` returns `[]` and
+  `activity.byId` shows recent `startedAt` but null aggregates, prefer a
+  "data still syncing" placeholder over silently rendering an empty page.
+- Add a `/diagnose-cdc` skill (added in this change) that walks through the
+  slot-status + mirror-row-count queries used to diagnose this.
+
 ## 2026-05-19: ClickHouse System Logs Consumed Production Data Volume Space
 
 ### Symptoms
@@ -5462,3 +5580,77 @@ non-`@tanstack/history` TanStack Router release is available.
 - Re-run PR #1121 CI and verify `Test / Dependency Audit` passes.
 - Periodically check `GHSA-rmmr-r34h-pfm5`; remove the `--ignore` once upstream
   no longer reports safe TanStack versions as vulnerable.
+
+## 2026-05-19: PeerDB Metric Stream Snapshot Interrupted By Stack Restart
+
+### Symptoms
+
+During the PeerDB `metric_stream` initial snapshot, `ReplicateQRepPartitions`
+processed repeated 131,072-row chunks and then failed with `context canceled`.
+After the service restart, PeerDB attempt 5 initially failed to connect to
+Postgres at `db:5432`.
+
+### User Impact
+
+The PeerDB migration paused and had to retry. The existing production analytics
+path continued reading the current ClickHouse tables, so this was migration
+impact rather than a known user-facing dashboard outage.
+
+### Evidence
+
+The first fatal migration log line was:
+
+```text
+failed to sync records: failed to write records to S3: failed to upload file: upload multipart failed ... context canceled
+```
+
+Swarm service history also showed `dofek_clickhouse` had exited with code 137
+shortly before the PeerDB and DB connection errors. Postgres logs showed crash
+recovery and then `database system is ready to accept connections` at
+2026-05-19 21:36:42 UTC.
+
+### Root Cause
+
+The strongest evidence is a ClickHouse OOM/restart (`exit 137`) followed by a
+broader stack/service restart that interrupted PeerDB's MinIO/S3 upload and
+temporarily made Postgres unavailable. After restart, the retry failed
+permanently because PeerDB attempted to reuse Postgres transaction snapshot
+`00000050-0000001C-1`, which no longer existed.
+
+### Fix or Mitigation
+
+Swarm restarted the affected services, Postgres completed automatic recovery,
+and the DB returned healthy. The metric analytics mirror still had to be
+manually recovered:
+
+- Dropped only the failed `dofek_metric_stream_analytics` mirror.
+- Re-ran the checked-in PeerDB CDC setup from the production web container.
+- Verified the recreated `dofek_metric_stream_analytics` mirror was `Running`
+  in Temporal and `status = 1` in the PeerDB catalog.
+- Dropped the accidentally recreated legacy validation mirror
+  `dofek_metric_stream_cdc` because it started a full `fitness.metric_stream`
+  snapshot and was not part of the pre-recovery running state.
+- During follow-up monitoring, ClickHouse restarted again under memory/CPU
+  pressure. PeerDB briefly logged `context canceled`, all slots went inactive
+  while the worker restarted, then all three flows reconnected without slot
+  loss. Final observed state: all three slots active, `wal_status = reserved`,
+  retained WAL tens of MB, and PeerDB-reported metric analytics lag back near
+  16 MB.
+
+### Remaining Risk
+
+The analytics mirror is back to steady-state CDC, but the canonical setup path
+still includes the legacy `dofek_metric_stream_cdc` validation mirror with
+`do_initial_copy = true`. Running the setup command after that mirror is absent
+can restart a full metric-stream snapshot and recreate the same load pattern.
+ClickHouse also remains close enough to the host memory envelope that heavy
+snapshot or migration work can restart it and temporarily interrupt PeerDB CDC.
+
+### Follow-Up Work
+
+- Remove or gate the legacy `dofek_metric_stream_cdc` mirror from the setup
+  template if it is no longer intentionally used.
+- Continue monitoring PeerDB metric analytics slot lag.
+- Check ClickHouse memory usage during any future PeerDB snapshot.
+- If `exit 137` repeats, reduce concurrent migration pressure before raising
+  service limits further.
