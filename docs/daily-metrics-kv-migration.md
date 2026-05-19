@@ -222,4 +222,4 @@ golden-path queries.
 | 3 — drop columns     | 1 migration, schema.ts, writers (remove dual-write) | low |
 
 Total: roughly half a day of focused work spread across four PRs, each
-independently revertable.
+independently revertible.
