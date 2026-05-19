@@ -387,7 +387,7 @@ def build_device_windows(
 # ---------------------------------------------------------------------------
 
 
-class MetricBranch(nn.Module):  # type: ignore[misc]  # torch not installed in CI
+class MetricBranch(nn.Module):
     """CNN branch for 1 Hz metric data (heart_rate, power, speed, etc.).
 
     Processes 60-sample windows with progressively deeper convolutions.
@@ -428,7 +428,7 @@ class MetricBranch(nn.Module):  # type: ignore[misc]  # torch not installed in C
         return x.squeeze(-1)  # Remove the length-1 temporal dim
 
 
-class DeviceBranch(nn.Module):  # type: ignore[misc]  # torch not installed in CI
+class DeviceBranch(nn.Module):
     """CNN branch for 50 Hz device data (accelerometer, gyroscope, etc.).
 
     Processes 3000-sample windows. The larger input allows deeper convolutions
@@ -473,7 +473,7 @@ class DeviceBranch(nn.Module):  # type: ignore[misc]  # torch not installed in C
         return x.squeeze(-1)
 
 
-class FusedActivityModel(nn.Module):  # type: ignore[misc]  # torch not installed in CI
+class FusedActivityModel(nn.Module):
     """Fused multi-device CNN for activity classification.
 
     The key idea: different data streams are processed by separate CNN branches
@@ -659,7 +659,7 @@ def train_model(
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward()  # type: ignore[no-untyped-call]
             optimizer.step()
 
             epoch_loss += loss.item()
