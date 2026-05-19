@@ -273,20 +273,6 @@ entity "health_event" {
   created_at : timestamp
 }
 
-entity "inertial_measurement_unit_sample" {
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  device_id : text
-  device_type : text
-  provider_id : text <<FK>>
-  x : real
-  y : real
-  z : real
-  gyroscope_x : real
-  gyroscope_y : real
-  gyroscope_z : real
-}
-
 entity "journal_entry" {
   * id : uuid <<PK>>
   --
@@ -361,21 +347,6 @@ entity "life_events" {
   ongoing : boolean
   notes : text
   created_at : timestamp
-}
-
-entity "location_sample" {
-  id : uuid
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  device_id : text
-  source_type : text
-  activity_id : uuid <<FK>>
-  latitude : double precision
-  longitude : double precision
-  horizontal_accuracy_m : real
-  gps_accuracy_m : real
-  raw : jsonb
 }
 
 entity "medication" {
@@ -454,14 +425,6 @@ entity "nutrient" {
   conversion_factor : real
 }
 
-entity "nutrition_daily" {
-  date : date
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  water_ml : integer
-  created_at : timestamp
-}
-
 entity "oauth_token" {
   user_id : uuid <<FK>>
   provider_id : text <<FK>>
@@ -471,17 +434,6 @@ entity "oauth_token" {
   scopes : text
   created_at : timestamp
   updated_at : timestamp
-}
-
-entity "orientation_sample" {
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  device_id : text
-  quaternion_w : real
-  quaternion_x : real
-  quaternion_y : real
-  quaternion_z : real
 }
 
 entity "provider" {
@@ -631,16 +583,6 @@ entity "sync_log" {
   synced_at : timestamp
 }
 
-entity "training_export_watermark" {
-  * id : uuid <<PK>>
-  --
-  table_name : text
-  last_exported_at : timestamp
-  row_count : bigint
-  created_at : timestamp
-  updated_at : timestamp
-}
-
 entity "user_billing" {
   * user_id : uuid <<PK>>
   --
@@ -714,8 +656,6 @@ food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
 provider ||--o{ health_event
 user_profile ||--o{ health_event
-user_profile ||--o{ inertial_measurement_unit_sample
-provider ||--o{ inertial_measurement_unit_sample
 provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
@@ -725,9 +665,6 @@ provider ||--o{ lab_result
 user_profile ||--o{ lab_result
 lab_panel ||--o{ lab_result
 user_profile ||--o{ life_events
-user_profile ||--o{ location_sample
-provider ||--o{ location_sample
-activity ||--o{ location_sample
 provider ||--o{ medication
 user_profile ||--o{ medication
 provider ||--o{ medication_dose_event
@@ -736,12 +673,8 @@ user_profile ||--o{ menstrual_period
 user_profile ||--o{ metric_stream
 provider ||--o{ metric_stream
 activity ||--o{ metric_stream
-provider ||--o{ nutrition_daily
-user_profile ||--o{ nutrition_daily
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
-user_profile ||--o{ orientation_sample
-provider ||--o{ orientation_sample
 user_profile ||--o{ provider
 user_profile ||--o{ session
 user_profile ||--o{ shared_report

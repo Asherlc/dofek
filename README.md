@@ -91,6 +91,10 @@ See [docs/nutrition-ai-input.md](docs/nutrition-ai-input.md) for natural-languag
 
 See [docs/schema.md](docs/schema.md) for the full data model.
 
+### Known gaps
+
+- **`fitness.medication_dose_event`** — table exists (modeled after the iOS 26 `HKMedicationDoseEvent` type) but has no ingestion path and no read path wired up. Apple Health imports do not write to it, and no router or repository reads from it. Wire-up needed: (1) ingest from `HKMedicationDoseEvent` samples in `packages/mobile` and POST to a sync endpoint, (2) add reader in `packages/server/src/repositories` exposing dose history via tRPC, (3) display in web/mobile medication views.
+
 ## Project Structure
 
 pnpm workspace monorepo:
