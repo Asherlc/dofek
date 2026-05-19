@@ -43,7 +43,7 @@ describe("ClickHouseActivitySensorStore", () => {
         format: "JSONEachRow",
         query: expect.stringContaining("analytics.deduped_sensor"),
         query_params: expect.objectContaining({
-          activityId: window.activityId,
+          activityIds: window.memberActivityIds,
           userId: window.userId,
           maxPoints: 500,
         }),
@@ -52,7 +52,7 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).not.toContain("fitness.metric_stream");
     expect(queryText).not.toContain("fitness.deduped_sensor");
-    expect(queryText).toContain("activity_id = {activityId:UUID}");
+    expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
     expect(queryText).toContain("analytics.deduped_location");
   });
 
@@ -82,6 +82,10 @@ describe("ClickHouseActivitySensorStore", () => {
         query: expect.stringContaining("FROM analytics.activity_summary"),
         query_params: { activityIds: [window.activityId] },
       }),
+    );
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain(
+      "activity_id IN (\n          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))",
     );
   });
 
@@ -138,13 +142,14 @@ describe("ClickHouseActivitySensorStore", () => {
       expect.objectContaining({
         format: "JSONEachRow",
         query_params: expect.objectContaining({
-          activityId: window.activityId,
+          activityIds: window.memberActivityIds,
           ftp: 275,
         }),
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.deduped_sensor");
+    expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
     expect(queryText).toContain("channel = 'power'");
   });
 
