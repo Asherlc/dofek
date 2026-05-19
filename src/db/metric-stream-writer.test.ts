@@ -110,6 +110,8 @@ describe("sourceRowToMetricStream", () => {
       vector: null,
       point: "SRID=4326;POINT(-74.006 40.7128)",
     });
+    expect(rows.find((row) => row.channel === "location")).not.toHaveProperty("latitude");
+    expect(rows.find((row) => row.channel === "location")).not.toHaveProperty("longitude");
   });
 
   it("keeps GPS accuracy metadata on the location metric", () => {

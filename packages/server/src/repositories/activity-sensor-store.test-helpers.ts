@@ -491,12 +491,13 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
           location_samples AS (
             SELECT
               recorded_at,
-              MAX(latitude)::real AS lat,
-              MAX(longitude)::real AS lng
+              MAX(public.ST_Y(point))::real AS lat,
+              MAX(public.ST_X(point))::real AS lng
             FROM fitness.metric_stream
             WHERE user_id = ${window.userId}::uuid
               AND activity_id = ${window.activityId}::uuid
               AND channel = 'location'
+              AND point IS NOT NULL
             GROUP BY recorded_at
           ),
           sample_times AS (

@@ -32,6 +32,9 @@ interface TableCountRow {
 
 const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
 const CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS = 120_000;
+export const CLICKHOUSE_DEFAULT_SETTINGS = {
+  allow_experimental_nullable_tuple_type: 1,
+} satisfies Record<string, string | number | boolean>;
 
 interface ClickHousePostgresConnection {
   hostAndPort: string;
@@ -93,6 +96,7 @@ export function createClickHouseClientFromEnv(
   return createClient({
     url,
     request_timeout: options.requestTimeoutMs ?? CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS,
+    clickhouse_settings: CLICKHOUSE_DEFAULT_SETTINGS,
   });
 }
 

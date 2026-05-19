@@ -909,8 +909,6 @@ describe("RideWithGpsProvider — sync", () => {
           providerId: "ride-with-gps",
           channel: "location",
           point: "SRID=4326;POINT(-122.6 45.5)",
-          latitude: 45.5,
-          longitude: -122.6,
         }),
         expect.objectContaining({
           activityId: 7,

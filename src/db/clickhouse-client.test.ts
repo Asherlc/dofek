@@ -21,6 +21,9 @@ describe("createClickHouseClientFromEnv", () => {
     expect(mockCreateClient).toHaveBeenCalledWith({
       url: "http://default:secret@clickhouse:8123",
       request_timeout: 120_000,
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+      },
     });
   });
 

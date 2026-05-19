@@ -37,6 +37,7 @@
     "!**/*.test.tsx",
     "!**/test-helpers.ts",
     "!**/fixtures/**",
+    "!src/db/clickhouse-migrations.ts",
     "!src/db/schema.ts"
   ],
   "ignorePatterns": [

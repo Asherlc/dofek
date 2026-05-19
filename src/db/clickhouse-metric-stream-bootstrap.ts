@@ -25,9 +25,7 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   device_id Nullable(String),
   source_type Nullable(String),
   scalar Nullable(Float32),
-  latitude Nullable(Float32),
-  longitude Nullable(Float32),
-  metadata Nullable(String),
+  point Nullable(Point),
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
@@ -331,8 +329,7 @@ linked_best_source AS (
       ON metric_stream.activity_id = activity_members.member_activity_id
     WHERE metric_stream._peerdb_is_deleted = 0
       AND metric_stream.channel = 'location'
-      AND metric_stream.latitude IS NOT NULL
-      AND metric_stream.longitude IS NOT NULL
+      AND metric_stream.point IS NOT NULL
     GROUP BY activity_members.activity_id, metric_stream.provider_id
   ) AS best_source
   WHERE best_source.row_number = 1
@@ -341,8 +338,8 @@ SELECT
   activity_members.activity_id AS activity_id,
   activity_members.user_id AS user_id,
   metric_stream.recorded_at AS recorded_at,
-  max(metric_stream.latitude) AS lat,
-  max(metric_stream.longitude) AS lng
+  max(tupleElement(metric_stream.point, 2)) AS lat,
+  max(tupleElement(metric_stream.point, 1)) AS lng
 FROM (
   SELECT *
   FROM postgres_fitness.metric_stream FINAL
@@ -354,8 +351,7 @@ INNER JOIN linked_best_source
  AND linked_best_source.provider_id = metric_stream.provider_id
 WHERE metric_stream._peerdb_is_deleted = 0
   AND metric_stream.channel = 'location'
-  AND metric_stream.latitude IS NOT NULL
-  AND metric_stream.longitude IS NOT NULL
+  AND metric_stream.point IS NOT NULL
 GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.recorded_at`,
     "SYSTEM REFRESH VIEW analytics.deduped_location",
     "SYSTEM WAIT VIEW analytics.deduped_location",

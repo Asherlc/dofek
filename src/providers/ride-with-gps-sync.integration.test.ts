@@ -191,8 +191,6 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     expect(cadenceSamples).toHaveLength(10);
     expect(locationSamples).toHaveLength(10);
     expect(locationSamples.every((sample) => sample.point !== null)).toBe(true);
-    expect(locationSamples.every((sample) => sample.latitude !== null)).toBe(true);
-    expect(locationSamples.every((sample) => sample.longitude !== null)).toBe(true);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

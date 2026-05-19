@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
+  buildClickHouseBootstrapStatements,
   type ClickHouseClient,
   createClickHouseClientFromEnv,
   parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
-import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 
@@ -633,7 +633,7 @@ export async function createClickHouseTestActivitySensorStore(
 
   const releaseSlot = await acquireClickHouseTestSetupSlot();
   try {
-    await runClickHouseMigrations(setupClient, testContext.connectionString);
+    await bootstrapClickHouseTestSchema(setupClient, testContext.connectionString);
     await syncClickHouseTestActivitySensorStoreWithClient(
       setupClient,
       testContext.connectionString,
@@ -643,6 +643,15 @@ export async function createClickHouseTestActivitySensorStore(
   }
 
   return new ClickHouseActivitySensorStore(client);
+}
+
+async function bootstrapClickHouseTestSchema(
+  client: ClickHouseClient,
+  connectionString: string,
+): Promise<void> {
+  for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
+    await client.command({ query: statement });
+  }
 }
 
 export async function syncClickHouseTestActivitySensorStore(

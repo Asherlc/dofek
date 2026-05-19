@@ -144,6 +144,11 @@ services:
       - -c
       - maintenance_work_mem=64MB
       - -c
+      # Large ClickHouse one-off backfills read the Timescale metric_stream
+      # hypertable through PostgreSQL and can touch thousands of chunks in one
+      # transaction. Size the shared lock table for that operational path.
+      - max_locks_per_transaction=4096
+      - -c
       - wal_level=logical
       - -c
       - max_replication_slots=4
@@ -184,10 +189,17 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD is required}
     volumes:
       - /mnt/dofek-data/clickhouse:/var/lib/clickhouse
+    configs:
+      - source: clickhouse_nullable_tuple_settings
+        target: /etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml
+        mode: 0444
+      - source: clickhouse_system_log_ttl
+        target: /etc/clickhouse-server/config.d/system-log-ttl.xml
+        mode: 0444
     deploy:
       resources:
         limits:
-          memory: 3G
+          memory: 5G
 
   peerdb-catalog:
     image: postgres:18-alpine
@@ -525,3 +537,9 @@ networks:
   default:
     driver: overlay
     attachable: true
+
+configs:
+  clickhouse_nullable_tuple_settings:
+    file: ./clickhouse/users.d/allow-experimental-nullable-tuple-type.xml
+  clickhouse_system_log_ttl:
+    file: ./clickhouse/config.d/system-log-ttl.xml
