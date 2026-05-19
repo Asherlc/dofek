@@ -363,6 +363,7 @@
     "Codeable",
     "ILIKE",
     "NTILE",
+    "unhex",
     "ribeye",
     "Apim",
     "asum",
