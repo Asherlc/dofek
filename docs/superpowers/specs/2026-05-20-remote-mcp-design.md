@@ -44,7 +44,7 @@ Users create and revoke MCP tokens through authenticated Dofek UI/API flows. The
 
 Every MCP request must include `Authorization: Bearer <token>`. The route validates the token hash, confirms it is not expired or revoked, loads `userId` and scopes, updates `last_used_at`, and builds the MCP context.
 
-Missing or invalid tokens return `401` with a `WWW-Authenticate: Bearer` header. Valid tokens missing a required scope return `403` with an `insufficient_scope` response. Do not fall back to cookies or query-string sessions for MCP.
+Missing or invalid tokens return `401` with a `WWW-Authenticate: Bearer` header. Valid tokens missing a required scope return a tool-level JSON-RPC error over the MCP Streamable HTTP response, which remains HTTP `200` per the SDK transport behavior. Do not fall back to cookies or query-string sessions for MCP.
 
 Initial scopes:
 
@@ -132,7 +132,7 @@ Add route tests for:
 
 - Missing bearer token returns `401`.
 - Invalid bearer token returns `401`.
-- Valid token missing scope returns `403`.
+- Valid token missing scope returns a tool-level insufficient-scope error in the MCP response.
 - Valid token can make at least one MCP request through `/api/mcp`.
 
 Add focused tests for each tool through the public MCP route where practical. Repository-heavy paths may use existing repository tests or integration tests with the local database.

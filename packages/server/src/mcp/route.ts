@@ -29,12 +29,30 @@ function sendUnauthorized(response: express.Response): void {
   });
 }
 
+function requireBearerTokenHeader(
+  request: express.Request,
+  response: express.Response,
+  next: express.NextFunction,
+): void {
+  const token = bearerTokenFromHeader(request.headers.authorization);
+  if (!token) {
+    sendUnauthorized(response);
+    return;
+  }
+  response.locals.mcpBearerToken = token;
+  next();
+}
+
+function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export function createMcpRouter(options: CreateMcpRouterOptions): Router {
   const router = Router();
 
-  router.post("/", express.json(), async (request, response) => {
-    const token = bearerTokenFromHeader(request.headers.authorization);
-    if (!token) {
+  router.post("/", requireBearerTokenHeader, express.json(), async (request, response) => {
+    const token = response.locals.mcpBearerToken;
+    if (typeof token !== "string") {
       sendUnauthorized(response);
       return;
     }
@@ -49,7 +67,7 @@ export function createMcpRouter(options: CreateMcpRouterOptions): Router {
       db: options.db,
       userId: validatedToken.userId,
       scopes: validatedToken.scopes,
-      timezone: "UTC",
+      timezone: getSingleHeaderValue(request.headers["x-timezone"]) ?? "UTC",
       sensorStore: options.sensorStore,
     });
     const transport = new StreamableHTTPServerTransport({

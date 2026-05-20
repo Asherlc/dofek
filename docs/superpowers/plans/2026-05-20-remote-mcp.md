@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Create `drizzle/0026_mcp_access_token.sql`: Postgres table for MCP tokens.
+- Create `drizzle/0024_mcp_access_token.sql`: Postgres table for MCP tokens.
 - Modify `src/db/schema.ts`: Drizzle table definition.
 - Create `packages/server/src/mcp/token-repository.ts`: token generation, hashing, validation, revocation, scope checks.
 - Create `packages/server/src/mcp/token-repository.test.ts`: unit tests for token behavior.
@@ -46,14 +46,14 @@ CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm vitest run packages/ser
 
 Expected: fails because the module does not exist.
 
-- [ ] Add `drizzle/0026_mcp_access_token.sql`.
+- [ ] Add `drizzle/0024_mcp_access_token.sql`.
 - [ ] Add `mcpAccessToken` to `src/db/schema.ts`.
 - [ ] Implement `packages/server/src/mcp/token-repository.ts` with `generateMcpToken`, `hashMcpToken`, `createMcpToken`, `validateMcpToken`, `revokeMcpToken`, `listMcpTokens`, `requireMcpScope`, and `McpAuthError`.
 - [ ] Rerun the token repository test until it passes.
 - [ ] Commit:
 
 ```bash
-git add drizzle/0026_mcp_access_token.sql src/db/schema.ts packages/server/src/mcp/token-repository.ts packages/server/src/mcp/token-repository.test.ts packages/server/package.json pnpm-lock.yaml
+git add drizzle/0024_mcp_access_token.sql src/db/schema.ts packages/server/src/mcp/token-repository.ts packages/server/src/mcp/token-repository.test.ts packages/server/package.json pnpm-lock.yaml
 git commit -m "feat: add mcp token storage"
 git push
 ```

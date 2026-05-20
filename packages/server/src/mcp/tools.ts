@@ -13,6 +13,7 @@ import type { ActivitySensorStore } from "../repositories/activity-repository.ts
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
+import { localDateString } from "../repositories/resting-heart-rate-query.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
@@ -38,8 +39,8 @@ function jsonContent(value: unknown) {
   };
 }
 
-function dateFromOptionalDateTime(value: string | undefined): string {
-  return value ? new Date(value).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+function dateFromOptionalDateTime(value: string | undefined, timezone: string): string {
+  return localDateString(value ? new Date(value) : new Date(), timezone);
 }
 
 export function createDofekMcpServer(context: DofekMcpContext): McpServer {
@@ -90,7 +91,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async ({ from, to, query, limit }) => {
       requireMcpScope(context.scopes, "activity:read");
-      const endDate = to ?? new Date().toISOString();
+      const endDate = to ?? localDateString(new Date(), context.timezone);
       const days = from
         ? Math.max(
             1,
@@ -136,7 +137,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       requireMcpScope(context.scopes, "nutrition:write");
       const repository = new FoodRepository(context.db, context.userId, context.timezone);
       const entry = await repository.create({
-        date: dateFromOptionalDateTime(occurredAt),
+        date: dateFromOptionalDateTime(occurredAt, context.timezone),
         meal: mealType ?? "other",
         foodName: text,
         nutrients: {},
