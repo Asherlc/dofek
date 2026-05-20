@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   WhoopAuthToken,
   WhoopCycle,
@@ -12,6 +13,11 @@ import type {
 
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
+const WHOOP_AUTH_ORIGIN = "https://id.whoop.com";
+const WHOOP_AUTH_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0";
+const WHOOP_AUTH_AMZ_USER_AGENT =
+  "aws-sdk-js/3.848.0 ua/2.1 os/macOS#10.15 lang/js md/browser#Firefox_150.0 api/cognito-identity-provider#3.848.0 m/N,E";
 
 export class WhoopRateLimitError extends Error {
   constructor(message: string) {
@@ -56,8 +62,20 @@ async function cognitoCall(
   const response = await fetchFn(COGNITO_ENDPOINT, {
     method: "POST",
     headers: {
+      Accept: "*/*",
+      "Accept-Language": "en-US,en;q=0.9",
       "Content-Type": "application/x-amz-json-1.1",
+      Origin: WHOOP_AUTH_ORIGIN,
+      Priority: "u=4",
+      Referer: `${WHOOP_AUTH_ORIGIN}/`,
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-site",
+      "User-Agent": WHOOP_AUTH_USER_AGENT,
       "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+      "amz-sdk-invocation-id": randomUUID(),
+      "amz-sdk-request": "attempt=1; max=3",
+      "x-amz-user-agent": WHOOP_AUTH_AMZ_USER_AGENT,
     },
     body: JSON.stringify(body),
   });
