@@ -5742,3 +5742,68 @@ same ownership correction unless the infrastructure provisioner is updated.
 - Document the staging wipe/rebuild procedure, including the immutable image
   tag, stack removal, bind-directory cleanup, Postgres ownership correction, and
   Deploy Web staging rerun.
+
+## 2026-05-20: Dashboard Recovery Ring Slow And Missing Data
+
+### Symptoms
+
+The production dashboard batch request took about 19.5 seconds. The daily
+overview showed a valid strain score, but recovery and sleep rings displayed
+`No data`.
+
+### User Impact
+
+Initial dashboard load was slow enough to feel broken. Recovery information was
+not shown promptly, and the sleep ring displayed no current score.
+
+### Evidence
+
+Axiom slow-query logs for the dashboard burst showed `insights.compute`,
+`training.nextWorkout`, `anomalyDetection.check`, `recovery.strainTarget`,
+`stress.scores`, `recovery.readinessScore`, `weeklyReport.report`, and
+`healthspan.score` clustered between about 5.3 seconds and 16.7 seconds around
+`2026-05-20T00:42Z`. ClickHouse `system.query_log` showed the shared
+`resting_heart_rate` CTE reading 4.5M-16M rows and taking about 10-16 seconds
+per query. A direct production ClickHouse test with a coarse
+`samples.recorded_at` bound reduced the 30-day helper query to about 1.0
+second.
+
+The sleep ring had a separate data freshness cause: production
+`fitness.v_sleep` had no non-nap sleep rows newer than `2026-05-06` for the
+affected user, while the dashboard date was `2026-05-19`.
+
+### Root Cause
+
+The ClickHouse resting-heart-rate helper computed each sleep-window resting
+heart rate on demand from `analytics.deduped_sensor`. Under a dashboard burst,
+multiple RHR-dependent procedures scanned and sorted overlapping heart-rate
+sample ranges in parallel instead of reading one precomputed row per sleep
+window.
+
+The sleep ring `No data` state was unrelated to that helper: the latest sleep
+record was stale according to the dashboard freshness rule.
+
+### Fix or Mitigation
+
+Added a daily ClickHouse refreshable materialized view,
+`analytics.resting_heart_rate_sleep_window`, that precomputes one resting heart
+rate per non-nap sleep window from deduped heart-rate samples. The dashboard
+helper now reads that compact table and only performs per-request local-date
+selection, avoiding raw sample scans during dashboard loads.
+
+### Remaining Risk
+
+The code fix still needs to be deployed before production dashboard latency
+improves. The materialized view refreshes daily, so resting heart rate can lag
+behind newly ingested sleep and heart-rate data until the next refresh. The
+sleep ring still requires fresh sleep ingestion; the query fix does not create
+missing sleep records.
+
+### Follow-Up Work
+
+- Deploy the RHR sleep-window materialized view and re-check Axiom/ClickHouse
+  query logs for dashboard batches.
+- Investigate why sleep ingestion has no non-nap rows newer than
+  `2026-05-06` for the affected user.
+- Consider adding a dashboard-visible stale-data explanation for sleep so old
+  data is distinguishable from query failure.

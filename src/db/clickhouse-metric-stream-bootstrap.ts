@@ -3,6 +3,7 @@ import {
   buildActivityTrendDailyCreateReadModelStatements,
   buildAnalyticsFitnessReadModelStatements,
 } from "./clickhouse-read-models.ts";
+import { buildRestingHeartRateSleepWindowMaterializedViewSql } from "./clickhouse-resting-heart-rate-materialized-view.ts";
 import {
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
@@ -295,6 +296,9 @@ SELECT
 FROM standalone_samples`,
     "SYSTEM REFRESH VIEW analytics.deduped_sensor",
     "SYSTEM WAIT VIEW analytics.deduped_sensor",
+    buildRestingHeartRateSleepWindowMaterializedViewSql(),
+    "SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window",
+    "SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window",
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location
 REFRESH EVERY 1 MINUTE
 ENGINE = MergeTree

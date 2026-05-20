@@ -18,7 +18,7 @@ import {
 } from "./clickhouse-migrations.ts";
 
 describe("buildClickHouseMigrationStatements", () => {
-  it("keeps destructive cleanup and read-model creation in migration statements", () => {
+  it("keeps destructive cleanup and analytics table creation in migration statements", () => {
     const sql = buildClickHouseMigrationStatements("postgres://health:fixture@db:5432/health").join(
       "\n",
     );
@@ -57,7 +57,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
   });
 
-  it("creates remaining analytics read models in ClickHouse", () => {
+  it("creates remaining analytics tables in ClickHouse", () => {
     const sql = buildClickHouseMigrationStatements("postgres://health:fixture@db:5432/health").join(
       "\n",
     );
@@ -65,6 +65,19 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
+    );
+    expect(sql).toContain("DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window");
+    expect(sql).toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
+    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
+    expect(
+      sql.indexOf("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor"),
+    ).toBeLessThan(
+      sql.indexOf(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
+      ),
+    );
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
@@ -124,7 +137,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(13);
+    expect(count).toBe(14);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

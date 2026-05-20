@@ -31,6 +31,7 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.v_daily_metrics",
         "analytics.provider_stats",
         "analytics.deduped_sensor",
+        "analytics.resting_heart_rate_sleep_window",
         "analytics.deduped_location",
         "analytics.activity_summary",
         "analytics.activity_trend_daily",
@@ -53,7 +54,7 @@ SELECT 1 AS value`,
 const mockRunClickHouseMigrations = vi.mocked(runClickHouseMigrations);
 
 describe("clickhouse integration test helpers", () => {
-  it("syncs raw mirrored tables and populates stored test read models", async () => {
+  it("syncs raw mirrored tables and populates stored test analytics tables", async () => {
     clickHouseMocks.command.mockReset().mockResolvedValue(undefined);
     clickHouseMocks.query.mockReset().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) });
     clickHouseMocks.close.mockReset().mockResolvedValue(undefined);
@@ -162,9 +163,16 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".resting_heart_rate_sleep_window"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(10);
+    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(11);
   });
 });

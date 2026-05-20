@@ -13,6 +13,7 @@ import {
   buildActivityTrendDailyReadModelStatements,
   buildProviderStatsReadModelStatements,
 } from "./clickhouse-read-models.ts";
+import { buildRestingHeartRateSleepWindowMaterializedViewStatements } from "./clickhouse-resting-heart-rate-materialized-view.ts";
 
 interface MigrationCountRow {
   migration_count: number | string;
@@ -202,6 +203,10 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     {
       id: "0013_metric_stream_location_point",
       run: rebuildMetricStreamLocationPoint,
+    },
+    {
+      id: "0014_resting_heart_rate_sleep_window_materialized_view",
+      statements: buildRestingHeartRateSleepWindowMaterializedViewStatements(),
     },
   ];
 }
