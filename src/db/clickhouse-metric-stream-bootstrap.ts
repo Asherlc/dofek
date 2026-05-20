@@ -38,7 +38,7 @@ ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
     ...metricStreamStatements,
     ...buildAnalyticsFitnessReadModelStatements(),
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor
-REFRESH EVERY 1 MINUTE
+REFRESH EVERY 15 MINUTE
 ENGINE = MergeTree
 ORDER BY (user_id, activity_id, channel, recorded_at)
 SETTINGS allow_nullable_key = 1
@@ -300,7 +300,7 @@ FROM standalone_samples`,
     "SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window",
     "SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window",
     `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location
-REFRESH EVERY 1 MINUTE
+REFRESH EVERY 15 MINUTE
 ENGINE = MergeTree
 ORDER BY (user_id, activity_id, recorded_at)
 AS
@@ -369,7 +369,7 @@ export function buildActivitySummaryReadModelStatements(
 ): string[] {
   return [
     `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
-REFRESH EVERY 1 MINUTE OFFSET 10 SECOND
+REFRESH EVERY 15 MINUTE OFFSET 10 SECOND
 ENGINE = MergeTree
 ORDER BY (user_id, started_at, activity_id)
 SETTINGS allow_nullable_key = 1

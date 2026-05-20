@@ -222,6 +222,17 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         "DROP TABLE IF EXISTS analytics.activity_summary_before_centroids",
       ],
     },
+    {
+      id: "0016_reduce_metric_stream_refresh_load",
+      statements: [
+        "ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.deduped_location MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.activity_summary MODIFY REFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
+        "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
+      ],
+    },
   ];
 }
 

@@ -9,6 +9,7 @@ import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
+import { McpTokensPanel } from "./McpTokensPanel.tsx";
 
 const freeAccessWindowFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -128,6 +129,10 @@ export function SettingsPage() {
 
       <PageSection title="Linked Accounts" subtitle="Manage login methods linked to your account">
         <LinkedAccountsPanel />
+      </PageSection>
+
+      <PageSection title="MCP Tokens" subtitle="Create and revoke remote MCP access tokens">
+        <McpTokensPanel />
       </PageSection>
 
       <PageSection title="Units" subtitle="Choose how measurements are displayed">

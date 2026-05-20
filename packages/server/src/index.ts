@@ -29,6 +29,7 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
+import { createMcpRouter } from "./mcp/route.ts";
 import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
@@ -158,6 +159,7 @@ function setupRoutes(
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
+  app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
     app.get("/auth/dev-login", async (_req, res) => {
