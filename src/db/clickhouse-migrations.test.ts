@@ -69,6 +69,18 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.activity_trend_daily");
     expect(sql).toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
+    expect(sql).toContain("ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE");
+    expect(sql).toContain("ALTER TABLE analytics.deduped_location MODIFY REFRESH EVERY 15 MINUTE");
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_summary MODIFY REFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
+    );
+    expect(sql).toContain("ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE");
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
+    );
   });
 
   it("creates remaining analytics tables in ClickHouse", () => {
@@ -151,7 +163,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(15);
+    expect(count).toBe(16);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -198,6 +210,13 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("countIf(channel = 'speed') AS speed_samples"),
       }),
     );
+    expect(command).toHaveBeenCalledWith({
+      query: "ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE",
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining("INSERT INTO analytics.schema_migrations"),

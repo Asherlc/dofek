@@ -389,6 +389,8 @@ function buildBodyMeasurementReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader(
     "analytics.v_body_measurement",
     "(user_id, recorded_at, id)",
+    "",
+    "15 MINUTE",
   )}
 WITH RECURSIVE
 body_measurement_samples AS (
@@ -686,7 +688,12 @@ GROUP BY date, user_id`;
 }
 
 function buildProviderStatsReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader("analytics.provider_stats", "(user_id, provider_id)")}
+  return `${refreshableMergeTreeViewHeader(
+    "analytics.provider_stats",
+    "(user_id, provider_id)",
+    "",
+    "15 MINUTE",
+  )}
 WITH
 providers AS (
   SELECT DISTINCT user_id, id AS provider_id
@@ -866,7 +873,12 @@ LEFT JOIN journal_entry_counts
 }
 
 function buildActivityTrendDailyReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader("analytics.activity_trend_daily", "(user_id, bucket_date)", "20 SECOND")}
+  return `${refreshableMergeTreeViewHeader(
+    "analytics.activity_trend_daily",
+    "(user_id, bucket_date)",
+    "20 SECOND",
+    "15 MINUTE",
+  )}
 SELECT
   user_id,
   toDate(recorded_at) AS bucket_date,
