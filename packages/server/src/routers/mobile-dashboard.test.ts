@@ -227,6 +227,24 @@ describe("mobileDashboard.dashboard", () => {
     expect(result.strain.dailyStrain).toBe(4.1);
   });
 
+  it("falls back to today's raw activity load when heart-rate physiology is unavailable", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+    execute.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore([{ metric_date: "2026-03-28", daily_load: 50 }]),
+    });
+    const result = await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(result.strain.dailyStrain).toBe(13.8);
+    expect(result.strain.acuteLoad).toBe(50);
+  });
+
   it("computes strain windows, rounded workload ratio, and latest metric date", async () => {
     const execute = vi.fn();
     const rows = Array.from({ length: 29 }, (_, index) =>
@@ -320,6 +338,43 @@ describe("mobileDashboard.dashboard", () => {
       neededMinutes: 525,
       debtMinutes: 105,
     });
+  });
+
+  it("builds sleep need from exactly seven high-HRV nights", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+    execute.mockResolvedValueOnce([
+      sleepBaselineRow("2026-03-27", 420, 80, 0),
+      sleepBaselineRow("2026-03-26", 450, 80),
+      sleepBaselineRow("2026-03-25", 480, 80),
+      sleepBaselineRow("2026-03-24", 510, 80),
+      sleepBaselineRow("2026-03-23", 540, 80),
+      sleepBaselineRow("2026-03-22", 570, 80),
+      sleepBaselineRow("2026-03-21", 600, 80),
+      sleepBaselineRow("2026-03-20", 0, 80),
+      sleepBaselineRow("2026-03-19", 1000, null),
+      sleepBaselineRow("2026-03-18", 1000, 10),
+    ]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(result.sleepNeed).toEqual(
+      expect.objectContaining({
+        baselineMinutes: 510,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 690,
+        totalNeedMinutes: 683,
+        canRecommend: true,
+      }),
+    );
   });
 
   it("returns null dashboard sections when no metric or sleep rows exist", async () => {

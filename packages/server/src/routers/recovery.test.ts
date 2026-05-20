@@ -1935,8 +1935,7 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         workload_ratio: 1.25,
       },
     ]).workloadRatio({});
-    expect(result.timeSeries[0]?.strain).toBeTypeOf("number");
-    expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
+    expect(result.timeSeries[0]?.strain).toBe(13.8);
   });
 
   it("displayedStrain defaults to 0 when timeSeries is empty", async () => {

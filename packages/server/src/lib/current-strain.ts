@@ -60,9 +60,9 @@ export async function computeCurrentStrain({
 
   if (fallbackActivityLoad > 0) {
     return {
-      currentStrain: StrainScore.fromPhysiologicalLoad(fallbackActivityLoad / 100).value,
+      currentStrain: StrainScore.fromRawLoad(fallbackActivityLoad).value,
       currentStrainSource: "activity",
-      currentPhysiologyLoad: Math.round((fallbackActivityLoad / 100) * 100) / 100,
+      currentPhysiologyLoad: null,
     };
   }
 

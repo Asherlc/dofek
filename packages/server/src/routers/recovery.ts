@@ -323,7 +323,7 @@ export const recoveryRouter = router({
         return {
           date: row.date,
           dailyLoad,
-          strain: StrainScore.fromRawLoad(dailyLoad / 100).value,
+          strain: StrainScore.fromRawLoad(dailyLoad).value,
           acuteLoad,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
@@ -667,7 +667,8 @@ export const recoveryRouter = router({
         }),
         `SELECT
           toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-          sum(avg_hr * dateDiff('second', started_at, ended_at) / 60.0 / 100.0) AS daily_load
+          sum(dateDiff('second', started_at, ended_at) / 60.0
+              * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
         FROM analytics.activity_summary
         WHERE user_id = {userId:UUID}
           AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
