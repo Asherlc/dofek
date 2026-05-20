@@ -18,16 +18,19 @@ struct DofekWatchApp: App {
 
     init() {
         #if canImport(Sentry)
-        SentrySDK.start { options in
-            options.dsn = "https://42c67c5933a945408e9e164e045c2811@ebsoftware.bugsink.com/3"
-            // Disable iOS-specific features that are unavailable on watchOS.
-            // The prebuilt XCFramework includes all platforms, but auto-instrumentation
-            // (UIViewController tracking, swizzling, network breadcrumbs) relies on
-            // UIKit which doesn't exist on watchOS and can crash at launch.
-            options.enableSwizzling = false
-            options.enableAutoPerformanceTracing = false
-            options.enableCaptureFailedRequests = false
-            options.enableAppHangTracking = false
+        if let sentryDsn = Bundle.main.object(forInfoDictionaryKey: "SentryDsn") as? String,
+           !sentryDsn.isEmpty {
+            SentrySDK.start { options in
+                options.dsn = sentryDsn
+                // Disable iOS-specific features that are unavailable on watchOS.
+                // The prebuilt XCFramework includes all platforms, but auto-instrumentation
+                // (UIViewController tracking, swizzling, network breadcrumbs) relies on
+                // UIKit which doesn't exist on watchOS and can crash at launch.
+                options.enableSwizzling = false
+                options.enableAutoPerformanceTracing = false
+                options.enableCaptureFailedRequests = false
+                options.enableAppHangTracking = false
+            }
         }
         #endif
     }

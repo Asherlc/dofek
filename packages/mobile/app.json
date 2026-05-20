@@ -85,7 +85,6 @@
           "project": "dofek-mobile",
           "useNativeInit": true,
           "options": {
-            "dsn": "https://42c67c5933a945408e9e164e045c2811@ebsoftware.bugsink.com/3",
             "enableMetricKit": true,
             "enableMetricKitRawPayload": true
           }
