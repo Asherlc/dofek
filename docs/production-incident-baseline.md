@@ -6139,12 +6139,27 @@ rate rows of 55, 57, 55, and a single latest 85 bpm outlier. Before the fix,
 `dailyMetrics.trends` returned `latest_resting_hr = 85`; the failing assertion
 was `expected 85 to be 56`.
 
+A production ClickHouse check confirmed that
+`analytics.resting_heart_rate_sleep_window` contained two overlapping
+WHOOP-sourced Apple Health sleep rows for user
+`f923fed7-d934-4cd9-8cb9-8e83020d0e69` on local start date 2026-05-03:
+`27e2b795-f846-4873-b69a-8092034f4f4a` from 17:00:56 to 01:14:47 Pacific with
+43 heart-rate samples and `resting_hr = 85`, and
+`128b10f8-4af3-433b-a125-d18b9d158d27` from 17:50:48 to 07:00:20 Pacific with
+31 heart-rate samples and `resting_hr = 85`. Adjacent nights had thousands of
+samples and resting heart rates in the low-to-high 50s.
+
 ### Root Cause
 
 `DailyMetricsRepository.getTrends()` selected the most recent non-null resting
 heart rate for the dashboard card, while activity heart-rate zones already used
 a representative median of recent positive resting-heart-rate readings to
 suppress one-off noisy sleep-window values.
+
+The production outlier came from sparse evening heart-rate samples being joined
+to abnormal overlapping sleep windows. The materialized view accepted those
+rows because they met the current minimum of 30 samples, even though they did
+not represent a normal full-night sample distribution.
 
 ### Fix or Mitigation
 
@@ -6164,3 +6179,49 @@ window; only the current card value is made representative.
   outlier.
 - Consider whether average resting heart rate should also use a robust statistic
   in the dashboard card, or whether preserving the raw average is preferable.
+- Consider adding a coverage-quality rule to the ClickHouse resting-heart-rate
+  materialized view so sparse sleep-window joins cannot produce daily resting
+  heart-rate rows.
+
+## 2026-05-20: Production Temporarily Unreachable During RHR Investigation
+
+### Symptoms
+
+During the first attempt to inspect the resting-heart-rate outlier, SSH banner
+exchange timed out, `https://dofek.fit/healthz` timed out after 10 seconds, and
+internal service pings for CloudBeaver and Netdata also timed out.
+
+### User Impact
+
+The production app was temporarily unreachable or severely degraded during the
+investigation window.
+
+### Evidence
+
+Hetzner CPU metrics showed the 4-core production VM near full saturation around
+the failed checks. Sentry showed recent Postgres connection termination errors,
+BullMQ lock-renewal failures, Redis DNS/timeout errors, and Garmin provider
+validation failures. A later retry succeeded: `healthz` returned HTTP 200 in
+0.742 seconds, SSH worked, and the host reported it had been up for 3 minutes.
+
+### Root Cause
+
+Unresolved. The system appeared to recover without manual changes before the
+second check. At recovery time, Docker services were running, but host load was
+still elevated and ClickHouse was consuming high CPU.
+
+### Fix or Mitigation
+
+No manual server changes were made. The investigation remained read-only.
+
+### Remaining Risk
+
+The underlying cause of the transient saturation and restart/recovery event is
+unknown.
+
+### Follow-Up Work
+
+- Inspect host and Docker service logs around the restart window if production
+  saturation recurs.
+- Add a runbook note for correlating Hetzner CPU, Sentry connection failures,
+  and Docker service restart times during transient outages.
