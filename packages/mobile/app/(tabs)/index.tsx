@@ -1,12 +1,5 @@
-import {
-  formatDateYmd,
-  formatDurationMinutes,
-  formatSleepDebtInline,
-  isToday,
-} from "@dofek/format/format";
+import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
-import { readinessLevelColor } from "@dofek/scoring/scoring";
-import type { NextWorkoutRecommendation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -42,16 +35,6 @@ function todayString(): string {
   });
 }
 
-function recommendationTypeColor(type: NextWorkoutRecommendation["recommendationType"]): string {
-  if (type === "rest") return colors.orange;
-  if (type === "strength") return colors.positive;
-  return colors.blue;
-}
-
-function capitalize(value: string): string {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
-}
-
 export default function TodayScreen() {
   const router = useRouter();
   const providerGuide = useProviderGuide();
@@ -77,8 +60,7 @@ export default function TodayScreen() {
   // Auto-sync when data is stale
   useAutoSync(dashboardData?.latestDate ?? undefined);
 
-  // Recommendations and alerts from consolidated query
-  const nextWorkout = dashboardData?.nextWorkout;
+  // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
   const anomalies = dashboardData?.anomalies;
 
@@ -239,76 +221,6 @@ export default function TodayScreen() {
               )}
             </Card>
           </TouchableOpacity>
-        </Animated.View>
-      )}
-
-      {/* Next Workout */}
-      {nextWorkout != null && isToday(new Date(nextWorkout.generatedAt)) && (
-        <Animated.View
-          entering={FadeInUp.delay(240)
-            .duration(duration.slow)
-            .easing(Easing.bezier(0.16, 1, 0.3, 1))}
-        >
-          <Card title="Next Workout">
-            <View style={styles.nextWorkoutHeader}>
-              <View style={styles.nextWorkoutTitleWrap}>
-                <Text style={styles.nextWorkoutTitle}>{nextWorkout.title}</Text>
-              </View>
-              <View
-                style={[
-                  styles.nextWorkoutTypeBadge,
-                  {
-                    borderColor: recommendationTypeColor(nextWorkout.recommendationType),
-                    backgroundColor: `${recommendationTypeColor(nextWorkout.recommendationType)}20`,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.nextWorkoutTypeLabel,
-                    { color: recommendationTypeColor(nextWorkout.recommendationType) },
-                  ]}
-                >
-                  {capitalize(nextWorkout.recommendationType)}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.nextWorkoutSummary}>{nextWorkout.shortBlurb}</Text>
-            <Text
-              style={[
-                styles.nextWorkoutReadiness,
-                { color: readinessLevelColor(nextWorkout.readiness.level) },
-              ]}
-            >
-              Readiness:{" "}
-              {nextWorkout.readiness.score != null
-                ? `${nextWorkout.readiness.score}/100 (${nextWorkout.readiness.level})`
-                : "Unavailable"}
-            </Text>
-
-            {nextWorkout.cardio != null && (
-              <Text style={styles.nextWorkoutMeta}>
-                Cardio: {nextWorkout.cardio.durationMinutes} minutes ({nextWorkout.cardio.focus})
-              </Text>
-            )}
-            {nextWorkout.strength != null && nextWorkout.strength.focusMuscles.length > 0 && (
-              <Text style={styles.nextWorkoutMeta}>
-                Strength focus: {nextWorkout.strength.focusMuscles.join(", ")}
-              </Text>
-            )}
-
-            {nextWorkout.details.length > 0 && (
-              <View style={styles.nextWorkoutList}>
-                <Text style={styles.nextWorkoutListTitle}>Plan</Text>
-                {nextWorkout.details.slice(0, 3).map((detail) => (
-                  <Text key={detail} style={styles.nextWorkoutListItem}>
-                    {"\u2022"} {detail}
-                  </Text>
-                ))}
-              </View>
-            )}
-          </Card>
         </Animated.View>
       )}
 
@@ -533,63 +445,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text,
     fontWeight: "500",
-  },
-  // Next workout
-  nextWorkoutHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  nextWorkoutTitleWrap: {
-    flex: 1,
-    gap: 6,
-  },
-  nextWorkoutTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  nextWorkoutTypeBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginTop: 2,
-  },
-  nextWorkoutTypeLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  nextWorkoutSummary: {
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 20,
-  },
-  nextWorkoutReadiness: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  nextWorkoutMeta: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  nextWorkoutList: {
-    gap: 6,
-    marginTop: 2,
-  },
-  nextWorkoutListTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  nextWorkoutListItem: {
-    fontSize: 13,
-    color: colors.text,
-    lineHeight: 19,
   },
   // Sleep coach
   sleepNeedTotal: {

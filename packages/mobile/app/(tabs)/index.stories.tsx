@@ -63,11 +63,6 @@ function createSeededProviders() {
   );
 
   queryClient.setQueryData(
-    [["training", "nextWorkout"], { input: { endDate: todayDate }, type: "query" }],
-    null,
-  );
-
-  queryClient.setQueryData(
     [["sleepNeed", "calculate"], { input: { endDate: todayDate }, type: "query" }],
     null,
   );

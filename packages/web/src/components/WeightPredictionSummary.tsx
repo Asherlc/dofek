@@ -35,17 +35,6 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
         </div>
       </div>
 
-      {/* Period deltas */}
-      {prediction.periodDeltas.days7 != null && (
-        <div>
-          <div className="text-subtle text-xs uppercase">7-Day Change</div>
-          <div className="font-medium">
-            {units.convertWeight(prediction.periodDeltas.days7) > 0 ? "+" : ""}
-            {formatNumber(units.convertWeight(prediction.periodDeltas.days7))} {units.weightLabel}
-          </div>
-        </div>
-      )}
-
       {/* Calorie estimate */}
       {prediction.impliedDailyCalories != null && (
         <div>

@@ -1,8 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { getEffectiveParams } from "dofek/personalization/params";
-import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
-import { endDateSchema } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   cardioPlan,
@@ -100,24 +97,5 @@ export const trainingRouter = router({
         ctx.accessWindow,
       );
       return repo.getActivityStats(input.days);
-    }),
-
-  nextWorkout: cachedProtectedQuery(CacheTTL.SHORT)
-    .input(z.object({ endDate: endDateSchema }))
-    .query(async ({ ctx, input }) => {
-      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
-      const weights = getEffectiveParams(storedParams).readinessWeights;
-
-      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
-      const repo = new TrainingRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        sensorStore,
-        ctx.accessWindow,
-      );
-      const data = await repo.getNextWorkoutData(input.endDate);
-
-      return repo.getRecommendation(data, input.endDate, weights);
     }),
 });

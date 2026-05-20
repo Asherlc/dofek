@@ -1,12 +1,10 @@
 export const DASHBOARD_GRID_PAIRS: Readonly<Record<string, string>> = {
-  strain: "nextWorkout",
   weeklyReport: "sleepNeed",
   stress: "healthspan",
   spo2Temp: "steps",
 };
 
 export const DASHBOARD_GRID_PAIR_SECONDARIES: Readonly<Record<string, string>> = {
-  nextWorkout: "strain",
   sleepNeed: "weeklyReport",
   healthspan: "stress",
   steps: "spo2Temp",
@@ -49,11 +47,7 @@ export function reorderDashboardSections(
       return order;
     }
 
-    const targetSectionId = order[firstGroupIndex - 1];
-    if (targetSectionId === undefined) {
-      return order;
-    }
-
+    const targetSectionId = order[firstGroupIndex - 1] ?? sectionId;
     const targetGroupIds = getDashboardGridGroupIds(targetSectionId).filter(
       (id) => !sectionsToMoveSet.has(id) && order.includes(id),
     );
@@ -69,11 +63,7 @@ export function reorderDashboardSections(
     return order;
   }
 
-  const targetSectionId = order[lastGroupIndex + 1];
-  if (targetSectionId === undefined) {
-    return order;
-  }
-
+  const targetSectionId = order[lastGroupIndex + 1] ?? sectionId;
   const targetGroupIds = getDashboardGridGroupIds(targetSectionId).filter(
     (id) => !sectionsToMoveSet.has(id) && order.includes(id),
   );

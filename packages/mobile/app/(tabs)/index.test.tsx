@@ -40,9 +40,6 @@ vi.mock("../../lib/trpc", () => ({
       },
       activeSyncs: { useQuery: () => ({ data: [], isLoading: false }) },
     },
-    training: {
-      nextWorkout: { useQuery: () => ({ data: undefined, isLoading: false }) },
-    },
     useUtils: () => ({ invalidate: mockInvalidate }),
   },
 }));
@@ -124,7 +121,6 @@ describe("TodayScreen independent loading states", () => {
         workloadRatio: 1.2,
         date: "2026-03-21",
       },
-      nextWorkout: null,
       sleepNeed: {
         baselineMinutes: 480,
         strainDebtMinutes: 20,
