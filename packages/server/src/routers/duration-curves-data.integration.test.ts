@@ -51,8 +51,6 @@ describe("Duration curves router — data tests", () => {
           )`,
     );
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-
     const sensorStore = makeMockSensorStore();
     sensorStore.getHeartRateCurveRows = async () => [
       { duration_seconds: 5, best_hr: 180, activity_date: "2026-04-29" },

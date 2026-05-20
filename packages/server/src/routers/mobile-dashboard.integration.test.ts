@@ -62,7 +62,7 @@ describe("mobile-dashboard router integration", () => {
             ON CONFLICT DO NOTHING`,
     );
 
-    // Refresh materialized views so dashboard queries pick up the data
+    // Refresh sleep materialized view so dashboard queries pick up the data
     await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);

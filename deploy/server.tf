@@ -31,7 +31,7 @@ resource "hcloud_firewall" "dofek" {
 resource "hcloud_server" "dofek" {
   name         = "dofek"
   image        = "ubuntu-24.04"
-  server_type  = "cax11"
+  server_type  = "cax21"
   location     = "nbg1"
   ssh_keys     = [hcloud_ssh_key.default.id]
   firewall_ids = [hcloud_firewall.dofek.id]

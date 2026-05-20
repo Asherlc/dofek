@@ -254,7 +254,7 @@ describe("activityRouter", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("throws PRECONDITION_FAILED when materialized view is missing", async () => {
+    it("throws PRECONDITION_FAILED when activity view is missing", async () => {
       const missingViewError = Object.assign(
         new Error('relation "fitness.v_activity" does not exist'),
         { code: "42P01" },
@@ -268,7 +268,7 @@ describe("activityRouter", () => {
       });
       await expect(caller.list({ days: 30 })).rejects.toThrow(TRPCError);
       await expect(caller.list({ days: 30 })).rejects.toThrow(
-        "materialized views are being rebuilt",
+        "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
       );
     });
 

@@ -85,8 +85,6 @@ describe("Activity router", () => {
     cyclingActivityId = cyclingActivity.id;
     walkingActivityId = walkingActivity.id;
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_activity`);
-
     const sensorStore = makeMockSensorStore();
     sensorStore.getActivitySummaries = async (activityIds) =>
       activityIds.includes(metricOnlyActivityId)

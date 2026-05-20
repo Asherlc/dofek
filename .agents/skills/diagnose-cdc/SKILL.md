@@ -1,0 +1,113 @@
+---
+name: diagnose-cdc
+description: Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, refreshable materialized view freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration.
+---
+
+# Diagnose CDC
+
+Use this skill when activity pages, dashboards, or any ClickHouse-backed view show empty or stale data for rows that exist in Postgres. The most common cause is a broken PeerDB CDC flow, not the read-model SQL.
+
+## Signals that point here
+
+- A specific activity page (e.g. `/activity/<id>`) loads `activity.byId` but `activity.stream`, `activity.hrZones`, `activity.powerZones` return empty / all-null aggregates.
+- "No heart rate zone data" / missing Performance / missing Route Map for a recent activity that has data on the provider side (Strava, Garmin, WHOOP).
+- Dashboards that read from `analytics.v_activity`, `analytics.activity_summary`, `analytics.deduped_sensor`, `analytics.deduped_location` show stale or missing rows.
+- The deploy that introduced the regression involved a large migration / backfill that churned WAL.
+
+## 1) Check Postgres replication slot health
+
+Lost slots are the most common failure mode. WAL files are gone, so the slot can never recover on its own.
+
+```bash
+ssh dofek-server 'docker exec $(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1) bash -lc "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"SELECT slot_name, active, wal_status, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots ORDER BY slot_name;\""'
+```
+
+Healthy looks like `active = t`, `wal_status = 'reserved'`, non-null `restart_lsn`. Broken looks like `active = f`, `wal_status IN ('lost', 'unreserved')`, empty `restart_lsn`.
+
+The three Dofek slots:
+
+- `peerflow_slot_dofek_metric_stream_analytics` — feeds `postgres_fitness.metric_stream`.
+- `peerflow_slot_dofek_fitness_raw_analytics` — feeds `postgres_fitness.activity`, plus the rest of `fitness.*` mirror tables.
+- `peerflow_slot_dofek_provider_inventory_raw_analytics` — feeds `postgres_fitness.provider_inventory_*` mirrors.
+
+## 2) Check PeerDB worker logs for the actual error
+
+```bash
+ssh dofek-server 'docker logs $(docker ps --format "{{.Names}}" | grep peerdb-flow-worker | head -1) --since 24h 2>&1 | grep -iE "error|SQLSTATE" | tail -30'
+```
+
+Look for `SQLSTATE 55000` ("can no longer access replication slot") — confirms the slot is lost. Other PeerDB-specific errors (peer connection failures, ClickHouse insert errors, schema drift) point to different remediation paths.
+
+## 3) Compare row counts: Postgres source vs ClickHouse mirror
+
+For each suspected mirror table:
+
+```bash
+# Postgres (source of truth)
+ssh dofek-server 'docker exec $(docker ps --format "{{.Names}}" | grep -E "dofek[_-]db" | head -1) bash -lc "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"SELECT count(*), max(started_at) FROM fitness.activity;\""'
+
+# ClickHouse mirror
+ssh dofek-server "docker exec \$(docker ps --format '{{.Names}}' | grep -E 'dofek_clickhouse' | head -1) clickhouse-client -q \"SELECT count(), toString(max(_peerdb_synced_at)) FROM postgres_fitness.activity FINAL WHERE _peerdb_is_deleted = 0\""
+```
+
+If `max(_peerdb_synced_at)` is hours/days behind `max(started_at)` from Postgres, CDC is stalled or stopped for that flow. Run the same comparison for `fitness.metric_stream` ↔ `postgres_fitness.metric_stream` and any other affected mirror.
+
+## 4) Check whether refreshable materialized views are catching up
+
+The read models on top of the mirrors are `REFRESH EVERY 1 MINUTE` MVs:
+
+```sql
+-- ClickHouse
+SELECT view, view_query FROM system.view_refreshes WHERE database = 'analytics';
+
+SELECT view, status, last_refresh_time, last_success_time, exception
+FROM system.view_refreshes
+WHERE database = 'analytics'
+ORDER BY view;
+```
+
+If `status` is `Scheduled` and `last_success_time` is recent, the MV layer is fine — the upstream mirror is the problem. If `status` is `Exception`, read `exception` to see the failure.
+
+The relevant MVs:
+
+- `analytics.v_activity` — reads `postgres_fitness.activity`, `provider_priority`, `device_priority`.
+- `analytics.v_activity_members` — reads `analytics.v_activity`.
+- `analytics.deduped_sensor` — reads `postgres_fitness.metric_stream` filtered through `v_activity_members`.
+- `analytics.deduped_location` — same, location channel only.
+- `analytics.activity_summary` — aggregates the above per `activity_id`.
+
+Because every read model `INNER JOIN`s `v_activity_members`, a missing row in `postgres_fitness.activity` cascades to empty results in all of them, even if `postgres_fitness.metric_stream` has the samples.
+
+## 5) Decide between slot recreate vs full mirror resync
+
+- **`wal_status = 'lost'`**: no recovery option from Postgres side. The slot must be dropped and recreated. Whether that requires a full ClickHouse mirror resnapshot depends on data volume and how stale the mirror is.
+- **`wal_status = 'unreserved'`** (slot still has retention room but is inactive): the slot may recover on its own once PeerDB reconnects — try restarting `dofek_peerdb-flow-worker` first.
+- **PeerDB peer errors** (network, auth, schema drift): no slot recreate needed; fix the underlying connectivity / schema issue and restart the flow.
+
+## 6) Remediation (lost slot)
+
+This is destructive on the PeerDB side — confirm with the user before running.
+
+For each broken flow:
+
+1. Drop the broken slot in Postgres:
+
+   ```sql
+   SELECT pg_drop_replication_slot('peerflow_slot_dofek_<flow_name>');
+   ```
+
+2. In the PeerDB UI / API, "Resync" the corresponding mirror. This will:
+   - Create a fresh logical replication slot.
+   - Take an initial snapshot of the source tables into the ClickHouse mirror.
+   - Resume CDC from the new slot's start LSN.
+
+3. For the `metric_stream` flow specifically, the migration in PR #1128 already direct-backfills `postgres_fitness.metric_stream` from Postgres independent of CDC, so a fresh snapshot for that flow is mostly redundant — but it's still needed to seed the new slot.
+
+4. Verify the mirrors fill in (`count(*)` matches Postgres within tolerance) and that `analytics.v_activity` / `analytics.deduped_sensor` repopulate within ~1 refresh interval.
+
+## 7) Prevent the next occurrence
+
+- Raise `max_slot_wal_keep_size` (or set `-1` = unlimited) before any large migration that holds the slot back.
+- Add an alert for `pg_replication_slots.wal_status IN ('lost', 'unreserved')`.
+- Add a heartbeat that compares Postgres `fitness.activity` row count to `postgres_fitness.activity FINAL` row count and alarms if they diverge.
+- Record the incident in `docs/production-incident-baseline.md` with timestamps, evidence, root cause, and follow-up actions.

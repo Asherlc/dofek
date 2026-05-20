@@ -597,22 +597,4 @@ export const adminRouter = router({
       });
       return { jobId: String(job.id) };
     }),
-
-  /** Get training export watermark status */
-  trainingExportStatus: adminProcedure.query(async ({ ctx }) => {
-    const watermarkSchema = z.object({
-      table_name: z.string(),
-      last_exported_at: timestampStringSchema,
-      row_count: z.coerce.number(),
-      updated_at: timestampStringSchema,
-    });
-    const watermarks = await executeWithSchema(
-      ctx.db,
-      watermarkSchema,
-      sql`SELECT table_name, last_exported_at::text, row_count::text, updated_at::text
-          FROM fitness.training_export_watermark
-          ORDER BY table_name`,
-    );
-    return { watermarks };
-  }),
 });

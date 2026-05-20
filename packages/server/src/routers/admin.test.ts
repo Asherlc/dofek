@@ -566,20 +566,4 @@ describe("adminRouter", () => {
       });
     });
   });
-
-  describe("trainingExportStatus", () => {
-    it("returns watermark data", async () => {
-      const rows = [
-        {
-          table_name: "activity",
-          last_exported_at: "2024-01-01T00:00:00Z",
-          row_count: 500,
-          updated_at: "2024-01-01T00:00:00Z",
-        },
-      ];
-      const caller = makeCaller(vi.fn().mockResolvedValue(rows));
-      const result = await caller.trainingExportStatus();
-      expect(result).toEqual({ watermarks: rows });
-    });
-  });
 });

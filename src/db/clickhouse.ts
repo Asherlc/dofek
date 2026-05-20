@@ -32,6 +32,9 @@ interface TableCountRow {
 
 const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
 const CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS = 120_000;
+export const CLICKHOUSE_DEFAULT_SETTINGS = {
+  allow_experimental_nullable_tuple_type: 1,
+} satisfies Record<string, string | number | boolean>;
 
 interface ClickHousePostgresConnection {
   hostAndPort: string;
@@ -93,6 +96,7 @@ export function createClickHouseClientFromEnv(
   return createClient({
     url,
     request_timeout: options.requestTimeoutMs ?? CLICKHOUSE_REQUEST_TIMEOUT_MILLISECONDS,
+    clickhouse_settings: CLICKHOUSE_DEFAULT_SETTINGS,
   });
 }
 
@@ -130,19 +134,36 @@ export async function waitForClickHouseTable(
     throw new Error("ClickHouse table verification requires a query-capable client");
   }
 
+  let lastStartupError: Error | undefined;
   for (let attempt = 0; attempt < CLICKHOUSE_TABLE_WAIT_ATTEMPTS; attempt += 1) {
-    const result = await client.query<TableCountRow>({
-      query: `SELECT count() AS table_count FROM system.tables WHERE database = ${clickHouseStringLiteral(
-        database,
-      )} AND name = ${clickHouseStringLiteral(table)}`,
-      format: "JSONEachRow",
-    });
-    const rows = await result.json();
-    if (Number(rows[0]?.table_count ?? 0) > 0) {
-      return;
+    try {
+      const result = await client.query<TableCountRow>({
+        query: `SELECT count() AS table_count FROM system.tables WHERE database = ${clickHouseStringLiteral(
+          database,
+        )} AND name = ${clickHouseStringLiteral(table)}`,
+        format: "JSONEachRow",
+      });
+      const rows = await result.json();
+      if (Number(rows[0]?.table_count ?? 0) > 0) {
+        return;
+      }
+    } catch (error) {
+      if (!isTransientClickHouseStartupError(error)) {
+        throw error;
+      }
+      lastStartupError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
 
-  throw new Error(`Timed out waiting for ClickHouse table ${database}.${table}`);
+  const startupErrorMessage = lastStartupError
+    ? `; last startup error: ${lastStartupError.message}`
+    : "";
+  throw new Error(
+    `Timed out waiting for ClickHouse table ${database}.${table}${startupErrorMessage}`,
+  );
+}
+
+function isTransientClickHouseStartupError(error: unknown): error is Error {
+  return error instanceof Error && error.message.includes("ECONNREFUSED");
 }

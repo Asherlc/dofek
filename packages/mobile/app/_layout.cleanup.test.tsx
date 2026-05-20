@@ -1,6 +1,6 @@
 import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCreateClient = vi.fn();
 const mockInitBackgroundHealthKitSync = vi.fn().mockResolvedValue(undefined);
@@ -10,6 +10,10 @@ const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
 const mockRefreshRemove = vi.fn();
+const { mockPreventAutoHideAsync, mockHideAsync } = vi.hoisted(() => ({
+  mockPreventAutoHideAsync: vi.fn(() => Promise.resolve()),
+  mockHideAsync: vi.fn(() => Promise.resolve()),
+}));
 
 vi.mock("@sentry/react-native", () => ({
   init: vi.fn(),
@@ -28,6 +32,11 @@ vi.mock("expo-router", async () => {
     Stack,
   };
 });
+
+vi.mock("expo-splash-screen", () => ({
+  preventAutoHideAsync: (...args: unknown[]) => mockPreventAutoHideAsync(...args),
+  hideAsync: (...args: unknown[]) => mockHideAsync(...args),
+}));
 
 vi.mock("../lib/auth-context", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
@@ -127,10 +136,35 @@ mockCreateClient.mockImplementation(() => ({
   },
 }));
 
-import RootLayout from "./_layout";
+async function importRootLayout() {
+  vi.resetModules();
+  return (await import("./_layout")).default;
+}
 
 describe("RootLayout background cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("keeps the native splash screen visible until the root layout can render", async () => {
+    await importRootLayout();
+
+    expect(mockPreventAutoHideAsync).toHaveBeenCalledOnce();
+  });
+
+  it("hides the native splash screen after auth state is resolved", async () => {
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockHideAsync).toHaveBeenCalledOnce();
+    });
+  });
+
   it("tears down background HealthKit sync on unmount", async () => {
+    const RootLayout = await importRootLayout();
+
     const rendered = render(<RootLayout />);
 
     await waitFor(() => {

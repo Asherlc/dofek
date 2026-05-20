@@ -1,11 +1,12 @@
--- Canonical definition of the fitness.v_activity materialized view.
--- This file is the single source of truth — the migration runner recreates
--- the view from this definition after every migration run (only if changed).
+-- Canonical definition of the fitness.v_activity view.
+-- This file is the source definition for fresh databases, local test schemas,
+-- and future forward migrations that need to update the deployed view.
 --
--- To change v_activity: edit THIS file. Do NOT add DROP/CREATE to a migration.
+-- To change v_activity: edit THIS file and add a forward migration when the
+-- deployed view definition must change.
 -- Git merge conflicts here force developers to reconcile concurrent changes.
 
-CREATE MATERIALIZED VIEW fitness.v_activity AS
+CREATE OR REPLACE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
   SELECT
     a.*,
@@ -131,15 +132,3 @@ SELECT
   m.member_activity_ids
 FROM merged m
 ORDER BY m.started_at DESC;
-
---> statement-breakpoint
-
-CREATE UNIQUE INDEX IF NOT EXISTS v_activity_id_idx ON fitness.v_activity (id);
-
---> statement-breakpoint
-
-CREATE INDEX IF NOT EXISTS v_activity_time_idx ON fitness.v_activity (started_at DESC);
-
---> statement-breakpoint
-
-CREATE INDEX IF NOT EXISTS v_activity_user_time_idx ON fitness.v_activity (user_id, started_at DESC);

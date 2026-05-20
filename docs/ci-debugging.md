@@ -69,13 +69,13 @@ If `Deploy Web Stack` fails during rollout with healthcheck output like `wget: c
 ```bash
 gh run view <RUN_ID> --job <JOB_ID> --log
 ```
-2. Check if the failure happens during `rollout web` and includes repeated healthcheck failures.
+2. Check if the failure happens during `docker stack deploy --detach=false` and includes repeated healthcheck failures for `web`.
 3. Correlate timestamps with container logs printed by rollout. If you see migration/view logs during the healthcheck window, startup work is blocking readiness.
 
 ### Correct fix pattern
 
 1. Keep `web` startup focused on serving traffic.
-2. Run migrations as a separate explicit deploy step before `rollout web` (for example `compose run --rm web migrate`).
+2. Run migrations as a separate explicit deploy step before `docker stack deploy`; production does this with a one-shot `migrate` container on the swarm overlay network.
 3. Use `start_period` only as a bounded startup grace window, not as the primary migration strategy.
 
 ## Deploy Migration Failures (`database system is in recovery mode`)

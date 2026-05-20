@@ -21,6 +21,7 @@ const activityListRowSchema = z
     name: z.string().nullable(),
     provider_id: z.string(),
     source_providers: z.array(z.string()),
+    member_activity_ids: z.array(z.string()).optional().default([]),
     avg_hr: z.number().nullable(),
     max_hr: z.number().nullable(),
     avg_power: z.number().nullable(),
@@ -45,6 +46,7 @@ const activityDetailRowSchema = z.object({
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
   source_external_ids: z.array(sourceExternalIdSchema).nullable(),
+  member_activity_ids: z.array(z.string()).optional().default([]),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   avg_power: z.number().nullable(),
@@ -262,7 +264,7 @@ export class ActivityRepository extends BaseRepository {
     const rows = await this.#listRawRows(input);
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
-    const items = hydratedRows.map(({ total_count, ...rest }) => rest);
+    const items = hydratedRows.map(({ total_count, member_activity_ids, ...rest }) => rest);
     return { items, totalCount };
   }
 
@@ -284,6 +286,7 @@ export class ActivityRepository extends BaseRepository {
             a.name,
             a.provider_id,
             a.source_providers,
+            a.member_activity_ids,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -314,6 +317,7 @@ export class ActivityRepository extends BaseRepository {
             a.raw->>'sourceName' AS subsource,
             a.source_providers,
             a.source_external_ids,
+            a.member_activity_ids,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -326,15 +330,21 @@ export class ActivityRepository extends BaseRepository {
             NULL::double precision AS elevation_loss_m,
             NULL::integer AS sample_count
           FROM fitness.v_activity a
-          WHERE a.id = ${activityId}
+          JOIN fitness.v_activity_members am ON am.activity_id = a.id
+          WHERE am.member_activity_id = ${activityId}
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
-    return hydratedRows[0] ?? null;
+    const firstRow = hydratedRows[0];
+    if (!firstRow) return null;
+    const { member_activity_ids: _, ...activity } = firstRow;
+    return activity;
   }
 
-  async #withActivitySummaries<TRow extends { id: string }>(rows: TRow[]): Promise<TRow[]> {
+  async #withActivitySummaries<TRow extends { id: string; member_activity_ids?: string[] }>(
+    rows: TRow[],
+  ): Promise<TRow[]> {
     const sensorStore = this.#sensorStore;
     if (!sensorStore) {
       return rows;
@@ -343,7 +353,10 @@ export class ActivityRepository extends BaseRepository {
       return rows;
     }
 
-    const summaries = await sensorStore.getActivitySummaries(rows.map((row) => row.id));
+    const activityIds = [
+      ...new Set(rows.flatMap((row) => [row.id, ...(row.member_activity_ids ?? [])])),
+    ];
+    const summaries = await sensorStore.getActivitySummaries(activityIds);
     const summaryByActivityId = new Map(
       summaries.map((summary) => [
         summary.activity_id,
@@ -352,7 +365,9 @@ export class ActivityRepository extends BaseRepository {
     );
 
     return rows.map((row) => {
-      const summary = summaryByActivityId.get(row.id);
+      const summary = [row.id, ...(row.member_activity_ids ?? [])]
+        .map((activityId) => summaryByActivityId.get(activityId))
+        .find((candidate) => candidate != null);
       if (!summary) {
         return row;
       }
@@ -423,7 +438,8 @@ export class ActivityRepository extends BaseRepository {
             a.ended_at::text AS ended_at,
             a.member_activity_ids
           FROM fitness.v_activity a
-          WHERE a.id = ${activityId}
+          JOIN fitness.v_activity_members am ON am.activity_id = a.id
+          WHERE am.member_activity_id = ${activityId}
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );

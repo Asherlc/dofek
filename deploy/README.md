@@ -6,10 +6,10 @@ Infrastructure-as-code and deployment configuration for Dofek.
 
 Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (HCloud) with **Cloudflare** for DNS, R2 storage, and CDN.
 
-- **Compute**: Hetzner Cloud `cax11` ARM64 servers running Ubuntu 24.04. Production uses `dofek`; staging uses `dofek-staging`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
+- **Compute**: Hetzner Cloud ARM64 servers running Ubuntu 24.04. Production uses `dofek` on `cax21`; staging uses `dofek-staging` on `cax11`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw scalar `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. Its first `metric_stream` mirror writes to `peerdb.metric_stream`; production analytics keep reading the migrated native copy until that initial snapshot is verified.
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
@@ -49,7 +49,8 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
-- PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, and logical replication settings needed by ClickHouse change-data capture.
+- PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, `max_locks_per_transaction=4096` for large Timescale chunk scans, and logical replication settings needed by ClickHouse change-data capture.
+- ClickHouse has a 5 GiB container memory limit so large `metric_stream` read-model refreshes can complete without hitting ClickHouse's internal memory ceiling. It also loads checked-in server profile settings from `deploy/clickhouse/users.d/` and server settings from `deploy/clickhouse/config.d/`; the production stack mounts these as Docker Swarm configs so app-managed geospatial `Nullable(Point)` columns and seven-day system-log TTL retention work without manual server changes.
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
@@ -108,6 +109,14 @@ If direct `ssh root@157.90.25.125` fails with `Permission denied`, verify you ar
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web`, `worker`, and `training-export-worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
+
+### Production Secrets
+
+Production secrets are stored in Infisical and rendered by CI into a temporary
+`.env.<env>` file for `docker stack deploy`; the file is not stored on the
+server. Required app, database, ClickHouse, PeerDB, export, Authentik, and
+mobile pipeline keys are listed in the deploy steps and mobile CI sections
+below. Missing required keys must fail the workflow before rollout.
 
 ### Flow Diagram
 

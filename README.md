@@ -91,6 +91,10 @@ See [docs/nutrition-ai-input.md](docs/nutrition-ai-input.md) for natural-languag
 
 See [docs/schema.md](docs/schema.md) for the full data model.
 
+### Known gaps
+
+- **`fitness.medication_dose_event`** — table exists (modeled after the iOS 26 `HKMedicationDoseEvent` type) but has no ingestion path and no read path wired up. Apple Health imports do not write to it, and no router or repository reads from it. Wire-up needed: (1) ingest from `HKMedicationDoseEvent` samples in `packages/mobile` and POST to a sync endpoint, (2) add reader in `packages/server/src/repositories` exposing dose history via tRPC, (3) display in web/mobile medication views.
+
 ## Project Structure
 
 pnpm workspace monorepo:
@@ -126,7 +130,7 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
-├── deploy/                        # Terraform + Docker Compose (production stack) — see deploy/README.md
+├── deploy/                        # Terraform + Docker Swarm production stack — see deploy/README.md
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
 
@@ -230,7 +234,6 @@ docker run dofek:latest worker
 docker run dofek:latest sync
 ```
 
-All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. All modes run migrations before starting. In production, the `web` mode now waits for migrations to finish before accepting traffic (no background migration while serving).
 All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
 
 ## Deployment
@@ -350,7 +353,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
 - [x] WHOOP strength trainer sync (exercise-level sets/reps/weight from `weightlifting-service` internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
-- [x] Cross-provider deduplication via materialized views (recursive CTE overlap clustering, per-field merge by provider priority)
+- [x] Cross-provider deduplication via read-time views and analytics read models (recursive CTE overlap clustering, per-field merge by provider priority)
 - [x] Strong CSV import (strength training history — CSV upload with unit conversion)
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
 - [x] WHOOP raw IMU/accelerometer data investigation — **not feasible**: data is in a private S3 bucket with no download API; app only uploads, never reads back. Load-velocity profiles (derived from accelerometer) may be accessible once enough training data is collected. See `docs/whoop.md`.
@@ -370,14 +373,14 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] OTel Collector sidecar shipping app logs + Docker container logs to Axiom
 - [x] Infisical secrets management (migrated from SOPS + Age)
 - [x] GHA CI with Docker build + push to GHCR
-- [x] Watchtower auto-deploy with Slack notifications
+- [x] GitHub Actions deploys the Docker Swarm stack with shared app/ML image tags
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
 - [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB)
 
 ### Resilience
 - [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.
 - [ ] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout.
-- [ ] Convert `fitness.v_activity` and `fitness.v_sleep` from materialized views to plain views once we can prove the recursive-CTE dedup query is fast enough on production-scale data. These two are the last remaining matviews; everything else has been converted. Removing them would also let us delete `admin.refreshViews`, the activity self-heal in `BaseRepository.queryWithViewRefresh`, the HealthKit sync `refreshIngestView` helper, and the e2e `/api/internal/materialized-views/refresh` wait, leaving a fully read-time-fresh schema with no refresh maintenance.
+- [ ] Convert `fitness.v_sleep` from a materialized view to a plain view once we can prove the recursive-CTE dedup query is fast enough on production-scale data. `fitness.v_activity` is already a plain view, so activity reads are fresh without refresh maintenance.
 
 ### Authentication Follow-ups
 - [ ] When a user signs up with any provider that does not give us an email, require them to enter their email manually before completing signup/account linking
@@ -591,4 +594,4 @@ For production deploy-time secret injection, the required Infisical `prod` keys,
 - **Stryker** — mutation testing
 - **Biome** — linting and formatting
 - **Infisical** — secrets management (client secrets, API keys, tokens)
-- **Docker + GHCR** — deployment via GitHub Actions + Watchtower
+- **Docker + GHCR** — deployment via GitHub Actions to Docker Swarm

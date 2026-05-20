@@ -1,10 +1,11 @@
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
@@ -16,6 +17,9 @@ describe("Activity summary deduplication", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
+  let canonicalActivityId: string;
+  let memberActivityId: string;
+  let sensorStore: ActivitySensorStore;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -79,15 +83,69 @@ describe("Activity summary deduplication", () => {
       }
     }
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_activity`);
+    const aliasRows = await testCtx.db.execute<{ id: string; member_activity_ids: string[] }>(
+      sql`SELECT id, member_activity_ids::text[] AS member_activity_ids
+          FROM fitness.v_activity
+          WHERE user_id = ${TEST_USER_ID}
+            AND cardinality(member_activity_ids) > 1
+          ORDER BY started_at DESC
+          LIMIT 1`,
+    );
+    const aliasRow = aliasRows[0];
+    const nonCanonicalMemberId = aliasRow?.member_activity_ids.find(
+      (activityId) => activityId !== aliasRow.id,
+    );
+    if (!aliasRow || !nonCanonicalMemberId) {
+      throw new Error("Expected overlapping activity aliases in fitness.v_activity");
+    }
+    canonicalActivityId = aliasRow.id;
+    memberActivityId = nonCanonicalMemberId;
 
-    const app = createApp(
-      testCtx.db,
-      makeMockSensorStore([
+    const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
+      if (queryText.includes("SELECT date, resting_hr")) {
+        return [{ date: "2026-04-20", resting_hr: 50 }];
+      }
+      return [
         { day: "2026-04-20", trimp: 50 },
         { day: "2026-04-27", trimp: 52 },
+      ];
+    };
+
+    sensorStore = {
+      ...makeMockSensorStore(),
+      query: vi.fn(queryMock),
+      getActivitySummaries: vi.fn().mockResolvedValue([
+        {
+          activity_id: memberActivityId,
+          avg_hr: 144,
+          max_hr: 171,
+          avg_power: 212,
+          max_power: 390,
+          avg_speed: 8.1,
+          max_speed: 12.4,
+          avg_cadence: 86,
+          total_distance: 31_000,
+          elevation_gain_m: 440,
+          elevation_loss_m: 430,
+          sample_count: 1800,
+        },
       ]),
-    );
+      getStream: vi.fn().mockResolvedValue([
+        {
+          recorded_at: "2026-04-20T15:00:00.000Z",
+          heart_rate: 144,
+          power: 212,
+          speed: 8.1,
+          cadence: 86,
+          altitude: 120,
+          lat: 47.6,
+          lng: -122.3,
+        },
+      ]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([{ zone: 2, seconds: 120 }]),
+    };
+
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -118,6 +176,46 @@ describe("Activity summary deduplication", () => {
     return { status: res.status, result: data[0] };
   }
 
+  it("v_activity is a regular view so activity inserts are visible without refresh", async () => {
+    const result = await testCtx.db.execute<{ exists: boolean }>(
+      sql`SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.views
+            WHERE table_schema = 'fitness'
+              AND table_name = 'v_activity'
+          ) AS "exists"`,
+    );
+    expect(result[0]?.exists).toBe(true);
+
+    const inserted = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES (
+            'wahoo', ${TEST_USER_ID}, 'cycling',
+            CURRENT_TIMESTAMP + INTERVAL '1 day',
+            CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '30 minutes',
+            'Fresh Ride'
+          )
+          RETURNING id`,
+    );
+    const activityId = inserted[0]?.id;
+
+    if (!activityId) {
+      throw new Error("Expected fresh activity insert to return id");
+    }
+
+    try {
+      const viewResult = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.v_activity
+            WHERE id = ${activityId}`,
+      );
+      expect(Number(viewResult[0]?.count)).toBe(1);
+    } finally {
+      await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ${activityId}`);
+    }
+  });
+
   it("v_activity contains only one canonical row per overlapping activity pair", async () => {
     const result = await testCtx.db.execute<{ count: string }>(
       sql`SELECT COUNT(*)::text AS count FROM fitness.v_activity
@@ -140,5 +238,58 @@ describe("Activity summary deduplication", () => {
     for (const week of data.weeks) {
       expect(Math.abs(week.rampRate)).toBeLessThan(10);
     }
+  });
+
+  it("resolves activity endpoints from a non-canonical member activity id", async () => {
+    await queryCache.invalidateAll();
+
+    const byId = await query("activity.byId", { id: memberActivityId });
+    expect(byId.status).toBe(200);
+    expect(byId.result.result.data).toMatchObject({
+      id: canonicalActivityId,
+      avgHr: 144,
+      avgPower: 212,
+      sampleCount: 1800,
+    });
+
+    const stream = await query("activity.stream", { id: memberActivityId, maxPoints: 100 });
+    expect(stream.status).toBe(200);
+    expect(stream.result.result.data).toEqual([
+      {
+        recordedAt: "2026-04-20T15:00:00.000Z",
+        heartRate: 144,
+        power: 212,
+        speed: 8.1,
+        cadence: 86,
+        altitude: 120,
+        lat: 47.6,
+        lng: -122.3,
+      },
+    ]);
+
+    const heartRateZones = await query("activity.hrZones", { id: memberActivityId });
+    expect(heartRateZones.status).toBe(200);
+    expect(heartRateZones.result.result.data).toEqual(
+      expect.arrayContaining([expect.objectContaining({ zone: 2, seconds: 120 })]),
+    );
+
+    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith(
+      expect.arrayContaining([canonicalActivityId, memberActivityId]),
+    );
+    expect(sensorStore.getStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityId: canonicalActivityId,
+        memberActivityIds: expect.arrayContaining([canonicalActivityId, memberActivityId]),
+      }),
+      100,
+    );
+    expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityId: canonicalActivityId,
+        memberActivityIds: expect.arrayContaining([canonicalActivityId, memberActivityId]),
+      }),
+      190,
+      50,
+    );
   });
 });

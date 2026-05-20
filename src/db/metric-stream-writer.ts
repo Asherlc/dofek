@@ -122,8 +122,6 @@ export function sourceRowToMetricStream(
       scalar: null,
       vector: null,
       point: ewktPoint(row.lng, row.lat),
-      latitude: row.lat,
-      longitude: row.lng,
       metadata: locationMetadata(row),
     });
   }
