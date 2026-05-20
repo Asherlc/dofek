@@ -59,14 +59,18 @@ async function insertRealtimeDataBatch(
 
     const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
     if (beatIntervalSamples.length > 0) {
-      const beatIntervalValues = beatIntervalSamples.map(
-        (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`,
-      );
+      const beatIntervalValues = beatIntervalSamples.map((sample) => {
+        const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${sample.timestamp}`;
+        return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`;
+      });
       await database.execute(
         sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
-            VALUES ${sql.join(beatIntervalValues, sql`, `)}`,
+            (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
+            VALUES ${sql.join(beatIntervalValues, sql`, `)}
+            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+            SET scalar = EXCLUDED.scalar,
+                device_id = EXCLUDED.device_id,
+                source_type = EXCLUDED.source_type`,
       );
     }
 
@@ -79,14 +83,18 @@ async function insertRealtimeDataBatch(
         sample.quaternionZ !== 0,
     );
     if (orientationSamples.length > 0) {
-      const orientationSensorValues = orientationSamples.map(
-        (sample) =>
-          sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`,
-      );
+      const orientationSensorValues = orientationSamples.map((sample) => {
+        const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${sample.timestamp}`;
+        return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`;
+      });
       await database.execute(
         sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
-            VALUES ${sql.join(orientationSensorValues, sql`, `)}`,
+            (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, vector)
+            VALUES ${sql.join(orientationSensorValues, sql`, `)}
+            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+            SET vector = EXCLUDED.vector,
+                device_id = EXCLUDED.device_id,
+                source_type = EXCLUDED.source_type`,
       );
     }
 

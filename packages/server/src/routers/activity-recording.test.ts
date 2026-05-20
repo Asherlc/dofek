@@ -87,6 +87,34 @@ describe("activityRecordingRouter", () => {
       expect(execute1.mock.calls.length).toBe(execute2.mock.calls.length);
     });
 
+    it("writes deterministic sample external IDs and conflict handling", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.save(makeValidInput());
+
+      const serializedStatements = execute.mock.calls.map((call) => JSON.stringify(call[0]));
+
+      expect(serializedStatements.some((statement) => statement.includes("external_id"))).toBe(
+        true,
+      );
+      expect(
+        serializedStatements.some((statement) =>
+          statement.includes("dofek:2024-06-15T08:00:00Z:user-1:location:2024-06-15T08:00:00Z"),
+        ),
+      ).toBe(true);
+      expect(
+        serializedStatements.some((statement) =>
+          statement.includes(
+            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+          ),
+        ),
+      ).toBe(true);
+    });
+
     it("handles empty samples array", async () => {
       const execute = makeExecute();
       const caller = createCaller({

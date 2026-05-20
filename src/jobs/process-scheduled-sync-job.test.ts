@@ -15,6 +15,12 @@ function getMockQueue(providerId: string) {
 
 vi.mock("./queues.ts", () => ({
   getProviderSyncQueue: vi.fn((providerId: string) => getMockQueue(providerId)),
+  SYNC_JOB_RETRY_OPTIONS: {
+    attempts: 288,
+    backoff: { type: "fixed", delay: 300_000 },
+    removeOnComplete: { age: 86_400, count: 1_000 },
+    removeOnFail: { age: 604_800, count: 1_000 },
+  },
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -59,18 +65,26 @@ describe("processScheduledSyncJob", () => {
     const wahooQueue = getMockQueue("wahoo");
 
     expect(stravaQueue.add).toHaveBeenCalledTimes(1);
-    expect(stravaQueue.add).toHaveBeenCalledWith("sync", {
-      userId: "user-1",
-      providerId: "strava",
-      sinceDays: 1,
-    });
+    expect(stravaQueue.add).toHaveBeenCalledWith(
+      "sync",
+      {
+        userId: "user-1",
+        providerId: "strava",
+        sinceDays: 1,
+      },
+      expect.objectContaining({ attempts: 288 }),
+    );
 
     expect(wahooQueue.add).toHaveBeenCalledTimes(1);
-    expect(wahooQueue.add).toHaveBeenCalledWith("sync", {
-      userId: "user-2",
-      providerId: "wahoo",
-      sinceDays: 1,
-    });
+    expect(wahooQueue.add).toHaveBeenCalledWith(
+      "sync",
+      {
+        userId: "user-2",
+        providerId: "wahoo",
+        sinceDays: 1,
+      },
+      expect.objectContaining({ attempts: 288 }),
+    );
 
     // CSV provider queue should not be created
     expect(providerQueues.has("strong-csv")).toBe(false);

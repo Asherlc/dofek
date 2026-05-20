@@ -128,6 +128,40 @@ describe("whoopBleSyncRouter", () => {
       expect(allSqlParts).not.toContain("heart_rate");
     });
 
+    it("writes deterministic external IDs and conflict handling for retry-safe uploads", async () => {
+      const trpcCaller = caller(ctx);
+      await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            rrIntervalMs: 812,
+            quaternionW: 0,
+            quaternionX: 0.5,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      const allSqlParts = mockDb.execute.mock.calls.flatMap((call) => getSqlParts(call[0]));
+
+      expect(allSqlParts.some((part) => String(part).includes("external_id"))).toBe(true);
+      expect(allSqlParts).toEqual(
+        expect.arrayContaining([
+          "whoop_ble:WHOOP Strap:rr_interval_ms:2026-03-30T12:00:00.000Z",
+          "whoop_ble:WHOOP Strap:orientation:2026-03-30T12:00:00.000Z",
+        ]),
+      );
+      expect(
+        allSqlParts.some((part) =>
+          String(part).includes(
+            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+          ),
+        ),
+      ).toBe(true);
+    });
+
     it("ignores legacy heartRate fields instead of storing device-derived HR", async () => {
       const trpcCaller = caller(ctx);
       const legacySample = {

@@ -99,11 +99,13 @@ export class ActivityRecordingRepository {
             sample.gpsAccuracy == null
               ? null
               : JSON.stringify({ horizontal_accuracy_m: sample.gpsAccuracy });
+          const sampleExternalId = `${externalId}:location:${sample.recordedAt}`;
           return sql`(
             ${sample.recordedAt}::timestamptz,
             ${this.#userId}::uuid,
             ${activityId}::uuid,
             ${PROVIDER_ID},
+            ${sampleExternalId},
             ${input.sourceName},
             ${"api"},
             ${"location"},
@@ -114,8 +116,14 @@ export class ActivityRecordingRepository {
       if (locationValues.length > 0) {
         await this.#db.execute(
           sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, activity_id, provider_id, device_id, source_type, channel, point, metadata)
-              VALUES ${sql.join(locationValues, sql`, `)}`,
+              (recorded_at, user_id, activity_id, provider_id, external_id, device_id, source_type, channel, point, metadata)
+              VALUES ${sql.join(locationValues, sql`, `)}
+              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+              SET activity_id = EXCLUDED.activity_id,
+                  device_id = EXCLUDED.device_id,
+                  source_type = EXCLUDED.source_type,
+                  point = EXCLUDED.point,
+                  metadata = EXCLUDED.metadata`,
         );
       }
 
@@ -126,15 +134,20 @@ export class ActivityRecordingRepository {
       for (const { channel, key } of channelMapping) {
         const channelValues = batch
           .filter((sample) => sample[key] != null)
-          .map(
-            (sample) =>
-              sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`,
-          );
+          .map((sample) => {
+            const sampleExternalId = `${externalId}:${channel}:${sample.recordedAt}`;
+            return sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${sampleExternalId}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`;
+          });
         if (channelValues.length > 0) {
           await this.#db.execute(
             sql`INSERT INTO fitness.metric_stream
-                (recorded_at, user_id, activity_id, provider_id, device_id, source_type, channel, scalar)
-                VALUES ${sql.join(channelValues, sql`, `)}`,
+                (recorded_at, user_id, activity_id, provider_id, external_id, device_id, source_type, channel, scalar)
+                VALUES ${sql.join(channelValues, sql`, `)}
+                ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+                SET activity_id = EXCLUDED.activity_id,
+                    device_id = EXCLUDED.device_id,
+                    source_type = EXCLUDED.source_type,
+                    scalar = EXCLUDED.scalar`,
           );
         }
       }
