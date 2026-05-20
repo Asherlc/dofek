@@ -98,7 +98,11 @@ ClickHouse migrations create and update the databases and read models:
   Historical/backfilled location rows can have `point Nullable(Point)` for
   location projections, but current PeerDB metric-stream mirrors exclude
   `point` because PeerDB sends the Postgres geometry value in a format
-  ClickHouse cannot cast directly into `Nullable(Point)`.
+  ClickHouse cannot cast directly into `Nullable(Point)`. As a consequence,
+  new rows arrive with `point = NULL`, so location projections derived from
+  `analytics.deduped_location` (and GPS-derived fields in
+  `analytics.activity_summary`) stop updating for new data until a replacement
+  geometry replication strategy is in place.
 - `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns. Besides the activity/sleep/body/daily/metric stream
@@ -109,6 +113,10 @@ ClickHouse migrations create and update the databases and read models:
   read models over the raw mirrors.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
   15 minutes from the copied raw rows and activity membership.
+- `analytics.deduped_location`: a refreshable materialized view refreshed every
+  15 minutes from `postgres_fitness.metric_stream` location rows. While the
+  PeerDB mirror excludes `point`, new rows have `point = NULL` and this view
+  does not advance for new data.
 - `analytics.activity_summary`: a refreshable materialized view refreshed every
   15 minutes from `analytics.deduped_sensor`.
 - `analytics.activity_trend_daily`: a refreshable materialized view with one

@@ -1,6 +1,6 @@
 # ClickHouse Body Freshness Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. See `AGENTS.md` for any agent-specific execution workflows.
 
 **Goal:** Restore body metric freshness and reduce ClickHouse starvation from large read-model refreshes.
 
@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Exclude `metric_stream.point` From PeerDB CDC Mirrors
+## Task 1: Exclude `metric_stream.point` From PeerDB CDC Mirrors
 
 **Files:**
 - Modify: `src/db/peerdb/metric-stream-cdc.sql`
@@ -47,7 +47,7 @@ Run: `pnpm vitest run src/db/clickhouse-cdc.test.ts`
 
 Expected: PASS.
 
-### Task 2: Lengthen Heavy ClickHouse Refresh Intervals
+## Task 2: Lengthen Heavy ClickHouse Refresh Intervals
 
 **Files:**
 - Modify: `src/db/clickhouse-sql-helpers.ts`
@@ -96,17 +96,17 @@ AS`;
 
 Pass `"15 MINUTE"` for `analytics.v_body_measurement`, `analytics.provider_stats`, and `analytics.activity_trend_daily`. Update the inline materialized-view SQL for `analytics.deduped_sensor`, `analytics.deduped_location`, and `analytics.activity_summary` to use the same interval, preserving their existing offsets.
 
-- [ ] **Step 5: Add a non-destructive ClickHouse migration**
+- [ ] **Step 4: Add a non-destructive ClickHouse migration**
 
 Add migration `0015_reduce_metric_stream_refresh_load` with `ALTER TABLE ... MODIFY REFRESH` statements for the same six read models. Do not drop/recreate the views in this migration.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `pnpm vitest run src/db/clickhouse.test.ts`
 
 Expected: PASS.
 
-### Task 3: Document And Verify
+## Task 3: Document And Verify
 
 **Files:**
 - Modify: `docs/production-incident-baseline.md`

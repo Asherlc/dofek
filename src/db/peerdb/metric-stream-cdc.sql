@@ -30,6 +30,11 @@ CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness FROM CLICKHOUSE WITH
 -- validation and analytics mirrors keep only fields needed by ClickHouse models.
 -- device_id, source_type, vector, point, and metadata are excluded to reduce
 -- replicated payload size and avoid PeerDB geometry to ClickHouse Point casts.
+-- Consequence: new metric_stream rows arrive in ClickHouse with point = NULL,
+-- so analytics.deduped_location and GPS-derived fields in
+-- analytics.activity_summary stop updating for new data until a replacement
+-- geometry replication strategy is in place. Historical/backfilled rows still
+-- have their point populated.
 CREATE MIRROR IF NOT EXISTS dofek_metric_stream_cdc
 FROM dofek_postgres TO dofek_clickhouse
 WITH TABLE MAPPING
