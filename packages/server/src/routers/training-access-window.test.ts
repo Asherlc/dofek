@@ -43,6 +43,20 @@ import { trainingRouter } from "./training.ts";
 const createCaller = createTestCallerFactory(trainingRouter);
 
 describe("trainingRouter access window gating", () => {
+  it("weeklyVolume throws a specific precondition error when the sensor store is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.weeklyVolume({ days: 90 })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message:
+        "training requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+    });
+  });
+
   it("weeklyVolume passes accessWindow to repository (limited window returns empty)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const sensorStore = makeMockSensorStore([]);
@@ -68,6 +82,55 @@ describe("trainingRouter access window gating", () => {
         accessStart: "2026-04-10",
         accessEnd: "2026-04-17",
       }),
+    );
+  });
+
+  it("activityStats returns per-activity rows from the analytics store", async () => {
+    const sensorStore = makeMockSensorStore([
+      {
+        id: "activity-1",
+        activity_type: "running",
+        name: "Morning Run",
+        started_at: "2026-05-19T14:00:00.000Z",
+        ended_at: "2026-05-19T15:00:00.000Z",
+        avg_hr: 145.5,
+        max_hr: 172,
+        avg_power: null,
+        max_power: null,
+        avg_cadence: 82,
+        hr_samples: 3600,
+        power_samples: 0,
+        distance_meters: 10500,
+      },
+    ]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await expect(caller.activityStats({ days: 30 })).resolves.toEqual([
+      {
+        id: "activity-1",
+        activity_type: "running",
+        name: "Morning Run",
+        started_at: "2026-05-19T14:00:00.000Z",
+        ended_at: "2026-05-19T15:00:00.000Z",
+        avg_hr: 145.5,
+        max_hr: 172,
+        avg_power: null,
+        max_power: null,
+        avg_cadence: 82,
+        hr_samples: 3600,
+        power_samples: 0,
+        distance_meters: 10500,
+      },
+    ]);
+    expect(sensorStore.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("FROM analytics.v_activity a"),
+      { userId: "user-1", days: 30 },
     );
   });
 });
