@@ -43,6 +43,11 @@ describe("reorderDashboardSections", () => {
     expect(result).toBe(order);
   });
 
+  it("returns the same array when sectionId is not in order while moving down", () => {
+    const result = reorderDashboardSections(order, "nonexistent", "down");
+    expect(result).toBe(order);
+  });
+
   it("returns the same array when moving the first section up", () => {
     const result = reorderDashboardSections(order, "healthMonitor", "up");
     expect(result).toBe(order);
@@ -54,17 +59,12 @@ describe("reorderDashboardSections", () => {
   });
 
   it("returns the same reference when moving the first section up (index === 0)", () => {
-    // Kills: firstIndex <= 0 → firstIndex < 0 (EqualityOperator)
-    // healthMonitor is at index 0 — exactly at the boundary
     const result = reorderDashboardSections(order, "healthMonitor", "up");
     expect(result).toBe(order);
-    // Verify the array is truly unchanged, not just equal
     expect(result).toEqual(order);
   });
 
   it("returns the same reference when moving the last section down (index === length-1)", () => {
-    // Kills: lastIndex >= order.length - 1 → lastIndex > order.length - 1 (EqualityOperator)
-    // bodyComp is at index length-1 — exactly at the boundary
     const result = reorderDashboardSections(order, "bodyComp", "down");
     expect(result).toBe(order);
     expect(result).toEqual(order);
@@ -74,23 +74,35 @@ describe("reorderDashboardSections", () => {
     const reordered = ["weeklyReport", "sleepNeed", "healthMonitor", "topInsights"];
     const result = reorderDashboardSections(reordered, "weeklyReport", "up");
     expect(result).toBe(reordered);
+    expect(result).toEqual(reordered);
   });
 
   it("returns the same reference when moving a pair at the end down", () => {
-    // Put spo2Temp+steps at the end so lastGroupIndex === length-1
     const reordered = ["healthMonitor", "topInsights", "spo2Temp", "steps"];
     const result = reorderDashboardSections(reordered, "steps", "down");
     expect(result).toBe(reordered);
+    expect(result).toEqual(reordered);
   });
 
   // ── Move up ──
 
   it("moves a standalone section up by one position", () => {
-    // "hrvRhr" is standalone, preceded by "healthspan"
     const result = reorderDashboardSections(order, "hrvRhr", "up");
-    const hrvIndex = result.indexOf("hrvRhr");
-    const healthspanIndex = result.indexOf("healthspan");
-    expect(hrvIndex).toBeLessThan(healthspanIndex);
+    expect(result).toEqual([
+      "healthMonitor",
+      "topInsights",
+      "strain",
+      "weeklyReport",
+      "sleepNeed",
+      "hrvRhr",
+      "stress",
+      "healthspan",
+      "spo2Temp",
+      "steps",
+      "sleep",
+      "nutrition",
+      "bodyComp",
+    ]);
   });
 
   it("moves a primary section up as a pair", () => {
@@ -121,22 +133,43 @@ describe("reorderDashboardSections", () => {
   });
 
   it("jumps over an entire target pair when moving up", () => {
-    // "stress"+"healthspan" pair is preceded by "weeklyReport"+"sleepNeed" pair
-    // Moving stress up should jump over the entire weeklyReport+sleepNeed pair
     const result = reorderDashboardSections(order, "stress", "up");
-    const stressIndex = result.indexOf("stress");
-    const weeklyReportIndex = result.indexOf("weeklyReport");
-    expect(stressIndex).toBeLessThan(weeklyReportIndex);
+    expect(result).toEqual([
+      "healthMonitor",
+      "topInsights",
+      "strain",
+      "stress",
+      "healthspan",
+      "weeklyReport",
+      "sleepNeed",
+      "hrvRhr",
+      "spo2Temp",
+      "steps",
+      "sleep",
+      "nutrition",
+      "bodyComp",
+    ]);
   });
 
   // ── Move down ──
 
   it("moves a standalone section down by one position", () => {
     const result = reorderDashboardSections(order, "hrvRhr", "down");
-    const hrvIndex = result.indexOf("hrvRhr");
-    const spo2Index = result.indexOf("spo2Temp");
-    // hrvRhr should now be after spo2Temp+steps pair
-    expect(hrvIndex).toBeGreaterThan(spo2Index);
+    expect(result).toEqual([
+      "healthMonitor",
+      "topInsights",
+      "strain",
+      "weeklyReport",
+      "sleepNeed",
+      "stress",
+      "healthspan",
+      "spo2Temp",
+      "steps",
+      "hrvRhr",
+      "sleep",
+      "nutrition",
+      "bodyComp",
+    ]);
   });
 
   it("moves a secondary card down as a pair with its primary", () => {
@@ -220,19 +253,27 @@ describe("reorderDashboardSections", () => {
   // ── Target group filter ──
 
   it("filters target group to exclude sections not in order when jumping up", () => {
-    // Kills: targetGroupIds filter → getDashboardGridGroupIds(targetSectionId) (MethodExpression)
-    // and the && vs || logical operator mutant
-    // weeklyReport's pair is sleepNeed — but remove sleepNeed from order
-    // Moving stress up should jump over just weeklyReport, not a phantom sleepNeed
     const withoutSleepNeed = ["healthMonitor", "weeklyReport", "stress", "healthspan"];
     const result = reorderDashboardSections(withoutSleepNeed, "stress", "up");
-    expect(result.indexOf("stress")).toBeLessThan(result.indexOf("weeklyReport"));
+    expect(result).toEqual(["healthMonitor", "stress", "healthspan", "weeklyReport"]);
+  });
+
+  it("filters missing target primary sections when jumping up from a secondary target", () => {
+    const withoutWeeklyReport = ["healthMonitor", "sleepNeed", "stress", "healthspan", "bodyComp"];
+    const result = reorderDashboardSections(withoutWeeklyReport, "stress", "up");
+    expect(result).toEqual(["healthMonitor", "stress", "healthspan", "sleepNeed", "bodyComp"]);
   });
 
   it("filters target group to exclude sections not in order when jumping down", () => {
     const withoutHealthspan = ["stress", "weeklyReport", "sleepNeed", "bodyComp"];
     const result = reorderDashboardSections(withoutHealthspan, "stress", "down");
-    expect(result.indexOf("stress")).toBeGreaterThan(result.indexOf("weeklyReport"));
+    expect(result).toEqual(["weeklyReport", "sleepNeed", "stress", "bodyComp"]);
+  });
+
+  it("filters missing target secondary sections when jumping down from a primary target", () => {
+    const withoutSleepNeed = ["stress", "weeklyReport", "bodyComp"];
+    const result = reorderDashboardSections(withoutSleepNeed, "stress", "down");
+    expect(result).toEqual(["weeklyReport", "stress", "bodyComp"]);
   });
 });
 

@@ -47,11 +47,7 @@ export function reorderDashboardSections(
       return order;
     }
 
-    const targetSectionId = order[firstGroupIndex - 1];
-    if (targetSectionId === undefined) {
-      return order;
-    }
-
+    const targetSectionId = order[firstGroupIndex - 1] ?? sectionId;
     const targetGroupIds = getDashboardGridGroupIds(targetSectionId).filter(
       (id) => !sectionsToMoveSet.has(id) && order.includes(id),
     );
@@ -67,11 +63,7 @@ export function reorderDashboardSections(
     return order;
   }
 
-  const targetSectionId = order[lastGroupIndex + 1];
-  if (targetSectionId === undefined) {
-    return order;
-  }
-
+  const targetSectionId = order[lastGroupIndex + 1] ?? sectionId;
   const targetGroupIds = getDashboardGridGroupIds(targetSectionId).filter(
     (id) => !sectionsToMoveSet.has(id) && order.includes(id),
   );
