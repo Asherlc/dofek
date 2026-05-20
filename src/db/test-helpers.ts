@@ -140,7 +140,10 @@ export async function setupTestDatabase(): Promise<TestContext> {
     const statements = content
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter(
+        (statement) =>
+          statement && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS"),
+      );
 
     for (const statement of statements) {
       await migrationClient.query(statement);
