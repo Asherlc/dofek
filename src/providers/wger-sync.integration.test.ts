@@ -172,7 +172,7 @@ describe("WgerProvider.sync() (integration)", () => {
     expect(weight2.scalar).toBeCloseTo(82.0);
   });
 
-  it("idempotently re-syncs without duplicates", async () => {
+  it("re-syncs without duplicates", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
