@@ -174,7 +174,8 @@ describe("ActivitiesCalendarRepository", () => {
 
     const sqlObject = database.execute.mock.calls[0]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
-    expect(compiledQuery.sql).toContain("a.id::text IN (");
+    expect(compiledQuery.sql).toContain("a.id IN (");
+    expect(compiledQuery.sql).not.toContain("AND a.id::text IN (");
     expect(compiledQuery.sql).not.toContain("ANY(($");
     expect(compiledQuery.params).toEqual(
       expect.arrayContaining(["00000000-0000-0000-0000-000000000001", "activity-1", "activity-2"]),
