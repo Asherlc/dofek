@@ -61,9 +61,9 @@ export async function fetchSleepNights(
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-      formatDateTime(started_at, '%FT%TZ', 'UTC') AS started_at,
-      if(isNull(ended_at), NULL, formatDateTime(ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      date,
+      formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
       duration_minutes,
       deep_minutes,
       rem_minutes,
@@ -72,8 +72,9 @@ export async function fetchSleepNights(
       efficiency_pct
     FROM (
       SELECT
-        started_at,
-        ended_at,
+        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
+        started_at AS started_at_dt,
+        ended_at AS ended_at_dt,
         duration_minutes,
         deep_minutes,
         rem_minutes,
@@ -114,21 +115,33 @@ export async function fetchLatestSleepNight(input: {
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-      formatDateTime(started_at, '%FT%TZ', 'UTC') AS started_at,
-      if(isNull(ended_at), NULL, formatDateTime(ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      date,
+      formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
       duration_minutes,
       deep_minutes,
       rem_minutes,
       light_minutes,
       awake_minutes,
       efficiency_pct
-    FROM analytics.v_sleep
-    WHERE user_id = {userId:UUID}
-      AND is_nap = false
-      ${accessWindowClause(input.accessWindow)}
-    ORDER BY started_at DESC
-    LIMIT 1`,
+    FROM (
+      SELECT
+        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
+        started_at AS started_at_dt,
+        ended_at AS ended_at_dt,
+        duration_minutes,
+        deep_minutes,
+        rem_minutes,
+        light_minutes,
+        awake_minutes,
+        efficiency_pct
+      FROM analytics.v_sleep
+      WHERE user_id = {userId:UUID}
+        AND is_nap = false
+        ${accessWindowClause(input.accessWindow)}
+      ORDER BY started_at DESC
+      LIMIT 1
+    )`,
     {
       userId: input.userId,
       timezone: input.timezone,
