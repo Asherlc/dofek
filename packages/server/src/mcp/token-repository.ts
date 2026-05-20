@@ -173,10 +173,6 @@ export async function revokeMcpToken(
 
 export function requireMcpScope(scopes: readonly McpScope[], requiredScope: McpScope): void {
   if (!scopes.includes(requiredScope)) {
-    throw new McpAuthError(
-      403,
-      "insufficient_scope",
-      `MCP token requires scope: ${requiredScope}`,
-    );
+    throw new McpAuthError(403, "insufficient_scope", `MCP token requires scope: ${requiredScope}`);
   }
 }

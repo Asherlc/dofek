@@ -349,6 +349,19 @@ entity "life_events" {
   created_at : timestamp
 }
 
+entity "mcp_access_token" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  name : text
+  token_hash : text
+  scopes : text
+  created_at : timestamp
+  last_used_at : timestamp
+  expires_at : timestamp
+  revoked_at : timestamp
+}
+
 entity "medication" {
   * id : uuid <<PK>>
   --
@@ -665,6 +678,7 @@ provider ||--o{ lab_result
 user_profile ||--o{ lab_result
 lab_panel ||--o{ lab_result
 user_profile ||--o{ life_events
+user_profile ||--o{ mcp_access_token
 provider ||--o{ medication
 user_profile ||--o{ medication
 provider ||--o{ medication_dose_event

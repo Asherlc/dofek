@@ -58,7 +58,7 @@ async function request(
 
 function createTestApp() {
   const app = express();
-  app.use("/api/mcp", createMcpRouter({ db: { execute: vi.fn() } }));
+  app.use("/api/mcp", createMcpRouter({ db: { execute: vi.fn(), select: vi.fn() } }));
   return app;
 }
 

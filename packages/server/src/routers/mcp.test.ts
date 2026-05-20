@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashMcpToken } from "../mcp/token-repository.ts";
-import { createTestCallerFactory } from "./test-helpers.ts";
 import { mcpRouter } from "./mcp.ts";
+import { createTestCallerFactory } from "./test-helpers.ts";
 
 const createCaller = createTestCallerFactory(mcpRouter);
 const mockExecute = vi.fn();

@@ -1,12 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Database } from "dofek/db";
+import {
+  getProviderSyncQueue,
+  providerSyncQueueName,
+  SYNC_JOB_RETRY_OPTIONS,
+} from "dofek/jobs/queues";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
-import { getProviderSyncQueue, providerSyncQueueName, SYNC_JOB_RETRY_OPTIONS } from "dofek/jobs/queues";
-import type { Database } from "dofek/db";
 import { z } from "zod";
 import { startWorker } from "../lib/start-worker.ts";
-import { ActivityRepository } from "../repositories/activity-repository.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
@@ -21,7 +25,7 @@ import {
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
 
 export interface DofekMcpContext {
-  db: Pick<Database, "execute">;
+  db: Pick<Database, "execute" | "select">;
   userId: string;
   scopes: McpScope[];
   timezone: string;
@@ -72,8 +76,14 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       title: "Search Activities",
       description: "Search authenticated user activity summaries.",
       inputSchema: {
-        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        from: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
         query: z.string().max(200).optional(),
         limit: z.number().int().min(1).max(25).optional(),
       },
@@ -124,11 +134,12 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async ({ text, occurredAt, mealType }) => {
       requireMcpScope(context.scopes, "nutrition:write");
-      const repository = new FoodRepository(context.db, context.userId);
-      const entry = await repository.quickAdd({
+      const repository = new FoodRepository(context.db, context.userId, context.timezone);
+      const entry = await repository.create({
         date: dateFromOptionalDateTime(occurredAt),
         meal: mealType ?? "other",
         foodName: text,
+        nutrients: {},
       });
       return jsonContent(entry ?? null);
     },
@@ -150,8 +161,12 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         repository.getLastSyncTimes(),
         repository.getLatestErrors(),
       ]);
-      const connectedProviderIds = new Set(connectedProviders.map((provider) => provider.providerId));
-      const lastSyncMap = new Map(lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]));
+      const connectedProviderIds = new Set(
+        connectedProviders.map((provider) => provider.providerId),
+      );
+      const lastSyncMap = new Map(
+        lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
+      );
       const authErrorProviderIds = new Set(
         latestErrors
           .filter((provider) => isAuthError(provider.errorMessage))

@@ -4,11 +4,11 @@ import type { Database } from "dofek/db";
 import express, { Router } from "express";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { createDofekMcpServer } from "./tools.ts";
 import { validateMcpToken } from "./token-repository.ts";
+import { createDofekMcpServer } from "./tools.ts";
 
 export interface CreateMcpRouterOptions {
-  db: Pick<Database, "execute">;
+  db: Pick<Database, "execute" | "select">;
   sensorStore?: ActivitySensorStore;
 }
 
