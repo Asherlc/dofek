@@ -34,7 +34,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     );
   }
 
-  const latestWeeklyChange = data[data.length - 1]?.weeklyChange;
+  const ratePerWeekKg = prediction?.ratePerWeek ?? null;
   const goalWeightKg = prediction?.goal?.goalWeightKg ?? null;
   const goalBandKg = 1.1; // ±1.1 kg band around goal
 
@@ -159,13 +159,13 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
 
   return (
     <div className="space-y-2">
-      {latestWeeklyChange != null && (
+      {ratePerWeekKg != null && (
         <div className="flex items-baseline gap-2">
           <span
-            className={`text-lg font-semibold ${latestWeeklyChange > 0 ? "text-green-400" : latestWeeklyChange < 0 ? "text-red-400" : "text-muted"}`}
+            className={`text-lg font-semibold ${ratePerWeekKg > 0 ? "text-green-400" : ratePerWeekKg < 0 ? "text-red-400" : "text-muted"}`}
           >
-            {latestWeeklyChange > 0 ? "+" : ""}
-            {formatNumber(units.convertWeight(latestWeeklyChange))} {units.weightLabel}
+            {ratePerWeekKg > 0 ? "+" : ""}
+            {formatNumber(units.convertWeight(ratePerWeekKg))} {units.weightLabel}
             /week
           </span>
         </div>
