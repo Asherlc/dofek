@@ -74,6 +74,8 @@ export function restingHeartRateClickHouseCte(): string {
       INNER JOIN analytics.deduped_sensor AS samples
         ON samples.user_id = sleep_windows.user_id
       WHERE samples.channel = 'heart_rate'
+        AND samples.recorded_at >= toDateTime({rhrWindowStart:String}) - INTERVAL 1 DAY
+        AND samples.recorded_at < toDateTime({rhrEndDate:String}) + INTERVAL 2 DAY
         AND samples.recorded_at >= sleep_windows.started_at
         AND samples.recorded_at <= sleep_windows.ended_at
         AND samples.activity_id IS NULL

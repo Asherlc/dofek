@@ -25,6 +25,12 @@ describe("fetchRestingHeartRateRows", () => {
     expect(queryText).toContain("analytics.deduped_sensor");
     expect(queryText).toContain("channel = 'heart_rate'");
     expect(queryText).toContain("activity_id IS NULL");
+    expect(queryText).toContain(
+      "samples.recorded_at >= toDateTime({rhrWindowStart:String}) - INTERVAL 1 DAY",
+    );
+    expect(queryText).toContain(
+      "samples.recorded_at < toDateTime({rhrEndDate:String}) + INTERVAL 2 DAY",
+    );
     expect(queryText).toContain("raw_sleep_windows");
     expect(queryText).toContain("LIMIT 1 BY user_id, date");
     expect(queryText).toContain("arraySort");
