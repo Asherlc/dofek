@@ -770,7 +770,7 @@ export const recoveryRouter = router({
             : 0,
         zone: target.zone,
         explanation: target.explanation,
-        dailyLoad: Math.round(Number(todayLoad) * 10) / 10,
+        dailyLoad: Math.round(todayLoad * 10) / 10,
         acuteLoad: roundedAcuteLoad,
         chronicLoad: roundedChronicLoad,
         workloadRatio: workloadRatio != null ? Math.round(workloadRatio * 100) / 100 : null,
