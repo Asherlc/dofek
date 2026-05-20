@@ -526,22 +526,30 @@ jobs:
 
       - name: Wait for Temporal
         run: |
+          deadline=$((SECONDS + 180))
+          attempt=0
           temporal_output=""
-          for attempt in $(seq 1 36); do
-            if temporal_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
-              --entrypoint temporal \
-              temporalio/admin-tools:1.29 \
-              --address peerdb-temporal:7233 --namespace default --color never \
-              operator search-attribute list 2>&1); then
-              echo "Temporal frontend is reachable."
-              break
-            fi
-            if [ "$attempt" -eq 36 ]; then
+          while :; do
+            attempt=$((attempt + 1))
+            remaining=$((deadline - SECONDS))
+            if [ "$remaining" -le 0 ]; then
               echo "::error::Temporal frontend did not become reachable within 180s"
               printf '%s\n' "$temporal_output"
               exit 1
             fi
-            echo "Temporal readiness attempt ${attempt}/36: retrying in 5s..."
+            per_attempt_timeout=10
+            if [ "$per_attempt_timeout" -gt "$remaining" ]; then
+              per_attempt_timeout="$remaining"
+            fi
+            if temporal_output=$(timeout "${per_attempt_timeout}s" docker run --rm --network "${STACK_NAME}_default" \
+              --entrypoint temporal \
+              temporalio/admin-tools:1.29 \
+              --address peerdb-temporal:7233 --namespace default --color never \
+              operator search-attribute list 2>&1); then
+              echo "Temporal frontend is reachable after ${attempt} attempt(s)."
+              break
+            fi
+            echo "Temporal readiness attempt ${attempt} failed; ${remaining}s remaining, sleeping 5s..."
             sleep 5
           done
 
