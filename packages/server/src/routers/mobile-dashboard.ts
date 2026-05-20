@@ -19,9 +19,7 @@ import {
 import {
   computeComponentScores,
   computeReadinessScore,
-  type NextWorkoutRecommendation,
 } from "../repositories/training-recommendation.ts";
-import { TrainingRepository } from "../repositories/training-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 
@@ -81,7 +79,6 @@ export interface MobileDashboardResult {
     workloadRatio: number | null;
     date: string | null;
   };
-  nextWorkout: NextWorkoutRecommendation | null;
   sleepNeed: SleepNeedResult | null;
   anomalies: AnomalyCheckResult | null;
   latestDate: string | null;
@@ -404,12 +401,7 @@ export const mobileDashboardRouter = router({
         date: metricsRows[0]?.date ?? null,
       };
 
-      // 5. Next Workout
-      const trainingRepo = new TrainingRepository(ctx.db, ctx.userId, tz, sensorStore);
-      const workoutData = await trainingRepo.getNextWorkoutData(endDate);
-      const nextWorkout = await trainingRepo.getRecommendation(workoutData, endDate, weights);
-
-      // 6. Anomalies
+      // 5. Anomalies
       const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz, sensorStore);
       const anomalies = await anomalyRepo.check(endDate);
 
@@ -429,7 +421,6 @@ export const mobileDashboardRouter = router({
           sleepDebt: Math.round(accumulatedDebt),
         },
         strain: strainResult,
-        nextWorkout,
         sleepNeed: sleepNeedResult,
         anomalies,
         latestDate: metricsRows[0]?.date ?? null,

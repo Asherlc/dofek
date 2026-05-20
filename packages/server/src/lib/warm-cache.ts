@@ -30,7 +30,6 @@ export async function warmCache(
     ["dailyMetrics.list(30)", () => caller.dailyMetrics.list({ days: 30, endDate })],
     ["dailyMetrics.list(90)", () => caller.dailyMetrics.list({ days: 90, endDate })],
     ["dailyMetrics.trends(30)", () => caller.dailyMetrics.trends({ days: 30, endDate })],
-    ["training.nextWorkout", () => caller.training.nextWorkout({ endDate })],
     ["dailyMetrics.latest", () => caller.dailyMetrics.latest()],
     ["sleep.list(30)", () => caller.sleep.list({ days: 30, endDate })],
     ["sync.providers", () => caller.sync.providers()],
