@@ -1,9 +1,11 @@
-import { type InferInsertModel, sql } from "drizzle-orm";
+import type { InferInsertModel } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
-import type { metricStream } from "./schema.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 
-export type MetricStreamInsert = InferInsertModel<typeof metricStream>;
+type MetricStreamTable = typeof import("./schema.ts").metricStream;
+
+export type MetricStreamInsert = InferInsertModel<MetricStreamTable>;
+
 export interface MetricStreamSourceRow {
   recordedAt: Date;
   userId?: string;
@@ -43,6 +45,10 @@ function locationMetadata(row: MetricStreamSourceRow): Record<string, unknown> |
  */
 export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
 
+export function metricStreamConflictTarget(table: MetricStreamTable) {
+  return [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt];
+}
+
 /**
  * Create the default batch insert function using a Drizzle DB instance.
  */
@@ -52,15 +58,8 @@ export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsert
     await db
       .insert(table)
       .values(batch)
-      .onConflictDoUpdate({
-        target: [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt],
-        set: {
-          activityId: sql`excluded.activity_id`,
-          deviceId: sql`excluded.device_id`,
-          sourceType: sql`excluded.source_type`,
-          scalar: sql`excluded.scalar`,
-          vector: sql`excluded.vector`,
-        },
+      .onConflictDoNothing({
+        target: metricStreamConflictTarget(table),
       });
   };
 }

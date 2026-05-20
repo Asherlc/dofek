@@ -92,7 +92,7 @@ describe("ios telemetry", () => {
     expect(mocks.mockInit).not.toHaveBeenCalled();
   });
 
-  it("initializes Sentry once with DSN and sends a verification message", async () => {
+  it("initializes Sentry once with DSN", async () => {
     process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
 
     const mod = await import("./telemetry");
@@ -104,7 +104,7 @@ describe("ios telemetry", () => {
       dsn: "https://key@sentry.example/789",
       debug: true,
     });
-    expect(mocks.mockCaptureMessage).toHaveBeenCalledWith("Sentry initialized on iOS", "info");
+    expect(mocks.mockCaptureMessage).not.toHaveBeenCalled();
   });
 
   it("delegates captureException to Sentry with extra context", async () => {

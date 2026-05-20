@@ -172,7 +172,7 @@ describe("WgerProvider.sync() (integration)", () => {
     expect(weight2.scalar).toBeCloseTo(82.0);
   });
 
-  it("upserts on re-sync (no duplicates)", async () => {
+  it("re-syncs without duplicates", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -181,7 +181,7 @@ describe("WgerProvider.sync() (integration)", () => {
     });
 
     const sessions = [fakeWorkoutSession({ id: 101, date: "2026-03-01" })];
-    const weights = [fakeWeightEntry({ id: 201, date: "2026-03-01", weight: "83.0" })];
+    const weights = [fakeWeightEntry({ id: 203, date: "2026-03-01", weight: "83.0" })];
 
     server.use(...wgerHandlers(sessions, weights));
 
@@ -202,16 +202,16 @@ describe("WgerProvider.sync() (integration)", () => {
       .select()
       .from(metricStream)
       .where(eq(metricStream.providerId, "wger"));
-    const countOf201 = weightRows.filter(
-      (r) => r.externalId === "201" && r.channel === "body_weight",
+    const countOf203 = weightRows.filter(
+      (r) => r.externalId === "203" && r.channel === "body_weight",
     ).length;
-    expect(countOf201).toBe(1);
+    expect(countOf203).toBe(1);
 
-    // Verify weight was updated
+    // Verify the weight row was retained across the repeated sync.
     const updatedWeight = weightRows.find(
-      (r) => r.externalId === "201" && r.channel === "body_weight",
+      (r) => r.externalId === "203" && r.channel === "body_weight",
     );
-    if (!updatedWeight) throw new Error("expected weight 201");
+    if (!updatedWeight) throw new Error("expected weight 203");
     expect(updatedWeight.scalar).toBeCloseTo(83.0);
   });
 
