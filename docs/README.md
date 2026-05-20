@@ -1,6 +1,6 @@
 # Documentation
 
-<!-- cspell:ignore dbml bugsink Bugsink rollups -->
+<!-- cspell:ignore dbml rollups -->
 
 Human-facing architecture notes, provider research, and operational runbooks for Dofek.
 
@@ -64,7 +64,7 @@ Cross-provider reverse-engineering references:
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |
 | [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |
-| [bugsink.md](bugsink.md) | Investigating Bugsink issues and stack traces from terminal. |
+| [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |
 | [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Fixing management subdomains that return Traefik 404s. |
 
 ## Notes

@@ -1,3 +1,5 @@
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+
 /** @type {import('@bacons/apple-targets/app.plugin').Config} */
 module.exports = {
   type: "watch",
@@ -10,6 +12,7 @@ module.exports = {
     NSMotionUsageDescription:
       "Dofek records accelerometer data to track your movement and activity throughout the day.",
     RCTNewArchEnabled: true,
+    ...(sentryDsn ? { SentryDsn: sentryDsn } : {}),
     WKApplication: true,
     WKCompanionAppBundleIdentifier: "com.dofek.app",
   },
