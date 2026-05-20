@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   fetchRestingHeartRateRows,
+  localDateString,
   representativeRestingHeartRate,
 } from "./resting-heart-rate-query.ts";
 
@@ -32,6 +33,58 @@ describe("fetchRestingHeartRateRows", () => {
     expect(queryText).not.toContain("derived_resting_heart_rate");
   });
 });
+
+describe("localDateString", () => {
+  it("formats dates from named Intl parts rather than part order", () => {
+    const dateTimeFormatSpy = mockDateTimeFormatParts([
+      { type: "year", value: "2026" },
+      { type: "literal", value: "-" },
+      { type: "day", value: "20" },
+      { type: "literal", value: "-" },
+      { type: "month", value: "05" },
+    ]);
+
+    expect(localDateString(new Date("2026-05-20T15:45:00Z"), "UTC")).toBe("2026-05-20");
+
+    dateTimeFormatSpy.mockRestore();
+  });
+
+  it.each([
+    [
+      "year",
+      [
+        { type: "month", value: "05" },
+        { type: "day", value: "20" },
+      ],
+    ],
+    [
+      "month",
+      [
+        { type: "year", value: "2026" },
+        { type: "day", value: "20" },
+      ],
+    ],
+    [
+      "day",
+      [
+        { type: "year", value: "2026" },
+        { type: "month", value: "05" },
+      ],
+    ],
+  ])("falls back to the ISO date when the %s part is missing", (_, parts) => {
+    const dateTimeFormatSpy = mockDateTimeFormatParts(parts);
+
+    expect(localDateString(new Date("2026-05-20T15:45:00Z"), "UTC")).toBe("2026-05-20");
+
+    dateTimeFormatSpy.mockRestore();
+  });
+});
+
+function mockDateTimeFormatParts(parts: Intl.DateTimeFormatPart[]) {
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: "UTC" });
+  vi.spyOn(formatter, "formatToParts").mockReturnValue(parts);
+  return vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => formatter);
+}
 
 describe("representativeRestingHeartRate", () => {
   it("returns null when no rows are provided", () => {
