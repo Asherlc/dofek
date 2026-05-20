@@ -428,6 +428,12 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
+      const serialized = serializeMetricStreamInsertCalls(execute);
+      expect(serialized).toContain("external_id");
+      expect(serialized).toContain("hk:hr1");
+      expect(serialized).toContain(
+        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+      );
     });
 
     it("links newly inserted heart-rate metric rows to existing workouts", async () => {
@@ -1350,6 +1356,13 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(3);
       const serialized = serializeMetricStreamInsertCalls(execute);
       expect(serialized).toContain('"location"');
+      expect(serialized).toContain("external_id");
+      expect(serialized).toContain("hk:workout:w-route-1:location:2024-01-15T10:00:00.000Z");
+      expect(serialized).toContain("hk:workout:w-route-1:altitude:2024-01-15T10:00:00.000Z");
+      expect(serialized).toContain("hk:workout:w-route-1:speed:2024-01-15T10:00:00.000Z");
+      expect(serialized).toContain(
+        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+      );
       expect(serialized).toContain("ST_SetSRID");
       expect(serialized).toContain("Apple Watch");
       expect(serialized).toContain("horizontal_accuracy_m");

@@ -88,6 +88,30 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(execute).toHaveBeenCalledTimes(2);
     });
 
+    it("writes deterministic external IDs and conflict handling for retry-safe uploads", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      await caller.pushSamples({
+        deviceId: "iPhone 15 Pro",
+        deviceType: "iphone",
+        samples: [makeSample({ timestamp: "2026-03-25T10:00:00.020+00:00" })],
+      });
+
+      const insertStatement = execute.mock.calls[1]?.[0];
+      const sqlParts = getSqlParts(insertStatement);
+
+      expect(sqlParts.some((part) => String(part).includes("external_id"))).toBe(true);
+      expect(sqlParts).toContain("apple_motion:iPhone 15 Pro:accel:2026-03-25T10:00:00.020Z");
+      expect(
+        sqlParts.some((part) =>
+          String(part).includes(
+            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+          ),
+        ),
+      ).toBe(true);
+    });
+
     it("handles empty samples array by returning zero inserted", async () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });

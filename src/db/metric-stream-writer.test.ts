@@ -175,6 +175,7 @@ describe("sourceRowToMetricStream", () => {
         recordedAt: new Date("2026-03-30T12:00:00Z"),
         userId: undefined,
         providerId: "withings",
+        externalId: "withings:no-activity:Withings Body+:body_weight:2026-03-30T12:00:00.000Z",
         activityId: undefined,
         deviceId: "Withings Body+",
         sourceType: "api",
@@ -185,6 +186,8 @@ describe("sourceRowToMetricStream", () => {
         recordedAt: new Date("2026-03-30T12:00:00Z"),
         userId: undefined,
         providerId: "withings",
+        externalId:
+          "withings:no-activity:Withings Body+:body_fat_percentage:2026-03-30T12:00:00.000Z",
         activityId: undefined,
         deviceId: "Withings Body+",
         sourceType: "api",
@@ -195,6 +198,8 @@ describe("sourceRowToMetricStream", () => {
         recordedAt: new Date("2026-03-30T12:00:00Z"),
         userId: undefined,
         providerId: "withings",
+        externalId:
+          "withings:no-activity:Withings Body+:systolic_blood_pressure:2026-03-30T12:00:00.000Z",
         activityId: undefined,
         deviceId: "Withings Body+",
         sourceType: "api",
@@ -224,6 +229,7 @@ describe("writeMetricStream", () => {
     const rows: MetricStreamInsert[] = Array.from({ length: 7 }, (_, index) => ({
       recordedAt: new Date(),
       providerId: "test",
+      externalId: `sample-${index}`,
       sourceType: "api",
       channel: "heart_rate",
       scalar: index,
@@ -247,6 +253,7 @@ describe("writeMetricStream", () => {
     const rows: MetricStreamInsert[] = Array.from({ length: 1001 }, (_, index) => ({
       recordedAt: new Date(),
       providerId: "test",
+      externalId: `sample-${index}`,
       sourceType: "api",
       channel: "heart_rate",
       scalar: index,
@@ -258,6 +265,43 @@ describe("writeMetricStream", () => {
     expect(insertedBatches).toHaveLength(2);
     expect(insertedBatches[0]).toHaveLength(1000);
     expect(insertedBatches[1]).toHaveLength(1);
+  });
+
+  it("rejects rows without external IDs", async () => {
+    const insertBatch = vi.fn();
+    const rows: MetricStreamInsert[] = [
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "test",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: 72,
+      },
+    ];
+
+    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
+      "metric_stream ingestion rows require externalId for idempotency",
+    );
+    expect(insertBatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects rows with whitespace-only external IDs", async () => {
+    const insertBatch = vi.fn();
+    const rows: MetricStreamInsert[] = [
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "test",
+        externalId: "   ",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: 72,
+      },
+    ];
+
+    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
+      "metric_stream ingestion rows require externalId for idempotency",
+    );
+    expect(insertBatch).not.toHaveBeenCalled();
   });
 });
 

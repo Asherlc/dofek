@@ -5966,13 +5966,22 @@ run. `docker stats` showed ClickHouse using more than one CPU and roughly
 
 ### Root Cause
 
-Unresolved. The strongest current evidence is that PeerDB CDC for
-`metric_stream` sends the Postgres `point` value in a format ClickHouse cannot
-cast into `Nullable(Point)`, which blocks normalization batches and prevents
-newer metric rows from reaching the app-facing ClickHouse read models. The slow
-insights symptom is consistent with ClickHouse saturation from PeerDB catch-up
-and one-minute refreshable materialized views scanning the large
-`postgres_fitness.metric_stream` mirror.
+PeerDB CDC for the existing `dofek_metric_stream_analytics` mirror still
+included the Postgres `point` column even after the checked-in mirror template
+had been changed to exclude it. `CREATE MIRROR IF NOT EXISTS` did not update
+the already-running mirror configuration, so PeerDB continued to send `point`
+in a format ClickHouse could not parse into `Nullable(Point)`. That blocked
+normalization batches and prevented newer metric rows from reaching the
+ClickHouse mirror.
+
+The body read-model staleness had a second cause: production
+`analytics.v_body_measurement` was still the old read model over
+`postgres_fitness.body_measurement`, while the current code builds body
+measurements from `postgres_fitness.metric_stream`. Rebuilding the current view
+definition directly over `postgres_fitness.metric_stream FINAL` is too expensive
+for the current host: the attempted refresh read more than 200M rows, exhausted
+available memory, timed out after 300s, and caused the ClickHouse container to
+restart.
 
 ### Fix or Mitigation
 
@@ -5980,26 +5989,43 @@ Code changes were prepared to exclude `point` from the PeerDB metric-stream
 mirror template and to move metric-stream-heavy ClickHouse refreshable
 materialized views from one-minute refreshes to 15-minute refreshes. The
 refresh cadence change is applied through a non-destructive ClickHouse migration
-using `ALTER TABLE ... MODIFY REFRESH`. Withings sync into Postgres is current;
-the stale chart behavior remains isolated to the ClickHouse analytics
-replication path until the changes are deployed and PeerDB is reconciled.
+using `ALTER TABLE ... MODIFY REFRESH`.
+
+On production, the stale `dofek_metric_stream_analytics` mirror was dropped and
+the checked-in CDC setup was rerun from the web container. PeerDB catalog
+inspection changed from `position('point' in encode(config_proto, 'escape')) =
+0` before repair to `106` after repair, proving the recreated mirror excludes
+`point`. Recent PeerDB flow rows then showed new info progress instead of new
+normalization failures. The eight missing recent body metric rows were also
+backfilled into `postgres_fitness.metric_stream` in ClickHouse.
+
+The attempted production rebuild of `analytics.v_body_measurement` from
+`metric_stream` was rolled back after it timed out and restarted ClickHouse.
+The production view was restored to the lightweight pre-existing
+`postgres_fitness.body_measurement` source, which refreshed in 126ms and left
+the site healthy, but still only contains body data through
+2026-05-09 15:32:22 UTC.
 
 ### Remaining Risk
 
-Body metrics and any analytics that depend on `postgres_fitness.metric_stream`
-can remain stale until the PeerDB normalization failure is fixed and the mirror
-is replayed. WAL retained for the lagging replication slot can continue to grow
-while the flow is blocked.
+Raw ClickHouse `postgres_fitness.metric_stream` body rows are current through
+2026-05-20 14:09:23 UTC after the mirror repair and bounded backfill, but
+`analytics.v_body_measurement` remains stale by design because the
+metric-stream-native view definition is currently too expensive to refresh on
+the production host. Any deploy migration that recreates
+`analytics.v_body_measurement` directly from `postgres_fitness.metric_stream
+FINAL` can restart ClickHouse and should not be shipped without a cheaper
+design.
 
 ### Follow-Up Work
 
-- Choose the canonical fix for `metric_stream.point` CDC handling before
-  changing code or deployment config.
-- Reconcile the already-running PeerDB `dofek_metric_stream_analytics` mirror,
-  since `CREATE MIRROR IF NOT EXISTS` does not prove an existing mirror adopts
-  the updated `point` exclusion.
+- Design a safe body read model that does not full-scan
+  `postgres_fitness.metric_stream FINAL` for every refresh.
 - Add an alert for PeerDB flow normalization failures and metric-stream mirror
   lag.
+- Add deploy validation that compares existing PeerDB mirror configuration with
+  the checked-in template instead of assuming `CREATE MIRROR IF NOT EXISTS`
+  reconciles an existing mirror.
 - Decide whether product-impacting infrastructure errors should also create
   Sentry issues, or whether they should stay in Axiom/log alerts with links to
   the affected service and flow.
@@ -6052,6 +6078,87 @@ connections during route publication.
 - Decide whether the review-app deploy workflow needs a root-cause fix in SSH
   host readiness, connection limiting, or front door service health.
 
+## 2026-05-20: Production Deploy Blocked Waiting for Temporal
+
+### Symptoms
+
+Deploy Web run `26184278312` failed in the production `Deploy Web Stack` job
+at `Wait for Temporal`. Staging completed successfully, production Terraform
+completed successfully, migrations completed, and the swarm stack deploy
+converged before the post-deploy Temporal readiness gate timed out.
+
+### User Impact
+
+The production deploy workflow reported failure and skipped the post-deploy
+PeerDB Temporal search-attribute check and ClickHouse CDC configuration steps.
+Production services were later observed running the target image
+`ghcr.io/asherlc/dofek:sha-397d04a`, with PeerDB, Temporal, web, and worker
+services healthy.
+
+### Evidence
+
+The failing job timed out after twelve Temporal readiness attempts and ended
+with `Temporal frontend did not become reachable within 180s`. A direct
+production check after the failure showed `dofek_peerdb-temporal` and
+`dofek_peerdb-catalog` running and healthy, and `temporal operator
+search-attribute list` returned successfully with `MirrorName` present.
+
+Temporal service logs during the failed window contained persistence errors
+against the PeerDB catalog, including `database connection lost: driver: bad
+connection`, `no usable database connection found`, and later
+`lookup peerdb-catalog on 127.0.0.11:53: no such host` while the catalog was
+being restarted. The previous Temporal task exited with code 137 but was not
+marked OOM-killed; host kernel logs did not show an OOM kill in the checked
+window.
+
+### Root Cause
+
+Unresolved. The direct failure was the deploy workflow's Temporal admin-tools
+readiness command timing out while Temporal was in a degraded persistence state
+against `peerdb-catalog`. The evidence does not yet prove why the catalog
+connection became unusable or why the Temporal task later exited with 137.
+
+### Fix or Mitigation
+
+The production services recovered and the required Temporal search attribute
+was confirmed present after recovery. This branch adds deploy-failure
+diagnostics to print recent `peerdb-temporal` and `peerdb-catalog` service
+state/logs when the Temporal readiness gate times out. It does not change
+Temporal readiness timing, retry behavior, service limits, or deploy semantics.
+
+The same run also exposed a recurring deploy theme: stack rollout can converge
+while stateful PeerDB/ClickHouse objects remain stale or unreconciled. In this
+case, the post-deploy CDC step was skipped by the Temporal timeout, leaving the
+existing `dofek_metric_stream_analytics` mirror running with stale config until
+it was repaired manually.
+
+### Remaining Risk
+
+Production deploys can fail after a successful stack rollout if Temporal is
+temporarily degraded even though the stack itself has converged. The workflow's
+current failure output also hides the underlying Temporal and catalog errors,
+so a repeated failure will still require host-side log inspection unless the
+workflow diagnostics are improved.
+
+Post-deploy checks can also miss or skip state reconciliation when an earlier
+readiness gate times out. Stateful mirrors and read models need direct
+configuration drift checks rather than relying only on idempotent create
+statements.
+
+### Follow-Up Work
+
+- Inspect Docker daemon events or service update causes for the
+  `peerdb-temporal` exit 137 and `peerdb-catalog` restart.
+- Use the new deploy diagnostics from the next failure, if it repeats, to
+  identify the first Temporal or catalog fatal log line without SSHing into the
+  host.
+- Decide whether the readiness gate should use service health plus a bounded
+  admin-tools command, or whether the post-deploy PeerDB/Temporal admin work
+  should be moved earlier in the deploy flow before the final stack rollout.
+- Add explicit PeerDB mirror drift validation for important mirrors, especially
+  `dofek_metric_stream_analytics`, so deploy logs show when a live mirror does
+  not match the checked-in template.
+
 ## 2026-05-20: Production DB Connection Resets During Stack Updates
 
 ### Symptoms
@@ -6078,7 +6185,7 @@ minutes. `docker service inspect dofek_db` showed the DB service updated at
 `database system was interrupted; last known up at 2026-05-20 19:09:01 UTC`,
 then `database system was not properly shut down; automatic recovery in
 progress`, and finally `database system is ready to accept connections` at
-`2026-05-20 19:09:51Z`.
+`2026-05-20T19:09:51Z`.
 
 Host checks during triage did not show disk exhaustion: root filesystem was
 55% used, the Hetzner data volume was 73% used, and Docker reported 2.259 GB
@@ -6119,6 +6226,72 @@ ClickHouse-precondition logs stop in production.
   stack deploys or made less disruptive for active sync writes.
 - Re-check Sentry for new Postgres connection-reset events after the next
   deploy.
+
+## 2026-05-20: Production DB Restart During IMU Sync
+
+### Symptoms
+
+Sentry issue `DOFEK-SERVER-2P` reported one production error at
+`2026-05-20T19:09:41Z` from
+`inertialMeasurementUnitSync.pushSamples`. The request failed while inserting a
+large IMU batch into `fitness.metric_stream`.
+
+### User Impact
+
+One IMU sample push failed and the affected mobile client would need to retry
+that batch. No impacted Sentry users were recorded. Postgres recovered and was
+writable again by `2026-05-20T19:09:51Z`.
+
+### Evidence
+
+The failing route was `inertialMeasurementUnitSync.pushSamples`. The failing
+SQL step was:
+`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, vector) VALUES ...`.
+
+The first fatal application error was:
+`Error: Connection terminated unexpectedly`.
+
+Postgres logs showed the database restarted immediately after the Sentry event:
+`2026-05-20 19:09:48.090 UTC [25] LOG: database system was interrupted; last known up at 2026-05-20 19:09:01 UTC`,
+followed by automatic recovery and
+`2026-05-20 19:09:51.865 UTC [1] LOG: database system is ready to accept connections`.
+
+Docker and host logs around the same window showed Docker swarm manager
+timeouts, healthcheck start timeouts, repeated `Canceled: context canceled`
+image/metadata lookups, `systemd-journald` memory-pressure cache flushes, and
+multiple service bindings disappearing. Host uptime confirmed this was not a
+host reboot. Current checks after recovery showed the DB container healthy,
+`pg_is_in_recovery = false`, no disk exhaustion, and `OOMKilled=false`.
+
+### Root Cause
+
+Partially unresolved. The direct cause of the Sentry error was an unclean
+Postgres task restart during a host/Docker resource-pressure window, not a
+schema or payload validation failure in the IMU route. The exact workload that
+created the pressure was not proven from the available logs.
+
+### Fix or Mitigation
+
+No behavior change was shipped during triage. Postgres recovered
+automatically, and the current DB health check passed. This branch separately
+makes direct metric-stream ingestion paths idempotent so retrying a failed
+sample upload does not duplicate raw samples.
+
+### Remaining Risk
+
+The same failure can recur if host memory or Docker swarm manager pressure
+returns during large metric-stream inserts or deploy activity.
+
+### Follow-Up Work
+
+- Correlate Axiom/Netdata metrics around `2026-05-20T19:06Z` to identify the
+  memory and load source.
+- Add or verify host memory-pressure alerts that fire before Docker swarm
+  healthchecks and task management start timing out.
+- Review whether ClickHouse metric-stream refresh or CDC work was active during
+  the incident window.
+- Consider mobile-side retry behavior for transient server/database disconnects
+  only after the infrastructure root cause is understood.
 
 ## 2026-05-20: Dashboard Resting Heart Rate Showed 85 BPM Outlier
 

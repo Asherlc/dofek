@@ -15,6 +15,7 @@
 
 import { randomBytes } from "node:crypto";
 import { runWithTokenUser } from "dofek/db/token-user-context";
+import { SYNC_JOB_RETRY_OPTIONS } from "dofek/jobs/queues";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { Router, raw } from "express";
@@ -209,11 +210,15 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
           }
 
           // Fallback: enqueue a full 1-day sync via BullMQ
-          await queue.add("sync", {
-            providerId: provider_id,
-            sinceDays: 1,
-            userId: user_id,
-          });
+          await queue.add(
+            "sync",
+            {
+              providerId: provider_id,
+              sinceDays: 1,
+              userId: user_id,
+            },
+            SYNC_JOB_RETRY_OPTIONS,
+          );
           processed++;
           fallbackJobsEnqueued++;
 

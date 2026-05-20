@@ -60,6 +60,33 @@ const peerDbMetadataColumns = [
   "_peerdb_version Int64 DEFAULT 0",
 ] as const;
 
+function readQueryRows(queryResult: unknown): Array<Record<string, unknown>> {
+  if (typeof queryResult !== "object" || queryResult === null || !("rows" in queryResult)) {
+    return [];
+  }
+
+  const rows = queryResult.rows;
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  return rows.filter(
+    (row): row is Record<string, unknown> => typeof row === "object" && row !== null,
+  );
+}
+
+function readInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return Number.parseInt(value, 10);
+  }
+
+  return null;
+}
+
 function peerDbStringLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
@@ -359,11 +386,36 @@ async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Pr
   }
 }
 
+async function reconcileMetricStreamAnalyticsMirror(peerDbClient: PeerDbClient): Promise<void> {
+  const result = await peerDbClient.query(`
+    SELECT position('point' in encode(config_proto, 'escape'))
+      AS metric_stream_analytics_point_exclude_position
+    FROM public.flows
+    WHERE name = 'dofek_metric_stream_analytics'
+  `);
+  const [mirrorRow] = readQueryRows(result);
+  if (!mirrorRow) {
+    return;
+  }
+
+  const pointExcludePosition = readInteger(
+    mirrorRow.metric_stream_analytics_point_exclude_position,
+  );
+  if (pointExcludePosition === null) {
+    throw new Error("Unable to read PeerDB metric stream analytics mirror configuration");
+  }
+
+  if (pointExcludePosition === 0) {
+    await peerDbClient.query("DROP MIRROR dofek_metric_stream_analytics");
+  }
+}
+
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
+  await reconcileMetricStreamAnalyticsMirror(options.peerDbClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);
