@@ -173,10 +173,20 @@ export class DailyMetricsRepository extends BaseRepository {
               STDDEV(skin_temp_c) AS stddev_skin_temp
             FROM current
           ),
+          representative_resting_heart_rate AS (
+            SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY recent.resting_hr) AS resting_hr
+            FROM (
+              SELECT resting_hr
+              FROM current
+              WHERE resting_hr > 0
+              ORDER BY date DESC
+              LIMIT 14
+            ) recent
+          ),
           latest AS (
             SELECT
               (ARRAY_AGG(hrv ORDER BY date DESC) FILTER (WHERE hrv IS NOT NULL))[1] AS hrv,
-              (ARRAY_AGG(resting_hr ORDER BY date DESC) FILTER (WHERE resting_hr IS NOT NULL))[1] AS resting_hr,
+              (SELECT resting_hr FROM representative_resting_heart_rate) AS resting_hr,
               (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
               (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
               (ARRAY_AGG(active_energy_kcal ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal,
