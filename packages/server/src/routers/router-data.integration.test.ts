@@ -1325,7 +1325,7 @@ describe("Router data coverage", () => {
       expect(withHr.length).toBeGreaterThan(0);
     });
 
-    it("hrZones returns 5-zone distribution", async () => {
+    it("hrZones returns zone 0 plus 5 training zones", async () => {
       if (activityIds.length === 0) return;
       const highestHeartRateActivityId = activityIds[activityIds.length - 1];
       if (!highestHeartRateActivityId) {
@@ -1335,9 +1335,9 @@ describe("Router data coverage", () => {
         { zone: number; label: string; minPct: number; maxPct: number; seconds: number }[]
       >("activity.hrZones", { id: highestHeartRateActivityId });
 
-      expect(result).toHaveLength(5);
-      expect(result[0]?.zone).toBe(1);
-      expect(result[4]?.zone).toBe(5);
+      expect(result).toHaveLength(6);
+      expect(result[0]?.zone).toBe(0);
+      expect(result[5]?.zone).toBe(5);
       // With 1800 HR samples, at least some zones should have data
       const totalSeconds = result.reduce((sum, z) => sum + z.seconds, 0);
       expect(totalSeconds).toBeGreaterThan(0);
@@ -1417,6 +1417,7 @@ describe("Router data coverage", () => {
         maxHr: number | null;
         weeks: {
           week: string;
+          zone0: number;
           zone1: number;
           zone2: number;
           zone3: number;

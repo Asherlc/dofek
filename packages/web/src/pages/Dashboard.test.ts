@@ -6,6 +6,7 @@ import {
 } from "../lib/dashboardGridPairs.ts";
 import { DEFAULT_LAYOUT } from "../lib/dashboardLayoutContext.ts";
 import {
+  buildHealthMetrics,
   buildSkinTempSeries,
   DASHBOARD_SECTION_IDS,
   healthMonitorSubtitle,
@@ -102,6 +103,42 @@ describe("spo2TempSectionConfig", () => {
 describe("healthMonitorSubtitle", () => {
   it("returns latest values label", () => {
     expect(healthMonitorSubtitle()).toBe("Latest values vs. rolling average");
+  });
+});
+
+describe("buildHealthMetrics", () => {
+  it("includes resting heart rate as a lower-is-better health metric", () => {
+    const metrics = buildHealthMetrics(
+      {
+        avg_hrv: 43.8,
+        avg_resting_hr: 56.2,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_active_energy: null,
+        avg_skin_temp: null,
+        stddev_hrv: 7.5,
+        stddev_resting_hr: 3.1,
+        stddev_spo2: null,
+        stddev_skin_temp: null,
+        latest_hrv: 48,
+        latest_resting_hr: 55,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_active_energy: null,
+        latest_skin_temp: null,
+        latest_date: "2025-03-15",
+      },
+      new UnitConverter("metric"),
+    );
+
+    expect(metrics).toContainEqual({
+      label: "Resting Heart Rate",
+      value: 55,
+      avg: 56.2,
+      stddev: 3.1,
+      unit: "bpm",
+      lowerBetter: true,
+    });
   });
 });
 

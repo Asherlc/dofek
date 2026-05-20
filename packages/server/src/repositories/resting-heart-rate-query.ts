@@ -3,11 +3,12 @@ import {
   fetchRestingHeartRateRowsFromClickHouse,
   type RestingHeartRateQueryStore,
   type RestingHeartRateRow,
+  representativeRestingHeartRate,
   restingHeartRateClickHouseCte,
   restingHeartRateValuesCte,
 } from "../../../../src/db/resting-heart-rate-query.ts";
 
-export { restingHeartRateClickHouseCte, restingHeartRateValuesCte };
+export { representativeRestingHeartRate, restingHeartRateClickHouseCte, restingHeartRateValuesCte };
 export type { RestingHeartRateRow };
 
 interface FetchRestingHeartRateRowsInput {

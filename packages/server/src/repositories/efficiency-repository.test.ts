@@ -1,13 +1,39 @@
-import { computePolarizationIndex } from "@dofek/zones/zones";
+import { computePolarizationIndex, POLARIZATION_ZONES } from "@dofek/zones/zones";
+import * as Sentry from "@sentry/node";
 import { describe, expect, it, vi } from "vitest";
+import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { EfficiencyRepository } from "./efficiency-repository.ts";
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(() => "event-id"),
+}));
 
 function makeSensorStore(rows: unknown[]): ActivitySensorStore {
   // Mirror ClickHouseActivitySensorStore.query: parse each row through the
   // supplied Zod schema. Sequential calls return the same `rows`, which works
   // because every getter in this repo issues exactly one CH query.
   const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+    return rows.map((row) => schema.parse(row));
+  });
+  return {
+    query,
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  } satisfies ActivitySensorStore;
+}
+
+function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): ActivitySensorStore {
+  const rowQueue = rowsByCall.map((rows) => [...rows]);
+  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+    const rows = rowQueue.shift() ?? [];
     return rows.map((row) => schema.parse(row));
   });
   return {
@@ -33,6 +59,12 @@ function makeRepository(rows: Record<string, unknown>[] = []) {
   return { repo, execute, sensorStore };
 }
 
+function makeRepositoryWithSensorStore(sensorStore: ActivitySensorStore) {
+  const execute = vi.fn();
+  const repo = new EfficiencyRepository({ execute }, "user-1", "UTC", sensorStore);
+  return { repo, execute, sensorStore };
+}
+
 // ---------------------------------------------------------------------------
 // getAerobicEfficiency
 // ---------------------------------------------------------------------------
@@ -47,10 +79,92 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
   it("issues a CH query for the main aggregation and a diagnostic CH query when empty", async () => {
     const { repo, sensorStore } = makeRepository([]);
     await repo.getAerobicEfficiency(90);
-    // Main aerobic-efficiency CH query + diagnostic CH query when result is empty.
-    // Diagnostic runs in the background via .catch(); flush microtasks first.
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not run diagnostics when the main aggregation returns rows", async () => {
+    const { repo, sensorStore } = makeRepository([
+      {
+        max_hr: "190",
+        date: "2025-06-01",
+        activity_type: "cycling",
+        name: "Morning Ride",
+        avg_power_z2: "180.5",
+        avg_hr_z2: "135.2",
+        efficiency_factor: "1.335",
+        z2_samples: "1800",
+      },
+    ]);
+
+    await repo.getAerobicEfficiency(90);
+
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses diagnostic max heart rate and logs context when no activities qualify", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [],
+      [
+        {
+          max_hr: "192",
+          endurance_activities: "3",
+          activities_with_power: "2",
+          activities_with_hr: "1",
+        },
+      ],
+    ]);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    const result = await repo.getAerobicEfficiency(90);
+
+    expect(result).toEqual({ maxHr: 192, activities: [] });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=192, endurance_activities=3, with_power=2, with_hr=1",
+    );
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({
+        userId: "user-1",
+        days: 90,
+        enduranceTypes: expect.arrayContaining(["cycling", "running"]),
+      }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not log an empty diagnostic row", async () => {
+    const sensorStore = makeSequentialSensorStore([[], []]);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const captureException = vi.mocked(Sentry.captureException);
+    captureException.mockClear();
+
+    const result = await repo.getAerobicEfficiency(90);
+
+    expect(result).toEqual({ maxHr: null, activities: [] });
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it("reports diagnostic query failures to Sentry", async () => {
+    const diagnosticError = new Error("diagnostic query failed");
+    const sensorStore = makeSequentialSensorStore([]);
+    vi.mocked(sensorStore.query).mockResolvedValueOnce([]).mockRejectedValueOnce(diagnosticError);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const captureException = vi.mocked(Sentry.captureException);
+    captureException.mockClear();
+
+    const result = await repo.getAerobicEfficiency(90);
+
+    expect(result).toEqual({ maxHr: null, activities: [] });
+    expect(captureException).toHaveBeenCalledWith(diagnosticError);
   });
 
   it("maps rows to AerobicEfficiencyActivity objects", async () => {
@@ -241,6 +355,21 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     const { repo, sensorStore } = makeRepository([]);
     await repo.getPolarizationTrend(90);
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the canonical Treff polarization zone boundaries in the query params", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getPolarizationTrend(90);
+
+    expect(sensorStore.query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({
+        p1: POLARIZATION_ZONES[1]?.minPctHrmax,
+        p2: POLARIZATION_ZONES[2]?.minPctHrmax,
+      }),
+    );
   });
 
   it("returns maxHr as number (not null) when rows.length > 0", async () => {

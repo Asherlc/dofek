@@ -2,12 +2,12 @@
  * Heart rate and power zone models and utilities.
  *
  * Three models are supported:
- * 1. **Karvonen 5-zone** HR (%HRR) — standard 5-zone model for activity analysis
+ * 1. **Karvonen HR zones** (%HRR) — zone 0 plus the standard 5 training zones
  * 2. **Treff 3-zone** HR (%HRmax) — simplified model for polarization index
  * 3. **7-zone** cycling power (%FTP) — standard model for power analysis
  */
 
-import { chartColors, statusColors } from "@dofek/scoring/colors";
+import { chartColors, statusColors, textColors } from "@dofek/scoring/colors";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -50,15 +50,16 @@ export interface PolarizationZoneDefinition {
   maxPctHrmax: number;
 }
 
-// ── Karvonen 5-Zone Model ────────────────────────────────────────────
+// ── Karvonen Heart Rate Zones ────────────────────────────────────────
 
 /**
- * Standard 5-zone Karvonen model using % Heart Rate Reserve.
+ * Karvonen model using % Heart Rate Reserve.
  *
  * HRR = maxHr - restingHr
  * Zone boundary = restingHr + HRR * fraction
  */
 export const HEART_RATE_ZONES: HeartRateZoneDefinition[] = [
+  { zone: 0, label: "Below Zone 1", minPctHrr: 0, maxPctHrr: 0.5, color: textColors.neutral },
   { zone: 1, label: "Recovery", minPctHrr: 0.5, maxPctHrr: 0.6, color: statusColors.info },
   { zone: 2, label: "Aerobic", minPctHrr: 0.6, maxPctHrr: 0.7, color: statusColors.positive },
   { zone: 3, label: "Tempo", minPctHrr: 0.7, maxPctHrr: 0.8, color: statusColors.warning },
@@ -66,15 +67,15 @@ export const HEART_RATE_ZONES: HeartRateZoneDefinition[] = [
   { zone: 5, label: "VO2max", minPctHrr: 0.9, maxPctHrr: 1.0, color: statusColors.danger },
 ];
 
-/** Ordered array of zone colors for chart series (indexed 0-4 for zones 1-5). */
+/** Ordered array of zone colors for chart series (indexed 0-5 for zones 0-5). */
 export const HEART_RATE_ZONE_COLORS: string[] = HEART_RATE_ZONES.map((z) => z.color);
 
 /**
  * Zone boundary fractions for SQL interpolation.
  * These are the upper bounds of each zone (as %HRR fractions):
- * [0.6, 0.7, 0.8, 0.9] — the boundary between zone N and zone N+1.
+ * [0.5, 0.6, 0.7, 0.8, 0.9] — the boundary between zone N and zone N+1.
  *
- * Use these instead of hardcoding 0.6, 0.7, 0.8, 0.9 in SQL queries
+ * Use these instead of hardcoding HRR thresholds in SQL queries
  * so zone definitions stay in sync across the codebase.
  */
 export const ZONE_BOUNDARIES_HRR = HEART_RATE_ZONES.slice(0, -1).map((z) => z.maxPctHrr);
@@ -94,8 +95,7 @@ export function heartRateZoneBoundaries(maxHr: number, restingHr: number): Heart
 }
 
 /**
- * Classify a heart rate reading into zone 1-5.
- * Returns 0 if the heart rate is below zone 1 (< 50% HRR).
+ * Classify a heart rate reading into zone 0-5.
  */
 export function classifyHeartRateZone(heartRate: number, maxHr: number, restingHr: number): number {
   const reserve = maxHr - restingHr;
@@ -110,7 +110,7 @@ export function classifyHeartRateZone(heartRate: number, maxHr: number, restingH
 }
 
 /**
- * Compute the absolute BPM range for a specific zone number (1-5).
+ * Compute the absolute BPM range for a specific zone number (0-5).
  * Returns null if maxHr or restingHr is null.
  */
 export function computeHrRange(
@@ -129,7 +129,7 @@ export function computeHrRange(
 }
 
 /**
- * Map raw DB zone rows to the full 5-zone structure.
+ * Map raw DB zone rows to the full heart-rate zone structure.
  * Missing zones get 0 seconds. Used by activity and training routers.
  */
 export function mapHrZones(rows: { zone: number; seconds: number }[]): ActivityHrZone[] {

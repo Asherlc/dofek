@@ -1,8 +1,9 @@
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
+import { restingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -40,14 +41,17 @@ export type HrvBaselineRow = z.infer<typeof hrvBaselineRowSchema>;
 
 const trendsRowSchema = z.object({
   avg_hrv: z.coerce.number().nullable(),
+  avg_resting_hr: z.coerce.number().nullable(),
   avg_spo2: z.coerce.number().nullable(),
   avg_steps: z.coerce.number().nullable(),
   avg_active_energy: z.coerce.number().nullable(),
   avg_skin_temp: z.coerce.number().nullable(),
   stddev_hrv: z.coerce.number().nullable(),
+  stddev_resting_hr: z.coerce.number().nullable(),
   stddev_spo2: z.coerce.number().nullable(),
   stddev_skin_temp: z.coerce.number().nullable(),
   latest_hrv: z.coerce.number().nullable(),
+  latest_resting_hr: z.coerce.number().nullable(),
   latest_spo2: z.coerce.number().nullable(),
   latest_steps: z.coerce.number().nullable(),
   latest_active_energy: z.coerce.number().nullable(),
@@ -118,24 +122,53 @@ export class DailyMetricsRepository extends BaseRepository {
   }
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
-  async getTrends(days: number, endDate: string): Promise<TrendsRow | null> {
+  async getTrends(
+    days: number,
+    endDate: string,
+    restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
+  ): Promise<TrendsRow | null> {
     const rows = await this.query(
       trendsRowSchema,
-      sql`WITH current AS (
-            SELECT * FROM fitness.v_daily_metrics
+      sql`WITH ${restingHeartRateCte},
+          base_dates AS (
+            SELECT date
+            FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
               AND date > ${dateWindowStart(endDate, days)}
               AND date <= ${dateWindowEnd(endDate)}
-              ${this.dateAccessPredicate(sql`date`)}
+            UNION
+            SELECT date
+            FROM resting_heart_rate
+          ),
+          current AS (
+            SELECT
+              base_dates.date,
+              dm.hrv,
+              drhr.resting_hr,
+              dm.spo2_avg,
+              dm.steps,
+              dm.active_energy_kcal,
+              dm.skin_temp_c
+            FROM base_dates
+            LEFT JOIN fitness.v_daily_metrics dm
+              ON dm.user_id = ${this.userId}
+             AND dm.date = base_dates.date
+            LEFT JOIN resting_heart_rate drhr
+              ON drhr.date = base_dates.date
+            WHERE base_dates.date > ${dateWindowStart(endDate, days)}
+              AND base_dates.date <= ${dateWindowEnd(endDate)}
+              ${this.dateAccessPredicate(sql`base_dates.date`)}
           ),
           stats AS (
             SELECT
               AVG(hrv) AS avg_hrv,
+              AVG(resting_hr) AS avg_resting_hr,
               AVG(spo2_avg) AS avg_spo2,
               AVG(steps) AS avg_steps,
               AVG(active_energy_kcal) AS avg_active_energy,
               AVG(skin_temp_c) AS avg_skin_temp,
               STDDEV(hrv) AS stddev_hrv,
+              STDDEV(resting_hr) AS stddev_resting_hr,
               STDDEV(spo2_avg) AS stddev_spo2,
               STDDEV(skin_temp_c) AS stddev_skin_temp
             FROM current
@@ -143,6 +176,7 @@ export class DailyMetricsRepository extends BaseRepository {
           latest AS (
             SELECT
               (ARRAY_AGG(hrv ORDER BY date DESC) FILTER (WHERE hrv IS NOT NULL))[1] AS hrv,
+              (ARRAY_AGG(resting_hr ORDER BY date DESC) FILTER (WHERE resting_hr IS NOT NULL))[1] AS resting_hr,
               (ARRAY_AGG(spo2_avg ORDER BY date DESC) FILTER (WHERE spo2_avg IS NOT NULL))[1] AS spo2_avg,
               (ARRAY_AGG(steps ORDER BY date DESC) FILTER (WHERE steps IS NOT NULL))[1] AS steps,
               (ARRAY_AGG(active_energy_kcal ORDER BY date DESC) FILTER (WHERE active_energy_kcal IS NOT NULL))[1] AS active_energy_kcal,
@@ -155,6 +189,7 @@ export class DailyMetricsRepository extends BaseRepository {
           SELECT
             stats.*,
             latest.hrv AS latest_hrv,
+            latest.resting_hr AS latest_resting_hr,
             latest.spo2_avg AS latest_spo2,
             latest.steps AS latest_steps,
             latest.active_energy_kcal AS latest_active_energy,

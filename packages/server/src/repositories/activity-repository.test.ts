@@ -526,6 +526,7 @@ describe("ActivityRepository", () => {
         ])
         .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 55 }]);
       sensorStore.getHeartRateZoneSeconds.mockResolvedValueOnce([
+        { zone: 0, seconds: 30 },
         { zone: 1, seconds: 120 },
         { zone: 2, seconds: 300 },
         { zone: 3, seconds: 600 },
@@ -533,9 +534,11 @@ describe("ActivityRepository", () => {
         { zone: 5, seconds: 80 },
       ]);
       const result = await repo.getHrZones("activity-id");
-      expect(result).toHaveLength(5);
-      expect(result[0]?.zone).toBe(1);
-      expect(result[0]?.seconds).toBe(120);
+      expect(result).toHaveLength(6);
+      expect(result[0]?.zone).toBe(0);
+      expect(result[0]?.seconds).toBe(30);
+      expect(result[1]?.zone).toBe(1);
+      expect(result[1]?.seconds).toBe(120);
     });
 
     it("fails when no sensor store is configured", async () => {
@@ -571,6 +574,42 @@ describe("ActivityRepository", () => {
         },
         190,
         55,
+      );
+    });
+
+    it("uses the median of recent resting HR readings instead of a single noisy night", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
+      // Apr 26-28 stable around 55-57, May 4 spiked to 85. Old code picked 85 (latest),
+      // which pushed every Karvonen boundary above the user's walking-zone HR.
+      sensorStore.query.mockResolvedValueOnce([
+        { date: "2026-04-26", resting_hr: 55 },
+        { date: "2026-04-27", resting_hr: 57 },
+        { date: "2026-04-28", resting_hr: 55 },
+        { date: "2026-05-04", resting_hr: 85 },
+      ]);
+      execute
+        .mockResolvedValueOnce([
+          {
+            id: "activity-id",
+            user_id: "user-1",
+            started_at: "2026-05-18T19:40:00.000Z",
+            ended_at: "2026-05-18T20:08:59.000Z",
+            member_activity_ids: ["activity-id"],
+          },
+        ])
+        .mockResolvedValueOnce([{ max_hr: 194, resting_hr: 56 }]);
+
+      await repo.getHrZones("activity-id");
+
+      const sqlObject = execute.mock.calls[1]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      // The median of [55, 55, 57, 85] is (55 + 57) / 2 = 56, not 85.
+      expect(compiledQuery.params).toContain(56);
+      expect(compiledQuery.params).not.toContain(85);
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
+        expect.objectContaining({ activityId: "activity-id" }),
+        194,
+        56,
       );
     });
 

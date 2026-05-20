@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MetricStreamInsert } from "./metric-stream-writer.ts";
-import { sourceRowToMetricStream, writeMetricStream } from "./metric-stream-writer.ts";
+import {
+  metricStreamConflictTarget,
+  sourceRowToMetricStream,
+  writeMetricStream,
+} from "./metric-stream-writer.ts";
+import { metricStream } from "./schema.ts";
 
 // ── sourceRowToMetricStream ────────────────────────────────
 
@@ -253,5 +258,19 @@ describe("writeMetricStream", () => {
     expect(insertedBatches).toHaveLength(2);
     expect(insertedBatches[0]).toHaveLength(1000);
     expect(insertedBatches[1]).toHaveLength(1);
+  });
+});
+
+// ── metricStreamConflictTarget ─────────────────────────────
+
+describe("metricStreamConflictTarget", () => {
+  it("uses the provider sample identity as the duplicate key", () => {
+    expect(metricStreamConflictTarget(metricStream)).toEqual([
+      metricStream.userId,
+      metricStream.providerId,
+      metricStream.externalId,
+      metricStream.channel,
+      metricStream.recordedAt,
+    ]);
   });
 });

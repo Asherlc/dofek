@@ -633,12 +633,13 @@ describe("activityRouter", () => {
       );
     });
 
-    it("returns 5 zones with labels", async () => {
+    it("returns zone 0 plus 5 training zones with labels", async () => {
       const sensorStore = {
         query: vi.fn().mockResolvedValue([{ date: "2024-01-01", resting_hr: 55 }]),
         getActivitySummaries: vi.fn().mockResolvedValue([]),
         getStream: vi.fn(),
         getHeartRateZoneSeconds: vi.fn().mockResolvedValue([
+          { zone: 0, seconds: 300 },
           { zone: 1, seconds: 600 },
           { zone: 2, seconds: 1200 },
           { zone: 3, seconds: 900 },
@@ -670,16 +671,24 @@ describe("activityRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
 
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(6);
       expect(result[0]).toEqual({
+        zone: 0,
+        label: "Below Zone 1",
+        minPct: 0,
+        maxPct: 50,
+        seconds: 300,
+        percent: 8.9,
+      });
+      expect(result[1]).toEqual({
         zone: 1,
         label: "Recovery",
         minPct: 50,
         maxPct: 60,
         seconds: 600,
-        percent: 19.6,
+        percent: 17.9,
       });
-      expect(result[4]).toMatchObject({ zone: 5, label: "VO2max" });
+      expect(result[5]).toMatchObject({ zone: 5, label: "VO2max" });
     });
 
     it("defaults missing zones to 0 seconds", async () => {
@@ -714,8 +723,9 @@ describe("activityRouter", () => {
       });
 
       expect(result[0]?.seconds).toBe(0);
-      expect(result[1]?.seconds).toBe(500);
-      expect(result[2]?.seconds).toBe(0);
+      expect(result[1]?.seconds).toBe(0);
+      expect(result[2]?.seconds).toBe(500);
+      expect(result[3]?.seconds).toBe(0);
     });
   });
 
@@ -980,8 +990,9 @@ describe("mapStreamPoint", () => {
 });
 
 describe("mapHrZones", () => {
-  it("maps all 5 zones with correct labels and ranges", () => {
+  it("maps zone 0 plus all 5 training zones with correct labels and ranges", () => {
     const rows = [
+      { zone: 0, seconds: 120 },
       { zone: 1, seconds: 120 },
       { zone: 2, seconds: 600 },
       { zone: 3, seconds: 900 },
@@ -990,11 +1001,12 @@ describe("mapHrZones", () => {
     ];
     const result = mapHrZones(rows);
     expect(result).toEqual([
-      { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 120, percent: 6.1 },
-      { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600, percent: 30.3 },
-      { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900, percent: 45.5 },
-      { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300, percent: 15.2 },
-      { zone: 5, label: "VO2max", minPct: 90, maxPct: 100, seconds: 60, percent: 3 },
+      { zone: 0, label: "Below Zone 1", minPct: 0, maxPct: 50, seconds: 120, percent: 5.7 },
+      { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 120, percent: 5.7 },
+      { zone: 2, label: "Aerobic", minPct: 60, maxPct: 70, seconds: 600, percent: 28.6 },
+      { zone: 3, label: "Tempo", minPct: 70, maxPct: 80, seconds: 900, percent: 42.9 },
+      { zone: 4, label: "Threshold", minPct: 80, maxPct: 90, seconds: 300, percent: 14.3 },
+      { zone: 5, label: "VO2max", minPct: 90, maxPct: 100, seconds: 60, percent: 2.9 },
     ]);
   });
 
@@ -1002,14 +1014,16 @@ describe("mapHrZones", () => {
     const result = mapHrZones([{ zone: 3, seconds: 500 }]);
     expect(result[0]?.seconds).toBe(0);
     expect(result[1]?.seconds).toBe(0);
-    expect(result[2]?.seconds).toBe(500);
-    expect(result[3]?.seconds).toBe(0);
+    expect(result[2]?.seconds).toBe(0);
+    expect(result[3]?.seconds).toBe(500);
     expect(result[4]?.seconds).toBe(0);
+    expect(result[5]?.seconds).toBe(0);
+    expect(result.find((zone) => zone.zone === 3)?.seconds).toBe(500);
   });
 
   it("returns all zeros for empty input", () => {
     const result = mapHrZones([]);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(6);
     for (const zone of result) {
       expect(zone.seconds).toBe(0);
     }

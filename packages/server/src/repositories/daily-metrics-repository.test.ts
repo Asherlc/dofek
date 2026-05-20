@@ -46,14 +46,17 @@ function makeHrvBaselineRow(overrides: Record<string, unknown> = {}): Record<str
 function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     avg_hrv: "43.8",
+    avg_resting_hr: "56.2",
     avg_spo2: "97.1",
     avg_steps: "8200",
     avg_active_energy: "410",
     avg_skin_temp: "33.0",
     stddev_hrv: "7.5",
+    stddev_resting_hr: "3.1",
     stddev_spo2: "0.8",
     stddev_skin_temp: "0.4",
     latest_hrv: "48",
+    latest_resting_hr: "55",
     latest_spo2: "98",
     latest_steps: "9200",
     latest_active_energy: "450",
@@ -68,14 +71,17 @@ function makeTrendsRow(overrides: Record<string, unknown> = {}): Record<string, 
 function makeAllNullTrendsRow(): Record<string, unknown> {
   return {
     avg_hrv: null,
+    avg_resting_hr: null,
     avg_spo2: null,
     avg_steps: null,
     avg_active_energy: null,
     avg_skin_temp: null,
     stddev_hrv: null,
+    stddev_resting_hr: null,
     stddev_spo2: null,
     stddev_skin_temp: null,
     latest_hrv: null,
+    latest_resting_hr: null,
     latest_spo2: null,
     latest_steps: null,
     latest_active_energy: null,
@@ -224,9 +230,23 @@ describe("DailyMetricsRepository", () => {
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result).not.toBeNull();
       expect(result?.avg_hrv).toBe(43.8);
+      expect(result?.avg_resting_hr).toBe(56.2);
       expect(result?.latest_hrv).toBe(48);
+      expect(result?.latest_resting_hr).toBe(55);
       expect(result?.latest_date).toBe("2025-03-15");
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("joins resting heart rate values into the trends query", async () => {
+      const { repo, execute } = makeRepository([makeTrendsRow()]);
+
+      await repo.getTrends(30, "2025-03-15");
+
+      const sqlArg = execute.mock.calls[0]?.[0];
+      const sqlText = JSON.stringify(sqlArg);
+      expect(sqlText).toContain("resting_heart_rate");
+      expect(sqlText).toContain("avg_resting_hr");
+      expect(sqlText).toContain("latest_resting_hr");
     });
 
     it("returns all-null trends without probing the base table", async () => {

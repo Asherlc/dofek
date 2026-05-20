@@ -258,7 +258,7 @@ describe("Activity router", () => {
   });
 
   describe("hrZones", () => {
-    it("returns 5 zones for a non-existent activity (all zero seconds)", async () => {
+    it("returns zone 0 plus 5 training zones for a non-existent activity (all zero seconds)", async () => {
       const result = await query("activity.hrZones", {
         id: "00000000-0000-0000-0000-000000000099",
       });
@@ -266,7 +266,7 @@ describe("Activity router", () => {
       // May return empty or all-zero depending on user_profile having max_hr
       // Either way it should not error
       if (zones) {
-        expect(zones).toHaveLength(5);
+        expect(zones).toHaveLength(6);
         for (const zone of zones) {
           expect(zone.seconds).toBe(0);
         }
@@ -278,13 +278,16 @@ describe("Activity router", () => {
         id: "00000000-0000-0000-0000-000000000099",
       });
       const zones = result.result?.data;
-      if (zones && zones.length === 5) {
-        expect(zones[0].label).toBe("Recovery");
-        expect(zones[0].minPct).toBe(50);
-        expect(zones[0].maxPct).toBe(60);
-        expect(zones[4].label).toBe("VO2max");
-        expect(zones[4].minPct).toBe(90);
-        expect(zones[4].maxPct).toBe(100);
+      if (zones && zones.length === 6) {
+        expect(zones[0].label).toBe("Below Zone 1");
+        expect(zones[0].minPct).toBe(0);
+        expect(zones[0].maxPct).toBe(50);
+        expect(zones[1].label).toBe("Recovery");
+        expect(zones[1].minPct).toBe(50);
+        expect(zones[1].maxPct).toBe(60);
+        expect(zones[5].label).toBe("VO2max");
+        expect(zones[5].minPct).toBe(90);
+        expect(zones[5].maxPct).toBe(100);
       }
     });
 
