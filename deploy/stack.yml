@@ -483,14 +483,6 @@ services:
         - traefik.http.routers.authentik-outpost.priority=1000
         - traefik.http.services.authentik-outpost.loadbalancer.server.port=9000
 
-  docuum:
-    image: stephanmisc/docuum:0.27.0
-    init: true
-    command: ["--threshold", "0 GB"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - docuum_data:/root
-
   netdata:
     image: netdata/netdata:v2.5
     pid: host
@@ -527,7 +519,6 @@ volumes:
   pgadmin_data:
   job_files:
   portainer_data:
-  docuum_data:
   netdata_config:
   netdata_lib:
   netdata_cache:

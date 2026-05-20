@@ -145,6 +145,11 @@ CI (main) -> build dofek + dofek-ml (same tag)
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
+      Image cleanup is controlled by this deploy workflow: it prunes unused
+      Docker objects before image pulls and prunes obsolete images after a
+      successful stack deploy. Do not run a continuous background image pruner
+      on the production host, because newly pulled deploy images are not
+      referenced by a service until after migrations complete.
    5. Bootstrap step for clean-slate hosts: if `docker service inspect <stack>_db` fails, run
       `docker stack deploy -c deploy/stack.yml --with-registry-auth <stack>` first so the swarm DB service and overlay network exist.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).

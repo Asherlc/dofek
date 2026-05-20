@@ -77,5 +77,3 @@ jobs:
       cloudbeaver_host_rule: 'Host(`staging-cloudbeaver.dofek.asherlc.com`)'
       pgadmin_host_rule: 'Host(`staging-pgadmin.dofek.asherlc.com`)'
     secrets: inherit
-
-  # Image cleanup runs on the server via docuum (see stack.yml).
