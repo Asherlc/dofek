@@ -526,6 +526,24 @@ jobs:
 
       - name: Wait for Temporal
         run: |
+          dump_temporal_diagnostics() {
+            echo "::group::Temporal service state"
+            docker service ps "${STACK_NAME}_peerdb-temporal" --no-trunc || true
+            echo "::endgroup::"
+
+            echo "::group::PeerDB catalog service state"
+            docker service ps "${STACK_NAME}_peerdb-catalog" --no-trunc || true
+            echo "::endgroup::"
+
+            echo "::group::Recent Temporal logs"
+            timeout 30s docker service logs --raw --timestamps --tail 200 "${STACK_NAME}_peerdb-temporal" 2>&1 || true
+            echo "::endgroup::"
+
+            echo "::group::Recent PeerDB catalog logs"
+            timeout 30s docker service logs --raw --timestamps --tail 120 "${STACK_NAME}_peerdb-catalog" 2>&1 || true
+            echo "::endgroup::"
+          }
+
           deadline=$((SECONDS + 180))
           attempt=0
           temporal_output=""
@@ -535,6 +553,7 @@ jobs:
             if [ "$remaining" -le 0 ]; then
               echo "::error::Temporal frontend did not become reachable within 180s"
               printf '%s\n' "$temporal_output"
+              dump_temporal_diagnostics
               exit 1
             fi
             per_attempt_timeout=10

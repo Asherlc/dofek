@@ -37,6 +37,10 @@ function credentialedUrl(
   return url.toString();
 }
 
+function isMetricStreamAnalyticsMirrorReconciliationQuery(queryText: string): boolean {
+  return queryText.includes("metric_stream_analytics_point_exclude_position");
+}
+
 describe("PeerDB ClickHouse CDC setup", () => {
   const rawAnalyticsTables = [
     "activity",
@@ -144,7 +148,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
     await setupClickHouseCdc({
       peerDbClient: {
         async query(queryText) {
+          if (isMetricStreamAnalyticsMirrorReconciliationQuery(queryText)) {
+            return { rows: [] };
+          }
           peerDbQueries.push(queryText);
+          return {};
         },
       },
       sourcePostgresClient: {
@@ -229,7 +237,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
     await setupClickHouseCdc({
       peerDbClient: {
         async query(queryText) {
+          if (isMetricStreamAnalyticsMirrorReconciliationQuery(queryText)) {
+            return { rows: [] };
+          }
           peerDbQueries.push(queryText);
+          return {};
         },
       },
       sourcePostgresClient: {
@@ -291,13 +303,61 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
   });
 
+  it("recreates the metric stream analytics mirror when the existing mirror still includes point", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (isMetricStreamAnalyticsMirrorReconciliationQuery(query)) {
+            return {
+              rows: [{ metric_stream_analytics_point_exclude_position: 0 }],
+            };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: {
+        async command() {},
+      },
+      templateSql,
+      templateValues: {
+        clickHouseDatabase: "peerdb",
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_metric_stream_analytics");
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics"),
+    );
+  });
+
   it("splits statements without splitting semicolons inside string literals", async () => {
     const peerDbQueries: string[] = [];
 
     await setupClickHouseCdc({
       peerDbClient: {
         async query(queryText) {
+          if (isMetricStreamAnalyticsMirrorReconciliationQuery(queryText)) {
+            return { rows: [] };
+          }
           peerDbQueries.push(queryText);
+          return {};
         },
       },
       sourcePostgresClient: {
@@ -381,9 +441,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
         "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version",
       ),
     });
-    const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
-      String(queryText),
-    );
+    const peerDbQueries = peerDbClientMocks.query.mock.calls
+      .map(([queryText]) => String(queryText))
+      .filter((queryText) => !isMetricStreamAnalyticsMirrorReconciliationQuery(queryText));
     expect(peerDbQueries).toHaveLength(9);
     expect(peerDbQueries[0]).toContain("peerdb_metric_stream_publication");
     expect(peerDbQueries[1]).toContain("peerdb_metric_stream_no_imu");
@@ -437,9 +497,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
     await setupClickHouseCdcFromEnv();
 
-    const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
-      String(queryText),
-    );
+    const peerDbQueries = peerDbClientMocks.query.mock.calls
+      .map(([queryText]) => String(queryText))
+      .filter((queryText) => !isMetricStreamAnalyticsMirrorReconciliationQuery(queryText));
     const peerDbQueryPostgres = String(peerDbQueries[2]);
     const peerDbQueryClickhouse = String(peerDbQueries[3]);
     const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[4]);
@@ -476,9 +536,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
     await setupClickHouseCdcFromEnv();
 
-    const peerDbQueries = peerDbClientMocks.query.mock.calls.map(([queryText]) =>
-      String(queryText),
-    );
+    const peerDbQueries = peerDbClientMocks.query.mock.calls
+      .map(([queryText]) => String(queryText))
+      .filter((queryText) => !isMetricStreamAnalyticsMirrorReconciliationQuery(queryText));
     const peerDbQueryPostgres = String(peerDbQueries[2]);
     const peerDbQueryClickhouse = String(peerDbQueries[3]);
     const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[4]);
