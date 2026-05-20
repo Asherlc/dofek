@@ -12,6 +12,13 @@ function makeToken(overrides: Partial<WhoopAuthToken> = {}): WhoopAuthToken {
   };
 }
 
+function getFirstRequestUrl(fetchFn: ReturnType<typeof createMockFetch>): string {
+  const firstCall = fetchFn.mock.calls[0];
+  if (!firstCall) throw new Error("Expected request");
+  const [requestUrl] = firstCall;
+  return String(requestUrl);
+}
+
 // ============================================================
 // WhoopClient constructor
 // ============================================================
@@ -29,6 +36,52 @@ describe("WhoopClient constructor", () => {
 // ============================================================
 
 describe("WhoopClient.signIn", () => {
+  it("sends the WHOOP browser Cognito request envelope", async () => {
+    const fetchFn = createMockFetch({
+      ok: true,
+      status: 200,
+      body: { ChallengeName: "SMS_MFA", Session: "session-abc" },
+    });
+
+    await WhoopClient.signIn("user@example.com", "password123", fetchFn);
+
+    const firstCall = fetchFn.mock.calls[0];
+    if (!firstCall) throw new Error("Expected auth request");
+    const init = firstCall[1];
+    if (!init) throw new Error("Expected request init");
+    const headers = init.headers;
+    if (!headers || Array.isArray(headers) || headers instanceof Headers) {
+      throw new Error("Expected plain request headers");
+    }
+    const body = typeof init.body === "string" ? JSON.parse(init.body) : null;
+
+    expect(headers).toMatchObject({
+      Accept: "*/*",
+      "Accept-Language": "en-US,en;q=0.9",
+      Origin: "https://id.whoop.com",
+      Referer: "https://id.whoop.com/",
+      "Content-Type": "application/x-amz-json-1.1",
+      "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+      "amz-sdk-request": "attempt=1; max=3",
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-site",
+    });
+    expect(headers["User-Agent"]).toContain("Firefox/150.0");
+    expect(headers["x-amz-user-agent"]).toContain("api/cognito-identity-provider#3.848.0");
+    expect(headers["amz-sdk-invocation-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(body).toMatchObject({
+      AuthFlow: "USER_PASSWORD_AUTH",
+      ClientId: "37365lrcda1js3fapqfe2n40eh",
+      AuthParameters: {
+        USERNAME: "user@example.com",
+        PASSWORD: "password123",
+      },
+    });
+  });
+
   it("returns success with token when no MFA", async () => {
     const callCount = { value: 0 };
 
@@ -497,7 +550,7 @@ describe("WhoopClient.getHeartRate", () => {
     const result = await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
 
     expect(result).toEqual(hrValues);
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("/metrics-service/v1/metrics/user/12345");
     expect(String(url)).toContain("name=heart_rate");
     expect(String(url)).toContain("step=6");
@@ -518,7 +571,7 @@ describe("WhoopClient.getHeartRate", () => {
 
     await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z", 60);
 
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("step=60");
   });
 });
@@ -532,7 +585,7 @@ describe("WhoopClient.getSteps", () => {
     const result = await client.getSteps("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
 
     expect(result).toEqual(stepValues);
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("name=steps");
     expect(String(url)).toContain("step=300");
   });
@@ -613,7 +666,7 @@ describe("WhoopClient.getCycles", () => {
 
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("limit=26");
   });
 
@@ -623,7 +676,7 @@ describe("WhoopClient.getCycles", () => {
 
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z", 50);
 
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("limit=50");
   });
 });
@@ -648,7 +701,7 @@ describe("WhoopClient.getSleep", () => {
     const result = await client.getSleep(1001);
 
     expect(result).toEqual(sleepRecord);
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("/sleep-service/v1/sleep-events");
     expect(String(url)).toContain("activityId=1001");
   });
@@ -664,7 +717,7 @@ describe("WhoopClient.getJournal", () => {
     const result = await client.getJournal("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
     expect(result).toEqual(journalData);
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("/behavior-impact-service/v1/impact");
   });
 });
@@ -689,7 +742,7 @@ describe("WhoopClient.getWeightliftingWorkout", () => {
     const result = await client.getWeightliftingWorkout("abc-123");
 
     expect(result).toEqual(workoutData);
-    const [url] = fetchFn.mock.calls[0];
+    const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("/weightlifting-service/v2/weightlifting-workout/abc-123");
   });
 
