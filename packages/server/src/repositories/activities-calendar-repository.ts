@@ -226,6 +226,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
   async #fetchCaloriesByActivityId(activityIds: string[]) {
     if (activityIds.length === 0) return [];
+    const activityIdFilter = sql.join(
+      activityIds.map((activityId) => sql`${activityId}`),
+      sql`, `,
+    );
     return this.query(
       caloriesRowSchema,
       sql`SELECT
@@ -233,7 +237,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             NULLIF(a.raw->>'calories', '')::numeric AS calories
           FROM fitness.activity a
           WHERE a.user_id = ${this.userId}::uuid
-            AND a.id::text = ANY(${activityIds})
+            AND a.id::text IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );
   }
