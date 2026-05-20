@@ -208,6 +208,17 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       id: "0014_resting_heart_rate_sleep_window_materialized_view",
       statements: buildRestingHeartRateSleepWindowMaterializedViewStatements(),
     },
+    {
+      id: "0015_reduce_metric_stream_refresh_load",
+      statements: [
+        "ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.deduped_location MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.activity_summary MODIFY REFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
+        "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE",
+        "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
+      ],
+    },
   ];
 }
 

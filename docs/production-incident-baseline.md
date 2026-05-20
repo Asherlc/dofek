@@ -5929,3 +5929,77 @@ triage if they continue after deploy.
   occurrences.
 - Add a Sentry triage preflight note documenting the working `mcp-remote`
   fallback when direct Sentry MCP tools are not exposed to the agent.
+
+## 2026-05-20: Body Metrics Stale In ClickHouse Analytics
+
+### Symptoms
+
+Body weight and body composition charts stopped at May 9 even though the site
+was otherwise serving traffic after a transient recovery period. Body insights
+and dashboard batches also loaded slowly while ClickHouse was saturated.
+
+### User Impact
+
+The body pages showed stale weight and body composition data. Current Withings
+measurements were synced into Postgres but were not visible through the
+analytics-backed app views. Dashboard/body insight sections could appear stuck
+because batched tRPC responses waited for slower ClickHouse-backed queries.
+
+### Evidence
+
+Postgres `fitness.metric_stream` contained current Withings body rows through
+2026-05-20 14:09:23 UTC. ClickHouse `analytics.v_body_measurement` only showed
+body data through 2026-05-09 15:32:22 UTC, and the ClickHouse
+`postgres_fitness.metric_stream` mirror only showed body rows through
+2026-05-18 14:25:58 UTC. The PeerDB flow worker for
+`dofek_metric_stream_analytics` repeatedly failed normalization with
+`Cannot parse input: expected '('` while converting source column `point` into
+ClickHouse destination column `Nullable(Point)`. The active replication slot
+had hundreds of megabytes of retained WAL lag. A separate transient host
+restart around 17:50 UTC caused Cloudflare 521 responses before health checks
+recovered. Web logs later showed a batched dashboard request taking 14.9s;
+`insights.compute` took 2.7s in that batch while `healthspan.score` took 15s.
+ClickHouse `system.query_log` showed repeated refresh inserts over analytics
+read models reading 53M rows / 4.7 GiB per run, plus one 563M-row / 40+ GiB
+run. `docker stats` showed ClickHouse using more than one CPU and roughly
+3.5 GiB of its 5 GiB memory limit while those refreshes and PeerDB catch-up ran.
+
+### Root Cause
+
+Unresolved. The strongest current evidence is that PeerDB CDC for
+`metric_stream` sends the Postgres `point` value in a format ClickHouse cannot
+cast into `Nullable(Point)`, which blocks normalization batches and prevents
+newer metric rows from reaching the app-facing ClickHouse read models. The slow
+insights symptom is consistent with ClickHouse saturation from PeerDB catch-up
+and one-minute refreshable materialized views scanning the large
+`postgres_fitness.metric_stream` mirror.
+
+### Fix or Mitigation
+
+Code changes were prepared to exclude `point` from the PeerDB metric-stream
+mirror template and to move metric-stream-heavy ClickHouse refreshable
+materialized views from one-minute refreshes to 15-minute refreshes. The
+refresh cadence change is applied through a non-destructive ClickHouse migration
+using `ALTER TABLE ... MODIFY REFRESH`. Withings sync into Postgres is current;
+the stale chart behavior remains isolated to the ClickHouse analytics
+replication path until the changes are deployed and PeerDB is reconciled.
+
+### Remaining Risk
+
+Body metrics and any analytics that depend on `postgres_fitness.metric_stream`
+can remain stale until the PeerDB normalization failure is fixed and the mirror
+is replayed. WAL retained for the lagging replication slot can continue to grow
+while the flow is blocked.
+
+### Follow-Up Work
+
+- Choose the canonical fix for `metric_stream.point` CDC handling before
+  changing code or deployment config.
+- Reconcile the already-running PeerDB `dofek_metric_stream_analytics` mirror,
+  since `CREATE MIRROR IF NOT EXISTS` does not prove an existing mirror adopts
+  the updated `point` exclusion.
+- Add an alert for PeerDB flow normalization failures and metric-stream mirror
+  lag.
+- Decide whether product-impacting infrastructure errors should also create
+  Sentry issues, or whether they should stay in Axiom/log alerts with links to
+  the affected service and flow.

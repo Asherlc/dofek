@@ -20,15 +20,15 @@ Postgres/Timescale fitness.metric_stream
         v                         +----------------+
 ClickHouse postgres_fitness.metric_stream
         |
-        | refreshable materialized view
+        | refreshable materialized view, 15-minute cadence
         v
 ClickHouse analytics.deduped_sensor
         |
-        | refreshable materialized view
+        | refreshable materialized view, 15-minute cadence
         v
 ClickHouse analytics.activity_summary
         |
-        | refreshable materialized view
+        | refreshable materialized view, 15-minute cadence
         v
 ClickHouse analytics.activity_trend_daily
         |
@@ -94,9 +94,11 @@ server profile at
 ClickHouse migrations create and update the databases and read models:
 
 - `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` copy of the
-  raw metric stream and the active PeerDB CDC sink for analytics refreshers. It
-  stores location rows as `point Nullable(Point)` and projects latitude and
-  longitude only in the location read model.
+  raw metric stream and the active PeerDB CDC sink for analytics refreshers.
+  Historical/backfilled location rows can have `point Nullable(Point)` for
+  location projections, but current PeerDB metric-stream mirrors exclude
+  `point` because PeerDB sends the Postgres geometry value in a format
+  ClickHouse cannot cast directly into `Nullable(Point)`.
 - `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns. Besides the activity/sleep/body/daily/metric stream
@@ -106,12 +108,13 @@ ClickHouse migrations create and update the databases and read models:
   `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: ClickHouse
   read models over the raw mirrors.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
-  minute from the copied raw rows and activity membership.
-- `analytics.activity_summary`: a refreshable materialized view refreshed from
-  `analytics.deduped_sensor`.
+  15 minutes from the copied raw rows and activity membership.
+- `analytics.activity_summary`: a refreshable materialized view refreshed every
+  15 minutes from `analytics.deduped_sensor`.
 - `analytics.activity_trend_daily`: a refreshable materialized view with one
   activity-linked sensor trend row per user and UTC day. It is derived from
-  `analytics.deduped_sensor` and is safe to drop and rebuild.
+  `analytics.deduped_sensor`, refreshes every 15 minutes, and is safe to drop
+  and rebuild.
 
 Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
 table rather than a table created by PeerDB, it must include PeerDB's CDC
@@ -134,9 +137,9 @@ connection values, and applies the declarative PeerDB peer and mirror
 definition. Provider inventory tables are mirrored by
 `dofek_provider_inventory_raw_analytics` so existing raw analytics mirrors do
 not need to be rebuilt when inventory coverage expands. The mirrors use a
-dedicated publication name, exclude `device_id`, `source_type`, `vector`, and
-`metadata` from the metric stream mirrors, and enable soft deletes so delete
-events are represented in ClickHouse.
+dedicated publication name, exclude `device_id`, `source_type`, `vector`,
+`point`, and `metadata` from the metric stream mirrors, and enable soft deletes
+so delete events are represented in ClickHouse.
 ClickHouse's built-in `MaterializedPostgreSQL` engine is not the CDC path for
 `metric_stream`.
 
