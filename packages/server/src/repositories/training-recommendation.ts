@@ -30,6 +30,7 @@ interface NextWorkoutRecommendationData {
     last_endurance_date: string | null;
   };
   zoneTotals: {
+    zone0: number;
     zone1: number;
     zone2: number;
     zone3: number;
@@ -257,6 +258,7 @@ export function buildNextWorkoutRecommendation(
 }
 
 export function computeZonePercentages(zoneTotals: {
+  zone0: number;
   zone1: number;
   zone2: number;
   zone3: number;
@@ -269,10 +271,15 @@ export function computeZonePercentages(zoneTotals: {
   moderateIntensityPct: number;
 } {
   const totalZoneSamples =
-    zoneTotals.zone1 + zoneTotals.zone2 + zoneTotals.zone3 + zoneTotals.zone4 + zoneTotals.zone5;
+    zoneTotals.zone0 +
+    zoneTotals.zone1 +
+    zoneTotals.zone2 +
+    zoneTotals.zone3 +
+    zoneTotals.zone4 +
+    zoneTotals.zone5;
   const highIntensitySamples = zoneTotals.zone4 + zoneTotals.zone5;
   const moderateSamples = zoneTotals.zone3;
-  const lowSamples = zoneTotals.zone1 + zoneTotals.zone2;
+  const lowSamples = zoneTotals.zone0 + zoneTotals.zone1 + zoneTotals.zone2;
   const highIntensityPct = totalZoneSamples > 0 ? highIntensitySamples / totalZoneSamples : 0;
   const lowIntensityPct = totalZoneSamples > 0 ? lowSamples / totalZoneSamples : 0;
   const moderateIntensityPct = totalZoneSamples > 0 ? moderateSamples / totalZoneSamples : 0;

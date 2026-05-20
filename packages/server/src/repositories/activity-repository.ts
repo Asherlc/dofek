@@ -6,7 +6,11 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
-import { fetchRestingHeartRateRows, localDateString } from "./resting-heart-rate-query.ts";
+import {
+  fetchRestingHeartRateRows,
+  localDateString,
+  representativeRestingHeartRate,
+} from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -398,7 +402,7 @@ export class ActivityRepository extends BaseRepository {
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
-  /** HR zone distribution for a single activity using Karvonen zones. */
+  /** HR zone distribution for a single activity using the canonical Karvonen model. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.#findActivitySensorWindow(activityId);
@@ -465,15 +469,15 @@ export class ActivityRepository extends BaseRepository {
       endDate: activityDate,
       days: 3650,
     });
-    const latestRestingHeartRate = restingHeartRateRows.at(-1)?.resting_hr ?? null;
+    const derivedRestingHeartRate = representativeRestingHeartRate(restingHeartRateRows);
     const rows = await this.query(
       heartRateZoneParamsRowSchema,
       sql`SELECT
             up.max_hr,
           CASE
-            WHEN ${latestRestingHeartRate}::real > 0
-              AND ${latestRestingHeartRate}::real < up.max_hr
-            THEN ${latestRestingHeartRate}::real
+            WHEN ${derivedRestingHeartRate}::real > 0
+              AND ${derivedRestingHeartRate}::real < up.max_hr
+            THEN ${derivedRestingHeartRate}::real
             WHEN up.resting_hr > 0
               AND up.resting_hr < up.max_hr
             THEN up.resting_hr

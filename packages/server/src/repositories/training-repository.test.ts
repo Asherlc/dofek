@@ -53,7 +53,7 @@ describe("TrainingRepository", () => {
         last_strength_date: null,
         last_endurance_date: null,
       },
-      zoneTotals: { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 },
+      zoneTotals: { zone0: 0, zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 },
       hiitLoad: { hiit_count_7d: 0, last_hiit_date: null },
       trainingDates: [],
       ...overrides,
@@ -143,6 +143,7 @@ describe("TrainingRepository", () => {
         {
           max_hr: 190,
           week: "2024-01-15",
+          zone0: 75,
           zone1: 100,
           zone2: 200,
           zone3: 150,
@@ -153,7 +154,19 @@ describe("TrainingRepository", () => {
       const result = await repo.getHrZones(90);
       expect(result.maxHr).toBe(190);
       expect(result.weeks).toHaveLength(1);
+      expect(result.weeks[0]?.zone0).toBe(75);
       expect(result.weeks[0]?.zone2).toBe(200);
+    });
+
+    it("uses activity-specific heart-rate values in canonical zone SQL", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+
+      await repo.getHrZones(90);
+
+      const query = sensorStore.query.mock.calls[0]?.[1];
+      expect(query).toContain("am.resting_hr + (am.max_hr - am.resting_hr)");
+      expect(query).not.toContain("{restingHr:Float64}");
+      expect(query).not.toContain("{maxHr:Float64}");
     });
   });
 
@@ -264,7 +277,14 @@ describe("TrainingRepository", () => {
         last_strength_date: null,
         last_endurance_date: null,
       });
-      expect(data.zoneTotals).toEqual({ zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 });
+      expect(data.zoneTotals).toEqual({
+        zone0: 0,
+        zone1: 0,
+        zone2: 0,
+        zone3: 0,
+        zone4: 0,
+        zone5: 0,
+      });
       expect(data.hiitLoad).toEqual({ hiit_count_7d: 0, last_hiit_date: null });
       expect(data.trainingDates).toEqual([]);
     });
@@ -310,7 +330,7 @@ describe("TrainingRepository", () => {
       sensorQuery.mockResolvedValueOnce([]);
       sensorQuery.mockResolvedValueOnce([{ acwr: 1.15 }]);
       sensorQuery.mockResolvedValueOnce([
-        { zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 },
+        { zone0: 75, zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 },
       ]);
       sensorQuery.mockResolvedValueOnce([{ hiit_count_7d: 2, last_hiit_date: "2024-01-13" }]);
       const sensorStore = makeSensorStore([]);
@@ -339,6 +359,7 @@ describe("TrainingRepository", () => {
       // Each default 0 must be exactly 0 to catch Stryker 0→1 mutations
       expect(data.balance.strength_7d).toStrictEqual(0);
       expect(data.balance.endurance_7d).toStrictEqual(0);
+      expect(data.zoneTotals.zone0).toStrictEqual(0);
       expect(data.zoneTotals.zone1).toStrictEqual(0);
       expect(data.zoneTotals.zone2).toStrictEqual(0);
       expect(data.zoneTotals.zone3).toStrictEqual(0);
@@ -464,7 +485,7 @@ describe("TrainingRepository", () => {
             last_strength_date: "2024-01-14",
             last_endurance_date: "2024-01-13",
           },
-          zoneTotals: { zone1: 50, zone2: 30, zone3: 10, zone4: 5, zone5: 5 },
+          zoneTotals: { zone0: 0, zone1: 50, zone2: 30, zone3: 10, zone4: 5, zone5: 5 },
           hiitLoad: { hiit_count_7d: 3, last_hiit_date: "2024-01-14" },
         }),
         "2024-01-15",
