@@ -24,7 +24,7 @@ export function QueryStatePanel({
   if (variant === "loading") {
     return (
       <div
-        className="query-error-panel flex items-center justify-center"
+        className="query-state-panel flex items-center justify-center"
         style={{ minHeight: height }}
         data-testid="query-state-loading"
         aria-busy="true"
@@ -39,7 +39,7 @@ export function QueryStatePanel({
 
   return (
     <div
-      className="query-error-panel"
+      className={variant === "error" ? "query-error-panel" : "query-state-panel"}
       style={{ minHeight: height }}
       data-testid={`query-state-${variant}`}
     >
