@@ -124,9 +124,27 @@ describe("SmoothedWeightChart", () => {
     expect(screen.getByText("No weight data available")).toBeDefined();
   });
 
-  it("shows weekly change when available", () => {
-    render(<SmoothedWeightChart data={sampleData} />);
-    expect(screen.getByText(/\/week/)).toBeDefined();
+  it("shows headline rate from prediction when available", () => {
+    render(
+      <SmoothedWeightChart
+        data={sampleData}
+        prediction={{
+          ratePerWeek: -0.3,
+          rateConfidence: 0.92,
+          impliedDailyCalories: -330,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+    expect(screen.getByText("-0.3 kg/week")).toBeDefined();
+    expect(screen.queryByText("-0.15 kg/week")).toBeNull();
+  });
+
+  it("does not show headline rate when prediction is missing", () => {
+    const { container } = render(<SmoothedWeightChart data={sampleData} />);
+    expect(container.textContent).not.toMatch(/\/week/);
   });
 
   it("y-axis min rounds down floating-point values to nearest even integer", () => {

@@ -239,6 +239,10 @@ export function Dashboard() {
     days: Math.max(days, 90),
     endDate,
   });
+  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
+    days: Math.max(days, 90),
+    endDate,
+  });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
     days: Math.max(days, 180),
     endDate,
@@ -457,6 +461,7 @@ export function Dashboard() {
             ) : (
               <SmoothedWeightChart
                 data={smoothedWeight.data ?? []}
+                prediction={weightPrediction.data}
                 loading={smoothedWeight.isLoading}
               />
             )}

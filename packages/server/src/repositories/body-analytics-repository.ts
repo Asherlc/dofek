@@ -2,7 +2,14 @@ import type { Database } from "dofek/db";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { type BodyClickHouseStore, fetchBodyWeightRows } from "./body-clickhouse.ts";
+
 // ── Types ───────────────────────────────────────────────────────────
+
+const WEIGHT_RATE_REGRESSION_WINDOW_DAYS = 14;
+const MIN_ACTUAL_READINGS_FOR_WEIGHT_RATE = 7;
+const MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA = 4;
+const MIN_ACTUAL_READINGS_FOR_14_DAY_DELTA = 7;
+const MIN_ACTUAL_READINGS_FOR_30_DAY_DELTA = 19;
 
 export interface SmoothedWeightRow {
   date: string;
@@ -171,6 +178,10 @@ export function interpolateMissingDays(
   return result;
 }
 
+function countActualWeightReadings(points: ReadonlyArray<Pick<InterpolatedPoint, "interpolated">>) {
+  return points.filter((point) => !point.interpolated).length;
+}
+
 // ── EWMA helper ─────────────────────────────────────────────────────
 
 /** Apply exponentially-weighted moving average to a series of values. */
@@ -323,7 +334,11 @@ export class BodyAnalyticsRepository extends BaseRepository {
       let weeklyChange: number | null = null;
       if (index >= 7) {
         const previousSmoothed = smoothedValues[index - 7];
-        if (previousSmoothed !== undefined) {
+        const weeklyWindowPoints = dense.slice(index - 7, index + 1);
+        if (
+          previousSmoothed !== undefined &&
+          countActualWeightReadings(weeklyWindowPoints) >= MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA
+        ) {
           weeklyChange = Math.round((smoothed - previousSmoothed) * 100) / 100;
         }
       }
@@ -453,13 +468,17 @@ export class BodyAnalyticsRepository extends BaseRepository {
     );
     if (smoothed.length === 0) return emptyResult;
 
-    // Rate via regression on last 14 smoothed values
-    const regressionWindow = Math.min(14, smoothed.length);
+    // Rate via regression on recent smoothed values, only when recent data is mostly real.
+    const regressionWindow = Math.min(WEIGHT_RATE_REGRESSION_WINDOW_DAYS, smoothed.length);
     let ratePerWeek: number | null = null;
     let rateConfidence: number | null = null;
     let slopePerDay = 0;
 
-    if (smoothed.length >= 8) {
+    const regressionWindowPoints = interpolated.slice(-regressionWindow);
+    if (
+      smoothed.length >= 8 &&
+      countActualWeightReadings(regressionWindowPoints) >= MIN_ACTUAL_READINGS_FOR_WEIGHT_RATE
+    ) {
       const windowValues = smoothed.slice(-regressionWindow).map((value, index) => ({
         dayIndex: index,
         value,
@@ -476,30 +495,34 @@ export class BodyAnalyticsRepository extends BaseRepository {
 
     // Period deltas from smoothed values
     const latest = smoothed[smoothed.length - 1] ?? 0;
-    const days7 =
-      smoothed.length >= 8
-        ? Math.round((latest - (smoothed[smoothed.length - 8] ?? 0)) * 100) / 100
-        : null;
-    const days14 =
-      smoothed.length >= 15
-        ? Math.round((latest - (smoothed[smoothed.length - 15] ?? 0)) * 100) / 100
-        : null;
-    const days30 =
-      smoothed.length >= 31
-        ? Math.round((latest - (smoothed[smoothed.length - 31] ?? 0)) * 100) / 100
-        : null;
+    const computePeriodDelta = (daysBack: number, minimumActualReadings: number) => {
+      const requiredPointCount = daysBack + 1;
+      if (smoothed.length < requiredPointCount) return null;
+
+      const periodPoints = interpolated.slice(-requiredPointCount);
+      if (countActualWeightReadings(periodPoints) < minimumActualReadings) return null;
+
+      return (
+        Math.round((latest - (smoothed[smoothed.length - requiredPointCount] ?? 0)) * 100) / 100
+      );
+    };
+
+    const days7 = computePeriodDelta(7, MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA);
+    const days14 = computePeriodDelta(14, MIN_ACTUAL_READINGS_FOR_14_DAY_DELTA);
+    const days30 = computePeriodDelta(30, MIN_ACTUAL_READINGS_FOR_30_DAY_DELTA);
 
     // Goal projection
     let goal: WeightPrediction["goal"] = null;
-    if (goalWeightKg != null && ratePerWeek != null) {
+    if (goalWeightKg != null) {
       const remainingKg = Math.round((goalWeightKg - latest) * 100) / 100;
-      const trendingTowardGoal =
-        (remainingKg < 0 && slopePerDay < 0) || (remainingKg > 0 && slopePerDay > 0);
 
       let estimatedDate: string | null = null;
       let daysRemaining: number | null = null;
 
       const lastInterpolatedPoint = interpolated[interpolated.length - 1];
+      const trendingTowardGoal =
+        ratePerWeek != null &&
+        ((remainingKg < 0 && slopePerDay < 0) || (remainingKg > 0 && slopePerDay > 0));
       if (trendingTowardGoal && Math.abs(slopePerDay) > 0.001 && lastInterpolatedPoint) {
         daysRemaining = Math.ceil(Math.abs(remainingKg / slopePerDay));
         const lastMs = dateToMs(lastInterpolatedPoint.date);

@@ -345,6 +345,17 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[2]?.rawWeight).toBe(82);
     });
 
+    it("does not report weekly change when the 7-day window is mostly interpolated", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "95" },
+        { date: "2024-01-02", weight_kg: "95" },
+        { date: "2024-01-20", weight_kg: "85" },
+      ]);
+      const result = await repo.getSmoothedWeight(90, "2024-01-20");
+
+      expect(result.at(-1)?.weeklyChange).toBeNull();
+    });
+
     it("applies EWMA smoothing across interpolated days", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80" },
@@ -973,6 +984,29 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.ratePerWeek ?? 0).toBeGreaterThan(-1);
       expect(result.rateConfidence).not.toBeNull();
       expect(result.rateConfidence ?? 0).toBeGreaterThan(0.9);
+    });
+
+    it("does not report rate-derived prediction fields when recent weigh-ins are sparse", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "95" },
+        { date: "2024-01-02", weight_kg: "95" },
+        { date: "2024-01-03", weight_kg: "95" },
+        { date: "2024-01-04", weight_kg: "95" },
+        { date: "2024-01-05", weight_kg: "95" },
+        { date: "2024-01-06", weight_kg: "95" },
+        { date: "2024-01-20", weight_kg: "85" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", 82);
+
+      expect(result.ratePerWeek).toBeNull();
+      expect(result.rateConfidence).toBeNull();
+      expect(result.impliedDailyCalories).toBeNull();
+      expect(result.periodDeltas.days7).toBeNull();
+      expect(result.periodDeltas.days14).toBeNull();
+      expect(result.goal?.estimatedDate).toBeNull();
+      expect(result.goal?.daysRemaining).toBeNull();
+      expect(result.projectionLine).toEqual([]);
     });
 
     it("computes implied daily calories from rate", async () => {
