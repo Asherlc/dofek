@@ -29,6 +29,7 @@ import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
+import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
@@ -252,8 +253,9 @@ function setupRoutes(
 export function runStartupTasks(
   db: ReturnType<typeof createDatabaseFromEnv>,
   app: express.Express,
+  sensorStore?: ActivitySensorStore,
 ) {
-  warmCache(db).catch((err) => {
+  warmCache(db, sensorStore).catch((err) => {
     logger.error(`[cache] Warm failed: ${err}`);
     Sentry.captureException(err);
   });
@@ -283,7 +285,7 @@ export async function main() {
   app.listen(PORT, () => {
     logger.info(`[server] API running at http://localhost:${PORT}`);
     logger.info(`[server] tRPC at http://localhost:${PORT}/api/trpc`);
-    runStartupTasks(db, app);
+    runStartupTasks(db, app, sensorStore);
   });
 }
 
