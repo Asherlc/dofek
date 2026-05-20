@@ -257,6 +257,11 @@ describe("DailyOverview", () => {
       progressPercent: 89,
       zone: "Push" as const,
       explanation: "Recovery is strong (75). Push for a high-strain day to build fitness.",
+      dailyLoad: 100,
+      acuteLoad: 80,
+      chronicLoad: 70,
+      workloadRatio: 1.14,
+      readinessScore: 75,
     };
 
     render(
@@ -285,6 +290,54 @@ describe("DailyOverview", () => {
     expect(screen.getByText("Acute (7d)")).toBeTruthy();
     expect(screen.getByText("Chronic (28d)")).toBeTruthy();
     expect(screen.getByText("Workload Ratio")).toBeTruthy();
+  });
+
+  it("explains current strain from today's load separately from rolling training load", () => {
+    const mockStrainTarget = {
+      targetStrain: 12,
+      currentStrain: 0,
+      progressPercent: 0,
+      zone: "Maintain" as const,
+      explanation:
+        "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+      dailyLoad: 0,
+      acuteLoad: 133,
+      chronicLoad: 33,
+      workloadRatio: 4,
+      readinessScore: 50,
+    };
+
+    render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={{
+          displayedStrain: 0,
+          displayedDate: today,
+          timeSeries: [
+            {
+              date: today,
+              dailyLoad: 0,
+              strain: 0,
+              acuteLoad: 133,
+              chronicLoad: 33,
+              workloadRatio: 4,
+            },
+          ],
+        }}
+        sleepPerformance={mockSleepPerformance}
+        strainTarget={mockStrainTarget}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Strain score breakdown" }));
+
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByText("0")).toBeTruthy();
+    expect(screen.getByText("Training Load Ratio")).toBeTruthy();
+    expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
   });
 
   it("expands sleep breakdown when sleep ring is clicked", () => {

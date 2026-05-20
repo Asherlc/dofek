@@ -70,7 +70,7 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain = workloadResult?.displayedStrain ?? 0;
+  const dailyStrain = strainTarget?.currentStrain ?? workloadResult?.displayedStrain ?? 0;
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
@@ -160,6 +160,22 @@ export default function StrainScreen() {
                 />
               </View>
               <Text style={styles.targetExplanation}>{strainTarget.explanation}</Text>
+              <View style={styles.loadGrid}>
+                <View style={styles.loadItem}>
+                  <Text style={styles.loadValue}>
+                    {formatNumber(strainTarget.currentStrain, 1)}
+                  </Text>
+                  <Text style={styles.loadLabel}>Today</Text>
+                </View>
+                <View style={styles.loadItem}>
+                  <Text style={styles.loadValue}>
+                    {strainTarget.workloadRatio != null
+                      ? formatNumber(strainTarget.workloadRatio, 2)
+                      : "--"}
+                  </Text>
+                  <Text style={styles.loadLabel}>Training Load Ratio</Text>
+                </View>
+              </View>
             </View>
           )}
 

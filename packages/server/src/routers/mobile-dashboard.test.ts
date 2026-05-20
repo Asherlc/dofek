@@ -29,11 +29,13 @@ type SensorStore = import("../repositories/activity-repository.ts").ActivitySens
 function makeSensorStore(
   dailyLoads: Array<{ metric_date: string; daily_load: number }> = [],
   yesterdayLoad = 0,
+  currentPhysiologyRows: Array<{ physiological_load: number | null }> = [],
 ): SensorStore {
   const query = vi.fn();
   query.mockResolvedValueOnce(dailyLoads);
   query.mockResolvedValueOnce([{ load: yesterdayLoad }]);
   query.mockResolvedValueOnce([]);
+  query.mockResolvedValueOnce(currentPhysiologyRows);
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -182,7 +184,7 @@ describe("mobileDashboard.dashboard", () => {
     );
   });
 
-  it("computes daily strain from rolling acute load when today is a rest day", async () => {
+  it("does not compute daily strain from rolling acute load when today is a rest day", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([
       metricRow({ date: "2026-03-28" }),
@@ -202,8 +204,27 @@ describe("mobileDashboard.dashboard", () => {
     });
     const result = await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(result.strain.dailyStrain).toBeGreaterThan(0);
+    expect(result.strain.dailyStrain).toBe(0);
     expect(result.strain.acuteLoad).toBe(350);
+  });
+
+  it("computes daily strain from today's heart-rate physiology load", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+    execute.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore([{ metric_date: "2026-03-28", daily_load: 0 }], 0, [
+        { physiological_load: 2.2107535185185188 },
+      ]),
+    });
+    const result = await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(result.strain.dailyStrain).toBe(4.1);
   });
 
   it("computes strain windows, rounded workload ratio, and latest metric date", async () => {

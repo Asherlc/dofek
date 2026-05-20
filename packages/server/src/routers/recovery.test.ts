@@ -342,6 +342,14 @@ describe("recoveryRouter.hrvVariability", () => {
 // ── workloadRatio ───────────────────────────────────────────────
 
 describe("recoveryRouter.workloadRatio", () => {
+  function callerWith(rows: unknown[]) {
+    return createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+  }
+
   it("returns empty timeSeries and zero strain when no data", async () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -445,6 +453,23 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
   });
 
+  it("derives daily strain from the day's load instead of rolling acute load", async () => {
+    const rows = [
+      {
+        date: "2026-03-23",
+        daily_load: 0,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: 1.25,
+      },
+    ];
+
+    const result = await callerWith(rows).workloadRatio({});
+
+    expect(result.timeSeries[0]?.strain).toBe(0);
+    expect(result.displayedStrain).toBe(0);
+  });
+
   it("uses default days of 90", async () => {
     const sensorStore = makeSensorStore([]);
     const caller = createCaller({
@@ -456,7 +481,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(sensorStore.query).toHaveBeenCalled();
   });
 
-  it("displayedStrain and displayedDate reflect latest rolling strain", async () => {
+  it("displayedStrain and displayedDate reflect latest daily strain", async () => {
     const rows = [
       {
         date: "2026-03-01",
@@ -482,7 +507,7 @@ describe("recoveryRouter.workloadRatio", () => {
     const result = await caller.workloadRatio({});
 
     expect(result.displayedDate).toBe("2026-03-02");
-    expect(result.displayedStrain).toBeGreaterThan(0);
+    expect(result.displayedStrain).toBe(0);
   });
 });
 
@@ -1228,10 +1253,12 @@ describe("recoveryRouter.strainTarget", () => {
     readinessRows = [],
     sleepRows,
     loads = [],
+    currentPhysiologyRows = [],
   }: {
     readinessRows?: unknown[];
     sleepRows?: unknown[];
     loads?: unknown[];
+    currentPhysiologyRows?: unknown[];
   }) {
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce(readinessRows);
@@ -1239,7 +1266,7 @@ describe("recoveryRouter.strainTarget", () => {
     return createCaller({
       db: { execute: executeMock },
       userId: "user-1",
-      sensorStore: makeSensorStore(loads),
+      sensorStore: makeSensorStore([[], loads, currentPhysiologyRows]),
     });
   }
 
@@ -1276,22 +1303,52 @@ describe("recoveryRouter.strainTarget", () => {
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
   });
 
-  it("computes current strain from recent acute load", async () => {
+  it("computes current strain from today's heart-rate physiology load", async () => {
     const today = "2026-03-23";
     const caller = setup({
       loads: [
         { date: "2026-03-22", daily_load: 100 },
         { date: today, daily_load: 0 },
       ],
+      currentPhysiologyRows: [{ physiological_load: 2.2107535185185188 }],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    expect(result.currentStrain).toBeGreaterThan(0);
+    expect(result.currentStrain).toBe(4.1);
+    expect(result.currentStrainSource).toBe("heart_rate");
+    expect(result.currentPhysiologyLoad).toBe(2.21);
+  });
+
+  it("does not count earlier acute-window load as today's current strain", async () => {
+    const today = "2026-03-23";
+    const caller = setup({
+      loads: [
+        { date: "2026-03-17", daily_load: 180 },
+        { date: "2026-03-18", daily_load: 170 },
+        { date: "2026-03-19", daily_load: 160 },
+        { date: "2026-03-20", daily_load: 150 },
+        { date: "2026-03-21", daily_load: 140 },
+        { date: "2026-03-22", daily_load: 130 },
+        { date: today, daily_load: 0 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBe(0);
+    expect(result.progressPercent).toBe(0);
+    expect(result.dailyLoad).toBe(0);
+    expect(result.acuteLoad).toBeCloseTo(930 / 7, 1);
+    expect(result.chronicLoad).toBeCloseTo(930 / 28, 1);
+    expect(result.workloadRatio).toBe(4);
+    expect(result.readinessScore).toBe(50);
   });
 
   it("computes progressPercent as ratio of current to target", async () => {
     const today = "2026-03-23";
-    const caller = setup({ loads: [{ date: today, daily_load: 50 }] });
+    const caller = setup({
+      loads: [{ date: today, daily_load: 50 }],
+      currentPhysiologyRows: [{ physiological_load: 2.2107535185185188 }],
+    });
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.progressPercent).toBeGreaterThan(0);
@@ -1502,7 +1559,7 @@ describe("recoveryRouter.strainTarget", () => {
     const result = await caller.strainTarget({ endDate: today });
 
     expect(result.targetStrain).toBeGreaterThan(0);
-    expect(result.currentStrain).toBeGreaterThan(0);
+    expect(result.currentStrain).toBe(0);
   });
 
   it("progressPercent reflects currentStrain relative to targetStrain", async () => {
@@ -1868,11 +1925,11 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
     expect(result.timeSeries[0]?.date).toBe("2026-03-15");
   });
 
-  it("strain is derived from rounded acuteLoad", async () => {
+  it("strain is derived from rounded dailyLoad", async () => {
     const result = await callerWith([
       {
         date: "2026-03-01",
-        daily_load: 0,
+        daily_load: 50,
         acute_load: 500,
         chronic_load: 400,
         workload_ratio: 1.25,
