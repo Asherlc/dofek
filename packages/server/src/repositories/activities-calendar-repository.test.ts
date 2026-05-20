@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -52,6 +53,8 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("ActivitiesCalendarRepository", () => {
+  const dialect = new PgDialect();
+
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([{ id: "activity-1", calories: 421.6 }]);
     const sensorStore = makeSensorStore([
@@ -150,6 +153,32 @@ describe("ActivitiesCalendarRepository", () => {
         userId: "00000000-0000-0000-0000-000000000001",
         activityIds: ["activity-1", "activity-2"],
       },
+    );
+  });
+
+  it("builds the calories activity id filter without a Postgres row expression", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ id: "activity-1" }), makeActivityRow({ id: "activity-2" })],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "00000000-0000-0000-0000-000000000001",
+      "UTC",
+      sensorStore,
+    );
+
+    await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    const sqlObject = database.execute.mock.calls[0]?.[0];
+    const compiledQuery = dialect.sqlToQuery(sqlObject);
+    expect(compiledQuery.sql).toContain("a.id IN (");
+    expect(compiledQuery.sql).not.toContain("AND a.id::text IN (");
+    expect(compiledQuery.sql).not.toContain("ANY(($");
+    expect(compiledQuery.params).toEqual(
+      expect.arrayContaining(["00000000-0000-0000-0000-000000000001", "activity-1", "activity-2"]),
     );
   });
 
