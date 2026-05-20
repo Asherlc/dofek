@@ -16,4 +16,10 @@ describe("canonicalizeTimestampForExternalId", () => {
       "Invalid timestamp for external ID: not-a-timestamp",
     );
   });
+
+  it("rejects timezone-less timestamps before composing external IDs", () => {
+    expect(() => canonicalizeTimestampForExternalId("2026-03-30T12:00:00")).toThrow(
+      "Invalid timestamp for external ID: 2026-03-30T12:00:00",
+    );
+  });
 });

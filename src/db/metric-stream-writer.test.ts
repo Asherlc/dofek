@@ -284,6 +284,25 @@ describe("writeMetricStream", () => {
     );
     expect(insertBatch).not.toHaveBeenCalled();
   });
+
+  it("rejects rows with whitespace-only external IDs", async () => {
+    const insertBatch = vi.fn();
+    const rows: MetricStreamInsert[] = [
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        providerId: "test",
+        externalId: "   ",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: 72,
+      },
+    ];
+
+    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
+      "metric_stream ingestion rows require externalId for idempotency",
+    );
+    expect(insertBatch).not.toHaveBeenCalled();
+  });
 });
 
 // ── metricStreamConflictTarget ─────────────────────────────
