@@ -469,7 +469,10 @@
     "strongapp",
     "legendselectchanged",
     "deauthorize",
-    "deauthorization"
+    "deauthorization",
+    "modelcontextprotocol",
+    "Streamable",
+    "streamable"
   ],
   "flagWords": [],
   "useGitignore": false,

@@ -22,6 +22,7 @@
     "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",
     "@dofek/zones": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@sentry/node": "10.45.0",
     "@slack/bolt": "4.7.2",
     "@slack/socket-mode": "2.0.7",
