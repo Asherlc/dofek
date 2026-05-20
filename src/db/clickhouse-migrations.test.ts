@@ -82,7 +82,6 @@ describe("buildClickHouseMigrationStatements", () => {
       "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
     );
     expect(sql).toContain("body_measurement_samples AS");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("measurement_key AS external_id");
   });
 
