@@ -112,7 +112,7 @@ describe("whoopBleSyncRouter", () => {
         deviceId: "WHOOP Strap",
         samples: [
           {
-            timestamp: "2026-03-30T12:00:00.000Z",
+            timestamp: "2026-03-30T12:00:00Z",
             rrIntervalMs: 812,
             quaternionW: 0,
             quaternionX: 0,

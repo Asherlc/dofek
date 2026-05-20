@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
+import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import { rejectFutureSamples } from "./sample-validation.ts";
@@ -63,7 +64,8 @@ async function insertBatch(
       const sampleHasGyro =
         sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
       const channel = sampleHasGyro ? "imu" : "accel";
-      const externalId = `${PROVIDER_ID}:${deviceId}:${channel}:${sample.timestamp}`;
+      const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+      const externalId = `${PROVIDER_ID}:${deviceId}:${channel}:${recordedAt}`;
       const vector = sampleHasGyro
         ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
         : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;

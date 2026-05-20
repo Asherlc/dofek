@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
+import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import { rejectFutureSamples } from "./sample-validation.ts";
@@ -60,7 +61,8 @@ async function insertRealtimeDataBatch(
     const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
     if (beatIntervalSamples.length > 0) {
       const beatIntervalValues = beatIntervalSamples.map((sample) => {
-        const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${sample.timestamp}`;
+        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+        const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}`;
         return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`;
       });
       await database.execute(
@@ -84,7 +86,8 @@ async function insertRealtimeDataBatch(
     );
     if (orientationSamples.length > 0) {
       const orientationSensorValues = orientationSamples.map((sample) => {
-        const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${sample.timestamp}`;
+        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+        const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${recordedAt}`;
         return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`;
       });
       await database.execute(

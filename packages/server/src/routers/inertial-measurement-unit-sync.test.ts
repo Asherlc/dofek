@@ -95,7 +95,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
-        samples: [makeSample()],
+        samples: [makeSample({ timestamp: "2026-03-25T10:00:00.020+00:00" })],
       });
 
       const insertStatement = execute.mock.calls[1]?.[0];

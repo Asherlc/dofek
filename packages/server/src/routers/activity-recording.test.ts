@@ -103,7 +103,9 @@ describe("activityRecordingRouter", () => {
       );
       expect(
         serializedStatements.some((statement) =>
-          statement.includes("dofek:2024-06-15T08:00:00Z:user-1:location:2024-06-15T08:00:00Z"),
+          statement.includes(
+            "dofek:2024-06-15T08:00:00.000Z:user-1:location:2024-06-15T08:00:00.000Z",
+          ),
         ),
       ).toBe(true);
       expect(

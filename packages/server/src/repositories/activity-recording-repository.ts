@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 const PROVIDER_ID = "dofek";
@@ -52,7 +53,8 @@ export class ActivityRecordingRepository {
   async saveActivity(input: SaveActivityInput): Promise<string> {
     await this.ensureProvider();
 
-    const externalId = `dofek:${input.startedAt}:${this.#userId}`;
+    const activityStartedAt = canonicalizeTimestampForExternalId(input.startedAt);
+    const externalId = `dofek:${activityStartedAt}:${this.#userId}`;
 
     const rows = await executeWithSchema(
       this.#db,
@@ -99,7 +101,8 @@ export class ActivityRecordingRepository {
             sample.gpsAccuracy == null
               ? null
               : JSON.stringify({ horizontal_accuracy_m: sample.gpsAccuracy });
-          const sampleExternalId = `${externalId}:location:${sample.recordedAt}`;
+          const recordedAt = canonicalizeTimestampForExternalId(sample.recordedAt);
+          const sampleExternalId = `${externalId}:location:${recordedAt}`;
           return sql`(
             ${sample.recordedAt}::timestamptz,
             ${this.#userId}::uuid,
@@ -135,7 +138,8 @@ export class ActivityRecordingRepository {
         const channelValues = batch
           .filter((sample) => sample[key] != null)
           .map((sample) => {
-            const sampleExternalId = `${externalId}:${channel}:${sample.recordedAt}`;
+            const recordedAt = canonicalizeTimestampForExternalId(sample.recordedAt);
+            const sampleExternalId = `${externalId}:${channel}:${recordedAt}`;
             return sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${sampleExternalId}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`;
           });
         if (channelValues.length > 0) {
