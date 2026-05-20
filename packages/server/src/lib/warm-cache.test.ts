@@ -22,6 +22,7 @@ vi.mock("../logger.ts", () => ({
 }));
 
 import { logger } from "../logger.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { appRouter } from "../router.ts";
 import { warmCache } from "./warm-cache.ts";
 
@@ -113,17 +114,34 @@ describe("warmCache", () => {
     vi.clearAllMocks();
   });
 
+  function buildSensorStore(): ActivitySensorStore {
+    return {
+      query: vi.fn(),
+      getActivitySummaries: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+    };
+  }
+
   it("warms every configured query with expected payloads and logs final count", async () => {
     const dbExecute = vi.fn().mockResolvedValue([{ id: "test-user" }]);
+    const sensorStore = buildSensorStore();
     const { caller, spies } = buildCaller();
     createCallerMock.mockReturnValue(caller);
 
-    await warmCache({ execute: dbExecute });
+    await warmCache({ execute: dbExecute }, sensorStore);
 
     const endDate = new Date().toISOString().slice(0, 10);
     expect(appRouter.createCaller).toHaveBeenCalledTimes(1);
     expect(appRouter.createCaller).toHaveBeenCalledWith({
       db: { execute: dbExecute },
+      sensorStore,
       userId: "test-user",
       timezone: "UTC",
     });
