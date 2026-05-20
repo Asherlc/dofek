@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -29,8 +30,8 @@ const calendarActivityEntrySchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   activityType: z.string(),
-  startedAt: z.string(),
-  endedAt: z.string().nullable(),
+  startedAt: timestampStringSchema,
+  endedAt: timestampStringSchema.nullable(),
   durationMin: z.number(),
   location: activityLocationSchema.nullable(),
   calories: z.number().nullable(),
@@ -39,7 +40,7 @@ const calendarActivityEntrySchema = z.object({
 });
 
 const calendarDayActivitiesSchema = z.object({
-  date: z.string(),
+  date: dateStringSchema,
   activities: z.array(calendarActivityEntrySchema),
 });
 

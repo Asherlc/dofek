@@ -63,4 +63,47 @@ describe("calendarRouter", () => {
       TRPCError,
     );
   });
+
+  it("normalizes weekList output date and timestamp fields at the API boundary", async () => {
+    repositoryResultMock.mockResolvedValueOnce([
+      {
+        date: new Date("2026-03-18T12:00:00.000Z"),
+        activities: [
+          {
+            id: "activity-1",
+            name: "Trainer Ride",
+            activityType: "indoor_cycling",
+            startedAt: new Date("2026-03-18T07:00:00.000Z"),
+            endedAt: "2026-03-18 08:00:00+00",
+            durationMin: 60,
+            location: null,
+            calories: null,
+            tss: null,
+            stats: [
+              { label: "Training Stress Score", value: "—" },
+              { label: "Calories", value: "—" },
+            ],
+          },
+        ],
+      },
+    ]);
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+      {
+        date: "2026-03-18",
+        activities: [
+          expect.objectContaining({
+            startedAt: "2026-03-18T07:00:00.000Z",
+            endedAt: "2026-03-18T08:00:00.000Z",
+          }),
+        ],
+      },
+    ]);
+  });
 });
