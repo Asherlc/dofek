@@ -5,6 +5,8 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
+import { restingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
@@ -184,6 +186,22 @@ describe("dailyMetrics data correctness", () => {
       // Sanity check: averages should be in expected ranges
       expect(result.avg_steps).toBeGreaterThan(5000);
       expect(result.avg_steps).toBeLessThan(15000);
+    });
+
+    it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {
+      const repo = new DailyMetricsRepository(testCtx.db, TEST_USER_ID, "UTC");
+      const result = await repo.getTrends(
+        30,
+        endDate,
+        restingHeartRateValuesCte([
+          { date: subtractDays(endDate, 24), resting_hr: 55 },
+          { date: subtractDays(endDate, 23), resting_hr: 57 },
+          { date: subtractDays(endDate, 22), resting_hr: 55 },
+          { date: subtractDays(endDate, 21), resting_hr: 85 },
+        ]),
+      );
+
+      expect(result?.latest_resting_hr).toBe(56);
     });
 
     it("returns all-null values when no data exists in the window", async () => {

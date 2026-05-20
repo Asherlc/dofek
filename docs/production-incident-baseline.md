@@ -6119,3 +6119,48 @@ ClickHouse-precondition logs stop in production.
   stack deploys or made less disruptive for active sync writes.
 - Re-check Sentry for new Postgres connection-reset events after the next
   deploy.
+
+## 2026-05-20: Dashboard Resting Heart Rate Showed 85 BPM Outlier
+
+### Symptoms
+
+The dashboard health metrics card showed resting heart rate as `85 bpm`, which
+was not representative of the user's actual resting heart rate.
+
+### User Impact
+
+The dashboard displayed a misleading current recovery metric and could make
+resting-heart-rate status look worse than the user's recent baseline.
+
+### Evidence
+
+A focused integration test reproduced the behavior with recent resting heart
+rate rows of 55, 57, 55, and a single latest 85 bpm outlier. Before the fix,
+`dailyMetrics.trends` returned `latest_resting_hr = 85`; the failing assertion
+was `expected 85 to be 56`.
+
+### Root Cause
+
+`DailyMetricsRepository.getTrends()` selected the most recent non-null resting
+heart rate for the dashboard card, while activity heart-rate zones already used
+a representative median of recent positive resting-heart-rate readings to
+suppress one-off noisy sleep-window values.
+
+### Fix or Mitigation
+
+Changed the dashboard trends query to compute `latest_resting_hr` as the median
+of the most recent 14 positive resting-heart-rate readings in the requested
+window instead of using the latest non-null value directly.
+
+### Remaining Risk
+
+The fix is not active in production until deployed. Trend averages and standard
+deviations still include all daily resting-heart-rate readings in the selected
+window; only the current card value is made representative.
+
+### Follow-Up Work
+
+- Deploy the dashboard query fix and verify the card no longer shows the 85 bpm
+  outlier.
+- Consider whether average resting heart rate should also use a robust statistic
+  in the dashboard card, or whether preserving the raw average is preferable.
