@@ -2,7 +2,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
+import {
+  fetchRestingHeartRateRows,
+  representativeRestingHeartRate,
+} from "./resting-heart-rate-query.ts";
 
 describe("fetchRestingHeartRateRows", () => {
   it("queries precomputed ClickHouse resting heart rate windows", async () => {
@@ -27,6 +30,75 @@ describe("fetchRestingHeartRateRows", () => {
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("channel = 'heart_rate'");
     expect(queryText).not.toContain("derived_resting_heart_rate");
+  });
+});
+
+describe("representativeRestingHeartRate", () => {
+  it("returns null when no rows are provided", () => {
+    expect(representativeRestingHeartRate([])).toBeNull();
+  });
+
+  it("returns the single value when there is one row", () => {
+    expect(representativeRestingHeartRate([{ date: "2026-05-04", resting_hr: 55 }])).toBe(55);
+  });
+
+  it("medians an odd-length window", () => {
+    const rows = [
+      { date: "2026-05-01", resting_hr: 55 },
+      { date: "2026-05-02", resting_hr: 57 },
+      { date: "2026-05-03", resting_hr: 56 },
+    ];
+    expect(representativeRestingHeartRate(rows)).toBe(56);
+  });
+
+  it("averages the two middle values for an even-length window", () => {
+    const rows = [
+      { date: "2026-05-01", resting_hr: 55 },
+      { date: "2026-05-02", resting_hr: 57 },
+      { date: "2026-05-03", resting_hr: 55 },
+      { date: "2026-05-04", resting_hr: 59 },
+    ];
+    expect(representativeRestingHeartRate(rows)).toBe(56);
+  });
+
+  it("suppresses a single noisy night surrounded by stable readings", () => {
+    // Matches the prod scenario: Apr 26-28 ≈ 55-57 bpm, then May 4 spikes to 85.
+    // The old `.at(-1)` picked 85 and broke HR zones for every later activity.
+    const rows = [
+      { date: "2026-04-26", resting_hr: 55 },
+      { date: "2026-04-27", resting_hr: 57 },
+      { date: "2026-04-28", resting_hr: 55 },
+      { date: "2026-05-04", resting_hr: 85 },
+    ];
+    expect(representativeRestingHeartRate(rows)).toBe(56);
+  });
+
+  it("uses only the most recent sampleWindow rows", () => {
+    const rows = [
+      { date: "2025-12-01", resting_hr: 100 },
+      { date: "2025-12-02", resting_hr: 100 },
+      { date: "2026-05-01", resting_hr: 55 },
+      { date: "2026-05-02", resting_hr: 56 },
+      { date: "2026-05-03", resting_hr: 57 },
+    ];
+    expect(representativeRestingHeartRate(rows, 3)).toBe(56);
+  });
+
+  it("ignores non-positive readings", () => {
+    const rows = [
+      { date: "2026-05-01", resting_hr: 0 },
+      { date: "2026-05-02", resting_hr: 56 },
+      { date: "2026-05-03", resting_hr: 58 },
+    ];
+    expect(representativeRestingHeartRate(rows)).toBe(57);
+  });
+
+  it("returns null when every reading is non-positive", () => {
+    const rows = [
+      { date: "2026-05-01", resting_hr: 0 },
+      { date: "2026-05-02", resting_hr: -5 },
+    ];
+    expect(representativeRestingHeartRate(rows)).toBeNull();
   });
 });
 

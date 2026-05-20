@@ -77,3 +77,27 @@ export function dateWindowStartString(endDate: string, days: number): string {
   windowStart.setUTCDate(windowStart.getUTCDate() - days);
   return windowStart.toISOString().slice(0, 10);
 }
+
+/**
+ * Pick a single representative resting heart rate from a sequence of daily readings.
+ * Takes the median of the most recent positive readings so one noisy night (a wrist
+ * tracker capturing waking HR inside a sleep window, etc.) can't shift zone boundaries
+ * for every subsequent activity. Rows must be sorted ascending by date — the contract
+ * of `fetchRestingHeartRateRowsFromClickHouse`.
+ */
+export function representativeRestingHeartRate(
+  rows: RestingHeartRateRow[],
+  sampleWindow = 14,
+): number | null {
+  const recent = rows
+    .slice(-sampleWindow)
+    .map((row) => row.resting_hr)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (recent.length === 0) return null;
+  const mid = Math.floor(recent.length / 2);
+  if (recent.length % 2 === 1) return recent[mid] ?? null;
+  const lower = recent[mid - 1];
+  const upper = recent[mid];
+  return lower != null && upper != null ? (lower + upper) / 2 : null;
+}

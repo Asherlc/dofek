@@ -574,6 +574,42 @@ describe("ActivityRepository", () => {
       );
     });
 
+    it("uses the median of recent resting HR readings instead of a single noisy night", async () => {
+      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
+      // Apr 26-28 stable around 55-57, May 4 spiked to 85. Old code picked 85 (latest),
+      // which pushed every Karvonen boundary above the user's walking-zone HR.
+      sensorStore.query.mockResolvedValueOnce([
+        { date: "2026-04-26", resting_hr: 55 },
+        { date: "2026-04-27", resting_hr: 57 },
+        { date: "2026-04-28", resting_hr: 55 },
+        { date: "2026-05-04", resting_hr: 85 },
+      ]);
+      execute
+        .mockResolvedValueOnce([
+          {
+            id: "activity-id",
+            user_id: "user-1",
+            started_at: "2026-05-18T19:40:00.000Z",
+            ended_at: "2026-05-18T20:08:59.000Z",
+            member_activity_ids: ["activity-id"],
+          },
+        ])
+        .mockResolvedValueOnce([{ max_hr: 194, resting_hr: 56 }]);
+
+      await repo.getHrZones("activity-id");
+
+      const sqlObject = execute.mock.calls[1]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      // The median of [55, 55, 57, 85] is (55 + 57) / 2 = 56, not 85.
+      expect(compiledQuery.params).toContain(56);
+      expect(compiledQuery.params).not.toContain(85);
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
+        expect.objectContaining({ activityId: "activity-id" }),
+        194,
+        56,
+      );
+    });
+
     it("queries a default resting HR when params are invalid", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
       execute
