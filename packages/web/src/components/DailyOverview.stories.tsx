@@ -43,6 +43,10 @@ const mockStrainTarget = {
   progressPercent: 88,
   zone: "Push" as const,
   explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
+  dailyLoad: 120,
+  acuteLoad: 95,
+  chronicLoad: 80,
+  workloadRatio: 1.19,
 };
 
 const meta = {
@@ -65,6 +69,18 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const WithLoadStats: Story = {
+  args: {
+    strainTarget: mockStrainTarget,
+  },
+};
+
+export const WithoutLoadStats: Story = {
+  args: {
+    strainTarget: undefined,
+  },
+};
 
 export const Loading: Story = {
   args: {

@@ -59,13 +59,9 @@ const activityRowSchema = z.object({
   avg_power: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
+  centroid_lat: z.coerce.number().nullable(),
+  centroid_lng: z.coerce.number().nullable(),
   local_date: dateStringSchema,
-});
-
-const locationRowSchema = z.object({
-  activity_id: z.string(),
-  centroid_lat: z.coerce.number(),
-  centroid_lng: z.coerce.number(),
 });
 
 const caloriesRowSchema = z.object({
@@ -122,6 +118,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.avg_power AS avg_power,
             asum.total_distance AS total_distance,
             asum.elevation_gain_m AS elevation_gain_m,
+            asum.centroid_lat AS centroid_lat,
+            asum.centroid_lng AS centroid_lng,
             toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS local_date
           FROM analytics.activity_summary asum
           WHERE asum.user_id = {userId:UUID}
@@ -147,12 +145,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     ]);
 
     const activityIds = activityRows.map((row) => row.id);
-    const [locationRows, caloriesRows] = await Promise.all([
-      this.#fetchLocationCentroids(activityIds),
-      this.#fetchCaloriesByActivityId(activityIds),
-    ]);
+    const caloriesRows = await this.#fetchCaloriesByActivityId(activityIds);
 
-    const locationByActivityId = new Map(locationRows.map((row) => [row.activity_id, row]));
     const caloriesByActivityId = new Map(
       caloriesRows.map((row) => [row.id, row.calories] as const),
     );
@@ -162,7 +156,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of activityRows) {
-      const location = locationByActivityId.get(row.id);
       const calories = caloriesByActivityId.get(row.id) ?? null;
       const tss = computeActivityTss({
         durationMin: row.duration_min,
@@ -182,15 +175,16 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         startedAt: row.started_at,
         endedAt: row.ended_at,
         durationMin: Math.round(row.duration_min * 10) / 10,
-        location: location
-          ? {
-              centroidLat: location.centroid_lat,
-              centroidLng: location.centroid_lng,
-              tileUrl: osmTileUrl(location.centroid_lat, location.centroid_lng),
-              distanceMeters: row.total_distance,
-              elevationGainM: row.elevation_gain_m,
-            }
-          : null,
+        location:
+          row.centroid_lat != null && row.centroid_lng != null
+            ? {
+                centroidLat: row.centroid_lat,
+                centroidLng: row.centroid_lng,
+                tileUrl: osmTileUrl(row.centroid_lat, row.centroid_lng),
+                distanceMeters: row.total_distance,
+                elevationGainM: row.elevation_gain_m,
+              }
+            : null,
         calories,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
         stats: formatActivityStats(tss, calories),
@@ -204,24 +198,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return Array.from(dayMap.entries())
       .map(([date, activities]) => ({ date, activities }))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }
-
-  async #fetchLocationCentroids(activityIds: string[]) {
-    if (activityIds.length === 0) return [];
-    return this.#sensorStore.query(
-      locationRowSchema,
-      `SELECT
-          toString(activity_id) AS activity_id,
-          avg(lat) AS centroid_lat,
-          avg(lng) AS centroid_lng
-        FROM analytics.deduped_location
-        WHERE user_id = {userId:UUID}
-          AND activity_id IN ({activityIds:Array(UUID)})
-          AND lat IS NOT NULL
-          AND lng IS NOT NULL
-        GROUP BY activity_id`,
-      { userId: this.userId, activityIds },
-    );
   }
 
   async #fetchCaloriesByActivityId(activityIds: string[]) {

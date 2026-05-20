@@ -42,6 +42,10 @@ export class StrainScore {
     return new StrainScore(value);
   }
 
+  static fromPhysiologicalLoad(physiologicalLoad: number): StrainScore {
+    return StrainScore.fromRawLoad(physiologicalLoad);
+  }
+
   static fromAcuteLoad(acuteLoad: number): StrainScore {
     return StrainScore.fromRawLoad(acuteLoad / StrainScore.#ACUTE_LOAD_DAYS);
   }

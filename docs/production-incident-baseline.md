@@ -6003,3 +6003,51 @@ while the flow is blocked.
 - Decide whether product-impacting infrastructure errors should also create
   Sentry issues, or whether they should stay in Axiom/log alerts with links to
   the affected service and flow.
+## 2026-05-20: Review App Deploy SSH Connection Reset
+
+### Symptoms
+
+PR #1141 review-app deploy run `26178665787` failed in the `Deploy Review App`
+job after Terraform applied successfully with no infrastructure changes.
+
+### User Impact
+
+The PR review app route was not updated for the latest branch commit. Production
+services were not affected.
+
+### Evidence
+
+The failing step was `Deploy Review App / Write front door review route`. The
+step attempted to run:
+`ssh "root@${FRONT_DOOR_HOST}" "mkdir -p /opt/dofek/traefik-dynamic"` followed
+by `scp "$route_config" "root@${FRONT_DOOR_HOST}:${REVIEW_ROUTE_FILE}"`.
+
+The first fatal log line was:
+`kex_exchange_identification: read: Connection reset by peer`, followed by
+`Connection reset by *** port 22` and exit code 255. Immediately before this,
+Terraform reported `No changes. Your infrastructure matches the configuration.`
+and output `review_url = "https://pr-1141.dofek.asherlc.com"`.
+
+### Root Cause
+
+Unresolved. The failure occurred while opening an SSH connection to the front
+door host after a successful Terraform apply. The log shows the front door SSH
+port was reachable during host-key setup, then reset the subsequent SSH
+connection.
+
+### Fix or Mitigation
+
+No code or infrastructure mitigation was applied in this branch. The failure is
+tracked here for follow-up rather than being papered over with retry changes.
+
+### Remaining Risk
+
+Review-app deploys can fail intermittently if the front door host resets SSH
+connections during route publication.
+
+### Follow-Up Work
+
+- Inspect front door SSH logs around `2026-05-20T17:28:07Z` for disconnect or
+  connection-limit evidence.
+- Decide whether the review-app deploy workflow needs a root-cause fix in SSH
+  host readiness, connection limiting, or front door service health.

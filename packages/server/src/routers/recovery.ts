@@ -13,6 +13,7 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitlement.ts";
+import { computeCurrentStrain } from "../lib/current-strain.ts";
 import {
   dateWindowEnd,
   dateWindowStart,
@@ -101,9 +102,16 @@ export interface ReadinessRow {
 export interface StrainTargetResult {
   targetStrain: number;
   currentStrain: number;
+  currentStrainSource?: "heart_rate" | "activity" | "none";
+  currentPhysiologyLoad?: number | null;
   progressPercent: number;
   zone: "Push" | "Maintain" | "Recovery";
   explanation: string;
+  dailyLoad?: number;
+  acuteLoad?: number;
+  chronicLoad?: number;
+  workloadRatio?: number | null;
+  readinessScore?: number;
 }
 
 export const recoveryRouter = router({
@@ -315,7 +323,7 @@ export const recoveryRouter = router({
         return {
           date: row.date,
           dailyLoad,
-          strain: StrainScore.fromAcuteLoad(acuteLoad).value,
+          strain: StrainScore.fromRawLoad(dailyLoad).value,
           acuteLoad,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
@@ -659,7 +667,8 @@ export const recoveryRouter = router({
         }),
         `SELECT
           toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-          sum(avg_hr * dateDiff('second', started_at, ended_at) / 60.0 / 100.0) AS daily_load
+          sum(dateDiff('second', started_at, ended_at) / 60.0
+              * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
         FROM analytics.activity_summary
         WHERE user_id = {userId:UUID}
           AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
@@ -733,19 +742,39 @@ export const recoveryRouter = router({
         if (daysAgo < acuteWindow) acuteLoadTotal += row.daily_load;
         if (daysAgo < chronicWindow) chronicLoad += row.daily_load;
       }
-      const currentStrain = StrainScore.fromAcuteLoad(acuteLoadTotal).value;
       const acuteLoad = acuteLoadTotal / acuteWindow;
       chronicLoad /= chronicWindow;
 
       const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
+      const todayLoad = loads.find((row) => row.date === today)?.daily_load ?? 0;
+      const currentStrain = await computeCurrentStrain({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate: today,
+        fallbackActivityLoad: todayLoad,
+      });
+      const roundedCurrentStrain = Math.round(currentStrain.currentStrain * 10) / 10;
+      const roundedAcuteLoad = Math.round(acuteLoad * 10) / 10;
+      const roundedChronicLoad = Math.round(chronicLoad * 10) / 10;
+      const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
 
       return {
         targetStrain: target.targetStrain,
-        currentStrain: Math.round(currentStrain * 10) / 10,
+        currentStrain: roundedCurrentStrain,
+        currentStrainSource: currentStrain.currentStrainSource,
+        currentPhysiologyLoad: currentStrain.currentPhysiologyLoad,
         progressPercent:
-          target.targetStrain > 0 ? Math.round((currentStrain / target.targetStrain) * 100) : 0,
+          target.targetStrain > 0
+            ? Math.round((roundedCurrentStrain / target.targetStrain) * 100)
+            : 0,
         zone: target.zone,
         explanation: target.explanation,
+        dailyLoad: Math.round(todayLoad * 10) / 10,
+        acuteLoad: roundedAcuteLoad,
+        chronicLoad: roundedChronicLoad,
+        workloadRatio: workloadRatio != null ? Math.round(workloadRatio * 100) / 100 : null,
+        readinessScore,
       };
     }),
 });

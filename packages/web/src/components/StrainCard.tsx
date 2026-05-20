@@ -115,7 +115,7 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
   }
 
   const today = data.timeSeries[data.timeSeries.length - 1];
-  const strain = data.displayedStrain;
+  const strain = strainTarget?.currentStrain ?? data.displayedStrain;
   const strainScore = new StrainScore(strain);
   const label = strainScore.label;
   const color = strainScore.color;

@@ -1,9 +1,9 @@
-import { StrainScore } from "@dofek/scoring/scoring";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { computeCurrentStrain } from "../lib/current-strain.ts";
 import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
 import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -386,12 +386,18 @@ export const mobileDashboardRouter = router({
       const chronicLoad =
         metricsRows.slice(0, 28).reduce((sum, r) => sum + (dailyLoadByDate.get(r.date) ?? 0), 0) /
         4;
-      const isLatestStrainRecent = metricsRows[0] != null && isRecent(metricsRows[0].date, endDate);
-      const dailyStrain = isLatestStrainRecent ? StrainScore.fromAcuteLoad(acuteLoad).value : 0;
       const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
+      const todayActivityLoad = dailyLoadByDate.get(endDate) ?? 0;
+      const currentStrain = await computeCurrentStrain({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: tz,
+        endDate,
+        fallbackActivityLoad: todayActivityLoad,
+      });
 
       const strainResult: MobileDashboardResult["strain"] = {
-        dailyStrain: Math.round(dailyStrain * 10) / 10,
+        dailyStrain: Math.round(currentStrain.currentStrain * 10) / 10,
         acuteLoad: Math.round(acuteLoad),
         chronicLoad: Math.round(chronicLoad),
         workloadRatio: workloadRatio != null ? Math.round(workloadRatio * 100) / 100 : null,

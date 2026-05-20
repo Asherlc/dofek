@@ -36,6 +36,64 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const CurrentStrainFromTarget: Story = {
+  args: {
+    data: {
+      displayedStrain: 8.4,
+      displayedDate: "2026-03-31",
+      timeSeries: [
+        {
+          date: "2026-03-31",
+          dailyLoad: 240,
+          strain: 8.4,
+          acuteLoad: 310,
+          chronicLoad: 390,
+          workloadRatio: 0.79,
+        },
+      ],
+    },
+    strainTarget: {
+      targetStrain: 15.0,
+      currentStrain: 12.5,
+      progressPercent: 83,
+      zone: "Maintain",
+      explanation: "Your readiness is moderate. Aim for a balanced training load.",
+    },
+  },
+};
+
+export const FallbackDisplayedStrain: Story = {
+  args: {
+    data: {
+      displayedStrain: 8.4,
+      displayedDate: "2026-03-31",
+      timeSeries: [
+        {
+          date: "2026-03-31",
+          dailyLoad: 240,
+          strain: 8.4,
+          acuteLoad: 310,
+          chronicLoad: 390,
+          workloadRatio: 0.79,
+        },
+      ],
+    },
+    strainTarget: undefined,
+  },
+};
+
+export const TargetMarker: Story = {
+  args: {
+    strainTarget: {
+      targetStrain: 16.5,
+      currentStrain: 11.2,
+      progressPercent: 68,
+      zone: "Push",
+      explanation: "Recovery is strong. Push for a high-strain day to build fitness.",
+    },
+  },
+};
+
 export const HighStrain: Story = {
   args: {
     data: {

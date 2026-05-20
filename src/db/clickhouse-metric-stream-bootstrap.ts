@@ -359,7 +359,16 @@ WHERE metric_stream._peerdb_is_deleted = 0
 GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.recorded_at`,
     "SYSTEM REFRESH VIEW analytics.deduped_location",
     "SYSTEM WAIT VIEW analytics.deduped_location",
-    `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary
+    ...buildActivitySummaryReadModelStatements(),
+    ...buildActivityTrendDailyCreateReadModelStatements(),
+  ];
+}
+
+export function buildActivitySummaryReadModelStatements(
+  viewName = "analytics.activity_summary",
+): string[] {
+  return [
+    `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
 REFRESH EVERY 15 MINUTE OFFSET 10 SECOND
 ENGINE = MergeTree
 ORDER BY (user_id, started_at, activity_id)
@@ -440,6 +449,16 @@ distance_per_activity AS (
   WHERE prev_lat IS NOT NULL
   GROUP BY activity_id
 ),
+location_centroids AS (
+  SELECT
+    activity_id,
+    CAST(avg(lat), 'Nullable(Float64)') AS centroid_lat,
+    CAST(avg(lng), 'Nullable(Float64)') AS centroid_lng
+  FROM gps_points
+  WHERE lat IS NOT NULL
+    AND lng IS NOT NULL
+  GROUP BY activity_id
+),
 channel_aggs AS (
   SELECT
     activity_id,
@@ -496,6 +515,8 @@ SELECT
   if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling'),
      CAST(0, 'Nullable(Float64)'),
      coalesce(distance_per_activity.total_distance, CAST(0, 'Nullable(Float64)'))) AS total_distance,
+  location_centroids.centroid_lat AS centroid_lat,
+  location_centroids.centroid_lng AS centroid_lng,
   channel_aggs.avg_left_balance AS avg_left_balance,
   channel_aggs.avg_left_torque_eff AS avg_left_torque_eff,
   channel_aggs.avg_right_torque_eff AS avg_right_torque_eff,
@@ -518,9 +539,10 @@ LEFT JOIN channel_aggs
 LEFT JOIN elevation_per_activity
   ON elevation_per_activity.activity_id = activity_bounds.activity_id
 LEFT JOIN distance_per_activity
-  ON distance_per_activity.activity_id = activity_bounds.activity_id`,
-    "SYSTEM REFRESH VIEW analytics.activity_summary",
-    "SYSTEM WAIT VIEW analytics.activity_summary",
-    ...buildActivityTrendDailyCreateReadModelStatements(),
+  ON distance_per_activity.activity_id = activity_bounds.activity_id
+LEFT JOIN location_centroids
+  ON location_centroids.activity_id = activity_bounds.activity_id`,
+    `SYSTEM REFRESH VIEW ${viewName}`,
+    `SYSTEM WAIT VIEW ${viewName}`,
   ];
 }

@@ -254,6 +254,24 @@ function StrainBreakdown({
       )}
 
       {/* Load stats */}
+      {strainTarget && (
+        <div className="grid grid-cols-2 gap-2 text-center">
+          <div>
+            <p className="text-sm font-bold text-foreground tabular-nums">
+              {strainTarget.currentStrain.toFixed(1)}
+            </p>
+            <p className="text-[10px] text-subtle">Today</p>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-foreground tabular-nums">
+              {strainTarget.workloadRatio != null ? strainTarget.workloadRatio.toFixed(2) : "--"}
+            </p>
+            <p className="text-[10px] text-subtle">Training Load Ratio</p>
+          </div>
+        </div>
+      )}
+
+      {/* Load stats */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-sm font-bold text-foreground tabular-nums">{acuteLoad.toFixed(0)}</p>
@@ -516,10 +534,11 @@ export function DailyOverview({
     return isToday(readinessDate) || isYesterday(readinessDate);
   })();
   const recoveryScore = readinessIsFresh ? (latestReadiness?.readinessScore ?? null) : null;
-  const strainIsToday = workloadRatio?.displayedDate
-    ? isToday(new Date(`${workloadRatio.displayedDate}T00:00:00`))
-    : false;
-  const strain = strainIsToday ? (workloadRatio?.displayedStrain ?? 0) : 0;
+  const strain =
+    strainTarget?.currentStrain ??
+    (workloadRatio?.displayedDate && isToday(new Date(`${workloadRatio.displayedDate}T00:00:00`))
+      ? (workloadRatio?.displayedStrain ?? 0)
+      : 0);
   const sleepIsFresh = (() => {
     if (!sleepPerformance?.sleepDate) return false;
     const sleepDate = new Date(`${sleepPerformance.sleepDate}T00:00:00`);
