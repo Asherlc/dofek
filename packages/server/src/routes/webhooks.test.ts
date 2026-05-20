@@ -1,4 +1,5 @@
 import type { AddressInfo } from "node:net";
+import { SYNC_JOB_RETRY_OPTIONS } from "dofek/jobs/queues";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { encryptCredentialValue } from "dofek/security/credential-encryption";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -396,11 +397,15 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
-    expect(mockQueueAdd).toHaveBeenCalledWith("sync", {
-      providerId: "prov-1",
-      sinceDays: 1,
-      userId: "user-1",
-    });
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "prov-1",
+        sinceDays: 1,
+        userId: "user-1",
+      },
+      SYNC_JOB_RETRY_OPTIONS,
+    );
   });
 
   it("calls syncWebhookEvent for targeted sync when available", async () => {
@@ -461,11 +466,15 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
-    expect(mockQueueAdd).toHaveBeenCalledWith("sync", {
-      providerId: "prov-1",
-      sinceDays: 1,
-      userId: "user-1",
-    });
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "prov-1",
+        sinceDays: 1,
+        userId: "user-1",
+      },
+      SYNC_JOB_RETRY_OPTIONS,
+    );
   });
 
   it("skips events when no user found for external ID", async () => {
@@ -517,11 +526,15 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(res.status).toBe(200);
     // Second event should still have been processed
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
-    expect(mockQueueAdd).toHaveBeenCalledWith("sync", {
-      providerId: "prov-2",
-      sinceDays: 1,
-      userId: "user-2",
-    });
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "prov-2",
+        sinceDays: 1,
+        userId: "user-2",
+      },
+      SYNC_JOB_RETRY_OPTIONS,
+    );
   });
 
   it("starts worker when full sync jobs are enqueued (no syncWebhookEvent)", async () => {

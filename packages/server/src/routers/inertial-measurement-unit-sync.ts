@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
+import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import { rejectFutureSamples } from "./sample-validation.ts";
@@ -63,15 +64,21 @@ async function insertBatch(
       const sampleHasGyro =
         sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
       const channel = sampleHasGyro ? "imu" : "accel";
+      const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+      const externalId = `${PROVIDER_ID}:${deviceId}:${channel}:${recordedAt}`;
       const vector = sampleHasGyro
         ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
         : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
-      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
+      return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
     });
     await db.execute(
       sql`INSERT INTO fitness.metric_stream
-          (recorded_at, user_id, provider_id, device_id, source_type, channel, vector)
-          VALUES ${sql.join(sensorValuesClauses, sql`, `)}`,
+          (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, vector)
+          VALUES ${sql.join(sensorValuesClauses, sql`, `)}
+          ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+          SET vector = EXCLUDED.vector,
+              device_id = EXCLUDED.device_id,
+              source_type = EXCLUDED.source_type`,
     );
 
     totalInserted += batch.length;

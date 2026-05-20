@@ -3,7 +3,11 @@ import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
-import { getProviderSyncQueue, type ScheduledSyncJobData } from "./queues.ts";
+import {
+  getProviderSyncQueue,
+  type ScheduledSyncJobData,
+  SYNC_JOB_RETRY_OPTIONS,
+} from "./queues.ts";
 
 /**
  * Process a scheduled sync job: query all users with connected providers
@@ -43,11 +47,15 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         continue;
       }
 
-      await getProviderSyncQueue(providerId).add("sync", {
-        userId,
-        providerId,
-        sinceDays: 1,
-      });
+      await getProviderSyncQueue(providerId).add(
+        "sync",
+        {
+          userId,
+          providerId,
+          sinceDays: 1,
+        },
+        SYNC_JOB_RETRY_OPTIONS,
+      );
       jobCount++;
     }
   }

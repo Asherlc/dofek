@@ -1201,6 +1201,26 @@ describe("HealthKitSyncRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
+    it("writes external IDs and conflict handling for retry-safe metric stream samples", async () => {
+      const { repository, execute } = makeRepository();
+      const samples = [
+        makeSample({
+          type: "HKQuantityTypeIdentifierHeartRate",
+          value: 72,
+          uuid: "hr-idempotent",
+        }),
+      ];
+
+      await repository.processMetricStream(samples);
+
+      const serializedQuery = JSON.stringify(execute.mock.calls[0]?.[0]);
+      expect(serializedQuery).toContain("external_id");
+      expect(serializedQuery).toContain("hk:hr-idempotent");
+      expect(serializedQuery).toContain(
+        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+      );
+    });
+
     it("skips samples with unmapped type", async () => {
       const { repository, execute } = makeRepository();
       const samples = [
