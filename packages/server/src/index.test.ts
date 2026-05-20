@@ -127,6 +127,7 @@ import { createApp, main, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { warmCache } from "./lib/warm-cache.ts";
 import { logger } from "./logger.ts";
+import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
@@ -715,6 +716,21 @@ describe("runStartupTasks", () => {
     vi.clearAllMocks();
   });
 
+  function buildSensorStore(): ActivitySensorStore {
+    return {
+      query: vi.fn(),
+      getActivitySummaries: vi.fn(),
+      getPowerCurveSamples: vi.fn(),
+      getNormalizedPowerSamples: vi.fn(),
+      getVo2MaxEstimates: vi.fn(),
+      getHeartRateCurveRows: vi.fn(),
+      getPaceCurveRows: vi.fn(),
+      getStream: vi.fn(),
+      getHeartRateZoneSeconds: vi.fn(),
+      getPowerZoneSeconds: vi.fn(),
+    };
+  }
+
   it("reports warmCache errors to Sentry", async () => {
     const error = new Error("cache boom");
     vi.mocked(warmCache).mockRejectedValueOnce(error);
@@ -729,6 +745,20 @@ describe("runStartupTasks", () => {
 
     expect(vi.mocked(logger.error)).toHaveBeenCalledWith(expect.stringContaining("cache boom"));
     expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error);
+  });
+
+  it("passes the sensor store to warmCache", async () => {
+    vi.mocked(warmCache).mockResolvedValueOnce(undefined);
+    vi.mocked(startSlackBot).mockResolvedValueOnce(undefined);
+
+    const fakeDb = createDatabaseFromEnv();
+    const app = express();
+    const sensorStore = buildSensorStore();
+    runStartupTasks(fakeDb, app, sensorStore);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vi.mocked(warmCache)).toHaveBeenCalledWith(fakeDb, sensorStore);
   });
 
   it("reports startSlackBot errors to Sentry", async () => {

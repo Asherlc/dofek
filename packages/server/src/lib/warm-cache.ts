@@ -1,10 +1,14 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../logger.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { appRouter } from "../router.ts";
 
 /** Fire common queries sequentially to populate cache without overwhelming the DB. */
-export async function warmCache(db: import("dofek/db").Database): Promise<void> {
+export async function warmCache(
+  db: import("dofek/db").Database,
+  sensorStore?: ActivitySensorStore,
+): Promise<void> {
   const rows = await db.execute(
     sql`SELECT id::text AS id FROM fitness.user_profile ORDER BY created_at ASC LIMIT 1`,
   );
@@ -14,7 +18,12 @@ export async function warmCache(db: import("dofek/db").Database): Promise<void> 
     return;
   }
 
-  const caller = appRouter.createCaller({ db, userId: parsed.data.id, timezone: "UTC" });
+  const caller = appRouter.createCaller({
+    db,
+    sensorStore,
+    userId: parsed.data.id,
+    timezone: "UTC",
+  });
   const endDate = new Date().toISOString().slice(0, 10);
   const queries: Array<[string, () => Promise<unknown>]> = [
     // Dashboard

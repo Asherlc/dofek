@@ -6052,6 +6052,74 @@ connections during route publication.
 - Decide whether the review-app deploy workflow needs a root-cause fix in SSH
   host readiness, connection limiting, or front door service health.
 
+## 2026-05-20: Production DB Connection Resets During Stack Updates
+
+### Symptoms
+
+Sentry reported Garmin sync failures while writing `fitness.metric_stream` and
+then attempting to write `fitness.sync_log`. The attached event showed
+`connect ECONNREFUSED 10.0.1.97:5432`. Sentry also showed related production
+events at `2026-05-20T18:48:46Z`, `2026-05-20T19:08:35Z`, and
+`2026-05-20T19:09:41Z` with `read ECONNRESET`, `terminating connection due to
+administrator command`, and `Connection terminated unexpectedly`.
+
+### User Impact
+
+Garmin activity sync jobs failed during the DB interruption window. The public
+web health endpoint later returned `{"status":"ok"}`, and the production DB was
+writable with `pg_is_in_recovery()` returning `false`.
+
+### Evidence
+
+`docker service ps dofek_db --no-trunc` showed repeated DB task replacement:
+one running task, plus prior `Complete`/`Shutdown` tasks from the preceding
+minutes. `docker service inspect dofek_db` showed the DB service updated at
+`2026-05-20 19:22:37Z`. Postgres logs showed:
+`database system was interrupted; last known up at 2026-05-20 19:09:01 UTC`,
+then `database system was not properly shut down; automatic recovery in
+progress`, and finally `database system is ready to accept connections` at
+`2026-05-20T19:09:51Z`.
+
+Host checks during triage did not show disk exhaustion: root filesystem was
+55% used, the Hetzner data volume was 73% used, and Docker reported 2.259 GB
+reclaimable image data. The current DB health check reported
+`/var/run/postgresql:5432 - accepting connections`.
+
+During the same triage, production services rolled from `sha-bae9208` to
+`sha-397d04a`; `docker service ls` showed `dofek_web` at `2/2`,
+`dofek_worker` at `1/1`, and `dofek_db` at `1/1`.
+
+### Root Cause
+
+The sync failures were caused by production DB task replacement during stack
+updates, which interrupted active Postgres connections. No evidence of disk
+exhaustion, recovery-mode stall, or persistent DB crash loop was found during
+triage.
+
+### Fix or Mitigation
+
+No manual server changes were made. The system recovered after Postgres
+automatic recovery and the stack rollout converged. A separate startup-cache
+issue was identified: `warmCache()` constructs a tRPC caller without
+`ctx.sensorStore`, so ClickHouse-backed warmup queries log
+`requires the ClickHouse activity analytics store` even when `CLICKHOUSE_URL`
+is configured for real request handling. This branch fixes that separate cache
+warmup issue by passing the production ClickHouse-backed sensor store into
+`warmCache()`.
+
+### Remaining Risk
+
+Sync jobs can still fail if a DB task is replaced while writes are in flight.
+The startup cache-warm fix needs to be deployed before the false
+ClickHouse-precondition logs stop in production.
+
+### Follow-Up Work
+
+- Decide whether DB service updates should be avoided during normal app-only
+  stack deploys or made less disruptive for active sync writes.
+- Re-check Sentry for new Postgres connection-reset events after the next
+  deploy.
+
 ## 2026-05-20: Production DB Restart During IMU Sync
 
 ### Symptoms
@@ -6097,9 +6165,10 @@ created the pressure was not proven from the available logs.
 
 ### Fix or Mitigation
 
-No behavior change was shipped. Postgres recovered automatically, and the
-current DB health check passed. A retry/timeout workaround was intentionally not
-added because the root resource-pressure source is still unconfirmed.
+No behavior change was shipped during triage. Postgres recovered
+automatically, and the current DB health check passed. This branch separately
+makes direct metric-stream ingestion paths idempotent so retrying a failed
+sample upload does not duplicate raw samples.
 
 ### Remaining Risk
 
