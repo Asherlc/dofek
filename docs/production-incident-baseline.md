@@ -6185,7 +6185,7 @@ minutes. `docker service inspect dofek_db` showed the DB service updated at
 `database system was interrupted; last known up at 2026-05-20 19:09:01 UTC`,
 then `database system was not properly shut down; automatic recovery in
 progress`, and finally `database system is ready to accept connections` at
-`2026-05-20 19:09:51Z`.
+`2026-05-20T19:09:51Z`.
 
 Host checks during triage did not show disk exhaustion: root filesystem was
 55% used, the Hetzner data volume was 73% used, and Docker reported 2.259 GB
@@ -6278,3 +6278,68 @@ view.
   `syncClickHouseTestActivitySensorStore()`.
 - Add a regression test that fails on new non-test runtime references to
   `fitness.v_sleep`.
+## 2026-05-20: Production DB Restart During IMU Sync
+
+### Symptoms
+
+Sentry issue `DOFEK-SERVER-2P` reported one production error at
+`2026-05-20T19:09:41Z` from
+`inertialMeasurementUnitSync.pushSamples`. The request failed while inserting a
+large IMU batch into `fitness.metric_stream`.
+
+### User Impact
+
+One IMU sample push failed and the affected mobile client would need to retry
+that batch. No impacted Sentry users were recorded. Postgres recovered and was
+writable again by `2026-05-20T19:09:51Z`.
+
+### Evidence
+
+The failing route was `inertialMeasurementUnitSync.pushSamples`. The failing
+SQL step was:
+`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, vector) VALUES ...`.
+
+The first fatal application error was:
+`Error: Connection terminated unexpectedly`.
+
+Postgres logs showed the database restarted immediately after the Sentry event:
+`2026-05-20 19:09:48.090 UTC [25] LOG: database system was interrupted; last known up at 2026-05-20 19:09:01 UTC`,
+followed by automatic recovery and
+`2026-05-20 19:09:51.865 UTC [1] LOG: database system is ready to accept connections`.
+
+Docker and host logs around the same window showed Docker swarm manager
+timeouts, healthcheck start timeouts, repeated `Canceled: context canceled`
+image/metadata lookups, `systemd-journald` memory-pressure cache flushes, and
+multiple service bindings disappearing. Host uptime confirmed this was not a
+host reboot. Current checks after recovery showed the DB container healthy,
+`pg_is_in_recovery = false`, no disk exhaustion, and `OOMKilled=false`.
+
+### Root Cause
+
+Partially unresolved. The direct cause of the Sentry error was an unclean
+Postgres task restart during a host/Docker resource-pressure window, not a
+schema or payload validation failure in the IMU route. The exact workload that
+created the pressure was not proven from the available logs.
+
+### Fix or Mitigation
+
+No behavior change was shipped during triage. Postgres recovered
+automatically, and the current DB health check passed. This branch separately
+makes direct metric-stream ingestion paths idempotent so retrying a failed
+sample upload does not duplicate raw samples.
+
+### Remaining Risk
+
+The same failure can recur if host memory or Docker swarm manager pressure
+returns during large metric-stream inserts or deploy activity.
+
+### Follow-Up Work
+
+- Correlate Axiom/Netdata metrics around `2026-05-20T19:06Z` to identify the
+  memory and load source.
+- Add or verify host memory-pressure alerts that fire before Docker swarm
+  healthchecks and task management start timing out.
+- Review whether ClickHouse metric-stream refresh or CDC work was active during
+  the incident window.
+- Consider mobile-side retry behavior for transient server/database disconnects
+  only after the infrastructure root cause is understood.

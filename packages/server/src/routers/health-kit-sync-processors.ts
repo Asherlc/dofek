@@ -5,6 +5,7 @@ import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
+import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
@@ -306,17 +307,23 @@ export async function processMetricStream(
       const metricValue = INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
         ? Math.round(sample.value)
         : sample.value;
+      const externalId = `hk:${sample.uuid}`;
       await db.execute(
-        sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, scalar)
+        sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
             VALUES (
               ${sample.startDate}::timestamptz,
               ${userId},
               ${PROVIDER_ID},
+              ${externalId},
               ${sample.sourceName ?? null},
               ${"api"},
               ${mapping.column},
               ${metricValue}::real
-            )`,
+            )
+            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+            SET scalar = EXCLUDED.scalar,
+                device_id = EXCLUDED.device_id,
+                source_type = EXCLUDED.source_type`,
       );
       inserted++;
     }
@@ -457,23 +464,33 @@ export async function processWorkoutRoutes(
       if (pendingValues.length === 0) return;
       await db.execute(
         sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, activity_id, device_id, source_type, channel, scalar, point, metadata)
-            VALUES ${sql.join(pendingValues, sql`, `)}`,
+              (recorded_at, user_id, provider_id, external_id, activity_id, device_id, source_type, channel, scalar, point, metadata)
+            VALUES ${sql.join(pendingValues, sql`, `)}
+            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+            SET activity_id = EXCLUDED.activity_id,
+                device_id = EXCLUDED.device_id,
+                source_type = EXCLUDED.source_type,
+                scalar = EXCLUDED.scalar,
+                point = EXCLUDED.point,
+                metadata = EXCLUDED.metadata`,
       );
       inserted += pendingValues.length;
       pendingValues.length = 0;
     };
 
     for (const location of route.locations) {
+      const recordedAt = canonicalizeTimestampForExternalId(location.date);
       const locationMetadata =
         location.horizontalAccuracy == null
           ? null
           : JSON.stringify({ horizontal_accuracy_m: location.horizontalAccuracy });
+      const locationExternalId = `${externalId}:location:${recordedAt}`;
       pendingValues.push(
         sql`(
           ${location.date}::timestamptz,
           ${userId},
           ${PROVIDER_ID},
+          ${locationExternalId},
           ${activityId}::uuid,
           ${route.sourceName ?? null},
           ${"api"},
@@ -493,19 +510,21 @@ export async function processWorkoutRoutes(
         if (value == null) continue;
 
         const scalar = round ? Math.round(value) : value;
+        const scalarExternalId = `${externalId}:${channel}:${recordedAt}`;
         pendingValues.push(
           sql`(
             ${location.date}::timestamptz,
             ${userId},
             ${PROVIDER_ID},
+            ${scalarExternalId},
             ${activityId}::uuid,
             ${route.sourceName ?? null},
             ${"api"},
-          ${channel},
-          ${scalar}::real,
-          NULL,
-          NULL::jsonb
-        )`,
+            ${channel},
+            ${scalar}::real,
+            NULL,
+            NULL::jsonb
+          )`,
         );
 
         if (pendingValues.length >= BATCH_SIZE) {

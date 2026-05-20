@@ -161,6 +161,8 @@ Routers that need daily nutrient totals query `fitness.v_nutrition_daily`. Route
 
 All provider-sourced tables have a `(provider_id, external_id)` unique index. Syncs use upsert to avoid duplicates.
 
+Every data ingestion path that writes `fitness.metric_stream` must set a stable `external_id` before inserting. Provider-supplied IDs are preferred; when the source does not expose a sample ID, ingestion derives a deterministic ID from provider, activity/source, channel, and timestamp. Metric stream writes use `(user_id, provider_id, external_id, channel, recorded_at)` as the idempotency key so failed syncs can be retried without duplicating raw samples.
+
 Daily metrics use per-category dedup priority (see `src/db/dedup.ts`) to prefer the most accurate source for each metric when multiple providers report the same data.
 
 Sensor sample dedup: per (activity_id, channel), the provider with the most samples wins. This ensures the most granular source (e.g., BLE at 50Hz vs API at 1Hz) is automatically preferred.
