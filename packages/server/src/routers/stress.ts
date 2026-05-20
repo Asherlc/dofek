@@ -121,7 +121,7 @@ export const stressRouter = router({
       const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
       const rows = metricRows.map((row) => ({
         ...row,
-        efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? null,
+        efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? row.efficiency_pct,
       }));
 
       // Load personalized stress thresholds

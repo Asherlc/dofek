@@ -340,7 +340,6 @@ describe("Router data coverage", () => {
     }
 
     // ── Refresh Postgres sleep materialized view ──
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);

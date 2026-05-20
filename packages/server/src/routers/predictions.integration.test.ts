@@ -165,7 +165,6 @@ describe("Predictions router (integration)", () => {
     }
 
     // Refresh sleep materialized view
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     const app = createApp(testCtx.db, sensorStore);

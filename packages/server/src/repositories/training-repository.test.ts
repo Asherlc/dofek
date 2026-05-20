@@ -304,7 +304,6 @@ describe("TrainingRepository", () => {
           rr_sd_30d: 1.0,
         },
       ];
-      const sleepRows = [{ efficiency_pct: 88.5 }];
       const muscleRows = [{ muscle_group: "chest", last_trained_date: "2024-01-12" }];
       const balanceRows = [
         {
@@ -318,16 +317,16 @@ describe("TrainingRepository", () => {
       const execute = vi.fn().mockImplementation(async (query: unknown) => {
         const queryText = JSON.stringify(query);
         if (queryText.includes("vitals_baseline")) return latestMetricsRows;
-        if (queryText.includes("efficiency_pct")) return sleepRows;
         if (queryText.includes("muscle_group")) return muscleRows;
         if (queryText.includes("strength_data")) return balanceRows;
         if (queryText.includes("training_date")) return trainingRows;
         return [];
       });
 
-      // CH queries (in fetch order): helper RHR, acwr, zoneTotals, hiitLoad.
+      // CH queries (in fetch order): helper RHR, latest sleep, acwr, zoneTotals, hiitLoad.
       const sensorQuery = vi.fn();
       sensorQuery.mockResolvedValueOnce([]);
+      sensorQuery.mockResolvedValueOnce([{ date: "2024-01-14", efficiency_pct: 88.5 }]);
       sensorQuery.mockResolvedValueOnce([{ acwr: 1.15 }]);
       sensorQuery.mockResolvedValueOnce([
         { zone0: 75, zone1: 100, zone2: 200, zone3: 150, zone4: 50, zone5: 10 },
@@ -371,10 +370,10 @@ describe("TrainingRepository", () => {
     it("calls execute for PG sub-queries and sensorStore.query for CH sub-queries", async () => {
       const { repo, execute, sensorStore } = makeRepository([]);
       await repo.getNextWorkoutData("2024-01-15");
-      // 5 PG queries: latestMetrics, sleep, muscleFreshness, balance, trainingDays.
-      // 4 CH queries: helper RHR, acwr, zoneTotals, hiitLoad.
-      expect(execute).toHaveBeenCalledTimes(5);
-      expect(sensorStore.query).toHaveBeenCalledTimes(4);
+      // 4 PG queries: latestMetrics, muscleFreshness, balance, trainingDays.
+      // 5 CH queries: helper RHR, latest sleep, acwr, zoneTotals, hiitLoad.
+      expect(execute).toHaveBeenCalledTimes(4);
+      expect(sensorStore.query).toHaveBeenCalledTimes(5);
     });
   });
 

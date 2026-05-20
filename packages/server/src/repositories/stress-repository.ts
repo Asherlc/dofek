@@ -168,7 +168,7 @@ export class StressRepository extends BaseRepository {
     const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
     const rows = vitalRows.map((row) => ({
       ...row,
-      efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? null,
+      efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? row.efficiency_pct,
     }));
 
     const storedParams = await loadPersonalizedParams(this.db, this.userId);

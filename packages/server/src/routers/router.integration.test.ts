@@ -271,7 +271,6 @@ describe("Router coverage", () => {
     }
 
     // ── Refresh Postgres sleep materialized view ──
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
@@ -591,9 +590,6 @@ describe("Router coverage", () => {
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
             )`,
       );
-
-      // Refresh materialized view so v_sleep picks up the new row
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
       // Clear cache so the query hits the DB
       await queryCache.invalidateAll();

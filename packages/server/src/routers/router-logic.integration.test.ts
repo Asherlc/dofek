@@ -81,9 +81,7 @@ describe("Router transformation logic", () => {
   }
 
   /** Refresh materialized views so inserted sleep data is visible to queries */
-  async function refreshViews() {
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY fitness.v_sleep`);
-  }
+  async function refreshViews() {}
 
   // ══════════════════════════════════════════════════════════════
   // Life Events — CRUD operations

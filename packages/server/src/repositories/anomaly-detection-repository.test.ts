@@ -43,7 +43,9 @@ function makeDb(rows: Record<string, unknown>[] = []) {
 
 function makeSensorStore() {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2024-06-14", resting_hr: 52 }]),
+    query: vi.fn(async (_schema: unknown, query: string) =>
+      query.includes("analytics.v_sleep") ? [] : [{ date: "2024-06-14", resting_hr: 52 }],
+    ),
   };
 }
 

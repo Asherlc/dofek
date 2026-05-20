@@ -295,7 +295,15 @@ export class AnomalyDetectionRepository {
     if (!row || !row.date) return { anomalies, checkedMetrics };
 
     const date = String(row.date);
-    const sleepStats = sleepStatsForDate(sleepRows, date);
+    const sleepStats =
+      sleepRows.length > 0
+        ? sleepStatsForDate(sleepRows, date)
+        : {
+            durationMinutes: row.duration_minutes,
+            mean: row.sleep_mean,
+            stddev: row.sleep_sd,
+            count: row.sleep_count ?? 0,
+          };
 
     // Check resting HR (higher = worse)
     if (

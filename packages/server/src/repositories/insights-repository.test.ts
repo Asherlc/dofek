@@ -33,8 +33,8 @@ describe("InsightsRepository", () => {
       const sensorStore = makeSensorStore();
       const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
       await repo.computeInsights(90, "2024-06-01");
-      expect(db.execute).toHaveBeenCalledTimes(3);
-      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+      expect(db.execute).toHaveBeenCalledTimes(2);
+      expect(sensorStore.query).toHaveBeenCalledTimes(4);
     });
 
     it("returns engine result for empty data", async () => {

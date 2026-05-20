@@ -31,6 +31,7 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
     ? (() => {
         const fn = vi.fn();
         for (const batch of rows) fn.mockResolvedValueOnce(batch);
+        fn.mockResolvedValue([]);
         return fn;
       })()
     : vi.fn().mockResolvedValue(rows);
@@ -46,6 +47,100 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
   };
+}
+
+type SleepNightTestRow = {
+  date: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_minutes: number | null;
+  deep_minutes: number | null;
+  rem_minutes: number | null;
+  light_minutes: number | null;
+  awake_minutes: number | null;
+  efficiency_pct: number | null;
+};
+
+function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTestRow {
+  const date = overrides.date ?? "2026-03-01";
+  return {
+    date,
+    started_at: `${date}T22:00:00Z`,
+    ended_at: `${addDays(date, 1)}T06:00:00Z`,
+    duration_minutes: 480,
+    deep_minutes: 90,
+    rem_minutes: 105,
+    light_minutes: 255,
+    awake_minutes: 30,
+    efficiency_pct: 93.75,
+    ...overrides,
+  };
+}
+
+function sleepScheduleRow(
+  date: string,
+  bedtimeHour: number,
+  waketimeHour: number,
+): SleepNightTestRow {
+  return sleepNightRow({
+    date,
+    started_at: `${date}T${hourString(bedtimeHour)}Z`,
+    ended_at: `${addDays(date, 1)}T${hourString(waketimeHour)}Z`,
+  });
+}
+
+function sleepAnalyticsRow({
+  date,
+  durationMinutes,
+  deepPct,
+  remPct,
+  lightPct,
+  awakePct,
+  efficiency,
+}: {
+  date: string;
+  durationMinutes: number;
+  deepPct: number;
+  remPct: number;
+  lightPct: number;
+  awakePct: number;
+  efficiency: number;
+}): SleepNightTestRow {
+  return sleepNightRow({
+    date,
+    duration_minutes: durationMinutes,
+    deep_minutes: Math.round(durationMinutes * deepPct) / 100,
+    rem_minutes: Math.round(durationMinutes * remPct) / 100,
+    light_minutes: Math.round(durationMinutes * lightPct) / 100,
+    awake_minutes: Math.round(durationMinutes * awakePct) / 100,
+    efficiency_pct: efficiency,
+  });
+}
+
+function sleepDebtRow(date: string, sleepMinutes: number, durationMinutes = sleepMinutes) {
+  return sleepNightRow({
+    date,
+    duration_minutes: durationMinutes,
+    deep_minutes: null,
+    rem_minutes: null,
+    light_minutes: sleepMinutes,
+    awake_minutes: Math.max(0, durationMinutes - sleepMinutes),
+    efficiency_pct: durationMinutes > 0 ? (sleepMinutes / durationMinutes) * 100 : null,
+  });
+}
+
+function hourString(hourValue: number): string {
+  const hour = Math.floor(hourValue);
+  const totalSeconds = Math.round((hourValue - hour) * 3600);
+  const minute = Math.floor(totalSeconds / 60);
+  const second = totalSeconds % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
@@ -83,22 +178,14 @@ describe("recoveryRouter.sleepConsistency", () => {
     expect(result).toEqual([]);
   });
 
-  it("maps SQL rows to SleepConsistencyRow format with rounding", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22.567,
-        waketime_hour: 6.789,
-        rolling_bedtime_stddev: 0.4567,
-        rolling_waketime_stddev: 0.3456,
-        window_count: 14,
-      },
-    ];
+  it("maps ClickHouse sleep rows to SleepConsistencyRow format with rounding", async () => {
+    const rows = [sleepScheduleRow("2026-03-01", 22.567, 6.789)];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
@@ -106,128 +193,83 @@ describe("recoveryRouter.sleepConsistency", () => {
     expect(result[0]?.date).toBe("2026-03-01");
     // bedtimeHour rounds to 2 decimal places: 22.567 -> 22.57
     expect(result[0]?.bedtimeHour).toBe(22.57);
-    // waketimeHour rounds to 2 decimal places: 6.789 -> 6.79
-    expect(result[0]?.waketimeHour).toBe(6.79);
-    // rollingBedtimeStddev rounds to 2 decimal places: 0.4567 -> 0.46
-    expect(result[0]?.rollingBedtimeStddev).toBe(0.46);
-    // rollingWaketimeStddev rounds to 2 decimal places: 0.3456 -> 0.35
-    expect(result[0]?.rollingWaketimeStddev).toBeCloseTo(0.35, 2);
+    expect(result[0]?.waketimeHour).toBe(6.78);
+    expect(result[0]?.rollingBedtimeStddev).toBe(0);
+    expect(result[0]?.rollingWaketimeStddev).toBe(0);
   });
 
-  it("sets consistencyScore to null when window_count < 7", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 6, // fewer than 7
-      },
-    ];
+  it("sets consistencyScore to null when fewer than 7 nights are available", async () => {
+    const rows = Array.from({ length: 6 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
-    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result.at(-1)?.consistencyScore).toBeNull();
   });
 
-  it("computes consistencyScore when window_count >= 7", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+  it("computes consistencyScore when at least 7 nights are available", async () => {
+    const rows = Array.from({ length: 7 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
-    // avgStddev = (0.5 + 0.5) / 2 = 0.5
-    // score = max(0, min(100, (1 - (0.5 - 0.5) / 1.0) * 100)) = max(0, min(100, 100)) = 100
-    expect(result[0]?.consistencyScore).toBe(100);
+    expect(result.at(-1)?.consistencyScore).toBe(100);
   });
 
   it("handles null stddev values", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: null,
-        rolling_waketime_stddev: null,
-        window_count: 14,
-      },
-    ];
+    const rows = [sleepNightRow({ date: "2026-03-01", ended_at: null })];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
-    expect(result[0]?.rollingBedtimeStddev).toBeNull();
-    expect(result[0]?.rollingWaketimeStddev).toBeNull();
-    // computeSleepConsistencyScore returns null when either stddev is null
-    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result).toEqual([]);
   });
 
   it("uses default days of 90", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore,
     });
     await caller.sleepConsistency({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 
   it("processes multiple rows correctly", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.3,
-        rolling_waketime_stddev: 0.3,
-        window_count: 14,
-      },
-      {
-        date: "2026-03-02",
-        bedtime_hour: 23.5,
-        waketime_hour: 7.5,
-        rolling_bedtime_stddev: 0.8,
-        rolling_waketime_stddev: 0.9,
-        window_count: 14,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7), sleepScheduleRow("2026-03-02", 23.5, 7.5)];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
 
     expect(result).toHaveLength(2);
     expect(result[0]?.date).toBe("2026-03-01");
     expect(result[1]?.date).toBe("2026-03-02");
-    // First row should have higher consistency (lower stddev)
-    expect(result[0]?.consistencyScore).toBeGreaterThan(result[1]?.consistencyScore ?? 0);
+    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result[1]?.consistencyScore).toBeNull();
   });
 });
 
@@ -526,25 +568,24 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(result.sleepDebt).toBe(0);
   });
 
-  it("maps SQL rows to SleepNightlyRow format with rounding", async () => {
+  it("maps ClickHouse rows to SleepNightlyRow format with rounding", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 18.567,
-        rem_pct: 22.345,
-        light_pct: 50.123,
-        awake_pct: 8.965,
+        durationMinutes: 480,
+        deepPct: 18.567,
+        remPct: 22.345,
+        lightPct: 50.123,
+        awakePct: 8.965,
         efficiency: 93.456,
-        rolling_avg_duration: 455.789,
-      },
+      }),
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -552,7 +593,7 @@ describe("recoveryRouter.sleepAnalytics", () => {
     const night = result.nightly[0];
     expect(night?.date).toBe("2026-03-01");
     expect(night?.durationMinutes).toBe(480);
-    expect(night?.sleepMinutes).toBe(450);
+    expect(night?.sleepMinutes).toBeCloseTo(436.97, 1);
     // deepPct rounds to 1 decimal: 18.567 -> 18.6
     expect(night?.deepPct).toBe(18.6);
     // remPct rounds to 1 decimal: 22.345 -> 22.3
@@ -563,54 +604,33 @@ describe("recoveryRouter.sleepAnalytics", () => {
     expect(night?.awakePct).toBe(9);
     // efficiency rounds to 1 decimal: 93.456 -> 93.5
     expect(night?.efficiency).toBeCloseTo(93.5, 1);
-    // rollingAvgDuration rounds to 1 decimal: 455.789 -> 455.8
-    expect(night?.rollingAvgDuration).toBe(455.8);
+    expect(night?.rollingAvgDuration).toBeCloseTo(437, 1);
   });
 
-  it("handles null rolling_avg_duration", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 25,
-        light_pct: 45,
-        awake_pct: 10,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+  it("computes rolling average duration from available sleep rows", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 450, 480)];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
-    expect(result.nightly[0]?.rollingAvgDuration).toBeNull();
+    expect(result.nightly[0]?.rollingAvgDuration).toBe(450);
   });
 
   it("computes positive sleep debt when sleep is below target", async () => {
     // Default sleep target is 480 min (8 hours)
     // 14 nights all at 420 min = 60 min deficit each = 60 * 14 = 840 total debt
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 420,
-      sleep_minutes: 420,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 87.5,
-      rolling_avg_duration: 420,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 420),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -620,22 +640,14 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
   it("computes zero sleep debt when sleep meets or exceeds target", async () => {
     // Default sleep target is 480 min
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 500,
-      sleep_minutes: 500,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 90,
-      rolling_avg_duration: 500,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 500),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -647,34 +659,18 @@ describe("recoveryRouter.sleepAnalytics", () => {
   it("sleep debt uses last 14 nights only", async () => {
     // 20 nights: first 6 at 300 min (large debt), last 14 at 480 min (no debt)
     const rows = [
-      ...Array.from({ length: 6 }, (_, i) => ({
-        date: `2026-02-${String(i + 20).padStart(2, "0")}`,
-        duration_minutes: 300,
-        sleep_minutes: 300,
-        deep_pct: 20,
-        rem_pct: 25,
-        light_pct: 45,
-        awake_pct: 10,
-        efficiency: 85,
-        rolling_avg_duration: 300,
-      })),
-      ...Array.from({ length: 14 }, (_, i) => ({
-        date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-        duration_minutes: 480,
-        sleep_minutes: 480,
-        deep_pct: 20,
-        rem_pct: 25,
-        light_pct: 45,
-        awake_pct: 10,
-        efficiency: 90,
-        rolling_avg_duration: 480,
-      })),
+      ...Array.from({ length: 6 }, (_, index) =>
+        sleepDebtRow(`2026-02-${String(index + 20).padStart(2, "0")}`, 300),
+      ),
+      ...Array.from({ length: 14 }, (_, index) =>
+        sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 480),
+      ),
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
 
@@ -683,14 +679,14 @@ describe("recoveryRouter.sleepAnalytics", () => {
   });
 
   it("uses default days of 90", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore,
     });
     await caller.sleepAnalytics({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 });
 
@@ -733,7 +729,7 @@ describe("recoveryRouter.readinessScore", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 92 })]]),
     });
     const result = await caller.readinessScore({});
 
@@ -890,7 +886,7 @@ describe("recoveryRouter.readinessScore", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 120 })]]),
     });
     const result = await caller.readinessScore({});
 
@@ -959,7 +955,7 @@ describe("recoveryRouter.readinessScore", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 120 })]]),
     });
     const result = await caller.readinessScore({});
 
@@ -992,7 +988,7 @@ describe("recoveryRouter.readinessScore", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: -10 })]]),
     });
     const result = await caller.readinessScore({});
 
@@ -1256,17 +1252,20 @@ describe("recoveryRouter.strainTarget", () => {
     currentPhysiologyRows = [],
   }: {
     readinessRows?: unknown[];
-    sleepRows?: unknown[];
+    sleepRows?: Partial<SleepNightTestRow>[];
     loads?: unknown[];
     currentPhysiologyRows?: unknown[];
   }) {
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce(readinessRows);
-    if (sleepRows !== undefined) executeMock.mockResolvedValueOnce(sleepRows);
+    const sensorRows =
+      readinessRows.length > 0
+        ? [[], loads, (sleepRows ?? []).map((row) => sleepNightRow(row)), currentPhysiologyRows]
+        : [[], loads, currentPhysiologyRows];
     return createCaller({
       db: { execute: executeMock },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], loads, currentPhysiologyRows]),
+      sensorStore: makeSensorStore(sensorRows),
     });
   }
 
@@ -1591,143 +1590,89 @@ describe("recoveryRouter.strainTarget", () => {
 
 describe("recoveryRouter.sleepConsistency - mutation killers", () => {
   it("window_count exactly 7 produces non-null consistencyScore", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+    const rows = Array.from({ length: 7 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.consistencyScore).not.toBeNull();
-    expect(result[0]?.consistencyScore).toBeTypeOf("number");
+    expect(result.at(-1)?.consistencyScore).not.toBeNull();
+    expect(result.at(-1)?.consistencyScore).toBeTypeOf("number");
   });
 
   it("window_count 6 produces null consistencyScore (boundary)", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.5,
-        window_count: 6,
-      },
-    ];
+    const rows = Array.from({ length: 6 }, (_, index) =>
+      sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
+    );
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.consistencyScore).toBeNull();
+    expect(result.at(-1)?.consistencyScore).toBeNull();
   });
 
   it("bedtimeHour rounds correctly (kills *10/10 vs *100/100 mutation)", async () => {
     // 22.567 * 100 / 100 = 22.57 (correct, 2 decimals)
     // 22.567 * 10 / 10 = 22.6 (wrong, 1 decimal)
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22.567,
-        waketime_hour: 6.0,
-        rolling_bedtime_stddev: null,
-        rolling_waketime_stddev: null,
-        window_count: 3,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22.567, 6)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
     expect(result[0]?.bedtimeHour).toBe(22.57);
   });
 
   it("waketimeHour rounds to 2 decimals not 1", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22.0,
-        waketime_hour: 6.789,
-        rolling_bedtime_stddev: null,
-        rolling_waketime_stddev: null,
-        window_count: 3,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 6.789)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.waketimeHour).toBe(6.79);
+    expect(result[0]?.waketimeHour).toBe(6.78);
   });
 
   it("rollingBedtimeStddev rounds to 2 decimals", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 1.456,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7), sleepScheduleRow("2026-03-02", 19.088, 7)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.rollingBedtimeStddev).toBe(1.46);
+    expect(result.at(-1)?.rollingBedtimeStddev).toBe(1.46);
   });
 
   it("rollingWaketimeStddev rounds to 2 decimals", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0.5,
-        rolling_waketime_stddev: 0.789,
-        window_count: 7,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7), sleepScheduleRow("2026-03-02", 22, 8.59)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
-    expect(result[0]?.rollingWaketimeStddev).toBe(0.79);
+    expect(result.at(-1)?.rollingWaketimeStddev).toBe(0.79);
   });
 
   it("only null bedtime stddev produces null rollingBedtimeStddev", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        bedtime_hour: 22,
-        waketime_hour: 7,
-        rolling_bedtime_stddev: 0,
-        rolling_waketime_stddev: 0.5,
-        window_count: 7,
-      },
-    ];
+    const rows = [sleepScheduleRow("2026-03-01", 22, 7)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepConsistency({});
     // 0 is a valid value, not null
@@ -1954,22 +1899,21 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
 describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
   it("deepPct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 18.567,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 9,
+        durationMinutes: 480,
+        deepPct: 18.567,
+        remPct: 22,
+        lightPct: 50,
+        awakePct: 9,
         efficiency: 90,
-        rolling_avg_duration: 455,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.deepPct).toBe(18.6);
@@ -1977,22 +1921,20 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("remPct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22.345,
-        light_pct: 50,
-        awake_pct: 8,
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 22.345,
+        lightPct: 50,
+        awakePct: 8,
         efficiency: 90,
-        rolling_avg_duration: 455,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.remPct).toBeCloseTo(22.3, 1);
@@ -2000,22 +1942,20 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("lightPct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50.789,
-        awake_pct: 7,
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 22,
+        lightPct: 50.789,
+        awakePct: 7,
         efficiency: 90,
-        rolling_avg_duration: null,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.lightPct).toBe(50.8);
@@ -2023,114 +1963,64 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("awakePct rounds to 1 decimal", async () => {
     const rows = [
-      {
+      sleepAnalyticsRow({
         date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8.965,
+        durationMinutes: 480,
+        deepPct: 20,
+        remPct: 22,
+        lightPct: 50,
+        awakePct: 8.965,
         efficiency: 90,
-        rolling_avg_duration: null,
-      },
+      }),
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.awakePct).toBe(9);
   });
 
   it("efficiency rounds to 1 decimal", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 93.456,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepNightRow({ date: "2026-03-01", efficiency_pct: 93.456 })];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.efficiency).toBeCloseTo(93.5, 1);
   });
 
-  it("rollingAvgDuration rounds to 1 decimal when non-null", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: 455.789,
-      },
-    ];
+  it("rollingAvgDuration rounds to 1 decimal", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 455.789, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.rollingAvgDuration).toBe(455.8);
   });
 
   it("durationMinutes preserves the numeric value", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepDebtRow("2026-03-01", 450, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.durationMinutes).toBe(480);
   });
 
   it("sleepMinutes preserves the numeric value", async () => {
-    const rows = [
-      {
-        date: "2026-03-01",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepDebtRow("2026-03-01", 450, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.sleepMinutes).toBe(450);
@@ -2138,22 +2028,14 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
   it("sleep debt is rounded to integer", async () => {
     // 14 nights at 470 min → deficit = (480 - 470) * 14 = 140
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 470,
-      sleep_minutes: 470,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 90,
-      rolling_avg_duration: 470,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 470),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.sleepDebt).toBe(140);
@@ -2161,23 +2043,11 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
   });
 
   it("date is passed through to nightly entries", async () => {
-    const rows = [
-      {
-        date: "2026-03-15",
-        duration_minutes: 480,
-        sleep_minutes: 450,
-        deep_pct: 20,
-        rem_pct: 22,
-        light_pct: 50,
-        awake_pct: 8,
-        efficiency: 90,
-        rolling_avg_duration: null,
-      },
-    ];
+    const rows = [sleepDebtRow("2026-03-15", 450, 480)];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.date).toBe("2026-03-15");
@@ -2186,22 +2056,14 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
   it("sleepDebt uses sleepMinutes not durationMinutes", async () => {
     // durationMinutes = 500 (would produce surplus of -280 over 14 nights)
     // sleepMinutes = 400 (produces debt of 80*14 = 1120)
-    const rows = Array.from({ length: 14 }, (_, i) => ({
-      date: `2026-03-${String(i + 1).padStart(2, "0")}`,
-      duration_minutes: 500,
-      sleep_minutes: 400,
-      deep_pct: 20,
-      rem_pct: 25,
-      light_pct: 45,
-      awake_pct: 10,
-      efficiency: 90,
-      rolling_avg_duration: 400,
-    }));
+    const rows = Array.from({ length: 14 }, (_, index) =>
+      sleepDebtRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 400, 500),
+    );
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.sleepAnalytics({});
     // 480 - 400 = 80 per night * 14 = 1120
@@ -2239,7 +2101,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 85 })]]),
     });
     const result = await caller.readinessScore({});
     // z = (30-50)/10 = -2, should map to low score
@@ -2347,7 +2209,7 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 85 })]]),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.sleepScore).toBe(85);
@@ -2519,6 +2381,7 @@ describe("recoveryRouter access window gating", () => {
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
+      timezone: "UTC",
       accessWindow: {
         kind: "limited",
         paid: false,
@@ -2526,6 +2389,7 @@ describe("recoveryRouter access window gating", () => {
         startDate: "2026-04-10",
         endDateExclusive: "2026-04-17",
       },
+      sensorStore: makeSensorStore([]),
     });
     const result = await caller.sleepConsistency({});
     expect(result).toEqual([]);

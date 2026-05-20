@@ -124,16 +124,18 @@ function buildSleepComparisonRows(
       rows: rows.filter((row) => row.date >= startDate && row.date <= endDate),
     },
   ];
-  return groups.map((group) =>
-    sleepComparisonRowSchema.parse({
-      period: group.period,
-      nights: group.rows.length,
-      avg_sleep_min: averageNullable(group.rows.map((row) => row.duration_minutes)),
-      avg_deep_min: averageNullable(group.rows.map((row) => row.deep_minutes)),
-      avg_rem_min: averageNullable(group.rows.map((row) => row.rem_minutes)),
-      avg_efficiency: averageNullable(group.rows.map((row) => row.efficiency_pct)),
-    }),
-  );
+  return groups
+    .filter((group) => group.rows.length > 0)
+    .map((group) =>
+      sleepComparisonRowSchema.parse({
+        period: group.period,
+        nights: group.rows.length,
+        avg_sleep_min: averageNullable(group.rows.map((row) => row.duration_minutes)),
+        avg_deep_min: averageNullable(group.rows.map((row) => row.deep_minutes)),
+        avg_rem_min: averageNullable(group.rows.map((row) => row.rem_minutes)),
+        avg_efficiency: averageNullable(group.rows.map((row) => row.efficiency_pct)),
+      }),
+    );
 }
 
 // ---------------------------------------------------------------------------
