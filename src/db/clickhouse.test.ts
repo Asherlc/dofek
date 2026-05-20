@@ -93,7 +93,7 @@ describe("createClickHouseClientFromEnv", () => {
 });
 
 describe("buildClickHouseBootstrapStatements", () => {
-  it("creates native metric stream source and ClickHouse read models", () => {
+  it("creates native metric stream source and ClickHouse analytics tables", () => {
     const sql = buildClickHouseBootstrapStatements("postgres://health:secret@db:5432/health").join(
       "\n",
     );
@@ -147,6 +147,17 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
+    );
+    expect(sql).toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
+    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql).toContain("SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql.indexOf("SYSTEM WAIT VIEW analytics.deduped_sensor")).toBeLessThan(
+      sql.indexOf(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
+      ),
+    );
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
@@ -191,6 +202,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
     expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
     expect(sql).toContain("FROM analytics.deduped_sensor");
+    expect(sql).toContain("FROM analytics.v_sleep");
+    expect(sql).toContain("arrayAvg(arraySlice(");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",
     );
@@ -199,7 +212,7 @@ describe("buildClickHouseBootstrapStatements", () => {
 });
 
 describe("bootstrapClickHouseFromEnv", () => {
-  it("verifies migrated ClickHouse read models exist without running DDL", async () => {
+  it("verifies migrated ClickHouse analytics tables exist without running DDL", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
       json: vi

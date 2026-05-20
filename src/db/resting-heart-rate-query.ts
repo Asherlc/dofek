@@ -47,51 +47,16 @@ export async function fetchRestingHeartRateRowsFromClickHouse({
 }
 
 export function restingHeartRateClickHouseCte(): string {
-  return `raw_sleep_windows AS (
+  return `resting_heart_rate AS (
       SELECT
-        user_id,
         toString(toDate(toTimeZone(ended_at, {timezone:String}))) AS date,
-        started_at,
-        ended_at
-      FROM analytics.v_sleep
+        resting_hr
+      FROM analytics.resting_heart_rate_sleep_window
       WHERE user_id = {userId:UUID}
-        AND is_nap = false
-        AND ended_at IS NOT NULL
         AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({rhrWindowStart:String})
         AND toDate(toTimeZone(ended_at, {timezone:String})) <= toDate({rhrEndDate:String})
-    ),
-    sleep_windows AS (
-      SELECT user_id, date, started_at, ended_at
-      FROM raw_sleep_windows
-      ORDER BY user_id, date, dateDiff('second', started_at, ended_at) DESC, ended_at DESC
+      ORDER BY user_id, date, duration_seconds DESC, ended_at DESC
       LIMIT 1 BY user_id, date
-    ),
-    heart_rate_samples AS (
-      SELECT
-        sleep_windows.date AS date,
-        samples.scalar AS heart_rate
-      FROM sleep_windows
-      INNER JOIN analytics.deduped_sensor AS samples
-        ON samples.user_id = sleep_windows.user_id
-      WHERE samples.channel = 'heart_rate'
-        AND samples.recorded_at >= toDateTime({rhrWindowStart:String}) - INTERVAL 1 DAY
-        AND samples.recorded_at < toDateTime({rhrEndDate:String}) + INTERVAL 2 DAY
-        AND samples.recorded_at >= sleep_windows.started_at
-        AND samples.recorded_at <= sleep_windows.ended_at
-        AND samples.activity_id IS NULL
-        AND samples.scalar IS NOT NULL
-    ),
-    resting_heart_rate AS (
-      SELECT
-      date,
-      toInt32(round(arrayAvg(arraySlice(
-        arraySort(groupArray(toFloat64(heart_rate))),
-        1,
-        greatest(toInt32(ceil(count() * 0.10)), 1)
-      )))) AS resting_hr
-      FROM heart_rate_samples
-      GROUP BY date
-      HAVING count() >= 30
     )`;
 }
 

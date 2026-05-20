@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
 
 describe("fetchRestingHeartRateRows", () => {
-  it("queries ClickHouse sleep and heart-rate samples instead of derived RHR read models", async () => {
+  it("queries precomputed ClickHouse resting heart rate windows", async () => {
     const query = vi.fn().mockResolvedValue([{ date: "2026-05-01", resting_hr: 52 }]);
     const sensorStore = { query };
 
@@ -21,20 +21,11 @@ describe("fetchRestingHeartRateRows", () => {
     expect(query).toHaveBeenCalledTimes(1);
 
     const queryText = String(query.mock.calls[0]?.[1]);
-    expect(queryText).toContain("analytics.v_sleep");
-    expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).toContain("channel = 'heart_rate'");
-    expect(queryText).toContain("activity_id IS NULL");
-    expect(queryText).toContain(
-      "samples.recorded_at >= toDateTime({rhrWindowStart:String}) - INTERVAL 1 DAY",
-    );
-    expect(queryText).toContain(
-      "samples.recorded_at < toDateTime({rhrEndDate:String}) + INTERVAL 2 DAY",
-    );
-    expect(queryText).toContain("raw_sleep_windows");
+    expect(queryText).toContain("analytics.resting_heart_rate_sleep_window");
+    expect(queryText).toContain("toDate(toTimeZone(ended_at, {timezone:String}))");
     expect(queryText).toContain("LIMIT 1 BY user_id, date");
-    expect(queryText).toContain("arraySort");
-    expect(queryText).toContain("arraySlice");
+    expect(queryText).not.toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("channel = 'heart_rate'");
     expect(queryText).not.toContain("derived_resting_heart_rate");
   });
 });

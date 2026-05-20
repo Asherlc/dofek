@@ -5774,31 +5774,35 @@ affected user, while the dashboard date was `2026-05-19`.
 
 ### Root Cause
 
-The ClickHouse resting-heart-rate helper filtered samples against per-night
-sleep windows but did not include a coarse `recorded_at` range predicate on
-`analytics.deduped_sensor`. Under a dashboard burst, multiple RHR-dependent
-procedures scanned far more heart-rate samples than needed in parallel.
+The ClickHouse resting-heart-rate helper computed each sleep-window resting
+heart rate on demand from `analytics.deduped_sensor`. Under a dashboard burst,
+multiple RHR-dependent procedures scanned and sorted overlapping heart-rate
+sample ranges in parallel instead of reading one precomputed row per sleep
+window.
 
 The sleep ring `No data` state was unrelated to that helper: the latest sleep
 record was stale according to the dashboard freshness rule.
 
 ### Fix or Mitigation
 
-Added coarse `samples.recorded_at` bounds to the ClickHouse RHR helper using
-the existing `rhrWindowStart` and `rhrEndDate` parameters, with a timezone
-cushion so overnight sessions are still included. Added a unit regression test
-to keep those bounds in the generated helper SQL.
+Added a daily ClickHouse refreshable materialized view,
+`analytics.resting_heart_rate_sleep_window`, that precomputes one resting heart
+rate per non-nap sleep window from deduped heart-rate samples. The dashboard
+helper now reads that compact table and only performs per-request local-date
+selection, avoiding raw sample scans during dashboard loads.
 
 ### Remaining Risk
 
 The code fix still needs to be deployed before production dashboard latency
-improves. The sleep ring still requires fresh sleep ingestion; the query fix
-does not create missing sleep records.
+improves. The materialized view refreshes daily, so resting heart rate can lag
+behind newly ingested sleep and heart-rate data until the next refresh. The
+sleep ring still requires fresh sleep ingestion; the query fix does not create
+missing sleep records.
 
 ### Follow-Up Work
 
-- Deploy the RHR helper predicate fix and re-check Axiom/ClickHouse query logs
-  for dashboard batches.
+- Deploy the RHR sleep-window materialized view and re-check Axiom/ClickHouse
+  query logs for dashboard batches.
 - Investigate why sleep ingestion has no non-nap rows newer than
   `2026-05-06` for the affected user.
 - Consider adding a dashboard-visible stale-data explanation for sleep so old

@@ -116,7 +116,7 @@ describe("InsightsRepository", () => {
       );
     });
 
-    it("does not query derived resting heart rate views for vitals", async () => {
+    it("queries precomputed resting heart rate windows for vitals", async () => {
       const db = makeDb();
       const sensorStore = makeSensorStore();
       const repo = new InsightsRepository(db, "user-1", "UTC", sensorStore);
@@ -126,7 +126,8 @@ describe("InsightsRepository", () => {
       const restingHeartRateQuery = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
       expect(vitalsQuery).toContain("analytics.v_daily_metrics");
       expect(vitalsQuery).not.toContain("derived_resting_heart_rate");
-      expect(restingHeartRateQuery).toContain("analytics.deduped_sensor");
+      expect(restingHeartRateQuery).toContain("analytics.resting_heart_rate_sleep_window");
+      expect(restingHeartRateQuery).not.toContain("analytics.deduped_sensor");
       expect(restingHeartRateQuery).not.toContain("derived_resting_heart_rate");
     });
   });

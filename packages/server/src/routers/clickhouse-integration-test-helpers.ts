@@ -288,6 +288,7 @@ const analyticsRefreshOrder = [
   "analytics.v_daily_metrics",
   "analytics.provider_stats",
   "analytics.deduped_sensor",
+  "analytics.resting_heart_rate_sleep_window",
   "analytics.deduped_location",
   "analytics.activity_summary",
   "analytics.activity_trend_daily",
@@ -325,7 +326,7 @@ function rewriteClickHouseDatabaseNames(
     .replace(/\banalytics\b/g, databases.analytics);
 }
 
-function buildTestReadModelTableStatement(viewName: string): string | null {
+function buildTestAnalyticsTableStatement(viewName: string): string | null {
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,
@@ -362,6 +363,13 @@ sleep_type Nullable(String),
 is_nap Nullable(Bool),
 source_name Nullable(String),
 source_providers Array(String)`,
+    resting_heart_rate_sleep_window: `sleep_id UUID,
+user_id UUID,
+started_at DateTime64(6, 'UTC'),
+ended_at Nullable(DateTime64(6, 'UTC')),
+duration_seconds Nullable(Int64),
+sample_count UInt64,
+resting_hr Int32`,
     v_body_measurement: `id UUID,
 provider_id String,
 user_id UUID,
@@ -489,7 +497,7 @@ ORDER BY tuple()`;
 function rewriteClickHouseTestCommand(
   query: string,
   databases: IsolatedClickHouseDatabases,
-  readModelSelectByName: Map<string, string>,
+  precomputedAnalyticsSelectByName: Map<string, string>,
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
   const materializedViewMatch = rewrittenQuery.match(
@@ -503,10 +511,10 @@ function rewriteClickHouseTestCommand(
       throw new Error("Could not parse ClickHouse test materialized view statement");
     }
     const trimmedSelectSql = selectSql.trim();
-    readModelSelectByName.set(viewName, trimmedSelectSql);
-    const tableStatement = buildTestReadModelTableStatement(viewName);
+    precomputedAnalyticsSelectByName.set(viewName, trimmedSelectSql);
+    const tableStatement = buildTestAnalyticsTableStatement(viewName);
     if (!tableStatement) {
-      throw new Error(`Missing ClickHouse test read-model table schema for ${viewName}`);
+      throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
     }
     return [tableStatement];
   }
@@ -518,9 +526,9 @@ function rewriteClickHouseTestCommand(
   const refreshViewPrefix = `SYSTEM REFRESH VIEW ${databases.analytics}.`;
   if (rewrittenQuery.startsWith(refreshViewPrefix)) {
     const viewName = rewrittenQuery.slice("SYSTEM REFRESH VIEW ".length);
-    const selectSql = readModelSelectByName.get(viewName);
+    const selectSql = precomputedAnalyticsSelectByName.get(viewName);
     if (!selectSql) {
-      throw new Error(`Missing ClickHouse test read-model SELECT for ${viewName}`);
+      throw new Error(`Missing ClickHouse test analytics SELECT for ${viewName}`);
     }
     return [`TRUNCATE TABLE ${viewName}`, `INSERT INTO ${viewName}\n${selectSql}`];
   }
@@ -536,10 +544,14 @@ function createIsolatedClickHouseClient(
   client: ClickHouseClient,
   databases: IsolatedClickHouseDatabases,
 ): ClickHouseClient {
-  const readModelSelectByName = new Map<string, string>();
+  const precomputedAnalyticsSelectByName = new Map<string, string>();
   return {
     command: async (options) => {
-      const queries = rewriteClickHouseTestCommand(options.query, databases, readModelSelectByName);
+      const queries = rewriteClickHouseTestCommand(
+        options.query,
+        databases,
+        precomputedAnalyticsSelectByName,
+      );
       let result: unknown;
       for (const query of queries) {
         try {
