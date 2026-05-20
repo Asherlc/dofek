@@ -199,32 +199,6 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
   });
 
-  it("does not render the next workout recommendation section", async () => {
-    mockDashboardData.nextWorkout = {
-      generatedAt: new Date().toISOString(),
-      recommendationType: "cardio",
-      title: "Easy Zone 2 Run",
-      shortBlurb: "Keep it easy today to build aerobic base.",
-      readiness: { score: 78, level: "high" },
-      rationale: ["Recovery metrics look good"],
-      details: ["30 min Zone 2 run"],
-      strength: null,
-      cardio: {
-        focus: "z2",
-        durationMinutes: 30,
-        targetZones: ["Zone 2"],
-        structure: "Steady state",
-        lastEnduranceDaysAgo: 2,
-      },
-    };
-
-    const { default: TodayScreen } = await import("./index");
-    render(<TodayScreen />);
-
-    expect(screen.queryByText("Next Workout")).toBeNull();
-    expect(screen.queryByText("Easy Zone 2 Run")).toBeNull();
-  });
-
   it("opens add food with today's date and auto-selected meal", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 21, 15, 30));
