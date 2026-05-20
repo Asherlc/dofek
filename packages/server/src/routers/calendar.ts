@@ -1,4 +1,8 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { endDateSchema } from "../lib/date-window.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -9,6 +13,37 @@ export interface CalendarDay {
   activityTypes: string[];
 }
 
+const activityLocationSchema = z.object({
+  centroidLat: z.number(),
+  centroidLng: z.number(),
+  tileUrl: z.string(),
+  distanceMeters: z.number().nullable(),
+  elevationGainM: z.number().nullable(),
+});
+
+const activityStatSchema = z.object({
+  label: z.string(),
+  value: z.string(),
+});
+
+const calendarActivityEntrySchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  activityType: z.string(),
+  startedAt: timestampStringSchema,
+  endedAt: timestampStringSchema.nullable(),
+  durationMin: z.number(),
+  location: activityLocationSchema.nullable(),
+  calories: z.number().nullable(),
+  tss: z.number().nullable(),
+  stats: z.array(activityStatSchema),
+});
+
+const calendarDayActivitiesSchema = z.object({
+  date: dateStringSchema,
+  activities: z.array(calendarActivityEntrySchema),
+});
+
 export const calendarRouter = router({
   calendarData: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
@@ -16,5 +51,31 @@ export const calendarRouter = router({
       const repo = new CalendarRepository(ctx.db, ctx.userId, ctx.timezone);
       const days = await repo.getCalendarData(input.days);
       return days.map((day) => day.toDetail());
+    }),
+
+  weekList: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(
+      z.object({
+        weeks: z.number().int().min(1).max(52).default(4),
+        endDate: endDateSchema,
+      }),
+    )
+    .output(z.array(calendarDayActivitiesSchema))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivitiesCalendarRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+        ctx.accessWindow,
+      );
+      return repo.getWeekList(input);
     }),
 });

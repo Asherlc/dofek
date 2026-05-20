@@ -52,8 +52,28 @@ vi.mock("react-native", () => {
   }
 
   function createMockComponent(name: string) {
-    const component = ({ children, style, testID, ...props }: Record<string, unknown>) =>
-      el(name, { ...props, style: flattenStyle(style), "data-testid": testID }, children);
+    const component = ({
+      accessibilityHint,
+      accessibilityLabel,
+      accessibilityRole,
+      accessible: _accessible,
+      children,
+      style,
+      testID,
+      ...props
+    }: Record<string, unknown>) =>
+      el(
+        name,
+        {
+          ...props,
+          "aria-description": accessibilityHint,
+          "aria-label": accessibilityLabel,
+          "data-testid": testID,
+          role: accessibilityRole,
+          style: flattenStyle(style),
+        },
+        children,
+      );
     component.displayName = name;
     return component;
   }
@@ -107,7 +127,26 @@ vi.mock("react-native", () => {
     });
   };
   TextInput.displayName = "TextInput";
-  const Image = createMockComponent("Image");
+  const Image = ({
+    accessibilityLabel,
+    children,
+    onError,
+    style,
+    testID,
+    ...props
+  }: Record<string, unknown>) =>
+    React.createElement(
+      "image",
+      {
+        ...props,
+        "aria-label": accessibilityLabel,
+        "data-testid": testID,
+        onError,
+        style: flattenStyle(style),
+      },
+      children,
+    );
+  Image.displayName = "Image";
   const FlatList = createMockComponent("FlatList");
   const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>
     React.createElement("activityindicator", {

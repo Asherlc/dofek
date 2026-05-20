@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth-context.tsx";
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/training", label: "Training" },
+  { to: "/activities", label: "Activities" },
   { to: "/sleep", label: "Sleep" },
   { to: "/nutrition", label: "Nutrition" },
   { to: "/body", label: "Body" },

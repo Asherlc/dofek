@@ -4,6 +4,7 @@ const tabIconNames = {
   index: { focused: "today", unfocused: "today-outline" },
   recovery: { focused: "pulse", unfocused: "pulse-outline" },
   strain: { focused: "barbell", unfocused: "barbell-outline" },
+  activities: { focused: "map", unfocused: "map-outline" },
   food: { focused: "nutrition", unfocused: "nutrition-outline" },
 } as const;
 

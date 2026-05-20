@@ -1,5 +1,7 @@
 interface QueryStatePanelProps {
-  error: unknown;
+  error?: unknown;
+  variant?: "loading" | "error" | "empty";
+  message?: string;
   height?: number;
 }
 
@@ -13,12 +15,35 @@ function getQueryErrorMessage(error: unknown, fallback = "Failed to load data.")
   return fallback;
 }
 
-export function QueryStatePanel({ error, height = 180 }: QueryStatePanelProps) {
-  const message = getQueryErrorMessage(error);
+export function QueryStatePanel({
+  error,
+  variant = error ? "error" : "empty",
+  message,
+  height = 180,
+}: QueryStatePanelProps) {
+  if (variant === "loading") {
+    return (
+      <div
+        className="query-error-panel flex items-center justify-center"
+        style={{ minHeight: height }}
+        data-testid="query-state-loading"
+        aria-busy="true"
+      >
+        <div className="w-5 h-5 border-2 border-border-strong border-t-muted rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  const resolvedMessage =
+    message ?? (variant === "error" ? getQueryErrorMessage(error) : "No data yet.");
 
   return (
-    <div className="query-error-panel" style={{ minHeight: height }}>
-      <p>{message}</p>
+    <div
+      className="query-error-panel"
+      style={{ minHeight: height }}
+      data-testid={`query-state-${variant}`}
+    >
+      <p>{resolvedMessage}</p>
     </div>
   );
 }
