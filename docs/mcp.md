@@ -10,7 +10,9 @@ The endpoint uses Streamable HTTP and requires a Dofek MCP bearer token on every
 
 ## Create A Token
 
-Use the authenticated tRPC `mcp.createToken` procedure from an existing logged-in Dofek client session.
+Open Dofek Settings and use the **MCP Tokens** section to create, copy, list, and revoke tokens.
+
+The UI calls the authenticated tRPC `mcp.createToken` procedure from the logged-in Dofek client session.
 
 Input:
 
