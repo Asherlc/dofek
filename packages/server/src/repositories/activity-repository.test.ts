@@ -526,6 +526,7 @@ describe("ActivityRepository", () => {
         ])
         .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 55 }]);
       sensorStore.getHeartRateZoneSeconds.mockResolvedValueOnce([
+        { zone: 0, seconds: 30 },
         { zone: 1, seconds: 120 },
         { zone: 2, seconds: 300 },
         { zone: 3, seconds: 600 },
@@ -533,9 +534,11 @@ describe("ActivityRepository", () => {
         { zone: 5, seconds: 80 },
       ]);
       const result = await repo.getHrZones("activity-id");
-      expect(result).toHaveLength(5);
-      expect(result[0]?.zone).toBe(1);
-      expect(result[0]?.seconds).toBe(120);
+      expect(result).toHaveLength(6);
+      expect(result[0]?.zone).toBe(0);
+      expect(result[0]?.seconds).toBe(30);
+      expect(result[1]?.zone).toBe(1);
+      expect(result[1]?.seconds).toBe(120);
     });
 
     it("fails when no sensor store is configured", async () => {

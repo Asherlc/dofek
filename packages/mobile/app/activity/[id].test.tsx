@@ -237,6 +237,7 @@ describe("ActivityDetailScreen", () => {
   it("labels the heart rate zone chart with zone numbers", async () => {
     mockHrZonesQuery.mockReturnValue({
       data: [
+        { zone: 0, label: "Below Zone 1", minPct: 0, maxPct: 50, seconds: 150, percent: 14.3 },
         { zone: 1, label: "Recovery", minPct: 50, maxPct: 60, seconds: 300, percent: 33.3 },
         { zone: 2, label: "Endurance", minPct: 60, maxPct: 70, seconds: 600, percent: 66.7 },
       ],
@@ -246,6 +247,7 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
 
+    expect(screen.getByText("Zone 0")).toBeTruthy();
     expect(screen.getByText("Zone 1")).toBeTruthy();
     expect(screen.getByText("Zone 2")).toBeTruthy();
     expect(screen.queryByText("Z1 Recovery")).toBeNull();

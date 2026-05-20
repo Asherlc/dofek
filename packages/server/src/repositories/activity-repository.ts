@@ -402,7 +402,7 @@ export class ActivityRepository extends BaseRepository {
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
-  /** HR zone distribution for a single activity using Karvonen zones. */
+  /** HR zone distribution for a single activity using the canonical Karvonen model. */
   async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.#findActivitySensorWindow(activityId);

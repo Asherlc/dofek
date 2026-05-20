@@ -84,6 +84,22 @@ describe("representativeRestingHeartRate", () => {
     expect(representativeRestingHeartRate(rows, 3)).toBe(56);
   });
 
+  it("uses the most recent positive readings when invalid readings trail the window", () => {
+    const rows = [
+      { date: "2026-05-01", resting_hr: 55 },
+      { date: "2026-05-02", resting_hr: 57 },
+      { date: "2026-05-03", resting_hr: 0 },
+      { date: "2026-05-04", resting_hr: -1 },
+    ];
+    expect(representativeRestingHeartRate(rows, 2)).toBe(56);
+  });
+
+  it("returns null when sampleWindow is not positive", () => {
+    const rows = [{ date: "2026-05-01", resting_hr: 55 }];
+    expect(representativeRestingHeartRate(rows, 0)).toBeNull();
+    expect(representativeRestingHeartRate(rows, -1)).toBeNull();
+  });
+
   it("ignores non-positive readings", () => {
     const rows = [
       { date: "2026-05-01", resting_hr: 0 },

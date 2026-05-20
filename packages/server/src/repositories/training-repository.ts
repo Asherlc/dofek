@@ -1,5 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
-import { ZONE_BOUNDARIES_HRR } from "@dofek/zones/zones";
+import { HEART_RATE_ZONES } from "@dofek/zones/zones";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -14,6 +14,11 @@ import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
+  heartRateZoneCountColumns,
+  heartRateZoneSqlParams,
+  heartRateZoneSumColumns,
+} from "./heart-rate-zone-sql.ts";
+import {
   fetchRestingHeartRateRows,
   restingHeartRateClickHouseCte,
   restingHeartRateValuesCte,
@@ -24,6 +29,21 @@ import {
 } from "./training-recommendation.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
+
+const activityMetaHeartRateExpressions = {
+  maxHr: "am.max_hr",
+  restingHr: "am.resting_hr",
+};
+
+function requireHeartRateZone(zoneNumber: number) {
+  const zone = HEART_RATE_ZONES.find((zoneDefinition) => zoneDefinition.zone === zoneNumber);
+  if (!zone) {
+    throw new Error(`Heart-rate zone ${zoneNumber} definition is required`);
+  }
+  return zone;
+}
+
+const highIntensityZone = requireHeartRateZone(4);
 
 // ---------------------------------------------------------------------------
 // Zod schemas for DB rows
@@ -41,6 +61,7 @@ export type WeeklyVolumeRow = z.infer<typeof weeklyVolumeRowSchema>;
 const hrZoneRowSchema = z.object({
   max_hr: z.number().nullable(),
   week: dateStringSchema,
+  zone0: z.coerce.number(),
   zone1: z.coerce.number(),
   zone2: z.coerce.number(),
   zone3: z.coerce.number(),
@@ -108,6 +129,7 @@ const balanceSchema = z.object({
 export type BalanceRow = z.infer<typeof balanceSchema>;
 
 const zoneTotalsSchema = z.object({
+  zone0: z.coerce.number(),
   zone1: z.coerce.number(),
   zone2: z.coerce.number(),
   zone3: z.coerce.number(),
@@ -199,7 +221,7 @@ export class TrainingRepository extends BaseRepository {
     );
   }
 
-  /** HR zone distribution per week using 5-zone Karvonen model. */
+  /** HR zone distribution per week using the canonical Karvonen model. */
   async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
     const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
@@ -225,14 +247,7 @@ export class TrainingRepository extends BaseRepository {
         SELECT
           am.activity_date AS activity_date,
           am.max_hr AS max_hr,
-          countIf(ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}) AS zone1,
-          countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
-                  AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}) AS zone2,
-          countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
-                  AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b3:Float64}) AS zone3,
-          countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b3:Float64}
-                  AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b4:Float64}) AS zone4,
-          countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b4:Float64}) AS zone5
+          ${heartRateZoneCountColumns("ds.scalar", activityMetaHeartRateExpressions)}
         FROM analytics.deduped_sensor ds
         INNER JOIN activity_meta am ON am.id = ds.activity_id
         WHERE ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL
@@ -241,11 +256,7 @@ export class TrainingRepository extends BaseRepository {
       SELECT
         toString(toMonday(activity_date)) AS week,
         max(max_hr) AS max_hr,
-        sum(zone1) AS zone1,
-        sum(zone2) AS zone2,
-        sum(zone3) AS zone3,
-        sum(zone4) AS zone4,
-        sum(zone5) AS zone5
+        ${heartRateZoneSumColumns()}
       FROM zone_counts
       GROUP BY toMonday(activity_date)
       ORDER BY week`,
@@ -256,10 +267,7 @@ export class TrainingRepository extends BaseRepository {
         rhrWindowStart: dateWindowStartString(today, days),
         rhrEndDate: today,
         enduranceTypes: ENDURANCE_TYPES,
-        b1: ZONE_BOUNDARIES_HRR[0],
-        b2: ZONE_BOUNDARIES_HRR[1],
-        b3: ZONE_BOUNDARIES_HRR[2],
-        b4: ZONE_BOUNDARIES_HRR[3],
+        ...heartRateZoneSqlParams(),
       },
     );
     const rawMaxHr = rows[0]?.max_hr;
@@ -338,7 +346,14 @@ export class TrainingRepository extends BaseRepository {
         last_strength_date: null,
         last_endurance_date: null,
       },
-      zoneTotals: zoneTotalsRows[0] ?? { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 },
+      zoneTotals: zoneTotalsRows[0] ?? {
+        zone0: 0,
+        zone1: 0,
+        zone2: 0,
+        zone3: 0,
+        zone4: 0,
+        zone5: 0,
+      },
       hiitLoad: hiitLoadRows[0] ?? { hiit_count_7d: 0, last_hiit_date: null },
       trainingDates: trainingDays.map((day) => day.training_date),
     };
@@ -525,14 +540,7 @@ export class TrainingRepository extends BaseRepository {
           AND up.max_hr IS NOT NULL
       )
       SELECT
-        countIf(ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}) AS zone1,
-        countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
-                AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}) AS zone2,
-        countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
-                AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b3:Float64}) AS zone3,
-        countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b3:Float64}
-                AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b4:Float64}) AS zone4,
-        countIf(ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b4:Float64}) AS zone5
+        ${heartRateZoneCountColumns("ds.scalar", activityMetaHeartRateExpressions)}
       FROM analytics.deduped_sensor ds
       INNER JOIN activity_meta am ON am.id = ds.activity_id
       WHERE ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL`,
@@ -543,10 +551,7 @@ export class TrainingRepository extends BaseRepository {
         rhrWindowStart: dateWindowStartString(endDate, 14),
         rhrEndDate: endDate,
         enduranceTypes: ENDURANCE_TYPES,
-        b1: ZONE_BOUNDARIES_HRR[0],
-        b2: ZONE_BOUNDARIES_HRR[1],
-        b3: ZONE_BOUNDARIES_HRR[2],
-        b4: ZONE_BOUNDARIES_HRR[3],
+        ...heartRateZoneSqlParams(),
       },
     );
   }
@@ -594,7 +599,7 @@ export class TrainingRepository extends BaseRepository {
         rhrEndDate: endDate,
         sevenDayStart: dateWindowStartString(endDate, 7),
         enduranceTypes: ENDURANCE_TYPES,
-        hiitThreshold: ZONE_BOUNDARIES_HRR[2],
+        hiitThreshold: highIntensityZone.minPctHrr,
       },
     );
   }

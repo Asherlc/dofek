@@ -89,10 +89,11 @@ export function representativeRestingHeartRate(
   rows: RestingHeartRateRow[],
   sampleWindow = 14,
 ): number | null {
+  if (sampleWindow <= 0) return null;
   const recent = rows
-    .slice(-sampleWindow)
     .map((row) => row.resting_hr)
     .filter((value) => value > 0)
+    .slice(-sampleWindow)
     .sort((a, b) => a - b);
   if (recent.length === 0) return null;
   const mid = Math.floor(recent.length / 2);

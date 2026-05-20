@@ -153,6 +153,29 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("channel = 'power'");
   });
 
+  it("generates heart-rate zone SQL from the shared zone definitions", async () => {
+    const { store, query } = makeStore([{ zone: 0, seconds: 5 }]);
+
+    const rows = await store.getHeartRateZoneSeconds(window, 190, 50);
+
+    expect(rows).toEqual([{ zone: 0, seconds: 5 }]);
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "JSONEachRow",
+        query_params: expect.objectContaining({
+          activityIds: window.memberActivityIds,
+          maxHr: 190,
+          restingHr: 50,
+        }),
+      }),
+    );
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("WHEN 0 THEN scalar <");
+    expect(queryText).toContain("WHEN 1 THEN scalar >=");
+    expect(queryText).toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");
+    expect(queryText).not.toContain("FROM (SELECT number + 1 AS zone FROM numbers(5)) AS zones");
+  });
+
   it("clamps heart-rate duration windows to at least one sample", async () => {
     const { store, query } = makeStore([]);
 

@@ -1,4 +1,4 @@
-import { statusColors } from "@dofek/scoring/colors";
+import { statusColors, textColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
 import {
   classifyHeartRateZone,
@@ -19,19 +19,26 @@ import {
 } from "./zones.ts";
 
 describe("HEART_RATE_ZONES", () => {
-  it("defines exactly 5 zones", () => {
-    expect(HEART_RATE_ZONES).toHaveLength(5);
+  it("defines zone 0 plus the 5 Karvonen training zones", () => {
+    expect(HEART_RATE_ZONES).toHaveLength(6);
   });
 
-  it("has zones numbered 1-5 with labels and %HRR boundaries", () => {
+  it("has zones numbered 0-5 with labels and %HRR boundaries", () => {
     expect(HEART_RATE_ZONES[0]).toEqual({
+      zone: 0,
+      label: "Below Zone 1",
+      minPctHrr: 0,
+      maxPctHrr: 0.5,
+      color: textColors.neutral,
+    });
+    expect(HEART_RATE_ZONES[1]).toEqual({
       zone: 1,
       label: "Recovery",
       minPctHrr: 0.5,
       maxPctHrr: 0.6,
       color: statusColors.info,
     });
-    expect(HEART_RATE_ZONES[4]).toEqual({
+    expect(HEART_RATE_ZONES[5]).toEqual({
       zone: 5,
       label: "VO2max",
       minPctHrr: 0.9,
@@ -40,7 +47,7 @@ describe("HEART_RATE_ZONES", () => {
     });
   });
 
-  it("has contiguous boundaries (no gaps from Z2 to Z5)", () => {
+  it("has contiguous boundaries from Z0 to Z5", () => {
     for (let i = 1; i < HEART_RATE_ZONES.length; i++) {
       const prev = HEART_RATE_ZONES[i - 1];
       const curr = HEART_RATE_ZONES[i];
@@ -52,20 +59,20 @@ describe("HEART_RATE_ZONES", () => {
 });
 
 describe("ZONE_BOUNDARIES_HRR", () => {
-  it("has 4 boundaries derived from zone maxPctHrr values", () => {
-    expect(ZONE_BOUNDARIES_HRR).toEqual([0.6, 0.7, 0.8, 0.9]);
+  it("has 5 boundaries derived from zone maxPctHrr values", () => {
+    expect(ZONE_BOUNDARIES_HRR).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
   });
 
-  it("matches the maxPctHrr of zones 1-4", () => {
-    for (let i = 0; i < 4; i++) {
+  it("matches the maxPctHrr of zones 0-4", () => {
+    for (let i = 0; i < 5; i++) {
       expect(ZONE_BOUNDARIES_HRR[i]).toBe(HEART_RATE_ZONES[i]?.maxPctHrr);
     }
   });
 });
 
 describe("HEART_RATE_ZONE_COLORS", () => {
-  it("has 5 hex color strings matching zone definitions", () => {
-    expect(HEART_RATE_ZONE_COLORS).toHaveLength(5);
+  it("has 6 hex color strings matching zone definitions", () => {
+    expect(HEART_RATE_ZONE_COLORS).toHaveLength(6);
     for (const color of HEART_RATE_ZONE_COLORS) {
       expect(color).toMatch(/^#[0-9a-f]{6}$/);
     }
@@ -77,20 +84,22 @@ describe("heartRateZoneBoundaries", () => {
   it("computes absolute BPM boundaries from max HR and resting HR", () => {
     // maxHr=190, restingHr=50 → reserve=140
     const boundaries = heartRateZoneBoundaries(190, 50);
-    expect(boundaries).toHaveLength(5);
+    expect(boundaries).toHaveLength(6);
 
+    // Z0: below 50% HRR
+    expect(boundaries[0]).toEqual(expect.objectContaining({ zone: 0, minBpm: 50, maxBpm: 120 }));
     // Z1: 50 + 140*0.5 = 120 to 50 + 140*0.6 = 134
-    expect(boundaries[0]).toEqual(expect.objectContaining({ zone: 1, minBpm: 120, maxBpm: 134 }));
+    expect(boundaries[1]).toEqual(expect.objectContaining({ zone: 1, minBpm: 120, maxBpm: 134 }));
     // Z2: 50 + 140*0.6 = 134 to 50 + 140*0.7 = 148
-    expect(boundaries[1]).toEqual(expect.objectContaining({ zone: 2, minBpm: 134, maxBpm: 148 }));
+    expect(boundaries[2]).toEqual(expect.objectContaining({ zone: 2, minBpm: 134, maxBpm: 148 }));
     // Z5: 50 + 140*0.9 = 176 to 50 + 140*1.0 = 190
-    expect(boundaries[4]).toEqual(expect.objectContaining({ zone: 5, minBpm: 176, maxBpm: 190 }));
+    expect(boundaries[5]).toEqual(expect.objectContaining({ zone: 5, minBpm: 176, maxBpm: 190 }));
   });
 
   it("includes labels and colors in output", () => {
     const boundaries = heartRateZoneBoundaries(180, 60);
-    expect(boundaries[0]?.label).toBe("Recovery");
-    expect(boundaries[0]?.color).toBe(statusColors.info);
+    expect(boundaries[1]?.label).toBe("Recovery");
+    expect(boundaries[1]?.color).toBe(statusColors.info);
   });
 });
 
@@ -99,7 +108,7 @@ describe("classifyHeartRateZone", () => {
   const maxHr = 190;
   const restingHr = 50;
 
-  it("returns 0 for HR below Z1 (< 50% HRR)", () => {
+  it("classifies Z0 for HR below Z1 (< 50% HRR)", () => {
     // 50 + 140*0.5 = 120 → anything below 120 is zone 0
     expect(classifyHeartRateZone(100, maxHr, restingHr)).toBe(0);
     expect(classifyHeartRateZone(119, maxHr, restingHr)).toBe(0);
@@ -158,6 +167,11 @@ describe("computeHrRange", () => {
     expect(range).toEqual({ min: 120, max: 134 });
   });
 
+  it("handles zone 0 (below 50% HRR)", () => {
+    const range = computeHrRange(190, 50, 0);
+    expect(range).toEqual({ min: 50, max: 120 });
+  });
+
   it("handles zone 5 (up to 100% HRR)", () => {
     const range = computeHrRange(190, 50, 5);
     expect(range).toEqual({ min: 176, max: 190 });
@@ -165,24 +179,33 @@ describe("computeHrRange", () => {
 });
 
 describe("mapHrZones", () => {
-  it("maps raw zone rows to full 5-zone structure", () => {
+  it("maps raw zone rows to full zone 0 through zone 5 structure", () => {
     const rows = [
+      { zone: 0, seconds: 120 },
       { zone: 1, seconds: 120 },
       { zone: 3, seconds: 300 },
       { zone: 5, seconds: 60 },
     ];
     const result = mapHrZones(rows);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(6);
     expect(result[0]).toEqual({
+      zone: 0,
+      label: "Below Zone 1",
+      minPct: 0,
+      maxPct: 50,
+      seconds: 120,
+      percent: 20,
+    });
+    expect(result[1]).toEqual({
       zone: 1,
       label: "Recovery",
       minPct: 50,
       maxPct: 60,
       seconds: 120,
-      percent: 25,
+      percent: 20,
     });
     // Zone 2 has no data → 0 seconds
-    expect(result[1]).toEqual({
+    expect(result[2]).toEqual({
       zone: 2,
       label: "Aerobic",
       minPct: 60,
@@ -190,13 +213,13 @@ describe("mapHrZones", () => {
       seconds: 0,
       percent: 0,
     });
-    expect(result[2]?.seconds).toBe(300);
-    expect(result[4]?.seconds).toBe(60);
+    expect(result[3]?.seconds).toBe(300);
+    expect(result[5]?.seconds).toBe(60);
   });
 
   it("returns all zeros when no rows", () => {
     const result = mapHrZones([]);
-    expect(result).toHaveLength(5);
+    expect(result).toHaveLength(6);
     for (const zone of result) {
       expect(zone.seconds).toBe(0);
     }

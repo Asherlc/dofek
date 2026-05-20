@@ -1,9 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
-import {
-  computePolarizationIndex,
-  POLARIZATION_ZONES,
-  ZONE_BOUNDARIES_HRR,
-} from "@dofek/zones/zones";
+import { computePolarizationIndex, HEART_RATE_ZONES, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
 import { z } from "zod";
@@ -15,6 +11,16 @@ import type { ActivitySensorStore } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
+
+function requireHeartRateZone(zoneNumber: number) {
+  const zone = HEART_RATE_ZONES.find((zoneDefinition) => zoneDefinition.zone === zoneNumber);
+  if (!zone) {
+    throw new Error(`Heart-rate zone ${zoneNumber} definition is required`);
+  }
+  return zone;
+}
+
+const aerobicEfficiencyZone = requireHeartRateZone(2);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -173,8 +179,8 @@ export class EfficiencyRepository extends BaseRepository {
         timezone: this.timezone,
         days,
         enduranceTypes: ENDURANCE_TYPES,
-        b1: ZONE_BOUNDARIES_HRR[0],
-        b2: ZONE_BOUNDARIES_HRR[1],
+        b1: aerobicEfficiencyZone.minPctHrr,
+        b2: aerobicEfficiencyZone.maxPctHrr,
         rhrEndDate: today,
         rhrWindowStart: dateWindowStartString(today, days),
       },

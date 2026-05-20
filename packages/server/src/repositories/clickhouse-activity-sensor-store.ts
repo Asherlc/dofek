@@ -18,6 +18,11 @@ import type {
   PowerZoneSecondRow,
   Vo2MaxEstimateRow,
 } from "./clickhouse-activity-sensor-types.ts";
+import {
+  heartRateZoneCaseSql,
+  heartRateZoneNumbersSql,
+  heartRateZoneSqlParams,
+} from "./heart-rate-zone-sql.ts";
 
 export interface ActivitySummaryReadModelRow {
   activity_id: string;
@@ -393,25 +398,17 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           zone,
           countIf(
             CASE zone
-              WHEN 1 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.5
-                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.6
-              WHEN 2 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.6
-                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.7
-              WHEN 3 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.7
-                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.8
-              WHEN 4 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.8
-                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.9
-              WHEN 5 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * 0.9
+              ${heartRateZoneCaseSql("scalar")}
               ELSE false
             END
           ) AS seconds
-        FROM (SELECT number + 1 AS zone FROM numbers(5)) AS zones
+        FROM (${heartRateZoneNumbersSql()}) AS zones
         LEFT JOIN (SELECT scalar FROM deduped_samples) AS heart_rate_samples ON true
         GROUP BY zone
         ORDER BY zone
       `,
       format: "JSONEachRow",
-      query_params: queryParams(window, { maxHr, restingHr }),
+      query_params: queryParams(window, { maxHr, restingHr, ...heartRateZoneSqlParams() }),
     });
     return result.json();
   }

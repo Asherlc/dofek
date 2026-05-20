@@ -1,4 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { classifyHeartRateZone, HEART_RATE_ZONES } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -534,7 +535,7 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     const values = await this.#activityChannelValues(window, "heart_rate");
 
     const calculateZoneRows = (zoneValues: number[]) =>
-      [1, 2, 3, 4, 5].map((zone) => ({
+      HEART_RATE_ZONES.map(({ zone }) => ({
         zone,
         seconds: zoneValues.filter((value) => valueInHeartRateZone(value, zone, maxHr, restingHr))
           .length,
@@ -717,13 +718,7 @@ function valueInHeartRateZone(
   maxHr: number,
   restingHr: number,
 ): boolean {
-  const reserve = maxHr - restingHr;
-  const lower = restingHr + reserve * (0.4 + zone * 0.1);
-  if (zone === 5) {
-    return value >= lower;
-  }
-  const upper = restingHr + reserve * (0.5 + zone * 0.1);
-  return value >= lower && value < upper;
+  return classifyHeartRateZone(value, maxHr, restingHr) === zone;
 }
 
 function valueInPowerZone(value: number, zone: number, ftp: number): boolean {

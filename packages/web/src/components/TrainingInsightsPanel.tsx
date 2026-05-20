@@ -55,6 +55,7 @@ type WeeklyVolumeRow = z.infer<typeof weeklyVolumeRowSchema>;
 
 const hrZoneWeekSchema = z.object({
   week: z.string(),
+  zone0: z.number(),
   zone1: z.number(),
   zone2: z.number(),
   zone3: z.number(),
@@ -62,6 +63,25 @@ const hrZoneWeekSchema = z.object({
   zone5: z.number(),
 });
 type HrZoneWeek = z.infer<typeof hrZoneWeekSchema>;
+
+function hrZoneSeconds(week: HrZoneWeek, zone: number): number {
+  switch (zone) {
+    case 0:
+      return week.zone0;
+    case 1:
+      return week.zone1;
+    case 2:
+      return week.zone2;
+    case 3:
+      return week.zone3;
+    case 4:
+      return week.zone4;
+    case 5:
+      return week.zone5;
+    default:
+      return 0;
+  }
+}
 
 interface TrainingInsightsPanelProps {
   days: number;
@@ -189,26 +209,28 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
 /** Stacked bar chart: HR zone distribution per week (percentage view) */
 function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
   // Convert seconds to percentages per week
+  const zoneKeys = HEART_RATE_ZONES.map((zone) => `zone${zone.zone}`);
+  const emptyZonePercentages = Object.fromEntries(zoneKeys.map((zoneKey) => [zoneKey, 0]));
   const zonePcts = weeks.map((w) => {
-    const total = w.zone1 + w.zone2 + w.zone3 + w.zone4 + w.zone5;
-    if (total === 0) return { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
-    return {
-      zone1: (w.zone1 / total) * 100,
-      zone2: (w.zone2 / total) * 100,
-      zone3: (w.zone3 / total) * 100,
-      zone4: (w.zone4 / total) * 100,
-      zone5: (w.zone5 / total) * 100,
-    };
+    const total = HEART_RATE_ZONES.reduce((sum, zone) => sum + hrZoneSeconds(w, zone.zone), 0);
+    if (total === 0) return emptyZonePercentages;
+    return Object.fromEntries(
+      HEART_RATE_ZONES.map((zone) => {
+        const zoneKey = `zone${zone.zone}`;
+        return [zoneKey, (hrZoneSeconds(w, zone.zone) / total) * 100];
+      }),
+    );
   });
 
-  const zoneKeys = ["zone1", "zone2", "zone3", "zone4", "zone5"] as const;
-
-  const series = zoneKeys.map((zone) => ({
-    name: ZONE_LABELS[zone],
+  const series = HEART_RATE_ZONES.map((zoneDefinition) => ({
+    name: ZONE_LABELS[`zone${zoneDefinition.zone}`],
     type: "bar" as const,
     stack: "zones",
-    data: weeks.map((w, i) => [w.week, Math.round((zonePcts[i]?.[zone] ?? 0) * 10) / 10]),
-    itemStyle: { color: ZONE_COLORS[zone] },
+    data: weeks.map((w, i) => [
+      w.week,
+      Math.round((zonePcts[i]?.[`zone${zoneDefinition.zone}`] ?? 0) * 10) / 10,
+    ]),
+    itemStyle: { color: ZONE_COLORS[`zone${zoneDefinition.zone}`] },
     emphasis: { focus: "series" as const },
   }));
 
@@ -237,8 +259,8 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
         const lines = params
           .filter((p) => p.value[1] > 0)
           .map((p) => {
-            const zoneKey = zoneKeys[params.indexOf(p)];
-            const secs = raw && zoneKey ? (raw[zoneKey] ?? 0) : 0;
+            const zoneDefinition = HEART_RATE_ZONES[params.indexOf(p)];
+            const secs = zoneDefinition ? hrZoneSeconds(raw, zoneDefinition.zone) : 0;
             const mins = Math.round(secs / 60);
             return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}% (${mins}m)`;
           });
@@ -269,7 +291,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
   // Aggregate across all weeks
   const totals = weeks.reduce(
     (acc, w) => ({
-      low: acc.low + w.zone1 + w.zone2,
+      low: acc.low + w.zone0 + w.zone1 + w.zone2,
       medium: acc.medium + w.zone3,
       high: acc.high + w.zone4 + w.zone5,
     }),

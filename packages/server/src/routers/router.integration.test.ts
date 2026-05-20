@@ -1164,7 +1164,7 @@ describe("Router coverage", () => {
       }
     });
 
-    it("hrZones returns 5-zone distribution for an activity", async () => {
+    it("hrZones returns zone 0 plus 5 training zones for an activity", async () => {
       const list = await query<{ items: { id: string; avg_hr: number | null }[] }>(
         "activity.list",
         { days: 90 },
@@ -1188,10 +1188,10 @@ describe("Router coverage", () => {
         }[]
       >("activity.hrZones", { id: activityId });
 
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(6);
 
       for (const zone of result) {
-        expect(zone.zone).toBeGreaterThanOrEqual(1);
+        expect(zone.zone).toBeGreaterThanOrEqual(0);
         expect(zone.zone).toBeLessThanOrEqual(5);
         expect(zone.label).toBeTruthy();
         expect(zone.seconds).toBeGreaterThanOrEqual(0);

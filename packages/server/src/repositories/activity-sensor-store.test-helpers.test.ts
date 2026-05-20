@@ -4,7 +4,9 @@ import { createPostgresTestActivitySensorStore } from "./activity-sensor-store.t
 
 describe("PostgresTestActivitySensorStore", () => {
   it("uses metric stream sensor values for heart-rate zones", async () => {
-    const execute = vi.fn().mockResolvedValueOnce([{ scalar: 110 }, { scalar: 140 }]);
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ scalar: 100 }, { scalar: 110 }, { scalar: 130 }]);
     const store = createPostgresTestActivitySensorStore({ execute });
 
     const result = await store.getHeartRateZoneSeconds(
@@ -21,10 +23,11 @@ describe("PostgresTestActivitySensorStore", () => {
 
     expect(execute).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
+      { zone: 0, seconds: 1 },
       { zone: 1, seconds: 1 },
       { zone: 2, seconds: 0 },
-      { zone: 3, seconds: 0 },
-      { zone: 4, seconds: 1 },
+      { zone: 3, seconds: 1 },
+      { zone: 4, seconds: 0 },
       { zone: 5, seconds: 0 },
     ]);
   });

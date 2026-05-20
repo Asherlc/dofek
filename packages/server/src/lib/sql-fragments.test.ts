@@ -1,6 +1,5 @@
-import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { heartRateZoneColumns, sleepDedupCte } from "./sql-fragments.ts";
+import { sleepDedupCte } from "./sql-fragments.ts";
 
 describe("sleepDedupCte", () => {
   it("returns a SQL object with queryChunks", () => {
@@ -26,34 +25,5 @@ describe("sleepDedupCte", () => {
     const chunks = JSON.stringify(result.queryChunks);
     expect(chunks).toContain("sleep_raw");
     expect(chunks).toContain("sleep_deduped");
-  });
-});
-
-describe("heartRateZoneColumns", () => {
-  const heartRate = sql`ms.heart_rate`;
-  const maxHr = sql`up.max_hr`;
-  const restingHr = sql`rhr.resting_hr`;
-  const boundaries = [0.5, 0.6, 0.7, 0.8, 0.9] as const;
-
-  it("returns an object with all five zone keys", () => {
-    const zones = heartRateZoneColumns(heartRate, maxHr, restingHr, boundaries);
-    expect(zones).toHaveProperty("zone1");
-    expect(zones).toHaveProperty("zone2");
-    expect(zones).toHaveProperty("zone3");
-    expect(zones).toHaveProperty("zone4");
-    expect(zones).toHaveProperty("zone5");
-  });
-
-  it("each zone is a SQL object", () => {
-    const zones = heartRateZoneColumns(heartRate, maxHr, restingHr, boundaries);
-    for (const zone of Object.values(zones)) {
-      expect(zone.queryChunks).toBeDefined();
-    }
-  });
-
-  it("produces different SQL for different boundaries", () => {
-    const zonesA = heartRateZoneColumns(heartRate, maxHr, restingHr, [0.5, 0.6, 0.7, 0.8, 0.9]);
-    const zonesB = heartRateZoneColumns(heartRate, maxHr, restingHr, [0.4, 0.55, 0.7, 0.85, 0.95]);
-    expect(zonesA.zone1).not.toEqual(zonesB.zone1);
   });
 });
