@@ -63,6 +63,35 @@ describe("mcpRouter", () => {
       expiresAt: null,
       revokedAt: null,
     });
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("user-id");
+    expect(queryPayload).toContain("Codex");
+    expect(queryPayload).toContain("health:read");
+  });
+
+  it("creates expiring tokens with the requested expiration timestamp", async () => {
+    mockExecute.mockResolvedValueOnce([
+      {
+        id: "token-id",
+        name: "Codex",
+        scopes: ["health:read"],
+        created_at: new Date("2026-05-20T12:00:00Z"),
+        last_used_at: null,
+        expires_at: new Date("2026-06-01T00:00:00Z"),
+        revoked_at: null,
+      },
+    ]);
+    const caller = createCaller(createContext("user-id"));
+
+    const result = await caller.createToken({
+      name: "Codex",
+      scopes: ["health:read"],
+      expiresAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
+    expect(queryPayload).toContain("2026-06-01T00:00:00.000Z");
+    expect(result.metadata.expiresAt).toEqual(new Date("2026-06-01T00:00:00Z"));
   });
 
   it("lists token metadata without raw tokens or hashes", async () => {
@@ -113,5 +142,16 @@ describe("mcpRouter", () => {
     const result = await caller.revokeToken({ tokenId: "00000000-0000-0000-0000-000000000001" });
 
     expect(result?.revokedAt).toEqual(new Date("2026-05-20T13:00:00Z"));
+  });
+
+  it("rejects revoking a token that does not belong to the user", async () => {
+    const caller = createCaller(createContext("user-id"));
+
+    await expect(
+      caller.revokeToken({ tokenId: "00000000-0000-0000-0000-000000000001" }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "MCP token not found.",
+    });
   });
 });
