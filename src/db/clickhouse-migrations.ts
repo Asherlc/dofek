@@ -8,6 +8,7 @@ import {
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
+import { buildActivitySummaryReadModelStatements } from "./clickhouse-metric-stream-bootstrap.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
 import {
   buildActivityTrendDailyReadModelStatements,
@@ -207,6 +208,14 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     {
       id: "0014_resting_heart_rate_sleep_window_materialized_view",
       statements: buildRestingHeartRateSleepWindowMaterializedViewStatements(),
+    },
+    {
+      id: "0015_activity_summary_centroids",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        ...buildActivitySummaryReadModelStatements(),
+      ],
     },
   ];
 }

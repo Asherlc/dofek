@@ -140,6 +140,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("tupleElement(metric_stream.point, 2)");
     expect(sql).toContain("tupleElement(metric_stream.point, 1)");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("location_centroids AS");
+    expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
+    expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
     expect(sql).toContain("REFRESH EVERY 1 MINUTE");

@@ -47,6 +47,8 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
     avg_power: 250,
     total_distance: null,
     elevation_gain_m: null,
+    centroid_lat: null,
+    centroid_lng: null,
     local_date: new Date("2026-03-18T00:00:00.000Z"),
     ...overrides,
   };
@@ -93,12 +95,13 @@ describe("ActivitiesCalendarRepository", () => {
           activity_type: "running",
           total_distance: 5000,
           elevation_gain_m: 125,
+          centroid_lat: 90,
+          centroid_lng: 180,
           avg_power: null,
           local_date: "2026-03-19",
         }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: null }],
-      [{ activity_id: "activity-1", centroid_lat: 90, centroid_lng: 180 }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -116,7 +119,10 @@ describe("ActivitiesCalendarRepository", () => {
   it("passes the requested user, timezone, activity ids, and date window to backing stores", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
-      [makeActivityRow({ id: "activity-1" }), makeActivityRow({ id: "activity-2" })],
+      [
+        makeActivityRow({ id: "activity-1", total_distance: 5000 }),
+        makeActivityRow({ id: "activity-2", elevation_gain_m: 50 }),
+      ],
       [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
@@ -145,14 +151,59 @@ describe("ActivitiesCalendarRepository", () => {
       expect.stringContaining("FROM postgres_fitness.user_profile_current"),
       { userId: "00000000-0000-0000-0000-000000000001" },
     );
-    expect(sensorStore.query).toHaveBeenNthCalledWith(
-      3,
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads precomputed centroids from activity summary without a runtime location query", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "indoor",
+          activity_type: "indoor_cycling",
+          total_distance: null,
+          elevation_gain_m: null,
+        }),
+        makeActivityRow({
+          id: "outdoor-without-route",
+          activity_type: "running",
+          total_distance: null,
+          elevation_gain_m: null,
+        }),
+        makeActivityRow({
+          id: "outdoor-with-route",
+          activity_type: "running",
+          total_distance: 5000,
+          elevation_gain_m: 125,
+          centroid_lat: 37.8,
+          centroid_lng: -122.4,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "00000000-0000-0000-0000-000000000001",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(
+      result[0]?.activities.find((activity) => activity.id === "outdoor-with-route")?.location,
+    ).toEqual({
+      centroidLat: 37.8,
+      centroidLng: -122.4,
+      tileUrl: "https://tile.openstreetmap.org/13/1310/3165.png",
+      distanceMeters: 5000,
+      elevationGainM: 125,
+    });
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("FROM analytics.deduped_location"),
-      {
-        userId: "00000000-0000-0000-0000-000000000001",
-        activityIds: ["activity-1", "activity-2"],
-      },
+      expect.anything(),
     );
   });
 

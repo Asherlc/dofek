@@ -49,9 +49,12 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("standalone_samples AS");
     expect(sql).toContain("CAST(NULL, 'Nullable(UUID)') AS activity_id");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("location_centroids AS");
+    expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
+    expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary/g),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.activity_trend_daily");
     expect(sql).toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
@@ -137,7 +140,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(14);
+    expect(count).toBe(15);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -192,7 +195,7 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(33);
+    expect(systemTableQueries).toHaveLength(36);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
