@@ -5,6 +5,7 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
  * Integration tests for dailyMetrics data correctness.
@@ -86,7 +87,7 @@ describe("dailyMetrics data correctness", () => {
     // Refresh the materialized view
 
     // Start server
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, makeMockSensorStore());
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
@@ -212,11 +213,13 @@ describe("dailyMetrics data correctness", () => {
       );
       await testCtx.db.execute(
         sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES ('apple_health_stale_view', 'Apple Health', ${staleViewUserId})`,
+            VALUES ('apple_health_stale_view', 'Apple Health', ${staleViewUserId})
+            ON CONFLICT DO NOTHING`,
       );
       await testCtx.db.execute(
         sql`INSERT INTO fitness.provider (id, name, user_id)
-            VALUES ('garmin_stale_view', 'Garmin Connect', ${staleViewUserId})`,
+            VALUES ('garmin_stale_view', 'Garmin Connect', ${staleViewUserId})
+            ON CONFLICT DO NOTHING`,
       );
 
       for (let i = 7; i >= 1; i--) {

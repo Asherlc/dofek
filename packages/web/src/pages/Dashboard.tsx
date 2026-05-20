@@ -46,14 +46,17 @@ type MetricEntry = {
 
 const trendRowSchema = z.object({
   avg_hrv: z.number().nullable(),
+  avg_resting_hr: z.number().nullable(),
   avg_spo2: z.number().nullable(),
   avg_steps: z.number().nullable(),
   avg_active_energy: z.number().nullable(),
   avg_skin_temp: z.number().nullable(),
   stddev_hrv: z.number().nullable(),
+  stddev_resting_hr: z.number().nullable(),
   stddev_spo2: z.number().nullable(),
   stddev_skin_temp: z.number().nullable(),
   latest_hrv: z.number().nullable(),
+  latest_resting_hr: z.number().nullable(),
   latest_spo2: z.number().nullable(),
   latest_steps: z.number().nullable(),
   latest_active_energy: z.number().nullable(),
@@ -134,6 +137,61 @@ export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConver
   };
 }
 
+export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitConverter) {
+  if (!trendData) return [];
+  const entries: (MetricEntry | false)[] = [
+    {
+      label: "Heart Rate Variability (HRV)",
+      value: trendData.latest_hrv,
+      avg: trendData.avg_hrv,
+      stddev: trendData.stddev_hrv,
+      unit: "ms",
+      lowerBetter: false,
+    },
+    {
+      label: "Resting Heart Rate",
+      value: trendData.latest_resting_hr,
+      avg: trendData.avg_resting_hr,
+      stddev: trendData.stddev_resting_hr,
+      unit: "bpm",
+      lowerBetter: true,
+    },
+    trendData.latest_spo2 != null && {
+      label: "SpO2",
+      value: trendData.latest_spo2,
+      avg: trendData.avg_spo2,
+      stddev: trendData.stddev_spo2,
+      unit: "%",
+    },
+    {
+      label: "Steps",
+      value: trendData.latest_steps,
+      avg: trendData.avg_steps,
+      stddev: null,
+      unit: "",
+    },
+    {
+      label: "Active Energy",
+      value: trendData.latest_active_energy,
+      avg: trendData.avg_active_energy,
+      stddev: null,
+      unit: "kcal",
+    },
+    trendData.latest_skin_temp != null && {
+      label: "Skin Temp",
+      value: units.convertTemperature(trendData.latest_skin_temp),
+      avg:
+        trendData.avg_skin_temp != null ? units.convertTemperature(trendData.avg_skin_temp) : null,
+      stddev:
+        trendData.stddev_skin_temp != null
+          ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
+          : null,
+      unit: units.temperatureLabel,
+    },
+  ];
+  return entries.filter((entry): entry is MetricEntry => entry !== false);
+}
+
 export const DASHBOARD_SECTION_IDS = new Set([
   "healthMonitor",
   "topInsights",
@@ -200,54 +258,7 @@ export function Dashboard() {
       .slice(0, 2);
   }, [insightsQuery.data]);
 
-  const healthMetrics = useMemo(() => {
-    if (!trendData) return [];
-    const entries: (MetricEntry | false)[] = [
-      {
-        label: "Heart Rate Variability (HRV)",
-        value: trendData.latest_hrv,
-        avg: trendData.avg_hrv,
-        stddev: trendData.stddev_hrv,
-        unit: "ms",
-        lowerBetter: false,
-      },
-      trendData.latest_spo2 != null && {
-        label: "SpO2",
-        value: trendData.latest_spo2,
-        avg: trendData.avg_spo2,
-        stddev: trendData.stddev_spo2,
-        unit: "%",
-      },
-      {
-        label: "Steps",
-        value: trendData.latest_steps,
-        avg: trendData.avg_steps,
-        stddev: null,
-        unit: "",
-      },
-      {
-        label: "Active Energy",
-        value: trendData.latest_active_energy,
-        avg: trendData.avg_active_energy,
-        stddev: null,
-        unit: "kcal",
-      },
-      trendData.latest_skin_temp != null && {
-        label: "Skin Temp",
-        value: units.convertTemperature(trendData.latest_skin_temp),
-        avg:
-          trendData.avg_skin_temp != null
-            ? units.convertTemperature(trendData.avg_skin_temp)
-            : null,
-        stddev:
-          trendData.stddev_skin_temp != null
-            ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
-            : null,
-        unit: units.temperatureLabel,
-      },
-    ];
-    return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, units]);
+  const healthMetrics = useMemo(() => buildHealthMetrics(trendData, units), [trendData, units]);
 
   const metrics = dailyMetrics.error ? [] : assertRows(dailyMetrics.data, dailyMetricRowSchema);
   const sleepRows = sleepData.error ? [] : assertRows(sleepData.data, sleepRowSchema);
