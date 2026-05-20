@@ -1130,6 +1130,32 @@ export const session = fitness.table(
   ],
 );
 
+// ============================================================
+// MCP access tokens — per-user bearer tokens for remote MCP clients
+// ============================================================
+
+export const mcpAccessToken = fitness.table(
+  "mcp_access_token",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    scopes: text("scopes").array().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("mcp_access_token_user_idx").on(table.userId),
+    index("mcp_access_token_token_hash_idx").on(table.tokenHash),
+    index("mcp_access_token_active_idx").on(table.userId, table.revokedAt, table.expiresAt),
+  ],
+);
+
 // User billing — Stripe subscription state and internal paid grants
 // ============================================================
 
