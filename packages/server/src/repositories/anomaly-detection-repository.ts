@@ -2,11 +2,11 @@ import type { Database } from "dofek/db";
 import { decryptCredentialValue } from "dofek/security/credential-encryption";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowEnd, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { dateWindowEnd } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +69,45 @@ const WARNING_THRESHOLD = 2;
 const ALERT_THRESHOLD = 3;
 const BASELINE_LOOKBACK_DAYS = 35;
 const BASELINE_WINDOW_DAYS = 30;
+
+function sleepStatsForDate(
+  rows: { date: string; duration_minutes: number | null }[],
+  targetDate: string,
+) {
+  const targetIndex = rows.findIndex((row) => row.date === targetDate);
+  if (targetIndex < 0) {
+    return {
+      durationMinutes: null,
+      mean: null,
+      stddev: null,
+      count: 0,
+    };
+  }
+  const targetDuration = rows[targetIndex]?.duration_minutes ?? null;
+  const baselineDurations = rows
+    .slice(Math.max(0, targetIndex - BASELINE_WINDOW_DAYS), targetIndex)
+    .map((row) => row.duration_minutes)
+    .filter((duration): duration is number => duration != null);
+  if (baselineDurations.length === 0) {
+    return {
+      durationMinutes: targetDuration,
+      mean: null,
+      stddev: null,
+      count: 0,
+    };
+  }
+  const mean =
+    baselineDurations.reduce((sum, duration) => sum + duration, 0) / baselineDurations.length;
+  const variance =
+    baselineDurations.reduce((sum, duration) => sum + (duration - mean) ** 2, 0) /
+    baselineDurations.length;
+  return {
+    durationMinutes: targetDuration,
+    mean,
+    stddev: Math.sqrt(variance),
+    count: baselineDurations.length,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -157,10 +196,11 @@ export class AnomalyDetectionRepository {
       endDate,
       days: BASELINE_LOOKBACK_DAYS,
     });
-    const rows = await executeWithSchema(
-      this.#db,
-      anomalyCheckRowSchema,
-      sql`WITH target_date AS (
+    const [rows, sleepRows] = await Promise.all([
+      executeWithSchema(
+        this.#db,
+        anomalyCheckRowSchema,
+        sql`WITH target_date AS (
 	          SELECT ${dateWindowEnd(endDate)}::date AS date
 	        ),
           ${restingHeartRateCte},
@@ -224,42 +264,29 @@ export class AnomalyDetectionRepository {
                 LIMIT ${BASELINE_WINDOW_DAYS}
               ) history_rows
             ) history ON true
-          ),
-          sleep_raw AS (
-            SELECT
-              ${sleepNightDate(this.#timezone)} AS date,
-              duration_minutes
-            FROM fitness.v_sleep
-            WHERE user_id = ${this.#userId}
-              AND is_nap = false
-              AND started_at > ${timestampWindowStart(endDate, BASELINE_LOOKBACK_DAYS)}
-          ),
-          sleep_nightly AS (
-            SELECT DISTINCT ON (date) date, duration_minutes
-            FROM sleep_raw
-            ORDER BY date, duration_minutes DESC NULLS LAST
-          ),
-          sleep AS (
-            SELECT
-              date,
-              duration_minutes,
-              AVG(duration_minutes) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS sleep_mean,
-              STDDEV_POP(duration_minutes) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS sleep_sd,
-              COUNT(*) OVER (ORDER BY date ROWS BETWEEN ${BASELINE_WINDOW_DAYS} PRECEDING AND 1 PRECEDING) AS sleep_count
-            FROM sleep_nightly
-            ORDER BY date ASC
           )
           SELECT
             target_date.date::text,
             b.resting_hr, b.rhr_mean, b.rhr_sd, b.rhr_count,
             h.hrv, h.hrv_mean, h.hrv_sd, h.hrv_count,
-            s.duration_minutes, s.sleep_mean, s.sleep_sd, s.sleep_count
+            NULL::real AS duration_minutes,
+            NULL::real AS sleep_mean,
+            NULL::real AS sleep_sd,
+            0::int AS sleep_count
           FROM target_date
           LEFT JOIN baseline b ON b.date = target_date.date
           LEFT JOIN hrv_baseline h ON h.date = target_date.date
-          LEFT JOIN sleep s ON s.date = target_date.date
           LIMIT 1`,
-    );
+      ),
+      fetchSleepNights({
+        sensorStore: this.#sensorStore,
+        userId: this.#userId,
+        timezone: this.#timezone,
+        endDate,
+        days: BASELINE_LOOKBACK_DAYS,
+        order: "asc",
+      }),
+    ]);
 
     const anomalies: AnomalyRow[] = [];
     const checkedMetrics: string[] = [];
@@ -268,6 +295,7 @@ export class AnomalyDetectionRepository {
     if (!row || !row.date) return { anomalies, checkedMetrics };
 
     const date = String(row.date);
+    const sleepStats = sleepStatsForDate(sleepRows, date);
 
     // Check resting HR (higher = worse)
     if (
@@ -311,21 +339,21 @@ export class AnomalyDetectionRepository {
 
     // Check sleep duration (shorter = worse)
     if (
-      row.duration_minutes != null &&
-      row.sleep_mean != null &&
-      row.sleep_sd != null &&
-      Number(row.sleep_sd) > 0 &&
-      Number(row.sleep_count) >= MIN_BASELINE_DAYS
+      sleepStats.durationMinutes != null &&
+      sleepStats.mean != null &&
+      sleepStats.stddev != null &&
+      sleepStats.stddev > 0 &&
+      sleepStats.count >= MIN_BASELINE_DAYS
     ) {
       checkedMetrics.push("sleep_duration");
-      const zScore = (Number(row.duration_minutes) - Number(row.sleep_mean)) / Number(row.sleep_sd);
+      const zScore = (sleepStats.durationMinutes - sleepStats.mean) / sleepStats.stddev;
       if (zScore < -WARNING_THRESHOLD) {
         anomalies.push({
           date,
           metric: "Sleep Duration",
-          value: Math.round(Number(row.duration_minutes)),
-          baselineMean: Math.round(Number(row.sleep_mean)),
-          baselineStddev: Math.round(Number(row.sleep_sd)),
+          value: Math.round(sleepStats.durationMinutes),
+          baselineMean: Math.round(sleepStats.mean),
+          baselineStddev: Math.round(sleepStats.stddev),
           zScore: Math.round(zScore * 100) / 100,
           severity: zScore < -ALERT_THRESHOLD ? "alert" : "warning",
         });

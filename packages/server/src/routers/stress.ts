@@ -12,10 +12,10 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitlement.ts";
-import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { dateAccessPredicate } from "../billing/entitlement.ts";
+import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import {
   fetchRestingHeartRateRows,
   restingHeartRateValuesCte,
@@ -73,10 +73,11 @@ export const stressRouter = router({
         rhr_sd_60d: z.coerce.number().nullable(),
         efficiency_pct: z.coerce.number().nullable(),
       });
-      const rows = await executeWithSchema(
-        ctx.db,
-        rawRowSchema,
-        sql`WITH ${restingHeartRateCte},
+      const [metricRows, sleepRows] = await Promise.all([
+        executeWithSchema(
+          ctx.db,
+          rawRowSchema,
+          sql`WITH ${restingHeartRateCte},
             metrics AS (
               SELECT
                 dm.date,
@@ -93,21 +94,6 @@ export const stressRouter = router({
                 AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
                 ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
               ORDER BY dm.date ASC
-            ),
-            sleep_eff AS (
-              SELECT DISTINCT ON (local_date)
-                local_date AS date,
-                efficiency_pct
-              FROM (
-                SELECT ${sleepNightDate(ctx.timezone)} AS local_date,
-                       efficiency_pct, duration_minutes
-                FROM fitness.v_sleep
-                WHERE user_id = ${ctx.userId}
-                  AND is_nap = false
-                  AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
-                  ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
-              ) sleep_sub
-              ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
             SELECT
               m.date::text,
@@ -117,12 +103,26 @@ export const stressRouter = router({
               m.hrv_sd_60d,
               m.rhr_mean_60d,
               m.rhr_sd_60d,
-              s.efficiency_pct
+              NULL::real AS efficiency_pct
             FROM metrics m
-            LEFT JOIN sleep_eff s ON s.date = m.date
             WHERE m.date > ${dateWindowStart(input.endDate, input.days)}
             ORDER BY m.date ASC`,
-      );
+        ),
+        fetchSleepNights({
+          sensorStore: ctx.sensorStore,
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          endDate: input.endDate,
+          days: queryDays,
+          accessWindow: ctx.accessWindow,
+          order: "asc",
+        }),
+      ]);
+      const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
+      const rows = metricRows.map((row) => ({
+        ...row,
+        efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? null,
+      }));
 
       // Load personalized stress thresholds
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);

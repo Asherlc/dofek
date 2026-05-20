@@ -3,9 +3,9 @@ import { ZONE_BOUNDARIES_FTP } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { fetchBodyCompRows } from "../repositories/body-clickhouse.ts";
+import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import {
   fetchRestingHeartRateRows,
   type RestingHeartRateRow,
@@ -37,6 +37,34 @@ const rawRowSchema = z.object({
 export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
 
 type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function populationStddev(values: number[]): number | null {
+  const mean = average(values);
+  if (mean == null) return null;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+function bedtimeMinutes(timestamp: string, timezone: string): number | null {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  const minutes = hour * 60 + minute;
+  return minutes < 720 ? minutes + 1440 : minutes;
+}
 
 /**
  * Compute total aerobic and high-intensity minutes from analytics.deduped_sensor.
@@ -172,39 +200,29 @@ export async function fetchHealthspanRawData(
     : [];
   const latestWeightKg = latestNonNullValue(bodyMeasurements, "weight_kg");
   const latestBodyFatPct = latestNonNullValue(bodyMeasurements, "body_fat_pct");
+  const sleepRows = ctx.sensorStore
+    ? await fetchSleepNights({
+        sensorStore: ctx.sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate,
+        days: totalDays,
+        order: "asc",
+      })
+    : [];
+  const sleepDurations = sleepRows
+    .map((row) => row.duration_minutes)
+    .filter((duration): duration is number => duration != null);
+  const bedtimes = sleepRows
+    .map((row) => bedtimeMinutes(row.started_at, ctx.timezone))
+    .filter((minutes): minutes is number => minutes != null);
+  const avgSleepMin = average(sleepDurations);
+  const bedtimeStddevMin = populationStddev(bedtimes);
 
   const rows = await executeWithSchema(
     ctx.db,
     rawRowSchema,
     sql`WITH ${restingHeartRateCte},
-        sleep_raw AS (
-          SELECT
-            ${sleepNightDate(ctx.timezone)} AS date,
-            duration_minutes,
-            CASE
-              WHEN EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
-                   + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) < 720
-              THEN EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
-                   + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone}) + 1440
-              ELSE EXTRACT(HOUR FROM started_at AT TIME ZONE ${ctx.timezone}) * 60
-                   + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${ctx.timezone})
-            END AS bedtime_minutes
-          FROM fitness.v_sleep
-          WHERE user_id = ${ctx.userId}
-            AND is_nap = false
-            AND started_at > ${timestampWindowStart(endDate, totalDays)}
-        ),
-        sleep_data AS (
-          SELECT DISTINCT ON (date) date, duration_minutes, bedtime_minutes
-          FROM sleep_raw
-          ORDER BY date, duration_minutes DESC NULLS LAST
-        ),
-        sleep_agg AS (
-          SELECT
-            AVG(duration_minutes) AS avg_sleep_min,
-            STDDEV_POP(bedtime_minutes) AS bedtime_stddev_min
-          FROM sleep_data
-        ),
         metrics_agg AS (
           SELECT
             (SELECT AVG(resting_hr)
@@ -257,8 +275,8 @@ export async function fetchHealthspanRawData(
           ORDER BY week_start ASC
         )
         SELECT
-          sa.avg_sleep_min,
-          sa.bedtime_stddev_min,
+          ${avgSleepMin}::real AS avg_sleep_min,
+          ${bedtimeStddevMin}::real AS bedtime_stddev_min,
           ma.avg_resting_hr,
           ma.avg_steps,
           ma.latest_vo2max,
@@ -273,8 +291,7 @@ export async function fetchHealthspanRawData(
             'avg_steps', wm.avg_steps,
             'avg_vo2max', wm.avg_vo2max
           ) ORDER BY wm.week_start ASC) FROM weekly_metrics wm) AS weekly_history
-        FROM sleep_agg sa
-        CROSS JOIN metrics_agg ma
+        FROM metrics_agg ma
         CROSS JOIN strength_freq sf`,
   );
 

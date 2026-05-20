@@ -10,9 +10,9 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStart } from "../lib/date-window.ts";
-import { sleepDedupCte } from "../lib/sql-fragments.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 export type { WeeklyStressRow };
@@ -109,17 +109,19 @@ export class StressRepository extends BaseRepository {
 
   async getStressScores(days: number, endDate: string): Promise<StressResult> {
     const queryDays = days + BASELINE_LOOKBACK_DAYS;
+    const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
-      sensorStore: this.#requireSensorStore(),
+      sensorStore,
       userId: this.userId,
       timezone: this.timezone,
       endDate,
       days: queryDays,
     });
 
-    const rows = await this.query(
-      rawRowSchema,
-      sql`WITH ${restingHeartRateCte},
+    const [vitalRows, sleepRows] = await Promise.all([
+      this.query(
+        rawRowSchema,
+        sql`WITH ${restingHeartRateCte},
           vitals_baseline AS (
             SELECT
               base.date,
@@ -138,8 +140,7 @@ export class StressRepository extends BaseRepository {
             LEFT JOIN resting_heart_rate drhr
               ON drhr.date = base.date
             ORDER BY base.date ASC
-          ),
-          ${sleepDedupCte(this.userId, this.timezone, endDate, queryDays)}
+          )
           SELECT
             m.date::text,
             m.hrv,
@@ -148,13 +149,27 @@ export class StressRepository extends BaseRepository {
             m.hrv_stddev_60d AS hrv_sd_60d,
             m.resting_hr_mean_60d AS rhr_mean_60d,
             m.resting_hr_stddev_60d AS rhr_sd_60d,
-            sd.efficiency_pct
+            NULL::real AS efficiency_pct
           FROM vitals_baseline m
-          LEFT JOIN sleep_deduped sd ON sd.sleep_date = m.date
           WHERE m.date > ${dateWindowStart(endDate, days)}
             ${this.dateAccessPredicate(sql`m.date`)}
           ORDER BY m.date ASC`,
-    );
+      ),
+      fetchSleepNights({
+        sensorStore,
+        userId: this.userId,
+        timezone: this.timezone,
+        endDate,
+        days: queryDays,
+        accessWindow: this.accessWindow,
+        order: "asc",
+      }),
+    ]);
+    const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
+    const rows = vitalRows.map((row) => ({
+      ...row,
+      efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? null,
+    }));
 
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);

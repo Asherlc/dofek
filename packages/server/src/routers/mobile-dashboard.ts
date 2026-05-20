@@ -4,14 +4,14 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
-import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type AnomalyCheckResult,
   AnomalyDetectionRepository,
 } from "../repositories/anomaly-detection-repository.ts";
+import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import {
   fetchRestingHeartRateRows,
   restingHeartRateValuesCte,
@@ -44,6 +44,12 @@ export function isRecent(dateStr: string, anchorDateStr: string): boolean {
   const anchor = new Date(`${anchorDateStr}T12:00:00Z`);
   const diffDays = Math.round((anchor.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   return diffDays >= 0 && diffDays <= 1;
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 export interface MobileDashboardResult {
@@ -154,10 +160,11 @@ export const mobileDashboardRouter = router({
         rr_sd_30d: z.coerce.number().nullable(),
       });
 
-      const metricsRows = await executeWithSchema(
-        ctx.db,
-        readinessSchema,
-        sql`
+      const [metricsRowsWithoutSleep, readinessSleepRows] = await Promise.all([
+        executeWithSchema(
+          ctx.db,
+          readinessSchema,
+          sql`
           WITH ${restingHeartRateCte},
           metrics_base AS (
             SELECT
@@ -194,31 +201,33 @@ export const mobileDashboardRouter = router({
               AVG(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
               STDDEV_POP(respiratory_rate) OVER (ORDER BY metric_date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
             FROM metrics_base
-          ),
-          sleep_eff AS (
-            SELECT DISTINCT ON (local_date)
-              local_date::text AS sleep_date,
-              efficiency_pct
-            FROM (
-              SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date AS local_date,
-                     efficiency_pct,
-                     duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > ${endDate}::date - 60
-            ) sleep_sub
-            ORDER BY local_date, duration_minutes DESC NULLS LAST
           )
           SELECT
             m.metric_date::text AS date,
-            m.hrv, m.resting_hr, m.respiratory_rate, s.efficiency_pct,
+            m.hrv, m.resting_hr, m.respiratory_rate, NULL::real AS efficiency_pct,
             m.hrv_mean_30d, m.hrv_sd_30d, m.rhr_mean_30d, m.rhr_sd_30d, m.rr_mean_30d, m.rr_sd_30d
           FROM metrics_with_baselines m
-          LEFT JOIN sleep_eff s ON s.sleep_date = m.metric_date::text
           ORDER BY m.metric_date DESC
         `,
+        ),
+        fetchSleepNights({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: tz,
+          endDate,
+          days: 60,
+          accessWindow: ctx.accessWindow,
+          order: "asc",
+        }),
+      ]);
+
+      const sleepEfficiencyByDate = new Map(
+        readinessSleepRows.map((row) => [row.date, row.efficiency_pct]),
       );
+      const metricsRows = metricsRowsWithoutSleep.map((row) => ({
+        ...row,
+        efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? null,
+      }));
 
       const latestMetric = metricsRows[0];
       let readinessResult: MobileDashboardResult["readiness"] = null;
@@ -255,72 +264,63 @@ export const mobileDashboardRouter = router({
       }
 
       // 2. Sleep Analytics (Last Night)
-      const sleepRows = await executeWithSchema(
-        ctx.db,
-        z.object({
-          date: dateStringSchema,
-          duration_minutes: z.coerce.number(),
-          deep_pct: z.coerce.number(),
-          rem_pct: z.coerce.number(),
-          light_pct: z.coerce.number(),
-          awake_pct: z.coerce.number(),
-        }),
-        sql`
-          WITH sleep_rows AS (
-            SELECT
-              ${sleepNightDate(tz)} AS sleep_date,
-              duration_minutes,
-              CASE WHEN duration_minutes > 0 THEN deep_minutes::real / duration_minutes * 100 ELSE 0 END AS deep_pct,
-              CASE WHEN duration_minutes > 0 THEN rem_minutes::real / duration_minutes * 100 ELSE 0 END AS rem_pct,
-              CASE WHEN duration_minutes > 0 THEN light_minutes::real / duration_minutes * 100 ELSE 0 END AS light_pct,
-              CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct
-            FROM fitness.v_sleep
-            WHERE user_id = ${ctx.userId}
-              AND is_nap = false
-              AND started_at > ${endDate}::date - 14
-          )
-          SELECT DISTINCT ON (sleep_date)
-            sleep_date::text AS date,
-            duration_minutes, deep_pct, rem_pct, light_pct, awake_pct
-          FROM sleep_rows
-          ORDER BY sleep_date DESC, duration_minutes DESC NULLS LAST
-        `,
-      );
+      const sleepRows = (
+        await fetchSleepNights({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: tz,
+          endDate,
+          days: 14,
+          accessWindow: ctx.accessWindow,
+          order: "desc",
+        })
+      ).map((row) => {
+        const durationMinutes = row.duration_minutes ?? 0;
+        return {
+          date: row.date,
+          duration_minutes: durationMinutes,
+          deep_pct: durationMinutes > 0 ? ((row.deep_minutes ?? 0) / durationMinutes) * 100 : 0,
+          rem_pct: durationMinutes > 0 ? ((row.rem_minutes ?? 0) / durationMinutes) * 100 : 0,
+          light_pct: durationMinutes > 0 ? ((row.light_minutes ?? 0) / durationMinutes) * 100 : 0,
+          awake_pct: durationMinutes > 0 ? ((row.awake_minutes ?? 0) / durationMinutes) * 100 : 0,
+        };
+      });
 
       const lastNightRow = sleepRows.find((r) => isRecent(r.date, endDate));
 
       // 3. Sleep Need (90-day baseline)
-      const sleepBaselineRows = await executeWithSchema(
-        ctx.db,
-        z.object({
-          date: dateStringSchema,
-          duration_minutes: z.coerce.number(),
-          hrv: z.coerce.number().nullable(),
-          yesterday_load: z.coerce.number(),
+      const [baselineSleepRows, hrvRows] = await Promise.all([
+        fetchSleepNights({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: tz,
+          endDate,
+          days: 90,
+          accessWindow: ctx.accessWindow,
+          order: "asc",
         }),
-        sql`
-          WITH sleep_nights AS (
-             SELECT DISTINCT ON (sleep_date)
-               ${sleepNightDate(tz)} AS sleep_date,
-               duration_minutes
-             FROM fitness.v_sleep
-             WHERE user_id = ${ctx.userId} AND is_nap = false AND started_at > ${timestampWindowStart(endDate, 90)}
-             ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-          ),
-          daily_hrv AS (
-            SELECT date AS metric_date, hrv
-            FROM fitness.v_daily_metrics
-            WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
-          )
+        executeWithSchema(
+          ctx.db,
+          z.object({
+            date: dateStringSchema,
+            hrv: z.coerce.number().nullable(),
+          }),
+          sql`
           SELECT
-            s.sleep_date::text AS date,
-            s.duration_minutes,
-            h.hrv,
-            ${yesterdayLoadFromCh}::real AS yesterday_load
-          FROM sleep_nights s
-          LEFT JOIN daily_hrv h ON h.metric_date = s.sleep_date + 1
+            date::text AS date,
+            hrv
+          FROM fitness.v_daily_metrics
+          WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
         `,
-      );
+        ),
+      ]);
+      const hrvByDate = new Map(hrvRows.map((row) => [row.date, row.hrv]));
+      const sleepBaselineRows = baselineSleepRows.map((row) => ({
+        date: row.date,
+        duration_minutes: row.duration_minutes ?? 0,
+        hrv: hrvByDate.get(addDays(row.date, 1)) ?? null,
+        yesterday_load: yesterdayLoadFromCh,
+      }));
 
       const hrvMedian = (() => {
         const values = sleepBaselineRows

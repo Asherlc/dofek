@@ -13,6 +13,7 @@ import {
 import { enduranceTypeFilter } from "../lib/endurance-types.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchLatestSleepNight } from "./clickhouse-sleep-repository.ts";
 import {
   heartRateZoneCountColumns,
   heartRateZoneSqlParams,
@@ -413,15 +414,13 @@ export class TrainingRepository extends BaseRepository {
   }
 
   async #fetchLatestSleepEfficiency(): Promise<z.infer<typeof sleepRowSchema>[]> {
-    return this.query(
-      sleepRowSchema,
-      sql`SELECT efficiency_pct
-        FROM fitness.v_sleep
-        WHERE user_id = ${this.userId}
-          AND is_nap = false
-        ORDER BY COALESCE(ended_at, started_at + interval '8 hours') DESC
-        LIMIT 1`,
-    );
+    const latestSleep = await fetchLatestSleepNight({
+      sensorStore: this.#sensorStore,
+      userId: this.userId,
+      timezone: this.timezone,
+      accessWindow: this.accessWindow,
+    });
+    return [{ efficiency_pct: latestSleep?.efficiency_pct ?? null }];
   }
 
   async #fetchAcwr(endDate: string): Promise<z.infer<typeof acwrRowSchema>[]> {

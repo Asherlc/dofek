@@ -131,6 +131,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     "0008_clickhouse_activity_views.sql",
     "0017_drop_derived_resting_heart_rate.sql",
     "0019_clickhouse_proxy_views_after_body_measurement_migration.sql",
+    "0025_drop_v_sleep.sql",
   ]) {
     const content = readFileSync(resolve(drizzleDir, file), "utf-8");
     const statements = content

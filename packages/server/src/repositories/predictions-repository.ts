@@ -18,6 +18,7 @@ import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -383,15 +384,26 @@ export class PredictionsRepository {
   }
 
   async #fetchSleep(days: number): Promise<SleepRow[]> {
-    return executeWithSchema(
-      this.#db,
-      sleepRowSchema,
-      sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
-                 light_minutes, awake_minutes, efficiency_pct, is_nap
-          FROM fitness.v_sleep
-          WHERE user_id = ${this.#userId}
-            AND started_at > CURRENT_DATE - ${days}::int
-          ORDER BY started_at ASC`,
+    const endDate = new Date().toISOString().slice(0, 10);
+    const rows = await fetchSleepNights({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days,
+      order: "asc",
+    });
+    return rows.map((row) =>
+      sleepRowSchema.parse({
+        started_at: row.started_at,
+        duration_minutes: row.duration_minutes,
+        deep_minutes: row.deep_minutes,
+        rem_minutes: row.rem_minutes,
+        light_minutes: row.light_minutes,
+        awake_minutes: row.awake_minutes,
+        efficiency_pct: row.efficiency_pct,
+        is_nap: false,
+      }),
     );
   }
 

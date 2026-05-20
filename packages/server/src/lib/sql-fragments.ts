@@ -1,6 +1,5 @@
 import type { SQL } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { timestampWindowStart } from "./date-window.ts";
 
 // ---------------------------------------------------------------------------
 // Sleep night date
@@ -24,66 +23,4 @@ import { timestampWindowStart } from "./date-window.ts";
 export function sleepNightDate(timezone: string, column?: SQL): SQL {
   const col = column ?? sql`started_at`;
   return sql`((${col} AT TIME ZONE ${timezone}) - INTERVAL '6 hours')::date`;
-}
-
-// ---------------------------------------------------------------------------
-// Sleep dedup CTE
-// ---------------------------------------------------------------------------
-
-/**
- * Reusable CTE that deduplicates sleep sessions to one per calendar night.
- *
- * Picks the longest non-nap session per calendar night (using `sleepNightDate`
- * to attribute pre-6 AM sessions to the previous day). Returns two named CTEs:
- * `sleep_raw` (all non-nap sessions with night date) and `sleep_deduped`
- * (one row per night, longest duration wins).
- *
- * Columns available from `sleep_deduped`:
- *   sleep_date, duration_minutes, deep_minutes, rem_minutes,
- *   light_minutes, awake_minutes, efficiency_pct, started_at, ended_at
- *
- * @example
- * ```ts
- * sql`WITH ${sleepDedupCte(userId, tz, endDate, 90)}
- *      SELECT sleep_date, duration_minutes FROM sleep_deduped`
- * ```
- */
-export function sleepDedupCte(
-  userId: string,
-  timezone: string,
-  endDate: string,
-  days: number,
-): SQL {
-  return sql`sleep_raw AS (
-    SELECT
-      ${sleepNightDate(timezone)} AS sleep_date,
-      duration_minutes,
-      deep_minutes,
-      rem_minutes,
-      light_minutes,
-      awake_minutes,
-      efficiency_pct,
-      started_at,
-      ended_at,
-      provider_id
-    FROM fitness.v_sleep
-    WHERE user_id = ${userId}
-      AND is_nap = false
-      AND started_at > ${timestampWindowStart(endDate, days)}
-  ),
-  sleep_deduped AS (
-    SELECT DISTINCT ON (sleep_date)
-      sleep_date,
-      duration_minutes,
-      deep_minutes,
-      rem_minutes,
-      light_minutes,
-      awake_minutes,
-      efficiency_pct,
-      started_at,
-      ended_at,
-      provider_id
-    FROM sleep_raw
-    ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-  )`;
 }
