@@ -105,6 +105,11 @@ describe("StrainScreen recent activity navigation", () => {
       progressPercent: 71,
       zone: "Push",
       explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
+      dailyLoad: 50,
+      acuteLoad: 90,
+      chronicLoad: 80,
+      workloadRatio: 1.13,
+      readinessScore: 78,
     };
 
     const { default: StrainScreen } = await import("./strain");
@@ -114,6 +119,43 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("14")).toBeTruthy();
     expect(screen.getByText("Push")).toBeTruthy();
     expect(screen.getByText("71% reached")).toBeTruthy();
+  });
+
+  it("shows today's load separately from the rolling training load ratio", async () => {
+    mockStrainTargetData = {
+      targetStrain: 12,
+      currentStrain: 0,
+      progressPercent: 0,
+      zone: "Maintain",
+      explanation:
+        "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+      dailyLoad: 0,
+      acuteLoad: 133,
+      chronicLoad: 33,
+      workloadRatio: 4,
+      readinessScore: 50,
+    };
+    mockWorkloadRatioData = {
+      displayedStrain: 0,
+      displayedDate: "2026-03-28",
+      timeSeries: [
+        {
+          date: "2026-03-28",
+          dailyLoad: 0,
+          acuteLoad: 133,
+          chronicLoad: 33,
+          workloadRatio: 4,
+          strain: 0,
+        },
+      ],
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Today").length).toBeGreaterThan(0);
+    expect(screen.getByText("Training Load Ratio")).toBeTruthy();
+    expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
   });
 
   it("does not render strain target card when no target data", async () => {
