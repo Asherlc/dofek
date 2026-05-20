@@ -8,7 +8,7 @@ import {
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -26,13 +26,15 @@ export function ActivitiesPage() {
   return (
     <PageLayout title="Activities" subtitle="Last 4 weeks">
       {query.isLoading ? (
-        <ChartLoadingSkeleton height={400} />
+        <QueryStatePanel variant="loading" height={400} />
       ) : query.isError ? (
         <QueryStatePanel error={query.error} height={200} />
       ) : dayGroups.length === 0 ? (
-        <div className="card p-6 text-center text-muted text-sm">
-          No activities in the last 4 weeks.
-        </div>
+        <QueryStatePanel
+          variant="empty"
+          message="No activities in the last 4 weeks."
+          height={200}
+        />
       ) : (
         <div className="space-y-6">
           {dayGroups.map((day) => (
@@ -62,41 +64,12 @@ export function ActivitiesPage() {
                     </div>
 
                     {activity.location ? (
-                      <div className="relative h-40 bg-surface-secondary">
-                        <img
-                          src={activity.location.tileUrl}
-                          alt="Activity location map"
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="absolute bottom-2 left-2 flex gap-1">
-                          {activity.location.distanceMeters != null ? (
-                            <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
-                              {units.formatDistance(activity.location.distanceMeters / 1000)}
-                            </span>
-                          ) : null}
-                          {activity.location.elevationGainM != null ? (
-                            <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
-                              ↑ {units.formatElevation(activity.location.elevationGainM)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
+                      <ActivityMapTile location={activity.location} units={units} />
                     ) : (
                       <div className="px-3 sm:px-4 pb-3 sm:pb-4 grid grid-cols-2 gap-2">
-                        <Stat
-                          label="TSS"
-                          value={activity.tss != null ? String(activity.tss) : "—"}
-                        />
-                        <Stat
-                          label="Calories"
-                          value={
-                            activity.calories != null
-                              ? `${Math.round(activity.calories)} kcal`
-                              : "—"
-                          }
-                        />
+                        {activity.stats.map((stat) => (
+                          <Stat key={stat.label} label={stat.label} value={stat.value} />
+                        ))}
                       </div>
                     )}
                   </Link>
@@ -107,6 +80,50 @@ export function ActivitiesPage() {
         </div>
       )}
     </PageLayout>
+  );
+}
+
+interface ActivityMapTileProps {
+  location: {
+    tileUrl: string;
+    distanceMeters: number | null;
+    elevationGainM: number | null;
+  };
+  units: ReturnType<typeof useUnitConverter>;
+}
+
+function ActivityMapTile({ location, units }: ActivityMapTileProps) {
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  return (
+    <div className="relative h-40 bg-surface-secondary">
+      {loadFailed ? (
+        <div className="w-full h-full flex items-center justify-center text-xs text-muted">
+          Map unavailable
+        </div>
+      ) : (
+        <img
+          src={location.tileUrl}
+          alt="Activity location map"
+          className="w-full h-full object-cover"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setLoadFailed(true)}
+        />
+      )}
+      <div className="absolute bottom-2 left-2 flex gap-1">
+        {location.distanceMeters != null ? (
+          <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
+            {units.formatDistance(location.distanceMeters / 1000)}
+          </span>
+        ) : null}
+        {location.elevationGainM != null ? (
+          <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
+            ↑ {units.formatElevation(location.elevationGainM)}
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

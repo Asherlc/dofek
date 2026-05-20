@@ -5,7 +5,7 @@ import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { osmTileUrl } from "../lib/osm-tile.ts";
-import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +20,11 @@ export interface ActivityLocation {
   elevationGainM: number | null;
 }
 
+export interface ActivityStat {
+  label: string;
+  value: string;
+}
+
 export interface CalendarActivityEntry {
   id: string;
   name: string | null;
@@ -30,6 +35,7 @@ export interface CalendarActivityEntry {
   location: ActivityLocation | null;
   calories: number | null;
   tss: number | null;
+  stats: ActivityStat[];
 }
 
 export interface CalendarDayActivities {
@@ -53,7 +59,7 @@ const activityRowSchema = z.object({
   avg_power: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
-  local_date: z.string(),
+  local_date: dateStringSchema,
 });
 
 const locationRowSchema = z.object({
@@ -187,6 +193,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           : null,
         calories,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
+        stats: formatActivityStats(tss, calories),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];
@@ -268,4 +275,19 @@ function computeActivityTss(input: TssInput): number | null {
     );
   }
   return null;
+}
+
+function formatActivityStats(tss: number | null, calories: number | null): ActivityStat[] {
+  const roundedTss = tss != null ? Math.round(tss * 10) / 10 : null;
+  return [
+    {
+      label: "Training Stress Score",
+      value: roundedTss != null ? formatStatNumber(roundedTss) : "—",
+    },
+    { label: "Calories", value: calories != null ? `${Math.round(calories)} kcal` : "—" },
+  ];
+}
+
+function formatStatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }

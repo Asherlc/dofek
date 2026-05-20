@@ -33,6 +33,10 @@ function createSeededProviders() {
             },
             calories: null,
             tss: 78.4,
+            stats: [
+              { label: "Training Stress Score", value: "78.4" },
+              { label: "Calories", value: "—" },
+            ],
           },
         ],
       },
@@ -49,6 +53,10 @@ function createSeededProviders() {
             location: null,
             calories: 380,
             tss: 42.1,
+            stats: [
+              { label: "Training Stress Score", value: "42.1" },
+              { label: "Calories", value: "380 kcal" },
+            ],
           },
         ],
       },

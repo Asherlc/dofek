@@ -8,7 +8,7 @@ import {
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Image,
   RefreshControl,
@@ -56,12 +56,9 @@ export default function ActivitiesScreen() {
       </TouchableOpacity>
 
       {query.isLoading ? (
-        <QueryStatePanel variant="loading" message="" minHeight={200} />
+        <QueryStatePanel variant="loading" minHeight={200} />
       ) : query.isError ? (
-        <QueryStatePanel
-          variant="error"
-          message={query.error?.message ?? "Could not load activities."}
-        />
+        <QueryStatePanel variant="error" message={query.error.message} />
       ) : dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message="No activities in the last 4 weeks." />
       ) : (
@@ -89,35 +86,12 @@ export default function ActivitiesScreen() {
                 </View>
 
                 {activity.location ? (
-                  <View style={styles.tileContainer}>
-                    <Image
-                      source={{ uri: activity.location.tileUrl }}
-                      style={styles.tile}
-                      resizeMode="cover"
-                      accessibilityLabel="Activity location map"
-                    />
-                    <View style={styles.tileOverlay}>
-                      {activity.location.distanceMeters != null ? (
-                        <Text style={styles.tileBadge}>
-                          {units.formatDistance(activity.location.distanceMeters / 1000)}
-                        </Text>
-                      ) : null}
-                      {activity.location.elevationGainM != null ? (
-                        <Text style={styles.tileBadge}>
-                          ↑ {units.formatElevation(activity.location.elevationGainM)}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </View>
+                  <ActivityMapTile location={activity.location} units={units} />
                 ) : (
                   <View style={styles.statsRow}>
-                    <StatBadge label="TSS" value={activity.tss != null ? `${activity.tss}` : "—"} />
-                    <StatBadge
-                      label="Calories"
-                      value={
-                        activity.calories != null ? `${Math.round(activity.calories)} kcal` : "—"
-                      }
-                    />
+                    {activity.stats.map((stat) => (
+                      <StatBadge key={stat.label} label={stat.label} value={stat.value} />
+                    ))}
                   </View>
                 )}
               </TouchableOpacity>
@@ -126,6 +100,51 @@ export default function ActivitiesScreen() {
         ))
       )}
     </ScrollView>
+  );
+}
+
+interface ActivityMapTileProps {
+  location: {
+    tileUrl: string;
+    distanceMeters: number | null;
+    elevationGainM: number | null;
+  };
+  units: ReturnType<typeof useUnitConverter>;
+}
+
+function ActivityMapTile({ location, units }: ActivityMapTileProps) {
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  return (
+    <View style={styles.tileContainer}>
+      {loadFailed ? (
+        <View
+          style={styles.tileFallback}
+          accessibilityLabel="Activity location unavailable"
+          accessible={true}
+        >
+          <Text style={styles.tileFallbackText}>Map unavailable</Text>
+        </View>
+      ) : (
+        <Image
+          source={{ uri: location.tileUrl }}
+          style={styles.tile}
+          resizeMode="cover"
+          accessibilityLabel="Activity location map"
+          onError={() => setLoadFailed(true)}
+        />
+      )}
+      <View style={styles.tileOverlay}>
+        {location.distanceMeters != null ? (
+          <Text style={styles.tileBadge}>
+            {units.formatDistance(location.distanceMeters / 1000)}
+          </Text>
+        ) : null}
+        {location.elevationGainM != null ? (
+          <Text style={styles.tileBadge}>↑ {units.formatElevation(location.elevationGainM)}</Text>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -209,6 +228,17 @@ const styles = StyleSheet.create({
   tile: {
     width: "100%",
     height: "100%",
+  },
+  tileFallback: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tileFallbackText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
   },
   tileOverlay: {
     position: "absolute",

@@ -6,7 +6,7 @@ export type QueryStateVariant = "loading" | "error" | "empty";
 
 interface QueryStatePanelProps {
   variant: QueryStateVariant;
-  message: string;
+  message?: string;
   title?: string;
   minHeight?: number;
   style?: StyleProp<ViewStyle>;
@@ -54,11 +54,13 @@ export function QueryStatePanel({
       ]}
     >
       <Text style={styles.title}>{resolvedTitle}</Text>
-      <Text
-        style={[styles.message, variant === "error" ? styles.errorMessage : styles.emptyMessage]}
-      >
-        {message}
-      </Text>
+      {message ? (
+        <Text
+          style={[styles.message, variant === "error" ? styles.errorMessage : styles.emptyMessage]}
+        >
+          {message}
+        </Text>
+      ) : null}
     </View>
   );
 }

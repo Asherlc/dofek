@@ -1,10 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
-import {
-  ActivitiesCalendarRepository,
-  type CalendarDayActivities,
-} from "../repositories/activities-calendar-repository.ts";
+import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -14,6 +11,37 @@ export interface CalendarDay {
   totalMinutes: number;
   activityTypes: string[];
 }
+
+const activityLocationSchema = z.object({
+  centroidLat: z.number(),
+  centroidLng: z.number(),
+  tileUrl: z.string(),
+  distanceMeters: z.number().nullable(),
+  elevationGainM: z.number().nullable(),
+});
+
+const activityStatSchema = z.object({
+  label: z.string(),
+  value: z.string(),
+});
+
+const calendarActivityEntrySchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  activityType: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  durationMin: z.number(),
+  location: activityLocationSchema.nullable(),
+  calories: z.number().nullable(),
+  tss: z.number().nullable(),
+  stats: z.array(activityStatSchema),
+});
+
+const calendarDayActivitiesSchema = z.object({
+  date: z.string(),
+  activities: z.array(calendarActivityEntrySchema),
+});
 
 export const calendarRouter = router({
   calendarData: cachedProtectedQuery(CacheTTL.LONG)
@@ -31,7 +59,8 @@ export const calendarRouter = router({
         endDate: endDateSchema,
       }),
     )
-    .query(async ({ ctx, input }): Promise<CalendarDayActivities[]> => {
+    .output(z.array(calendarDayActivitiesSchema))
+    .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",

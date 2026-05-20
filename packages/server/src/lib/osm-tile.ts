@@ -7,6 +7,7 @@
  */
 
 const OSM_TILE_HOST = "https://tile.openstreetmap.org";
+const WEB_MERCATOR_MAX_LATITUDE = 85.05112878;
 
 export interface TileCoord {
   zoom: number;
@@ -16,11 +17,19 @@ export interface TileCoord {
 
 export function latLngToTile(lat: number, lng: number, zoom: number): TileCoord {
   const tilesPerAxis = 2 ** zoom;
-  const tileX = Math.floor(((lng + 180) / 360) * tilesPerAxis);
-  const latRad = (lat * Math.PI) / 180;
-  const tileY = Math.floor(
+  const maxTileIndex = tilesPerAxis - 1;
+  const normalizedLatitude = Math.min(
+    Math.max(lat, -WEB_MERCATOR_MAX_LATITUDE),
+    WEB_MERCATOR_MAX_LATITUDE,
+  );
+  const normalizedLongitude = ((((lng + 180) % 360) + 360) % 360) - 180;
+  const rawTileX = Math.floor(((normalizedLongitude + 180) / 360) * tilesPerAxis);
+  const latRad = (normalizedLatitude * Math.PI) / 180;
+  const rawTileY = Math.floor(
     ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * tilesPerAxis,
   );
+  const tileX = Math.min(Math.max(rawTileX, 0), maxTileIndex);
+  const tileY = Math.min(Math.max(rawTileY, 0), maxTileIndex);
   return { zoom, tileX, tileY };
 }
 
