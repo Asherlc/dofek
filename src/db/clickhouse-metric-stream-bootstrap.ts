@@ -364,9 +364,11 @@ GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.r
   ];
 }
 
-export function buildActivitySummaryReadModelStatements(): string[] {
+export function buildActivitySummaryReadModelStatements(
+  viewName = "analytics.activity_summary",
+): string[] {
   return [
-    `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary
+    `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
 REFRESH EVERY 1 MINUTE OFFSET 10 SECOND
 ENGINE = MergeTree
 ORDER BY (user_id, started_at, activity_id)
@@ -540,7 +542,7 @@ LEFT JOIN distance_per_activity
   ON distance_per_activity.activity_id = activity_bounds.activity_id
 LEFT JOIN location_centroids
   ON location_centroids.activity_id = activity_bounds.activity_id`,
-    "SYSTEM REFRESH VIEW analytics.activity_summary",
-    "SYSTEM WAIT VIEW analytics.activity_summary",
+    `SYSTEM REFRESH VIEW ${viewName}`,
+    `SYSTEM WAIT VIEW ${viewName}`,
   ];
 }
