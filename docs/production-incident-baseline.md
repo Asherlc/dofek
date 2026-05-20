@@ -5807,3 +5807,62 @@ missing sleep records.
   `2026-05-06` for the affected user.
 - Consider adding a dashboard-visible stale-data explanation for sleep so old
   data is distinguishable from query failure.
+
+## 2026-05-20: Production Deploy Migration Step Lost Docker SSH Connection
+
+### Symptoms
+
+Deploy Web run `26138117084` failed in the production `Run migrations` step
+while deploying image tag `sha-c7b7027`.
+
+### User Impact
+
+The production stack did not advance to the requested image. The existing
+production services remained up on the prior deployed image tag observed during
+triage, `sha-021e809`.
+
+### Evidence
+
+The failing step was `Deploy Web Production / Deploy Web Stack / Run
+migrations`. The migration container command was:
+`docker run --detach --name dofek_migrate_26138117084_1 --network
+dofek_default ... ghcr.io/asherlc/dofek:sha-c7b7027 ...`. The first fatal log
+line was: `docker: command [ssh ... docker system dial-stdio] has exited with
+exit status 255 ... stderr=client_loop: send disconnect: Broken pipe`, followed
+by exit code 125.
+
+Just before that, the same step logged `Unable to find image
+'ghcr.io/asherlc/dofek:sha-c7b7027' locally` even though the workflow's prior
+`Pull deploy images` step had run. Production `docuum` was configured with
+`--threshold 0 GB`, so newly pulled images that are not yet referenced by a
+container or swarm service can be pruned before migrations or stack deploy use
+them.
+
+### Root Cause
+
+The deployment pipeline has a race between pre-pulling the target app images
+and the aggressive production image pruner. The target image can be removed as
+unused before the migration container starts. When `docker run` then has to pull
+and extract the app image over Docker's SSH transport, the long-running remote
+Docker operation can lose the SSH control connection before returning a
+container ID.
+
+### Fix or Mitigation
+
+Removed the continuous `docuum` image-pruner service from `deploy/stack.yml`.
+Image cleanup is now handled only by the deploy workflow's explicit pre-pull
+and post-deploy prune steps. During triage, there was no leftover migration
+container, and production services were healthy on the previous image.
+
+### Remaining Risk
+
+Unused Docker images can accumulate between deploys, especially after failed
+deploys or manual pulls. The next deploy should reclaim them through the
+workflow's explicit prune steps, but root disk usage still needs monitoring.
+
+### Follow-Up Work
+
+- Re-run the affected deploy, or let the next successful CI completion trigger
+  a deploy with `docuum` removed.
+- Watch root disk usage after the first few deploys without continuous image
+  pruning.
