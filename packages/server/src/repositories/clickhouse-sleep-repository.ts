@@ -61,9 +61,9 @@ export async function fetchSleepNights(
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
-      date,
-      started_at,
-      ended_at,
+      toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
+      formatDateTime(started_at, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(ended_at), NULL, formatDateTime(ended_at, '%FT%TZ', 'UTC')) AS ended_at,
       duration_minutes,
       deep_minutes,
       rem_minutes,
@@ -72,9 +72,8 @@ export async function fetchSleepNights(
       efficiency_pct
     FROM (
       SELECT
-        toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
-        formatDateTime(started_at, '%FT%TZ', 'UTC') AS started_at,
-        if(isNull(ended_at), NULL, formatDateTime(ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+        started_at,
+        ended_at,
         duration_minutes,
         deep_minutes,
         rem_minutes,
