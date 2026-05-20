@@ -16,7 +16,7 @@ export interface MockDatabaseOptions {
   tokensResult?: Record<string, unknown>[];
   /** Number of upsert calls to allow before throwing `insertError` */
   insertErrorAfterCalls?: number;
-  /** Error to throw from `onConflictDoUpdate` after `insertErrorAfterCalls` calls */
+  /** Error to throw from conflict insert handlers after `insertErrorAfterCalls` calls */
   insertError?: Error;
   /** Rows returned by `execute()` (default: []) */
   executeResult?: unknown[];
@@ -65,14 +65,20 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   let upsertCallCount = 0;
 
   const returning = vi.fn().mockResolvedValue([]);
-
-  const onConflictDoUpdate = vi.fn().mockImplementation(() => {
+  const recordInsertAttempt = () => {
     upsertCallCount++;
     if (insertError && upsertCallCount > insertErrorAfterCalls) throw insertError;
+  };
+
+  const onConflictDoUpdate = vi.fn().mockImplementation(() => {
+    recordInsertAttempt();
     return { returning };
   });
 
-  const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+  const onConflictDoNothing = vi.fn().mockImplementation(() => {
+    recordInsertAttempt();
+    return undefined;
+  });
 
   const values = vi.fn().mockReturnValue({
     onConflictDoNothing,

@@ -12,6 +12,16 @@ extension CMSensorDataList: @retroactive Sequence {
 private let lastSyncKey = "com.dofek.coreMotion.lastSyncTimestamp"
 private let recordingActiveKey = "com.dofek.coreMotion.recordingActive"
 
+private func parseIsoDate(_ value: String) -> Date? {
+    let fractionalFormatter = ISO8601DateFormatter()
+    fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractionalFormatter.date(from: value) {
+        return date
+    }
+
+    return ISO8601DateFormatter().date(from: value)
+}
+
 public class CoreMotionModule: Module {
     private let sensorRecorder = CMSensorRecorder()
     private let activityManager = CMMotionActivityManager()
@@ -89,8 +99,8 @@ public class CoreMotionModule: Module {
                 return
             }
 
-            guard let fromDate = ISO8601DateFormatter().date(from: fromDateString),
-                  let toDate = ISO8601DateFormatter().date(from: toDateString) else {
+            guard let fromDate = parseIsoDate(fromDateString),
+                  let toDate = parseIsoDate(toDateString) else {
                 promise.reject("COREMOTION_INVALID_DATE", "Invalid ISO 8601 date string")
                 return
             }

@@ -329,12 +329,22 @@ describe("Upload & Auth - extended coverage", () => {
 
   describe("Data provider OAuth", () => {
     it("GET /auth/provider/slack without SLACK_CLIENT_ID returns 400", async () => {
-      const res = await fetch(`${baseUrl}/auth/provider/slack`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
+      const originalClientId = process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_CLIENT_ID;
+      try {
+        const res = await fetch(`${baseUrl}/auth/provider/slack`, {
+          redirect: "manual",
+        });
+        expect(res.status).toBe(400);
+        const body = await res.text();
+        expect(body).toContain("SLACK_CLIENT_ID");
+      } finally {
+        if (originalClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalClientId;
+        }
+      }
     });
 
     it("GET /auth/provider/:provider returns 404 for truly unknown provider", async () => {

@@ -171,6 +171,7 @@ describe("StravaProvider.sync", () => {
           onConflictDoUpdate: vi.fn().mockReturnValue({
             returning: vi.fn().mockResolvedValue([{ id: "act-1" }]),
           }),
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
@@ -361,6 +362,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       if (Array.isArray(payload)) {
         return {
           onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         };
       }
       if (getProviderId(payload) === "strava") {
@@ -830,7 +832,11 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const returningMock = vi.fn().mockResolvedValue([]);
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
-      if (Array.isArray(payload)) return Promise.resolve();
+      if (Array.isArray(payload)) {
+        return {
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        };
+      }
       return {
         onConflictDoUpdate: vi.fn().mockReturnValue({
           returning: returningMock,
@@ -921,6 +927,7 @@ describe("StravaProvider.sync — additional coverage", () => {
         metricBatchSizes.push(payload.length);
         return {
           onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         };
       }
       return {
@@ -995,6 +1002,7 @@ describe("StravaProvider.sync — additional coverage", () => {
         metricBatchSizes.push(payload.length);
         return {
           onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         };
       }
       return {

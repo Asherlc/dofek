@@ -5866,3 +5866,66 @@ workflow's explicit prune steps, but root disk usage still needs monitoring.
   a deploy with `docuum` removed.
 - Watch root disk usage after the first few deploys without continuous image
   pruning.
+
+## 2026-05-20: Sentry Open Issues From Metric Stream Replays And Mobile Startup
+
+### Symptoms
+
+Sentry showed unresolved production issues in `dofek-server` and `dofek-mobile`.
+The active server cluster repeatedly failed metric stream writes during WHOOP
+and Garmin syncs. Mobile showed tRPC JSON parse failures from WHOOP BLE
+realtime upload, CoreMotion background accelerometer date parsing failures, and
+an `initTelemetry` issue created by an intentional startup verification message.
+
+### User Impact
+
+Provider sync jobs for affected WHOOP and Garmin paths failed instead of
+idempotently replaying already-ingested historical samples. WHOOP BLE realtime
+uploads could retain buffered samples for retry after server failures.
+Background iPhone accelerometer sync could fail when native CoreMotion rejected
+JavaScript ISO timestamps with fractional seconds. Sentry issue noise included
+a non-error mobile startup message.
+
+### Evidence
+
+Sentry issue `DOFEK-SERVER-23` failed in
+`src/db/metric-stream-writer.ts` while WHOOP heart-rate stream sync attempted
+`ON CONFLICT DO UPDATE`; the first fatal database error was
+`cannot update table "metric_stream"`. `DOFEK-SERVER-24` showed the same
+writer failure from Garmin activity detail sync. `DOFEK-MOBILE-C` had extra
+context `source: "bg-accel-sync"` and error `Invalid ISO 8601 date string`.
+`DOFEK-MOBILE-K` was an info-level `Sentry initialized on iOS` event from
+`initTelemetry`.
+
+### Root Cause
+
+Metric stream sync replays attempted to update duplicate rows on a TimescaleDB
+hypertable that can contain compressed chunks; compressed historical chunks
+reject updates. The CoreMotion native module parsed incoming JavaScript
+`Date.toISOString()` strings with an `ISO8601DateFormatter` configuration that
+did not accept fractional seconds. Mobile telemetry intentionally emitted a
+startup Sentry message, which Sentry grouped as an issue.
+
+### Fix or Mitigation
+
+Changed metric stream duplicate handling to `ON CONFLICT DO NOTHING`, preserving
+idempotent raw sample replay without updating compressed historical rows. Added
+fractional-second ISO parsing for CoreMotion date inputs. Removed the production
+startup Sentry verification message from mobile telemetry.
+
+### Remaining Risk
+
+The fixes need to be deployed before Sentry issue recurrence should stop.
+Existing unresolved Sentry groups should only be marked resolved after a
+successful deploy and a no-recurrence check. Some remaining open server issues
+were provider auth or infrastructure connectivity events and may need separate
+triage if they continue after deploy.
+
+### Follow-Up Work
+
+- Deploy the fixes and re-check `DOFEK-SERVER-23`, `DOFEK-SERVER-24`,
+  `DOFEK-MOBILE-C`, and `DOFEK-MOBILE-K`.
+- Resolve closed-over Sentry issues only after production has run without new
+  occurrences.
+- Add a Sentry triage preflight note documenting the working `mcp-remote`
+  fallback when direct Sentry MCP tools are not exposed to the agent.

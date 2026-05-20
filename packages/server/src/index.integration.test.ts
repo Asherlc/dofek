@@ -304,13 +304,22 @@ describe("tRPC API", () => {
 
   describe("Slack OAuth", () => {
     it("GET /auth/provider/slack returns 400 without SLACK_CLIENT_ID", async () => {
-      // In test env, SLACK_CLIENT_ID is not set
-      const res = await fetch(`${baseUrl}/auth/provider/slack`, {
-        redirect: "manual",
-      });
-      expect(res.status).toBe(400);
-      const body = await res.text();
-      expect(body).toContain("SLACK_CLIENT_ID");
+      const originalClientId = process.env.SLACK_CLIENT_ID;
+      delete process.env.SLACK_CLIENT_ID;
+      try {
+        const res = await fetch(`${baseUrl}/auth/provider/slack`, {
+          redirect: "manual",
+        });
+        expect(res.status).toBe(400);
+        const body = await res.text();
+        expect(body).toContain("SLACK_CLIENT_ID");
+      } finally {
+        if (originalClientId === undefined) {
+          delete process.env.SLACK_CLIENT_ID;
+        } else {
+          process.env.SLACK_CLIENT_ID = originalClientId;
+        }
+      }
     });
   });
 

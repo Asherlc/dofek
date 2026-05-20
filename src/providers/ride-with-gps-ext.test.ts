@@ -561,6 +561,7 @@ function createSyncMockDb(
 
   const valuesResult = Object.create(null);
   valuesResult.onConflictDoUpdate = vi.fn().mockReturnValue(onConflictResult);
+  valuesResult.onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
 
   const db = Object.create(null);
   db.select = vi.fn().mockReturnValue({

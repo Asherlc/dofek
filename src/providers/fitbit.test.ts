@@ -152,6 +152,24 @@ function expectConflictSetContainsKey(
   expect(setMatched).toBe(true);
 }
 
+function expectDoNothingConflictTarget(
+  db: ReturnType<typeof createMockDb>,
+  expectedTarget: ReadonlyArray<unknown>,
+): void {
+  const targetMatched = db.onConflictDoNothing.mock.calls.some((callArgs) => {
+    const [arg] = callArgs;
+    if (typeof arg !== "object" || arg === null || !("target" in arg)) {
+      return false;
+    }
+    const target = Reflect.get(arg, "target");
+    if (!Array.isArray(target) || target.length !== expectedTarget.length) {
+      return false;
+    }
+    return target.every((column, index) => column === expectedTarget[index]);
+  });
+  expect(targetMatched).toBe(true);
+}
+
 function expectReasonableDuration(durationMilliseconds: number): void {
   expect(durationMilliseconds).toBeGreaterThanOrEqual(0);
   expect(durationMilliseconds).toBeLessThan(60_000);
@@ -874,24 +892,13 @@ describe("FitbitProvider", () => {
         ],
         "steps",
       );
-      expectConflictTarget(db, [
+      expectDoNothingConflictTarget(db, [
         metricStreamTable.userId,
         metricStreamTable.providerId,
         metricStreamTable.externalId,
         metricStreamTable.channel,
         metricStreamTable.recordedAt,
       ]);
-      expectConflictSetContainsKey(
-        db,
-        [
-          metricStreamTable.userId,
-          metricStreamTable.providerId,
-          metricStreamTable.externalId,
-          metricStreamTable.channel,
-          metricStreamTable.recordedAt,
-        ],
-        "scalar",
-      );
     });
 
     it("captures per-record insert errors without aborting the whole sync", async () => {
@@ -1147,24 +1154,13 @@ describe("FitbitProvider", () => {
           v.channel === "body_fat_percentage",
       );
       expect(bodyFatValues.scalar).toBe(18.5);
-      expectConflictTarget(db, [
+      expectDoNothingConflictTarget(db, [
         metricStreamTable.userId,
         metricStreamTable.providerId,
         metricStreamTable.externalId,
         metricStreamTable.channel,
         metricStreamTable.recordedAt,
       ]);
-      expectConflictSetContainsKey(
-        db,
-        [
-          metricStreamTable.userId,
-          metricStreamTable.providerId,
-          metricStreamTable.externalId,
-          metricStreamTable.channel,
-          metricStreamTable.recordedAt,
-        ],
-        "scalar",
-      );
     });
 
     it("returns empty result for unknown objectType", async () => {
