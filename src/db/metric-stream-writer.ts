@@ -1,9 +1,10 @@
 import type { InferInsertModel } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
-import type { metricStream } from "./schema.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 
-export type MetricStreamInsert = InferInsertModel<typeof metricStream>;
+type MetricStreamTable = typeof import("./schema.ts").metricStream;
+
+export type MetricStreamInsert = InferInsertModel<MetricStreamTable>;
 
 export interface MetricStreamSourceRow {
   recordedAt: Date;
@@ -44,7 +45,7 @@ function locationMetadata(row: MetricStreamSourceRow): Record<string, unknown> |
  */
 export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
 
-export function metricStreamConflictTarget(table: typeof metricStream) {
+export function metricStreamConflictTarget(table: MetricStreamTable) {
   return [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt];
 }
 

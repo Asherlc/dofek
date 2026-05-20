@@ -12,14 +12,22 @@ extension CMSensorDataList: @retroactive Sequence {
 private let lastSyncKey = "com.dofek.coreMotion.lastSyncTimestamp"
 private let recordingActiveKey = "com.dofek.coreMotion.recordingActive"
 
+private enum CoreMotionIsoDateFormatters {
+    static let fractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static let internetDateTime = ISO8601DateFormatter()
+}
+
 private func parseIsoDate(_ value: String) -> Date? {
-    let fractionalFormatter = ISO8601DateFormatter()
-    fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = fractionalFormatter.date(from: value) {
+    if let date = CoreMotionIsoDateFormatters.fractionalSeconds.date(from: value) {
         return date
     }
 
-    return ISO8601DateFormatter().date(from: value)
+    return CoreMotionIsoDateFormatters.internetDateTime.date(from: value)
 }
 
 public class CoreMotionModule: Module {
