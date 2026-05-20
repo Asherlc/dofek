@@ -143,6 +143,13 @@ describe("buildHealthMetrics", () => {
 });
 
 describe("DASHBOARD_SECTION_IDS", () => {
+  it("does not include the next workout section", () => {
+    expect(DASHBOARD_SECTION_IDS.has("nextWorkout")).toBe(false);
+    expect(DEFAULT_LAYOUT.order).not.toContain("nextWorkout");
+    expect(DASHBOARD_GRID_PAIRS).not.toHaveProperty("strain", "nextWorkout");
+    expect(DASHBOARD_GRID_PAIR_SECONDARIES).not.toHaveProperty("nextWorkout");
+  });
+
   it("includes spo2Temp section", () => {
     expect(DASHBOARD_SECTION_IDS.has("spo2Temp")).toBe(true);
   });

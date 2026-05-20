@@ -1,12 +1,10 @@
 export const DASHBOARD_GRID_PAIRS: Readonly<Record<string, string>> = {
-  strain: "nextWorkout",
   weeklyReport: "sleepNeed",
   stress: "healthspan",
   spo2Temp: "steps",
 };
 
 export const DASHBOARD_GRID_PAIR_SECONDARIES: Readonly<Record<string, string>> = {
-  nextWorkout: "strain",
   sleepNeed: "weeklyReport",
   healthspan: "stress",
   steps: "spo2Temp",

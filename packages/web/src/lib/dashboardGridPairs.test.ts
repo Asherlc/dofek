@@ -9,11 +9,11 @@ import { DEFAULT_LAYOUT } from "./dashboardLayoutContext.ts";
 
 describe("getDashboardGridGroupIds", () => {
   it("returns [primary, secondary] when given a primary section", () => {
-    expect(getDashboardGridGroupIds("strain")).toEqual(["strain", "nextWorkout"]);
+    expect(getDashboardGridGroupIds("weeklyReport")).toEqual(["weeklyReport", "sleepNeed"]);
   });
 
   it("returns [primary, secondary] when given a secondary section", () => {
-    expect(getDashboardGridGroupIds("nextWorkout")).toEqual(["strain", "nextWorkout"]);
+    expect(getDashboardGridGroupIds("sleepNeed")).toEqual(["weeklyReport", "sleepNeed"]);
   });
 
   it("returns a standalone section unchanged", () => {
@@ -71,9 +71,8 @@ describe("reorderDashboardSections", () => {
   });
 
   it("returns the same reference when moving a pair at position 0 up", () => {
-    // Put strain+nextWorkout at the start so firstGroupIndex === 0
-    const reordered = ["strain", "nextWorkout", "healthMonitor", "topInsights"];
-    const result = reorderDashboardSections(reordered, "strain", "up");
+    const reordered = ["weeklyReport", "sleepNeed", "healthMonitor", "topInsights"];
+    const result = reorderDashboardSections(reordered, "weeklyReport", "up");
     expect(result).toBe(reordered);
   });
 
@@ -95,24 +94,21 @@ describe("reorderDashboardSections", () => {
   });
 
   it("moves a primary section up as a pair", () => {
-    const result = reorderDashboardSections(order, "strain", "up");
-    const strainIndex = result.indexOf("strain");
-    const nextWorkoutIndex = result.indexOf("nextWorkout");
-    // strain+nextWorkout should stay adjacent with strain first
-    expect(nextWorkoutIndex).toBe(strainIndex + 1);
-    // They should have moved above their original position
-    expect(strainIndex).toBeLessThan(order.indexOf("strain"));
+    const result = reorderDashboardSections(order, "weeklyReport", "up");
+    const weeklyReportIndex = result.indexOf("weeklyReport");
+    const sleepNeedIndex = result.indexOf("sleepNeed");
+    expect(sleepNeedIndex).toBe(weeklyReportIndex + 1);
+    expect(weeklyReportIndex).toBeLessThan(order.indexOf("weeklyReport"));
   });
 
   it("moves a secondary card up using its primary-first pair order", () => {
-    const result = reorderDashboardSections(order, "nextWorkout", "up");
+    const result = reorderDashboardSections(order, "sleepNeed", "up");
     expect(result).toEqual([
       "healthMonitor",
-      "strain",
-      "nextWorkout",
       "topInsights",
       "weeklyReport",
       "sleepNeed",
+      "strain",
       "stress",
       "healthspan",
       "hrvRhr",
@@ -144,16 +140,15 @@ describe("reorderDashboardSections", () => {
   });
 
   it("moves a secondary card down as a pair with its primary", () => {
-    const result = reorderDashboardSections(order, "nextWorkout", "down");
+    const result = reorderDashboardSections(order, "sleepNeed", "down");
     expect(result).toEqual([
       "healthMonitor",
       "topInsights",
-      "weeklyReport",
-      "sleepNeed",
       "strain",
-      "nextWorkout",
       "stress",
       "healthspan",
+      "weeklyReport",
+      "sleepNeed",
       "hrvRhr",
       "spo2Temp",
       "steps",
@@ -169,7 +164,6 @@ describe("reorderDashboardSections", () => {
       "healthMonitor",
       "topInsights",
       "strain",
-      "nextWorkout",
       "stress",
       "healthspan",
       "weeklyReport",
@@ -186,48 +180,41 @@ describe("reorderDashboardSections", () => {
   // ── Partial pair in order (pair member missing) ──
 
   it("moves a section whose pair partner is not in the order", () => {
-    // Remove "nextWorkout" from order — "strain" should still move as a standalone
-    const partialOrder = order.filter((id) => id !== "nextWorkout");
-    const result = reorderDashboardSections(partialOrder, "strain", "down");
-    const strainIndex = result.indexOf("strain");
-    const originalIndex = partialOrder.indexOf("strain");
-    expect(strainIndex).toBeGreaterThan(originalIndex);
+    const partialOrder = order.filter((id) => id !== "sleepNeed");
+    const result = reorderDashboardSections(partialOrder, "weeklyReport", "down");
+    const weeklyReportIndex = result.indexOf("weeklyReport");
+    const originalIndex = partialOrder.indexOf("weeklyReport");
+    expect(weeklyReportIndex).toBeGreaterThan(originalIndex);
   });
 
   it("moves only the section present when pair partner is missing (up)", () => {
-    // Kills: .filter((id) => order.includes(id)) removal (MethodExpression)
-    // Remove "nextWorkout" — strain should move alone, not try to bring nextWorkout
-    const partialOrder = order.filter((id) => id !== "nextWorkout");
-    const result = reorderDashboardSections(partialOrder, "strain", "up");
-    expect(result).not.toContain("nextWorkout");
-    const strainIndex = result.indexOf("strain");
-    expect(strainIndex).toBeLessThan(partialOrder.indexOf("strain"));
+    const partialOrder = order.filter((id) => id !== "sleepNeed");
+    const result = reorderDashboardSections(partialOrder, "weeklyReport", "up");
+    expect(result).not.toContain("sleepNeed");
+    const weeklyReportIndex = result.indexOf("weeklyReport");
+    expect(weeklyReportIndex).toBeLessThan(partialOrder.indexOf("weeklyReport"));
   });
 
   it("handles moving when the primary of a secondary is not in the order", () => {
-    // Remove "strain" from order — "nextWorkout" should move as standalone
-    const partialOrder = order.filter((id) => id !== "strain");
-    const result = reorderDashboardSections(partialOrder, "nextWorkout", "up");
-    const nextWorkoutIndex = result.indexOf("nextWorkout");
-    const originalIndex = partialOrder.indexOf("nextWorkout");
-    expect(nextWorkoutIndex).toBeLessThan(originalIndex);
+    const partialOrder = order.filter((id) => id !== "weeklyReport");
+    const result = reorderDashboardSections(partialOrder, "sleepNeed", "up");
+    const sleepNeedIndex = result.indexOf("sleepNeed");
+    const originalIndex = partialOrder.indexOf("sleepNeed");
+    expect(sleepNeedIndex).toBeLessThan(originalIndex);
   });
 
   // ── Non-adjacent pair members ──
 
   it("handles pair members that are not adjacent in the order (up)", () => {
-    // Pair members separated by another section, not at boundaries
-    const scattered = ["topInsights", "strain", "healthMonitor", "nextWorkout", "sleep"];
-    const result = reorderDashboardSections(scattered, "nextWorkout", "up");
-    // Group should have moved up from its original position
-    expect(result.indexOf("strain")).toBeLessThan(scattered.indexOf("strain"));
+    const scattered = ["topInsights", "weeklyReport", "healthMonitor", "sleepNeed", "sleep"];
+    const result = reorderDashboardSections(scattered, "sleepNeed", "up");
+    expect(result.indexOf("weeklyReport")).toBeLessThan(scattered.indexOf("weeklyReport"));
   });
 
   it("handles pair members that are not adjacent in the order (down)", () => {
-    const scattered = ["sleep", "strain", "healthMonitor", "nextWorkout", "topInsights"];
-    const result = reorderDashboardSections(scattered, "strain", "down");
-    // Group should have moved down from its original position
-    expect(result.indexOf("nextWorkout")).toBeGreaterThan(scattered.indexOf("nextWorkout"));
+    const scattered = ["sleep", "weeklyReport", "healthMonitor", "sleepNeed", "topInsights"];
+    const result = reorderDashboardSections(scattered, "weeklyReport", "down");
+    expect(result.indexOf("sleepNeed")).toBeGreaterThan(scattered.indexOf("sleepNeed"));
   });
 
   // ── Target group filter ──

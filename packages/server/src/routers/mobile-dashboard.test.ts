@@ -78,18 +78,6 @@ vi.mock("../repositories/training-recommendation.ts", () => ({
   computeReadinessScore: vi.fn(() => 62),
 }));
 
-vi.mock("../repositories/training-repository.ts", () => ({
-  TrainingRepository: class {
-    getNextWorkoutData() {
-      return Promise.resolve(null);
-    }
-
-    getRecommendation() {
-      return Promise.resolve(null);
-    }
-  },
-}));
-
 vi.mock("../repositories/anomaly-detection-repository.ts", () => ({
   AnomalyDetectionRepository: class {
     check() {
@@ -411,5 +399,23 @@ describe("mobileDashboard.dashboard", () => {
       date: null,
     });
     expect(result.latestDate).toBeNull();
+  });
+
+  it("does not include next workout recommendation data", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+    execute.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(result).not.toHaveProperty("nextWorkout");
   });
 });

@@ -5,7 +5,6 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import type { NextWorkoutRecommendation } from "../repositories/training-recommendation.ts";
 import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
 import type { SleepNeedResult } from "./sleep-need.ts";
 
@@ -129,7 +128,6 @@ describe("mobile-dashboard router integration", () => {
         workloadRatio: number | null;
         date: string | null;
       } | null;
-      nextWorkout: NextWorkoutRecommendation | null;
       sleepNeed: SleepNeedResult | null;
       anomalies: { needsAttention: boolean } | null;
       latestDate: string | null;
@@ -151,19 +149,5 @@ describe("mobile-dashboard router integration", () => {
 
     // Should have strain data
     expect(result.strain).not.toBeNull();
-  });
-
-  it("includes nextWorkout recommendation when data exists", async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const result = await query<{
-      nextWorkout: NextWorkoutRecommendation | null;
-    }>({ endDate: today });
-
-    // With 30 days of metrics, there should be training data for a recommendation
-    if (result.nextWorkout) {
-      expect(result.nextWorkout.generatedAt).toBeTypeOf("string");
-      expect(result.nextWorkout.recommendationType).toBeDefined();
-      expect(result.nextWorkout.title).toBeTypeOf("string");
-    }
   });
 });

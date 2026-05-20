@@ -36,7 +36,6 @@ function buildCaller() {
   const insightsCompute = vi.fn().mockResolvedValue({});
   const trainingWeeklyVolume = vi.fn().mockResolvedValue([]);
   const trainingHrZones = vi.fn().mockResolvedValue([]);
-  const trainingNextWorkout = vi.fn().mockResolvedValue(null);
   const pmcChart = vi.fn().mockResolvedValue([]);
   const powerCurve = vi.fn().mockResolvedValue([]);
   const eftpTrend = vi.fn().mockResolvedValue([]);
@@ -61,7 +60,6 @@ function buildCaller() {
     training: {
       weeklyVolume: trainingWeeklyVolume,
       hrZones: trainingHrZones,
-      nextWorkout: trainingNextWorkout,
     },
     pmc: { chart: pmcChart },
     power: { powerCurve, eftpTrend },
@@ -93,7 +91,6 @@ function buildCaller() {
       insightsCompute,
       trainingWeeklyVolume,
       trainingHrZones,
-      trainingNextWorkout,
       pmcChart,
       powerCurve,
       eftpTrend,
@@ -149,7 +146,6 @@ describe("warmCache", () => {
     expect(spies.dailyMetricsList).toHaveBeenNthCalledWith(1, { days: 30, endDate });
     expect(spies.dailyMetricsList).toHaveBeenNthCalledWith(2, { days: 90, endDate });
     expect(spies.dailyMetricsTrends).toHaveBeenCalledWith({ days: 30, endDate });
-    expect(spies.trainingNextWorkout).toHaveBeenCalledWith({ endDate });
     expect(spies.dailyMetricsLatest).toHaveBeenCalledWith();
     expect(spies.sleepList).toHaveBeenCalledWith({ days: 30, endDate });
     expect(spies.syncProviders).toHaveBeenCalledWith();
@@ -169,7 +165,7 @@ describe("warmCache", () => {
     expect(spies.runningDynamics).toHaveBeenCalledWith({ days: 90 });
     expect(spies.runningPaceTrend).toHaveBeenCalledWith({ days: 90 });
 
-    expect(logger.info).toHaveBeenCalledWith("[cache] Warmed 21/22 queries");
+    expect(logger.info).toHaveBeenCalledWith("[cache] Warmed 20/21 queries");
   });
 
   it("logs query failures and continues warming remaining queries", async () => {
