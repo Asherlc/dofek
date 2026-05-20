@@ -80,6 +80,10 @@ vi.mock("dofek/providers/registry", () => ({
   registerProvider: vi.fn(),
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("./tools.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./tools.ts")>();
   return {
@@ -101,6 +105,7 @@ async function request(
   input: {
     body?: unknown;
     authorization?: string;
+    method?: "DELETE" | "GET" | "POST";
     rawBody?: string;
     timezone?: string;
   },
@@ -109,7 +114,7 @@ async function request(
     const server = app.listen(0, () => {
       const port = getPort(server);
       fetch(`http://localhost:${port}/api/mcp`, {
-        method: "POST",
+        method: input.method ?? "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json, text/event-stream",
@@ -256,6 +261,42 @@ describe("createMcpRouter", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBe("Bearer");
+    expect(jsonRpcEnvelopeSchema.parse(JSON.parse(response.text))).toEqual({
+      error: { code: -32001, message: "MCP bearer token is required." },
+      id: null,
+      jsonrpc: "2.0",
+    });
+    expect(validateMcpToken).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 without validating non-bearer authorization", async () => {
+    const response = await request(createTestApp(), {
+      authorization: "Token good-token",
+      body: initializeRequest,
+    });
+
+    expect(response.status).toBe(401);
+    expect(jsonRpcEnvelopeSchema.parse(JSON.parse(response.text))).toEqual({
+      error: { code: -32001, message: "MCP bearer token is required." },
+      id: null,
+      jsonrpc: "2.0",
+    });
+    expect(validateMcpToken).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 without validating an empty bearer token", async () => {
+    const response = await request(createTestApp(), {
+      authorization: "Bearer ",
+      body: initializeRequest,
+    });
+
+    expect(response.status).toBe(401);
+    expect(jsonRpcEnvelopeSchema.parse(JSON.parse(response.text))).toEqual({
+      error: { code: -32001, message: "MCP bearer token is required." },
+      id: null,
+      jsonrpc: "2.0",
+    });
+    expect(validateMcpToken).not.toHaveBeenCalled();
   });
 
   it("returns 401 before parsing JSON when Authorization is missing", async () => {
@@ -273,6 +314,25 @@ describe("createMcpRouter", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBe("Bearer");
+    expect(validateMcpToken).toHaveBeenCalledWith(expect.anything(), "bad-token");
+  });
+
+  it("returns JSON-RPC method errors for unsupported HTTP methods", async () => {
+    const getResponse = await request(createTestApp(), { method: "GET" });
+    const deleteResponse = await request(createTestApp(), { method: "DELETE" });
+
+    expect(jsonRpcEnvelopeSchema.parse(JSON.parse(getResponse.text))).toEqual({
+      error: { code: -32000, message: "Method not allowed." },
+      id: null,
+      jsonrpc: "2.0",
+    });
+    expect(getResponse.status).toBe(405);
+    expect(jsonRpcEnvelopeSchema.parse(JSON.parse(deleteResponse.text))).toEqual({
+      error: { code: -32000, message: "Method not allowed." },
+      id: null,
+      jsonrpc: "2.0",
+    });
+    expect(deleteResponse.status).toBe(405);
   });
 
   it("initializes MCP for a valid token", async () => {
