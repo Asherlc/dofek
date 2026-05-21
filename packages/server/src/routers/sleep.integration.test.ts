@@ -7,6 +7,10 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for sleep router endpoints.
@@ -47,7 +51,9 @@ describe("sleep router integration", () => {
           )`,
     );
 
-    const app = createApp(testCtx.db);
+    const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await syncClickHouseTestActivitySensorStore(testCtx);
+    const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

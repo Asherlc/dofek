@@ -5,7 +5,10 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for router coverage gaps:
@@ -590,6 +593,9 @@ describe("Router coverage", () => {
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
             )`,
       );
+
+      // Mirror the new row into ClickHouse so the analytics view sees it.
+      await syncClickHouseTestActivitySensorStore(testCtx);
 
       // Clear cache so the query hits the DB
       await queryCache.invalidateAll();

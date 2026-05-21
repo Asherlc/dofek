@@ -369,28 +369,23 @@ export const recoveryRouter = router({
         order: "asc",
       });
 
+      // Apple Health reports duration as in-bed time, so derive actual sleep
+      // from stage minutes. Other providers already exclude awake time from
+      // duration_minutes, so use duration directly to preserve their accounting.
+      const computeSleepMinutes = (row: (typeof rows)[number]) => {
+        const durationMinutes = row.duration_minutes ?? 0;
+        if (row.provider_id !== "apple_health") return durationMinutes;
+        const hasStages =
+          row.deep_minutes != null || row.rem_minutes != null || row.light_minutes != null;
+        if (!hasStages) return durationMinutes;
+        return (row.deep_minutes ?? 0) + (row.rem_minutes ?? 0) + (row.light_minutes ?? 0);
+      };
+
       const nightly = rows.map((row, rowIndex) => {
         const durationMinutes = row.duration_minutes ?? 0;
-        const stagedSleepMinutes =
-          row.deep_minutes != null || row.rem_minutes != null || row.light_minutes != null
-            ? (row.deep_minutes ?? 0) + (row.rem_minutes ?? 0) + (row.light_minutes ?? 0)
-            : null;
-        const sleepMinutes = stagedSleepMinutes ?? durationMinutes;
+        const sleepMinutes = computeSleepMinutes(row);
         const windowRows = rows.slice(Math.max(0, rowIndex - 6), rowIndex + 1);
-        const rollingDurations = windowRows.map((windowRow) => {
-          if (
-            windowRow.deep_minutes != null ||
-            windowRow.rem_minutes != null ||
-            windowRow.light_minutes != null
-          ) {
-            return (
-              (windowRow.deep_minutes ?? 0) +
-              (windowRow.rem_minutes ?? 0) +
-              (windowRow.light_minutes ?? 0)
-            );
-          }
-          return windowRow.duration_minutes ?? 0;
-        });
+        const rollingDurations = windowRows.map(computeSleepMinutes);
         const rollingAvgDuration =
           rollingDurations.reduce((sum, duration) => sum + duration, 0) / rollingDurations.length;
         return {
