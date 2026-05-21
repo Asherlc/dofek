@@ -6447,3 +6447,57 @@ The fix prevents the known stale-cursor path from reaching the native
 three-day boundary. Direct callers of the native CoreMotion module would still
 need to pass valid query windows, but the app's current production sync path
 uses the clamped TypeScript wrapper.
+
+## 2026-05-21: Review App Deploy Blocked by Front Door SSH Banner Timeout
+
+### Symptoms
+
+PR 1152's `Deploy Review App` GitHub Actions job failed after successfully
+creating the Hetzner review server. The job stopped in the `Setup front door
+SSH` step before it could write the Traefik review route or deploy the review
+stack.
+
+### User Impact
+
+The PR review app was not deployed and the PR had a failing CI check unrelated
+to the app code under review.
+
+### Evidence
+
+The failing step was `Setup front door SSH`. The first fatal log line was
+`SSH host key for *** did not become available within 235s`. Every retry showed
+`tcp/22: reachable (no SSH banner yet)`, which means the shared front door
+accepted TCP connections but did not return an SSH host key to `ssh-keyscan`.
+The previous Terraform step had already completed and output
+`review_server_ip = "88.99.171.167"`. A later read-only check against the front
+door IP returned the OpenSSH host key and accepted SSH, while the host showed
+very high load averages and ClickHouse/worker CPU pressure.
+
+### Root Cause
+
+The review-app workflow treated temporary shared front-door SSH unavailability
+as a PR code failure, and it checked that dependency only after provisioning a
+new review server.
+
+### Fix or Mitigation
+
+Made the reusable `setup-ssh-host` action optionally non-fatal and moved the
+front-door SSH check before Terraform review-server provisioning. When the
+shared front door cannot serve an SSH host key, the workflow now comments a
+review-app skip reason and exits successfully before creating new Hetzner
+resources. The review-server SSH check remains fatal because that host is the
+resource the job just provisioned and must be reachable to deploy the app.
+
+### Remaining Risk
+
+The underlying front-door load event was not remediated by this workflow
+change. If the shared front door is overloaded again, review app deployment
+will be skipped instead of failing the PR, and the production/front-door load
+needs separate operational investigation.
+
+### Follow-Up Work
+
+- Add front-door host load and SSH banner latency to review-app deploy
+  diagnostics so skips can be correlated with host saturation.
+- Consider a dedicated lightweight review-app front door if production host
+  load continues to affect PR preview availability.

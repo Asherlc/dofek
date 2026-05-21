@@ -7,12 +7,25 @@ inputs:
   private_key:
     description: Private SSH key content
     required: true
+  fail_on_error:
+    description: Whether to fail when the host key cannot be fetched
+    required: false
+    default: "true"
+outputs:
+  ready:
+    description: Whether the host key was fetched
+    value: ${{ steps.setup.outputs.ready }}
+  error_message:
+    description: Host key fetch failure message
+    value: ${{ steps.setup.outputs.error_message }}
 runs:
   using: composite
   steps:
     - name: Setup SSH key and known_hosts
+      id: setup
       shell: bash
       env:
+        FAIL_ON_ERROR: ${{ inputs.fail_on_error }}
         SSH_HOST: ${{ inputs.host }}
         SSH_PRIVATE_KEY: ${{ inputs.private_key }}
       run: |
@@ -32,6 +45,7 @@ runs:
           known_hosts_entry="$(ssh-keyscan -T "$keyscan_timeout" -H "$SSH_HOST" 2>"$keyscan_stderr" || true)"
           if [ -n "$known_hosts_entry" ]; then
             printf '%s\n' "$known_hosts_entry" >> ~/.ssh/known_hosts
+            echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "Attempt ${attempt}/${attempts}: ssh-keyscan returned no key for $SSH_HOST"
@@ -45,8 +59,15 @@ runs:
           fi
           if [ "$attempt" -eq "$attempts" ]; then
             total_seconds=$((attempts * keyscan_timeout + (attempts - 1) * sleep_between))
-            echo "::error::SSH host key for $SSH_HOST did not become available within ${total_seconds}s"
-            exit 1
+            message="SSH host key for $SSH_HOST did not become available within ${total_seconds}s"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "error_message=$message" >> "$GITHUB_OUTPUT"
+            if [ "$FAIL_ON_ERROR" = "true" ]; then
+              echo "::error::$message"
+              exit 1
+            fi
+            echo "::warning::$message"
+            exit 0
           fi
           sleep "$sleep_between"
         done
