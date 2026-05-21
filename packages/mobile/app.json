@@ -22,11 +22,6 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dofek.app",
@@ -64,6 +59,17 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1a2e1a",
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "ios": {
+            "enableFullScreenImage_legacy": true
+          }
+        }
+      ],
       [
         "expo-camera",
         {
