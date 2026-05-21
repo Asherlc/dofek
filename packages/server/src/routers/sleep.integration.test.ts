@@ -88,7 +88,7 @@ describe("sleep router integration", () => {
     return first?.result?.data;
   }
 
-  const UTC_ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+  const UTC_ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 
   it("sleep.list returns started_at in UTC ISO 8601 format", async () => {
     await queryCache.invalidateAll();

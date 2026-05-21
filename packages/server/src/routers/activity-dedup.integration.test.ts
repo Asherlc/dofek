@@ -20,9 +20,10 @@ describe("Activity summary deduplication", () => {
   let canonicalActivityId: string;
   let memberActivityId: string;
   let sensorStore: ActivitySensorStore;
+  const baseUtcNow = new Date();
 
   function dateDaysAgo(daysAgo: number): string {
-    const date = new Date();
+    const date = new Date(baseUtcNow);
     date.setUTCDate(date.getUTCDate() - daysAgo);
     return date.toISOString().slice(0, 10);
   }
