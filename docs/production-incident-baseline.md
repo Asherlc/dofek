@@ -6598,3 +6598,63 @@ Other direct server-side `metric_stream` raw SQL writers still use `DO UPDATE`.
 This fix covers the reported Sentry paths; a separate cleanup should migrate the
 remaining direct writers to the central metric stream writer or the same
 no-update duplicate behavior.
+
+## 2026-05-21: Body Weight Still Stale In UI-Facing ClickHouse View
+
+### Symptoms
+
+Weight appeared not to update even though Withings sync jobs were still running
+successfully in production.
+
+### User Impact
+
+The body weight UI can show stale data even when current weight samples are
+present in canonical Postgres storage.
+
+### Evidence
+
+At `2026-05-21 20:37 UTC`, Postgres `fitness.metric_stream` contained a current
+Withings `body_weight` row for `2026-05-21 14:46:25 UTC` at `87.575 kg`.
+Recent `fitness.sync_log` rows showed Withings `metric_stream` syncs succeeding
+every 30 minutes with `record_count = 1`, aside from intermittent `401` errors
+that later recovered. ClickHouse `postgres_fitness.metric_stream` only showed
+body-weight rows through `2026-05-20 14:09:23 UTC`, with PeerDB reporting
+`peerflow_slot_dofek_metric_stream_analytics` lag around `362-417 MB`.
+ClickHouse `analytics.v_body_measurement` only showed body-weight rows through
+`2026-05-09 15:32:22 UTC`.
+
+`SHOW CREATE TABLE analytics.v_body_measurement` showed the production view
+still reads from `postgres_fitness.body_measurement FINAL`, not from
+`postgres_fitness.metric_stream`. The legacy ClickHouse
+`postgres_fitness.body_measurement` source itself only contained rows through
+`2026-05-09 15:32:22 UTC`. A follow-up production definition scan also found
+`analytics.provider_stats` reading `postgres_fitness.body_measurement FINAL`
+for body-measurement provider counts.
+
+### Root Cause
+
+This was not a client caching issue. Canonical Postgres weight ingestion is
+current, but the UI-facing ClickHouse body read model still points at the old
+`body_measurement` mirror that no longer receives current body rows. There is
+also ongoing metric-stream CDC lag, but even a fully caught-up
+`postgres_fitness.metric_stream` mirror would not fix the stale UI while
+`analytics.v_body_measurement` continues reading the old source table. Provider
+stats had the same stale-source drift for body-measurement counts.
+
+### Fix or Mitigation
+
+No production mutation was performed during the initial read-only check. A code
+fix was prepared to create `analytics.body_measurement_sample`, backfill it once
+from body-related `metric_stream` channels, keep it current through
+`analytics.body_measurement_sample_ingest`, and rebuild
+`analytics.v_body_measurement` from that narrow projection instead of the
+legacy `postgres_fitness.body_measurement` table or repeated full scans of
+`postgres_fitness.metric_stream FINAL`. The same migration rebuilds
+`analytics.provider_stats` so its body-measurement counts also read the narrow
+projection instead of the stale legacy mirror.
+
+### Remaining Risk
+
+The migration still needs to run in production. `analytics.v_body_measurement`
+will remain stale until that deploy applies the new ClickHouse migration and the
+metric-stream mirror has enough current body rows for the projection to ingest.

@@ -116,6 +116,10 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
     );
   }
 
+  async refreshBodyMeasurements(): Promise<void> {
+    throw new Error("PostgresTestActivitySensorStore does not support body measurement refresh");
+  }
+
   async #queryPolarizationTrend<TSchema extends z.ZodType>(
     schema: TSchema,
     params: Record<string, unknown>,

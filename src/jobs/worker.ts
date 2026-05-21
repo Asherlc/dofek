@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
@@ -39,11 +40,21 @@ const connection = getRedisConnection();
 // Lazy-init the CH-backed refit sensor store. Created when the post-sync worker
 // first needs it (avoids forcing every worker to depend on CLICKHOUSE_URL).
 let refitSensorStore: ReturnType<typeof createRefitSensorStore> | null = null;
+let clickHouseClient: ReturnType<typeof createClickHouseClientFromEnv> | null = null;
+function getClickHouseClient() {
+  if (clickHouseClient) return clickHouseClient;
+  clickHouseClient = createClickHouseClientFromEnv();
+  return clickHouseClient;
+}
+
 function getRefitSensorStore() {
   if (refitSensorStore) return refitSensorStore;
-  const clickHouseClient = createClickHouseClientFromEnv();
-  refitSensorStore = createRefitSensorStore(clickHouseClient);
+  refitSensorStore = createRefitSensorStore(getClickHouseClient());
   return refitSensorStore;
+}
+
+async function refreshPostSyncBodyMeasurements() {
+  await refreshBodyMeasurementReadModel(getClickHouseClient());
 }
 
 // ── Per-provider sync workers ──
@@ -99,7 +110,10 @@ const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
 );
 const postSyncWorker = new Worker<PostSyncJobData>(
   POST_SYNC_QUEUE,
-  (job) => jobContext.run(job, () => processPostSyncJob(job, db, getRefitSensorStore)),
+  (job) =>
+    jobContext.run(job, () =>
+      processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
+    ),
   { connection, concurrency: 1 },
 );
 // Training export jobs are processed by the standalone Python BullMQ worker

@@ -81,6 +81,13 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain(
       "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
     );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
+    );
+    expect(sql).toContain("INSERT INTO analytics.body_measurement_sample");
+    expect(sql).toContain("FROM analytics.body_measurement_sample FINAL");
+    expect(sql).not.toContain("FROM postgres_fitness.body_measurement");
     expect(sql).toContain("body_measurement_samples AS");
     expect(sql).toContain("measurement_key AS external_id");
   });
@@ -165,7 +172,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(16);
+    expect(count).toBe(17);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

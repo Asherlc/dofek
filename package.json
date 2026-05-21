@@ -8,6 +8,7 @@
     "./export": "./src/export.ts",
     "./db": "./src/db/index.ts",
     "./db/clickhouse": "./src/db/clickhouse.ts",
+    "./db/clickhouse-read-model-refresh": "./src/db/clickhouse-read-model-refresh.ts",
     "./db/schema": "./src/db/schema.ts",
     "./db/nutrient-columns": "./src/db/nutrient-columns.ts",
     "./db/dedup": "./src/db/dedup.ts",
