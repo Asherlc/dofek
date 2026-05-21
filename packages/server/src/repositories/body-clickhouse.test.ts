@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
-import { fetchBodyComparisonRows, fetchBodyCompRows } from "./body-clickhouse.ts";
+import {
+  fetchBodyComparisonRows,
+  fetchBodyCompRows,
+  fetchBodyWeightRows,
+} from "./body-clickhouse.ts";
+
+describe("fetchBodyWeightRows", () => {
+  it("excludes non-positive weights from chart queries", async () => {
+    const calls: Array<{ query: string; params?: Record<string, unknown> }> = [];
+    const store: BodyClickHouseStore = {
+      async query(_schema, query, params) {
+        calls.push({ query, params });
+        return [];
+      },
+    };
+
+    await fetchBodyWeightRows(store, "user-1", "UTC", "now", 90);
+
+    expect(calls[0]?.query).toContain("AND weight_kg > 0");
+  });
+});
 
 describe("fetchBodyCompRows", () => {
   it("casts recorded_at only after filtering by the native ClickHouse timestamp", async () => {
