@@ -1,13 +1,8 @@
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
-import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { logger } from "../logger.ts";
+import { WhoopBleSyncRepository } from "../repositories/whoop-ble-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import { rejectFutureSamples } from "./sample-validation.ts";
-
-const PROVIDER_ID = "whoop_ble";
-const INSERT_BATCH_SIZE = 2000;
 
 // ── Zod schemas ──
 
@@ -33,99 +28,28 @@ const pushRealtimeDataInput = z.object({
 
 export type WhoopBleRealtimeDataSample = z.infer<typeof realtimeDataSampleSchema>;
 
-type Database = Parameters<Parameters<typeof protectedProcedure.mutation>[0]>[0]["ctx"]["db"];
-
-/** Ensure the whoop_ble provider row exists */
-async function ensureProvider(database: Database, userId: string) {
-  await database.execute(
-    sql`INSERT INTO fitness.provider (id, name, user_id)
-        VALUES (${PROVIDER_ID}, 'WHOOP BLE', ${userId})
-        ON CONFLICT (id) DO NOTHING`,
-  );
-}
-
-/** Insert WHOOP BLE realtime samples into metric_stream. */
-async function insertRealtimeDataBatch(
-  database: Database,
-  userId: string,
-  deviceId: string,
-  samples: WhoopBleRealtimeDataSample[],
-): Promise<number> {
-  if (samples.length === 0) return 0;
-
-  let totalInserted = 0;
-
-  for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
-    const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
-
-    const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
-    if (beatIntervalSamples.length > 0) {
-      const beatIntervalValues = beatIntervalSamples.map((sample) => {
-        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
-        const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}`;
-        return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`;
-      });
-      await database.execute(
-        sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
-            VALUES ${sql.join(beatIntervalValues, sql`, `)}
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING`,
-      );
-    }
-
-    // Insert quaternion only when it is present (compact 0x28 packets omit it and report all zeros).
-    const orientationSamples = batch.filter(
-      (sample) =>
-        sample.quaternionW !== 0 ||
-        sample.quaternionX !== 0 ||
-        sample.quaternionY !== 0 ||
-        sample.quaternionZ !== 0,
-    );
-    if (orientationSamples.length > 0) {
-      const orientationSensorValues = orientationSamples.map((sample) => {
-        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
-        const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${recordedAt}`;
-        return sql`(${sample.timestamp}::timestamptz, ${userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`;
-      });
-      await database.execute(
-        sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, vector)
-            VALUES ${sql.join(orientationSensorValues, sql`, `)}
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING`,
-      );
-    }
-
-    totalInserted += batch.length;
-  }
-
-  return totalInserted;
-}
-
 // ── Router ──
 
 export const whoopBleSyncRouter = router({
   pushRealtimeData: protectedProcedure
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {
+      const repository = new WhoopBleSyncRepository(ctx.db, ctx.userId);
+
       if (input.samples.length === 0) {
-        await ensureProvider(ctx.db, ctx.userId);
+        await repository.ensureProvider();
         logger.info("WHOOP BLE realtime push with 0 samples", { userId: ctx.userId });
         return { inserted: 0 };
       }
 
       const now = new Date();
       rejectFutureSamples(input.samples, now, "WHOOP BLE");
-      await ensureProvider(ctx.db, ctx.userId);
+      await repository.ensureProvider();
 
       const firstTimestamp = input.samples[0]?.timestamp;
       const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
 
-      const inserted = await insertRealtimeDataBatch(
-        ctx.db,
-        ctx.userId,
-        input.deviceId,
-        input.samples,
-      );
+      const inserted = await repository.insertRealtimeDataBatch(input.deviceId, input.samples);
 
       logger.info("WHOOP BLE realtime data pushed", {
         userId: ctx.userId,

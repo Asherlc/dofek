@@ -20,7 +20,15 @@ import { inertialMeasurementUnitSyncRouter } from "./inertial-measurement-unit-s
 const createCaller = createTestCallerFactory(inertialMeasurementUnitSyncRouter);
 
 function makeExecute() {
-  return vi.fn().mockResolvedValue([]);
+  return vi.fn(async (statement: unknown) => {
+    const sqlParts = getSqlParts(statement);
+    if (!sqlParts.some((part) => String(part).includes("INSERT INTO fitness.metric_stream"))) {
+      return [];
+    }
+
+    const insertedCount = sqlParts.filter((part) => part === "accel" || part === "imu").length;
+    return Array.from({ length: insertedCount }, (_, index) => ({ id: `metric-${index}` }));
+  });
 }
 
 function flattenSqlChunk(chunk: unknown): Array<string | number> {
@@ -130,6 +138,19 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
       });
+    });
+
+    it("returns zero inserted when duplicate IMU rows no-op", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({ db: { execute }, userId: "user-1" });
+
+      const result = await caller.pushSamples({
+        deviceId: "iPhone 15 Pro",
+        deviceType: "iphone",
+        samples: [makeSample()],
+      });
+
+      expect(result.inserted).toBe(0);
     });
 
     it("rejects samples with missing required fields", async () => {

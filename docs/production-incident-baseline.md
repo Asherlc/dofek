@@ -6587,9 +6587,9 @@ stream writer's duplicate handling.
 Added unit regression tests for the WHOOP BLE and IMU SQL and confirmed they
 failed before the code changes because the routes emitted `DO UPDATE`. After the
 WHOOP BLE change,
-`CLICKHOUSE_URL=http://default:health@localhost:8123 REDIS_URL=redis://localhost:6379 POSTGRES_PASSWORD=health CLICKHOUSE_PASSWORD=health pnpm vitest run packages/server/src/routers/whoop-ble-sync.test.ts`
+`CLICKHOUSE_URL=http://<CLICKHOUSE_USER>:<CLICKHOUSE_PASSWORD>@localhost:8123 REDIS_URL=redis://localhost:6379 POSTGRES_PASSWORD=<POSTGRES_PASSWORD> CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD> pnpm vitest run packages/server/src/routers/whoop-ble-sync.test.ts`
 passed with 19 tests. After the IMU change,
-`CLICKHOUSE_URL=http://default:health@localhost:8123 REDIS_URL=redis://localhost:6379 POSTGRES_PASSWORD=health CLICKHOUSE_PASSWORD=health pnpm vitest run packages/server/src/routers/inertial-measurement-unit-sync.test.ts`
+`CLICKHOUSE_URL=http://<CLICKHOUSE_USER>:<CLICKHOUSE_PASSWORD>@localhost:8123 REDIS_URL=redis://localhost:6379 POSTGRES_PASSWORD=<POSTGRES_PASSWORD> CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD> pnpm vitest run packages/server/src/routers/inertial-measurement-unit-sync.test.ts`
 passed with 14 tests.
 
 ### Remaining Risk
