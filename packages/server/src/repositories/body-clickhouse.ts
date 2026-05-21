@@ -104,6 +104,7 @@ export function bodyWeightDedupClickHouseQuery(
       FROM analytics.v_body_measurement
       WHERE user_id = {userId:UUID}
         AND weight_kg IS NOT NULL
+        AND weight_kg > 0
         ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
         AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})
     )
@@ -150,6 +151,7 @@ export async function fetchBodyCompRows(
           body_fat_pct
         FROM analytics.v_body_measurement
         WHERE user_id = {userId:UUID}
+          AND (weight_kg IS NULL OR weight_kg > 0)
           AND recorded_at > subtractDays(${endTimestampExpression(endDate)}, {days:UInt32})
       ) AS body_measurements
       ORDER BY body_measurements.recorded_at ASC
@@ -169,6 +171,7 @@ export async function fetchLatestBodyMeasurement(
       FROM analytics.v_body_measurement
       WHERE user_id = {userId:UUID}
         AND weight_kg IS NOT NULL
+        AND weight_kg > 0
       ORDER BY recorded_at DESC
       LIMIT 1
     `,
@@ -203,6 +206,7 @@ export async function fetchBodyComparisonRows(
           body_fat_pct
         FROM analytics.v_body_measurement
         WHERE user_id = {userId:UUID}
+          AND (weight_kg IS NULL OR weight_kg > 0)
       ),
       combined AS (
         SELECT 'before' AS period, weight_kg, body_fat_pct

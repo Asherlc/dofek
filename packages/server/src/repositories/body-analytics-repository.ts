@@ -182,6 +182,14 @@ function countActualWeightReadings(points: ReadonlyArray<Pick<InterpolatedPoint,
   return points.filter((point) => !point.interpolated).length;
 }
 
+function roundWeight(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function isPositiveWeight(value: number): boolean {
+  return value > 0;
+}
+
 // ── EWMA helper ─────────────────────────────────────────────────────
 
 /** Apply exponentially-weighted moving average to a series of values. */
@@ -237,10 +245,12 @@ export class BodyAnalyticsRepository extends BaseRepository {
       { accessWindow: this.accessWindow },
     );
 
-    const data = rows.map((row) => ({
-      date: row.date,
-      rawWeight: Number(row.weight_kg),
-    }));
+    const data = rows
+      .map((row) => ({
+        date: row.date,
+        rawWeight: Number(row.weight_kg),
+      }))
+      .filter((row) => isPositiveWeight(row.rawWeight));
 
     return this.#computeSmoothedWeight(data);
   }
@@ -260,11 +270,13 @@ export class BodyAnalyticsRepository extends BaseRepository {
       { requireBodyFat: true, accessWindow: this.accessWindow },
     );
 
-    const data = rows.map((row) => ({
-      date: row.date,
-      weightKg: Number(row.weight_kg),
-      bodyFatPct: Number(row.body_fat_pct),
-    }));
+    const data = rows
+      .map((row) => ({
+        date: row.date,
+        weightKg: Number(row.weight_kg),
+        bodyFatPct: Number(row.body_fat_pct),
+      }))
+      .filter((row) => isPositiveWeight(row.weightKg));
 
     return this.#computeRecomposition(data);
   }
@@ -278,7 +290,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
       accessWindow: this.accessWindow,
     });
 
-    const weights = rows.map((row) => Number(row.weight_kg));
+    const weights = rows.map((row) => Number(row.weight_kg)).filter(isPositiveWeight);
     return this.#computeWeightTrend(weights);
   }
 
@@ -300,10 +312,12 @@ export class BodyAnalyticsRepository extends BaseRepository {
       { accessWindow: this.accessWindow },
     );
 
-    const data = rows.map((row) => ({
-      date: row.date,
-      rawWeight: Number(row.weight_kg),
-    }));
+    const data = rows
+      .map((row) => ({
+        date: row.date,
+        rawWeight: Number(row.weight_kg),
+      }))
+      .filter((row) => isPositiveWeight(row.rawWeight));
 
     return this.#computeWeightPrediction(data, goalWeightKg);
   }
@@ -345,8 +359,8 @@ export class BodyAnalyticsRepository extends BaseRepository {
 
       result.push({
         date: point.date,
-        rawWeight: point.interpolated ? null : Math.round(point.value * 100) / 100,
-        smoothedWeight: Math.round(smoothed * 100) / 100,
+        rawWeight: point.interpolated ? null : roundWeight(point.value),
+        smoothedWeight: roundWeight(smoothed),
         weeklyChange,
         interpolated: point.interpolated,
       });
@@ -385,12 +399,12 @@ export class BodyAnalyticsRepository extends BaseRepository {
 
       result.push({
         date: day.date,
-        weightKg: Math.round(day.weightKg * 100) / 100,
+        weightKg: roundWeight(day.weightKg),
         bodyFatPct: Math.round(day.bodyFatPct * 10) / 10,
-        fatMassKg: Math.round(fatMass * 100) / 100,
-        leanMassKg: Math.round(leanMass * 100) / 100,
-        smoothedFatMass: Math.round(smoothedFat * 100) / 100,
-        smoothedLeanMass: Math.round(smoothedLean * 100) / 100,
+        fatMassKg: roundWeight(fatMass),
+        leanMassKg: roundWeight(leanMass),
+        smoothedFatMass: roundWeight(smoothedFat),
+        smoothedLeanMass: roundWeight(smoothedLean),
       });
     }
 
@@ -514,7 +528,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
     // Goal projection
     let goal: WeightPrediction["goal"] = null;
     if (goalWeightKg != null) {
-      const remainingKg = Math.round((goalWeightKg - latest) * 100) / 100;
+      const remainingKg = roundWeight(goalWeightKg - latest);
 
       let estimatedDate: string | null = null;
       let daysRemaining: number | null = null;
@@ -543,7 +557,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
       for (let day = 1; day <= maxDays; day++) {
         projectionLine.push({
           date: msToDate(lastMs + day * MS_PER_DAY),
-          projectedWeight: Math.round((latest + slopePerDay * day) * 100) / 100,
+          projectedWeight: roundWeight(latest + slopePerDay * day),
         });
       }
     }

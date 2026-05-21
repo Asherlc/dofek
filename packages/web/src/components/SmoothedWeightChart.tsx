@@ -21,6 +21,10 @@ interface SmoothedWeightChartProps {
   loading?: boolean;
 }
 
+function roundWeight(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeightChartProps) {
   const units = useUnitConverter();
 
@@ -79,7 +83,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
         .filter(
           (d): d is typeof d & { rawWeight: number } => !d.interpolated && d.rawWeight != null,
         )
-        .map((d) => [d.date, units.convertWeight(d.rawWeight)]),
+        .map((d) => [d.date, roundWeight(units.convertWeight(d.rawWeight))]),
       {
         color: chartThemeColors.axisLabel,
         symbolSize: 4,
@@ -90,7 +94,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     {
       ...dofekSeries.line(
         "Trend",
-        data.map((d) => [d.date, units.convertWeight(d.smoothedWeight)]),
+        data.map((d) => [d.date, roundWeight(units.convertWeight(d.smoothedWeight))]),
         {
           color: chartColors.teal,
           width: 3,
@@ -105,7 +109,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
         "Weekly Change",
         data
           .filter((d) => d.weeklyChange != null)
-          .map((d) => [d.date, units.convertWeight(d.weeklyChange ?? 0)]),
+          .map((d) => [d.date, roundWeight(units.convertWeight(d.weeklyChange ?? 0))]),
         { yAxisIndex: 1, barWidth: "60%" },
       ),
       itemStyle: {
@@ -121,10 +125,13 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
     const projectionData: [string, number][] = [];
     // Start from last actual point for visual continuity
     if (lastDataPoint) {
-      projectionData.push([lastDataPoint.date, units.convertWeight(lastDataPoint.smoothedWeight)]);
+      projectionData.push([
+        lastDataPoint.date,
+        roundWeight(units.convertWeight(lastDataPoint.smoothedWeight)),
+      ]);
     }
     for (const point of prediction.projectionLine) {
-      projectionData.push([point.date, units.convertWeight(point.projectedWeight)]);
+      projectionData.push([point.date, roundWeight(units.convertWeight(point.projectedWeight))]);
     }
 
     const projectionSeries = dofekSeries.line("Projection", projectionData, {

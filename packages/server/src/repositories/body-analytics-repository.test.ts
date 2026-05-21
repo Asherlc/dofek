@@ -280,8 +280,7 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.smoothedWeight).toBe(80);
       // 0.1 * 81 + 0.9 * 80 = 80.1
       expect(result[1]?.smoothedWeight).toBe(80.1);
-      // 0.1 * 79 + 0.9 * 80.1 = 79.99
-      expect(result[2]?.smoothedWeight).toBe(79.99);
+      expect(result[2]?.smoothedWeight).toBe(80);
     });
 
     it("computes weekly change when enough data points exist", async () => {
@@ -356,6 +355,18 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.at(-1)?.weeklyChange).toBeNull();
     });
 
+    it("excludes non-positive weights from smoothing computation", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "0" },
+        { date: "2024-01-03", weight_kg: "82" },
+      ]);
+
+      const result = await repo.getSmoothedWeight(90, "2024-06-01");
+
+      expect(result.map((row) => row.rawWeight)).toEqual([80, null, 82]);
+    });
+
     it("applies EWMA smoothing across interpolated days", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80" },
@@ -370,15 +381,15 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[3]?.smoothedWeight).toBeGreaterThan(result[2]?.smoothedWeight ?? 0);
     });
 
-    it("rounds values to 2 decimal places", async () => {
+    it("rounds values to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.123" },
         { date: "2024-01-02", weight_kg: "80.456" },
       ]);
 
       const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      expect(result[0]?.rawWeight).toBe(80.12);
-      expect(result[1]?.rawWeight).toBe(80.46);
+      expect(result[0]?.rawWeight).toBe(80.1);
+      expect(result[1]?.rawWeight).toBe(80.5);
     });
   });
 
@@ -432,10 +443,8 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.smoothedLeanMass).toBe(64);
 
       // Day 2: fatMass = 82 * 0.22 = 18.04, leanMass = 82 - 18.04 = 63.96
-      // smoothedFat = 0.15 * 18.04 + 0.85 * 16 = 16.306
-      expect(result[1]?.smoothedFatMass).toBeCloseTo(16.31, 2);
-      // smoothedLean = 0.15 * 63.96 + 0.85 * 64 = 63.994
-      expect(result[1]?.smoothedLeanMass).toBeCloseTo(63.99, 2);
+      expect(result[1]?.smoothedFatMass).toBe(16.3);
+      expect(result[1]?.smoothedLeanMass).toBe(64);
     });
 
     it("divides bodyFatPct by 100 for fat mass (not 10 or 1000)", async () => {
@@ -457,6 +466,18 @@ describe("BodyAnalyticsRepository", () => {
       const result = await repo.getRecomposition(180, "2024-06-01");
       // 18.25 rounded to 1 decimal = 18.3 (rounds up)
       expect(result[0]?.bodyFatPct).toBe(18.3);
+    });
+
+    it("excludes non-positive weights from recomposition computation", async () => {
+      const { repo } = makeRepository([
+        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-02", weight_kg: "0", body_fat_pct: "13.2" },
+      ]);
+
+      const result = await repo.getRecomposition(180, "2024-06-01");
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.date).toBe("2024-01-01");
     });
   });
 
@@ -550,6 +571,23 @@ describe("BodyAnalyticsRepository", () => {
       }));
       const { repo } = makeRepository(rows);
       const result = await repo.getWeightTrend();
+      expect(result.trend).toBe("insufficient");
+    });
+
+    it("excludes non-positive weights from trend computation", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "80" },
+        { date: "2024-01-03", weight_kg: "80" },
+        { date: "2024-01-04", weight_kg: "80" },
+        { date: "2024-01-05", weight_kg: "80" },
+        { date: "2024-01-06", weight_kg: "80" },
+        { date: "2024-01-07", weight_kg: "0" },
+      ];
+      const { repo } = makeRepository(rows);
+
+      const result = await repo.getWeightTrend();
+
       expect(result.trend).toBe("insufficient");
     });
 
@@ -741,24 +779,20 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.date).toBe("2024-03-15");
     });
 
-    it("rounds rawWeight via Math.round(x * 100) / 100 (2 decimal places, not 1 or 3)", async () => {
+    it("rounds rawWeight to 1 decimal place", async () => {
       const { repo } = makeRepository([{ date: "2024-01-01", weight_kg: "80.1234" }]);
       const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      // Math.round(80.1234 * 100) / 100 = Math.round(8012.34) / 100 = 8012/100 = 80.12
-      expect(result[0]?.rawWeight).toBe(80.12);
+      expect(result[0]?.rawWeight).toBe(80.1);
     });
 
-    it("rounds smoothedWeight via Math.round(x * 100) / 100 (2 decimal places)", async () => {
+    it("rounds smoothedWeight to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.1234" },
         { date: "2024-01-02", weight_kg: "81.5678" },
       ]);
       const result = await repo.getSmoothedWeight(90, "2024-06-01");
-      // smoothed[0] = 80.1234, rounded = 80.12
-      expect(result[0]?.smoothedWeight).toBe(80.12);
-      // smoothed[1] = 0.1 * 81.5678 + 0.9 * 80.1234 = 8.15678 + 72.11106 = 80.26784
-      // Math.round(80.26784 * 100) / 100 = Math.round(8026.784) / 100 = 8027/100 = 80.27
-      expect(result[1]?.smoothedWeight).toBe(80.27);
+      expect(result[0]?.smoothedWeight).toBe(80.1);
+      expect(result[1]?.smoothedWeight).toBe(80.3);
     });
 
     it("rounds weeklyChange via Math.round(x * 100) / 100 (not *10/10 or *1000/1000)", async () => {
@@ -789,12 +823,12 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.date).toBe("2024-05-20");
     });
 
-    it("rounds weightKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+    it("rounds weightKg to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.1234", body_fat_pct: "20" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      expect(result[0]?.weightKg).toBe(80.12);
+      expect(result[0]?.weightKg).toBe(80.1);
     });
 
     it("rounds bodyFatPct to 1 decimal via Math.round(x * 10) / 10 (not *100/100)", async () => {
@@ -806,34 +840,29 @@ describe("BodyAnalyticsRepository", () => {
       expect(result[0]?.bodyFatPct).toBe(18.5);
     });
 
-    it("rounds fatMassKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+    it("rounds fatMassKg to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      // fatMass = 80.5 * (18.3 / 100) = 80.5 * 0.183 = 14.7315
-      // Math.round(14.7315 * 100) / 100 = Math.round(1473.15) / 100 = 1473/100 = 14.73
-      expect(result[0]?.fatMassKg).toBe(14.73);
+      expect(result[0]?.fatMassKg).toBe(14.7);
     });
 
-    it("rounds leanMassKg to 2 decimal places via Math.round(x * 100) / 100", async () => {
+    it("rounds leanMassKg to 1 decimal place", async () => {
       const { repo } = makeRepository([
         { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      // leanMass = 80.5 - 14.7315 = 65.7685
-      // Math.round(65.7685 * 100) / 100 = Math.round(6576.85) / 100 = 6577/100 = 65.77
-      expect(result[0]?.leanMassKg).toBe(65.77);
+      expect(result[0]?.leanMassKg).toBe(65.8);
     });
 
-    it("rounds smoothedFatMass and smoothedLeanMass to 2 decimals", async () => {
+    it("rounds smoothedFatMass and smoothedLeanMass to 1 decimal place", async () => {
       const { repo } = makeRepository([
-        { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+        { date: "2024-01-01", weight_kg: "80.5", body_fat_pct: "18.3" },
       ]);
       const result = await repo.getRecomposition(180, "2024-06-01");
-      // First entry: smoothed = raw
-      expect(result[0]?.smoothedFatMass).toBe(16);
-      expect(result[0]?.smoothedLeanMass).toBe(64);
+      expect(result[0]?.smoothedFatMass).toBe(14.7);
+      expect(result[0]?.smoothedLeanMass).toBe(65.8);
     });
   });
 
@@ -1006,6 +1035,24 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.periodDeltas.days14).toBeNull();
       expect(result.goal?.estimatedDate).toBeNull();
       expect(result.goal?.daysRemaining).toBeNull();
+      expect(result.projectionLine).toEqual([]);
+    });
+
+    it("excludes non-positive weights from prediction computation", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "80" },
+        { date: "2024-01-02", weight_kg: "80" },
+        { date: "2024-01-03", weight_kg: "80" },
+        { date: "2024-01-04", weight_kg: "80" },
+        { date: "2024-01-05", weight_kg: "80" },
+        { date: "2024-01-06", weight_kg: "80" },
+        { date: "2024-01-07", weight_kg: "0" },
+      ];
+      const { repo } = makeRepository(rows);
+
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).toBeNull();
       expect(result.projectionLine).toEqual([]);
     });
 
