@@ -9,6 +9,7 @@ vi.mock("@sentry/node", () => ({
 const mockLoadProviderPriorityConfig = vi.fn((): unknown => ({ priorities: [] }));
 const mockSyncProviderPriorities = vi.fn();
 const mockRefitAllParams = vi.fn();
+const mockInvalidateByPrefix = vi.fn();
 
 vi.mock("../db/provider-priority.ts", () => ({
   loadProviderPriorityConfig: () => mockLoadProviderPriorityConfig(),
@@ -17,6 +18,12 @@ vi.mock("../db/provider-priority.ts", () => ({
 
 vi.mock("../personalization/refit.ts", () => ({
   refitAllParams: (...args: unknown[]) => mockRefitAllParams(...args),
+}));
+
+vi.mock("../lib/cache.ts", () => ({
+  queryCache: {
+    invalidateByPrefix: (...args: unknown[]) => mockInvalidateByPrefix(...args),
+  },
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -46,12 +53,18 @@ describe("processPostSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     refreshBodyMeasurements.mockResolvedValue(undefined);
+    mockInvalidateByPrefix.mockResolvedValue(undefined);
   });
 
   it("runs only global maintenance operations for a global maintenance job", async () => {
     const getSensorStore = vi.fn(getFakeSensorStore);
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getSensorStore);
+    await processPostSyncJob(
+      makeGlobalMaintenanceJob(),
+      fakeDb,
+      getSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockLoadProviderPriorityConfig).toHaveBeenCalled();
     expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
@@ -60,7 +73,12 @@ describe("processPostSyncJob", () => {
   });
 
   it("does not run per-user refits during global post-sync maintenance", async () => {
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeGlobalMaintenanceJob(),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
     expect(mockRefitAllParams).not.toHaveBeenCalled();
@@ -96,7 +114,12 @@ describe("processPostSyncJob", () => {
   it("continues when syncProviderPriorities fails", async () => {
     mockSyncProviderPriorities.mockRejectedValueOnce(new Error("priorities failed"));
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeGlobalMaintenanceJob(),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockRefitAllParams).not.toHaveBeenCalled();
   });
@@ -105,7 +128,12 @@ describe("processPostSyncJob", () => {
     mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
 
     // Should not throw
-    await processPostSyncJob(makeUserRefitJob("user-5"), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeUserRefitJob("user-5"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
   });
@@ -113,7 +141,12 @@ describe("processPostSyncJob", () => {
   it("skips syncProviderPriorities when config is null", async () => {
     mockLoadProviderPriorityConfig.mockReturnValueOnce(null);
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeGlobalMaintenanceJob(),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
   });
@@ -122,7 +155,12 @@ describe("processPostSyncJob", () => {
     const prioritiesError = new Error("priorities failed");
     mockSyncProviderPriorities.mockRejectedValueOnce(prioritiesError);
 
-    await processPostSyncJob(makeGlobalMaintenanceJob(), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeGlobalMaintenanceJob(),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockCaptureException).toHaveBeenCalledWith(prioritiesError, {
       tags: { postSyncStep: "syncProviderPriorities" },
@@ -133,10 +171,62 @@ describe("processPostSyncJob", () => {
     const refitError = new Error("refit failed");
     mockRefitAllParams.mockRejectedValueOnce(refitError);
 
-    await processPostSyncJob(makeUserRefitJob("user-10"), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeUserRefitJob("user-10"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockCaptureException).toHaveBeenCalledWith(refitError, {
       tags: { postSyncStep: "refitParams" },
+    });
+  });
+
+  it("reports errors to Sentry when body measurement refresh fails", async () => {
+    const refreshError = new Error("refresh failed");
+    refreshBodyMeasurements.mockRejectedValueOnce(refreshError);
+
+    await processPostSyncJob(
+      makeUserRefitJob("user-11"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(refreshError, {
+      tags: { postSyncStep: "refreshBodyMeasurements" },
+    });
+    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-11", fakeSensorStore);
+  });
+
+  it("invalidates the user cache after refitting", async () => {
+    await processPostSyncJob(
+      makeUserRefitJob("user-12"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
+
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-12:");
+    expect(mockRefitAllParams.mock.invocationCallOrder[0]).toBeLessThan(
+      mockInvalidateByPrefix.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("reports errors to Sentry when user cache invalidation fails", async () => {
+    const cacheError = new Error("cache failed");
+    mockInvalidateByPrefix.mockRejectedValueOnce(cacheError);
+
+    await processPostSyncJob(
+      makeUserRefitJob("user-13"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(cacheError, {
+      tags: { postSyncStep: "invalidateUserCache" },
     });
   });
 });

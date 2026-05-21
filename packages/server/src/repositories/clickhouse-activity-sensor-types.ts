@@ -3,10 +3,6 @@ interface ClickHouseJsonResult<TRow> {
 }
 
 export interface ClickHouseQueryClient {
-  command(options: {
-    query: string;
-    clickhouse_settings?: Record<string, string | number | boolean>;
-  }): Promise<unknown>;
   query<TRow extends object>(options: {
     query: string;
     format: "JSONEachRow";

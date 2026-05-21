@@ -1,4 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import type { ClickHouseCommandClient } from "dofek/db/clickhouse";
 import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
 import type { z } from "zod";
 import type {
@@ -24,6 +25,10 @@ import {
   heartRateZoneNumbersSql,
   heartRateZoneSqlParams,
 } from "./heart-rate-zone-sql.ts";
+
+interface ClickHouseActivitySensorClient
+  extends ClickHouseQueryClient,
+    Pick<ClickHouseCommandClient, "command"> {}
 
 export interface ActivitySummaryReadModelRow {
   activity_id: string;
@@ -78,9 +83,9 @@ function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
 }
 
 export class ClickHouseActivitySensorStore implements ActivitySensorStore {
-  readonly #client: ClickHouseQueryClient;
+  readonly #client: ClickHouseActivitySensorClient;
 
-  constructor(client: ClickHouseQueryClient) {
+  constructor(client: ClickHouseActivitySensorClient) {
     this.#client = client;
   }
 

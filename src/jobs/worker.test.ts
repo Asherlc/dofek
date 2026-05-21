@@ -19,6 +19,10 @@ vi.mock("../db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: vi.fn(() => ({})),
 }));
 
+vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
+  refreshBodyMeasurementReadModel: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock("../db/refit-sensor-store.ts", () => ({
   createRefitSensorStore: vi.fn(() => ({})),
 }));
@@ -167,24 +171,45 @@ describe("worker module", () => {
     expect(setTimeoutSpy).toHaveBeenCalled();
   });
 
-  it("active event handler resets idle timer", () => {
+  function getWorkerHandler(eventName: string): (...args: unknown[]) => unknown {
+    const call = mockOn.mock.calls.find((mockCall) => mockCall[0] === eventName);
+    expect(call).toBeDefined();
+    const handler = call?.[1];
+    if (typeof handler !== "function") {
+      throw new Error(`No ${eventName} handler registered`);
+    }
+    return handler;
+  }
+
+  it("active event handler resets idle timer without starting a new one", () => {
     const clearBefore = clearTimeoutSpy.mock.calls.length;
-    const activeCall = mockOn.mock.calls.find((call) => call[0] === "active");
-    expect(activeCall).toBeDefined();
-    activeCall?.[1]();
-    // resetIdleTimer should call clearTimeout
+    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
+
+    getWorkerHandler("active")();
+
     expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(clearBefore);
+    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
+    getWorkerHandler("completed")();
   });
 
   it("completed event handler restarts idle timer when no active jobs", () => {
+    getWorkerHandler("active")();
     const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
-    // The active handler above incremented activeJobs to 1.
-    // Calling completed decrements it to 0, triggering startIdleTimer.
-    const completedCall = mockOn.mock.calls.find((call) => call[0] === "completed");
-    expect(completedCall).toBeDefined();
-    completedCall?.[1]();
-    // startIdleTimer should call setTimeout
+
+    getWorkerHandler("completed")();
+
     expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
+  });
+
+  it("completed event handler does not restart idle timer while another job is active", () => {
+    getWorkerHandler("active")();
+    getWorkerHandler("active")();
+    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
+
+    getWorkerHandler("completed")();
+
+    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
+    getWorkerHandler("completed")();
   });
 
   it("failed event handler reports to Sentry and logs the error", async () => {
@@ -193,13 +218,28 @@ describe("worker module", () => {
     vi.mocked(Sentry.captureException).mockClear();
     vi.mocked(logger.error).mockClear();
 
-    const failedCall = mockOn.mock.calls.find((call) => call[0] === "failed");
-    expect(failedCall).toBeDefined();
+    getWorkerHandler("active")();
     const error = new Error("test failure");
-    failedCall?.[1](undefined, error);
+    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
+    getWorkerHandler("failed")(undefined, error);
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
     expect(logger.error).toHaveBeenCalledWith("[worker] Job failed: test failure");
+    expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
+  });
+
+  it("failed event handler does not restart idle timer while another job is active", async () => {
+    const Sentry = await import("@sentry/node");
+    vi.mocked(Sentry.captureException).mockClear();
+    getWorkerHandler("active")();
+    getWorkerHandler("active")();
+    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
+
+    getWorkerHandler("failed")(undefined, new Error("one of two jobs failed"));
+
+    expect(Sentry.captureException).toHaveBeenCalledOnce();
+    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
+    getWorkerHandler("completed")();
   });
 
   it("error event handler reports to Sentry and logs the error", async () => {
@@ -317,5 +357,37 @@ describe("worker module", () => {
     await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" });
 
     expect(processPostSyncJob).toHaveBeenCalled();
+  });
+
+  it("post-sync processor passes cached ClickHouse helpers to processPostSyncJob", async () => {
+    const { createClickHouseClientFromEnv } = await import("../db/clickhouse.ts");
+    const { createRefitSensorStore } = await import("../db/refit-sensor-store.ts");
+    const { refreshBodyMeasurementReadModel } = await import(
+      "../db/clickhouse-read-model-refresh.ts"
+    );
+    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+    vi.mocked(createClickHouseClientFromEnv).mockClear();
+    vi.mocked(createRefitSensorStore).mockClear();
+    vi.mocked(refreshBodyMeasurementReadModel).mockClear();
+    vi.mocked(processPostSyncJob).mockClear();
+
+    await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" });
+    const processCall = vi.mocked(processPostSyncJob).mock.calls[0];
+    const getSensorStore = processCall?.[2];
+    const refreshBodyMeasurements = processCall?.[3];
+    expect(getSensorStore).toBeDefined();
+    expect(refreshBodyMeasurements).toBeDefined();
+
+    if (typeof getSensorStore !== "function" || typeof refreshBodyMeasurements !== "function") {
+      throw new Error("post-sync helpers were not passed to processPostSyncJob");
+    }
+
+    getSensorStore();
+    getSensorStore();
+    await refreshBodyMeasurements();
+
+    expect(createClickHouseClientFromEnv).toHaveBeenCalledOnce();
+    expect(createRefitSensorStore).toHaveBeenCalledOnce();
+    expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
   });
 });
