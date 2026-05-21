@@ -22,8 +22,6 @@ const pushSamplesInput = z.object({
   samples: z.array(inertialMeasurementUnitSampleSchema),
 });
 
-export type InertialMeasurementUnitSample = z.infer<typeof inertialMeasurementUnitSampleSchema>;
-
 // ── Router ──
 
 export const inertialMeasurementUnitSyncRouter = router({

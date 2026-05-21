@@ -26,8 +26,6 @@ const pushRealtimeDataInput = z.object({
   samples: z.array(realtimeDataSampleSchema),
 });
 
-export type WhoopBleRealtimeDataSample = z.infer<typeof realtimeDataSampleSchema>;
-
 // ── Router ──
 
 export const whoopBleSyncRouter = router({
