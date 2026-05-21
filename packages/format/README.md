@@ -20,11 +20,13 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 - **Hour Formatting**: `formatHour` converts decimal hours to localized 12/24-hour strings, normalizing Unicode non-breaking spaces for consistent display.
 
 ### Numeric Formatting
+
 - `formatNumber`: Safely formats finite numbers with fixed decimals; returns `--` for `NaN` or `Infinity`.
 - `formatPercent`: Converts 0–1 ratios to percentage strings.
 - `formatSigned`: Prefixes positive values with `+`.
 
 ### Domain Metric Formatting
+
 Use the shared domain helpers from `@dofek/format/format` anywhere these values are displayed:
 - Nutrition values: `formatNutritionNumber`, `formatCalories`, `formatGrams`, and `formatNutritionAmount` use 0 decimals.
 - Body composition values: `formatBodyCompositionNumber` and `formatBodyCompositionPercent` use 1 decimal.

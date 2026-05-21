@@ -269,7 +269,9 @@ export default function StrainScreen() {
                     <View style={styles.volumeBarTrack}>
                       <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
                     </View>
-                    <Text style={styles.volumeHours}>{formatDurationMinutes(week.hours * 60)}</Text>
+                    <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
+                      {formatDurationMinutes(week.hours * 60)}
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -485,7 +487,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: colors.text,
-    width: 40,
+    minWidth: 72,
     textAlign: "right",
     fontVariant: ["tabular-nums"],
   },

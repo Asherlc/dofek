@@ -218,7 +218,9 @@ export function formatConfirmationMessage(
     ],
   });
 
-  const fallbackText = items.map((i) => `${i.foodName}: ${formatCalories(i.calories)}`).join(", ");
+  const fallbackText = items
+    .map((itemSummary) => `${itemSummary.foodName}: ${formatCalories(itemSummary.calories)}`)
+    .join(", ");
 
   return { blocks, text: fallbackText };
 }
@@ -264,7 +266,9 @@ export function formatSavedMessage(
     });
   }
 
-  const fallbackText = items.map((i) => `${i.foodName}: ${formatCalories(i.calories)}`).join(", ");
+  const fallbackText = items
+    .map((itemSummary) => `${itemSummary.foodName}: ${formatCalories(itemSummary.calories)}`)
+    .join(", ");
 
   return {
     blocks,

@@ -53,7 +53,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           label="Training"
           value={formatDurationMinutes(current.trainingHours * 60)}
           sub={`${current.activityCount} activities`}
-          prevValue={prevWeek ? `${prevWeek.trainingHours}h` : undefined}
+          prevValue={prevWeek ? formatDurationMinutes(prevWeek.trainingHours * 60) : undefined}
         />
         <StatBlock
           label="Sleep"
@@ -78,7 +78,11 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           value={current.avgRestingHr != null ? `${current.avgRestingHr}` : "—"}
           sub="bpm avg"
         />
-        <StatBlock label="HRV" value={formatHRV(current.avgHrv)} sub="avg" />
+        <StatBlock
+          label="Heart Rate Variability (HRV)"
+          value={formatHRV(current.avgHrv)}
+          sub="avg"
+        />
       </div>
 
       {/* Strain zone history mini bar */}

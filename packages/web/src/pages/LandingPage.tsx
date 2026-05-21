@@ -310,16 +310,18 @@ function DashboardMockup() {
               unit: "bpm",
               color: activityMetricColors.heartRate,
             },
-            { label: "HRV", value: "68", unit: "ms", color: "#7c5cbf" },
-            { label: "Sleep", value: "7h 42m", unit: "", color: "#4338ca" },
-            { label: "Steps", value: "8,432", unit: "", color: "#059669" },
-            { label: "Recovery", value: "82%", unit: "", color: "#2d7a56" },
+            { label: "Heart Rate Variability (HRV)", value: "68", unit: "ms", color: "#7c5cbf" },
+            { label: "Sleep", value: "7h 42m", color: "#4338ca" },
+            { label: "Steps", value: "8,432", color: "#059669" },
+            { label: "Recovery", value: "82%", color: "#2d7a56" },
           ].map((metric) => (
             <div key={metric.label} className="flex-1 min-w-0 card p-3">
               <div className="text-[10px] text-muted truncate">{metric.label}</div>
               <div className="text-lg font-bold mt-0.5" style={{ color: metric.color }}>
                 {metric.value}
-                <span className="text-xs font-normal text-muted ml-0.5">{metric.unit}</span>
+                {metric.unit && (
+                  <span className="text-xs font-normal text-muted ml-0.5">{metric.unit}</span>
+                )}
               </div>
             </div>
           ))}

@@ -55,7 +55,7 @@ type MetricEntry = {
   value: number | null;
   avg: number | null;
   stddev: number | null;
-  unit: string;
+  unit?: string;
   formatValue?: (value: number | null | undefined) => string;
   lowerBetter?: boolean;
 };
@@ -129,7 +129,6 @@ export function BodyPage() {
         value: trendData.latest_hrv,
         avg: trendData.avg_hrv,
         stddev: trendData.stddev_hrv,
-        unit: "",
         formatValue: formatHRV,
         lowerBetter: false,
       },
@@ -138,7 +137,6 @@ export function BodyPage() {
         value: trendData.latest_spo2,
         avg: trendData.avg_spo2,
         stddev: trendData.stddev_spo2,
-        unit: "",
         formatValue: formatSpO2,
       },
       trendData.latest_skin_temp != null && {
@@ -146,7 +144,6 @@ export function BodyPage() {
         value: trendData.latest_skin_temp,
         avg: trendData.avg_skin_temp,
         stddev: trendData.stddev_skin_temp,
-        unit: "",
         formatValue: (value) => (value == null ? "--" : units.formatTemperature(value)),
       },
     ];

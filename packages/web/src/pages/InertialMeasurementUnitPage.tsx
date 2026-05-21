@@ -54,7 +54,9 @@ function SyncStatusPanel() {
           <p className="text-2xl font-bold">{formatNumber(device.sampleCount)} samples</p>
           <p className="text-xs text-muted-foreground">
             {device.earliestSample
-              ? `${formatDateMedium(device.earliestSample)} — ${formatDateMedium(device.latestSample ?? "")}`
+              ? `${formatDateMedium(device.earliestSample)}${
+                  device.latestSample ? ` — ${formatDateMedium(device.latestSample)}` : ""
+                }`
               : "No data"}
           </p>
         </div>

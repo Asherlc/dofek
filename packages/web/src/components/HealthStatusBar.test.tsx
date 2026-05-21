@@ -62,9 +62,7 @@ describe("HealthStatusBar", () => {
     it("uses absolute z-score when lowerBetter is undefined (no direction preference)", () => {
       // Steps: avg=8000, stddev=2000, value=13000 → z=+2.5 → any deviation is flagged
       render(
-        <HealthStatusBar
-          metrics={[{ label: "Steps", value: 13000, avg: 8000, stddev: 2000, unit: "" }]}
-        />,
+        <HealthStatusBar metrics={[{ label: "Steps", value: 13000, avg: 8000, stddev: 2000 }]} />,
       );
       expect(screen.getByText(/Abnormal/)).toBeDefined();
     });

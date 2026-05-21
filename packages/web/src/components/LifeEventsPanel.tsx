@@ -392,7 +392,7 @@ function EventAnalysis({
           lowerBetter
         />
         <CompareCard
-          label="HRV"
+          label="Heart Rate Variability (HRV)"
           before={before.metrics?.avg_hrv}
           after={after.metrics?.avg_hrv}
           periodLabel={periodLabel}

@@ -40,7 +40,7 @@ type MetricEntry = {
   value: number | null;
   avg: number | null;
   stddev: number | null;
-  unit: string;
+  unit?: string;
   formatValue?: (value: number | null | undefined) => string;
   lowerBetter?: boolean;
 };
@@ -146,7 +146,6 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_hrv,
       avg: trendData.avg_hrv,
       stddev: trendData.stddev_hrv,
-      unit: "",
       formatValue: formatHRV,
       lowerBetter: false,
     },
@@ -163,7 +162,6 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_spo2,
       avg: trendData.avg_spo2,
       stddev: trendData.stddev_spo2,
-      unit: "",
       formatValue: formatSpO2,
     },
     {
@@ -171,14 +169,12 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_steps,
       avg: trendData.avg_steps,
       stddev: null,
-      unit: "",
     },
     {
       label: "Active Energy",
       value: trendData.latest_active_energy,
       avg: trendData.avg_active_energy,
       stddev: null,
-      unit: "",
       formatValue: formatCalories,
     },
     trendData.latest_skin_temp != null && {
@@ -186,7 +182,6 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_skin_temp,
       avg: trendData.avg_skin_temp,
       stddev: trendData.stddev_skin_temp,
-      unit: "",
       formatValue: (value) => (value == null ? "--" : units.formatTemperature(value)),
     },
   ];

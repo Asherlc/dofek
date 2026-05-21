@@ -6,7 +6,7 @@ interface HealthMetric {
   value: number | null | undefined;
   avg: number | null | undefined;
   stddev: number | null | undefined;
-  unit: string;
+  unit?: string;
   formatValue?: (value: number | null | undefined) => string;
   /** Whether lower is better (e.g., resting HR) */
   lowerBetter?: boolean;
@@ -98,7 +98,7 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
             </div>
             <div className="text-lg font-semibold font-mono tabular-nums">
               <MetricValue value={metric.value} formatValue={metric.formatValue} />
-              {metric.value != null && (
+              {metric.value != null && metric.unit && (
                 <span className="ml-1 text-xs font-normal text-subtle">{metric.unit}</span>
               )}
             </div>

@@ -71,6 +71,37 @@ describe("AerobicEfficiencyChart", () => {
     expect(screen.getByText(/Trend:/)).toBeDefined();
   });
 
+  it("uses original date strings for trend endpoints to avoid timezone drift", () => {
+    const activities = [
+      {
+        date: "2026-03-10",
+        activityType: "cycling",
+        name: "Morning Ride",
+        avgPowerZ2: 180,
+        avgHrZ2: 135,
+        efficiencyFactor: 1.333,
+        z2Samples: 600,
+      },
+      {
+        date: "2026-03-15",
+        activityType: "cycling",
+        name: "Evening Ride",
+        avgPowerZ2: 185,
+        avgHrZ2: 133,
+        efficiencyFactor: 1.391,
+        z2Samples: 900,
+      },
+    ];
+
+    render(<AerobicEfficiencyChart activities={activities} maxHr={190} />);
+    const chartElement = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chartElement.dataset.option ?? "{}");
+    const trendSeries = option.series.find((series: { name?: string }) => series.name === "Trend");
+
+    expect(trendSeries.data[0][0]).toBe("2026-03-10");
+    expect(trendSeries.data[1][0]).toBe("2026-03-15");
+  });
+
   it("does not show Invalid Date in rendered output", () => {
     render(<AerobicEfficiencyChart activities={[]} maxHr={null} />);
     expect(screen.queryByText("Invalid Date")).toBeNull();

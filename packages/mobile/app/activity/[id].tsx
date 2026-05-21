@@ -7,7 +7,7 @@ import {
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import { activityMetricColors } from "@dofek/scoring/colors";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -39,6 +39,7 @@ import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
+import { styles } from "./styles";
 import { useChartScrub } from "./useChartScrub";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
 
@@ -910,127 +911,3 @@ export default function ActivityDetailScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 100,
-    gap: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textTertiary,
-  },
-  chartsLoading: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: "center",
-    gap: 8,
-  },
-  chartsLoadingText: {
-    fontSize: 13,
-    color: colors.textTertiary,
-  },
-  errorContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  errorText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  header: {
-    gap: 8,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  icon: {
-    fontSize: 32,
-  },
-  headerText: {
-    flex: 1,
-    gap: 6,
-  },
-  name: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  typeBadge: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  typeBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "capitalize",
-  },
-  dateTime: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  sourceRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  source: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-  sourceLinkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  sourceLinkPressable: {
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-    borderRadius: 4,
-  },
-  sourceLink: {
-    fontSize: 12,
-    color: colors.accent,
-    textDecorationLine: "underline",
-  },
-  deleteButton: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  deleteButtonPressed: {
-    opacity: 0.7,
-  },
-  deleteButtonDisabled: {
-    opacity: 0.5,
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: statusColors.danger,
-  },
-});

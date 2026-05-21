@@ -1,4 +1,5 @@
 import { formatDateShort } from "@dofek/format/format";
+import DOMPurify from "dompurify";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -17,12 +18,9 @@ export function isSeriesEmpty(series: Pick<Series, "data">[]): boolean {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  const textContainer = document.createElement("span");
+  textContainer.textContent = value;
+  return DOMPurify.sanitize(textContainer.innerHTML, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
 }
 
 interface TimeSeriesChartProps {

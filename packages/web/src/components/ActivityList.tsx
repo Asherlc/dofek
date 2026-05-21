@@ -116,7 +116,8 @@ export function ActivityList({
       label: "Calories",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
-      renderCell: (activity) => (activity.calories ? formatCalories(activity.calories) : "—"),
+      renderCell: (activity) =>
+        activity.calories != null ? formatCalories(activity.calories) : "—",
     },
     {
       key: "provider",
