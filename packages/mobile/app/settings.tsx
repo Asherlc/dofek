@@ -1,5 +1,5 @@
 import { formatDateMedium, formatDateTime } from "@dofek/format/format";
-import { UnitConverter } from "@dofek/format/units";
+import { formatMeasurementText, UnitConverter } from "@dofek/format/units";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -455,7 +455,9 @@ export default function SettingsScreen() {
             </View>
           ) : currentGoalKg != null ? (
             <View style={styles.goalDisplayRow}>
-              <Text style={styles.goalDisplayText}>{units.formatWeight(currentGoalKg)}</Text>
+              <Text style={styles.goalDisplayText}>
+                {formatMeasurementText(units.formatWeight(currentGoalKg))}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   setGoalInput(

@@ -7,6 +7,7 @@ import {
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -115,12 +116,12 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
       <div className="absolute bottom-2 left-2 flex gap-1">
         {location.distanceMeters != null ? (
           <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
-            {units.formatDistance(location.distanceMeters / 1000)}
+            {formatMeasurementText(units.formatDistance(location.distanceMeters / 1000))}
           </span>
         ) : null}
         {location.elevationGainM != null ? (
           <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
-            ↑ {units.formatElevation(location.elevationGainM)}
+            ↑ {formatMeasurementText(units.formatElevation(location.elevationGainM))}
           </span>
         ) : null}
       </div>

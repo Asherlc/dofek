@@ -1,5 +1,9 @@
+import { formatCaloriesMeasurement, formatHRVMeasurement } from "@dofek/format/format";
+import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { HealthStatusBar } from "./HealthStatusBar";
+
+const imperialUnits = new UnitConverter("imperial");
 
 const meta = {
   title: "Components/HealthStatusBar",
@@ -61,6 +65,34 @@ export const Unknown: Story = {
         avg: 60,
         stddev: 8,
         unit: "ms",
+      },
+    ],
+  },
+};
+
+export const FormattedUnits: Story = {
+  args: {
+    metrics: [
+      {
+        label: "Heart Rate Variability (HRV)",
+        value: 57,
+        avg: 51,
+        stddev: 8,
+        formatValue: formatHRVMeasurement,
+      },
+      {
+        label: "Active Energy",
+        value: 302,
+        avg: null,
+        stddev: null,
+        formatValue: formatCaloriesMeasurement,
+      },
+      {
+        label: "Skin Temp",
+        value: 34.4,
+        avg: 34.1,
+        stddev: 0.5,
+        formatValue: (value) => imperialUnits.formatTemperature(value),
       },
     ],
   },

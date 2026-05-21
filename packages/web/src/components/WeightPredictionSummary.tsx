@@ -1,4 +1,5 @@
 import { formatCalories, formatDateMedium } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -29,7 +30,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
         <div className="text-subtle text-xs uppercase">Rate</div>
         <div className={`font-semibold ${rateColor}`}>
           {prediction.ratePerWeek > 0 ? "+" : ""}
-          {units.formatWeight(prediction.ratePerWeek)}/wk
+          {formatMeasurementText(units.formatWeight(prediction.ratePerWeek))}/wk
         </div>
       </div>
 
@@ -49,7 +50,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
         <div>
           <div className="text-subtle text-xs uppercase">Goal Estimate</div>
           <div className="font-medium">
-            {units.formatWeight(prediction.goal.goalWeightKg)}
+            {formatMeasurementText(units.formatWeight(prediction.goal.goalWeightKg))}
             {" by "}
             <span className="text-muted">~{formatDate(prediction.goal.estimatedDate)}</span>
           </div>
@@ -60,7 +61,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
         <div>
           <div className="text-subtle text-xs uppercase">Goal</div>
           <div className="font-medium text-muted">
-            {units.formatWeight(prediction.goal.goalWeightKg)}
+            {formatMeasurementText(units.formatWeight(prediction.goal.goalWeightKg))}
             {" — estimate unavailable"}
           </div>
         </div>

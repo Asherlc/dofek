@@ -7,6 +7,7 @@ import {
   isYesterday,
   parseValidDate,
 } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -138,11 +139,13 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
       <View style={styles.tileOverlay}>
         {location.distanceMeters != null ? (
           <Text style={styles.tileBadge}>
-            {units.formatDistance(location.distanceMeters / 1000)}
+            {formatMeasurementText(units.formatDistance(location.distanceMeters / 1000))}
           </Text>
         ) : null}
         {location.elevationGainM != null ? (
-          <Text style={styles.tileBadge}>↑ {units.formatElevation(location.elevationGainM)}</Text>
+          <Text style={styles.tileBadge}>
+            ↑ {formatMeasurementText(units.formatElevation(location.elevationGainM))}
+          </Text>
         ) : null}
       </View>
     </View>

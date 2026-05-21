@@ -1,4 +1,10 @@
-import { formatCalories, formatHRV, formatSpO2 } from "@dofek/format/format";
+import {
+  type FormattedMeasurement,
+  formatCaloriesMeasurement,
+  formatHRVMeasurement,
+  formatSpO2,
+  formatSpO2Measurement,
+} from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { type ReactNode, useMemo } from "react";
 import { z } from "zod";
@@ -41,7 +47,7 @@ type MetricEntry = {
   avg: number | null;
   stddev: number | null;
   unit?: string;
-  formatValue?: (value: number | null | undefined) => string;
+  formatValue?: (value: number | null | undefined) => FormattedMeasurement;
   lowerBetter?: boolean;
 };
 
@@ -146,7 +152,7 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_hrv,
       avg: trendData.avg_hrv,
       stddev: trendData.stddev_hrv,
-      formatValue: formatHRV,
+      formatValue: formatHRVMeasurement,
       lowerBetter: false,
     },
     {
@@ -162,7 +168,7 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_spo2,
       avg: trendData.avg_spo2,
       stddev: trendData.stddev_spo2,
-      formatValue: formatSpO2,
+      formatValue: formatSpO2Measurement,
     },
     {
       label: "Steps",
@@ -175,14 +181,14 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_active_energy,
       avg: trendData.avg_active_energy,
       stddev: null,
-      formatValue: formatCalories,
+      formatValue: formatCaloriesMeasurement,
     },
     trendData.latest_skin_temp != null && {
       label: "Skin Temp",
       value: trendData.latest_skin_temp,
       avg: trendData.avg_skin_temp,
       stddev: trendData.stddev_skin_temp,
-      formatValue: (value) => (value == null ? "--" : units.formatTemperature(value)),
+      formatValue: (value) => units.formatTemperature(value),
     },
   ];
   return entries.filter((entry): entry is MetricEntry => entry !== false);
