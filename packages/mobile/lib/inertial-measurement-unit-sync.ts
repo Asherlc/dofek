@@ -2,6 +2,7 @@ import type { InertialMeasurementUnitSample } from "../modules/core-motion";
 
 const UPLOAD_BATCH_SIZE = 5000;
 const TWELVE_HOURS_SECONDS = 12 * 3600;
+const SENSOR_HISTORY_LOOKBACK_MS = 2.9 * 24 * 60 * 60 * 1000;
 
 /** Abstraction over CoreMotion native module for testability */
 export interface InertialMeasurementUnitAdapter {
@@ -61,8 +62,10 @@ export async function syncInertialMeasurementUnitToServer(
   // Determine sync window
   const now = new Date();
   const lastSync = coreMotion.getLastSyncTimestamp();
-  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
-  const fromDate = lastSync ? new Date(lastSync) : threeDaysAgo;
+  const oldestQueryableDate = new Date(now.getTime() - SENSOR_HISTORY_LOOKBACK_MS);
+  const requestedFromDate = lastSync ? new Date(lastSync) : oldestQueryableDate;
+  const fromDate =
+    requestedFromDate < oldestQueryableDate ? oldestQueryableDate : requestedFromDate;
 
   // Don't query into the future or if fromDate is after now
   if (fromDate >= now) {
