@@ -73,7 +73,8 @@ function partNeedsUnitStyling(part: FormattedMeasurementPart): boolean {
 }
 
 function renderMeasurementParts(display: FormattedMeasurement) {
-  const segments: Array<{ styledAsUnit: boolean; text: string }> = [];
+  const segments: Array<{ startOffset: number; styledAsUnit: boolean; text: string }> = [];
+  let currentOffset = 0;
 
   for (const part of display.parts) {
     const styledAsUnit = partNeedsUnitStyling(part);
@@ -82,13 +83,14 @@ function renderMeasurementParts(display: FormattedMeasurement) {
     if (lastSegment && lastSegment.styledAsUnit === styledAsUnit) {
       lastSegment.text += part.value;
     } else {
-      segments.push({ styledAsUnit, text: part.value });
+      segments.push({ startOffset: currentOffset, styledAsUnit, text: part.value });
     }
+    currentOffset += part.value.length;
   }
 
   return segments.map((segment) => (
     <span
-      key={`${segment.styledAsUnit ? "unit" : "value"}:${segment.text}`}
+      key={`${segment.styledAsUnit ? "unit" : "value"}:${segment.startOffset}`}
       className={segment.styledAsUnit ? "text-xs font-normal text-subtle" : undefined}
     >
       {segment.text}

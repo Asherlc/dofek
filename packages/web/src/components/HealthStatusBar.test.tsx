@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { HealthStatusBar } from "./HealthStatusBar.tsx";
 
 describe("HealthStatusBar", () => {
@@ -33,6 +33,37 @@ describe("HealthStatusBar", () => {
     expect(value.className).not.toContain("font-normal");
     expect(unit.className).toContain("font-normal");
     expect(container.querySelector(".font-semibold")?.textContent).toContain("94.0°F");
+  });
+
+  it("uses unique keys when formatted measurement segment text repeats", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            label: "Repeated",
+            value: 1,
+            avg: null,
+            stddev: null,
+            formatValue: () => ({
+              text: "1kg1kg",
+              parts: [
+                { type: "integer", value: "1" },
+                { type: "unit", value: "kg" },
+                { type: "integer", value: "1" },
+                { type: "unit", value: "kg" },
+              ],
+            }),
+          },
+        ]}
+      />,
+    );
+
+    expect(consoleError).not.toHaveBeenCalledWith(
+      expect.stringContaining("Encountered two children with the same key"),
+    );
+    consoleError.mockRestore();
   });
 
   describe("directional status coloring", () => {
