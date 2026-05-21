@@ -7,6 +7,7 @@ import {
   formatHRV,
   formatNumber,
 } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import { useState } from "react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
@@ -431,7 +432,9 @@ function EventAnalysis({
           after={after.body?.avg_weight}
           periodLabel={periodLabel}
           lowerBetter
-          formatValue={(value) => (value == null ? "—" : units.formatWeight(value))}
+          formatValue={(value) =>
+            value == null ? "—" : formatMeasurementText(units.formatWeight(value))
+          }
         />
         <CompareCard
           label="Body Fat"

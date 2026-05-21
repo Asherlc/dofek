@@ -4,6 +4,37 @@ import { describe, expect, it } from "vitest";
 import { HealthStatusBar } from "./HealthStatusBar.tsx";
 
 describe("HealthStatusBar", () => {
+  it("renders structured formatted value units with normal weight", () => {
+    const { container } = render(
+      <HealthStatusBar
+        metrics={[
+          {
+            label: "Skin Temp",
+            value: 34.4,
+            avg: 34,
+            stddev: 0.5,
+            formatValue: () => ({
+              text: "94.0°F",
+              parts: [
+                { type: "integer", value: "94" },
+                { type: "decimal", value: "." },
+                { type: "fraction", value: "0" },
+                { type: "unit", value: "°F" },
+              ],
+            }),
+          },
+        ]}
+      />,
+    );
+
+    const value = screen.getByText("94.0");
+    const unit = screen.getByText("°F");
+
+    expect(value.className).not.toContain("font-normal");
+    expect(unit.className).toContain("font-normal");
+    expect(container.querySelector(".font-semibold")?.textContent).toContain("94.0°F");
+  });
+
   describe("directional status coloring", () => {
     it("shows green for HRV elevated above average (higher is better)", () => {
       // HRV: avg=50, stddev=10, value=65 → z=+1.5 above average → good

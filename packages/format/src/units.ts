@@ -1,3 +1,5 @@
+import type { FormattedMeasurement, FormattedMeasurementPart, NullableNumber } from "./format.ts";
+
 export type UnitSystem = "metric" | "imperial";
 
 // --- Conversion constants ---
@@ -6,17 +8,35 @@ const KM_TO_MILES = 0.621371;
 const METERS_TO_FEET = 3.28084;
 const CM_TO_INCHES = 0.393701;
 const KM_PER_MILE = 1 / KM_TO_MILES;
+const numberFormatters = new Map<number, Intl.NumberFormat>();
 const unitFormatters = new Map<string, Intl.NumberFormat>();
 
-function formatUnitValue(
-  value: number,
+function formatMeasurementParts(value: number, decimals: number): FormattedMeasurementPart[] {
+  const existing = numberFormatters.get(decimals);
+  if (existing) return existing.formatToParts(value);
+  const formatter = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+    useGrouping: false,
+  });
+  numberFormatters.set(decimals, formatter);
+  return formatter.formatToParts(value);
+}
+
+function formatPlaceholderMeasurement(): FormattedMeasurement {
+  return { text: "--", parts: [{ type: "nan", value: "--" }] };
+}
+
+function formatUnitMeasurement(
+  value: NullableNumber,
   decimals: number,
   unit: string,
   fallbackLabel: string,
-): string {
+): FormattedMeasurement {
+  if (value == null || !Number.isFinite(value)) return formatPlaceholderMeasurement();
   const key = `${unit}:${decimals}`;
   const existing = unitFormatters.get(key);
-  if (existing) return existing.format(value);
+  if (existing) return formatParts(existing.formatToParts(value));
   let formatter: Intl.NumberFormat;
   try {
     formatter = new Intl.NumberFormat("en-US", {
@@ -29,11 +49,28 @@ function formatUnitValue(
     });
   } catch (error) {
     // Expected compatibility fallback for JS runtimes with limited Intl unit support.
-    if (error instanceof RangeError) return `${value.toFixed(decimals)} ${fallbackLabel}`;
+    if (error instanceof RangeError) {
+      return formatParts([
+        ...formatMeasurementParts(value, decimals),
+        { type: "literal", value: " " },
+        { type: "unit", value: fallbackLabel },
+      ]);
+    }
     throw error;
   }
   unitFormatters.set(key, formatter);
-  return formatter.format(value);
+  return formatParts(formatter.formatToParts(value));
+}
+
+function formatParts(parts: FormattedMeasurementPart[]): FormattedMeasurement {
+  return {
+    text: parts.map((part) => part.value).join(""),
+    parts,
+  };
+}
+
+export function formatMeasurementText(measurement: FormattedMeasurement): string {
+  return measurement.text;
 }
 
 // --- UnitConverter class ---
@@ -107,54 +144,54 @@ export class UnitConverter {
 
   // --- Format helpers (convert + label in one call) ---
 
-  formatWeight(kg: number): string {
-    return formatUnitValue(
-      this.convertWeight(kg),
+  formatWeight(kg: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      kg == null || !Number.isFinite(kg) ? kg : this.convertWeight(kg),
       1,
       this.system === "imperial" ? "pound" : "kilogram",
       this.weightLabel,
     );
   }
 
-  formatDistance(km: number): string {
-    return formatUnitValue(
-      this.convertDistance(km),
+  formatDistance(km: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      km == null || !Number.isFinite(km) ? km : this.convertDistance(km),
       1,
       this.system === "imperial" ? "mile" : "kilometer",
       this.distanceLabel,
     );
   }
 
-  formatElevation(meters: number): string {
-    return formatUnitValue(
-      this.convertElevation(meters),
+  formatElevation(meters: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      meters == null || !Number.isFinite(meters) ? meters : this.convertElevation(meters),
       0,
       this.system === "imperial" ? "foot" : "meter",
       this.elevationLabel,
     );
   }
 
-  formatTemperature(celsius: number): string {
-    return formatUnitValue(
-      this.convertTemperature(celsius),
+  formatTemperature(celsius: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      celsius == null || !Number.isFinite(celsius) ? celsius : this.convertTemperature(celsius),
       1,
       this.system === "imperial" ? "fahrenheit" : "celsius",
       this.temperatureLabel,
     );
   }
 
-  formatSpeed(kmh: number): string {
-    return formatUnitValue(
-      this.convertSpeed(kmh),
+  formatSpeed(kmh: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      kmh == null || !Number.isFinite(kmh) ? kmh : this.convertSpeed(kmh),
       1,
       this.system === "imperial" ? "mile-per-hour" : "kilometer-per-hour",
       this.speedLabel,
     );
   }
 
-  formatHeight(cm: number): string {
-    return formatUnitValue(
-      this.convertHeight(cm),
+  formatHeight(cm: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(
+      cm == null || !Number.isFinite(cm) ? cm : this.convertHeight(cm),
       1,
       this.system === "imperial" ? "inch" : "centimeter",
       this.heightLabel,

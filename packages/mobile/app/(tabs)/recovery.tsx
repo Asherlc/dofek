@@ -6,6 +6,7 @@ import {
   formatNumber,
   formatSpO2,
 } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import {
   trendDirection as computeTrend,
   SCORE_ZONES,
@@ -409,7 +410,7 @@ export default function RecoveryScreen() {
           {trendsData?.latest_skin_temp != null && (
             <MetricCard
               title="Skin Temperature"
-              value={units.formatTemperature(trendsData.latest_skin_temp)}
+              value={formatMeasurementText(units.formatTemperature(trendsData.latest_skin_temp))}
               trend={skinTempTrend}
               color={colors.orange}
               trendDirection={
@@ -464,7 +465,7 @@ export default function RecoveryScreen() {
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {units.formatWeight(latestWeight.smoothedWeight)}
+                    {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
                   </Text>
                   {weightPrediction.data?.ratePerWeek != null && (
                     <Text
@@ -481,13 +482,17 @@ export default function RecoveryScreen() {
                       ]}
                     >
                       {weightPrediction.data.ratePerWeek > 0 ? "+" : ""}
-                      {units.formatWeight(weightPrediction.data.ratePerWeek)}/wk
+                      {formatMeasurementText(units.formatWeight(weightPrediction.data.ratePerWeek))}
+                      /wk
                     </Text>
                   )}
                   {weightPrediction.data?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
-                      Goal: {units.formatWeight(weightPrediction.data.goal.goalWeightKg)} by ~
-                      {formatDateShort(weightPrediction.data.goal.estimatedDate)}
+                      Goal:{" "}
+                      {formatMeasurementText(
+                        units.formatWeight(weightPrediction.data.goal.goalWeightKg),
+                      )}{" "}
+                      by ~{formatDateShort(weightPrediction.data.goal.estimatedDate)}
                     </Text>
                   )}
                 </View>

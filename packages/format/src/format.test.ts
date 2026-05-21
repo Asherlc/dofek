@@ -3,6 +3,7 @@ import {
   formatBodyCompositionNumber,
   formatBodyCompositionPercent,
   formatCalories,
+  formatCaloriesMeasurement,
   formatDateForDisplay,
   formatDateLong,
   formatDateMedium,
@@ -16,6 +17,7 @@ import {
   formatGrams,
   formatHour,
   formatHRV,
+  formatHRVMeasurement,
   formatIntensity,
   formatMonthYear,
   formatNumber,
@@ -28,6 +30,7 @@ import {
   formatSleepDebt,
   formatSleepDebtInline,
   formatSpO2,
+  formatSpO2Measurement,
   formatTime,
   formatTimeOnly,
   formatTrainingLoad,
@@ -557,6 +560,16 @@ describe("domain metric formatters", () => {
     expect(formatNutritionNumber(12.4)).toBe("12");
     expect(formatNutritionNumber(12.5)).toBe("13");
     expect(formatCalories(1999.6)).toBe("2,000 kcal");
+    expect(formatCaloriesMeasurement(1999.6)).toEqual({
+      text: "2,000 kcal",
+      parts: [
+        { type: "integer", value: "2" },
+        { type: "group", value: "," },
+        { type: "integer", value: "000" },
+        { type: "literal", value: " " },
+        { type: "unit", value: "kcal" },
+      ],
+    });
     expect(formatGrams(41.5)).toBe("42 g");
     expect(formatNutritionAmount(680.4, "mg")).toBe("680 mg");
   });
@@ -570,11 +583,26 @@ describe("domain metric formatters", () => {
   it("formats oxygen saturation with 0 decimals", () => {
     expect(formatSpO2(96.4)).toBe("96%");
     expect(formatSpO2(96.5)).toBe("97%");
+    expect(formatSpO2Measurement(96.5)).toEqual({
+      text: "97%",
+      parts: [
+        { type: "integer", value: "97" },
+        { type: "unit", value: "%" },
+      ],
+    });
   });
 
   it("formats heart rate variability with 0 decimals", () => {
     expect(formatHRV(51.4)).toBe("51 ms");
     expect(formatHRV(51.5)).toBe("52 ms");
+    expect(formatHRVMeasurement(51.5)).toEqual({
+      text: "52 ms",
+      parts: [
+        { type: "integer", value: "52" },
+        { type: "literal", value: " " },
+        { type: "unit", value: "ms" },
+      ],
+    });
   });
 
   it("formats intensity with 0 decimals", () => {
@@ -591,6 +619,10 @@ describe("domain metric formatters", () => {
     expect(formatNutritionNumber(null)).toBe("--");
     expect(formatBodyCompositionNumber(undefined)).toBe("--");
     expect(formatSpO2(Number.NaN)).toBe("--");
+    expect(formatSpO2Measurement(Number.NaN)).toEqual({
+      text: "--",
+      parts: [{ type: "nan", value: "--" }],
+    });
     expect(formatHRV(Number.POSITIVE_INFINITY)).toBe("--");
     expect(formatIntensity(Number.NEGATIVE_INFINITY)).toBe("--");
   });

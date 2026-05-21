@@ -235,7 +235,19 @@ export function formatSigned(value: number, decimals = 1): string {
   return formatted;
 }
 
-type NullableNumber = number | null | undefined;
+export type NullableNumber = number | null | undefined;
+
+export interface FormattedMeasurementPart {
+  type: string;
+  value: string;
+}
+
+export interface FormattedMeasurement {
+  text: string;
+  parts: FormattedMeasurementPart[];
+}
+
+export type FormattedMeasurementFormatter = (value: NullableNumber) => FormattedMeasurement;
 
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 const unitFormatters = new Map<string, Intl.NumberFormat>();
@@ -280,6 +292,43 @@ function fixedUnitFormatter(
 function formatMetricValue(value: NullableNumber, decimals: number, useGrouping = false): string {
   if (value == null || !Number.isFinite(value)) return "--";
   return fixedDecimalFormatter(decimals, useGrouping).format(value);
+}
+
+function formatPlaceholderMeasurement(): FormattedMeasurement {
+  return { text: "--", parts: [{ type: "nan", value: "--" }] };
+}
+
+function formatMetricParts(
+  value: NullableNumber,
+  decimals: number,
+  useGrouping = false,
+): FormattedMeasurementPart[] {
+  if (value == null || !Number.isFinite(value)) return formatPlaceholderMeasurement().parts;
+  return fixedDecimalFormatter(decimals, useGrouping).formatToParts(value);
+}
+
+function formatMetricMeasurement(
+  value: NullableNumber,
+  decimals: number,
+  unit: string,
+  useGrouping = false,
+  separator: "" | " " = " ",
+): FormattedMeasurement {
+  if (value == null || !Number.isFinite(value)) return formatPlaceholderMeasurement();
+  const unitLabel = FALLBACK_UNIT_LABELS.get(unit) ?? unit;
+  const parts = [
+    ...formatMetricParts(value, decimals, useGrouping),
+    ...(separator ? [{ type: "literal", value: separator }] : []),
+    { type: "unit", value: unitLabel },
+  ];
+  return {
+    text: parts.map((part) => part.value).join(""),
+    parts,
+  };
+}
+
+function joinFormattedMeasurement(measurement: FormattedMeasurement): string {
+  return measurement.text;
 }
 
 function formatMetricUnitValue(
@@ -342,10 +391,13 @@ export function formatNutritionNumber(value: NullableNumber): string {
   return formatMetricValue(value, 0, true);
 }
 
+/** Format calorie display values with value and unit separated for UI styling. */
+export const formatCaloriesMeasurement: FormattedMeasurementFormatter = (value) =>
+  formatMetricMeasurement(value, 0, "kcal", true);
+
 /** Format calorie display values with 0 decimals. */
 export function formatCalories(value: NullableNumber): string {
-  const formattedValue = formatNutritionNumber(value);
-  return formattedValue === "--" ? formattedValue : `${formattedValue} kcal`;
+  return joinFormattedMeasurement(formatCaloriesMeasurement(value));
 }
 
 /** Format nutrition gram display values with 0 decimals. */
@@ -389,13 +441,21 @@ export function formatBodyCompositionPercent(value: NullableNumber): string {
 
 /** Format oxygen saturation display values with 0 decimals. */
 export function formatSpO2(value: NullableNumber): string {
-  return formatMetricUnitValue(value, 0, "percent");
+  return joinFormattedMeasurement(formatSpO2Measurement(value));
 }
+
+/** Format oxygen saturation display values with value and unit separated for UI styling. */
+export const formatSpO2Measurement: FormattedMeasurementFormatter = (value) =>
+  formatMetricMeasurement(value, 0, "%", false, "");
 
 /** Format heart rate variability display values with 0 decimals. */
 export function formatHRV(value: NullableNumber): string {
-  return formatMetricUnitValue(value, 0, "millisecond");
+  return joinFormattedMeasurement(formatHRVMeasurement(value));
 }
+
+/** Format heart rate variability display values with value and unit separated for UI styling. */
+export const formatHRVMeasurement: FormattedMeasurementFormatter = (value) =>
+  formatMetricMeasurement(value, 0, "ms");
 
 /** Format intensity display values with 0 decimals. */
 export function formatIntensity(value: NullableNumber): string {

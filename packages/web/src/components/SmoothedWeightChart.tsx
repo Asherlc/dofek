@@ -1,3 +1,4 @@
+import { formatMeasurementText } from "@dofek/format/units";
 import type {
   SmoothedWeightRow,
   WeightPrediction,
@@ -51,7 +52,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
             {
               yAxis: units.convertWeight(goalWeightKg),
               label: {
-                formatter: `Goal: ${units.formatWeight(goalWeightKg)}`,
+                formatter: `Goal: ${formatMeasurementText(units.formatWeight(goalWeightKg))}`,
                 position: "insideEndTop" as const,
               },
               lineStyle: { type: "dashed" as const, color: chartColors.green, width: 2 },
@@ -171,7 +172,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
             className={`text-lg font-semibold ${ratePerWeekKg > 0 ? "text-green-400" : ratePerWeekKg < 0 ? "text-red-400" : "text-muted"}`}
           >
             {ratePerWeekKg > 0 ? "+" : ""}
-            {units.formatWeight(ratePerWeekKg)}
+            {formatMeasurementText(units.formatWeight(ratePerWeekKg))}
             /week
           </span>
         </div>

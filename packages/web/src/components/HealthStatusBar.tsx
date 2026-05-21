@@ -1,4 +1,9 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  type FormattedMeasurement,
+  type FormattedMeasurementFormatter,
+  type FormattedMeasurementPart,
+  formatNumber,
+} from "@dofek/format/format";
 import { useCountUp } from "../hooks/useCountUp.ts";
 
 interface HealthMetric {
@@ -7,7 +12,7 @@ interface HealthMetric {
   avg: number | null | undefined;
   stddev: number | null | undefined;
   unit?: string;
-  formatValue?: (value: number | null | undefined) => string;
+  formatValue?: FormattedMeasurementFormatter;
   /** Whether lower is better (e.g., resting HR) */
   lowerBetter?: boolean;
 }
@@ -52,23 +57,68 @@ const statusText = {
   unknown: "—",
 };
 
-function MetricValue({
-  value,
-  formatValue,
-}: {
-  value: number | null | undefined;
-  formatValue?: (value: number | null | undefined) => string;
-}) {
+function MetricValue({ value }: { value: number | null | undefined }) {
   const decimals = value != null && !Number.isInteger(value) ? 1 : 0;
   const display = useCountUp(value ?? null, 600, decimals);
-
-  if (formatValue) return <>{formatValue(value)}</>;
 
   if (value == null) {
     return <span className="text-dim">—</span>;
   }
 
   return <>{display}</>;
+}
+
+function partNeedsUnitStyling(part: FormattedMeasurementPart): boolean {
+  return part.type === "unit" || part.type === "percentSign" || part.type === "currency";
+}
+
+function renderMeasurementParts(display: FormattedMeasurement) {
+  const segments: Array<{ styledAsUnit: boolean; text: string }> = [];
+
+  for (const part of display.parts) {
+    const styledAsUnit = partNeedsUnitStyling(part);
+    const lastSegment = segments.at(-1);
+
+    if (lastSegment && lastSegment.styledAsUnit === styledAsUnit) {
+      lastSegment.text += part.value;
+    } else {
+      segments.push({ styledAsUnit, text: part.value });
+    }
+  }
+
+  return segments.map((segment) => (
+    <span
+      key={`${segment.styledAsUnit ? "unit" : "value"}:${segment.text}`}
+      className={segment.styledAsUnit ? "text-xs font-normal text-subtle" : undefined}
+    >
+      {segment.text}
+    </span>
+  ));
+}
+
+function MetricDisplay({ metric }: { metric: HealthMetric }) {
+  if (metric.formatValue) {
+    const display = metric.formatValue(metric.value);
+
+    return <>{renderMeasurementParts(display)}</>;
+  }
+
+  return (
+    <>
+      <MetricValue value={metric.value} />
+      {metric.value != null && metric.unit && (
+        <span className="ml-1 text-xs font-normal text-subtle">{metric.unit}</span>
+      )}
+    </>
+  );
+}
+
+function formatAverage(metric: HealthMetric): string {
+  if (metric.avg == null) return "";
+  if (!metric.formatValue) return formatNumber(Number(metric.avg));
+
+  const display = metric.formatValue(metric.avg);
+  return display.text;
 }
 
 export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
@@ -97,14 +147,11 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
               <span className="text-xs text-muted uppercase tracking-wider">{metric.label}</span>
             </div>
             <div className="text-lg font-semibold font-mono tabular-nums">
-              <MetricValue value={metric.value} formatValue={metric.formatValue} />
-              {metric.value != null && metric.unit && (
-                <span className="ml-1 text-xs font-normal text-subtle">{metric.unit}</span>
-              )}
+              <MetricDisplay metric={metric} />
             </div>
             <div className="text-[10px] text-subtle">
               {status !== "unknown" && metric.avg != null
-                ? `avg ${metric.formatValue ? metric.formatValue(metric.avg) : formatNumber(Number(metric.avg))} · ${statusText[status]}`
+                ? `avg ${formatAverage(metric)} · ${statusText[status]}`
                 : ""}
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { UnitConverter } from "@dofek/format/units";
+import { formatMeasurementText, UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 
@@ -47,7 +47,9 @@ function GoalWeightInputStory({
     <div className="flex items-center gap-2">
       {goalWeightKg != null ? (
         <>
-          <span className="text-xs text-muted">Goal: {units.formatWeight(goalWeightKg)}</span>
+          <span className="text-xs text-muted">
+            Goal: {formatMeasurementText(units.formatWeight(goalWeightKg))}
+          </span>
           <button
             type="button"
             className="text-xs text-primary hover:text-primary/80"
