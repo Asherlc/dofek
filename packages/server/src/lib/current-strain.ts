@@ -50,17 +50,28 @@ export async function computeCurrentStrain({
   );
 
   const physiologyLoad = rows[0]?.physiological_load ?? null;
+  const activityStrain =
+    fallbackActivityLoad > 0 ? StrainScore.fromRawLoad(fallbackActivityLoad).value : 0;
   if (physiologyLoad != null) {
+    const physiologyStrain = StrainScore.fromPhysiologicalLoad(physiologyLoad).value;
+    if (physiologyStrain >= activityStrain) {
+      return {
+        currentStrain: physiologyStrain,
+        currentStrainSource: "heart_rate",
+        currentPhysiologyLoad: Math.round(physiologyLoad * 100) / 100,
+      };
+    }
+
     return {
-      currentStrain: StrainScore.fromPhysiologicalLoad(physiologyLoad).value,
-      currentStrainSource: "heart_rate",
-      currentPhysiologyLoad: Math.round(physiologyLoad * 100) / 100,
+      currentStrain: activityStrain,
+      currentStrainSource: "activity",
+      currentPhysiologyLoad: null,
     };
   }
 
-  if (fallbackActivityLoad > 0) {
+  if (activityStrain > 0) {
     return {
-      currentStrain: StrainScore.fromRawLoad(fallbackActivityLoad).value,
+      currentStrain: activityStrain,
       currentStrainSource: "activity",
       currentPhysiologyLoad: null,
     };

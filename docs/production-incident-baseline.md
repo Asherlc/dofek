@@ -6498,3 +6498,48 @@ The fix prevents the known stale-cursor path from reaching the native
 three-day boundary. Direct callers of the native CoreMotion module would still
 need to pass valid query windows, but the app's current production sync path
 uses the clamped TypeScript wrapper.
+
+## 2026-05-20: Dashboard Strain Dropped After Heart-Rate Sync
+
+### Symptoms
+
+The mobile dashboard showed current strain as `0.4` at 9:49 PM PT even though
+it had shown a higher value earlier in the day.
+
+### User Impact
+
+The dashboard understated same-day training strain and made current exertion
+look lower after a later sync.
+
+### Evidence
+
+Production ClickHouse for user `f923fed7-d934-4cd9-8cb9-8e83020d0e69` on
+`2026-05-20` in `America/Los_Angeles` had 152 heart-rate samples from
+`09:05-09:19 PT`. The current-strain physiology query computed load `0.1255`,
+which displayed as strain `0.4`. The same day had one activity summary with
+daily load `12.5958`, which displays as strain `9.1`.
+
+### Root Cause
+
+`computeCurrentStrain()` treated any non-null same-day heart-rate physiology
+load as authoritative, so sparse heart-rate telemetry could override and lower
+the activity-derived strain for the same day.
+
+### Fix or Mitigation
+
+Changed current strain selection to compute both heart-rate physiology strain
+and same-day activity strain, then use activity strain when it is higher.
+
+### Validation
+
+Added a regression test for the observed production values and ran:
+`pnpm lint`, `pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`,
+`cd packages/web && pnpm tsc --noEmit`,
+`CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm test:changed`, and
+`CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm test`.
+
+### Remaining Risk
+
+The fix preserves same-day activity strain as a floor. Future work should
+define whether all-day passive heart-rate samples should contribute to current
+strain independently from activity summaries.
