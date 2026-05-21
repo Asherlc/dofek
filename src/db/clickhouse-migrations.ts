@@ -12,6 +12,8 @@ import { buildActivitySummaryReadModelStatements } from "./clickhouse-metric-str
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
 import {
   buildActivityTrendDailyReadModelStatements,
+  buildBodyMeasurementReadModelStatements,
+  buildBodyMeasurementSampleProjectionMigrationStatements,
   buildProviderStatsReadModelStatements,
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowMaterializedViewStatements } from "./clickhouse-resting-heart-rate-materialized-view.ts";
@@ -231,6 +233,14 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
         "ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE",
         "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
+      ],
+    },
+    {
+      id: "0017_body_measurement_sample_projection",
+      statements: [
+        ...buildBodyMeasurementSampleProjectionMigrationStatements(),
+        ...buildBodyMeasurementReadModelStatements(),
+        ...buildProviderStatsReadModelStatements(),
       ],
     },
   ];

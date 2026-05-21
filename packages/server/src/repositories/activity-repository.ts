@@ -209,6 +209,7 @@ export interface ActivitySensorStore {
     window: ActivitySensorWindow,
     ftp: number,
   ): Promise<z.infer<typeof powerZoneRowSchema>[]>;
+  refreshBodyMeasurements?(): Promise<void>;
 }
 
 /** A single data point from an activity's metric stream. */

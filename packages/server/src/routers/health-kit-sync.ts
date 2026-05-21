@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
@@ -89,10 +90,12 @@ export const healthKitSyncRouter = router({
       }
 
       let inserted = 0;
+      let bodyInserted = 0;
       const errors: string[] = [];
 
       try {
-        inserted += await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
+        bodyInserted = await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
+        inserted += bodyInserted;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Body measurements: ${message}`);
@@ -142,6 +145,18 @@ export const healthKitSyncRouter = router({
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         errors.push(`Health events: ${message}`);
+      }
+
+      if (bodyInserted > 0 && ctx.sensorStore?.refreshBodyMeasurements) {
+        try {
+          await ctx.sensorStore.refreshBodyMeasurements();
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          Sentry.captureException(error, {
+            tags: { healthKitSyncStep: "refreshBodyMeasurements" },
+          });
+          errors.push(`Body measurements refresh: ${message}`);
+        }
       }
 
       // Invalidate cached data so queries pick up the newly ingested data

@@ -1,4 +1,114 @@
-import { refreshableMergeTreeViewHeader } from "./clickhouse-sql-helpers.ts";
+import {
+  peerDbMetadataColumnDefinitions,
+  refreshableMergeTreeViewHeader,
+  replacingMergeTreeTable,
+} from "./clickhouse-sql-helpers.ts";
+
+const bodyMeasurementChannels = [
+  "body_weight",
+  "body_fat_percentage",
+  "muscle_mass",
+  "bone_mass",
+  "body_water_percentage",
+  "body_mass_index",
+  "height",
+  "waist_circumference",
+  "systolic_blood_pressure",
+  "diastolic_blood_pressure",
+  "heart_pulse",
+  "body_temperature",
+];
+
+function bodyMeasurementChannelListSql(): string {
+  return bodyMeasurementChannels.map((channel) => `'${channel}'`).join(",\n      ");
+}
+
+function buildBodyMeasurementSampleProjectionTableSql(): string {
+  return `CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample (
+  id UUID,
+  provider_id String,
+  user_id UUID,
+  recorded_at DateTime64(6, 'UTC'),
+  channel String,
+  external_id Nullable(String),
+  device_id Nullable(String),
+  source_type Nullable(String),
+  scalar Nullable(Float32),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, recorded_at, channel, provider_id, id)")}`;
+}
+
+function buildBodyMeasurementSampleProjectionIngestSql(): string {
+  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample
+AS
+SELECT
+  id,
+  provider_id,
+  user_id,
+  recorded_at,
+  channel,
+  external_id,
+  device_id,
+  source_type,
+  scalar,
+  _peerdb_synced_at,
+  _peerdb_is_deleted,
+  _peerdb_version
+FROM postgres_fitness.metric_stream
+WHERE channel IN (
+      ${bodyMeasurementChannelListSql()}
+    )`;
+}
+
+function buildBodyMeasurementSampleProjectionBackfillSql(): string {
+  return `INSERT INTO analytics.body_measurement_sample (
+  id,
+  provider_id,
+  user_id,
+  recorded_at,
+  channel,
+  external_id,
+  device_id,
+  source_type,
+  scalar,
+  _peerdb_synced_at,
+  _peerdb_is_deleted,
+  _peerdb_version
+)
+SELECT
+  id,
+  provider_id,
+  user_id,
+  recorded_at,
+  channel,
+  external_id,
+  device_id,
+  source_type,
+  scalar,
+  _peerdb_synced_at,
+  _peerdb_is_deleted,
+  _peerdb_version
+FROM postgres_fitness.metric_stream
+WHERE channel IN (
+      ${bodyMeasurementChannelListSql()}
+    )`;
+}
+
+export function buildBodyMeasurementSampleProjectionStatements(): string[] {
+  return [
+    buildBodyMeasurementSampleProjectionTableSql(),
+    buildBodyMeasurementSampleProjectionIngestSql(),
+  ];
+}
+
+export function buildBodyMeasurementSampleProjectionMigrationStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.body_measurement_sample_ingest",
+    ...buildBodyMeasurementSampleProjectionStatements(),
+    buildBodyMeasurementSampleProjectionBackfillSql(),
+  ];
+}
 
 function buildActivityReadModelSql(): string {
   return `${refreshableMergeTreeViewHeader("analytics.v_activity", "(user_id, started_at, id)")}
@@ -407,21 +517,10 @@ body_measurement_samples AS (
       external_id,
       concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
     ) AS measurement_key
-  FROM postgres_fitness.metric_stream FINAL
+  FROM analytics.body_measurement_sample FINAL
   WHERE _peerdb_is_deleted = 0
     AND channel IN (
-      'body_weight',
-      'body_fat_percentage',
-      'muscle_mass',
-      'bone_mass',
-      'body_water_percentage',
-      'body_mass_index',
-      'height',
-      'waist_circumference',
-      'systolic_blood_pressure',
-      'diastolic_blood_pressure',
-      'heart_pulse',
-      'body_temperature'
+      ${bodyMeasurementChannelListSql()}
     )
 ),
 active_body AS (
@@ -762,21 +861,10 @@ body_measurement_counts AS (
       external_id,
       concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
     )) AS count
-  FROM postgres_fitness.metric_stream FINAL
+  FROM analytics.body_measurement_sample FINAL
   WHERE _peerdb_is_deleted = 0
     AND channel IN (
-      'body_weight',
-      'body_fat_percentage',
-      'muscle_mass',
-      'bone_mass',
-      'body_water_percentage',
-      'body_mass_index',
-      'height',
-      'waist_circumference',
-      'systolic_blood_pressure',
-      'diastolic_blood_pressure',
-      'heart_pulse',
-      'body_temperature'
+      ${bodyMeasurementChannelListSql()}
     )
   GROUP BY user_id, provider_id
 ),
@@ -950,5 +1038,15 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     "SYSTEM REFRESH VIEW analytics.v_daily_metrics",
     "SYSTEM WAIT VIEW analytics.v_daily_metrics",
     ...buildProviderStatsCreateReadModelStatements(),
+  ];
+}
+
+export function buildBodyMeasurementReadModelStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.v_body_measurement",
+    "DROP TABLE IF EXISTS analytics.v_body_measurement",
+    buildBodyMeasurementReadModelSql(),
+    "SYSTEM REFRESH VIEW analytics.v_body_measurement",
+    "SYSTEM WAIT VIEW analytics.v_body_measurement",
   ];
 }

@@ -5,8 +5,9 @@ describe("ClickHouseActivitySensorStore", () => {
   function makeStore(rows: Record<string, unknown>[] = []) {
     const json = vi.fn().mockResolvedValue(rows);
     const query = vi.fn().mockResolvedValue({ json });
-    const client = { query };
-    return { store: new ClickHouseActivitySensorStore(client), query, json };
+    const command = vi.fn().mockResolvedValue(undefined);
+    const client = { command, query };
+    return { store: new ClickHouseActivitySensorStore(client), command, query, json };
   }
 
   const window = {
@@ -54,6 +55,19 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("fitness.deduped_sensor");
     expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
     expect(queryText).toContain("analytics.deduped_location");
+  });
+
+  it("refreshes body measurement read model", async () => {
+    const { store, command } = makeStore();
+
+    await store.refreshBodyMeasurements();
+
+    expect(command).toHaveBeenNthCalledWith(1, {
+      query: "SYSTEM REFRESH VIEW analytics.v_body_measurement",
+    });
+    expect(command).toHaveBeenNthCalledWith(2, {
+      query: "SYSTEM WAIT VIEW analytics.v_body_measurement",
+    });
   });
 
   it("queries activity summaries from the ClickHouse analytics schema", async () => {

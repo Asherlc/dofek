@@ -26,7 +26,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
     .create();
   return {
     router: trpc.router,
@@ -3254,6 +3254,33 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    });
+
+    it("refreshes body measurements after inserting HealthKit body weight", async () => {
+      const execute = makeExecute();
+      const refreshBodyMeasurements = vi.fn().mockResolvedValue(undefined);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: { refreshBodyMeasurements },
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierBodyMass",
+            value: 82.5,
+            unit: "kg",
+            uuid: "body-weight-1",
+          }),
+        ],
+      });
+
+      expect(refreshBodyMeasurements).toHaveBeenCalledOnce();
+      expect(refreshBodyMeasurements.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInvalidateByPrefix.mock.invocationCallOrder[0] ?? 0,
+      );
     });
   });
 });

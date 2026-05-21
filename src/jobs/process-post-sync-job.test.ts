@@ -40,10 +40,12 @@ const fakeSensorStore = {
   query: async () => [],
 };
 const getFakeSensorStore: Parameters<typeof processPostSyncJob>[2] = () => fakeSensorStore;
+const refreshBodyMeasurements = vi.fn();
 
 describe("processPostSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    refreshBodyMeasurements.mockResolvedValue(undefined);
   });
 
   it("runs only global maintenance operations for a global maintenance job", async () => {
@@ -65,11 +67,30 @@ describe("processPostSyncJob", () => {
   });
 
   it("runs only per-user refit for a user refit job", async () => {
-    await processPostSyncJob(makeUserRefitJob("user-1"), fakeDb, getFakeSensorStore);
+    await processPostSyncJob(
+      makeUserRefitJob("user-1"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
 
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
     expect(mockLoadProviderPriorityConfig).not.toHaveBeenCalled();
     expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
+  });
+
+  it("refreshes body measurements before refitting and invalidating user caches", async () => {
+    await processPostSyncJob(
+      makeUserRefitJob("user-1"),
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
+
+    expect(refreshBodyMeasurements).toHaveBeenCalledOnce();
+    expect(refreshBodyMeasurements.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRefitAllParams.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("continues when syncProviderPriorities fails", async () => {

@@ -111,6 +111,11 @@ ClickHouse migrations create and update the databases and read models:
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
   `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: ClickHouse
   read models over the raw mirrors.
+- `analytics.body_measurement_sample`: a narrow `ReplacingMergeTree`
+  projection of body-related `metric_stream` channels. It is backfilled once by
+  migration and kept current by `analytics.body_measurement_sample_ingest`, so
+  `analytics.v_body_measurement` can refresh without repeatedly scanning the
+  full metric stream mirror.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
   15 minutes from the copied raw rows and activity membership.
 - `analytics.deduped_location`: a refreshable materialized view refreshed every

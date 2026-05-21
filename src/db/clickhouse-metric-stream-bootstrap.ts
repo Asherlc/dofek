@@ -2,6 +2,7 @@ import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.
 import {
   buildActivityTrendDailyCreateReadModelStatements,
   buildAnalyticsFitnessReadModelStatements,
+  buildBodyMeasurementSampleProjectionStatements,
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowMaterializedViewSql } from "./clickhouse-resting-heart-rate-materialized-view.ts";
 import {
@@ -31,6 +32,7 @@ ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
     ...buildPostgresFitnessRawTableStatements(),
+    ...buildBodyMeasurementSampleProjectionStatements(),
   ];
 
   return [

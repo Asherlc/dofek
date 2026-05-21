@@ -174,6 +174,12 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement\nREFRESH EVERY 15 MINUTE",
     );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
+    );
+    expect(sql).toContain("FROM analytics.body_measurement_sample FINAL");
+    expect(sql).not.toContain("FROM postgres_fitness.body_measurement");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
     expect(sql).toContain(

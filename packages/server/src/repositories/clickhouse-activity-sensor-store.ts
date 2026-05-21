@@ -1,4 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
 import type { z } from "zod";
 import type {
   ActivitySensorStore,
@@ -443,5 +444,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       query_params: queryParams(window, { ftp }),
     });
     return result.json();
+  }
+
+  async refreshBodyMeasurements(): Promise<void> {
+    await refreshBodyMeasurementReadModel(this.#client);
   }
 }

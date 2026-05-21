@@ -19,6 +19,7 @@ export async function processPostSyncJob(
   job: PostSyncJob,
   db: SyncDatabase,
   getSensorStore: () => RefitSensorStore,
+  refreshBodyMeasurements?: () => Promise<void>,
 ) {
   if (job.data.type === "global-maintenance") {
     logger.info("[post-sync] Running global post-sync maintenance");
@@ -41,6 +42,14 @@ export async function processPostSyncJob(
   }
 
   logger.info(`[post-sync] Running post-sync refit for user ${job.data.userId}`);
+
+  try {
+    await refreshBodyMeasurements?.();
+    logger.info("[post-sync] Body measurement read model refreshed.");
+  } catch (err) {
+    logger.error(`[post-sync] Failed to refresh body measurement read model: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "refreshBodyMeasurements" } });
+  }
 
   try {
     const { refitAllParams } = await import("../personalization/refit.ts");
