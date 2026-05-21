@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
 
@@ -27,6 +28,12 @@ const listTokensQuery: {
 const createTokenMutateAsync = vi.fn();
 const revokeTokenMutateAsync = vi.fn();
 const invalidateMcp = vi.fn();
+let createTokenMutationPending = false;
+let revokeTokenMutationPending = false;
+
+vi.mock("../lib/telemetry.ts", () => ({
+  captureException: vi.fn(),
+}));
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -43,14 +50,14 @@ vi.mock("../lib/trpc.ts", () => ({
         useMutation: () => ({
           mutateAsync: createTokenMutateAsync,
           error: null,
-          isPending: false,
+          isPending: createTokenMutationPending,
         }),
       },
       revokeToken: {
         useMutation: () => ({
           mutateAsync: revokeTokenMutateAsync,
           error: null,
-          isPending: false,
+          isPending: revokeTokenMutationPending,
         }),
       },
     },
@@ -66,6 +73,8 @@ describe("McpTokensPanel", () => {
     createTokenMutateAsync.mockReset();
     revokeTokenMutateAsync.mockReset();
     invalidateMcp.mockReset();
+    createTokenMutationPending = false;
+    revokeTokenMutationPending = false;
   });
 
   afterEach(() => {
@@ -79,12 +88,20 @@ describe("McpTokensPanel", () => {
     expect(screen.getByText("No MCP tokens yet.")).toBeTruthy();
   });
 
-  it("shows install instructions for MCP client settings", () => {
+  it("renders without a browser window", () => {
+    vi.stubGlobal("window", undefined);
+
+    expect(() => renderToString(<McpTokensPanel />)).not.toThrow();
+  });
+
+  it("shows install instructions for Model Context Protocol client settings", () => {
     render(<McpTokensPanel />);
 
-    expect(screen.getByText("Install in MCP client settings")).toBeTruthy();
+    expect(
+      screen.getByText("Install in Model Context Protocol (MCP) client settings"),
+    ).toBeTruthy();
     expect(screen.getByText("Remote URL")).toBeTruthy();
-    expect(screen.getByText("Client settings JSON")).toBeTruthy();
+    expect(screen.getByText("Client settings JavaScript Object Notation (JSON)")).toBeTruthy();
     expect(screen.getByText(/"mcpServers"/)).toBeTruthy();
     expect(screen.getByText(/Bearer dofek_mcp_your_token/)).toBeTruthy();
   });
@@ -206,5 +223,70 @@ describe("McpTokensPanel", () => {
     expect(await screen.findByDisplayValue("dofek_mcp_rotated")).toBeTruthy();
     expect(screen.getByText(/Bearer dofek_mcp_rotated/)).toBeTruthy();
     expect(invalidateMcp).toHaveBeenCalled();
+  });
+
+  it("reports partial rotation failure and refreshes tokens", async () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Codex",
+        scopes: ["health:read", "providers:read"],
+        createdAt: new Date("2026-05-20T12:00:00Z"),
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ];
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_created_before_revoke_failed",
+      metadata: {
+        id: "00000000-0000-0000-0000-000000000002",
+        name: "Codex",
+        scopes: ["health:read", "providers:read"],
+        createdAt: new Date("2026-05-21T12:00:00Z"),
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    });
+    revokeTokenMutateAsync.mockRejectedValueOnce(new Error("Revoke failed"));
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotate Codex" }));
+
+    await waitFor(() => {
+      expect(revokeTokenMutateAsync).toHaveBeenCalledWith({
+        tokenId: "00000000-0000-0000-0000-000000000001",
+      });
+    });
+    expect(await screen.findByDisplayValue("dofek_mcp_created_before_revoke_failed")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "New token created, but failed to revoke the old token. Revoke the old token manually.",
+      ),
+    ).toBeTruthy();
+    expect(invalidateMcp).toHaveBeenCalled();
+  });
+
+  it("disables revoke while token creation is pending", () => {
+    createTokenMutationPending = true;
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Codex",
+        scopes: ["health:read"],
+        createdAt: new Date("2026-05-20T12:00:00Z"),
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ];
+
+    render(<McpTokensPanel />);
+
+    expect(screen.getByRole("button", { name: "Revoke Codex" }).getAttribute("disabled")).not.toBe(
+      null,
+    );
   });
 });
