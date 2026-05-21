@@ -30,6 +30,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 });
 
 import { healthspanRouter } from "./healthspan.ts";
+import { fetchHealthspanRawData, type HealthspanRawRow } from "./healthspan-query.ts";
 import {
   scoreAerobicMinutes,
   scoreHighIntensityMinutes,
@@ -365,6 +366,7 @@ describe("scoreLeanMassPct", () => {
 // --- healthspanRouter ---
 
 const createCaller = createTestCallerFactory(healthspanRouter);
+const fullAccessWindow = { kind: "full", paid: true, reason: "paid_grant" } as const;
 
 function makeSensorStore(overrides: Partial<ActivitySensorStore>): ActivitySensorStore {
   return {
@@ -381,6 +383,233 @@ function makeSensorStore(overrides: Partial<ActivitySensorStore>): ActivitySenso
     ...overrides,
   };
 }
+
+function makeRawHealthspanRow(overrides: Partial<HealthspanRawRow> = {}): HealthspanRawRow {
+  return {
+    avg_sleep_min: null,
+    bedtime_stddev_min: null,
+    avg_resting_hr: null,
+    avg_steps: null,
+    latest_vo2max: null,
+    weekly_aerobic_min: null,
+    weekly_high_intensity_min: null,
+    sessions_per_week: null,
+    weight_kg: null,
+    body_fat_pct: null,
+    weekly_history: null,
+    ...overrides,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function collectSqlParameterValues(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectSqlParameterValues);
+  }
+  if (!isRecord(value)) {
+    return [value];
+  }
+
+  if ("value" in value) {
+    return [];
+  }
+
+  const queryChunks = value.queryChunks;
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.flatMap(collectSqlParameterValues);
+  }
+
+  return [];
+}
+
+function expectSqlParamsToContainNumber(values: unknown[], expected: number): void {
+  expect(
+    values.some(
+      (value) => typeof value === "number" && Math.abs(value - expected) < Number.EPSILON,
+    ),
+  ).toBe(true);
+}
+
+function countSqlNumberParams(values: unknown[], expected: number): number {
+  return values.filter(
+    (value) => typeof value === "number" && Math.abs(value - expected) < Number.EPSILON,
+  ).length;
+}
+
+function makeFetchContext(
+  overrides: Partial<Parameters<typeof fetchHealthspanRawData>[0]>,
+): Parameters<typeof fetchHealthspanRawData>[0] {
+  return {
+    db: { execute: vi.fn().mockResolvedValue([makeRawHealthspanRow()]) },
+    userId: "user-1",
+    timezone: "UTC",
+    accessWindow: fullAccessWindow,
+    ...overrides,
+  };
+}
+
+describe("fetchHealthspanRawData", () => {
+  it("passes derived sleep, body, and zone metrics into the aggregate query", async () => {
+    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow()]);
+    const query = vi.fn(async (_schema: unknown, queryText: string) => {
+      if (queryText.includes("analytics.resting_heart_rate_sleep_window")) {
+        return [{ date: "2026-03-02", resting_hr: 48 }];
+      }
+      if (queryText.includes("activity_metadata")) {
+        return [{ aerobic_minutes: 140, high_intensity_minutes: 70 }];
+      }
+      if (queryText.includes("analytics.v_body_measurement")) {
+        return [
+          { recorded_at: "2026-03-01 08:00:00", weight_kg: null, body_fat_pct: 21 },
+          { recorded_at: "2026-03-02 08:00:00", weight_kg: 80, body_fat_pct: null },
+          { recorded_at: "2026-03-03 08:00:00", weight_kg: 77, body_fat_pct: null },
+        ];
+      }
+      if (queryText.includes("analytics.v_sleep")) {
+        return [
+          {
+            date: "2026-03-01",
+            started_at: "2026-03-01T12:00:00.000Z",
+            duration_minutes: 420,
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: null,
+            awake_minutes: null,
+            efficiency_pct: null,
+          },
+          {
+            date: "2026-03-02",
+            started_at: "2026-03-02T13:00:00.000Z",
+            duration_minutes: null,
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: null,
+            awake_minutes: null,
+            efficiency_pct: null,
+          },
+          {
+            date: "2026-03-03",
+            started_at: "2026-03-03T00:30:00.000Z",
+            duration_minutes: 480,
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: null,
+            awake_minutes: null,
+            efficiency_pct: null,
+          },
+          {
+            date: "2026-03-04",
+            started_at: "not-a-date",
+            duration_minutes: 600,
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: null,
+            awake_minutes: null,
+            efficiency_pct: null,
+          },
+        ];
+      }
+      return [];
+    });
+    const sensorStore = makeSensorStore({
+      query,
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    });
+    const ctx = makeFetchContext({
+      db: { execute },
+      sensorStore,
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("activity_metadata"),
+      expect.objectContaining({
+        windowStart: "2026-03-01 00:00:00",
+        restingHeartRateDates: ["2026-03-02"],
+        restingHeartRates: [48],
+      }),
+    );
+    const sqlValues = collectSqlParameterValues(execute.mock.calls[0]?.[0]);
+    expectSqlParamsToContainNumber(sqlValues, 500);
+    expectSqlParamsToContainNumber(sqlValues, Math.sqrt(115_800));
+    expectSqlParamsToContainNumber(sqlValues, 70);
+    expectSqlParamsToContainNumber(sqlValues, 35);
+    expectSqlParamsToContainNumber(sqlValues, 77);
+    expectSqlParamsToContainNumber(sqlValues, 21);
+  });
+
+  it("merges VO2 max estimates into sorted weekly history", async () => {
+    const execute = vi.fn().mockResolvedValue([
+      makeRawHealthspanRow({
+        weekly_history: [
+          { week_start: "2026-03-16", avg_rhr: 55, avg_steps: 10_000, avg_vo2max: null },
+        ],
+      }),
+    ]);
+    const getVo2MaxEstimates = vi.fn().mockResolvedValue([
+      {
+        activity_id: "activity-1",
+        activity_date: "2026-03-03",
+        method: "cycling_power",
+        vo2max: 40,
+      },
+      {
+        activity_id: "activity-2",
+        activity_date: "2026-03-05",
+        method: "submaximal_acsm",
+        vo2max: 50,
+      },
+      {
+        activity_id: "activity-3",
+        activity_date: "2026-03-17",
+        method: "submaximal_acsm",
+        vo2max: 60,
+      },
+    ]);
+    const ctx = makeFetchContext({
+      db: { execute },
+      sensorStore: makeSensorStore({ getVo2MaxEstimates }),
+    });
+
+    const result = await fetchHealthspanRawData(ctx, "2026-03-20", 21);
+
+    expect(result?.latest_vo2max).toBe(50);
+    expect(result?.weekly_history).toEqual([
+      { week_start: "2026-03-02", avg_rhr: null, avg_steps: null, avg_vo2max: 45 },
+      { week_start: "2026-03-16", avg_rhr: 55, avg_steps: 10_000, avg_vo2max: 60 },
+    ]);
+  });
+
+  it("keeps missing weekly history as null when no VO2 max estimates exist", async () => {
+    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow({ weekly_history: null })]);
+    const ctx = makeFetchContext({
+      db: { execute },
+      sensorStore: makeSensorStore({ getVo2MaxEstimates: vi.fn().mockResolvedValue([]) }),
+    });
+
+    const result = await fetchHealthspanRawData(ctx, "2026-03-20", 21);
+
+    expect(result?.weekly_history).toBeNull();
+  });
+
+  it("uses null sensor metrics and zero zone minutes without a sensor store", async () => {
+    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow()]);
+    const ctx = makeFetchContext({
+      db: { execute },
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const sqlValues = collectSqlParameterValues(execute.mock.calls[0]?.[0]);
+    expect(sqlValues).not.toContain(undefined);
+    expect(countSqlNumberParams(sqlValues, 0)).toBeGreaterThanOrEqual(2);
+  });
+});
 
 describe("healthspanRouter", () => {
   describe("score", () => {

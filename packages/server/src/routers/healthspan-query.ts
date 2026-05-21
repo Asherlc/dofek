@@ -37,6 +37,12 @@ const rawRowSchema = z.object({
 export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
 
 type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
+type HealthspanRawDataContext = Pick<
+  AuthenticatedContext,
+  "accessWindow" | "sensorStore" | "timezone" | "userId"
+> & {
+  db: Parameters<typeof executeWithSchema>[0];
+};
 
 function average(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -71,7 +77,7 @@ function bedtimeMinutes(timestamp: string, timezone: string): number | null {
  * Uses user_profile plus bounded helper-provided resting heart-rate rows.
  */
 async function fetchHrZoneTime(
-  ctx: AuthenticatedContext,
+  ctx: HealthspanRawDataContext,
   endDate: string,
   totalDays: number,
   restingHeartRateRows: RestingHeartRateRow[],
@@ -177,7 +183,7 @@ async function fetchHrZoneTime(
  * whose bedtimes straddle 00:00.
  */
 export async function fetchHealthspanRawData(
-  ctx: AuthenticatedContext,
+  ctx: HealthspanRawDataContext,
   endDate: string,
   totalDays: number,
 ): Promise<HealthspanRawRow | null> {

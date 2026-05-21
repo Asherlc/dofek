@@ -580,7 +580,8 @@ describe("Router coverage", () => {
       const inBedDuration = deep + rem + light + awake; // 480
       const expectedSleepMinutes = deep + rem + light; // 390
 
-      // Use a future date so this is clearly the latest entry after all seeded data
+      // Use today's sleep date with a longer duration so the ClickHouse sleep-day
+      // dedupe selects this row over the seeded fixture for the same date.
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
@@ -588,8 +589,8 @@ describe("Router coverage", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID},
-              CURRENT_TIMESTAMP + INTERVAL '1 day',
-              CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '8 hours',
+              CURRENT_DATE + INTERVAL '23 hours',
+              CURRENT_DATE + INTERVAL '23 hours' + INTERVAL '8 hours',
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
             )`,
       );
