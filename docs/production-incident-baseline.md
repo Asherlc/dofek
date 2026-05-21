@@ -6544,18 +6544,19 @@ The fix preserves same-day activity strain as a floor. Future work should
 define whether all-day passive heart-rate samples should contribute to current
 strain independently from activity summaries.
 
-## 2026-05-21: WHOOP BLE Realtime Metric Stream Upserts Failed
+## 2026-05-21: Realtime Sensor Metric Stream Upserts Failed
 
 ### Symptoms
 
-Sentry issue `DOFEK-SERVER-2X` escalated with repeated production errors from
-`whoopBleSync.pushRealtimeData`.
+Sentry issues `DOFEK-SERVER-2X` and `DOFEK-SERVER-2F` escalated with repeated
+production errors from realtime sensor upload routes.
 
 ### User Impact
 
-WHOOP BLE realtime uploads could fail when the mobile client retried samples
-whose metric stream identity already existed. Sentry reported 2,069 occurrences
-and 0 impacted Sentry users as of the latest inspected event.
+WHOOP BLE and IMU realtime uploads could fail when the mobile client retried
+samples whose metric stream identity already existed. Sentry reported 2,069
+occurrences on `DOFEK-SERVER-2X` and 2,091 occurrences on `DOFEK-SERVER-2F`,
+with 0 impacted Sentry users as of the latest inspected events.
 
 ### Evidence
 
@@ -6563,31 +6564,37 @@ The latest inspected Sentry event `23cfce7ac3024e0c955b70d1fbd95868` occurred
 at `2026-05-21T17:38:55.597Z`. The failing command was an
 `INSERT INTO fitness.metric_stream (...) ON CONFLICT (...) DO UPDATE` issued
 from `packages/server/src/routers/whoop-ble-sync.ts`. The first fatal database
-error was `cannot update table "metric_stream"`.
+error was `cannot update table "metric_stream"`. Sentry event
+`6c4ae7212d91443c8bf951097fe49edd` showed the same database error from
+`packages/server/src/routers/inertial-measurement-unit-sync.ts` at
+`2026-05-21T17:45:20.836Z`.
 
 ### Root Cause
 
-WHOOP BLE realtime duplicate handling still used the update side of an upsert
-against `fitness.metric_stream`. Metric stream rows are raw immutable samples,
-and Timescale compressed chunks reject updates, so retries that hit an existing
-sample key could fail instead of no-oping.
+WHOOP BLE and IMU realtime duplicate handling still used the update side of an
+upsert against `fitness.metric_stream`. Metric stream rows are raw immutable
+samples, and Timescale compressed chunks reject updates, so retries that hit an
+existing sample key could fail instead of no-oping.
 
 ### Fix or Mitigation
 
-Changed WHOOP BLE R-R interval and orientation metric stream inserts to
-`ON CONFLICT ... DO NOTHING`, matching the central metric stream writer's
-duplicate handling.
+Changed WHOOP BLE R-R interval, WHOOP BLE orientation, and IMU vector metric
+stream inserts to `ON CONFLICT ... DO NOTHING`, matching the central metric
+stream writer's duplicate handling.
 
 ### Validation
 
-Added a unit regression test for the WHOOP BLE SQL and confirmed it failed
-before the code change because the route emitted `DO UPDATE`. After the change,
+Added unit regression tests for the WHOOP BLE and IMU SQL and confirmed they
+failed before the code changes because the routes emitted `DO UPDATE`. After the
+WHOOP BLE change,
 `CLICKHOUSE_URL=http://default:health@localhost:8123 REDIS_URL=redis://localhost:6379 POSTGRES_PASSWORD=health CLICKHOUSE_PASSWORD=health pnpm vitest run packages/server/src/routers/whoop-ble-sync.test.ts`
-passed with 19 tests.
+passed with 19 tests. After the IMU change,
+`CLICKHOUSE_URL=http://default:health@localhost:8123 REDIS_URL=redis://localhost:6379 POSTGRES_PASSWORD=health CLICKHOUSE_PASSWORD=health pnpm vitest run packages/server/src/routers/inertial-measurement-unit-sync.test.ts`
+passed with 14 tests.
 
 ### Remaining Risk
 
-Other direct server-side `metric_stream` raw SQL writers still use
-`DO UPDATE`. This fix covers the reported Sentry path; a separate cleanup should
-migrate the remaining direct writers to the central metric stream writer or the
-same no-update duplicate behavior.
+Other direct server-side `metric_stream` raw SQL writers still use `DO UPDATE`.
+This fix covers the reported Sentry paths; a separate cleanup should migrate the
+remaining direct writers to the central metric stream writer or the same
+no-update duplicate behavior.

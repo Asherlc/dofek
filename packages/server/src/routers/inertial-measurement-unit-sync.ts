@@ -75,10 +75,7 @@ async function insertBatch(
       sql`INSERT INTO fitness.metric_stream
           (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, vector)
           VALUES ${sql.join(sensorValuesClauses, sql`, `)}
-          ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-          SET vector = EXCLUDED.vector,
-              device_id = EXCLUDED.device_id,
-              source_type = EXCLUDED.source_type`,
+          ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING`,
     );
 
     totalInserted += batch.length;

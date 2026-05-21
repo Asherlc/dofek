@@ -88,7 +88,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(execute).toHaveBeenCalledTimes(2);
     });
 
-    it("writes deterministic external IDs and conflict handling for retry-safe uploads", async () => {
+    it("writes deterministic external IDs and treats duplicate samples as no-ops", async () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
@@ -106,7 +106,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(
         sqlParts.some((part) =>
           String(part).includes(
-            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING",
           ),
         ),
       ).toBe(true);
