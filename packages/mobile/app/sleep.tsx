@@ -1,4 +1,11 @@
-import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
+import {
+  formatDurationMinutes,
+  formatHour,
+  formatIntensity,
+  formatSleepDebt,
+  isToday,
+  isYesterday,
+} from "@dofek/format/format";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -81,7 +88,7 @@ export default function SleepScreen() {
               />
               <View style={styles.efficiencyRow}>
                 <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
-                <Text style={styles.efficiencyValue}>{Math.round(lastNight.efficiency)}%</Text>
+                <Text style={styles.efficiencyValue}>{formatIntensity(lastNight.efficiency)}</Text>
               </View>
             </View>
           )}
@@ -111,15 +118,14 @@ export default function SleepScreen() {
           <View style={styles.metricsGrid}>
             <MetricCard
               title="Average Duration"
-              value={`${Math.floor(avgDuration / 60)}h ${Math.round(avgDuration % 60)}m`}
+              value={formatDurationMinutes(avgDuration)}
               trend={durationTrend}
               color={colors.blue}
               subtitle={`Last ${days} nights`}
             />
             <MetricCard
               title="Average Efficiency"
-              value={`${Math.round(avgEfficiency)}`}
-              unit="%"
+              value={formatIntensity(avgEfficiency)}
               trend={efficiencyTrend}
               color={colors.purple}
               subtitle={`Last ${days} nights`}

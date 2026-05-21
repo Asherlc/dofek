@@ -1,4 +1,4 @@
-import { formatRelativeTime, formatTime } from "@dofek/format/format";
+import { formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import { statusColors } from "@dofek/scoring/colors";
@@ -471,7 +471,9 @@ function SyncHistory({ providerId }: { providerId: string }) {
               <View style={syncStyles.rowBottom}>
                 <Text style={syncStyles.metaText}>{formatTime(row.syncedAt)}</Text>
                 {row.durationMs != null && (
-                  <Text style={syncStyles.metaText}>{(row.durationMs / 1000).toFixed(1)}s</Text>
+                  <Text style={syncStyles.metaText}>
+                    {formatDurationSeconds(row.durationMs / 1000)}
+                  </Text>
                 )}
               </View>
               {isError && row.errorMessage ? (

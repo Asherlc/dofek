@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatNumber, formatTrainingLoad } from "@dofek/format/format";
 import {
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
@@ -102,10 +102,10 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
 
         return [
           `<strong>${label}</strong>`,
-          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatNumber(load)}`,
-          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatNumber(fitness)}`,
-          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatNumber(fatigue)}`,
-          `<span style="color:${new FormZone(form).color}">Form:</span> ${formatNumber(form)}`,
+          `<span style="color:${chartThemeColors.axisLabel}">Load:</span> ${formatTrainingLoad(load)}`,
+          `<span style="color:${COLOR_FITNESS}">Fitness:</span> ${formatTrainingLoad(fitness)}`,
+          `<span style="color:${COLOR_FATIGUE}">Fatigue:</span> ${formatTrainingLoad(fatigue)}`,
+          `<span style="color:${new FormZone(form).color}">Form:</span> ${formatTrainingLoad(form)}`,
         ].join("<br/>");
       },
     }),
@@ -273,13 +273,13 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
               <div className="text-right">
                 <div className="text-subtle text-[10px]">Fitness</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FITNESS }}>
-                  {Math.round(lastPoint.ctl)}
+                  {formatTrainingLoad(lastPoint.ctl)}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-subtle text-[10px]">Fatigue</div>
                 <div className="text-sm font-semibold" style={{ color: COLOR_FATIGUE }}>
-                  {Math.round(lastPoint.atl)}
+                  {formatTrainingLoad(lastPoint.atl)}
                 </div>
               </div>
               <div className="text-right">
@@ -288,7 +288,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
                   className="text-sm font-semibold"
                   style={{ color: new FormZone(lastPoint.tsb).color }}
                 >
-                  {Math.round(lastPoint.tsb)}
+                  {formatTrainingLoad(lastPoint.tsb)}
                 </div>
               </div>
             </div>

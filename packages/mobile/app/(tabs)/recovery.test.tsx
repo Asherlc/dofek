@@ -104,7 +104,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
-    expect(screen.getByText("44")).toBeTruthy();
+    expect(screen.getByText("44 ms")).toBeTruthy();
     expect(screen.queryByText("24")).toBeNull();
   });
 
@@ -116,8 +116,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     render(<RecoveryScreen />);
 
     expect(screen.getByText("Blood Oxygen")).toBeTruthy();
-    expect(screen.getByText("97")).toBeTruthy();
-    expect(screen.getByText("%")).toBeTruthy();
+    expect(screen.getByText("97%")).toBeTruthy();
   });
 
   it("renders Skin Temperature card when latest_skin_temp is present", async () => {

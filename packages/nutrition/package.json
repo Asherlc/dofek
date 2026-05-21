@@ -11,6 +11,7 @@
     "./open-food-facts": "./src/open-food-facts.ts"
   },
   "dependencies": {
+    "@dofek/format": "workspace:*",
     "zod": "3.25.76"
   }
 }

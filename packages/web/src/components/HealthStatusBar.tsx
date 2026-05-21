@@ -7,6 +7,7 @@ interface HealthMetric {
   avg: number | null | undefined;
   stddev: number | null | undefined;
   unit: string;
+  formatValue?: (value: number | null | undefined) => string;
   /** Whether lower is better (e.g., resting HR) */
   lowerBetter?: boolean;
 }
@@ -51,9 +52,17 @@ const statusText = {
   unknown: "—",
 };
 
-function MetricValue({ value }: { value: number | null | undefined }) {
+function MetricValue({
+  value,
+  formatValue,
+}: {
+  value: number | null | undefined;
+  formatValue?: (value: number | null | undefined) => string;
+}) {
   const decimals = value != null && !Number.isInteger(value) ? 1 : 0;
   const display = useCountUp(value ?? null, 600, decimals);
+
+  if (formatValue) return <>{formatValue(value)}</>;
 
   if (value == null) {
     return <span className="text-dim">—</span>;
@@ -88,14 +97,14 @@ export function HealthStatusBar({ metrics, loading }: HealthStatusBarProps) {
               <span className="text-xs text-muted uppercase tracking-wider">{metric.label}</span>
             </div>
             <div className="text-lg font-semibold font-mono tabular-nums">
-              <MetricValue value={metric.value} />
+              <MetricValue value={metric.value} formatValue={metric.formatValue} />
               {metric.value != null && (
                 <span className="ml-1 text-xs font-normal text-subtle">{metric.unit}</span>
               )}
             </div>
             <div className="text-[10px] text-subtle">
               {status !== "unknown" && metric.avg != null
-                ? `avg ${formatNumber(Number(metric.avg))} · ${statusText[status]}`
+                ? `avg ${metric.formatValue ? metric.formatValue(metric.avg) : formatNumber(Number(metric.avg))} · ${statusText[status]}`
                 : ""}
             </div>
           </div>

@@ -136,6 +136,8 @@ dofek/
 
 The server imports shared code from the root package via `dofek` workspace dependency (e.g. `import { createDatabaseFromEnv } from "dofek/db"`). The web client imports the `AppRouter` type from the server via `dofek-server/router`. Shared domain logic lives in dedicated packages (`@dofek/format`, `@dofek/scoring`, etc.) imported by both web and mobile.
 
+Use `@dofek/format` for display formatting instead of local rounding or string-built units. Nutrition displays should use the nutrition helpers, body composition should use the body composition helpers, recovery metrics should use `formatHRV`/`formatSpO2`, intensity and training load should use their domain helpers, and durations should use the shared human-readable duration helpers.
+
 ## Development
 
 ```bash

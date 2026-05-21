@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatCalories, formatNumber, formatNutritionNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import {
@@ -113,9 +113,11 @@ function AdaptiveTdeeSection({ days }: { days: number }) {
         <Text style={styles.emptyText}>Not enough data</Text>
       ) : (
         <>
-          <Text style={styles.bigValue}>{Math.round(data.estimatedTdee)} kcal/day</Text>
+          <Text style={styles.bigValue}>{formatCalories(data.estimatedTdee)}/day</Text>
           <View style={styles.tdeeDetails}>
-            <Text style={styles.cardSubtext}>Confidence: {Math.round(data.confidence)}%</Text>
+            <Text style={styles.cardSubtext}>
+              Confidence: {formatNutritionNumber(data.confidence)}%
+            </Text>
             <Text style={styles.cardSubtext}>Based on {data.dataPoints} data points</Text>
           </View>
         </>
@@ -165,7 +167,7 @@ function CaloricBalanceSection({ days }: { days: number }) {
             ]}
           >
             {avgBalance >= 0 ? "+" : ""}
-            {Math.round(avgBalance)} kcal
+            {formatCalories(avgBalance)}
           </Text>
         </View>
         <View style={styles.summaryCard}>
@@ -184,7 +186,7 @@ function CaloricBalanceSection({ days }: { days: number }) {
             ]}
           >
             {latestRollingAvg != null
-              ? `${latestRollingAvg >= 0 ? "+" : ""}${Math.round(latestRollingAvg)} kcal`
+              ? `${latestRollingAvg >= 0 ? "+" : ""}${formatCalories(latestRollingAvg)}`
               : "--"}
           </Text>
         </View>
@@ -320,7 +322,7 @@ function MicronutrientAdequacySection({ days }: { days: number }) {
                 <View style={[styles.nutrientRdaMarker, { left: `${(100 / 150) * 100}%` }]} />
               </View>
               <Text style={[styles.nutrientPct, { color: barColor }]}>
-                {Math.round(nutrient.percentRda)}%
+                {formatNutritionNumber(nutrient.percentRda)}%
               </Text>
             </View>
           </View>

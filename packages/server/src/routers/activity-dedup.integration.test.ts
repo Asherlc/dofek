@@ -8,6 +8,12 @@ import { createApp } from "../index.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
+function dateDaysAgo(daysAgo: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * Integration test verifying that overlapping activities are deduplicated
  * before ClickHouse activity analytics consume them.
@@ -101,13 +107,16 @@ describe("Activity summary deduplication", () => {
     canonicalActivityId = aliasRow.id;
     memberActivityId = nonCanonicalMemberId;
 
+    const previousLoadDate = dateDaysAgo(14);
+    const recentLoadDate = dateDaysAgo(7);
+
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
       if (queryText.includes("SELECT date, resting_hr")) {
-        return [{ date: "2026-04-20", resting_hr: 50 }];
+        return [{ date: previousLoadDate, resting_hr: 50 }];
       }
       return [
-        { day: "2026-04-20", trimp: 50 },
-        { day: "2026-04-27", trimp: 52 },
+        { day: previousLoadDate, trimp: 50 },
+        { day: recentLoadDate, trimp: 52 },
       ];
     };
 

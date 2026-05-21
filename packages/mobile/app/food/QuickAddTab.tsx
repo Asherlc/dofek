@@ -83,7 +83,7 @@ export function QuickAddTab({
           keyboardType="number-pad"
           autoFocus
         />
-        <Text style={styles.quickAddCalorieUnit}>cal</Text>
+        <Text style={styles.quickAddCalorieUnit}>kcal</Text>
       </View>
 
       {/* Macros — optional row */}

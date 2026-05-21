@@ -1,3 +1,4 @@
+import { formatDurationMinutes, formatHRV, formatIntensity } from "@dofek/format/format";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
@@ -24,12 +25,6 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
     description: "How heart rate intensity translates to load",
   },
 };
-
-function formatMinutes(min: number): string {
-  const hours = Math.floor(min / 60);
-  const mins = min % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}
 
 export function PersonalizationPanel() {
   const status = trpc.personalization.status.useQuery();
@@ -109,8 +104,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="readinessWeights"
         personalized={data.parameters.readinessWeights}
-        value={`Heart Rate Variability ${Math.round(data.effective.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.effective.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.effective.readinessWeights.sleep * 100)}%, Respiratory Rate ${Math.round(data.effective.readinessWeights.respiratoryRate * 100)}%`}
-        defaultValue={`Heart Rate Variability ${Math.round(data.defaults.readinessWeights.hrv * 100)}%, Resting Heart Rate ${Math.round(data.defaults.readinessWeights.restingHr * 100)}%, Sleep ${Math.round(data.defaults.readinessWeights.sleep * 100)}%, Respiratory Rate ${Math.round(data.defaults.readinessWeights.respiratoryRate * 100)}%`}
+        value={`Heart Rate Variability ${formatIntensity(data.effective.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.effective.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.effective.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.effective.readinessWeights.respiratoryRate * 100)}`}
+        defaultValue={`Heart Rate Variability ${formatIntensity(data.defaults.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.defaults.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.defaults.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.defaults.readinessWeights.respiratoryRate * 100)}`}
         quality={
           data.parameters.readinessWeights
             ? `${data.parameters.readinessWeights.sampleCount} days, r=${data.parameters.readinessWeights.correlation}`
@@ -121,8 +116,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="sleepTarget"
         personalized={data.parameters.sleepTarget}
-        value={formatMinutes(data.effective.sleepTarget.minutes)}
-        defaultValue={formatMinutes(data.defaults.sleepTarget.minutes)}
+        value={formatDurationMinutes(data.effective.sleepTarget.minutes)}
+        defaultValue={formatDurationMinutes(data.defaults.sleepTarget.minutes)}
         quality={
           data.parameters.sleepTarget
             ? `${data.parameters.sleepTarget.sampleCount} qualifying nights`
@@ -133,8 +128,8 @@ export function PersonalizationPanel() {
       <ParamCard
         paramKey="stressThresholds"
         personalized={data.parameters.stressThresholds}
-        value={`HRV Thresholds: ${data.effective.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
-        defaultValue={`HRV Thresholds: ${data.defaults.stressThresholds.hrvThresholds.map((t) => t.toFixed(1)).join(", ")}`}
+        value={`Heart Rate Variability thresholds: ${data.effective.stressThresholds.hrvThresholds.map(formatHRV).join(", ")}`}
+        defaultValue={`Heart Rate Variability thresholds: ${data.defaults.stressThresholds.hrvThresholds.map(formatHRV).join(", ")}`}
         quality={
           data.parameters.stressThresholds
             ? `${data.parameters.stressThresholds.sampleCount} days`

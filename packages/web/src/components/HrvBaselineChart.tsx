@@ -1,3 +1,4 @@
+import { formatHRV } from "@dofek/format/format";
 import { chartColors, dofekAxis, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -53,7 +54,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
           const label = p.seriesName === "_upperBand" ? "60d Baseline" : p.seriesName;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${label}: <b>${p.data[1]}</b></span>`;
+          html += `<span>${label}: <b>${formatHRV(p.data[1])}</b></span>`;
           html += `</div>`;
         }
         return html;
@@ -71,6 +72,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
       name: "Heart Rate Variability (ms)",
       min: "dataMin",
       position: "left",
+      axisLabel: { formatter: (value: number) => formatHRV(value) },
     }),
     series: [
       // Lower band (invisible base for the stacked area)

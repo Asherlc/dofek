@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatNumber, formatTrainingLoad } from "@dofek/format/format";
 import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { WorkloadRatioRow } from "dofek-server/types";
 import {
@@ -50,7 +50,10 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
           if (p.data[1] == null) continue;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${p.seriesName}: <b>${formatNumber(p.data[1], 2)}</b></span>`;
+          const valueText = p.seriesName.includes("Load")
+            ? formatTrainingLoad(p.data[1])
+            : formatNumber(p.data[1], 2);
+          html += `<span>${p.seriesName}: <b>${valueText}</b></span>`;
           html += `</div>`;
         }
         return html;
@@ -78,7 +81,10 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         gridIndex: 0,
       },
       {
-        ...dofekAxis.value({ name: "Load" }),
+        ...dofekAxis.value({
+          name: "Load",
+          axisLabel: { formatter: (value: number) => formatTrainingLoad(value) },
+        }),
         gridIndex: 1,
       },
     ],

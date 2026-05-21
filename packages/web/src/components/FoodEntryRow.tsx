@@ -1,3 +1,4 @@
+import { formatCalories } from "@dofek/format/format";
 import {
   type FoodEntryNutrientDetail,
   groupFoodEntryNutrientDetails,
@@ -50,7 +51,7 @@ export function FoodEntryRow({
           </span>
         </button>
         <div className="flex shrink-0 items-center gap-3 py-2 pr-3">
-          <span className="text-sm text-foreground tabular-nums">{calories} kcal</span>
+          <span className="text-sm text-foreground tabular-nums">{formatCalories(calories)}</span>
           <button
             type="button"
             onClick={onDelete}

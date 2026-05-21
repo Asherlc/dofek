@@ -1,3 +1,9 @@
+import {
+  formatCalories,
+  formatGrams,
+  formatNutritionAmount,
+  formatNutritionNumber,
+} from "@dofek/format/format";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 
 interface SlackBlock {
@@ -63,11 +69,7 @@ const MICRO_DISPLAY: Array<{ key: MicroKey; label: string; unit: string }> = [
 ];
 
 function formatMacroLine(item: NutritionItemWithMeal): string {
-  return `*${item.calories} cal* | P: ${item.proteinG}g | C: ${item.carbsG}g | F: ${item.fatG}g`;
-}
-
-function formatCalories(value: number): string {
-  return Math.round(value).toLocaleString("en-US");
+  return `*${formatCalories(item.calories)}* | P: ${formatGrams(item.proteinG)} | C: ${formatGrams(item.carbsG)} | F: ${formatGrams(item.fatG)}`;
 }
 
 function formatCalorieProgressBar(progress: DailyCalorieProgress): string {
@@ -77,11 +79,11 @@ function formatCalorieProgressBar(progress: DailyCalorieProgress): string {
     rawPercentage >= 100 ? Math.round(rawPercentage) : Math.max(Math.floor(rawPercentage), 0);
   const filledSegments = Math.min(Math.max(Math.floor(rawPercentage / 10), 0), 10);
   const emptySegments = 10 - filledSegments;
-  return `[${"█".repeat(filledSegments)}${"░".repeat(emptySegments)}] ${percentage}%`;
+  return `[${"█".repeat(filledSegments)}${"░".repeat(emptySegments)}] ${formatNutritionNumber(percentage)}%`;
 }
 
 function formatDailyCalorieProgress(progress: DailyCalorieProgress): string {
-  const calorieLine = `Calories: ${formatCalories(progress.caloriesConsumed)} / ${formatCalories(progress.calorieGoal)} cal`;
+  const calorieLine = `Calories: ${formatCalories(progress.caloriesConsumed)} / ${formatCalories(progress.calorieGoal)}`;
   const progressBar = formatCalorieProgressBar(progress);
   return `${calorieLine}\n${progressBar}\n${formatDailyCalorieStatus(progress)}`;
 }
@@ -89,10 +91,10 @@ function formatDailyCalorieProgress(progress: DailyCalorieProgress): string {
 function formatDailyCalorieStatus(progress: DailyCalorieProgress): string {
   const caloriesRemaining = Math.round(progress.calorieGoal - progress.caloriesConsumed);
   if (caloriesRemaining > 0) {
-    return `${formatCalories(caloriesRemaining)} cal remaining today`;
+    return `${formatCalories(caloriesRemaining)} remaining today`;
   }
   if (caloriesRemaining < 0) {
-    return `${formatCalories(Math.abs(caloriesRemaining))} cal over goal today`;
+    return `${formatCalories(Math.abs(caloriesRemaining))} over goal today`;
   }
   return "Calorie goal reached today";
 }
@@ -104,8 +106,7 @@ export function formatMicroLine(item: NutritionItemWithMeal | MicroTotals): stri
     const rawValue = item[key];
     if (typeof rawValue !== "number") continue;
     if (rawValue > 0) {
-      const formatted = rawValue < 10 ? rawValue.toFixed(1) : Math.round(rawValue).toString();
-      parts.push(`${label}: ${formatted}${unit}`);
+      parts.push(`${label}: ${formatNutritionAmount(rawValue, unit)}`);
     }
   }
   return parts.join(" | ");
@@ -178,7 +179,7 @@ export function formatConfirmationMessage(
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*Total:* *${totalCalories} cal* | P: ${totalProtein.toFixed(1)}g | C: ${totalCarbs.toFixed(1)}g | F: ${totalFat.toFixed(1)}g${totalMicroSection}`,
+          text: `*Total:* *${formatCalories(totalCalories)}* | P: ${formatGrams(totalProtein)} | C: ${formatGrams(totalCarbs)} | F: ${formatGrams(totalFat)}${totalMicroSection}`,
         },
       },
     );
@@ -203,7 +204,7 @@ export function formatConfirmationMessage(
     ],
   });
 
-  const fallbackText = items.map((i) => `${i.foodName}: ${i.calories} cal`).join(", ");
+  const fallbackText = items.map((i) => `${i.foodName}: ${formatCalories(i.calories)}`).join(", ");
 
   return { blocks, text: fallbackText };
 }
@@ -228,7 +229,7 @@ export function formatSavedMessage(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${item.foodName} — *${item.calories} cal*`,
+        text: `${item.foodName} — *${formatCalories(item.calories)}*`,
       },
     });
   }
@@ -249,7 +250,7 @@ export function formatSavedMessage(
     });
   }
 
-  const fallbackText = items.map((i) => `${i.foodName}: ${i.calories} cal`).join(", ");
+  const fallbackText = items.map((i) => `${i.foodName}: ${formatCalories(i.calories)}`).join(", ");
 
   return {
     blocks,

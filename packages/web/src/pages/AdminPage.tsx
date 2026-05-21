@@ -1,3 +1,4 @@
+import { formatDurationSeconds } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
@@ -227,9 +228,7 @@ function ShortId({ id }: { id: string }) {
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return "\u2014";
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  return formatDurationSeconds(seconds);
 }
 
 // ── Tab: Overview ──

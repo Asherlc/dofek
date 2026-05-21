@@ -1,4 +1,8 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  formatDurationMinutes,
+  formatDurationSeconds,
+  formatIntensity,
+} from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   collapseWeeklyVolumeActivityTypes,
@@ -184,9 +188,9 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
           .filter((p) => p.value[1] > 0)
           .map((p) => {
             total += p.value[1];
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}h`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatDurationMinutes(p.value[1] * 60)}`;
           });
-        return `<strong>${dateLabel}</strong> (${formatNumber(total)}h total)<br/>${lines.join("<br/>")}`;
+        return `<strong>${dateLabel}</strong> (${formatDurationMinutes(total * 60)} total)<br/>${lines.join("<br/>")}`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -261,8 +265,7 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
           .map((p) => {
             const zoneDefinition = HEART_RATE_ZONES[params.indexOf(p)];
             const secs = zoneDefinition ? hrZoneSeconds(raw, zoneDefinition.zone) : 0;
-            const mins = Math.round(secs / 60);
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatNumber(p.value[1])}% (${mins}m)`;
+            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatIntensity(p.value[1])} (${formatDurationSeconds(secs)})`;
           });
         return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
       },
@@ -308,8 +311,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
     tooltip: dofekTooltip({
       trigger: "item",
       formatter: ({ name, value, percent }: { name: string; value: number; percent: number }) => {
-        const hours = Math.round(value / 3600);
-        return `${name}: ${percent}% (${hours}h)`;
+        return `${name}: ${formatIntensity(percent)} (${formatDurationSeconds(value)})`;
       },
     }),
     legend: {
@@ -327,7 +329,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
         label: {
           show: true,
           position: "center",
-          formatter: `{bold|${lowPct}%}\n{sub|low intensity}`,
+          formatter: `{bold|${formatIntensity(lowPct)}}\n{sub|low intensity}`,
           rich: {
             bold: {
               fontSize: 28,
@@ -350,6 +352,7 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
   // Determine if polarized (80/20 guideline)
   const isPolarized = lowPct >= 75 && medPct <= 10;
   const status = isPolarized ? "Polarized" : lowPct >= 70 ? "Mostly polarized" : "Not polarized";
+  const intensitySplitLabel = `${formatIntensity(lowPct)}/${formatIntensity(medPct)}/${formatIntensity(highPct)}`;
   const statusColor = isPolarized
     ? "text-green-500"
     : lowPct >= 70
@@ -362,14 +365,15 @@ function IntensityDonut({ weeks }: { weeks: HrZoneWeek[] }) {
         <h3 className="text-xs font-medium text-subtle">
           Intensity Distribution{" "}
           <span className={`${statusColor} ml-2`}>
-            {status} ({lowPct}/{medPct}/{highPct})
+            {status} ({intensitySplitLabel})
           </span>
         </h3>
         <ChartDescriptionTooltip description="This chart summarizes your full time split between low, medium, and high intensity training." />
       </div>
       <DofekChart option={option} height={200} />
       <p className="text-xs text-dim mt-1">
-        Target: ~80% low (Z1-Z2), minimal medium (Z3), ~20% high (Z4-Z5)
+        Target: ~{formatIntensity(80)} low (Z1-Z2), minimal medium (Z3), ~{formatIntensity(20)} high
+        (Z4-Z5)
       </p>
     </div>
   );

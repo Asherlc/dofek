@@ -125,7 +125,7 @@ describe("format functions", () => {
 
   it("formats weight with appropriate precision", () => {
     expect(metric.formatWeight(80.5)).toBe("80.5 kg");
-    expect(imperial.formatWeight(80.5)).toBe("177.5 lbs");
+    expect(imperial.formatWeight(80.5)).toBe("177.5 lb");
   });
 
   it("formats distance with 1 decimal", () => {
@@ -139,8 +139,8 @@ describe("format functions", () => {
   });
 
   it("formats temperature with 1 decimal", () => {
-    expect(metric.formatTemperature(37)).toBe("37.0 °C");
-    expect(imperial.formatTemperature(37)).toBe("98.6 °F");
+    expect(metric.formatTemperature(37)).toBe("37.0°C");
+    expect(imperial.formatTemperature(37)).toBe("98.6°F");
   });
 
   it("formats speed with 1 decimal", () => {

@@ -1,4 +1,3 @@
-import { formatNumber } from "@dofek/format/format";
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -78,9 +77,7 @@ export function GoalWeightInput() {
     <div className="flex items-center gap-2">
       {currentGoalKg != null ? (
         <>
-          <span className="text-xs text-muted">
-            Goal: {formatNumber(units.convertWeight(currentGoalKg))} {units.weightLabel}
-          </span>
+          <span className="text-xs text-muted">Goal: {units.formatWeight(currentGoalKg)}</span>
           <button
             type="button"
             className="text-xs text-primary hover:text-primary/80"

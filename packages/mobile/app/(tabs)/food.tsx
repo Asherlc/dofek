@@ -1,3 +1,4 @@
+import { formatCalories } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -274,7 +275,7 @@ export default function FoodScreen() {
                     <Text style={styles.aiReviewFoodName}>{item.foodName}</Text>
                     <Text style={styles.aiReviewDescription}>{item.foodDescription}</Text>
                   </View>
-                  <Text style={styles.aiReviewCalories}>{item.calories} cal</Text>
+                  <Text style={styles.aiReviewCalories}>{formatCalories(item.calories)}</Text>
                 </View>
               ))}
               <View style={styles.aiReviewActions}>

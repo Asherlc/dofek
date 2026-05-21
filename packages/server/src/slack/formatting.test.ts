@@ -80,9 +80,9 @@ describe("formatConfirmationMessage", () => {
 
     // Should show totals
     expect(text).toContain("790"); // 650 + 140 total calories
-    expect(text).toContain("P: 35.2g");
-    expect(text).toContain("C: 111.1g");
-    expect(text).toContain("F: 22.5g");
+    expect(text).toContain("P: 35 g");
+    expect(text).toContain("C: 111 g");
+    expect(text).toContain("F: 23 g");
     expect(text).toContain('"type":"divider"');
   });
 
@@ -108,7 +108,7 @@ describe("formatSavedMessage", () => {
   it("shows a success message with item count", () => {
     const result = formatSavedMessage([sampleItem]);
 
-    expect(result.text).toBe("Logged: Chicken Burrito: 650 cal");
+    expect(result.text).toBe("Logged: Chicken Burrito: 650 kcal");
     expect(result.blocks).toHaveLength(2);
     expect(result.blocks[0]).toEqual({
       type: "section",
@@ -146,10 +146,10 @@ describe("formatSavedMessage", () => {
     });
 
     const text = JSON.stringify(result.blocks);
-    expect(text).toContain("Calories: 650 / 2,000 cal");
+    expect(text).toContain("Calories: 650 kcal / 2,000 kcal");
     expect(text).toContain("[███░░░░░░░] 32%");
-    expect(text).toContain("1,350 cal remaining today");
-    expect(result.text).toContain("1,350 cal remaining today");
+    expect(text).toContain("1,350 kcal remaining today");
+    expect(result.text).toContain("1,350 kcal remaining today");
   });
 
   it("does not show a full progress bar before the calorie goal is reached", () => {
@@ -160,7 +160,7 @@ describe("formatSavedMessage", () => {
 
     const text = JSON.stringify(result.blocks);
     expect(text).toContain("[█████████░] 99%");
-    expect(text).toContain("1 cal remaining today");
+    expect(text).toContain("1 kcal remaining today");
   });
 
   it("shows the reached status at exactly the calorie goal", () => {
@@ -170,7 +170,7 @@ describe("formatSavedMessage", () => {
     });
 
     const text = JSON.stringify(result.blocks);
-    expect(text).toContain("Calories: 2,000 / 2,000 cal");
+    expect(text).toContain("Calories: 2,000 kcal / 2,000 kcal");
     expect(text).toContain("[██████████] 100%");
     expect(text).toContain("Calorie goal reached today");
     expect(result.text).toContain("Calorie goal reached today");
@@ -183,10 +183,10 @@ describe("formatSavedMessage", () => {
     });
 
     const text = JSON.stringify(result.blocks);
-    expect(text).toContain("Calories: 2,150 / 2,000 cal");
+    expect(text).toContain("Calories: 2,150 kcal / 2,000 kcal");
     expect(text).toContain("[██████████] 108%");
-    expect(text).toContain("150 cal over goal today");
-    expect(result.text).toContain("150 cal over goal today");
+    expect(text).toContain("150 kcal over goal today");
+    expect(result.text).toContain("150 kcal over goal today");
   });
 
   it("does not divide by zero when calorie goal is unavailable", () => {
@@ -196,9 +196,9 @@ describe("formatSavedMessage", () => {
     });
 
     const text = JSON.stringify(result.blocks);
-    expect(text).toContain("Calories: 650 / 0 cal");
+    expect(text).toContain("Calories: 650 kcal / 0 kcal");
     expect(text).toContain("[░░░░░░░░░░] 0%");
-    expect(text).toContain("650 cal over goal today");
+    expect(text).toContain("650 kcal over goal today");
     expect(text).not.toContain("Infinity");
   });
 });
@@ -206,10 +206,10 @@ describe("formatSavedMessage", () => {
 describe("formatMicroLine", () => {
   it("formats non-zero micronutrients", () => {
     const line = formatMicroLine(sampleItem);
-    expect(line).toContain("Iron: 3.2mg");
-    expect(line).toContain("Ca: 210mg");
-    expect(line).toContain("Vit C: 8.5mg");
-    expect(line).toContain("Mg: 45mg");
+    expect(line).toContain("Iron: 3 mg");
+    expect(line).toContain("Ca: 210 mg");
+    expect(line).toContain("Vit C: 9 mg");
+    expect(line).toContain("Mg: 45 mg");
   });
 
   it("omits micronutrients that are undefined", () => {
@@ -224,15 +224,15 @@ describe("formatMicroLine", () => {
     expect(line).toBe("");
   });
 
-  it("rounds large values to integers and small values to one decimal", () => {
+  it("rounds micronutrients to integers", () => {
     const item: NutritionItemWithMeal = {
       ...secondItem,
       calciumMg: 250.7,
       ironMg: 3.7,
     };
     const line = formatMicroLine(item);
-    expect(line).toContain("Ca: 251mg");
-    expect(line).toContain("Iron: 3.7mg");
+    expect(line).toContain("Ca: 251 mg");
+    expect(line).toContain("Iron: 4 mg");
   });
 
   it("omits zero values and formats the 10-unit boundary as an integer", () => {
@@ -243,9 +243,9 @@ describe("formatMicroLine", () => {
     });
 
     expect(line).not.toContain("Ca:");
-    expect(line).toContain("Iron: 10mg");
-    expect(line).not.toContain("Iron: 10.0mg");
-    expect(line).toContain("Mg: 9.5mg");
+    expect(line).toContain("Iron: 10 mg");
+    expect(line).not.toContain("Iron: 10.0 mg");
+    expect(line).toContain("Mg: 10 mg");
   });
 });
 
@@ -339,7 +339,7 @@ describe("formatConfirmationMessage with micronutrients", () => {
     const result = formatConfirmationMessage([sampleItem, itemWithMicros]);
     const text = JSON.stringify(result.blocks);
     // Total iron: 3.2 + 1.0 = 4.2, total calcium: 210 + 10 = 220
-    expect(text).toContain("Iron: 4.2mg");
-    expect(text).toContain("Ca: 220mg");
+    expect(text).toContain("Iron: 4 mg");
+    expect(text).toContain("Ca: 220 mg");
   });
 });

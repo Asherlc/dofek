@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 
@@ -9,13 +9,14 @@ import { useState } from "react";
  */
 function GoalWeightInputStory({
   goalWeightKg,
-  weightLabel = "kg",
+  unitSystem = "metric",
 }: {
   goalWeightKg: number | null;
-  weightLabel?: string;
+  unitSystem?: "metric" | "imperial";
 }) {
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const units = new UnitConverter(unitSystem);
 
   if (editing) {
     return (
@@ -24,7 +25,7 @@ function GoalWeightInputStory({
           type="number"
           step="0.1"
           className="w-20 rounded bg-surface border border-border px-2 py-1 text-sm"
-          placeholder={weightLabel}
+          placeholder={units.weightLabel}
           value={inputValue}
           onChange={(event) => setInputValue(event.target.value)}
         />
@@ -46,9 +47,7 @@ function GoalWeightInputStory({
     <div className="flex items-center gap-2">
       {goalWeightKg != null ? (
         <>
-          <span className="text-xs text-muted">
-            Goal: {formatNumber(goalWeightKg)} {weightLabel}
-          </span>
+          <span className="text-xs text-muted">Goal: {units.formatWeight(goalWeightKg)}</span>
           <button
             type="button"
             className="text-xs text-primary hover:text-primary/80"
@@ -102,7 +101,7 @@ export const WithGoal: Story = {
 
 export const ImperialWithGoal: Story = {
   args: {
-    goalWeightKg: 165.3,
-    weightLabel: "lbs",
+    goalWeightKg: 75,
+    unitSystem: "imperial",
   },
 };

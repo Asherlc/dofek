@@ -1,3 +1,4 @@
+import { formatNutritionAmount } from "@dofek/format/format";
 import { useState } from "react";
 import { trpc } from "../lib/trpc.ts";
 
@@ -98,7 +99,7 @@ const NUTRIENT_FIELDS: { key: keyof Supplement; label: string; unit: string }[] 
 function formatDose(supp: Supplement): string {
   const parts: string[] = [];
   if (supp.amount != null && supp.unit) {
-    parts.push(`${supp.amount}${supp.unit}`);
+    parts.push(formatNutritionAmount(supp.amount, supp.unit));
   }
   if (supp.form) {
     parts.push(supp.form);
@@ -253,8 +254,7 @@ function SupplementRow({
           <div className="flex flex-wrap gap-x-3 gap-y-0 mt-0.5">
             {nutrients.map((f) => (
               <span key={f.key} className="text-[10px] text-dim">
-                {f.label}: {supp[f.key]}
-                {f.unit}
+                {f.label}: {formatNutritionAmount(Number(supp[f.key]), f.unit)}
               </span>
             ))}
           </div>

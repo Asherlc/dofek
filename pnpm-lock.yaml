@@ -447,6 +447,9 @@ importers:
 
   packages/nutrition:
     dependencies:
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -470,6 +473,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
@@ -20476,14 +20482,14 @@ snapshots:
       msw: 2.12.11(@types/node@22.19.15)(typescript@5.9.3)
       vite: 7.3.3(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  '@vitest/mocker@3.2.4(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(vite@7.3.3(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
+  '@vitest/mocker@3.2.4(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(vite@7.3.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.4
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.12.11(@types/node@25.9.1)(typescript@5.9.3)
-      vite: 7.3.3(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
+      vite: 7.3.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -26234,7 +26240,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(vite@7.3.3(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.4(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(vite@7.3.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4

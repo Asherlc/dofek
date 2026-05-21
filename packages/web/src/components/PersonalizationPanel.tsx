@@ -1,4 +1,9 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  formatDurationMinutes,
+  formatHRV,
+  formatIntensity,
+  formatNumber,
+} from "@dofek/format/format";
 import { trpc } from "../lib/trpc.ts";
 
 const PARAM_LABELS: Record<string, { label: string; description: string }> = {
@@ -23,12 +28,6 @@ const PARAM_LABELS: Record<string, { label: string; description: string }> = {
     description: "How heart rate intensity translates to training load",
   },
 };
-
-function formatMinutes(min: number): string {
-  const hours = Math.floor(min / 60);
-  const mins = min % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}
 
 export function PersonalizationPanel() {
   const status = trpc.personalization.status.useQuery();
@@ -105,7 +104,7 @@ export function PersonalizationPanel() {
             sleep: number;
             respiratoryRate: number;
           }) =>
-            `Heart Rate Variability ${Math.round(v.hrv * 100)}%, Resting Heart Rate ${Math.round(v.restingHr * 100)}%, Sleep ${Math.round(v.sleep * 100)}%, Respiratory Rate ${Math.round(v.respiratoryRate * 100)}%`
+            `Heart Rate Variability ${formatIntensity(v.hrv * 100)}, Resting Heart Rate ${formatIntensity(v.restingHr * 100)}, Sleep ${formatIntensity(v.sleep * 100)}, Respiratory Rate ${formatIntensity(v.respiratoryRate * 100)}`
           }
           renderQuality={
             data.parameters.readinessWeights
@@ -119,7 +118,7 @@ export function PersonalizationPanel() {
           personalized={data.parameters.sleepTarget}
           effective={data.effective.sleepTarget}
           defaults={data.defaults.sleepTarget}
-          renderValue={(v: { minutes: number }) => formatMinutes(v.minutes)}
+          renderValue={(v: { minutes: number }) => formatDurationMinutes(v.minutes)}
           renderQuality={
             data.parameters.sleepTarget
               ? `${data.parameters.sleepTarget.sampleCount} qualifying nights`
@@ -136,7 +135,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `Heart Rate Variability: ${v.hrvThresholds.map((t) => formatNumber(t)).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => formatNumber(t)).join(", ")}`
+            `Heart Rate Variability: ${v.hrvThresholds.map(formatHRV).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map((t) => formatNumber(t)).join(", ")}`
           }
           renderQuality={
             data.parameters.stressThresholds

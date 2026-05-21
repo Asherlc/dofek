@@ -1,3 +1,4 @@
+import { formatIntensity, formatTrainingLoad } from "@dofek/format/format";
 import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
@@ -147,13 +148,13 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
           <div className="grid grid-cols-3 gap-2">
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
-                {today?.acuteLoad.toFixed(0) ?? "--"}
+                {formatTrainingLoad(today?.acuteLoad)}
               </p>
               <p className="text-[10px] text-subtle">Acute (7d)</p>
             </div>
             <div>
               <p className="text-lg font-bold text-foreground tabular-nums">
-                {today?.chronicLoad.toFixed(0) ?? "--"}
+                {formatTrainingLoad(today?.chronicLoad)}
               </p>
               <p className="text-[10px] text-subtle">Chronic (28d)</p>
             </div>
@@ -176,7 +177,9 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
                   <span className="text-foreground font-medium">{strainTarget.targetStrain}</span> (
                   {strainTarget.zone})
                 </span>
-                <span className="text-subtle">{strainTarget.progressPercent}% reached</span>
+                <span className="text-subtle">
+                  {formatIntensity(strainTarget.progressPercent)} reached
+                </span>
               </div>
             </div>
           )}

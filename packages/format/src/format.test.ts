@@ -1,18 +1,29 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatBodyCompositionNumber,
+  formatBodyCompositionPercent,
+  formatCalories,
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
   formatDurationRange,
+  formatDurationSeconds,
+  formatGrams,
   formatHour,
+  formatHRV,
+  formatIntensity,
   formatNumber,
+  formatNutritionAmount,
+  formatNutritionNumber,
   formatPace,
   formatPercent,
   formatRelativeTime,
   formatSigned,
   formatSleepDebt,
   formatSleepDebtInline,
+  formatSpO2,
   formatTime,
+  formatTrainingLoad,
   isToday,
   isYesterday,
   parseValidDate,
@@ -95,6 +106,21 @@ describe("formatDurationRange", () => {
 
   it("returns -- when end is before start (negative duration)", () => {
     expect(formatDurationRange("2024-01-01T11:00:00Z", "2024-01-01T10:00:00Z")).toBe("--");
+  });
+});
+
+describe("formatDurationSeconds", () => {
+  it("formats short durations as seconds", () => {
+    expect(formatDurationSeconds(12)).toBe("12s");
+    expect(formatDurationSeconds(1.24)).toBe("1.2s");
+  });
+
+  it("formats longer durations as minutes and hours", () => {
+    expect(formatDurationSeconds(5410)).toBe("1h 30m");
+  });
+
+  it("returns placeholder for non-finite values", () => {
+    expect(formatDurationSeconds(Number.NaN)).toBe("--");
   });
 });
 
@@ -475,6 +501,50 @@ describe("formatSigned", () => {
   it("prepends + for small positive values", () => {
     expect(formatSigned(0.1, 1)).toBe("+0.1");
     expect(formatSigned(0.1, 1)[0]).toBe("+");
+  });
+});
+
+describe("domain metric formatters", () => {
+  it("formats nutrition values with 0 decimals", () => {
+    expect(formatNutritionNumber(12.4)).toBe("12");
+    expect(formatNutritionNumber(12.5)).toBe("13");
+    expect(formatCalories(1999.6)).toBe("2,000 kcal");
+    expect(formatGrams(41.5)).toBe("42 g");
+    expect(formatNutritionAmount(680.4, "mg")).toBe("680 mg");
+  });
+
+  it("formats body composition values with 1 decimal", () => {
+    expect(formatBodyCompositionNumber(82.44)).toBe("82.4");
+    expect(formatBodyCompositionNumber(82.45)).toBe("82.5");
+    expect(formatBodyCompositionPercent(18.24)).toBe("18.2%");
+  });
+
+  it("formats oxygen saturation with 0 decimals", () => {
+    expect(formatSpO2(96.4)).toBe("96%");
+    expect(formatSpO2(96.5)).toBe("97%");
+  });
+
+  it("formats heart rate variability with 0 decimals", () => {
+    expect(formatHRV(51.4)).toBe("51 ms");
+    expect(formatHRV(51.5)).toBe("52 ms");
+  });
+
+  it("formats intensity with 0 decimals", () => {
+    expect(formatIntensity(82.4)).toBe("82%");
+    expect(formatIntensity(82.5)).toBe("83%");
+  });
+
+  it("formats training load with 0 decimals", () => {
+    expect(formatTrainingLoad(84.4)).toBe("84");
+    expect(formatTrainingLoad(84.5)).toBe("85");
+  });
+
+  it("returns -- for absent or non-finite domain metric values", () => {
+    expect(formatNutritionNumber(null)).toBe("--");
+    expect(formatBodyCompositionNumber(undefined)).toBe("--");
+    expect(formatSpO2(Number.NaN)).toBe("--");
+    expect(formatHRV(Number.POSITIVE_INFINITY)).toBe("--");
+    expect(formatIntensity(Number.NEGATIVE_INFINITY)).toBe("--");
   });
 });
 

@@ -1,3 +1,4 @@
+import { formatNutritionAmount } from "@dofek/format/format";
 import { NUTRIENTS, type NutrientCategory } from "./nutrients";
 
 export interface FoodEntryNutrientDetail {
@@ -38,8 +39,7 @@ const CATEGORY_ORDER: readonly NutrientCategory[] = [
 ];
 
 function formatNutrientAmount(amount: number, unit: string): string {
-  const rounded = Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
-  return `${rounded} ${unit}`;
+  return formatNutritionAmount(amount, unit);
 }
 
 export function foodEntryNutrientDetailsFromLegacyColumns(

@@ -1,4 +1,10 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  formatBodyCompositionNumber,
+  formatHRV,
+  formatIntensity,
+  formatNumber,
+  formatSpO2,
+} from "@dofek/format/format";
 import {
   trendDirection as computeTrend,
   SCORE_ZONES,
@@ -60,7 +66,7 @@ function ComponentBar({ label, value, weight }: { label: string; value: number; 
     <View style={breakdownStyles.row}>
       <View style={breakdownStyles.labelCol}>
         <Text style={breakdownStyles.label}>{label}</Text>
-        <Text style={breakdownStyles.weight}>{Math.round(weight * 100)}%</Text>
+        <Text style={breakdownStyles.weight}>{formatIntensity(weight * 100)}</Text>
       </View>
       <View style={breakdownStyles.barTrack}>
         <View style={[breakdownStyles.barFill, { width: `${value}%`, backgroundColor: color }]} />
@@ -313,13 +319,10 @@ export default function RecoveryScreen() {
           {/* HRV detail */}
           <MetricCard
             title="Heart Rate Variability"
-            value={latestHrv?.hrv != null ? String(Math.round(latestHrv.hrv)) : "--"}
-            unit="ms"
+            value={formatHRV(latestHrv?.hrv)}
             trend={hrvValues.slice(-14)}
             color={colors.positive}
-            subtitle={
-              hrvBaseline != null ? `7-day baseline: ${Math.round(hrvBaseline)} ms` : undefined
-            }
+            subtitle={hrvBaseline != null ? `7-day baseline: ${formatHRV(hrvBaseline)}` : undefined}
             trendDirection={
               hrvValues.length >= 2
                 ? computeTrend(
@@ -341,7 +344,7 @@ export default function RecoveryScreen() {
                 color={colors.teal}
                 showBaseline
                 showYAxis
-                formatYLabel={(value) => `${Math.round(value)}%`}
+                formatYLabel={formatIntensity}
               />
               <Text style={styles.chartSubtitle}>
                 Lower variability = more stable autonomic nervous system
@@ -392,8 +395,7 @@ export default function RecoveryScreen() {
           {trendsData?.latest_spo2 != null && (
             <MetricCard
               title="Blood Oxygen"
-              value={String(Math.round(trendsData.latest_spo2))}
-              unit="%"
+              value={formatSpO2(trendsData.latest_spo2)}
               trend={spo2Trend}
               color={colors.blue}
               trendDirection={
@@ -411,8 +413,7 @@ export default function RecoveryScreen() {
           {trendsData?.latest_skin_temp != null && (
             <MetricCard
               title="Skin Temperature"
-              value={formatNumber(units.convertTemperature(trendsData.latest_skin_temp))}
-              unit={units.temperatureLabel}
+              value={units.formatTemperature(trendsData.latest_skin_temp)}
               trend={skinTempTrend}
               color={colors.orange}
               trendDirection={
@@ -467,9 +468,8 @@ export default function RecoveryScreen() {
               <View style={styles.weightRow}>
                 <View>
                   <Text style={styles.weightValue}>
-                    {formatNumber(units.convertWeight(latestWeight.smoothedWeight))}
+                    {units.formatWeight(latestWeight.smoothedWeight)}
                   </Text>
-                  <Text style={styles.weightUnit}>{units.weightLabel}</Text>
                   {weightPrediction.data?.ratePerWeek != null && (
                     <Text
                       style={[
@@ -485,15 +485,12 @@ export default function RecoveryScreen() {
                       ]}
                     >
                       {weightPrediction.data.ratePerWeek > 0 ? "+" : ""}
-                      {formatNumber(units.convertWeight(weightPrediction.data.ratePerWeek))}{" "}
-                      {units.weightLabel}/wk
+                      {units.formatWeight(weightPrediction.data.ratePerWeek)}/wk
                     </Text>
                   )}
                   {weightPrediction.data?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
-                      Goal:{" "}
-                      {formatNumber(units.convertWeight(weightPrediction.data.goal.goalWeightKg))}{" "}
-                      {units.weightLabel} by ~
+                      Goal: {units.formatWeight(weightPrediction.data.goal.goalWeightKg)} by ~
                       {new Date(
                         `${weightPrediction.data.goal.estimatedDate}T12:00:00`,
                       ).toLocaleDateString("en-US", {
@@ -510,7 +507,9 @@ export default function RecoveryScreen() {
                       height={50}
                       color={colors.blue}
                       showYAxis
-                      formatYLabel={(value) => `${Math.round(units.convertWeight(value))}`}
+                      formatYLabel={(value) =>
+                        formatBodyCompositionNumber(units.convertWeight(value))
+                      }
                     />
                   </View>
                 )}

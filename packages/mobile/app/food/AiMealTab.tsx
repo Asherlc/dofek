@@ -1,3 +1,4 @@
+import { formatCalories } from "@dofek/format/format";
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { colors } from "../../theme";
 import { styles } from "./add-styles.ts";
@@ -77,7 +78,7 @@ export function AiMealTab({
                   <Text style={styles.aiMealReviewDescription}>{item.foodDescription}</Text>
                 )}
               </View>
-              <Text style={styles.aiMealReviewCalories}>{item.calories} cal</Text>
+              <Text style={styles.aiMealReviewCalories}>{formatCalories(item.calories)}</Text>
             </View>
           ))}
           <View style={styles.aiMealReviewActions}>

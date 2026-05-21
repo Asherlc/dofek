@@ -1,3 +1,4 @@
+import { formatCalories, formatGrams } from "@dofek/format/format";
 import {
   foodEntryNutrientDetailsFromLegacyColumns,
   groupFoodEntryNutrientDetails,
@@ -51,11 +52,11 @@ export function FoodEntryCard({ entry, onDelete, deleting }: FoodEntryCardProps)
             <Text style={styles.description}>{entry.food_description}</Text>
           ) : null}
           <Text style={styles.macros}>
-            Protein: {entry.protein_g ?? 0}g · Carbs: {entry.carbs_g ?? 0}g · Fat:{" "}
-            {entry.fat_g ?? 0}g
+            Protein: {formatGrams(entry.protein_g ?? 0)} · Carbs: {formatGrams(entry.carbs_g ?? 0)}{" "}
+            · Fat: {formatGrams(entry.fat_g ?? 0)}
           </Text>
         </View>
-        <Text style={styles.calories}>{entry.calories ?? 0} cal</Text>
+        <Text style={styles.calories}>{formatCalories(entry.calories ?? 0)}</Text>
       </TouchableOpacity>
       {expanded ? (
         <View style={styles.details}>

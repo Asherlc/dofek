@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatHRV, formatIntensity } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { HrvVariabilityRow } from "dofek-server/types";
 import {
@@ -53,10 +53,13 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         for (const p of params) {
           if (p.data[1] == null) continue;
-          const unit = p.seriesName === "Rolling Variability" ? "%" : " ms";
+          const value =
+            p.seriesName === "Rolling Variability"
+              ? formatIntensity(p.data[1])
+              : formatHRV(p.data[1]);
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${p.seriesName}: <b>${formatNumber(p.data[1])}${unit}</b></span>`;
+          html += `<span>${p.seriesName}: <b>${value}</b></span>`;
           html += `</div>`;
         }
         return html;
@@ -70,6 +73,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
       dofekAxis.value({
         name: "Heart Rate Variability (ms)",
         position: "left",
+        axisLabel: { formatter: (value: number) => formatHRV(value) },
       }),
       dofekAxis.value({
         name: "Variability (%)",
@@ -77,6 +81,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         max: Math.ceil(maxCv),
         position: "right",
         showSplitLine: false,
+        axisLabel: { formatter: (value: number) => formatIntensity(value) },
       }),
     ],
     visualMap: [

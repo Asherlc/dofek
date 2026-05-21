@@ -1,4 +1,9 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  formatDurationMinutes,
+  formatIntensity,
+  formatNumber,
+  formatTrainingLoad,
+} from "@dofek/format/format";
 import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
@@ -146,7 +151,9 @@ export default function StrainScreen() {
                     {strainTarget.zone}
                   </Text>
                 </View>
-                <Text style={styles.targetProgress}>{strainTarget.progressPercent}% reached</Text>
+                <Text style={styles.targetProgress}>
+                  {formatIntensity(strainTarget.progressPercent)} reached
+                </Text>
               </View>
               <View style={styles.targetBarTrack}>
                 <View
@@ -184,11 +191,11 @@ export default function StrainScreen() {
             <Text style={styles.cardTitle}>Training Load</Text>
             <View style={styles.loadGrid}>
               <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>{formatNumber(acuteLoad)}</Text>
+                <Text style={styles.loadValue}>{formatTrainingLoad(acuteLoad)}</Text>
                 <Text style={styles.loadLabel}>Acute (7 day)</Text>
               </View>
               <View style={styles.loadItem}>
-                <Text style={styles.loadValue}>{formatNumber(chronicLoad)}</Text>
+                <Text style={styles.loadValue}>{formatTrainingLoad(chronicLoad)}</Text>
                 <Text style={styles.loadLabel}>Chronic (28 day)</Text>
               </View>
               <View style={styles.loadItem}>
@@ -268,7 +275,7 @@ export default function StrainScreen() {
                     <View style={styles.volumeBarTrack}>
                       <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
                     </View>
-                    <Text style={styles.volumeHours}>{formatNumber(week.hours)}h</Text>
+                    <Text style={styles.volumeHours}>{formatDurationMinutes(week.hours * 60)}</Text>
                   </View>
                 ))}
               </View>
@@ -276,7 +283,8 @@ export default function StrainScreen() {
                 <View style={styles.activityTypeSummary}>
                   {activityTypeTotals.map((entry) => (
                     <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
-                      {formatActivityTypeLabel(entry.activityType)}: {formatNumber(entry.hours)}h
+                      {formatActivityTypeLabel(entry.activityType)}:{" "}
+                      {formatDurationMinutes(entry.hours * 60)}
                     </Text>
                   ))}
                 </View>

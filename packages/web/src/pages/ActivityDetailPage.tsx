@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -743,9 +743,7 @@ interface ZoneDistributionDatum {
 }
 
 function formatZoneChartTime(secondsValue: number) {
-  const minutes = Math.floor(secondsValue / 60);
-  const seconds = secondsValue % 60;
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+  return formatDurationSeconds(secondsValue);
 }
 
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
@@ -1050,7 +1048,9 @@ function StrengthExerciseBreakdown({
                     )}
                     {hasDuration && (
                       <td className="text-right py-1.5 px-4 tabular-nums">
-                        {set.durationSeconds != null ? `${set.durationSeconds}s` : "—"}
+                        {set.durationSeconds != null
+                          ? formatDurationSeconds(set.durationSeconds)
+                          : "—"}
                       </td>
                     )}
                     {hasRpe && (

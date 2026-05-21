@@ -1,3 +1,4 @@
+import { formatDurationMinutes, formatHRV } from "@dofek/format/format";
 import { StrainZone, sleepPerformanceColor } from "@dofek/scoring/scoring";
 import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -5,12 +6,6 @@ import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 interface WeeklyReportCardProps {
   data: WeeklyReportResult | undefined;
   loading?: boolean;
-}
-
-function formatHoursMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = Math.round(minutes % 60);
-  return `${hours}h ${remainingMinutes}m`;
 }
 
 export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
@@ -62,13 +57,13 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
       <div className="grid grid-cols-2 gap-4 mb-5">
         <StatBlock
           label="Training"
-          value={`${current.trainingHours}h`}
+          value={formatDurationMinutes(current.trainingHours * 60)}
           sub={`${current.activityCount} activities`}
           prevValue={prevWeek ? `${prevWeek.trainingHours}h` : undefined}
         />
         <StatBlock
           label="Sleep"
-          value={sleepWasTracked ? formatHoursMinutes(current.avgSleepMinutes) : "Not tracked"}
+          value={sleepWasTracked ? formatDurationMinutes(current.avgSleepMinutes) : "Not tracked"}
           sub={
             sleepWasTracked ? (
               <span style={{ color: sleepPerformanceColor(current.sleepPerformancePct) }}>
@@ -80,7 +75,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           }
           prevValue={
             prevWeek && prevWeek.avgSleepMinutes > 0
-              ? formatHoursMinutes(prevWeek.avgSleepMinutes)
+              ? formatDurationMinutes(prevWeek.avgSleepMinutes)
               : undefined
           }
         />
@@ -89,11 +84,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           value={current.avgRestingHr != null ? `${current.avgRestingHr}` : "—"}
           sub="bpm avg"
         />
-        <StatBlock
-          label="HRV"
-          value={current.avgHrv != null ? `${current.avgHrv}` : "—"}
-          sub="ms avg"
-        />
+        <StatBlock label="HRV" value={formatHRV(current.avgHrv)} sub="avg" />
       </div>
 
       {/* Strain zone history mini bar */}

@@ -1,4 +1,4 @@
-import { formatNumber, formatPace } from "@dofek/format/format";
+import { formatDurationMinutes, formatNumber, formatPace } from "@dofek/format/format";
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
@@ -54,7 +54,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
       label: "Duration",
       headerClassName: "pb-2 pr-4",
       cellClassName: "py-2 pr-4 tabular-nums",
-      renderCell: (row) => `${formatNumber(row.durationMinutes, 0)} min`,
+      renderCell: (row) => formatDurationMinutes(row.durationMinutes),
     },
     {
       key: "pace",

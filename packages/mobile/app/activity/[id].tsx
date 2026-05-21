@@ -1,4 +1,4 @@
-import { formatDurationRange, formatNumber } from "@dofek/format/format";
+import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -533,7 +533,9 @@ function ExerciseBreakdown({
                 )}
                 {set.reps != null && <Text style={exerciseStyles.setValue}>{set.reps} reps</Text>}
                 {hasDuration && set.durationSeconds != null && (
-                  <Text style={exerciseStyles.setValue}>{set.durationSeconds}s</Text>
+                  <Text style={exerciseStyles.setValue}>
+                    {formatDurationSeconds(set.durationSeconds)}
+                  </Text>
                 )}
                 {set.rpe != null && (
                   <Text style={exerciseStyles.setRpe}>Perceived Exertion {set.rpe}</Text>

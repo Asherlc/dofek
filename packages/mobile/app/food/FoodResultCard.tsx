@@ -1,3 +1,4 @@
+import { formatCalories, formatGrams } from "@dofek/format/format";
 import { Text, TouchableOpacity, View } from "react-native";
 import { styles } from "./add-styles.ts";
 import type { SearchResult } from "./add-types.ts";
@@ -11,9 +12,9 @@ interface FoodResultCardProps {
 
 export function FoodResultCard({ result, onSelect, sourceLabel }: FoodResultCardProps) {
   const macroTags = [
-    result.proteinG != null ? `Protein ${result.proteinG}g` : null,
-    result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
-    result.fatG != null ? `Fat ${result.fatG}g` : null,
+    result.proteinG != null ? `Protein ${formatGrams(result.proteinG)}` : null,
+    result.carbsG != null ? `Carbs ${formatGrams(result.carbsG)}` : null,
+    result.fatG != null ? `Fat ${formatGrams(result.fatG)}` : null,
   ].filter((tag): tag is string => tag !== null);
 
   return (
@@ -29,7 +30,7 @@ export function FoodResultCard({ result, onSelect, sourceLabel }: FoodResultCard
         </Text>
         {result.calories != null && (
           <View style={styles.resultCaloriesBadge}>
-            <Text style={styles.resultCaloriesText}>{result.calories} cal</Text>
+            <Text style={styles.resultCaloriesText}>{formatCalories(result.calories)}</Text>
           </View>
         )}
       </View>

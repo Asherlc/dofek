@@ -1,3 +1,4 @@
+import { UnitConverter } from "@dofek/format/units";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -152,6 +153,7 @@ export default function SettingsScreen() {
   const [goalInput, setGoalInput] = useState("");
   const [editingGoal, setEditingGoal] = useState(false);
   const isImperial = currentUnitSystem === "imperial";
+  const units = new UnitConverter(currentUnitSystem);
   const kgToLbs = 2.20462;
 
   function handleUnitChange(value: UnitSystem) {
@@ -469,10 +471,7 @@ export default function SettingsScreen() {
             </View>
           ) : currentGoalKg != null ? (
             <View style={styles.goalDisplayRow}>
-              <Text style={styles.goalDisplayText}>
-                {(isImperial ? currentGoalKg * kgToLbs : currentGoalKg).toFixed(1)}{" "}
-                {isImperial ? "lbs" : "kg"}
-              </Text>
+              <Text style={styles.goalDisplayText}>{units.formatWeight(currentGoalKg)}</Text>
               <TouchableOpacity
                 onPress={() => {
                   setGoalInput(

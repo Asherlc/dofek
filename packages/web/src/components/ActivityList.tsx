@@ -1,4 +1,9 @@
-import { formatNumber, parseValidDate } from "@dofek/format/format";
+import {
+  formatCalories,
+  formatDurationMinutes,
+  formatNumber,
+  parseValidDate,
+} from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
@@ -37,7 +42,7 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
   const endedDate = parseValidDate(endedAt);
   if (!startedDate || !endedDate) return "—";
   const durationMinutes = Math.round((endedDate.getTime() - startedDate.getTime()) / 60000);
-  return durationMinutes >= 0 ? `${durationMinutes}m` : "—";
+  return durationMinutes >= 0 ? formatDurationMinutes(durationMinutes) : "—";
 }
 
 export function ActivityList({
@@ -110,7 +115,7 @@ export function ActivityList({
       label: "Calories",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 tabular-nums whitespace-nowrap text-foreground",
-      renderCell: (activity) => (activity.calories ? `${Math.round(activity.calories)} kcal` : "—"),
+      renderCell: (activity) => (activity.calories ? formatCalories(activity.calories) : "—"),
     },
     {
       key: "provider",

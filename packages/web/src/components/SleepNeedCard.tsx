@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDurationMinutes, formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
@@ -16,12 +16,6 @@ interface SleepNeedCardProps {
   loading?: boolean;
 }
 
-function formatHoursMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = Math.round(minutes % 60);
-  return `${hours}h ${remainingMinutes}m`;
-}
-
 export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
   if (loading || !data) {
     return (
@@ -34,9 +28,6 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       />
     );
   }
-
-  const needHours = Math.round((data.totalNeedMinutes / 60) * 10) / 10;
-  const baselineHours = Math.round((data.baselineMinutes / 60) * 10) / 10;
 
   // Recent nights bar chart
   const chartOption = {
@@ -62,10 +53,10 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
           return `<div style="font-weight:600;margin-bottom:4px">${date}</div><div style="color:#6b7280">No data</div>`;
         }
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
-        html += `<div>Slept: <b>${formatHoursMinutes(night.actualMinutes)}</b></div>`;
-        html += `<div>Needed: <b>${formatHoursMinutes(night.neededMinutes)}</b></div>`;
+        html += `<div>Slept: <b>${formatDurationMinutes(night.actualMinutes)}</b></div>`;
+        html += `<div>Needed: <b>${formatDurationMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
-          html += `<div style="color:${statusColors.danger}">Debt: ${night.debtMinutes}m</div>`;
+          html += `<div style="color:${statusColors.danger}">Debt: ${formatDurationMinutes(night.debtMinutes)}</div>`;
         }
         return html;
       },
@@ -120,7 +111,9 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
           <h3 className="text-muted text-sm font-medium mb-1">Sleep Need Tonight</h3>
           {data.canRecommend ? (
             <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-bold text-blue-400">{needHours}h</span>
+              <span className="text-4xl font-bold text-blue-400">
+                {formatDurationMinutes(data.totalNeedMinutes)}
+              </span>
               <span className="text-subtle text-sm">recommended</span>
             </div>
           ) : (
@@ -135,16 +128,20 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       <div className="flex gap-4 mb-4 text-xs">
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
           <p className="text-subtle">Baseline</p>
-          <p className="text-foreground font-medium">{baselineHours}h</p>
+          <p className="text-foreground font-medium">
+            {formatDurationMinutes(data.baselineMinutes)}
+          </p>
         </div>
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
           <p className="text-subtle">Strain Debt</p>
-          <p className="text-foreground font-medium">+{data.strainDebtMinutes}m</p>
+          <p className="text-foreground font-medium">
+            +{formatDurationMinutes(data.strainDebtMinutes)}
+          </p>
         </div>
         <div className="flex-1 bg-surface-solid rounded-lg p-2">
           <p className="text-subtle">Sleep Debt</p>
           <p className="font-medium" style={{ color: sleepDebtColor(data.accumulatedDebtMinutes) }}>
-            {formatHoursMinutes(data.accumulatedDebtMinutes)}
+            {formatDurationMinutes(data.accumulatedDebtMinutes)}
           </p>
         </div>
       </div>
