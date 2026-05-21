@@ -6608,7 +6608,7 @@ successfully in production.
 
 ### User Impact
 
-The body-weight UI can show stale data even when current weight samples are
+The body weight UI can show stale data even when current weight samples are
 present in canonical Postgres storage.
 
 ### Evidence
