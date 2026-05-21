@@ -221,12 +221,12 @@ describe("CorrelationRepository", () => {
   });
 
   describe("compute", () => {
-    it("executes 4 Postgres queries and reads body composition from ClickHouse", async () => {
+    it("executes 3 Postgres queries and reads sleep/body composition from ClickHouse", async () => {
       const db = makeDb();
       const sensorStore = makeSensorStore();
       const repo = new CorrelationRepository(db, "user-1", "UTC", sensorStore);
       await repo.compute("resting_hr", "hrv", 90, 0, "2024-06-01");
-      expect(db.execute).toHaveBeenCalledTimes(4);
+      expect(db.execute).toHaveBeenCalledTimes(3);
       expect(sensorStore.query).toHaveBeenCalledWith(
         expect.anything(),
         expect.stringContaining("analytics.v_body_measurement"),

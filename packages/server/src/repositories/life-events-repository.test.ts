@@ -8,13 +8,37 @@ function makeRepository(rows: Record<string, unknown>[] = []) {
   return { repo, execute, sensorStore };
 }
 
-function makeSensorStore(bodyRows: Record<string, unknown>[] = []) {
+function makeSleepRow(
+  date: string,
+  durationMinutes: number | null,
+  deepMinutes: number | null,
+  remMinutes: number | null,
+  efficiencyPct: number | null,
+) {
+  const lightMinutes =
+    durationMinutes == null || deepMinutes == null || remMinutes == null
+      ? null
+      : durationMinutes - deepMinutes - remMinutes;
   return {
-    query: vi.fn(async (_schema: unknown, query: string) =>
-      query.includes("analytics.v_body_measurement")
-        ? bodyRows
-        : [{ date: "2025-05-01", resting_hr: 52 }],
-    ),
+    date,
+    started_at: `${date}T04:00:00Z`,
+    ended_at: `${date}T11:00:00Z`,
+    duration_minutes: durationMinutes,
+    deep_minutes: deepMinutes,
+    rem_minutes: remMinutes,
+    light_minutes: lightMinutes,
+    awake_minutes: 0,
+    efficiency_pct: efficiencyPct,
+  };
+}
+
+function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: unknown[] = []) {
+  return {
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (query.includes("analytics.v_body_measurement")) return bodyRows;
+      if (query.includes("analytics.v_sleep")) return sleepRows;
+      return [{ date: "2025-05-01", resting_hr: 52 }];
+    }),
   };
 }
 
@@ -111,6 +135,21 @@ describe("LifeEventsRepository", () => {
       });
       expect(execute).toHaveBeenCalledOnce();
     });
+
+    it("throws when insert returning produces no row", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(
+        repo.create({
+          label: "Vacation",
+          startedAt: "2025-06-01",
+          endedAt: null,
+          category: null,
+          ongoing: false,
+          notes: null,
+        }),
+      ).rejects.toThrow("INSERT RETURNING returned no rows");
+    });
   });
 
   describe("update", () => {
@@ -186,6 +225,17 @@ describe("LifeEventsRepository", () => {
       expect(result).toBeNull();
     });
 
+    it("requires a ClickHouse sensor store when analyzing an existing event", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ started_at: "2025-06-01", ended_at: null, ongoing: false }]);
+      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC");
+
+      await expect(repo.analyze("evt-1", 30)).rejects.toThrow(
+        "ClickHouse activity analytics store is required for life event analysis",
+      );
+    });
+
     it("returns metrics, sleep, and body comp comparisons for a point event", async () => {
       const execute = vi
         .fn()
@@ -209,32 +259,23 @@ describe("LifeEventsRepository", () => {
             avg_steps: 7000,
             avg_active_energy: 450,
           },
-        ])
-        // Third call: sleep (parallel)
-        .mockResolvedValueOnce([
-          {
-            period: "before",
-            nights: 28,
-            avg_sleep_min: 420,
-            avg_deep_min: 90,
-            avg_rem_min: 100,
-            avg_efficiency: 88.5,
-          },
-        ])
-        .mockResolvedValueOnce([]);
+        ]);
 
       const repo = new LifeEventsRepository(
         { execute },
         "user-1",
         "America/New_York",
-        makeSensorStore([
-          {
-            period: "before",
-            measurements: 10,
-            avg_weight: 80.5,
-            avg_body_fat: 15.2,
-          },
-        ]),
+        makeSensorStore(
+          [
+            {
+              period: "before",
+              measurements: 10,
+              avg_weight: 80.5,
+              avg_body_fat: 15.2,
+            },
+          ],
+          [makeSleepRow("2025-05-15", 420, 90, 100, 88.5)],
+        ),
       );
       const result = await repo.analyze("evt-1", 30);
 
@@ -261,8 +302,8 @@ describe("LifeEventsRepository", () => {
       expect(result?.metrics).toEqual([]);
       expect(result?.sleep).toEqual([]);
       expect(result?.bodyComp).toEqual([]);
-      // 3 Postgres calls: event lookup, metrics, sleep. Body comparison is ClickHouse.
-      expect(execute).toHaveBeenCalledTimes(3);
+      // 2 Postgres calls: event lookup and metrics. Sleep and body comparison are ClickHouse.
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("handles ranged events with an end date", async () => {
@@ -297,6 +338,66 @@ describe("LifeEventsRepository", () => {
 
       expect(result).not.toBeNull();
       expect(result?.metrics).toHaveLength(2);
+    });
+
+    it("computes sleep comparison with exact before and after windows", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          { started_at: "2025-06-10", ended_at: "2025-06-12", ongoing: false },
+        ])
+        .mockResolvedValueOnce([]);
+      const sleepRows = [
+        makeSleepRow("2025-06-06", 200, 40, 50, 70),
+        makeSleepRow("2025-06-07", 300, 60, 90, 80),
+        makeSleepRow("2025-06-09", null, 90, 100, 90),
+        makeSleepRow("2025-06-10", 480, 110, 150, 92),
+        makeSleepRow("2025-06-12", 540, 130, null, 94),
+        makeSleepRow("2025-06-13", 600, 140, 180, 96),
+      ];
+      const sensorStore = makeSensorStore([], sleepRows);
+      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC", sensorStore);
+
+      const result = await repo.analyze("evt-ranged", 3);
+
+      expect(result?.sleep).toEqual([
+        {
+          period: "before",
+          nights: 2,
+          avg_sleep_min: 300,
+          avg_deep_min: 75,
+          avg_rem_min: 95,
+          avg_efficiency: 85,
+        },
+        {
+          period: "after",
+          nights: 2,
+          avg_sleep_min: 510,
+          avg_deep_min: 120,
+          avg_rem_min: 150,
+          avg_efficiency: 93,
+        },
+      ]);
+    });
+
+    it("uses the analysis window to request sleep rows for point events", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ started_at: "2025-06-10", ended_at: null, ongoing: false }])
+        .mockResolvedValueOnce([]);
+      const sensorStore = makeSensorStore([], []);
+      const repo = new LifeEventsRepository({ execute }, "user-1", "UTC", sensorStore);
+
+      await repo.analyze("evt-point", 3);
+
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("analytics.v_sleep"),
+        expect.objectContaining({
+          endDate: "2025-06-13",
+          days: 6,
+        }),
+      );
     });
   });
 });

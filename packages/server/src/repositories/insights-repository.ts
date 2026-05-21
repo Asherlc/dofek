@@ -15,6 +15,7 @@ import {
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
 
 export class InsightsRepository {
@@ -64,15 +65,26 @@ export class InsightsRepository {
           endDate,
           days,
         }),
-        executeWithSchema(
-          this.#db,
-          sleepRowSchema,
-          sql`SELECT started_at, duration_minutes, deep_minutes, rem_minutes,
-                   light_minutes, awake_minutes, efficiency_pct, is_nap
-            FROM fitness.v_sleep
-            WHERE user_id = ${this.#userId}
-              AND started_at > ${timestampWindowStart(endDate, days)}
-            ORDER BY started_at ASC`,
+        fetchSleepNights({
+          sensorStore: this.#sensorStore,
+          userId: this.#userId,
+          timezone: this.#timezone,
+          endDate,
+          days,
+          order: "asc",
+        }).then((rows) =>
+          rows.map((row) =>
+            sleepRowSchema.parse({
+              started_at: row.started_at,
+              duration_minutes: row.duration_minutes,
+              deep_minutes: row.deep_minutes,
+              rem_minutes: row.rem_minutes,
+              light_minutes: row.light_minutes,
+              awake_minutes: row.awake_minutes,
+              efficiency_pct: row.efficiency_pct,
+              is_nap: false,
+            }),
+          ),
         ),
         executeWithSchema(
           this.#db,

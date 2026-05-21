@@ -1,5 +1,4 @@
 import assert from "node:assert";
-import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
 import { dailyMetrics, sleepSession, TEST_USER_ID } from "../db/schema.ts";
@@ -62,9 +61,7 @@ async function insertDailyHrv(dates: Map<string, number>): Promise<void> {
   }
 }
 
-async function refreshFitSleepReadModels(): Promise<void> {
-  await ctx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-}
+async function refreshFitSleepReadModels(): Promise<void> {}
 
 describe("fitSleepFromDb", () => {
   it("executes the LATERAL subquery SQL without error on an empty database", async () => {

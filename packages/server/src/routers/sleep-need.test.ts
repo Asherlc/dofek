@@ -36,6 +36,66 @@ import { sleepNeedRouter } from "./sleep-need.ts";
 
 const createCaller = createTestCallerFactory(sleepNeedRouter);
 
+interface SleepNeedFixtureRow {
+  date: string;
+  duration_minutes: number | null;
+  next_day_hrv?: number | null;
+  median_hrv?: number | null;
+  good_recovery?: boolean;
+  yesterday_load?: number;
+  efficiency_pct?: number | null;
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
+  return rows.map((row) => ({
+    date: row.date,
+    started_at: `${row.date}T22:00:00`,
+    ended_at: `${addDays(row.date, 1)}T06:00:00`,
+    duration_minutes: row.duration_minutes,
+    deep_minutes: null,
+    rem_minutes: null,
+    light_minutes: null,
+    awake_minutes: null,
+    efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
+  }));
+}
+
+function toHrvRows(rows: SleepNeedFixtureRow[]) {
+  return rows
+    .filter((row) => row.next_day_hrv !== undefined)
+    .map((row) => ({
+      date: addDays(row.date, 1),
+      hrv: row.next_day_hrv ?? null,
+    }));
+}
+
+function createCalculateCaller(rows: SleepNeedFixtureRow[]) {
+  const yesterdayLoad = rows[0]?.yesterday_load ?? 0;
+  return createCaller({
+    db: { execute: vi.fn().mockResolvedValue(toHrvRows(rows)) },
+    userId: "user-1",
+    sensorStore: makeMockSensorStore([[{ load: yesterdayLoad }], toClickHouseSleepRows(rows)]),
+  });
+}
+
+function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
+  const latestRow = rows[0];
+  return createCaller({
+    db: { execute: vi.fn() },
+    userId: "user-1",
+    sensorStore: makeMockSensorStore([
+      latestRow ? toClickHouseSleepRows([latestRow]) : [],
+      toClickHouseSleepRows(rows.slice(1)),
+    ]),
+  });
+}
+
 describe("sleepNeedRouter", () => {
   // ── calculate ──────────────────────────────────────────
 
@@ -71,11 +131,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 0,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Average of 450, 455, 460, 465, 470, 475, 480, 485, 490, 495 = 472.5
@@ -92,11 +148,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 0,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.baselineMinutes).toBe(480);
@@ -124,11 +176,7 @@ describe("sleepNeedRouter", () => {
         })),
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Only good nights (420 min each) count for baseline
@@ -147,11 +195,7 @@ describe("sleepNeedRouter", () => {
         },
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Only 1 good night < 7 -> baseline defaults to 480
@@ -171,11 +215,7 @@ describe("sleepNeedRouter", () => {
         },
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.strainDebtMinutes).toBe(60);
@@ -201,11 +241,7 @@ describe("sleepNeedRouter", () => {
         },
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // yesterdayLoad = rows[0].yesterday_load = 150
@@ -235,11 +271,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 0,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = avg of 20 good nights at 430 = 430
@@ -278,11 +310,7 @@ describe("sleepNeedRouter", () => {
         })),
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Baseline = avg of 21 good nights = (7*480 + 7*420 + 7*520) / 21 = (3360+2940+3640)/21 = 9940/21 ≈ 473
@@ -303,11 +331,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 100,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = avg of 14 good nights at 400 = 400 (>= 7 good nights)
@@ -335,11 +359,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 0,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       expect(result.recentNights).toHaveLength(7);
@@ -364,11 +384,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 0,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Calendar: endDate-7 through endDate-1 (last 7 completed nights, excluding today)
@@ -386,11 +402,7 @@ describe("sleepNeedRouter", () => {
         yesterday_load: 0,
       }));
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = 420, actual = 420, debt = 0
@@ -423,11 +435,7 @@ describe("sleepNeedRouter", () => {
         })),
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // baseline = (8*480 + 2*520)/10 = (3840 + 1040)/10 = 488
@@ -459,11 +467,7 @@ describe("sleepNeedRouter", () => {
         },
       ];
 
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        sensorStore: makeMockSensorStore(rows),
-      });
+      const caller = createCalculateCaller(rows);
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
       // Only 7 good nights with duration > 0 at 480 each
@@ -475,43 +479,26 @@ describe("sleepNeedRouter", () => {
 
   describe("performance", () => {
     it("returns null when no sleep data", async () => {
-      const executeMock = vi.fn();
-      // First call: sleep rows
-      executeMock.mockResolvedValueOnce([]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).toBeNull();
     });
 
     it("returns null when duration_minutes is null", async () => {
-      const executeMock = vi.fn();
-      executeMock.mockResolvedValueOnce([{ duration_minutes: null, efficiency_pct: 90 }]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: null, efficiency_pct: 90 },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).toBeNull();
     });
 
     it("returns sleep performance info when data is available", async () => {
-      const executeMock = vi.fn();
-      // First call: sleep rows
-      executeMock.mockResolvedValueOnce([{ duration_minutes: 450, efficiency_pct: 92 }]);
-      // Second call: baseline rows
-      executeMock.mockResolvedValueOnce([{ avg_duration: 480 }]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
@@ -525,14 +512,10 @@ describe("sleepNeedRouter", () => {
     });
 
     it("uses default efficiency of 85 when null", async () => {
-      const executeMock = vi.fn();
-      executeMock.mockResolvedValueOnce([{ duration_minutes: 480, efficiency_pct: null }]);
-      executeMock.mockResolvedValueOnce([{ avg_duration: 480 }]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 480, efficiency_pct: null },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
@@ -540,14 +523,10 @@ describe("sleepNeedRouter", () => {
     });
 
     it("uses default baseline of 480 when avg_duration is null", async () => {
-      const executeMock = vi.fn();
-      executeMock.mockResolvedValueOnce([{ duration_minutes: 450, efficiency_pct: 90 }]);
-      executeMock.mockResolvedValueOnce([{ avg_duration: null }]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 90 },
+        { date: "2026-03-01", duration_minutes: null },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
@@ -555,14 +534,9 @@ describe("sleepNeedRouter", () => {
     });
 
     it("uses default baseline of 480 when no baseline rows", async () => {
-      const executeMock = vi.fn();
-      executeMock.mockResolvedValueOnce([{ duration_minutes: 450, efficiency_pct: 90 }]);
-      executeMock.mockResolvedValueOnce([]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 90 },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result).not.toBeNull();
@@ -570,14 +544,10 @@ describe("sleepNeedRouter", () => {
     });
 
     it("computes recommended bedtime in HH:MM format", async () => {
-      const executeMock = vi.fn();
-      executeMock.mockResolvedValueOnce([{ duration_minutes: 480, efficiency_pct: 95 }]);
-      executeMock.mockResolvedValueOnce([{ avg_duration: 480 }]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 480, efficiency_pct: 95 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
@@ -587,14 +557,10 @@ describe("sleepNeedRouter", () => {
     });
 
     it("rounds neededMinutes to integer", async () => {
-      const executeMock = vi.fn();
-      executeMock.mockResolvedValueOnce([{ duration_minutes: 450, efficiency_pct: 90 }]);
-      executeMock.mockResolvedValueOnce([{ avg_duration: 467.8 }]);
-
-      const caller = createCaller({
-        db: { execute: executeMock },
-        userId: "user-1",
-      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 90 },
+        { date: "2026-03-01", duration_minutes: 467.8 },
+      ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
       expect(result?.neededMinutes).toBe(468);

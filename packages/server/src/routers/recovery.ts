@@ -12,18 +12,20 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateAccessPredicate, timestampAccessPredicate } from "../billing/entitlement.ts";
+import { dateAccessPredicate } from "../billing/entitlement.ts";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
 import {
   dateWindowEnd,
   dateWindowStart,
   dateWindowStartString,
   endDateSchema,
-  timestampWindowStart,
 } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import {
+  fetchLatestSleepNight,
+  fetchSleepNights,
+} from "../repositories/clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -38,6 +40,34 @@ function requireSensorStore(
     });
   }
   return sensorStore;
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function hourInTimezone(timestamp: string, timezone: string): number | null {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour + minute / 60;
+}
+
+function populationStddev(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
 }
 
 export type { ReadinessComponents, ReadinessWeights };
@@ -124,67 +154,48 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepConsistencyRow[]> => {
       const queryDays = input.days + 14;
-      const consistencyRowSchema = z.object({
-        date: dateStringSchema,
-        bedtime_hour: z.coerce.number(),
-        waketime_hour: z.coerce.number(),
-        rolling_bedtime_stddev: z.coerce.number().nullable(),
-        rolling_waketime_stddev: z.coerce.number().nullable(),
-        window_count: z.coerce.number(),
+      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.sleepConsistency");
+      const today = new Date().toISOString().slice(0, 10);
+      const rows = (
+        await fetchSleepNights({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          endDate: today,
+          days: queryDays,
+          accessWindow: ctx.accessWindow,
+          order: "asc",
+        })
+      ).flatMap((row) => {
+        const endedAt = row.ended_at;
+        const bedtimeHour = hourInTimezone(row.started_at, ctx.timezone);
+        const waketimeHour = endedAt ? hourInTimezone(endedAt, ctx.timezone) : null;
+        if (bedtimeHour == null || waketimeHour == null) return [];
+        return [{ date: row.date, bedtimeHour, waketimeHour }];
       });
-      const tz = ctx.timezone;
-      const rows = await executeWithSchema(
-        ctx.db,
-        consistencyRowSchema,
-        sql`WITH raw_sleep AS (
-              SELECT
-                ${sleepNightDate(tz)} AS date,
-                EXTRACT(HOUR FROM started_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM started_at AT TIME ZONE ${tz}) / 60.0 AS bedtime_hour,
-                EXTRACT(HOUR FROM ended_at AT TIME ZONE ${tz}) + EXTRACT(MINUTE FROM ended_at AT TIME ZONE ${tz}) / 60.0 AS waketime_hour,
-                duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > NOW() - ${queryDays}::int * INTERVAL '1 day'
-                ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
-            ),
-            nightly AS (
-              SELECT DISTINCT ON (date) date, bedtime_hour, waketime_hour
-              FROM raw_sleep
-              ORDER BY date, duration_minutes DESC NULLS LAST
-            )
-            SELECT
-              date::text,
-              bedtime_hour,
-              waketime_hour,
-              STDDEV_POP(bedtime_hour) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_bedtime_stddev,
-              STDDEV_POP(waketime_hour) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS rolling_waketime_stddev,
-              COUNT(*) OVER (ORDER BY date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS window_count
-            FROM nightly
-            WHERE date > CURRENT_DATE - ${input.days}::int
-            ORDER BY date ASC`,
-      );
 
-      return rows.map((row) => {
-        const bedStddev =
-          row.rolling_bedtime_stddev != null ? Number(row.rolling_bedtime_stddev) : null;
-        const wakeStddev =
-          row.rolling_waketime_stddev != null ? Number(row.rolling_waketime_stddev) : null;
+      const cutoffDate = addDays(today, -input.days);
+      return rows
+        .map((row, rowIndex) => {
+          const windowRows = rows.slice(Math.max(0, rowIndex - 13), rowIndex + 1);
+          const bedStddev = populationStddev(windowRows.map((windowRow) => windowRow.bedtimeHour));
+          const wakeStddev = populationStddev(
+            windowRows.map((windowRow) => windowRow.waketimeHour),
+          );
 
-        const consistencyScore =
-          Number(row.window_count) >= 7
-            ? computeSleepConsistencyScore(bedStddev, wakeStddev)
-            : null;
+          const consistencyScore =
+            windowRows.length >= 7 ? computeSleepConsistencyScore(bedStddev, wakeStddev) : null;
 
-        return {
-          date: row.date,
-          bedtimeHour: Math.round(Number(row.bedtime_hour) * 100) / 100,
-          waketimeHour: Math.round(Number(row.waketime_hour) * 100) / 100,
-          rollingBedtimeStddev: bedStddev != null ? Math.round(bedStddev * 100) / 100 : null,
-          rollingWaketimeStddev: wakeStddev != null ? Math.round(wakeStddev * 100) / 100 : null,
-          consistencyScore,
-        };
-      });
+          return {
+            date: row.date,
+            bedtimeHour: Math.round(row.bedtimeHour * 100) / 100,
+            waketimeHour: Math.round(row.waketimeHour * 100) / 100,
+            rollingBedtimeStddev: bedStddev != null ? Math.round(bedStddev * 100) / 100 : null,
+            rollingWaketimeStddev: wakeStddev != null ? Math.round(wakeStddev * 100) / 100 : null,
+            consistencyScore,
+          };
+        })
+        .filter((row) => row.date > cutoffDate);
     }),
 
   /**
@@ -346,83 +357,61 @@ export const recoveryRouter = router({
   sleepAnalytics: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
-      const sleepRowSchema = z.object({
-        date: dateStringSchema,
-        duration_minutes: z.coerce.number(),
-        sleep_minutes: z.coerce.number(),
-        deep_pct: z.coerce.number(),
-        rem_pct: z.coerce.number(),
-        light_pct: z.coerce.number(),
-        awake_pct: z.coerce.number(),
-        efficiency: z.coerce.number(),
-        rolling_avg_duration: z.coerce.number().nullable(),
+      const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.sleepAnalytics");
+      const endDate = new Date().toISOString().slice(0, 10);
+      const rows = await fetchSleepNights({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate,
+        days: input.days,
+        accessWindow: ctx.accessWindow,
+        order: "asc",
       });
-      const tz = ctx.timezone;
-      const rows = await executeWithSchema(
-        ctx.db,
-        sleepRowSchema,
-        sql`WITH raw_sleep AS (
-              SELECT
-                ${sleepNightDate(tz)} AS date,
-                duration_minutes,
-                -- Actual time asleep: for Apple Health, duration = in-bed time,
-                -- so derive sleep time from stages. Other providers already exclude awake.
-                CASE
-                  WHEN provider_id = 'apple_health'
-                    AND (deep_minutes IS NOT NULL OR rem_minutes IS NOT NULL OR light_minutes IS NOT NULL)
-                    THEN COALESCE(deep_minutes, 0) + COALESCE(rem_minutes, 0) + COALESCE(light_minutes, 0)
-                  ELSE duration_minutes
-                END AS sleep_minutes,
-                deep_minutes,
-                rem_minutes,
-                light_minutes,
-                awake_minutes,
-                efficiency_pct,
-                CASE WHEN duration_minutes > 0 THEN deep_minutes::real / duration_minutes * 100 ELSE 0 END AS deep_pct,
-                CASE WHEN duration_minutes > 0 THEN rem_minutes::real / duration_minutes * 100 ELSE 0 END AS rem_pct,
-                CASE WHEN duration_minutes > 0 THEN light_minutes::real / duration_minutes * 100 ELSE 0 END AS light_pct,
-                CASE WHEN duration_minutes > 0 THEN awake_minutes::real / duration_minutes * 100 ELSE 0 END AS awake_pct
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > NOW() - ${input.days}::int * INTERVAL '1 day'
-                ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
-            ),
-            nightly AS (
-              SELECT DISTINCT ON (date)
-                date, duration_minutes, sleep_minutes, deep_minutes, rem_minutes,
-                light_minutes, awake_minutes, efficiency_pct, deep_pct, rem_pct, light_pct, awake_pct
-              FROM raw_sleep
-              ORDER BY date, duration_minutes DESC NULLS LAST
-            )
-            SELECT
-              date::text AS date,
-              duration_minutes,
-              sleep_minutes,
-              deep_pct,
-              rem_pct,
-              light_pct,
-              awake_pct,
-              efficiency_pct AS efficiency,
-              AVG(sleep_minutes) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_avg_duration
-            FROM nightly
-            ORDER BY date ASC`,
-      );
 
-      const nightly = rows.map((row) => ({
-        date: row.date,
-        durationMinutes: Number(row.duration_minutes),
-        sleepMinutes: Number(row.sleep_minutes),
-        deepPct: Math.round(Number(row.deep_pct) * 10) / 10,
-        remPct: Math.round(Number(row.rem_pct) * 10) / 10,
-        lightPct: Math.round(Number(row.light_pct) * 10) / 10,
-        awakePct: Math.round(Number(row.awake_pct) * 10) / 10,
-        efficiency: Math.round(Number(row.efficiency) * 10) / 10,
-        rollingAvgDuration:
-          row.rolling_avg_duration != null
-            ? Math.round(Number(row.rolling_avg_duration) * 10) / 10
-            : null,
-      }));
+      // Apple Health reports duration as in-bed time, so derive actual sleep
+      // from stage minutes. Other providers already exclude awake time from
+      // duration_minutes, so use duration directly to preserve their accounting.
+      const computeSleepMinutes = (row: (typeof rows)[number]) => {
+        const durationMinutes = row.duration_minutes ?? 0;
+        if (row.provider_id !== "apple_health") return durationMinutes;
+        const hasStages =
+          row.deep_minutes != null || row.rem_minutes != null || row.light_minutes != null;
+        if (!hasStages) return durationMinutes;
+        return (row.deep_minutes ?? 0) + (row.rem_minutes ?? 0) + (row.light_minutes ?? 0);
+      };
+
+      const nightly = rows.map((row, rowIndex) => {
+        const durationMinutes = row.duration_minutes ?? 0;
+        const sleepMinutes = computeSleepMinutes(row);
+        const windowRows = rows.slice(Math.max(0, rowIndex - 6), rowIndex + 1);
+        const rollingDurations = windowRows.map(computeSleepMinutes);
+        const rollingAvgDuration =
+          rollingDurations.reduce((sum, duration) => sum + duration, 0) / rollingDurations.length;
+        return {
+          date: row.date,
+          durationMinutes,
+          sleepMinutes,
+          deepPct:
+            durationMinutes > 0
+              ? Math.round(((row.deep_minutes ?? 0) / durationMinutes) * 1000) / 10
+              : 0,
+          remPct:
+            durationMinutes > 0
+              ? Math.round(((row.rem_minutes ?? 0) / durationMinutes) * 1000) / 10
+              : 0,
+          lightPct:
+            durationMinutes > 0
+              ? Math.round(((row.light_minutes ?? 0) / durationMinutes) * 1000) / 10
+              : 0,
+          awakePct:
+            durationMinutes > 0
+              ? Math.round(((row.awake_minutes ?? 0) / durationMinutes) * 1000) / 10
+              : 0,
+          efficiency: Math.round((row.efficiency_pct ?? 0) * 10) / 10,
+          rollingAvgDuration: Math.round(rollingAvgDuration * 10) / 10,
+        };
+      });
 
       // Compute 14-day sleep debt vs personalized target (using actual sleep time)
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
@@ -477,10 +466,11 @@ export const recoveryRouter = router({
         endDate: input.endDate,
         days: queryDays,
       });
-      const combinedRows = await executeWithSchema(
-        ctx.db,
-        readinessRowSchema,
-        sql`WITH ${restingHeartRateCte},
+      const [metricsRows, sleepRows] = await Promise.all([
+        executeWithSchema(
+          ctx.db,
+          readinessRowSchema,
+          sql`WITH ${restingHeartRateCte},
           metrics_with_baselines AS (
               SELECT
                 dm.date::text AS date,
@@ -499,24 +489,9 @@ export const recoveryRouter = router({
               WHERE dm.user_id = ${ctx.userId}
                 AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
                 ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
-            ),
-            sleep_eff AS (
-              SELECT DISTINCT ON (local_date)
-                local_date::text AS date,
-                efficiency_pct
-              FROM (
-                SELECT (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${ctx.timezone})::date AS local_date,
-                       efficiency_pct, duration_minutes
-                FROM fitness.v_sleep
-                WHERE user_id = ${ctx.userId}
-                  AND is_nap = false
-                  AND started_at > ${timestampWindowStart(input.endDate, queryDays)}
-                  ${timestampAccessPredicate(ctx.accessWindow, sql`started_at`)}
-              ) sleep_sub
-              ORDER BY local_date, duration_minutes DESC NULLS LAST
             )
             SELECT
-              COALESCE(m.date, s.date) AS date,
+              m.date AS date,
               m.hrv,
               m.resting_hr,
               m.respiratory_rate,
@@ -526,10 +501,48 @@ export const recoveryRouter = router({
               m.rhr_sd_30d,
               m.rr_mean_30d,
               m.rr_sd_30d,
-              s.efficiency_pct
+              NULL::real AS efficiency_pct
             FROM metrics_with_baselines m
-            FULL JOIN sleep_eff s ON s.date = m.date
             ORDER BY date ASC`,
+        ),
+        fetchSleepNights({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          endDate: input.endDate,
+          days: queryDays,
+          accessWindow: ctx.accessWindow,
+          order: "asc",
+        }),
+      ]);
+      const combinedByDate = new Map(
+        metricsRows.map((row) => [
+          row.date,
+          {
+            ...row,
+            efficiency_pct:
+              sleepRows.find((sleepRow) => sleepRow.date === row.date)?.efficiency_pct ?? null,
+          },
+        ]),
+      );
+      for (const sleepRow of sleepRows) {
+        if (combinedByDate.has(sleepRow.date)) continue;
+        combinedByDate.set(sleepRow.date, {
+          date: sleepRow.date,
+          hrv: null,
+          resting_hr: null,
+          respiratory_rate: null,
+          hrv_mean_30d: null,
+          hrv_sd_30d: null,
+          rhr_mean_30d: null,
+          rhr_sd_30d: null,
+          rr_mean_30d: null,
+          rr_sd_30d: null,
+          efficiency_pct: sleepRow.efficiency_pct,
+        });
+      }
+      const combinedRows = [...combinedByDate.values()].sort((leftRow, rightRow) =>
+        leftRow.date.localeCompare(rightRow.date),
       );
       const cutoffDate = new Date(input.endDate);
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
@@ -688,28 +701,16 @@ export const recoveryRouter = router({
       const readinessMetrics = readinessRows[0];
       if (readinessMetrics) {
         const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
-        const sleepRows = await executeWithSchema(
-          ctx.db,
-          z.object({ efficiency_pct: z.number().nullable() }),
-          sql`
-            WITH raw_sleep AS (
-              SELECT ${sleepNightDate(ctx.timezone)} AS date,
-                efficiency_pct, started_at, duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-            ),
-            nightly AS (
-              SELECT DISTINCT ON (date) efficiency_pct, started_at
-              FROM raw_sleep
-              ORDER BY date DESC, duration_minutes DESC NULLS LAST
-            )
-            SELECT efficiency_pct FROM nightly ORDER BY started_at DESC LIMIT 1
-          `,
-        );
+        const latestSleep = await fetchLatestSleepNight({
+          sensorStore,
+          userId: ctx.userId,
+          timezone: ctx.timezone,
+          endDate: input.endDate,
+          accessWindow: ctx.accessWindow,
+        });
 
         // Use sleep efficiency as a proxy for sleep score, default 62 for others
-        const sleepEff = sleepRows[0]?.efficiency_pct ?? null;
+        const sleepEff = latestSleep?.efficiency_pct ?? null;
         const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
         const components: ReadinessComponents = {
           hrvScore:

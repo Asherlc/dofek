@@ -6,7 +6,7 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { dateDaysBefore, makeMockSensorStore } from "./test-helpers.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 /**
  * Integration test verifying that overlapping activities are deduplicated
@@ -20,6 +20,13 @@ describe("Activity summary deduplication", () => {
   let canonicalActivityId: string;
   let memberActivityId: string;
   let sensorStore: ActivitySensorStore;
+  const baseUtcNow = new Date();
+
+  function dateDaysAgo(daysAgo: number): string {
+    const date = new Date(baseUtcNow);
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    return date.toISOString().slice(0, 10);
+  }
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -101,17 +108,13 @@ describe("Activity summary deduplication", () => {
     canonicalActivityId = aliasRow.id;
     memberActivityId = nonCanonicalMemberId;
 
-    const today = new Date().toISOString().slice(0, 10);
-    const recentLoadDate = dateDaysBefore(today, 3);
-    const previousLoadDate = dateDaysBefore(today, 14);
-
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
       if (queryText.includes("SELECT date, resting_hr")) {
-        return [{ date: previousLoadDate, resting_hr: 50 }];
+        return [{ date: dateDaysAgo(14), resting_hr: 50 }];
       }
       return [
-        { day: previousLoadDate, trimp: 50 },
-        { day: recentLoadDate, trimp: 52 },
+        { day: dateDaysAgo(14), trimp: 50 },
+        { day: dateDaysAgo(3), trimp: 52 },
       ];
     };
 

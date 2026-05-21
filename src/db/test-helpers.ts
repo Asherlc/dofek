@@ -15,6 +15,9 @@ export interface TestContext {
   cleanup: () => Promise<void>;
 }
 
+const isRunnableMigrationStatement = (statement: string): boolean =>
+  statement.length > 0 && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS");
+
 /**
  * Spin up a TimescaleDB container (or use TEST_DATABASE_URL), create schema, run migrations.
  * When TEST_DATABASE_URL is set, creates an isolated database per test file to avoid
@@ -80,7 +83,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     const statements = content
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter(isRunnableMigrationStatement);
 
     for (const statement of statements) {
       await migrationClient.query(statement);
@@ -131,12 +134,13 @@ export async function setupTestDatabase(): Promise<TestContext> {
     "0008_clickhouse_activity_views.sql",
     "0017_drop_derived_resting_heart_rate.sql",
     "0019_clickhouse_proxy_views_after_body_measurement_migration.sql",
+    "0025_drop_v_sleep.sql",
   ]) {
     const content = readFileSync(resolve(drizzleDir, file), "utf-8");
     const statements = content
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter(isRunnableMigrationStatement);
 
     for (const statement of statements) {
       await migrationClient.query(statement);

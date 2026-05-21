@@ -82,7 +82,7 @@ describe("refitAllParams", () => {
 
     await refitAllParams(db, "user-1", sensorStore);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(4);
+    expect(sensorStore.query).toHaveBeenCalledTimes(6);
     expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("analytics.activity_summary asum"),
