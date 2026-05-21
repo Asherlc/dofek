@@ -49,6 +49,7 @@ export async function processPostSyncJob(
   } catch (err) {
     logger.error(`[post-sync] Failed to refresh body measurement read model: ${err}`);
     Sentry.captureException(err, { tags: { postSyncStep: "refreshBodyMeasurements" } });
+    throw err;
   }
 
   try {

@@ -183,21 +183,24 @@ describe("processPostSyncJob", () => {
     });
   });
 
-  it("reports errors to Sentry when body measurement refresh fails", async () => {
+  it("reports errors to Sentry and aborts when body measurement refresh fails", async () => {
     const refreshError = new Error("refresh failed");
     refreshBodyMeasurements.mockRejectedValueOnce(refreshError);
 
-    await processPostSyncJob(
-      makeUserRefitJob("user-11"),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
+    await expect(
+      processPostSyncJob(
+        makeUserRefitJob("user-11"),
+        fakeDb,
+        getFakeSensorStore,
+        refreshBodyMeasurements,
+      ),
+    ).rejects.toThrow(refreshError);
 
     expect(mockCaptureException).toHaveBeenCalledWith(refreshError, {
       tags: { postSyncStep: "refreshBodyMeasurements" },
     });
-    expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-11", fakeSensorStore);
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
   });
 
   it("invalidates the user cache after refitting", async () => {

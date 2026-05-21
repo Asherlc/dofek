@@ -3282,5 +3282,36 @@ describe("healthKitSyncRouter", () => {
         mockInvalidateByPrefix.mock.invocationCallOrder[0] ?? 0,
       );
     });
+
+    it("reports body measurement refresh failures without invalidating caches", async () => {
+      const Sentry = await import("@sentry/node");
+      vi.mocked(Sentry.captureException).mockClear();
+      const execute = makeExecute();
+      const refreshError = new Error("boom");
+      const refreshBodyMeasurements = vi.fn().mockRejectedValue(refreshError);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: { refreshBodyMeasurements },
+      });
+
+      const result = await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierBodyMass",
+            value: 82.5,
+            unit: "kg",
+            uuid: "body-weight-refresh-error",
+          }),
+        ],
+      });
+
+      expect(result.errors).toContain("Body measurements refresh: boom");
+      expect(Sentry.captureException).toHaveBeenCalledWith(refreshError, {
+        tags: { healthKitSyncStep: "refreshBodyMeasurements" },
+      });
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    });
   });
 });

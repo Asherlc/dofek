@@ -147,7 +147,7 @@ export const healthKitSyncRouter = router({
         errors.push(`Health events: ${message}`);
       }
 
-      if (bodyInserted > 0 && ctx.sensorStore?.refreshBodyMeasurements) {
+      if (bodyInserted > 0 && ctx.sensorStore) {
         try {
           await ctx.sensorStore.refreshBodyMeasurements();
         } catch (error: unknown) {
@@ -160,7 +160,7 @@ export const healthKitSyncRouter = router({
       }
 
       // Invalidate cached data so queries pick up the newly ingested data
-      if (inserted > 0) {
+      if (inserted > 0 && errors.length === 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);
       }
 

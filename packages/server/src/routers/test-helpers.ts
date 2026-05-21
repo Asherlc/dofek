@@ -41,6 +41,7 @@ export function makeMockSensorStore(rows: unknown[] | unknown[][] = []): Activit
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
   };
 }
 
