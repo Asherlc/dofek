@@ -128,7 +128,7 @@ describe("whoopBleSyncRouter", () => {
       expect(allSqlParts).not.toContain("heart_rate");
     });
 
-    it("writes deterministic external IDs and conflict handling for retry-safe uploads", async () => {
+    it("writes deterministic external IDs and treats duplicate realtime samples as no-ops", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -156,7 +156,7 @@ describe("whoopBleSyncRouter", () => {
       expect(
         allSqlParts.some((part) =>
           String(part).includes(
-            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING",
           ),
         ),
       ).toBe(true);
