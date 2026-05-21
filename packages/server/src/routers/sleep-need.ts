@@ -6,10 +6,14 @@ import {
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowStart, endDateSchema, timestampWindowStart } from "../lib/date-window.ts";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
+import { dateAccessPredicate } from "../billing/entitlement.ts";
+import { dateWindowEnd, dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import {
+  fetchLatestSleepNight,
+  fetchSleepNights,
+} from "../repositories/clickhouse-sleep-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -23,6 +27,23 @@ function requireSensorStore(
     });
   }
   return sensorStore;
+}
+
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sortedValues = [...values].sort((leftValue, rightValue) => leftValue - rightValue);
+  const middleIndex = Math.floor(sortedValues.length / 2);
+  if (sortedValues.length % 2 !== 0) return sortedValues[middleIndex] ?? null;
+  const leftValue = sortedValues[middleIndex - 1];
+  const rightValue = sortedValues[middleIndex];
+  if (leftValue == null || rightValue == null) return null;
+  return (leftValue + rightValue) / 2;
 }
 
 export interface SleepPerformanceInfo extends SleepPerformanceResult {
@@ -75,15 +96,6 @@ export const sleepNeedRouter = router({
   calculate: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
-      const sleepNeedRowSchema = z.object({
-        date: dateStringSchema,
-        duration_minutes: z.coerce.number(),
-        next_day_hrv: z.coerce.number().nullable(),
-        median_hrv: z.coerce.number().nullable(),
-        good_recovery: z.coerce.boolean(),
-        yesterday_load: z.coerce.number(),
-      });
-
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.calculate");
 
       // Yesterday's training load comes from analytics.activity_summary in CH
@@ -105,60 +117,49 @@ export const sleepNeedRouter = router({
       );
       const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
 
-      // Fetch 90 days of sleep + next-day HRV in one PG query.
-      // When v_sleep has multiple non-nap sessions per date (e.g. WHOOP + Apple Health
-      // that don't overlap >80%), pick the longest per date to avoid arbitrary Map
-      // overwrites and inconsistent duration reporting across endpoints.
-      const rows = await executeWithSchema(
+      const sleepRows = await fetchSleepNights({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate: input.endDate,
+        days: 90,
+        accessWindow: ctx.accessWindow,
+        order: "asc",
+      });
+
+      const hrvRows = await executeWithSchema(
         ctx.db,
-        sleepNeedRowSchema,
-        sql`WITH raw_sleep AS (
-              SELECT
-                ${sleepNightDate(ctx.timezone)} AS date,
-                COALESCE(duration_minutes, EXTRACT(EPOCH FROM (ended_at - started_at)) / 60)::int AS duration_minutes
-              FROM fitness.v_sleep
-              WHERE user_id = ${ctx.userId}
-                AND is_nap = false
-                AND started_at > ${timestampWindowStart(input.endDate, 90)}
-            ),
-            sleep_nights AS (
-              SELECT DISTINCT ON (date) date, duration_minutes
-              FROM raw_sleep
-              ORDER BY date, duration_minutes DESC NULLS LAST
-            ),
-            daily_hrv AS (
-              SELECT date, hrv
-              FROM fitness.v_daily_metrics
-              WHERE user_id = ${ctx.userId}
-                AND date > ${dateWindowStart(input.endDate, 90)}
-                AND hrv IS NOT NULL
-            ),
-            sleep_with_next_hrv AS (
-              SELECT
-                s.date,
-                s.duration_minutes,
-                h.hrv AS next_day_hrv
-              FROM sleep_nights s
-              LEFT JOIN daily_hrv h ON h.date = s.date + 1
-            ),
-            hrv_median AS (
-              SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY next_day_hrv) AS median_hrv
-              FROM sleep_with_next_hrv
-              WHERE next_day_hrv IS NOT NULL
-            )
+        z.object({ date: dateStringSchema, hrv: z.coerce.number().nullable() }),
+        sql`
             SELECT
-              s.date::text,
-              s.duration_minutes,
-              s.next_day_hrv,
-              hm.median_hrv,
-              CASE WHEN s.next_day_hrv >= hm.median_hrv THEN true ELSE false END AS good_recovery,
-              ${yesterdayLoadFromCh}::numeric AS yesterday_load
-            FROM sleep_with_next_hrv s
-            CROSS JOIN hrv_median hm
-            ORDER BY s.date ASC`,
+              date::text AS date,
+              hrv
+            FROM fitness.v_daily_metrics
+            WHERE user_id = ${ctx.userId}
+              AND date > ${dateWindowStart(input.endDate, 90)}
+              AND date <= ${dateWindowEnd(input.endDate)}
+              AND hrv IS NOT NULL
+              ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
+            ORDER BY date ASC`,
       );
 
-      const nights = rows;
+      const hrvByDate = new Map(hrvRows.map((row) => [row.date, row.hrv]));
+      const nextDayHrvValues = sleepRows
+        .map((sleepRow) => hrvByDate.get(addDays(sleepRow.date, 1)) ?? null)
+        .filter((value): value is number => value != null);
+      const medianHrv = median(nextDayHrvValues);
+
+      const nights = sleepRows.map((sleepRow) => {
+        const nextDayHrv = hrvByDate.get(addDays(sleepRow.date, 1)) ?? null;
+        return {
+          date: sleepRow.date,
+          duration_minutes: sleepRow.duration_minutes ?? 0,
+          next_day_hrv: nextDayHrv,
+          median_hrv: medianHrv,
+          good_recovery: medianHrv != null && nextDayHrv != null && nextDayHrv >= medianHrv,
+          yesterday_load: yesterdayLoadFromCh,
+        };
+      });
 
       // Calculate personalized baseline from nights that preceded good recovery
       const goodNights = nights.filter((n) => n.good_recovery && n.duration_minutes > 0);
@@ -170,7 +171,7 @@ export const sleepNeedRouter = router({
             )
           : 480; // default to 8 hours if insufficient data
 
-      const yesterdayLoad = Number(nights[0]?.yesterday_load ?? 0);
+      const yesterdayLoad = Number(yesterdayLoadFromCh);
 
       // Strain debt: ~1 minute extra sleep per 5 units of load, capped at 60 min
       const strainDebtMinutes = Math.min(60, Math.round(yesterdayLoad / 5));
@@ -245,35 +246,14 @@ export const sleepNeedRouter = router({
     .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
       // Get last night's sleep
       const tz = ctx.timezone;
-      const sleepRows = await executeWithSchema(
-        ctx.db,
-        z.object({
-          duration_minutes: z.number().nullable(),
-          efficiency_pct: z.number().nullable(),
-          sleep_date: z.string(),
-        }),
-        sql`
-          WITH raw_sleep AS (
-            SELECT
-              ${sleepNightDate(tz)} AS sleep_date_val,
-              duration_minutes, efficiency_pct, started_at,
-              (COALESCE(ended_at, started_at + interval '8 hours') AT TIME ZONE ${tz})::date::text AS sleep_date
-            FROM fitness.v_sleep
-            WHERE user_id = ${ctx.userId}
-              AND is_nap = false
-          ),
-          nightly AS (
-            SELECT DISTINCT ON (sleep_date_val)
-              duration_minutes, efficiency_pct, sleep_date, started_at
-            FROM raw_sleep
-            ORDER BY sleep_date_val DESC, duration_minutes DESC NULLS LAST
-          )
-          SELECT duration_minutes, efficiency_pct, sleep_date
-          FROM nightly ORDER BY started_at DESC LIMIT 1
-        `,
-      );
-
-      const lastSleep = sleepRows[0];
+      const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.performance");
+      const lastSleep = await fetchLatestSleepNight({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: tz,
+        endDate: input.endDate,
+        accessWindow: ctx.accessWindow,
+      });
       if (!lastSleep || lastSleep.duration_minutes == null) {
         return null;
       }
@@ -281,30 +261,22 @@ export const sleepNeedRouter = router({
       const actualMinutes = lastSleep.duration_minutes;
       const efficiency = lastSleep.efficiency_pct ?? 85;
 
-      // Get sleep need (reuse the baseline calculation logic)
-      // Deduplicate per calendar date to avoid counting multi-provider sessions twice
-      const baselineRows = await executeWithSchema(
-        ctx.db,
-        z.object({ avg_duration: z.coerce.number().nullable() }),
-        sql`
-          WITH raw_sleep AS (
-            SELECT ${sleepNightDate(tz)} AS date, duration_minutes
-            FROM fitness.v_sleep
-            WHERE user_id = ${ctx.userId}
-              AND is_nap = false
-              AND started_at > ${timestampWindowStart(input.endDate, 90)}
-              AND duration_minutes IS NOT NULL
-          ),
-          nightly AS (
-            SELECT DISTINCT ON (date) duration_minutes
-            FROM raw_sleep
-            ORDER BY date, duration_minutes DESC NULLS LAST
-          )
-          SELECT AVG(duration_minutes) AS avg_duration FROM nightly
-        `,
-      );
-
-      const neededMinutes = baselineRows[0]?.avg_duration ?? 480;
+      const baselineRows = await fetchSleepNights({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: tz,
+        endDate: input.endDate,
+        days: 90,
+        accessWindow: ctx.accessWindow,
+        order: "asc",
+      });
+      const durations = baselineRows
+        .map((row) => row.duration_minutes)
+        .filter((duration): duration is number => duration != null);
+      const neededMinutes =
+        durations.length > 0
+          ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length
+          : 480;
 
       const result = computeSleepPerformance(actualMinutes, neededMinutes, efficiency);
       const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
@@ -315,7 +287,7 @@ export const sleepNeedRouter = router({
         neededMinutes: Math.round(neededMinutes),
         efficiency,
         recommendedBedtime,
-        sleepDate: lastSleep.sleep_date,
+        sleepDate: lastSleep.date,
       };
     }),
 });

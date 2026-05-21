@@ -46,13 +46,33 @@ function makeCaller(rows: Record<string, unknown>[] = []) {
   });
 }
 
-function makeSensorStore(bodyRows: Record<string, unknown>[] = []) {
+function makeSleepRow(
+  date: string,
+  durationMinutes: number,
+  deepMinutes: number,
+  remMinutes: number,
+  efficiencyPct: number,
+) {
   return {
-    query: vi
-      .fn()
-      .mockResolvedValueOnce([{ date: "2026-01-01", resting_hr: 52 }])
-      .mockResolvedValueOnce(bodyRows)
-      .mockResolvedValue([]),
+    date,
+    started_at: `${date}T04:00:00Z`,
+    ended_at: `${date}T11:00:00Z`,
+    duration_minutes: durationMinutes,
+    deep_minutes: deepMinutes,
+    rem_minutes: remMinutes,
+    light_minutes: durationMinutes - deepMinutes - remMinutes,
+    awake_minutes: 0,
+    efficiency_pct: efficiencyPct,
+  };
+}
+
+function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: unknown[] = []) {
+  return {
+    query: vi.fn(async (_schema: unknown, query: string) => {
+      if (query.includes("analytics.v_body_measurement")) return bodyRows;
+      if (query.includes("analytics.v_sleep")) return sleepRows;
+      return [{ date: "2026-01-01", resting_hr: 52 }];
+    }),
   };
 }
 
@@ -234,24 +254,6 @@ describe("lifeEventsRouter", () => {
           },
         ])
         .mockResolvedValueOnce([
-          {
-            period: "before",
-            nights: 28,
-            avg_sleep_min: 420,
-            avg_deep_min: 60,
-            avg_rem_min: 90,
-            avg_efficiency: 85,
-          },
-          {
-            period: "after",
-            nights: 30,
-            avg_sleep_min: 450,
-            avg_deep_min: 70,
-            avg_rem_min: 100,
-            avg_efficiency: 88,
-          },
-        ])
-        .mockResolvedValueOnce([
           { period: "before", measurements: 4, avg_weight: 75, avg_body_fat: 15 },
           { period: "after", measurements: 4, avg_weight: 74, avg_body_fat: 14.5 },
         ]);
@@ -260,10 +262,16 @@ describe("lifeEventsRouter", () => {
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore([
-          { period: "before", measurements: 4, avg_weight: 75, avg_body_fat: 15 },
-          { period: "after", measurements: 4, avg_weight: 74, avg_body_fat: 14.5 },
-        ]),
+        sensorStore: makeSensorStore(
+          [
+            { period: "before", measurements: 4, avg_weight: 75, avg_body_fat: 15 },
+            { period: "after", measurements: 4, avg_weight: 74, avg_body_fat: 14.5 },
+          ],
+          [
+            makeSleepRow("2026-01-01", 420, 60, 90, 85),
+            makeSleepRow("2026-02-01", 450, 70, 100, 88),
+          ],
+        ),
       });
 
       const result = await caller.analyze({

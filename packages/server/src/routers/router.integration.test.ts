@@ -5,7 +5,10 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  syncClickHouseTestActivitySensorStore,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for router coverage gaps:
@@ -271,7 +274,6 @@ describe("Router coverage", () => {
     }
 
     // ── Refresh Postgres sleep materialized view ──
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
@@ -578,7 +580,8 @@ describe("Router coverage", () => {
       const inBedDuration = deep + rem + light + awake; // 480
       const expectedSleepMinutes = deep + rem + light; // 390
 
-      // Use a future date so this is clearly the latest entry after all seeded data
+      // Use today's sleep date with a non-overlapping window so v_sleep keeps this
+      // row alongside the seeded fixture, then the per-date duration tie-break picks it.
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
@@ -586,14 +589,14 @@ describe("Router coverage", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID},
-              CURRENT_TIMESTAMP + INTERVAL '1 day',
-              CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '8 hours',
+              CURRENT_DATE + INTERVAL '13 hours',
+              CURRENT_DATE + INTERVAL '21 hours',
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
             )`,
       );
 
-      // Refresh materialized view so v_sleep picks up the new row
-      await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
+      // Mirror the new row into ClickHouse so the analytics view sees it.
+      await syncClickHouseTestActivitySensorStore(testCtx);
 
       // Clear cache so the query hits the DB
       await queryCache.invalidateAll();

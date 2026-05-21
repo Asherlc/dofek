@@ -6227,6 +6227,57 @@ ClickHouse-precondition logs stop in production.
 - Re-check Sentry for new Postgres connection-reset events after the next
   deploy.
 
+## 2026-05-20: Dashboard Sleep Stale Because Runtime Read Used Postgres v_sleep
+
+### Symptoms
+
+The dashboard sleep card was not up to date even though new raw sleep records
+had synced. Production `fitness.sleep_session` contained sleep through
+`2026-05-20` for WHOOP and Apple Health, while the Postgres materialized view
+`fitness.v_sleep` only exposed stale sleep rows.
+
+### User Impact
+
+Dashboard and recovery surfaces that read `fitness.v_sleep` could display old
+sleep duration, efficiency, sleep need, readiness, stress, anomaly, prediction,
+and healthspan inputs.
+
+### Evidence
+
+Production raw sleep queries showed current rows for user
+`f923fed7-d934-4cd9-8cb9-8e83020d0e69`, including WHOOP and Apple Health sleep
+on `2026-05-20`. The corresponding `fitness.v_sleep` query was stale, with
+latest Apple Health on `2026-05-06` and WHOOP on `2026-04-27`. ClickHouse
+`analytics.v_sleep` was current, including WHOOP sleep ending
+`2026-05-20 06:02:39.090000`.
+
+### Root Cause
+
+Runtime dashboard and recovery code still depended on the stale Postgres
+materialized sleep view after ClickHouse had become the current deduped sleep
+read model.
+
+### Fix or Mitigation
+
+This branch moves runtime sleep reads to ClickHouse `analytics.v_sleep`, keeps
+Postgres only for raw `sleep_stage` interval lookups, removes the canonical
+Postgres `v_sleep` view artifact, and adds migration `0025_drop_v_sleep.sql` to
+drop both `clickhouse.v_sleep` and `fitness.v_sleep`.
+
+### Remaining Risk
+
+Some historical integration tests still contain explicit
+`REFRESH MATERIALIZED VIEW fitness.v_sleep` setup and need to be converted to
+ClickHouse test-store sync before those suites can pass against the dropped
+view.
+
+### Follow-Up Work
+
+- Convert the remaining sleep-related integration tests to
+  `createClickHouseTestActivitySensorStore()` and
+  `syncClickHouseTestActivitySensorStore()`.
+- Add a regression test that fails on new non-test runtime references to
+  `fitness.v_sleep`.
 ## 2026-05-20: Production DB Restart During IMU Sync
 
 ### Symptoms

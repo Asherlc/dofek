@@ -20,6 +20,13 @@ describe("Activity summary deduplication", () => {
   let canonicalActivityId: string;
   let memberActivityId: string;
   let sensorStore: ActivitySensorStore;
+  const baseUtcNow = new Date();
+
+  function dateDaysAgo(daysAgo: number): string {
+    const date = new Date(baseUtcNow);
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    return date.toISOString().slice(0, 10);
+  }
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -103,11 +110,11 @@ describe("Activity summary deduplication", () => {
 
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
       if (queryText.includes("SELECT date, resting_hr")) {
-        return [{ date: "2026-04-20", resting_hr: 50 }];
+        return [{ date: dateDaysAgo(14), resting_hr: 50 }];
       }
       return [
-        { day: "2026-04-20", trimp: 50 },
-        { day: "2026-04-27", trimp: 52 },
+        { day: dateDaysAgo(14), trimp: 50 },
+        { day: dateDaysAgo(3), trimp: 52 },
       ];
     };
 

@@ -1,10 +1,10 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { sleepNightDate } from "../lib/sql-fragments.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyComparisonRows } from "./body-clickhouse.ts";
+import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +93,49 @@ export interface AnalyzeResult {
   metrics: MetricsComparison[];
   sleep: SleepComparison[];
   bodyComp: BodyComparison[];
+}
+
+function averageNullable(values: (number | null)[]): number | null {
+  const numericValues = values.filter((value): value is number => value != null);
+  if (numericValues.length === 0) return null;
+  return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+}
+
+function buildSleepComparisonRows(
+  rows: {
+    date: string;
+    duration_minutes: number | null;
+    deep_minutes: number | null;
+    rem_minutes: number | null;
+    efficiency_pct: number | null;
+  }[],
+  startDate: string,
+  endDate: string,
+  windowDays: number,
+): SleepComparison[] {
+  const beforeStartDate = addDays(startDate, -windowDays);
+  const groups = [
+    {
+      period: "before",
+      rows: rows.filter((row) => row.date >= beforeStartDate && row.date < startDate),
+    },
+    {
+      period: "after",
+      rows: rows.filter((row) => row.date >= startDate && row.date <= endDate),
+    },
+  ];
+  return groups
+    .filter((group) => group.rows.length > 0)
+    .map((group) =>
+      sleepComparisonRowSchema.parse({
+        period: group.period,
+        nights: group.rows.length,
+        avg_sleep_min: averageNullable(group.rows.map((row) => row.duration_minutes)),
+        avg_deep_min: averageNullable(group.rows.map((row) => row.deep_minutes)),
+        avg_rem_min: averageNullable(group.rows.map((row) => row.rem_minutes)),
+        avg_efficiency: averageNullable(group.rows.map((row) => row.efficiency_pct)),
+      }),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -271,60 +314,15 @@ export class LifeEventsRepository {
     );
 
     const [sleep, bodyComp] = await Promise.all([
-      executeWithSchema(
-        this.#db,
-        sleepComparisonRowSchema,
-        sql`
-				WITH before_raw AS (
-					SELECT 'before' as period,
-						${sleepNightDate(this.#timezone)} AS sleep_date,
-						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM fitness.v_sleep
-					WHERE user_id = ${this.#userId}
-						AND ${sleepNightDate(this.#timezone)} BETWEEN (${startDate}::date - ${windowDays}::int) AND (${startDate}::date - 1)
-						AND NOT is_nap
-				),
-				before_sleep AS (
-					SELECT DISTINCT ON (sleep_date) period, duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM before_raw
-					ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-				),
-				after_raw AS (
-					SELECT 'after' as period,
-						${sleepNightDate(this.#timezone)} AS sleep_date,
-						duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM fitness.v_sleep
-					WHERE user_id = ${this.#userId}
-						AND ${
-              endDate
-                ? endDate === "NOW()"
-                  ? sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND CURRENT_DATE`
-                  : sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND ${endDate}::date`
-                : sql`${sleepNightDate(this.#timezone)} BETWEEN ${startDate}::date AND (${startDate}::date + ${windowDays}::int)`
-            }
-						AND NOT is_nap
-				),
-				after_sleep AS (
-					SELECT DISTINCT ON (sleep_date) period, duration_minutes, deep_minutes, rem_minutes, efficiency_pct
-					FROM after_raw
-					ORDER BY sleep_date, duration_minutes DESC NULLS LAST
-				),
-				combined AS (
-					SELECT * FROM before_sleep
-					UNION ALL
-					SELECT * FROM after_sleep
-				)
-				SELECT
-					period,
-					COUNT(*) as nights,
-					AVG(duration_minutes)::numeric(10,0) as avg_sleep_min,
-					AVG(deep_minutes)::numeric(10,0) as avg_deep_min,
-					AVG(rem_minutes)::numeric(10,0) as avg_rem_min,
-					AVG(efficiency_pct)::numeric(10,1) as avg_efficiency
-				FROM combined
-				GROUP BY period
-				ORDER BY period
-				`,
+      fetchSleepNights({
+        sensorStore: this.#requireSensorStore(),
+        userId: this.#userId,
+        timezone: this.#timezone,
+        endDate: metricsEndDateString,
+        days: restingHeartRateDays,
+        order: "asc",
+      }).then((rows) =>
+        buildSleepComparisonRows(rows, startDate, metricsEndDateString, windowDays),
       ),
       fetchBodyComparisonRows(
         this.#requireSensorStore(),

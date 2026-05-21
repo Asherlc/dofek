@@ -119,8 +119,6 @@ describe("healthspan zone time with variable-interval HR data", () => {
       ) VALUES ${restingHeartRateValues.join(",\n")}`),
     );
 
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
-
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
@@ -251,8 +249,6 @@ describe("healthspan zone time with variable-interval HR data", () => {
             )`,
       );
     }
-
-    await testCtx.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 
