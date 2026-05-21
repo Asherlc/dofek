@@ -50,7 +50,17 @@ function getSqlParts(statement: unknown): Array<string | number> {
 
 function makeMockDb() {
   return {
-    execute: vi.fn().mockResolvedValue({ rows: [] }),
+    execute: vi.fn(async (statement: unknown) => {
+      const sqlParts = getSqlParts(statement);
+      if (!sqlParts.some((part) => String(part).includes("INSERT INTO fitness.metric_stream"))) {
+        return [];
+      }
+
+      const insertedCount = sqlParts.filter(
+        (part) => part === "rr_interval_ms" || part === "orientation",
+      ).length;
+      return Array.from({ length: insertedCount }, (_, index) => ({ id: `metric-${index}` }));
+    }),
   };
 }
 
@@ -128,7 +138,7 @@ describe("whoopBleSyncRouter", () => {
       expect(allSqlParts).not.toContain("heart_rate");
     });
 
-    it("writes deterministic external IDs and conflict handling for retry-safe uploads", async () => {
+    it("writes deterministic external IDs and treats duplicate realtime samples as no-ops", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -156,7 +166,7 @@ describe("whoopBleSyncRouter", () => {
       expect(
         allSqlParts.some((part) =>
           String(part).includes(
-            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING",
           ),
         ),
       ).toBe(true);
@@ -394,6 +404,27 @@ describe("whoopBleSyncRouter", () => {
       expect(result).toEqual({ inserted: 1 });
     });
 
+    it("returns zero inserted when duplicate realtime rows no-op", async () => {
+      mockDb.execute.mockResolvedValue([]);
+      const trpcCaller = caller(ctx);
+
+      const result = await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            rrIntervalMs: 812,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 0 });
+    });
+
     it("rejects invalid R-R interval values", async () => {
       const trpcCaller = caller(ctx);
 
@@ -493,7 +524,7 @@ describe("whoopBleSyncRouter", () => {
         samples,
       });
 
-      expect(result).toEqual({ inserted: 2500 });
+      expect(result).toEqual({ inserted: 5000 });
       // 1 ensure provider + 2 batches × (R-R interval metric_stream + orientation metric_stream) = 5 calls
       expect(mockDb.execute).toHaveBeenCalledTimes(5);
     });
