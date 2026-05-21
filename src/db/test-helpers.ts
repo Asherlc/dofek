@@ -15,6 +15,9 @@ export interface TestContext {
   cleanup: () => Promise<void>;
 }
 
+const isRunnableMigrationStatement = (statement: string): boolean =>
+  statement.length > 0 && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS");
+
 /**
  * Spin up a TimescaleDB container (or use TEST_DATABASE_URL), create schema, run migrations.
  * When TEST_DATABASE_URL is set, creates an isolated database per test file to avoid
@@ -80,10 +83,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     const statements = content
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
-      .filter(
-        (statement) =>
-          statement && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS"),
-      );
+      .filter(isRunnableMigrationStatement);
 
     for (const statement of statements) {
       await migrationClient.query(statement);
@@ -140,10 +140,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
     const statements = content
       .split("--> statement-breakpoint")
       .map((s) => s.trim())
-      .filter(
-        (statement) =>
-          statement && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS"),
-      );
+      .filter(isRunnableMigrationStatement);
 
     for (const statement of statements) {
       await migrationClient.query(statement);

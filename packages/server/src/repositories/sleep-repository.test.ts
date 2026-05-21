@@ -134,7 +134,7 @@ describe("SleepRepository", () => {
     });
 
     it("returns parsed stage rows", async () => {
-      const { repo } = makeRepository({
+      const { repo, execute, sensorStore } = makeRepository({
         postgresRows: [
           {
             stage: "light",
@@ -159,6 +159,8 @@ describe("SleepRepository", () => {
       const result = await repo.getLatestStages();
       expect(result).toHaveLength(1);
       expect(result[0]?.stage).toBe("light");
+      expect(sensorStore.query).toHaveBeenCalledOnce();
+      expect(execute).toHaveBeenCalledOnce();
     });
 
     it("queries ClickHouse for the latest sleep window before reading raw stages", async () => {

@@ -1,6 +1,6 @@
 # ClickHouse Sleep Dashboard Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Follow the step-by-step checklist below and mark tasks complete using `- [ ]` syntax.
 
 **Goal:** Remove dashboard/runtime dependence on stale `fitness.v_sleep` and read deduped sleep data from ClickHouse `analytics.v_sleep`.
 
@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Add Red Tests For ClickHouse Sleep Reads
+## Task 1: Add Red Tests For ClickHouse Sleep Reads
 
 **Files:**
 - Modify: `packages/server/src/repositories/sleep-repository.test.ts`
@@ -35,7 +35,7 @@ pnpm vitest packages/server/src/repositories/sleep-repository.test.ts packages/s
 
 Expected: FAIL because production code still queries `fitness.v_sleep`.
 
-### Task 2: Add Shared ClickHouse Sleep Helpers
+## Task 2: Add Shared ClickHouse Sleep Helpers
 
 **Files:**
 - Create: `packages/server/src/repositories/clickhouse-sleep-repository.ts`
@@ -49,7 +49,7 @@ Create helpers for one-row-per-night sleep queries over `analytics.v_sleep`, inc
 
 Use schemas with nullable numeric fields and string dates/timestamps, matching the existing route output contracts.
 
-### Task 3: Switch Dashboard Sleep Routes
+## Task 3: Switch Dashboard Sleep Routes
 
 **Files:**
 - Modify: `packages/server/src/repositories/sleep-repository.ts`
@@ -71,7 +71,7 @@ Keep daily metrics in Postgres where they already live, but fetch sleep rows fro
 
 `getStages()` and `getLatestStages()` can still read `fitness.sleep_stage`, but the selected/latest sleep session should come from ClickHouse.
 
-### Task 4: Remove Postgres Materialized View Ownership
+## Task 4: Remove Postgres Materialized View Ownership
 
 **Files:**
 - Add: `drizzle/0025_drop_v_sleep.sql`
@@ -86,7 +86,7 @@ Use `DROP MATERIALIZED VIEW IF EXISTS fitness.v_sleep;` with no replacement comp
 
 Delete `drizzle/_views/02_v_sleep.sql` so future deploy tooling cannot recreate the materialized view.
 
-### Task 5: Verify
+## Task 5: Verify
 
 **Files:**
 - Modify: tests touched by the route/repository changes.

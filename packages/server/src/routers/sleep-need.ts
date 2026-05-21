@@ -6,7 +6,8 @@ import {
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
+import { dateAccessPredicate } from "../billing/entitlement.ts";
+import { dateWindowEnd, dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
@@ -136,7 +137,9 @@ export const sleepNeedRouter = router({
             FROM fitness.v_daily_metrics
             WHERE user_id = ${ctx.userId}
               AND date > ${dateWindowStart(input.endDate, 90)}
+              AND date <= ${dateWindowEnd(input.endDate)}
               AND hrv IS NOT NULL
+              ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
             ORDER BY date ASC`,
       );
 

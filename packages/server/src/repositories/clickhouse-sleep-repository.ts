@@ -41,8 +41,8 @@ export interface FetchSleepNightsInput {
 function accessWindowClause(accessWindow: AccessWindow | undefined): string {
   if (!accessWindow || accessWindow.kind === "full") return "";
   return `
-    AND started_at >= parseDateTimeBestEffort({accessStartDate:String})
-    AND started_at < parseDateTimeBestEffort({accessEndDateExclusive:String})`;
+    AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) >= toDate({accessStartDate:String})
+    AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) < toDate({accessEndDateExclusive:String})`;
 }
 
 function accessWindowParams(accessWindow: AccessWindow | undefined): Record<string, unknown> {

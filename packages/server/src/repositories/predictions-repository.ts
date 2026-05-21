@@ -384,7 +384,7 @@ export class PredictionsRepository {
   }
 
   async #fetchSleep(days: number): Promise<SleepRow[]> {
-    const endDate = new Date().toISOString().slice(0, 10);
+    const endDate = localDateString(new Date(), this.#timezone);
     const rows = await fetchSleepNights({
       sensorStore: this.#sensorStore,
       userId: this.#userId,

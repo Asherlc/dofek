@@ -207,6 +207,7 @@ export async function fetchHealthspanRawData(
         timezone: ctx.timezone,
         endDate,
         days: totalDays,
+        accessWindow: ctx.accessWindow,
         order: "asc",
       })
     : [];

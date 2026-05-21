@@ -78,10 +78,11 @@ describe("recoveryRouter", () => {
       if ("bedtime_hour" in row || "waketime_hour" in row) {
         const bedtimeHour = Number(row.bedtime_hour ?? 22);
         const waketimeHour = Number(row.waketime_hour ?? 6);
+        const rowDate = String(row.date ?? today);
         return {
-          date: today,
-          started_at: hourTimestamp(today, bedtimeHour),
-          ended_at: hourTimestamp(today, waketimeHour),
+          date: rowDate,
+          started_at: hourTimestamp(rowDate, bedtimeHour),
+          ended_at: hourTimestamp(rowDate, waketimeHour),
           duration_minutes: durationMinutes,
           deep_minutes: null,
           rem_minutes: null,

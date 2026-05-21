@@ -80,9 +80,6 @@ describe("Router transformation logic", () => {
     return { status: res.status, result: data[0] };
   }
 
-  /** Refresh materialized views so inserted sleep data is visible to queries */
-  async function refreshViews() {}
-
   // ══════════════════════════════════════════════════════════════
   // Life Events — CRUD operations
   // ══════════════════════════════════════════════════════════════
@@ -333,7 +330,6 @@ describe("Router transformation logic", () => {
         await testCtx.db.execute(insert);
       }
 
-      await refreshViews();
       await syncClickHouseTestActivitySensorStore(testCtx);
       await queryCache.invalidateAll();
     }, 30_000);
@@ -441,8 +437,6 @@ describe("Router transformation logic", () => {
       await testCtx.db.execute(
         sql`UPDATE fitness.user_profile SET max_hr = 190 WHERE id = ${TEST_USER_ID}`,
       );
-
-      await refreshViews();
     }, 120_000);
 
     it("returns weekly summaries with strain zones", async () => {
@@ -613,7 +607,6 @@ describe("Router transformation logic", () => {
             ON CONFLICT DO NOTHING`,
       );
 
-      await refreshViews();
       await syncClickHouseTestActivitySensorStore(testCtx);
       await queryCache.invalidateAll();
     }, 30_000);
@@ -845,8 +838,6 @@ describe("Router transformation logic", () => {
           );
         }
       }
-
-      await refreshViews();
     }, 60_000);
 
     it("computes grade-adjusted pace using Minetti cost factor", async () => {
@@ -947,8 +938,6 @@ describe("Router transformation logic", () => {
           );
         }
       }
-
-      await refreshViews();
     }, 60_000);
 
     it("groups repeated activities and returns comparison instances", async () => {
