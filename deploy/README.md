@@ -276,3 +276,4 @@ If management subdomains return `404 page not found`, use:
 - **Databasus**: `https://databasus.dofek.asherlc.com` (DB management + backups)
 - **CloudBeaver**: `https://cloudbeaver.dofek.asherlc.com` (Postgres + ClickHouse UI)
 - **pgAdmin**: `https://pgadmin.dofek.asherlc.com` (Postgres UI)
+- **PeerDB**: `https://peerdb.dofek.asherlc.com` (CDC mirror dashboard)

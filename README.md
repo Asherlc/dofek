@@ -149,6 +149,7 @@ docker compose up -d db clickhouse redis
 docker compose -f docker-compose.yml -f docker-compose.peerdb.yml up -d
 # (The peerdb-temporal-init container auto-registers the MirrorName Temporal
 # search attribute that PeerDB workflows depend on. It exits after running.)
+# PeerDB UI is available at http://localhost:3001 when the PeerDB stack is up.
 
 # Apply Postgres + ClickHouse migrations to a fresh DB (idempotent).
 pnpm setup-db
