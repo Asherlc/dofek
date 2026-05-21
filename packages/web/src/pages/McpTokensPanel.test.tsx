@@ -79,6 +79,16 @@ describe("McpTokensPanel", () => {
     expect(screen.getByText("No MCP tokens yet.")).toBeTruthy();
   });
 
+  it("shows install instructions for MCP client settings", () => {
+    render(<McpTokensPanel />);
+
+    expect(screen.getByText("Install in MCP client settings")).toBeTruthy();
+    expect(screen.getByText("Remote URL")).toBeTruthy();
+    expect(screen.getByText("Client settings JSON")).toBeTruthy();
+    expect(screen.getByText(/"mcpServers"/)).toBeTruthy();
+    expect(screen.getByText(/Bearer dofek_mcp_your_token/)).toBeTruthy();
+  });
+
   it("creates a token and shows the raw value once", async () => {
     createTokenMutateAsync.mockResolvedValueOnce({
       token: "dofek_mcp_created",
@@ -107,6 +117,7 @@ describe("McpTokensPanel", () => {
     });
     expect(await screen.findByDisplayValue("dofek_mcp_created")).toBeTruthy();
     expect(screen.getByText("Save this token now. It will not be shown again.")).toBeTruthy();
+    expect(screen.getByText(/Bearer dofek_mcp_created/)).toBeTruthy();
     expect(invalidateMcp).toHaveBeenCalled();
   });
 
@@ -141,6 +152,59 @@ describe("McpTokensPanel", () => {
         tokenId: "00000000-0000-0000-0000-000000000001",
       });
     });
+    expect(invalidateMcp).toHaveBeenCalled();
+  });
+
+  it("rotates an active token with the same settings", async () => {
+    listTokensQuery.data = [
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "Codex",
+        scopes: ["health:read", "providers:read"],
+        createdAt: new Date("2026-05-20T12:00:00Z"),
+        lastUsedAt: null,
+        expiresAt: new Date("2026-06-01T00:00:00Z"),
+        revokedAt: null,
+      },
+    ];
+    createTokenMutateAsync.mockResolvedValueOnce({
+      token: "dofek_mcp_rotated",
+      metadata: {
+        id: "00000000-0000-0000-0000-000000000002",
+        name: "Codex",
+        scopes: ["health:read", "providers:read"],
+        createdAt: new Date("2026-05-21T12:00:00Z"),
+        lastUsedAt: null,
+        expiresAt: new Date("2026-06-01T00:00:00Z"),
+        revokedAt: null,
+      },
+    });
+    revokeTokenMutateAsync.mockResolvedValueOnce({
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "Codex",
+      scopes: ["health:read", "providers:read"],
+      createdAt: new Date("2026-05-20T12:00:00Z"),
+      lastUsedAt: null,
+      expiresAt: new Date("2026-06-01T00:00:00Z"),
+      revokedAt: new Date("2026-05-21T12:01:00Z"),
+    });
+
+    render(<McpTokensPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rotate Codex" }));
+
+    await waitFor(() => {
+      expect(createTokenMutateAsync).toHaveBeenCalledWith({
+        name: "Codex",
+        scopes: ["health:read", "providers:read"],
+        expiresAt: "2026-06-01T00:00:00.000Z",
+      });
+      expect(revokeTokenMutateAsync).toHaveBeenCalledWith({
+        tokenId: "00000000-0000-0000-0000-000000000001",
+      });
+    });
+    expect(await screen.findByDisplayValue("dofek_mcp_rotated")).toBeTruthy();
+    expect(screen.getByText(/Bearer dofek_mcp_rotated/)).toBeTruthy();
     expect(invalidateMcp).toHaveBeenCalled();
   });
 });
