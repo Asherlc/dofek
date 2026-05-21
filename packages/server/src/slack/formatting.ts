@@ -1,8 +1,10 @@
 import {
   formatCalories,
+  formatDateYmdInTimeZone,
   formatGrams,
   formatNutritionAmount,
   formatNutritionNumber,
+  formatWeekdayTime,
 } from "@dofek/format/format";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
 
@@ -27,6 +29,18 @@ export interface DailyCalorieProgress {
 }
 
 type MicroKey = keyof NutritionItemWithMeal & string;
+
+/** Convert a Slack epoch timestamp to a readable local time string using the user's timezone. */
+export function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  return formatWeekdayTime(epochSeconds * 1000, { timeZone: timezone });
+}
+
+/** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone. */
+export function slackTimestampToDateString(slackTs: string, timezone: string): string {
+  const epochSeconds = Number.parseFloat(slackTs);
+  return formatDateYmdInTimeZone(epochSeconds * 1000, timezone);
+}
 
 /** Object containing only micronutrient values, used for summing totals */
 type MicroTotals = Partial<Record<MicroKey, number | undefined>>;

@@ -57,7 +57,8 @@ import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
-import { FoodEntryRepository, slackTimestampToDateString } from "./food-entry-repository.ts";
+import { FoodEntryRepository } from "./food-entry-repository.ts";
+import { slackTimestampToDateString } from "./formatting.ts";
 
 const mockAnalyze = vi.mocked(analyzeNutritionItems);
 const mockRefine = vi.mocked(refineNutritionItems);

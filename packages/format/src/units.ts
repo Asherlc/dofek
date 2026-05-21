@@ -8,18 +8,30 @@ const CM_TO_INCHES = 0.393701;
 const KM_PER_MILE = 1 / KM_TO_MILES;
 const unitFormatters = new Map<string, Intl.NumberFormat>();
 
-function formatUnitValue(value: number, decimals: number, unit: string): string {
+function formatUnitValue(
+  value: number,
+  decimals: number,
+  unit: string,
+  fallbackLabel: string,
+): string {
   const key = `${unit}:${decimals}`;
   const existing = unitFormatters.get(key);
   if (existing) return existing.format(value);
-  const formatter = new Intl.NumberFormat("en-US", {
-    style: "unit",
-    unit,
-    unitDisplay: "short",
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-    useGrouping: false,
-  });
+  let formatter: Intl.NumberFormat;
+  try {
+    formatter = new Intl.NumberFormat("en-US", {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      useGrouping: false,
+    });
+  } catch (error) {
+    // Expected compatibility fallback for JS runtimes with limited Intl unit support.
+    if (error instanceof RangeError) return `${value.toFixed(decimals)} ${fallbackLabel}`;
+    throw error;
+  }
   unitFormatters.set(key, formatter);
   return formatter.format(value);
 }
@@ -100,6 +112,7 @@ export class UnitConverter {
       this.convertWeight(kg),
       1,
       this.system === "imperial" ? "pound" : "kilogram",
+      this.weightLabel,
     );
   }
 
@@ -108,6 +121,7 @@ export class UnitConverter {
       this.convertDistance(km),
       1,
       this.system === "imperial" ? "mile" : "kilometer",
+      this.distanceLabel,
     );
   }
 
@@ -116,6 +130,7 @@ export class UnitConverter {
       this.convertElevation(meters),
       0,
       this.system === "imperial" ? "foot" : "meter",
+      this.elevationLabel,
     );
   }
 
@@ -124,6 +139,7 @@ export class UnitConverter {
       this.convertTemperature(celsius),
       1,
       this.system === "imperial" ? "fahrenheit" : "celsius",
+      this.temperatureLabel,
     );
   }
 
@@ -132,6 +148,7 @@ export class UnitConverter {
       this.convertSpeed(kmh),
       1,
       this.system === "imperial" ? "mile-per-hour" : "kilometer-per-hour",
+      this.speedLabel,
     );
   }
 
@@ -140,6 +157,7 @@ export class UnitConverter {
       this.convertHeight(cm),
       1,
       this.system === "imperial" ? "inch" : "centimeter",
+      this.heightLabel,
     );
   }
 }

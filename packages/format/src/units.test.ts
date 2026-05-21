@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { detectUnitSystem, UnitConverter } from "./units.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("UnitConverter", () => {
   const metric = new UnitConverter("metric");
@@ -151,6 +155,20 @@ describe("format functions", () => {
   it("formats height with 1 decimal", () => {
     expect(metric.formatHeight(170)).toBe("170.0 cm");
     expect(imperial.formatHeight(170)).toBe("66.9 in");
+  });
+
+  it("falls back to numeric label formatting when Intl unit formatting is unsupported", async () => {
+    vi.resetModules();
+    const OriginalNumberFormat = Intl.NumberFormat;
+    vi.spyOn(Intl, "NumberFormat").mockImplementation((locale, options) => {
+      if (options?.style === "unit") {
+        throw new RangeError("unit formatting unsupported");
+      }
+      return new OriginalNumberFormat(locale, options);
+    });
+    const { UnitConverter: FreshUnitConverter } = await import("./units.ts");
+
+    expect(new FreshUnitConverter("metric").formatWeight(80)).toBe("80.0 kg");
   });
 });
 

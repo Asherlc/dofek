@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NutritionItemWithMeal } from "../lib/ai-nutrition.ts";
-import {
-  extractLatestConfirmFromThread,
-  FoodEntryRepository,
-  slackTimestampToDateString,
-  slackTimestampToLocalTime,
-} from "./food-entry-repository.ts";
+import { extractLatestConfirmFromThread, FoodEntryRepository } from "./food-entry-repository.ts";
+import { slackTimestampToDateString, slackTimestampToLocalTime } from "./formatting.ts";
 import type { PendingSlackEntry } from "./pending-entry-store.ts";
 import { InMemoryPendingEntryStore } from "./pending-entry-store.ts";
 

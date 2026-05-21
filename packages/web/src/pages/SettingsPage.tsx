@@ -1,4 +1,4 @@
-import { formatDateMedium } from "@dofek/format/format";
+import { formatDateMedium, parseValidDate } from "@dofek/format/format";
 import { useState } from "react";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
@@ -13,7 +13,8 @@ import { trpc } from "../lib/trpc.ts";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
 
 function getSignupWeekLabel(startDate: string, endDateExclusive: string): string {
-  const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
+  const endInclusive = parseValidDate(`${endDateExclusive}T12:00:00.000Z`);
+  if (!endInclusive) return `${formatDateMedium(startDate)} to --`;
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
 
   return `${formatDateMedium(startDate)} to ${formatDateMedium(endInclusive)}`;

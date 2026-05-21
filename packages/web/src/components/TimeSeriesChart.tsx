@@ -16,6 +16,15 @@ export function isSeriesEmpty(series: Pick<Series, "data">[]): boolean {
   return series.every((s) => s.data.every(([, value]) => value == null));
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 interface TimeSeriesChartProps {
   series: Series[];
   height?: number;
@@ -51,14 +60,14 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
         const firstParam = params[0];
         const point = firstParam?.value ?? firstParam?.data;
         if (!point) return "";
-        const date = formatDateShort(point[0]);
+        const date = escapeHtml(formatDateShort(point[0]));
         const lines = params.flatMap((param) => {
           const dataPoint = param.value ?? param.data;
           const value = dataPoint?.[1];
           if (value == null) return [];
           const formatter = seriesFormatters.get(param.seriesName);
           const displayValue = formatter ? formatter(value) : String(value);
-          return `${param.seriesName}: <b>${displayValue}</b>`;
+          return `${escapeHtml(param.seriesName)}: <b>${escapeHtml(displayValue)}</b>`;
         });
         return `<div style="font-weight:600;margin-bottom:4px">${date}</div>${lines.join("<br/>")}`;
       },

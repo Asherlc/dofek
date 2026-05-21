@@ -241,6 +241,7 @@ const numberFormatters = new Map<string, Intl.NumberFormat>();
 const unitFormatters = new Map<string, Intl.NumberFormat>();
 const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
 const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const SUPPORTED_INTL_UNITS = new Set(["gram", "percent", "millisecond"]);
 
 function fixedDecimalFormatter(decimals: number, useGrouping = false): Intl.NumberFormat {
   const key = `${decimals}:${useGrouping}`;
@@ -263,20 +264,15 @@ function fixedUnitFormatter(
   const key = `${unit}:${decimals}:${useGrouping}`;
   const existing = unitFormatters.get(key);
   if (existing) return existing;
-  let formatter: Intl.NumberFormat;
-  try {
-    formatter = new Intl.NumberFormat("en-US", {
-      style: "unit",
-      unit,
-      unitDisplay: "short",
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-      useGrouping,
-    });
-  } catch (error) {
-    if (error instanceof RangeError) return null;
-    throw error;
-  }
+  if (!SUPPORTED_INTL_UNITS.has(unit)) return null;
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "unit",
+    unit,
+    unitDisplay: "short",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+    useGrouping,
+  });
   unitFormatters.set(key, formatter);
   return formatter;
 }
