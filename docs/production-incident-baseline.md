@@ -6398,3 +6398,52 @@ unknown.
   saturation recurs.
 - Add a runbook note for correlating Hetzner CPU, Sentry connection failures,
   and Docker service restart times during transient outages.
+
+## 2026-05-20: iOS CoreMotion Stale Cursor Crash
+
+### Symptoms
+
+Sentry reported a native fatal crash in `east-bay-software/dofek-mobile`:
+`NSInternalInconsistencyException: startTime must be within 3 days of today.`
+The issue was tracked as DOFEK-MOBILE-N.
+
+### User Impact
+
+One production iOS user on app release `com.dofek.app@1.0.0+1779294463`
+experienced an unhandled native crash while the app was in the background.
+
+### Evidence
+
+Sentry recorded one fatal event at `2026-05-20T18:59:30Z` on a physical iPhone
+running iOS 26.4.2. The crash metadata identified an uncaught
+`NSInternalInconsistencyException` with the exact message above. The app's IMU
+sync code queried `CMSensorRecorder` from either the stored sync cursor or
+exactly three days ago, while existing Watch-side code already used a 2.9-day
+guard because CoreMotion rejects queries at or beyond the three-day retention
+edge.
+
+### Root Cause
+
+The iPhone IMU sync passed stale or boundary-adjacent start timestamps into
+`CMSensorRecorder.accelerometerData(from:to:)`, which can throw an uncaught
+native exception when `from` is outside CoreMotion's retained sensor history
+window.
+
+### Fix or Mitigation
+
+Clamped the iPhone IMU sync start time to 2.9 days before `now`, preserving a
+small safety margin before calling the native CoreMotion module.
+
+### Validation
+
+Added a mobile unit regression test proving a stale cursor from
+`2026-05-10T19:00:00.000Z` is clamped to `2026-05-17T21:24:00.000Z` when the
+current time is `2026-05-20T19:00:00.000Z`. `pnpm test:changed` passed with the
+documented local `CLICKHOUSE_URL`.
+
+### Remaining Risk
+
+The fix prevents the known stale-cursor path from reaching the native
+three-day boundary. Direct callers of the native CoreMotion module would still
+need to pass valid query windows, but the app's current production sync path
+uses the clamped TypeScript wrapper.
