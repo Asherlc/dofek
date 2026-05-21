@@ -10,7 +10,7 @@ const nullableNumberSchema = z.preprocess(
 const clickHouseSleepNightSchema = z
   .object({
     date: z.string(),
-    provider_id: z.string().optional(),
+    provider_id: z.string().nullable().optional(),
     started_at: z.string().optional(),
     ended_at: z.string().nullable().optional(),
     duration_minutes: nullableNumberSchema,
@@ -125,6 +125,7 @@ export async function fetchLatestSleepNight(input: {
     clickHouseSleepNightSchema,
     `SELECT
       date,
+      provider_id,
       formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
       duration_minutes,
@@ -136,6 +137,7 @@ export async function fetchLatestSleepNight(input: {
     FROM (
       SELECT
         toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
+        provider_id,
         started_at AS started_at_dt,
         ended_at AS ended_at_dt,
         duration_minutes,

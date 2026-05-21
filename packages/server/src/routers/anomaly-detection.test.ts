@@ -22,12 +22,59 @@ function makeDb(rows: Record<string, unknown>[]) {
   return { execute: vi.fn().mockResolvedValue(rows) };
 }
 
-function makeSensorStore() {
+function makeSensorStore(sleepRows: Record<string, unknown>[] = []) {
   return {
     query: vi.fn(async (_schema: unknown, query: string) =>
-      query.includes("analytics.v_sleep") ? [] : [{ date: "2024-01-14", resting_hr: 52 }],
+      query.includes("analytics.v_sleep") ? sleepRows : [{ date: "2024-01-14", resting_hr: 52 }],
     ),
   };
+}
+
+function dateDaysBefore(dateString: string, daysBefore: number): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - daysBefore);
+  return date.toISOString().slice(0, 10);
+}
+
+function sleepRowsForBaseline({
+  targetDate,
+  targetDuration,
+  baselineMean,
+  baselineStddev,
+  baselineCount = 20,
+}: {
+  targetDate: string;
+  targetDuration: number | null;
+  baselineMean: number;
+  baselineStddev: number;
+  baselineCount?: number;
+}) {
+  const baselineRows = Array.from({ length: baselineCount }, (_unused, index) => ({
+    date: dateDaysBefore(targetDate, baselineCount - index),
+    started_at: `${dateDaysBefore(targetDate, baselineCount - index)}T23:00:00Z`,
+    ended_at: `${dateDaysBefore(targetDate, baselineCount - index - 1)}T07:00:00Z`,
+    duration_minutes:
+      index % 2 === 0 ? baselineMean - baselineStddev : baselineMean + baselineStddev,
+    deep_minutes: null,
+    rem_minutes: null,
+    light_minutes: null,
+    awake_minutes: null,
+    efficiency_pct: null,
+  }));
+  return [
+    ...baselineRows,
+    {
+      date: targetDate,
+      started_at: `${targetDate}T23:00:00Z`,
+      ended_at: `${dateDaysBefore(targetDate, -1)}T07:00:00Z`,
+      duration_minutes: targetDuration,
+      deep_minutes: null,
+      rem_minutes: null,
+      light_minutes: null,
+      awake_minutes: null,
+      efficiency_pct: null,
+    },
+  ];
 }
 
 describe("checkAnomalies", () => {
@@ -160,7 +207,20 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
+    const result = await checkAnomalies(
+      db,
+      "user-1",
+      "UTC",
+      "2024-01-15",
+      makeSensorStore(
+        sleepRowsForBaseline({
+          targetDate: "2024-01-15",
+          targetDuration: 300,
+          baselineMean: 480,
+          baselineStddev: 60,
+        }),
+      ),
+    );
 
     expect(result.checkedMetrics).toContain("sleep_duration");
     expect(result.anomalies).toHaveLength(1);
@@ -186,7 +246,20 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
+    const result = await checkAnomalies(
+      db,
+      "user-1",
+      "UTC",
+      "2024-01-15",
+      makeSensorStore(
+        sleepRowsForBaseline({
+          targetDate: "2024-01-15",
+          targetDuration: 460,
+          baselineMean: 480,
+          baselineStddev: 60,
+        }),
+      ),
+    );
 
     expect(result.checkedMetrics).toHaveLength(3);
     expect(result.anomalies).toHaveLength(0);
@@ -260,7 +333,20 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
+    const result = await checkAnomalies(
+      db,
+      "user-1",
+      "UTC",
+      "2024-01-15",
+      makeSensorStore(
+        sleepRowsForBaseline({
+          targetDate: "2024-01-15",
+          targetDuration: 240,
+          baselineMean: 480,
+          baselineStddev: 60,
+        }),
+      ),
+    );
 
     expect(result.anomalies).toHaveLength(1);
     expect(result.anomalies[0]?.severity).toBe("alert"); // z = -4.0 < -3
@@ -285,7 +371,20 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
+    const result = await checkAnomalies(
+      db,
+      "user-1",
+      "UTC",
+      "2024-01-15",
+      makeSensorStore(
+        sleepRowsForBaseline({
+          targetDate: "2024-01-15",
+          targetDuration: 240,
+          baselineMean: 480,
+          baselineStddev: 60,
+        }),
+      ),
+    );
 
     expect(result.checkedMetrics).toHaveLength(3);
     expect(result.checkedMetrics).toContain("resting_hr");
@@ -384,7 +483,20 @@ describe("checkAnomalies", () => {
         sleep_count: null,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
+    const result = await checkAnomalies(
+      db,
+      "user-1",
+      "UTC",
+      "2024-01-15",
+      makeSensorStore(
+        sleepRowsForBaseline({
+          targetDate: "2024-01-15",
+          targetDuration: 280.7,
+          baselineMean: 480.3,
+          baselineStddev: 60.9,
+        }),
+      ),
+    );
     expect(result.checkedMetrics).not.toContain("hrv");
   });
 
@@ -428,7 +540,20 @@ describe("checkAnomalies", () => {
         sleep_count: 20,
       },
     ]);
-    const result = await checkAnomalies(db, "user-1", "UTC", "2024-01-15", makeSensorStore());
+    const result = await checkAnomalies(
+      db,
+      "user-1",
+      "UTC",
+      "2024-01-15",
+      makeSensorStore(
+        sleepRowsForBaseline({
+          targetDate: "2024-01-15",
+          targetDuration: 280.7,
+          baselineMean: 480.3,
+          baselineStddev: 60.9,
+        }),
+      ),
+    );
     expect(result.anomalies[0]?.value).toBe(281);
     expect(result.anomalies[0]?.baselineMean).toBe(480);
     expect(result.anomalies[0]?.baselineStddev).toBe(61);

@@ -51,6 +51,7 @@ function makeSensorStore(rows: unknown[] | unknown[][] = []): SensorStore {
 
 type SleepNightTestRow = {
   date: string;
+  provider_id: string;
   started_at: string;
   ended_at: string | null;
   duration_minutes: number | null;
@@ -65,6 +66,7 @@ function sleepNightRow(overrides: Partial<SleepNightTestRow> = {}): SleepNightTe
   const date = overrides.date ?? "2026-03-01";
   return {
     date,
+    provider_id: "apple_health",
     started_at: `${date}T22:00:00Z`,
     ended_at: `${addDays(date, 1)}T06:00:00Z`,
     duration_minutes: 480,

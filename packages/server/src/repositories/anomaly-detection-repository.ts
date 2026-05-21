@@ -299,10 +299,10 @@ export class AnomalyDetectionRepository {
       sleepRows.length > 0
         ? sleepStatsForDate(sleepRows, date)
         : {
-            durationMinutes: row.duration_minutes,
-            mean: row.sleep_mean,
-            stddev: row.sleep_sd,
-            count: row.sleep_count ?? 0,
+            durationMinutes: null,
+            mean: null,
+            stddev: null,
+            count: 0,
           };
 
     // Check resting HR (higher = worse)

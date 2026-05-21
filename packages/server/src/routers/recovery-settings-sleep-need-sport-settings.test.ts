@@ -81,6 +81,7 @@ describe("recoveryRouter", () => {
         const rowDate = String(row.date ?? today);
         return {
           date: rowDate,
+          provider_id: String(row.provider_id ?? "apple_health"),
           started_at: hourTimestamp(rowDate, bedtimeHour),
           ended_at: hourTimestamp(rowDate, waketimeHour),
           duration_minutes: durationMinutes,
@@ -103,6 +104,7 @@ describe("recoveryRouter", () => {
       const awakeMinutes = Math.max(0, durationMinutes - sleepMinutes);
       return {
         date: String(row.date ?? today),
+        provider_id: String(row.provider_id ?? "apple_health"),
         started_at: `${String(row.date ?? today)}T04:00:00Z`,
         ended_at: `${String(row.date ?? today)}T12:00:00Z`,
         duration_minutes: durationMinutes,

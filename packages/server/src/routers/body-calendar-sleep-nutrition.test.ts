@@ -120,6 +120,7 @@ describe("calendarRouter", () => {
 describe("sleepRouter", () => {
   const sleepRow = {
     date: "2024-01-01",
+    provider_id: "p1",
     started_at: "2024-01-01T22:00:00Z",
     ended_at: "2024-01-02T06:00:00Z",
     duration_minutes: 480,

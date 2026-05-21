@@ -14,8 +14,8 @@ import {
 
 /**
  * Integration tests for sleep router endpoints.
- * Verifies that the to_char SQL formatting returns ISO 8601 timestamps
- * parseable by strict JS engines (Firefox).
+ * Verifies that sleep timestamps are returned as ISO 8601 strings parseable by
+ * strict JS engines (Firefox).
  */
 describe("sleep router integration", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -88,17 +88,14 @@ describe("sleep router integration", () => {
     return first?.result?.data;
   }
 
-  /** sleep.list returns local (wall-clock) timestamps without Z suffix */
-  const LOCAL_ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
-  /** sleep.latest returns UTC timestamps with Z suffix */
   const UTC_ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
-  it("sleep.list returns started_at as local ISO 8601 (no Z)", async () => {
+  it("sleep.list returns started_at in UTC ISO 8601 format", async () => {
     await queryCache.invalidateAll();
     const rows = await query<{ started_at: string }[]>("sleep.list", { days: 30 });
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.started_at).toMatch(LOCAL_ISO_REGEX);
+      expect(row.started_at).toMatch(UTC_ISO_REGEX);
       expect(new Date(row.started_at).getTime()).not.toBeNaN();
     }
   });
@@ -178,6 +175,7 @@ describe("sleep router integration", () => {
             (${sessionId}::uuid, 'deep', NOW() - INTERVAL '5 hours', NOW() - INTERVAL '4 hours'),
             (${sessionId}::uuid, 'rem', NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours')`,
     );
+    await syncClickHouseTestActivitySensorStore(testCtx);
 
     const stages =
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
@@ -250,6 +248,7 @@ describe("sleep router integration", () => {
             'sleep'
           )`,
     );
+    await syncClickHouseTestActivitySensorStore(testCtx);
 
     const stages =
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
@@ -321,6 +320,7 @@ describe("sleep router integration", () => {
             'sleep'
           )`,
     );
+    await syncClickHouseTestActivitySensorStore(testCtx);
 
     const stages =
       await query<{ stage: string; started_at: string; ended_at: string }[]>("sleep.latestStages");
