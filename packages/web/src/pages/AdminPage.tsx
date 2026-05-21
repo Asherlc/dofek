@@ -1,4 +1,4 @@
-import { formatDurationSeconds } from "@dofek/format/format";
+import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
 import { Link } from "@tanstack/react-router";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
@@ -208,14 +208,7 @@ function ErrorState({ message }: { message: string }) {
 // ── Helper to format timestamps ──
 function formatTimestamp(timestamp: string | null | undefined): string {
   if (!timestamp) return "\u2014";
-  const date = new Date(timestamp);
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(timestamp);
 }
 
 function ShortId({ id }: { id: string }) {

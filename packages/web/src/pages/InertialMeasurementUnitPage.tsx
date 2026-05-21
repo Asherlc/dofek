@@ -1,3 +1,9 @@
+import {
+  formatDateMedium,
+  formatDateShort,
+  formatDateYmd,
+  formatTimeOnly,
+} from "@dofek/format/format";
 import { useState } from "react";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -48,7 +54,7 @@ function SyncStatusPanel() {
           <p className="text-2xl font-bold">{formatNumber(device.sampleCount)} samples</p>
           <p className="text-xs text-muted-foreground">
             {device.earliestSample
-              ? `${new Date(device.earliestSample).toLocaleDateString()} — ${new Date(device.latestSample ?? "").toLocaleDateString()}`
+              ? `${formatDateMedium(device.earliestSample)} — ${formatDateMedium(device.latestSample ?? "")}`
               : "No data"}
           </p>
         </div>
@@ -149,7 +155,7 @@ function DailyCoveragePanel() {
 }
 
 function formatDateForQuery(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return formatDateYmd(date);
 }
 
 function CoverageTimelinePanel() {
@@ -174,10 +180,7 @@ function CoverageTimelinePanel() {
       formatter: (params: { data: [string, number] }[]) => {
         const point = params[0];
         if (!point) return "";
-        const time = new Date(point.data[0]).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+        const time = formatTimeOnly(point.data[0]);
         const count = point.data[1];
         const pct = ((count / maxExpected) * 100).toFixed(0);
         return `<b>${time}</b><br/>${count.toLocaleString()} samples (${pct}% coverage)`;
@@ -226,13 +229,7 @@ function CoverageTimelinePanel() {
             />
           </svg>
         </button>
-        <span className="text-sm font-medium">
-          {selectedDate.toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          })}
-        </span>
+        <span className="text-sm font-medium">{formatDateShort(selectedDate)}</span>
         <button
           type="button"
           onClick={goToNextDay}

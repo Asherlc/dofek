@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { TrainingMonotonyWeek } from "dofek-server/types";
 import {
@@ -34,11 +34,7 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
         const idx = first.dataIndex;
         const dataPoint = data[idx];
         if (!dataPoint) return "";
-        const dateLabel = new Date(dataPoint.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(dataPoint.week);
         const monotonyColor = dataPoint.monotony > 2.0 ? statusColors.danger : chartColors.blue;
         return [
           `<strong>${dateLabel}</strong>`,

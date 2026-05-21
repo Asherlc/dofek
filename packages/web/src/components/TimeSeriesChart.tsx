@@ -1,3 +1,4 @@
+import { formatDateShort } from "@dofek/format/format";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -50,10 +51,7 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
         const firstParam = params[0];
         const point = firstParam?.value ?? firstParam?.data;
         if (!point) return "";
-        const date = new Date(point[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateShort(point[0]);
         const lines = params.flatMap((param) => {
           const dataPoint = param.value ?? param.data;
           const value = dataPoint?.[1];

@@ -1,4 +1,4 @@
-import { formatNumber, formatTrainingLoad } from "@dofek/format/format";
+import { formatDateShort, formatNumber, formatTrainingLoad } from "@dofek/format/format";
 import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { WorkloadRatioRow } from "dofek-server/types";
 import {
@@ -40,10 +40,7 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         if (!params || params.length === 0) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const date = new Date(firstParam.data[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateShort(firstParam.data[0]);
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         for (const p of params) {
           if (p.seriesName.startsWith("_")) continue;

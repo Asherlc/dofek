@@ -1,4 +1,4 @@
-import { formatHRV, formatIntensity } from "@dofek/format/format";
+import { formatDateShort, formatHRV, formatIntensity } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { HrvVariabilityRow } from "dofek-server/types";
 import {
@@ -46,10 +46,7 @@ export function HrvVariabilityChart({ data, loading }: HrvVariabilityChartProps)
         if (!params || params.length === 0) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const date = new Date(firstParam.data[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateShort(firstParam.data[0]);
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         for (const p of params) {
           if (p.data[1] == null) continue;

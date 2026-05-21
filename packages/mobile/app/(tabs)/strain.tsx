@@ -1,4 +1,6 @@
 import {
+  formatDateShort,
+  formatDateYmd,
   formatDurationMinutes,
   formatIntensity,
   formatNumber,
@@ -37,7 +39,7 @@ export default function StrainScreen() {
   const router = useRouter();
   const [days, setDays] = useState(30);
   const units = useUnitConverter();
-  const endDate = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
+  const endDate = useMemo(() => formatDateYmd(), []);
   const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
   const workloadResult = workloadQuery.data;
   const workloadData = workloadResult?.timeSeries ?? [];
@@ -86,10 +88,7 @@ export default function StrainScreen() {
       ? "No training load yet"
       : displayedDate === todayWorkload?.date
         ? "Today"
-        : `Last training day: ${new Date(displayedDate).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          })}`;
+        : `Last training day: ${formatDateShort(displayedDate)}`;
 
   const strainTrend = workloadData.map((d) => d.strain);
 
@@ -266,12 +265,7 @@ export default function StrainScreen() {
               <View style={styles.volumeStack}>
                 {aggregateWeeklyVolume(weeklyVolume).map((week) => (
                   <View key={week.week} style={styles.volumeRow}>
-                    <Text style={styles.volumeDate}>
-                      {new Date(week.week).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </Text>
+                    <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
                     <View style={styles.volumeBarTrack}>
                       <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
                     </View>

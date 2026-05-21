@@ -1,4 +1,5 @@
 import {
+  formatDateMedium,
   formatDurationMinutes,
   formatDurationSeconds,
   formatIntensity,
@@ -178,11 +179,7 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
         if (!params.length) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const dateLabel = new Date(firstParam.value[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(firstParam.value[0]);
         let total = 0;
         const lines = params
           .filter((p) => p.value[1] > 0)
@@ -255,11 +252,7 @@ function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
         const idx = firstParam.dataIndex;
         const raw = weeks[idx];
         if (!raw) return "";
-        const dateLabel = new Date(raw.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(raw.week);
         const lines = params
           .filter((p) => p.value[1] > 0)
           .map((p) => {

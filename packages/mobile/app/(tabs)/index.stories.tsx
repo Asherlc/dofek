@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,7 +12,7 @@ import TodayScreen from "./index";
 function localDateString(dayOffset = 0): string {
   const date = new Date();
   date.setDate(date.getDate() + dayOffset);
-  return date.toLocaleDateString("en-CA");
+  return formatDateYmd(date);
 }
 
 function createSeededProviders() {

@@ -112,8 +112,11 @@ vi.mock("../../theme", () => ({
 }));
 
 vi.mock("@dofek/format/format", () => ({
+  formatDateLong: (value: string) => value,
   formatDurationRange: () => "1:00:00",
+  formatDurationSeconds: (value: number) => `${value}s`,
   formatNumber: (value: number) => String(value),
+  formatTimeOnly: (value: string) => value,
 }));
 
 vi.mock("@dofek/format/units", () => ({}));

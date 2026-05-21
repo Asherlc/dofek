@@ -1,4 +1,4 @@
-import { formatDurationMinutes, formatHRV } from "@dofek/format/format";
+import { formatDateShort, formatDurationMinutes, formatHRV } from "@dofek/format/format";
 import { StrainZone, sleepPerformanceColor } from "@dofek/scoring/scoring";
 import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -32,13 +32,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
       <div className="flex items-start justify-between mb-5">
         <div>
           <h3 className="text-muted text-sm font-medium mb-1">Weekly Performance</h3>
-          <p className="text-dim text-xs">
-            Week of{" "}
-            {new Date(`${current.weekStart}T12:00:00`).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}
-          </p>
+          <p className="text-dim text-xs">Week of {formatDateShort(current.weekStart)}</p>
         </div>
         {sleepWasTracked ? (
           <div

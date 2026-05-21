@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { View } from "react-native";
@@ -8,8 +9,8 @@ function createSeededProviders() {
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
 
-  const today = new Date().toLocaleDateString("en-CA");
-  const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA");
+  const today = formatDateYmd();
+  const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
 
   queryClient.setQueryData(
     [["calendar", "weekList"], { input: { weeks: 4, endDate: today }, type: "query" }],

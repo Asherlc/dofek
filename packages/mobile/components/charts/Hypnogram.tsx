@@ -1,3 +1,4 @@
+import { formatTimeOnly } from "@dofek/format/format";
 import { sleepStageColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -92,12 +93,6 @@ export function Hypnogram({ data }: HypnogramProps) {
   });
 
   // Time labels (start and end)
-  const formatTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-
   return (
     <View style={styles.container}>
       <View
@@ -162,8 +157,10 @@ export function Hypnogram({ data }: HypnogramProps) {
 
       {/* X-axis labels */}
       <View style={styles.xAxisLabels}>
-        <Text style={styles.axisLabel}>{firstStage ? formatTime(firstStage.started_at) : ""}</Text>
-        <Text style={styles.axisLabel}>{lastStage ? formatTime(lastStage.ended_at) : ""}</Text>
+        <Text style={styles.axisLabel}>
+          {firstStage ? formatTimeOnly(firstStage.started_at) : ""}
+        </Text>
+        <Text style={styles.axisLabel}>{lastStage ? formatTimeOnly(lastStage.ended_at) : ""}</Text>
       </View>
 
       {/* Legend */}

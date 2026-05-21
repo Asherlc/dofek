@@ -1,5 +1,6 @@
 import {
   formatCalories,
+  formatDateMedium,
   formatDurationMinutes,
   formatNumber,
   parseValidDate,
@@ -32,8 +33,8 @@ interface ActivityListProps {
 }
 
 function formatActivityDate(startedAt: string): string {
-  const startedDate = parseValidDate(startedAt);
-  return startedDate ? startedDate.toLocaleDateString() : "—";
+  const formattedDate = formatDateMedium(startedAt);
+  return formattedDate === "--" ? "—" : formattedDate;
 }
 
 function formatActivityDuration(startedAt: string, endedAt: string | null): string {

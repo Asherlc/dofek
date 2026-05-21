@@ -1,4 +1,4 @@
-import { formatCalories } from "@dofek/format/format";
+import { formatCalories, formatDateLong, formatDateYmd } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -30,18 +30,11 @@ const MEALS = [
 ] as const;
 
 function formatDateForQuery(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatDateYmd(date);
 }
 
 function formatDateForDisplay(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  return formatDateLong(date);
 }
 
 function isToday(date: Date): boolean {

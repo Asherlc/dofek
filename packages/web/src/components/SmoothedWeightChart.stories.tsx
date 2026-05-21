@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type {
   SmoothedWeightRow,
@@ -14,7 +15,7 @@ function generateWeightData(
   const rows: SmoothedWeightRow[] = [];
   let smoothed = startKg;
   for (let index = 0; index < days; index++) {
-    const date = new Date(2026, 2, 1 + index).toISOString().slice(0, 10);
+    const date = formatDateYmd(new Date(2026, 2, 1 + index));
     const noise = (Math.sin(index * 0.7) + Math.cos(index * 1.3)) * 0.4;
     const raw = startKg + trendPerDay * index + noise;
     smoothed = index === 0 ? raw : 0.1 * raw + 0.9 * smoothed;
@@ -95,7 +96,7 @@ export const WithGoalWeight: Story = {
         daysRemaining: 43,
       },
       projectionLine: Array.from({ length: 30 }, (_, index) => ({
-        date: new Date(2026, 4, 31 + index).toISOString().slice(0, 10),
+        date: formatDateYmd(new Date(2026, 4, 31 + index)),
         projectedWeight: Math.round((81.3 - 0.03 * index) * 100) / 100,
       })),
     }),

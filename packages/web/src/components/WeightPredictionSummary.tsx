@@ -1,4 +1,4 @@
-import { formatCalories } from "@dofek/format/format";
+import { formatCalories, formatDateMedium } from "@dofek/format/format";
 import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -7,8 +7,7 @@ interface WeightPredictionSummaryProps {
 }
 
 function formatDate(isoDate: string): string {
-  const date = new Date(`${isoDate}T12:00:00`);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateMedium(isoDate);
 }
 
 export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryProps) {

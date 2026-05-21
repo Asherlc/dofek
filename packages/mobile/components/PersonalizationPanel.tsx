@@ -1,4 +1,9 @@
-import { formatDurationMinutes, formatHRV, formatIntensity } from "@dofek/format/format";
+import {
+  formatDateMedium,
+  formatDurationMinutes,
+  formatHRV,
+  formatIntensity,
+} from "@dofek/format/format";
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { trpc } from "../lib/trpc";
 import { colors } from "../theme";
@@ -82,9 +87,7 @@ export function PersonalizationPanel() {
           </Text>
         </View>
         {data.fittedAt && (
-          <Text style={styles.statusDate}>
-            Updated {new Date(data.fittedAt).toLocaleDateString()}
-          </Text>
+          <Text style={styles.statusDate}>Updated {formatDateMedium(data.fittedAt)}</Text>
         )}
       </View>
 

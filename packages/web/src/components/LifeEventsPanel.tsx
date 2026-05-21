@@ -1,6 +1,8 @@
 import {
   formatBodyCompositionPercent,
   formatCalories,
+  formatDateMedium,
+  formatDateYmd,
   formatDurationMinutes,
   formatHRV,
   formatNumber,
@@ -157,7 +159,7 @@ function AddEventForm({
   loading: boolean;
 }) {
   const [label, setLabel] = useState("");
-  const [startedAt, setStartedAt] = useState(new Date().toISOString().slice(0, 10));
+  const [startedAt, setStartedAt] = useState(formatDateYmd());
   const [endedAt, setEndedAt] = useState("");
   const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
@@ -523,11 +525,7 @@ function categoryIcon(category: string | null): string {
 }
 
 function formatDate(d: string): string {
-  return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDateMedium(d);
 }
 
 function fmtNum(v: number): string {

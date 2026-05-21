@@ -1,3 +1,4 @@
+import { formatDateTime } from "@dofek/format/format";
 import { useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
@@ -21,9 +22,8 @@ const mcpScopeValues = mcpScopeOptions.map((option) => option.value);
 
 function formatTimestamp(value: Date | string | null): string {
   if (!value) return "Never";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleString();
+  const formatted = formatDateTime(value);
+  return formatted === "--" ? "Unknown" : formatted;
 }
 
 export function McpTokensPanel() {

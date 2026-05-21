@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { formatDateTime } from "@dofek/format/format";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -270,7 +271,7 @@ describe("SettingsScreen OTA debug details", () => {
 
     render(<SettingsScreen />);
 
-    const expectedLocalTimestamp = otaCreatedAt.toLocaleString();
+    const expectedLocalTimestamp = formatDateTime(otaCreatedAt);
     expect(
       screen.getByText((content) => content.includes(`Created: ${expectedLocalTimestamp}`)),
     ).toBeTruthy();

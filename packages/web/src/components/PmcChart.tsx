@@ -1,4 +1,9 @@
-import { formatNumber, formatTrainingLoad } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDateShort,
+  formatNumber,
+  formatTrainingLoad,
+} from "@dofek/format/format";
 import {
   FORM_ZONE_COLORS,
   FORM_ZONE_FRESH,
@@ -59,13 +64,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
   }
 
   const lastPoint = data[data.length - 1];
-  const lastDate = lastPoint
-    ? new Date(lastPoint.date).toLocaleDateString("en-US", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      })
-    : "";
+  const lastDate = lastPoint ? formatDateShort(lastPoint.date) : "";
 
   const option = {
     grid: [
@@ -87,12 +86,7 @@ export function PmcChart({ data, model, loading }: PmcChartProps) {
         const first = params[0];
         if (!first) return "";
         const date = first.value[0];
-        const label = new Date(date).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const label = formatDateLong(date);
 
         // Find values by series name
         const load = params.find((p) => p.seriesName === "Load")?.value[1] ?? 0;

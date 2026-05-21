@@ -1,4 +1,4 @@
-import { formatDurationMinutes, formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatDurationMinutes, formatNumber } from "@dofek/format/format";
 import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
@@ -37,11 +37,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         const idx = firstParam.dataIndex;
         const night = nightly[idx];
         if (!night) return "";
-        const dateLabel = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(night.date);
         let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel} (${formatDurationMinutes(night.durationMinutes)})</div>`;
         for (const p of params) {
           if (p.seriesName === "7d Avg") {

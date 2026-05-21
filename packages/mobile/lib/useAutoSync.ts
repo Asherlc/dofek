@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useRef } from "react";
 import {
   deleteDietarySamples,
@@ -18,12 +19,12 @@ import { trpc } from "./trpc";
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
   if (!latestDate) return false; // No data at all — nothing to refresh
-  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
+  const today = formatDateYmd();
   return latestDate < today;
 }
 
 function todayYmd(): string {
-  return new Date().toLocaleDateString("en-CA");
+  return formatDateYmd();
 }
 
 /**

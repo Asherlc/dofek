@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { PHASE_DISPLAY } from "@dofek/scoring/menstrual-cycle";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -14,7 +15,7 @@ function CyclePage() {
     months: 6,
   });
 
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(formatDateYmd());
   const utils = trpc.useUtils();
   const logMutation = trpc.menstrualCycle.logPeriod.useMutation({
     onSuccess: () => {

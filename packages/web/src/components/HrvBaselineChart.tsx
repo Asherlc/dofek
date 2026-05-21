@@ -1,4 +1,4 @@
-import { formatHRV } from "@dofek/format/format";
+import { formatDateShort, formatHRV } from "@dofek/format/format";
 import { chartColors, dofekAxis, dofekLegend, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
@@ -43,10 +43,7 @@ export function HrvBaselineChart({ data, loading }: HrvBaselineChartProps) {
         if (!params || params.length === 0) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const date = new Date(firstParam.data[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateShort(firstParam.data[0]);
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         for (const p of params) {
           // Skip the lower band from tooltip

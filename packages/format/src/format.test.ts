@@ -4,7 +4,12 @@ import {
   formatBodyCompositionPercent,
   formatCalories,
   formatDateForDisplay,
+  formatDateLong,
+  formatDateMedium,
+  formatDateShort,
+  formatDateTime,
   formatDateYmd,
+  formatDateYmdInTimeZone,
   formatDurationMinutes,
   formatDurationRange,
   formatDurationSeconds,
@@ -12,6 +17,7 @@ import {
   formatHour,
   formatHRV,
   formatIntensity,
+  formatMonthYear,
   formatNumber,
   formatNutritionAmount,
   formatNutritionNumber,
@@ -23,7 +29,10 @@ import {
   formatSleepDebtInline,
   formatSpO2,
   formatTime,
+  formatTimeOnly,
   formatTrainingLoad,
+  formatWeekdayShort,
+  formatWeekdayTime,
   isToday,
   isYesterday,
   parseValidDate,
@@ -46,6 +55,45 @@ describe("formatDateYmd", () => {
     const now = new Date();
     const expected = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     expect(formatDateYmd()).toBe(expected);
+  });
+});
+
+describe("date and time formatters", () => {
+  it("formats short, medium, long, month, and weekday date labels", () => {
+    const date = new Date(2026, 0, 5, 14, 30);
+
+    expect(formatDateShort(date)).toBe("Jan 5");
+    expect(formatDateMedium(date)).toBe("Jan 5, 2026");
+    expect(formatDateLong(date)).toBe("Mon, Jan 5, 2026");
+    expect(formatMonthYear(date)).toBe("January 2026");
+    expect(formatWeekdayShort(date)).toBe("Mon");
+  });
+
+  it("formats date-only strings as local calendar days", () => {
+    expect(formatDateMedium("2026-01-05")).toBe("Jan 5, 2026");
+  });
+
+  it("formats human date-time and time-only labels", () => {
+    const date = new Date(2026, 0, 5, 14, 30);
+
+    expect(formatDateTime(date)).toBe("Jan 5, 2:30 PM");
+    expect(formatTimeOnly(date)).toBe("2:30 PM");
+    expect(formatWeekdayTime(date)).toBe("Monday 2:30 PM");
+  });
+
+  it("supports timezone-aware date labels", () => {
+    expect(formatDateLong("2026-01-01T05:00:00.000Z", { timeZone: "America/Los_Angeles" })).toBe(
+      "Wed, Dec 31, 2025",
+    );
+    expect(formatDateYmdInTimeZone("2026-01-01T05:00:00.000Z", "America/Los_Angeles")).toBe(
+      "2025-12-31",
+    );
+  });
+
+  it("returns placeholders for invalid date labels", () => {
+    expect(formatDateShort("not-a-date")).toBe("--");
+    expect(formatDateTime("not-a-date")).toBe("--");
+    expect(formatTimeOnly("not-a-date")).toBe("--");
   });
 });
 

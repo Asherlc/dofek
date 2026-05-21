@@ -1,5 +1,6 @@
 import {
   formatDateForDisplay,
+  formatDateYmd,
   formatDurationMinutes,
   formatTime,
   isToday,
@@ -17,7 +18,7 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 const WEEKS = 4;
 
 export function ActivitiesPage() {
-  const endDate = new Date().toLocaleDateString("en-CA");
+  const endDate = formatDateYmd();
   const query = trpc.calendar.weekList.useQuery({ weeks: WEEKS, endDate });
   const units = useUnitConverter();
 

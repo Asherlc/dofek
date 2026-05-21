@@ -1,4 +1,4 @@
-import { formatIntensity, formatNumber } from "@dofek/format/format";
+import { formatDateShort, formatIntensity, formatNumber } from "@dofek/format/format";
 import type { ActivityVariabilityRow } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 
@@ -49,11 +49,7 @@ export function ActivityVariabilityTable({
       label: "Date",
       headerClassName: "text-left py-2 px-3 text-muted font-medium",
       cellClassName: "py-2 px-3 text-foreground",
-      renderCell: (row) =>
-        new Date(row.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
+      renderCell: (row) => formatDateShort(row.date),
     },
     {
       key: "activity",

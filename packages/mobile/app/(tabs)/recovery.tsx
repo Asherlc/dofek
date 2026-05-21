@@ -1,5 +1,6 @@
 import {
   formatBodyCompositionNumber,
+  formatDateShort,
   formatHRV,
   formatIntensity,
   formatNumber,
@@ -377,12 +378,7 @@ export default function RecoveryScreen() {
               <View style={styles.weeklyGrid}>
                 {(stressResult?.weekly ?? []).slice(-4).map((week) => (
                   <View key={week.weekStart} style={styles.weeklyItem}>
-                    <Text style={styles.weeklyDate}>
-                      {new Date(week.weekStart).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </Text>
+                    <Text style={styles.weeklyDate}>{formatDateShort(week.weekStart)}</Text>
                     <Text style={styles.weeklyValue}>{formatNumber(week.avgDailyStress)}</Text>
                     <Text style={styles.weeklyLabel}>{week.highStressDays} high days</Text>
                   </View>
@@ -491,12 +487,7 @@ export default function RecoveryScreen() {
                   {weightPrediction.data?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
                       Goal: {units.formatWeight(weightPrediction.data.goal.goalWeightKg)} by ~
-                      {new Date(
-                        `${weightPrediction.data.goal.estimatedDate}T12:00:00`,
-                      ).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {formatDateShort(weightPrediction.data.goal.estimatedDate)}
                     </Text>
                   )}
                 </View>

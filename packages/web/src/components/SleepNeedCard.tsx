@@ -1,4 +1,9 @@
-import { formatDurationMinutes, formatNumber } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDurationMinutes,
+  formatNumber,
+  formatWeekdayShort,
+} from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNeedResult } from "dofek-server/types";
@@ -44,11 +49,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         if (!params?.[0]) return "";
         const night = data.recentNights[params[0].dataIndex];
         if (!night) return "";
-        const date = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateLong(night.date);
         if (night.actualMinutes == null) {
           return `<div style="font-weight:600;margin-bottom:4px">${date}</div><div style="color:#6b7280">No data</div>`;
         }
@@ -62,9 +63,7 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
       },
     }),
     xAxis: dofekAxis.category({
-      data: data.recentNights.map((n) =>
-        new Date(`${n.date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short" }),
-      ),
+      data: data.recentNights.map((n) => formatWeekdayShort(n.date)),
     }),
     yAxis: dofekAxis.value({
       name: "hours",

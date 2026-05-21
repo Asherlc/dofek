@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateShort, formatNumber } from "@dofek/format/format";
 import type { VerticalAscentRow } from "dofek-server/types";
 import { chartColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -60,7 +60,7 @@ export function VerticalAscentChart({ data, loading }: VerticalAscentChartProps)
         const [date, vam] = itemData.value;
         return [
           `<strong>${itemData.name}</strong>`,
-          `Date: ${new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+          `Date: ${formatDateShort(date)}`,
           `VAM: ${formatNumber(vam, 0)} ${eLabel}/h`,
           `Elevation Gain: ${formatNumber(itemData.elevationGain, 0)} ${eLabel}`,
         ].join("<br/>");

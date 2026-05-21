@@ -1,4 +1,4 @@
-import { formatIntensity, formatTrainingLoad } from "@dofek/format/format";
+import { formatDateShort, formatIntensity, formatTrainingLoad } from "@dofek/format/format";
 import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
@@ -127,7 +127,7 @@ export function StrainCard({ data, strainTarget, loading }: StrainCardProps) {
       ? ""
       : data.displayedDate === today?.date
         ? "Today"
-        : `Last training: ${new Date(data.displayedDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+        : `Last training: ${formatDateShort(data.displayedDate)}`;
 
   return (
     <div className="card p-6">

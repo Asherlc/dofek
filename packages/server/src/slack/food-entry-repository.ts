@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone, formatWeekdayTime } from "@dofek/format/format";
 import type { Database } from "dofek/db";
 import { nutrientAmountEntriesFromLegacyFields } from "dofek/db/nutrient-columns";
 import { sql } from "drizzle-orm";
@@ -78,21 +79,13 @@ function parseCalorieGoal(rawValue: unknown): number {
 /** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
 export function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
   const epochSeconds = Number.parseFloat(slackTs);
-  const date = new Date(epochSeconds * 1000);
-  return date.toLocaleString("en-US", {
-    timeZone: timezone,
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return formatWeekdayTime(epochSeconds * 1000, { timeZone: timezone });
 }
 
 /** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone */
 export function slackTimestampToDateString(slackTs: string, timezone: string): string {
   const epochSeconds = Number.parseFloat(slackTs);
-  const date = new Date(epochSeconds * 1000);
-  return date.toLocaleDateString("en-CA", { timeZone: timezone });
+  return formatDateYmdInTimeZone(epochSeconds * 1000, timezone);
 }
 
 /**

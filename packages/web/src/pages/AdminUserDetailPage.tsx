@@ -1,3 +1,4 @@
+import { formatDateTime } from "@dofek/format/format";
 import { Link, useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -6,14 +7,7 @@ import { trpc } from "../lib/trpc.ts";
 
 function formatTimestamp(timestamp: string | null | undefined): string {
   if (!timestamp) return "—";
-  const date = new Date(timestamp);
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatDateTime(timestamp);
 }
 
 function DetailCard({ title, children }: { title: string; children: ReactNode }) {

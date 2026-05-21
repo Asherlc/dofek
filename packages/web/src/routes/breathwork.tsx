@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import { totalSessionSeconds } from "@dofek/scoring/breathwork";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -241,7 +242,7 @@ function BreathworkPage() {
                         {technique?.name ?? session.techniqueId}
                       </span>
                       <span className="text-xs text-dim ml-2">
-                        {new Date(session.startedAt).toLocaleDateString()}
+                        {formatDateMedium(session.startedAt)}
                       </span>
                     </div>
                     <div className="text-right">

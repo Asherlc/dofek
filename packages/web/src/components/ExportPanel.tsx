@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
@@ -51,11 +52,7 @@ function formatBytes(sizeBytes: number | null): string {
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateMedium(value);
 }
 
 async function fetchExports(): Promise<DataExport[]> {

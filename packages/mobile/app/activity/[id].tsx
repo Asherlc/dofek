@@ -1,4 +1,10 @@
-import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDurationRange,
+  formatDurationSeconds,
+  formatNumber,
+  formatTimeOnly,
+} from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -50,26 +56,6 @@ const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "funct
 
 function isStrengthActivityType(activityType: string): boolean {
   return STRENGTH_ACTIVITY_TYPES.has(activityType);
-}
-
-// ── Helpers ──
-
-function formatDateTime(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatTimeOfDay(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function activityIcon(type: string): string {
@@ -795,9 +781,9 @@ export default function ActivityDetailScreen() {
           </View>
         </View>
         <Text style={styles.dateTime}>
-          {formatDateTime(activity.startedAt)}
+          {formatDateLong(activity.startedAt)}
           {" at "}
-          {formatTimeOfDay(activity.startedAt)}
+          {formatTimeOnly(activity.startedAt)}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>

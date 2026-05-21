@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import type { ElevationProfileRow } from "dofek-server/types";
 import {
   chartColors,
@@ -33,11 +33,7 @@ export function ElevationGainChart({ data, loading }: ElevationGainChartProps) {
         };
         const row = data[param.dataIndex];
         if (!row) return "";
-        const dateLabel = new Date(row.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(row.week);
         return [
           `<strong>Week of ${dateLabel}</strong>`,
           `Elevation Gain: ${formatNumber(units.convertElevation(row.elevationGainMeters), 0)} ${units.elevationLabel}`,

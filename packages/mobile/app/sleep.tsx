@@ -1,4 +1,6 @@
 import {
+  formatDateLong,
+  formatDateShort,
   formatDurationMinutes,
   formatHour,
   formatIntensity,
@@ -184,18 +186,8 @@ export default function SleepScreen() {
                             showBaseline
                           />
                           <View style={styles.xAxis}>
-                            <Text style={styles.axisLabel}>
-                              {new Date(first.date).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </Text>
-                            <Text style={styles.axisLabel}>
-                              {new Date(last.date).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </Text>
+                            <Text style={styles.axisLabel}>{formatDateShort(first.date)}</Text>
+                            <Text style={styles.axisLabel}>{formatDateShort(last.date)}</Text>
                           </View>
                         </View>
                       </View>
@@ -229,13 +221,7 @@ export default function SleepScreen() {
                   .reverse()
                   .map((night) => (
                     <View key={night.date} style={styles.nightlyRow}>
-                      <Text style={styles.nightlyDate}>
-                        {new Date(night.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </Text>
+                      <Text style={styles.nightlyDate}>{formatDateLong(night.date)}</Text>
                       <View style={styles.nightlyBarContainer}>
                         <SleepBar
                           durationMinutes={night.durationMinutes}

@@ -1,4 +1,9 @@
-import { formatDurationMinutes, formatNumber, formatPace } from "@dofek/format/format";
+import {
+  formatDateMedium,
+  formatDurationMinutes,
+  formatNumber,
+  formatPace,
+} from "@dofek/format/format";
 import type { GradeAdjustedPaceRow } from "dofek-server/types";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
@@ -32,7 +37,7 @@ export function GradeAdjustedPaceTable({ data, loading }: GradeAdjustedPaceTable
       label: "Date",
       headerClassName: "pb-2 pr-4",
       cellClassName: "py-2 pr-4 text-foreground",
-      renderCell: (row) => new Date(row.date).toLocaleDateString(),
+      renderCell: (row) => formatDateMedium(row.date),
     },
     {
       key: "name",

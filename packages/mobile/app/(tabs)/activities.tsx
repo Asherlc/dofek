@@ -1,5 +1,6 @@
 import {
   formatDateForDisplay,
+  formatDateYmd,
   formatDurationMinutes,
   formatTime,
   isToday,
@@ -29,7 +30,7 @@ const TILE_HEIGHT = 140;
 export default function ActivitiesScreen() {
   const router = useRouter();
   const units = useUnitConverter();
-  const endDate = useMemo(() => new Date().toLocaleDateString("en-CA"), []);
+  const endDate = useMemo(() => formatDateYmd(), []);
   const query = trpc.calendar.weekList.useQuery({ weeks: 4, endDate });
   const { refreshing, onRefresh } = useRefresh();
 

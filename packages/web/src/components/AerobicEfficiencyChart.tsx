@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateYmd, formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import {
@@ -114,8 +114,8 @@ export function AerobicEfficiencyChart({
   const { slope, intercept } = linearRegression(points);
 
   const trendData = [
-    [new Date(minTime).toISOString().slice(0, 10), slope * minTime + intercept],
-    [new Date(maxTime).toISOString().slice(0, 10), slope * maxTime + intercept],
+    [formatDateYmd(new Date(minTime)), slope * minTime + intercept],
+    [formatDateYmd(new Date(maxTime)), slope * maxTime + intercept],
   ];
 
   const trendDirection = slope > 0 ? "improving" : slope < 0 ? "declining" : "flat";

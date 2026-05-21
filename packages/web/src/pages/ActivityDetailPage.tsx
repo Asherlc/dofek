@@ -1,4 +1,9 @@
-import { formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDurationSeconds,
+  formatNumber,
+  formatTimeOnly,
+} from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
@@ -333,17 +338,7 @@ export function ActivityHeader({
         </span>
       </div>
       <p className="text-sm text-subtle">
-        {new Date(activity.startedAt).toLocaleDateString(undefined, {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })}
-        {" at "}
-        {new Date(activity.startedAt).toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
+        {formatDateLong(activity.startedAt)} at {formatTimeOnly(activity.startedAt)}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
         <p className="text-xs text-subtle mb-4">
@@ -655,10 +650,7 @@ function MetricsChart({
     xAxis: dofekAxis.category({
       data: times,
       axisLabel: {
-        formatter: (v: string) => {
-          const date = new Date(v);
-          return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
-        },
+        formatter: (v: string) => formatTimeOnly(v),
       },
     }),
     yAxis: yAxes,
@@ -700,10 +692,7 @@ function ElevationChart({
     xAxis: dofekAxis.category({
       data: elevPoints.map((p) => p.recordedAt),
       axisLabel: {
-        formatter: (v: string) => {
-          const date = new Date(v);
-          return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
-        },
+        formatter: (v: string) => formatTimeOnly(v),
       },
     }),
     yAxis: dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }),

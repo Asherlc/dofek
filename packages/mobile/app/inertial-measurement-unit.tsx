@@ -1,3 +1,4 @@
+import { formatDateShort, formatDateTime, formatDateYmd } from "@dofek/format/format";
 import { Stack } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -31,7 +32,7 @@ import { colors } from "../theme";
 import { rootStackScreenOptions } from "./_layout-options";
 
 function formatDateForQuery(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return formatDateYmd(date);
 }
 
 const MAX_SAMPLES_PER_BUCKET = 15000; // 50 Hz * 300 seconds
@@ -51,11 +52,7 @@ function CoverageTimeline() {
     setSelectedDate((previous) => new Date(previous.getTime() - 86400000));
   const goToNextDay = () => setSelectedDate((previous) => new Date(previous.getTime() + 86400000));
 
-  const dateLabel = selectedDate.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  const dateLabel = formatDateShort(selectedDate);
 
   const barColor = (ratio: number) => {
     if (ratio > 0.9) return colors.positive;
@@ -377,7 +374,7 @@ export default function InertialMeasurementUnitScreen() {
   );
 
   const latestSync = syncStatus.data?.[0]?.latestSample
-    ? new Date(syncStatus.data[0].latestSample).toLocaleString()
+    ? formatDateTime(syncStatus.data[0].latestSample)
     : "Never";
 
   // Collect all active problems for the top-level banner

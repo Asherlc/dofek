@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
@@ -46,11 +47,11 @@ function HealthReportPage() {
                         {report.reportType} Report
                       </span>
                       <span className="text-xs text-dim ml-2">
-                        {new Date(report.createdAt).toLocaleDateString()}
+                        {formatDateMedium(report.createdAt)}
                       </span>
                       {report.expiresAt && (
                         <span className="text-xs text-muted ml-2">
-                          Expires {new Date(report.expiresAt).toLocaleDateString()}
+                          Expires {formatDateMedium(report.expiresAt)}
                         </span>
                       )}
                     </div>

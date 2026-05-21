@@ -1,4 +1,4 @@
-import { formatDurationMinutes, formatHRV } from "@dofek/format/format";
+import { formatDurationMinutes, formatHRV, formatMonthYear } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -35,8 +35,7 @@ function MonthCard({
     avgSleepTrend: number | null;
   };
 }) {
-  const date = new Date(month.monthStart);
-  const monthLabel = date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const monthLabel = formatMonthYear(month.monthStart);
 
   return (
     <div className="card p-5">

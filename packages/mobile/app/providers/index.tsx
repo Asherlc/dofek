@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { File as ExpoFile } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -63,11 +64,11 @@ function deleteSharedFile(fileUri: string): void {
 function ymdDaysAgo(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() - days);
-  return date.toLocaleDateString("en-CA");
+  return formatDateYmd(date);
 }
 
 function todayYmd(): string {
-  return new Date().toLocaleDateString("en-CA");
+  return formatDateYmd();
 }
 
 export default function ProvidersScreen() {

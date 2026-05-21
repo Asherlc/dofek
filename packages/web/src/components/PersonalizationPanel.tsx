@@ -1,4 +1,5 @@
 import {
+  formatDateMedium,
   formatDurationMinutes,
   formatHRV,
   formatIntensity,
@@ -71,7 +72,7 @@ export function PersonalizationPanel() {
         </div>
         {data.fittedAt && (
           <span className="text-xs text-subtle">
-            Last updated {new Date(data.fittedAt).toLocaleDateString()}
+            Last updated {formatDateMedium(data.fittedAt)}
           </span>
         )}
       </div>

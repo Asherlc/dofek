@@ -48,6 +48,9 @@ importers:
       '@clickhouse/client':
         specifier: 1.12.1
         version: 1.12.1
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:packages/format
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
