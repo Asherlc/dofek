@@ -138,5 +138,4 @@ async function refreshRestingHeartRateViews() {
   if (testContext === null) {
     throw new Error("Test database has not been initialized");
   }
-  await testContext.db.execute(sql`REFRESH MATERIALIZED VIEW fitness.v_sleep`);
 }

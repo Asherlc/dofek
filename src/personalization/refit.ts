@@ -52,7 +52,7 @@ export async function refitAllParams(
     await Promise.allSettled([
       fitEwmaFromDb(sensorStore, userId),
       fitReadinessFromDb(db, sensorStore, userId),
-      fitSleepFromDb(db, userId),
+      fitSleepFromDb(db, sensorStore, userId),
       fitStressFromDb(db, sensorStore, userId),
       fitTrimpFromDb(sensorStore, userId),
     ]);
@@ -254,8 +254,9 @@ async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, u
       days: 425,
     }),
   );
-  const rows = await db.execute(
-    sql`WITH ${restingHeartRateCte},
+  const [metricRows, sleepRows] = await Promise.all([
+    db.execute(
+      sql`WITH ${restingHeartRateCte},
         metrics_base AS (
           SELECT
             dm.date,
@@ -281,27 +282,51 @@ async function fitReadinessFromDb(db: Database, sensorStore: RefitSensorStore, u
             LEAD(hrv_mean) OVER (ORDER BY date) AS next_day_hrv_mean,
             LEAD(hrv_sd) OVER (ORDER BY date) AS next_day_hrv_sd
           FROM metrics_base
-        ),
-        sleep_eff AS (
-          SELECT DISTINCT ON (COALESCE(ended_at, started_at + interval '8 hours')::date)
-            COALESCE(ended_at, started_at + interval '8 hours')::date AS date,
-            efficiency_pct
-          FROM fitness.v_sleep
-          WHERE user_id = ${userId}
-            AND is_nap = false
-            AND started_at > NOW() - INTERVAL '425 days'
-          ORDER BY COALESCE(ended_at, started_at + interval '8 hours')::date, started_at DESC
         )
         SELECT
           m.hrv, m.resting_hr, m.hrv_mean, m.hrv_sd, m.rhr_mean, m.rhr_sd,
           m.respiratory_rate, m.rr_mean, m.rr_sd,
-          s.efficiency_pct,
+          m.date,
+          NULL::real AS efficiency_pct,
           m.next_day_hrv, m.next_day_hrv_mean, m.next_day_hrv_sd
         FROM metrics m
-        LEFT JOIN sleep_eff s ON s.date = m.date
         WHERE m.date > CURRENT_DATE - 365
         ORDER BY m.date ASC`,
-  );
+    ),
+    sensorStore.query(
+      z.object({
+        date: z.string(),
+        efficiency_pct: z.coerce.number().nullable(),
+      }),
+      `SELECT
+        toString(toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)) AS date,
+        efficiency_pct
+      FROM (
+        SELECT
+          started_at,
+          efficiency_pct,
+          duration_minutes,
+          row_number() OVER (
+            PARTITION BY toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)
+            ORDER BY duration_minutes DESC NULLS LAST
+          ) AS row_number
+        FROM analytics.v_sleep
+        WHERE user_id = {userId:UUID}
+          AND is_nap = false
+          AND started_at > now() - INTERVAL 425 DAY
+      )
+      WHERE row_number = 1`,
+      { userId },
+    ),
+  ]);
+  const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
+  const rows = metricRows.map((row) => {
+    const rowDate = z.object({ date: z.coerce.string() }).parse(row).date;
+    return {
+      ...row,
+      efficiency_pct: sleepEfficiencyByDate.get(rowDate) ?? null,
+    };
+  });
 
   return fitReadinessWeights(parseReadinessRows(rows));
 }
@@ -325,18 +350,66 @@ export function parseSleepRows(rows: Record<string, unknown>[]): SleepTargetInpu
   return data;
 }
 
-export async function fitSleepFromDb(db: Database, userId: string) {
-  const rows = await db.execute(
-    sql`WITH nightly AS (
-          SELECT
-            COALESCE(s.ended_at, s.started_at + interval '8 hours')::date AS date,
-            s.duration_minutes
-          FROM fitness.v_sleep s
-          WHERE s.user_id = ${userId}
-            AND s.is_nap = false
-            AND s.started_at > NOW() - INTERVAL '365 days'
+export async function fitSleepFromDb(
+  db: Database,
+  userId: string,
+): Promise<PersonalizedParams["sleepTarget"]>;
+export async function fitSleepFromDb(
+  db: Database,
+  sensorStore: RefitSensorStore,
+  userId: string,
+): Promise<PersonalizedParams["sleepTarget"]>;
+export async function fitSleepFromDb(
+  db: Database,
+  sensorStoreOrUserId: RefitSensorStore | string,
+  maybeUserId?: string,
+): Promise<PersonalizedParams["sleepTarget"]> {
+  const userId = typeof sensorStoreOrUserId === "string" ? sensorStoreOrUserId : maybeUserId;
+  if (!userId) {
+    throw new Error("fitSleepFromDb requires a user id");
+  }
+  const [sleepRows, hrvRows] = await Promise.all([
+    typeof sensorStoreOrUserId === "string"
+      ? db.execute(
+          sql`WITH nightly AS (
+            SELECT DISTINCT ON (date)
+              ((started_at AT TIME ZONE 'UTC') - INTERVAL '6 hours')::date::text AS date,
+              duration_minutes
+            FROM fitness.sleep_session
+            WHERE user_id = ${userId}
+              AND sleep_type = 'sleep'
+              AND started_at > NOW() - INTERVAL '365 days'
+            ORDER BY date, duration_minutes DESC NULLS LAST
+          )
+          SELECT date, duration_minutes FROM nightly ORDER BY date ASC`,
+        )
+      : sensorStoreOrUserId.query(
+          z.object({
+            date: z.string(),
+            duration_minutes: z.coerce.number().nullable(),
+          }),
+          `SELECT
+        date,
+        duration_minutes
+      FROM (
+        SELECT
+          toString(toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)) AS date,
+          duration_minutes,
+          row_number() OVER (
+            PARTITION BY toDate(toTimeZone(started_at, 'UTC') - INTERVAL 6 HOUR)
+            ORDER BY duration_minutes DESC NULLS LAST
+          ) AS row_number
+        FROM analytics.v_sleep
+        WHERE user_id = {userId:UUID}
+          AND is_nap = false
+          AND started_at > now() - INTERVAL 365 DAY
+      )
+      WHERE row_number = 1
+      ORDER BY date ASC`,
+          { userId },
         ),
-        hrv_with_median AS (
+    db.execute(
+      sql`WITH hrv_with_median AS (
           SELECT
             d.date,
             d.hrv,
@@ -354,12 +427,28 @@ export async function fitSleepFromDb(db: Database, userId: string) {
             AND d.hrv IS NOT NULL
         )
         SELECT
-          n.duration_minutes,
-          CASE WHEN h.hrv >= h.median_hrv THEN true ELSE false END AS hrv_above_median
-        FROM nightly n
-        JOIN hrv_with_median h ON h.date = n.date + 1
-        ORDER BY n.date ASC`,
+          date::text AS date,
+          CASE WHEN hrv >= median_hrv THEN true ELSE false END AS hrv_above_median
+        FROM hrv_with_median`,
+    ),
+  ]);
+  const hrvByDate = new Map(
+    hrvRows.map((row) => {
+      const parsed = z
+        .object({ date: z.string(), hrv_above_median: z.coerce.boolean() })
+        .parse(row);
+      return [parsed.date, parsed.hrv_above_median];
+    }),
   );
+  const rows = sleepRows.flatMap((row) => {
+    if (row.duration_minutes == null) return [];
+    const date = new Date(`${row.date}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + 1);
+    const nextDate = date.toISOString().slice(0, 10);
+    const hrvAboveMedian = hrvByDate.get(nextDate);
+    if (hrvAboveMedian == null) return [];
+    return [{ duration_minutes: row.duration_minutes, hrv_above_median: hrvAboveMedian }];
+  });
 
   return fitSleepTarget(parseSleepRows(rows));
 }

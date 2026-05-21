@@ -41,10 +41,59 @@ function makeDb(rows: Record<string, unknown>[] = []) {
   return { execute };
 }
 
-function makeSensorStore() {
+function makeSensorStore(sleepRows: Record<string, unknown>[] = []) {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2024-06-14", resting_hr: 52 }]),
+    query: vi.fn(async (_schema: unknown, query: string) =>
+      query.includes("analytics.v_sleep") ? sleepRows : [{ date: "2024-06-14", resting_hr: 52 }],
+    ),
   };
+}
+
+function dateDaysBefore(dateString: string, daysBefore: number): string {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - daysBefore);
+  return date.toISOString().slice(0, 10);
+}
+
+function sleepRowsForBaseline({
+  targetDate,
+  targetDuration,
+  baselineMean,
+  baselineStddev,
+  baselineCount = 20,
+}: {
+  targetDate: string;
+  targetDuration: number | null;
+  baselineMean: number;
+  baselineStddev: number;
+  baselineCount?: number;
+}) {
+  const baselineRows = Array.from({ length: baselineCount }, (_unused, index) => ({
+    date: dateDaysBefore(targetDate, baselineCount - index),
+    started_at: `${dateDaysBefore(targetDate, baselineCount - index)}T23:00:00Z`,
+    ended_at: `${dateDaysBefore(targetDate, baselineCount - index - 1)}T07:00:00Z`,
+    duration_minutes:
+      index % 2 === 0 ? baselineMean - baselineStddev : baselineMean + baselineStddev,
+    deep_minutes: null,
+    rem_minutes: null,
+    light_minutes: null,
+    awake_minutes: null,
+    efficiency_pct: null,
+  }));
+  return [
+    ...baselineRows,
+    {
+      date: targetDate,
+      started_at: `${targetDate}T23:00:00Z`,
+      ended_at: `${dateDaysBefore(targetDate, -1)}T07:00:00Z`,
+      duration_minutes: targetDuration,
+      deep_minutes: null,
+      rem_minutes: null,
+      light_minutes: null,
+      awake_minutes: null,
+      efficiency_pct: null,
+    },
+  ];
 }
 
 /** Shorthand for the full check-row shape with all nulls filled in. */
@@ -197,10 +246,20 @@ describe("AnomalyDetectionRepository", () => {
 
     it("detects short sleep as warning (z < -2)", async () => {
       // mean=420, sd=30, value=350 => z = (350-420)/30 = -2.33
-      const db = makeDb([
-        checkRow({ duration_minutes: 350, sleep_mean: 420, sleep_sd: 30, sleep_count: 20 }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 350,
+            baselineMean: 420,
+            baselineStddev: 30,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.checkedMetrics).toContain("sleep_duration");
@@ -212,13 +271,34 @@ describe("AnomalyDetectionRepository", () => {
 
     it("detects severely short sleep as alert (z < -3)", async () => {
       // mean=420, sd=30, value=320 => z = (320-420)/30 = -3.33
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 320,
+            baselineMean: 420,
+            baselineStddev: 30,
+          }),
+        ),
+      );
+      const result = await repo.check("2024-06-15");
+
+      expect(result.anomalies[0]?.severity).toBe("alert");
+    });
+
+    it("ignores legacy SQL sleep stats when ClickHouse has no sleep rows", async () => {
       const db = makeDb([
         checkRow({ duration_minutes: 320, sleep_mean: 420, sleep_sd: 30, sleep_count: 20 }),
       ]);
       const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
       const result = await repo.check("2024-06-15");
 
-      expect(result.anomalies[0]?.severity).toBe("alert");
+      expect(result.checkedMetrics).not.toContain("sleep_duration");
+      expect(result.anomalies).toHaveLength(0);
     });
 
     // -- Multiple anomalies ------------------------------------------------
@@ -234,13 +314,25 @@ describe("AnomalyDetectionRepository", () => {
           hrv_mean: 50,
           hrv_sd: 5,
           hrv_count: 20,
-          duration_minutes: 300,
-          sleep_mean: 420,
-          sleep_sd: 30,
-          sleep_count: 20,
+          duration_minutes: null,
+          sleep_mean: null,
+          sleep_sd: null,
+          sleep_count: null,
         }),
       ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 300,
+            baselineMean: 420,
+            baselineStddev: 30,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.anomalies).toHaveLength(3);
@@ -534,10 +626,20 @@ describe("AnomalyDetectionRepository", () => {
 
     it("does NOT flag sleep when z-score is exactly -2.0 (uses < not <=)", async () => {
       // mean=420, sd=30, value=360 => z = (360-420)/30 = -2.0 exactly
-      const db = makeDb([
-        checkRow({ duration_minutes: 360, sleep_mean: 420, sleep_sd: 30, sleep_count: 20 }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 360,
+            baselineMean: 420,
+            baselineStddev: 30,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.checkedMetrics).toContain("sleep_duration");
@@ -546,10 +648,20 @@ describe("AnomalyDetectionRepository", () => {
 
     it("classifies sleep z-score of exactly -3.0 as warning, not alert (uses < not <=)", async () => {
       // mean=420, sd=30, value=330 => z = (330-420)/30 = -3.0 exactly
-      const db = makeDb([
-        checkRow({ duration_minutes: 330, sleep_mean: 420, sleep_sd: 30, sleep_count: 20 }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 330,
+            baselineMean: 420,
+            baselineStddev: 30,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.anomalies).toHaveLength(1);
@@ -561,13 +673,25 @@ describe("AnomalyDetectionRepository", () => {
       // z = (349.7 - 419.6)/29.8 = -69.9/29.8 = -2.346...
       const db = makeDb([
         checkRow({
-          duration_minutes: 349.7,
-          sleep_mean: 419.6,
-          sleep_sd: 29.8,
-          sleep_count: 20,
+          duration_minutes: null,
+          sleep_mean: null,
+          sleep_sd: null,
+          sleep_count: null,
         }),
       ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 349.7,
+            baselineMean: 419.6,
+            baselineStddev: 29.8,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.anomalies).toHaveLength(1);
@@ -577,20 +701,41 @@ describe("AnomalyDetectionRepository", () => {
     });
 
     it("skips sleep check when sleep_count < 14", async () => {
-      const db = makeDb([
-        checkRow({ duration_minutes: 200, sleep_mean: 420, sleep_sd: 30, sleep_count: 10 }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 200,
+            baselineMean: 420,
+            baselineStddev: 30,
+            baselineCount: 10,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.checkedMetrics).not.toContain("sleep_duration");
     });
 
     it("skips sleep check when sleep_sd is zero", async () => {
-      const db = makeDb([
-        checkRow({ duration_minutes: 200, sleep_mean: 420, sleep_sd: 0, sleep_count: 20 }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 200,
+            baselineMean: 420,
+            baselineStddev: 0,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
 
       expect(result.checkedMetrics).not.toContain("sleep_duration");
@@ -809,16 +954,20 @@ describe("AnomalyDetectionRepository", () => {
     });
 
     it("sets correct date on sleep anomaly output", async () => {
-      const db = makeDb([
-        checkRow({
-          date: "2024-08-01",
-          duration_minutes: 300,
-          sleep_mean: 420,
-          sleep_sd: 30,
-          sleep_count: 20,
-        }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow({ date: "2024-08-01" })]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-08-01",
+            targetDuration: 300,
+            baselineMean: 420,
+            baselineStddev: 30,
+          }),
+        ),
+      );
       const result = await repo.check("2024-08-01");
       expect(result.anomalies[0]?.date).toBe("2024-08-01");
       expect(result.anomalies[0]?.metric).toBe("Sleep Duration");
@@ -957,10 +1106,20 @@ describe("AnomalyDetectionRepository", () => {
 
     it("computes sleep z-score as (value - mean) / sd (negative when value < mean)", async () => {
       // mean=420, sd=40, value=330 => z = (330-420)/40 = -2.25
-      const db = makeDb([
-        checkRow({ duration_minutes: 330, sleep_mean: 420, sleep_sd: 40, sleep_count: 20 }),
-      ]);
-      const repo = new AnomalyDetectionRepository(db, "user-1", "UTC", makeSensorStore());
+      const db = makeDb([checkRow()]);
+      const repo = new AnomalyDetectionRepository(
+        db,
+        "user-1",
+        "UTC",
+        makeSensorStore(
+          sleepRowsForBaseline({
+            targetDate: "2024-06-15",
+            targetDuration: 330,
+            baselineMean: 420,
+            baselineStddev: 40,
+          }),
+        ),
+      );
       const result = await repo.check("2024-06-15");
       expect(result.anomalies[0]?.zScore).toBe(-2.25);
     });

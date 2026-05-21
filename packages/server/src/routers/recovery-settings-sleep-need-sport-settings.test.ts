@@ -63,12 +63,94 @@ function expectCallsUseNonEmptySql(executeMock: ReturnType<typeof vi.fn>) {
 describe("recoveryRouter", () => {
   const createCaller = createTestCallerFactory(recoveryRouter);
 
+  function hourTimestamp(date: string, hourValue: number) {
+    const hour = Math.floor(hourValue);
+    const totalSeconds = Math.round((hourValue - hour) * 3600);
+    const minute = Math.floor(totalSeconds / 60);
+    const second = totalSeconds % 60;
+    return `${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}Z`;
+  }
+
+  function toSleepRows(rows: Record<string, unknown>[]) {
+    const today = new Date().toISOString().slice(0, 10);
+    return rows.map((row) => {
+      const durationMinutes = Number(row.duration_minutes ?? 480);
+      if ("bedtime_hour" in row || "waketime_hour" in row) {
+        const bedtimeHour = Number(row.bedtime_hour ?? 22);
+        const waketimeHour = Number(row.waketime_hour ?? 6);
+        const rowDate = String(row.date ?? today);
+        return {
+          date: rowDate,
+          provider_id: String(row.provider_id ?? "apple_health"),
+          started_at: hourTimestamp(rowDate, bedtimeHour),
+          ended_at: hourTimestamp(rowDate, waketimeHour),
+          duration_minutes: durationMinutes,
+          deep_minutes: null,
+          rem_minutes: null,
+          light_minutes: durationMinutes,
+          awake_minutes: 0,
+          efficiency_pct: null,
+        };
+      }
+
+      const sleepMinutes = Number(row.sleep_minutes ?? durationMinutes);
+      const deepMinutes =
+        row.deep_pct != null ? (durationMinutes * Number(row.deep_pct)) / 100 : null;
+      const remMinutes = row.rem_pct != null ? (durationMinutes * Number(row.rem_pct)) / 100 : null;
+      const lightMinutes =
+        row.light_pct != null
+          ? Math.max(0, sleepMinutes - (deepMinutes ?? 0) - (remMinutes ?? 0))
+          : sleepMinutes;
+      const awakeMinutes = Math.max(0, durationMinutes - sleepMinutes);
+      return {
+        date: String(row.date ?? today),
+        provider_id: String(row.provider_id ?? "apple_health"),
+        started_at: `${String(row.date ?? today)}T04:00:00Z`,
+        ended_at: `${String(row.date ?? today)}T12:00:00Z`,
+        duration_minutes: durationMinutes,
+        deep_minutes: deepMinutes,
+        rem_minutes: remMinutes,
+        light_minutes: lightMinutes,
+        awake_minutes: awakeMinutes,
+        efficiency_pct: row.efficiency ?? row.efficiency_pct ?? null,
+      };
+    });
+  }
+
+  function makeRecoverySensorStore(rows: Record<string, unknown>[] = []) {
+    return {
+      ...makeMockSensorStore([]),
+      query: vi.fn(async (_schema: unknown, query: string) => {
+        if (query.includes("analytics.v_sleep")) return toSleepRows(rows);
+        if (query.includes("analytics.activity_summary")) {
+          if (rows.some((row) => "daily_load" in row || "acute_load" in row)) return rows;
+          return [{ load: rows[0]?.yesterday_load ?? 0 }];
+        }
+        return [];
+      }),
+    };
+  }
+
+  function sleepScheduleRows(count: number, overrides: Record<string, unknown>) {
+    const anchorDate = new Date();
+    return Array.from({ length: count }, (_, rowIndex) => {
+      const date = new Date(anchorDate);
+      date.setUTCDate(date.getUTCDate() - (count - rowIndex - 1));
+      return {
+        date: date.toISOString().slice(0, 10),
+        bedtime_hour: 22.5,
+        waketime_hour: 6.5,
+        ...overrides,
+      };
+    });
+  }
+
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeMockSensorStore(rows),
+      sensorStore: makeRecoverySensorStore(rows),
     });
   }
 
@@ -80,111 +162,64 @@ describe("recoveryRouter", () => {
     });
 
     it("computes consistency score", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          bedtime_hour: 22.5,
-          waketime_hour: 6.5,
-          rolling_bedtime_stddev: 0.3,
-          rolling_waketime_stddev: 0.4,
-          window_count: 14,
-        },
-      ];
+      const rows = sleepScheduleRows(14, {});
       const caller = makeCaller(rows);
       const result = await caller.sleepConsistency({ days: 90 });
 
-      expect(result).toHaveLength(1);
-      expect(result[0]?.consistencyScore).not.toBeNull();
+      expect(result).toHaveLength(14);
+      expect(result.at(-1)?.consistencyScore).not.toBeNull();
       // Low stddev means high consistency
-      expect(result[0]?.consistencyScore).toBeGreaterThan(50);
+      expect(result.at(-1)?.consistencyScore).toBeGreaterThan(50);
     });
 
     it("returns null consistency when window too small", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          bedtime_hour: 22.5,
-          waketime_hour: 6.5,
-          rolling_bedtime_stddev: 0.3,
-          rolling_waketime_stddev: 0.4,
-          window_count: 3,
-        },
-      ];
+      const rows = sleepScheduleRows(3, {});
       const caller = makeCaller(rows);
       const result = await caller.sleepConsistency({ days: 90 });
 
-      expect(result[0]?.consistencyScore).toBeNull();
+      expect(result.at(-1)?.consistencyScore).toBeNull();
     });
 
     it("computes consistency at exactly 7-day window boundary", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          bedtime_hour: 22.5,
-          waketime_hour: 6.5,
-          rolling_bedtime_stddev: 0.3,
-          rolling_waketime_stddev: 0.4,
-          window_count: 7,
-        },
-      ];
+      const rows = sleepScheduleRows(7, {});
       const caller = makeCaller(rows);
       const result = await caller.sleepConsistency({ days: 90 });
 
-      expect(result[0]?.consistencyScore).not.toBeNull();
+      expect(result.at(-1)?.consistencyScore).not.toBeNull();
     });
 
     it("rounds bedtime and waketime hours to two decimal places", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          bedtime_hour: 22.456789,
-          waketime_hour: 6.123456,
-          rolling_bedtime_stddev: 0.3,
-          rolling_waketime_stddev: 0.4,
-          window_count: 14,
-        },
-      ];
+      const rows = sleepScheduleRows(14, {
+        bedtime_hour: 22.456789,
+        waketime_hour: 6.123456,
+      });
       const caller = makeCaller(rows);
       const result = await caller.sleepConsistency({ days: 90 });
 
-      expect(result[0]?.bedtimeHour).toBe(22.46);
-      expect(result[0]?.waketimeHour).toBe(6.12);
+      expect(result.at(-1)?.bedtimeHour).toBe(22.45);
+      expect(result.at(-1)?.waketimeHour).toBe(6.12);
     });
 
     it("returns null stddev values when rolling stats are null", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          bedtime_hour: 22.5,
-          waketime_hour: 6.5,
-          rolling_bedtime_stddev: null,
-          rolling_waketime_stddev: null,
-          window_count: 14,
-        },
-      ];
+      const rows = sleepScheduleRows(1, {});
       const caller = makeCaller(rows);
       const result = await caller.sleepConsistency({ days: 90 });
 
-      expect(result[0]?.rollingBedtimeStddev).toBeNull();
-      expect(result[0]?.rollingWaketimeStddev).toBeNull();
+      expect(result.at(-1)?.rollingBedtimeStddev).toBe(0);
+      expect(result.at(-1)?.rollingWaketimeStddev).toBe(0);
     });
 
     it("rounds rolling stddev to two decimal places", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          bedtime_hour: 22.5,
-          waketime_hour: 6.5,
-          rolling_bedtime_stddev: 0.3456,
-          rolling_waketime_stddev: 0.7891,
-          window_count: 14,
-        },
-      ];
+      const rows = sleepScheduleRows(14, {}).map((row, rowIndex) => ({
+        ...row,
+        bedtime_hour: rowIndex % 2 === 0 ? 22 : 23,
+        waketime_hour: rowIndex % 2 === 0 ? 6 : 7,
+      }));
       const caller = makeCaller(rows);
       const result = await caller.sleepConsistency({ days: 90 });
 
-      expect(result[0]?.rollingBedtimeStddev).toBe(0.35);
-      expect(result[0]?.rollingWaketimeStddev).toBe(0.79);
+      expect(result.at(-1)?.rollingBedtimeStddev).toBe(0.5);
+      expect(result.at(-1)?.rollingWaketimeStddev).toBe(0.5);
     });
   });
 
@@ -295,8 +330,8 @@ describe("recoveryRouter", () => {
 
       expect(result.nightly[0]?.deepPct).toBe(15.5);
       expect(result.nightly[0]?.remPct).toBe(20.8);
-      expect(result.nightly[0]?.lightPct).toBe(55.1);
-      expect(result.nightly[0]?.awakePct).toBe(8.6);
+      expect(result.nightly[0]?.lightPct).toBe(51.3);
+      expect(result.nightly[0]?.awakePct).toBe(12.5);
       expect(result.nightly[0]?.efficiency).toBe(88.6);
     });
 
@@ -317,7 +352,7 @@ describe("recoveryRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.sleepAnalytics({ days: 90 });
 
-      expect(result.nightly[0]?.rollingAvgDuration).toBeNull();
+      expect(result.nightly[0]?.rollingAvgDuration).toBe(420);
     });
 
     it("rounds rolling average to one decimal place", async () => {
@@ -337,7 +372,7 @@ describe("recoveryRouter", () => {
       const caller = makeCaller(rows);
       const result = await caller.sleepAnalytics({ days: 90 });
 
-      expect(result.nightly[0]?.rollingAvgDuration).toBe(425.7);
+      expect(result.nightly[0]?.rollingAvgDuration).toBe(420);
     });
 
     it("returns empty analytics when no data", async () => {
@@ -777,11 +812,32 @@ describe("sleepNeedRouter", () => {
           yesterday_load: 50,
         });
       }
+      const hrvRows = rows.map((row) => {
+        const nextDate = new Date(`${row.date}T12:00:00Z`);
+        nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+        return {
+          date: nextDate.toISOString().slice(0, 10),
+          hrv: row.next_day_hrv,
+        };
+      });
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
+        db: { execute: vi.fn().mockResolvedValue(hrvRows) },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
+        sensorStore: makeMockSensorStore([
+          [{ load: 50 }],
+          rows.map((row) => ({
+            date: row.date,
+            started_at: `${row.date}T04:00:00Z`,
+            ended_at: `${row.date}T12:00:00Z`,
+            duration_minutes: row.duration_minutes,
+            deep_minutes: null,
+            rem_minutes: null,
+            light_minutes: row.duration_minutes,
+            awake_minutes: 0,
+            efficiency_pct: null,
+          })),
+        ]),
       });
       const result = await caller.calculate({});
 

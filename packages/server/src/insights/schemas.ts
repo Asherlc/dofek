@@ -12,7 +12,7 @@ export const dailyRowSchema = z.object({
   skin_temp_c: z.number().nullable(),
 });
 
-/** Zod schema for rows from fitness.v_sleep used by insights/correlation queries. */
+/** Zod schema for sleep rows used by insights/correlation queries. */
 export const sleepRowSchema = z.object({
   started_at: timestampStringSchema,
   duration_minutes: z.number().nullable(),

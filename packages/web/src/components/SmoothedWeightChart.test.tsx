@@ -200,6 +200,34 @@ describe("SmoothedWeightChart", () => {
     expect(scatterSeries?.data).toHaveLength(2);
   });
 
+  it("rounds converted chart weights to 1 decimal place", () => {
+    render(
+      <SmoothedWeightChart
+        data={[
+          {
+            date: "2026-03-01",
+            rawWeight: 72.36123,
+            smoothedWeight: 72.36091,
+            weeklyChange: -15.51971,
+            interpolated: false,
+          },
+        ]}
+      />,
+    );
+    expect(capturedOption).not.toBeNull();
+
+    const series = z
+      .array(z.object({ name: z.string(), data: z.array(z.tuple([z.string(), z.number()])) }))
+      .parse(capturedOption?.series);
+
+    for (const chartSeries of series) {
+      for (const dataPoint of chartSeries.data) {
+        const decimals = String(dataPoint[1]).split(".")[1]?.length ?? 0;
+        expect(decimals).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
   it("renders goal markLine when prediction has goal", () => {
     render(
       <SmoothedWeightChart

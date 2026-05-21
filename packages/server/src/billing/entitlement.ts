@@ -33,16 +33,6 @@ export function dateAccessPredicate(window: AccessWindow | undefined, column: SQ
              AND ${column} < ${window.endDateExclusive}::date`;
 }
 
-/**
- * Returns a SQL predicate fragment that restricts a timestamp column to the
- * billing access window. Returns an empty fragment for full-access or absent windows.
- */
-export function timestampAccessPredicate(window: AccessWindow | undefined, column: SQL): SQL {
-  if (!window || window.kind === "full") return sql``;
-  return sql`AND ${column} >= ${window.startDate}::date
-             AND ${column} < ${window.endDateExclusive}::date`;
-}
-
 export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWindow {
   if (input.paidGrantReason) {
     return { kind: "full", paid: true, reason: "paid_grant" };

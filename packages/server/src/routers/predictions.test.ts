@@ -86,7 +86,7 @@ describe("predictionsRouter", () => {
       const result = await caller.predict({ target: "hrv", days: 365 });
 
       expect(result).not.toBeNull();
-      expect(execute).toHaveBeenCalledTimes(4);
+      expect(execute).toHaveBeenCalledTimes(3);
     });
 
     it("returns null for unknown target", async () => {
