@@ -1,3 +1,4 @@
+import { formatCalories, formatHRV, formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { type ReactNode, useMemo } from "react";
 import { z } from "zod";
@@ -39,7 +40,8 @@ type MetricEntry = {
   value: number | null;
   avg: number | null;
   stddev: number | null;
-  unit: string;
+  unit?: string;
+  formatValue?: (value: number | null | undefined) => string;
   lowerBetter?: boolean;
 };
 
@@ -144,7 +146,7 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_hrv,
       avg: trendData.avg_hrv,
       stddev: trendData.stddev_hrv,
-      unit: "ms",
+      formatValue: formatHRV,
       lowerBetter: false,
     },
     {
@@ -160,32 +162,27 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
       value: trendData.latest_spo2,
       avg: trendData.avg_spo2,
       stddev: trendData.stddev_spo2,
-      unit: "%",
+      formatValue: formatSpO2,
     },
     {
       label: "Steps",
       value: trendData.latest_steps,
       avg: trendData.avg_steps,
       stddev: null,
-      unit: "",
     },
     {
       label: "Active Energy",
       value: trendData.latest_active_energy,
       avg: trendData.avg_active_energy,
       stddev: null,
-      unit: "kcal",
+      formatValue: formatCalories,
     },
     trendData.latest_skin_temp != null && {
       label: "Skin Temp",
-      value: units.convertTemperature(trendData.latest_skin_temp),
-      avg:
-        trendData.avg_skin_temp != null ? units.convertTemperature(trendData.avg_skin_temp) : null,
-      stddev:
-        trendData.stddev_skin_temp != null
-          ? units.scaleTemperatureStddev(trendData.stddev_skin_temp)
-          : null,
-      unit: units.temperatureLabel,
+      value: trendData.latest_skin_temp,
+      avg: trendData.avg_skin_temp,
+      stddev: trendData.stddev_skin_temp,
+      formatValue: (value) => (value == null ? "--" : units.formatTemperature(value)),
     },
   ];
   return entries.filter((entry): entry is MetricEntry => entry !== false);
@@ -276,6 +273,7 @@ export function Dashboard() {
       data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
       color: chartColors.blue,
       areaStyle: true,
+      formatValue: formatSpO2,
     }),
     [metrics],
   );

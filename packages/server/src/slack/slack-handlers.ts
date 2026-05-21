@@ -7,13 +7,13 @@ import { createSlackDedupeStore, type SlackDedupeStore } from "./dedupe-store.ts
 import {
   extractLatestConfirmFromThread,
   type FoodEntryRepository,
-  slackTimestampToDateString,
-  slackTimestampToLocalTime,
 } from "./food-entry-repository.ts";
 import {
   type DailyCalorieProgress,
   formatConfirmationMessage,
   formatSavedMessage,
+  slackTimestampToDateString,
+  slackTimestampToLocalTime,
 } from "./formatting.ts";
 
 type SayFunction = SayFn;

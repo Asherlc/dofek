@@ -1,6 +1,8 @@
 import {
+  formatCalories,
   formatDateForDisplay,
   formatDateYmd as formatDateForQuery,
+  formatGrams,
   isToday,
 } from "@dofek/format/format";
 import {
@@ -318,7 +320,7 @@ export function NutritionPage() {
                       <div className="text-xs text-subtle">{item.foodDescription}</div>
                     </div>
                     <div className="text-xs font-semibold text-foreground whitespace-nowrap">
-                      {item.calories} kcal
+                      {formatCalories(item.calories)}
                     </div>
                   </div>
                 ))}
@@ -358,9 +360,9 @@ export function NutritionPage() {
                   <span className="text-sm font-medium text-muted">Calories</span>
                   <span className="text-sm text-muted tabular-nums">
                     <span className="text-xl font-semibold text-foreground">
-                      {dailyTotals.totalCalories}
+                      {formatCalories(dailyTotals.totalCalories)}
                     </span>
-                    <span className="ml-1">/ {calorieGoal} kcal</span>
+                    <span className="ml-1">/ {formatCalories(calorieGoal)}</span>
                   </span>
                 </div>
                 <div className="h-3 rounded-full bg-accent/10 overflow-hidden">
@@ -371,8 +373,8 @@ export function NutritionPage() {
                 </div>
                 <div className="text-xs text-subtle tabular-nums">
                   {calorieGoal - dailyTotals.totalCalories > 0
-                    ? `${calorieGoal - dailyTotals.totalCalories} kcal remaining`
-                    : `${dailyTotals.totalCalories - calorieGoal} kcal over goal`}
+                    ? `${formatCalories(calorieGoal - dailyTotals.totalCalories)} remaining`
+                    : `${formatCalories(dailyTotals.totalCalories - calorieGoal)} over goal`}
                 </div>
               </div>
 
@@ -380,21 +382,21 @@ export function NutritionPage() {
               <div className="space-y-3">
                 <MacroBar
                   label="Protein"
-                  grams={Math.round(dailyTotals.totalProtein)}
+                  grams={formatGrams(dailyTotals.totalProtein)}
                   caloriesFromMacro={dailyTotals.totalProtein * CALORIES_PER_GRAM.protein}
                   totalCalories={dailyTotals.totalCalories}
                   color="blue"
                 />
                 <MacroBar
                   label="Carbs"
-                  grams={Math.round(dailyTotals.totalCarbs)}
+                  grams={formatGrams(dailyTotals.totalCarbs)}
                   caloriesFromMacro={dailyTotals.totalCarbs * CALORIES_PER_GRAM.carbs}
                   totalCalories={dailyTotals.totalCalories}
                   color="amber"
                 />
                 <MacroBar
                   label="Fat"
-                  grams={Math.round(dailyTotals.totalFat)}
+                  grams={formatGrams(dailyTotals.totalFat)}
                   caloriesFromMacro={dailyTotals.totalFat * CALORIES_PER_GRAM.fat}
                   totalCalories={dailyTotals.totalCalories}
                   color="red"
@@ -444,7 +446,7 @@ export function NutritionPage() {
                         )}
                       </div>
                       <span className="text-sm text-muted tabular-nums">
-                        {mealCalories > 0 ? `${mealCalories} kcal` : ""}
+                        {mealCalories > 0 ? formatCalories(mealCalories) : ""}
                       </span>
                     </button>
 

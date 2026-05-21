@@ -1,4 +1,4 @@
-import { formatDurationRange, formatNumber, parseValidDate } from "@dofek/format/format";
+import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
@@ -14,12 +14,6 @@ interface ActivityCardProps {
   avgPower: number | null;
   distanceKm?: number | null;
   units: UnitConverter;
-}
-
-function formatTime(iso: string): string {
-  const date = parseValidDate(iso);
-  if (!date) return "--";
-  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function activityIcon(type: string): string {
@@ -68,7 +62,7 @@ export function ActivityCard({
             {name || formatActivityTypeLabel(activityType)}
           </Text>
           <Text style={styles.time}>
-            {formatTime(startedAt)} · {formatDurationRange(startedAt, endedAt)}
+            {formatTimeOnly(startedAt)} · {formatDurationRange(startedAt, endedAt)}
           </Text>
         </View>
       </View>

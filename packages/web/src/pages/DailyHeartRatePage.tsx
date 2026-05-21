@@ -1,4 +1,4 @@
-import { formatDateYmd } from "@dofek/format/format";
+import { formatDateYmd, formatTimeOnly } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
 import { DofekChart } from "../components/DofekChart.tsx";
@@ -74,10 +74,7 @@ function buildChartOption(sources: HeartRateSourceSeries[]) {
         if (!params?.length) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const time = new Date(firstParam.data[0]).toLocaleTimeString("en-US", {
-          hour: "numeric",
-          minute: "2-digit",
-        });
+        const time = formatTimeOnly(firstParam.data[0]);
         let html = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(time)}</div>`;
         for (const param of params) {
           if (param.data[1] == null) continue;

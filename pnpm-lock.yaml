@@ -48,6 +48,9 @@ importers:
       '@clickhouse/client':
         specifier: 1.12.1
         version: 1.12.1
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:packages/format
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
@@ -447,6 +450,9 @@ importers:
 
   packages/nutrition:
     dependencies:
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
       zod:
         specifier: 3.25.76
         version: 3.25.76
@@ -470,6 +476,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
@@ -657,6 +666,9 @@ importers:
       dofek-server:
         specifier: workspace:*
         version: link:../server
+      dompurify:
+        specifier: 3.4.5
+        version: 3.4.5
       echarts:
         specifier: 5.6.0
         version: 5.6.0
@@ -16829,7 +16841,9 @@ snapshots:
       metro-runtime: 0.83.7
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

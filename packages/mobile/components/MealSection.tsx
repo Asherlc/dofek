@@ -1,3 +1,4 @@
+import { formatCalories } from "@dofek/format/format";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme";
 import type { FoodEntry } from "./FoodEntryCard";
@@ -26,7 +27,9 @@ export function MealSection({
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.mealName}>{mealName}</Text>
-        <Text style={styles.totalCalories}>{totalCalories > 0 ? `${totalCalories} cal` : ""}</Text>
+        <Text style={styles.totalCalories}>
+          {totalCalories > 0 ? formatCalories(totalCalories) : ""}
+        </Text>
       </View>
 
       {entries.length > 0 ? (

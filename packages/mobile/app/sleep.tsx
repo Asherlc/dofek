@@ -1,4 +1,13 @@
-import { formatHour, formatSleepDebt, isToday, isYesterday } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDateShort,
+  formatDurationMinutes,
+  formatHour,
+  formatIntensity,
+  formatSleepDebt,
+  isToday,
+  isYesterday,
+} from "@dofek/format/format";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -81,7 +90,7 @@ export default function SleepScreen() {
               />
               <View style={styles.efficiencyRow}>
                 <Text style={styles.efficiencyLabel}>Sleep Efficiency</Text>
-                <Text style={styles.efficiencyValue}>{Math.round(lastNight.efficiency)}%</Text>
+                <Text style={styles.efficiencyValue}>{formatIntensity(lastNight.efficiency)}</Text>
               </View>
             </View>
           )}
@@ -111,15 +120,14 @@ export default function SleepScreen() {
           <View style={styles.metricsGrid}>
             <MetricCard
               title="Average Duration"
-              value={`${Math.floor(avgDuration / 60)}h ${Math.round(avgDuration % 60)}m`}
+              value={formatDurationMinutes(avgDuration)}
               trend={durationTrend}
               color={colors.blue}
               subtitle={`Last ${days} nights`}
             />
             <MetricCard
               title="Average Efficiency"
-              value={`${Math.round(avgEfficiency)}`}
-              unit="%"
+              value={formatIntensity(avgEfficiency)}
               trend={efficiencyTrend}
               color={colors.purple}
               subtitle={`Last ${days} nights`}
@@ -178,18 +186,8 @@ export default function SleepScreen() {
                             showBaseline
                           />
                           <View style={styles.xAxis}>
-                            <Text style={styles.axisLabel}>
-                              {new Date(first.date).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </Text>
-                            <Text style={styles.axisLabel}>
-                              {new Date(last.date).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </Text>
+                            <Text style={styles.axisLabel}>{formatDateShort(first.date)}</Text>
+                            <Text style={styles.axisLabel}>{formatDateShort(last.date)}</Text>
                           </View>
                         </View>
                       </View>
@@ -223,13 +221,7 @@ export default function SleepScreen() {
                   .reverse()
                   .map((night) => (
                     <View key={night.date} style={styles.nightlyRow}>
-                      <Text style={styles.nightlyDate}>
-                        {new Date(night.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </Text>
+                      <Text style={styles.nightlyDate}>{formatDateLong(night.date)}</Text>
                       <View style={styles.nightlyBarContainer}>
                         <SleepBar
                           durationMinutes={night.durationMinutes}

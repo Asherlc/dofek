@@ -1,4 +1,12 @@
-import { formatNumber } from "@dofek/format/format";
+import {
+  formatBodyCompositionPercent,
+  formatCalories,
+  formatDateMedium,
+  formatDateYmd,
+  formatDurationMinutes,
+  formatHRV,
+  formatNumber,
+} from "@dofek/format/format";
 import { useState } from "react";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
@@ -151,7 +159,7 @@ function AddEventForm({
   loading: boolean;
 }) {
   const [label, setLabel] = useState("");
-  const [startedAt, setStartedAt] = useState(new Date().toISOString().slice(0, 10));
+  const [startedAt, setStartedAt] = useState(formatDateYmd());
   const [endedAt, setEndedAt] = useState("");
   const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
@@ -378,70 +386,60 @@ function EventAnalysis({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <CompareCard
           label="Resting HR"
-          unit="bpm"
           before={before.metrics?.avg_resting_hr}
           after={after.metrics?.avg_resting_hr}
           periodLabel={periodLabel}
           lowerBetter
         />
         <CompareCard
-          label="HRV"
-          unit="ms"
+          label="Heart Rate Variability (HRV)"
           before={before.metrics?.avg_hrv}
           after={after.metrics?.avg_hrv}
           periodLabel={periodLabel}
+          formatValue={formatHRV}
         />
         <CompareCard
           label="Steps"
-          unit=""
           before={before.metrics?.avg_steps}
           after={after.metrics?.avg_steps}
           periodLabel={periodLabel}
         />
         <CompareCard
           label="Active Energy"
-          unit="kcal"
           before={before.metrics?.avg_active_energy}
           after={after.metrics?.avg_active_energy}
           periodLabel={periodLabel}
+          formatValue={formatCalories}
         />
         <CompareCard
           label="Sleep"
-          unit="min"
           before={before.sleep?.avg_sleep_min}
           after={after.sleep?.avg_sleep_min}
           periodLabel={periodLabel}
+          formatValue={(value) => (value == null ? "—" : formatDurationMinutes(value))}
         />
         <CompareCard
           label="Deep Sleep"
-          unit="min"
           before={before.sleep?.avg_deep_min}
           after={after.sleep?.avg_deep_min}
           periodLabel={periodLabel}
+          formatValue={(value) => (value == null ? "—" : formatDurationMinutes(value))}
         />
         <CompareCard
           label="Weight"
-          unit={units.weightLabel}
-          before={
-            before.body?.avg_weight != null
-              ? units.convertWeight(Number(before.body.avg_weight))
-              : undefined
-          }
-          after={
-            after.body?.avg_weight != null
-              ? units.convertWeight(Number(after.body.avg_weight))
-              : undefined
-          }
+          before={before.body?.avg_weight}
+          after={after.body?.avg_weight}
           periodLabel={periodLabel}
           lowerBetter
+          formatValue={(value) => (value == null ? "—" : units.formatWeight(value))}
         />
         <CompareCard
           label="Body Fat"
-          unit="%"
           before={before.body?.avg_body_fat}
           after={after.body?.avg_body_fat}
           periodLabel={periodLabel}
           lowerBetter
+          formatValue={formatBodyCompositionPercent}
         />
       </div>
 
@@ -458,18 +456,18 @@ function EventAnalysis({
 
 function CompareCard({
   label,
-  unit,
   before,
   after,
   periodLabel,
   lowerBetter,
+  formatValue,
 }: {
   label: string;
-  unit: string;
   before: number | null | undefined;
   after: number | null | undefined;
   periodLabel: string;
   lowerBetter?: boolean;
+  formatValue?: (value: number | null | undefined) => string;
 }) {
   if (before == null && after == null) return null;
 
@@ -484,12 +482,14 @@ function CompareCard({
       <div className="flex items-baseline gap-2">
         <div className="text-center">
           <p className="text-[10px] text-dim">Before</p>
-          <p className="text-sm tabular-nums text-muted">{before != null ? fmtNum(before) : "—"}</p>
+          <p className="text-sm tabular-nums text-muted">
+            {before != null ? formatCompareValue(before, formatValue) : "—"}
+          </p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-dim">{periodLabel}</p>
           <p className="text-sm tabular-nums text-foreground font-medium">
-            {after != null ? fmtNum(after) : "—"}
+            {after != null ? formatCompareValue(after, formatValue) : "—"}
           </p>
         </div>
         {pctDiff != null && (
@@ -503,7 +503,6 @@ function CompareCard({
           </span>
         )}
       </div>
-      {unit && <p className="text-[10px] text-dim mt-0.5">{unit}</p>}
     </div>
   );
 }
@@ -526,14 +525,17 @@ function categoryIcon(category: string | null): string {
 }
 
 function formatDate(d: string): string {
-  return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDateMedium(d);
 }
 
 function fmtNum(v: number): string {
   if (Number.isInteger(v) || Math.abs(v) >= 100) return Math.round(v).toLocaleString();
   return formatNumber(v);
+}
+
+function formatCompareValue(
+  value: number,
+  formatValue: ((value: number | null | undefined) => string) | undefined,
+): string {
+  return formatValue ? formatValue(value) : fmtNum(value);
 }

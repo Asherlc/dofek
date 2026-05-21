@@ -1,4 +1,9 @@
-import { formatDateYmd, formatDurationMinutes, formatSleepDebtInline } from "@dofek/format/format";
+import {
+  formatDateLong,
+  formatDateYmd,
+  formatDurationMinutes,
+  formatSleepDebtInline,
+} from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
@@ -27,12 +32,7 @@ import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors, duration } from "../../theme";
 
 function todayString(): string {
-  const now = new Date();
-  return now.toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  return formatDateLong(new Date());
 }
 
 export default function TodayScreen() {

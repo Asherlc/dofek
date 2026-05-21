@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatDateYmd, formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { PolarizationWeek } from "dofek-server/types";
 import {
@@ -46,11 +46,11 @@ function findWeekForAxisValue(
 ): PolarizationWeekData | null {
   const axisDate = new Date(axisValue);
   if (Number.isNaN(axisDate.getTime())) return null;
-  const axisDateOnly = axisDate.toISOString().slice(0, 10);
+  const axisDateOnly = formatDateYmd(axisDate);
   for (const week of weeks) {
     const weekDate = new Date(week.week);
     if (Number.isNaN(weekDate.getTime())) continue;
-    if (weekDate.toISOString().slice(0, 10) === axisDateOnly) return week;
+    if (formatDateYmd(weekDate) === axisDateOnly) return week;
   }
   return null;
 }
@@ -95,11 +95,7 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeekData[]) {
 
         const pi = weekData.polarizationIndex;
         const piStr = pi !== null ? formatNumber(pi, 3) : "N/A";
-        const dateLabel = new Date(weekData.week).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const dateLabel = formatDateMedium(weekData.week);
         const missingZones = missingZonesForWeek(weekData);
         const status =
           pi === null

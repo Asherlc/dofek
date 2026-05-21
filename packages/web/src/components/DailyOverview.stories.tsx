@@ -1,7 +1,8 @@
+import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DailyOverview } from "./DailyOverview";
 
-const today = new Date().toLocaleDateString("en-CA");
+const today = formatDateYmd();
 
 const mockReadiness = [
   {

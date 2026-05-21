@@ -1,3 +1,4 @@
+import { formatWeekdayTime } from "@dofek/format/format";
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import { nutrientFieldsSchema } from "dofek/db/nutrient-columns";
@@ -12,13 +13,7 @@ const mealValues = ["breakfast", "lunch", "dinner", "snack", "other"] as const;
 type MealValue = (typeof mealValues)[number];
 
 function localizedTimeString(timezone: string, date: Date): string {
-  return date.toLocaleString("en-US", {
-    timeZone: timezone,
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return formatWeekdayTime(date, { timeZone: timezone });
 }
 
 function mealFromLocalizedTime(timezone: string, date: Date): MealValue {

@@ -1,3 +1,4 @@
+import { formatDateLong } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -141,11 +142,7 @@ function DayGroup({
   entries: JournalEntry[];
   onDelete: (id: string) => void;
 }) {
-  const dateDisplay = new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  const dateDisplay = formatDateLong(date);
 
   // Group by category
   const byCategory = useMemo(() => {

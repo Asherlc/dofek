@@ -1,4 +1,4 @@
-import { formatRelativeTime } from "@dofek/format/format";
+import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { ProviderLogo } from "../../components/ProviderLogo";
@@ -58,7 +58,7 @@ export function providerActionLabel(authStatus: AuthStatus): "Sync" | "Connect" 
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  return formatDurationSeconds(ms / 1000);
 }
 
 export function importProviderLabel(providerId: string | undefined): string {

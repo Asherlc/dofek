@@ -57,7 +57,8 @@ import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
 import { analyzeNutritionItems, refineNutritionItems } from "../lib/ai-nutrition.ts";
 import { createSlackBot } from "./bot.ts";
-import { FoodEntryRepository, slackTimestampToDateString } from "./food-entry-repository.ts";
+import { FoodEntryRepository } from "./food-entry-repository.ts";
+import { slackTimestampToDateString } from "./formatting.ts";
 
 const mockAnalyze = vi.mocked(analyzeNutritionItems);
 const mockRefine = vi.mocked(refineNutritionItems);
@@ -254,7 +255,7 @@ describe("bot.ts — registerHandlers", () => {
           ts: "thinking-ts",
           attachments: [],
           blocks: expect.any(Array),
-          text: expect.stringContaining("Test Food: 200 cal"),
+          text: expect.stringContaining("Test Food: 200 kcal"),
         }),
       );
       saveUnconfirmedSpy.mockRestore();
@@ -1153,12 +1154,12 @@ describe("bot.ts — registerHandlers", () => {
         expect.objectContaining({
           channel: "C123",
           ts: "1700000000.000000",
-          text: expect.stringContaining("Toast: 80 cal"),
+          text: expect.stringContaining("Toast: 80 kcal"),
         }),
       );
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("1,920 cal remaining today"),
+          text: expect.stringContaining("1,920 kcal remaining today"),
         }),
       );
       expect(vi.mocked(queryCache.invalidateByPrefix)).toHaveBeenCalledWith("user-123:food.");
@@ -1198,7 +1199,7 @@ describe("bot.ts — registerHandlers", () => {
         expect(ack).toHaveBeenCalled();
         expect(chatUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            text: expect.stringContaining("Toast: 80 cal"),
+            text: expect.stringContaining("Toast: 80 kcal"),
           }),
         );
         expect(chatUpdate).not.toHaveBeenCalledWith(
@@ -1248,7 +1249,7 @@ describe("bot.ts — registerHandlers", () => {
         expect(loadProgressSpy).not.toHaveBeenCalled();
         expect(chatUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            text: expect.stringContaining("Toast: 80 cal"),
+            text: expect.stringContaining("Toast: 80 kcal"),
           }),
         );
       } finally {
@@ -1286,7 +1287,7 @@ describe("bot.ts — registerHandlers", () => {
       // Should show success message, not "already saved"
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Toast: 80 cal"),
+          text: expect.stringContaining("Toast: 80 kcal"),
         }),
       );
     });
@@ -1378,7 +1379,7 @@ describe("bot.ts — registerHandlers", () => {
         expect(loadSummarySpy).toHaveBeenCalledWith(["entry-fresh-1"]);
         expect(chatUpdate).toHaveBeenCalledWith(
           expect.objectContaining({
-            text: expect.stringContaining("Toast: 80 cal"),
+            text: expect.stringContaining("Toast: 80 kcal"),
           }),
         );
       } finally {
@@ -3767,7 +3768,7 @@ describe("bot.ts — registerHandlers", () => {
       expect(ack).toHaveBeenCalled();
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Logged: Apple: 95 cal"),
+          text: expect.stringContaining("Logged: Apple: 95 kcal"),
         }),
       );
       // Cache invalidation should not have been called because no user row was found
@@ -4407,10 +4408,10 @@ describe("bot.ts — registerHandlers", () => {
           text: expect.stringContaining("Grilled Chicken"),
         }),
       );
-      // The text should contain 250 cal (from calories: 250)
+      // The text should contain 250 kcal (from calories: 250)
       expect(chatUpdate).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("250 cal"),
+          text: expect.stringContaining("250 kcal"),
         }),
       );
     });
@@ -4719,15 +4720,15 @@ describe("bot.ts — registerHandlers", () => {
       const updateArgs = chatUpdate.mock.calls[0]?.[0];
       expect(updateArgs).toBeDefined();
 
-      // "Steak: 600 cal" should be in the text (not "0 cal" from && mutation)
-      // formatSavedMessage produces text: "Logged: Steak: 600 cal"
+      // "Steak: 600 kcal" should be in the text (not "0 kcal" from && mutation)
+      // formatSavedMessage produces text: "Logged: Steak: 600 kcal"
       expect(updateArgs.text).toContain("Steak");
-      expect(updateArgs.text).toContain("600 cal");
+      expect(updateArgs.text).toContain("600 kcal");
 
-      // The blocks should contain "Steak — *600 cal*"
+      // The blocks should contain "Steak — *600 kcal*"
       const blockText = JSON.stringify(updateArgs.blocks);
       expect(blockText).toContain("Steak");
-      expect(blockText).toContain("600 cal");
+      expect(blockText).toContain("600 kcal");
     });
   });
 

@@ -34,7 +34,7 @@ describe("foodEntryNutrientDetailsFromLegacyColumns", () => {
         label: "Carbohydrates",
         amount: 41.5,
         unit: "g",
-        valueText: "41.5 g",
+        valueText: "42 g",
       }),
       expect.objectContaining({
         id: "sodium",

@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateShort, formatNumber, formatTrainingLoad } from "@dofek/format/format";
 import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { WorkloadRatioRow } from "dofek-server/types";
 import {
@@ -40,17 +40,17 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         if (!params || params.length === 0) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const date = new Date(firstParam.data[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateShort(firstParam.data[0]);
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         for (const p of params) {
           if (p.seriesName.startsWith("_")) continue;
           if (p.data[1] == null) continue;
           html += `<div style="display:flex;align-items:center;gap:6px">`;
           html += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color}"></span>`;
-          html += `<span>${p.seriesName}: <b>${formatNumber(p.data[1], 2)}</b></span>`;
+          const valueText = p.seriesName.includes("Load")
+            ? formatTrainingLoad(p.data[1])
+            : formatNumber(p.data[1], 2);
+          html += `<span>${p.seriesName}: <b>${valueText}</b></span>`;
           html += `</div>`;
         }
         return html;
@@ -78,7 +78,10 @@ export function WorkloadRatioChart({ data, loading }: WorkloadRatioChartProps) {
         gridIndex: 0,
       },
       {
-        ...dofekAxis.value({ name: "Load" }),
+        ...dofekAxis.value({
+          name: "Load",
+          axisLabel: { formatter: (value: number) => formatTrainingLoad(value) },
+        }),
         gridIndex: 1,
       },
     ],

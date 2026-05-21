@@ -129,6 +129,7 @@
     "@bull-board/api": "7.1.5",
     "@bull-board/express": "7.1.5",
     "@clickhouse/client": "1.12.1",
+    "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",

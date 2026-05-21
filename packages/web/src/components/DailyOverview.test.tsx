@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { formatDateYmd } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DailyOverview } from "./DailyOverview.tsx";
@@ -11,7 +12,7 @@ vi.mock("../hooks/useCountUp.ts", () => ({
   useCountUp: (val: number | null) => val ?? 0,
 }));
 
-const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+const today = formatDateYmd();
 
 const mockReadiness = [
   {
@@ -410,7 +411,7 @@ describe("DailyOverview", () => {
   it("shows yesterday's readiness as fresh (recovery reflects last night)", () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toLocaleDateString("en-CA");
+    const yesterdayStr = formatDateYmd(yesterday);
 
     render(
       <DailyOverview
@@ -463,7 +464,7 @@ describe("DailyOverview", () => {
   it("shows placeholder when readiness data is 2+ days old", () => {
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    const twoDaysAgoStr = twoDaysAgo.toLocaleDateString("en-CA");
+    const twoDaysAgoStr = formatDateYmd(twoDaysAgo);
 
     render(
       <DailyOverview

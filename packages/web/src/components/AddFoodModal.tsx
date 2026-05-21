@@ -1,3 +1,4 @@
+import { formatCalories, formatGrams } from "@dofek/format/format";
 import { MEAL_OPTIONS, type MealType } from "@dofek/nutrition/meal";
 import { type FoodDatabaseResult, OpenFoodFactsClient } from "@dofek/nutrition/open-food-facts";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -386,9 +387,9 @@ export function AddFoodModal({
                       ? `${result.name} (${result.brand})`
                       : result.name;
                     const macroParts = [
-                      result.proteinG != null ? `Protein ${result.proteinG}g` : null,
-                      result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
-                      result.fatG != null ? `Fat ${result.fatG}g` : null,
+                      result.proteinG != null ? `Protein ${formatGrams(result.proteinG)}` : null,
+                      result.carbsG != null ? `Carbs ${formatGrams(result.carbsG)}` : null,
+                      result.fatG != null ? `Fat ${formatGrams(result.fatG)}` : null,
                     ].filter((value): value is string => value !== null);
                     return (
                       <button
@@ -413,7 +414,7 @@ export function AddFoodModal({
                           </div>
                           {result.calories != null && (
                             <div className="text-xs font-semibold text-foreground whitespace-nowrap">
-                              {result.calories} cal
+                              {formatCalories(result.calories)}
                             </div>
                           )}
                         </div>
@@ -512,9 +513,11 @@ export function AddFoodModal({
                           ? `${result.name} (${result.brand})`
                           : result.name;
                         const macroParts = [
-                          result.proteinG != null ? `Protein ${result.proteinG}g` : null,
-                          result.carbsG != null ? `Carbs ${result.carbsG}g` : null,
-                          result.fatG != null ? `Fat ${result.fatG}g` : null,
+                          result.proteinG != null
+                            ? `Protein ${formatGrams(result.proteinG)}`
+                            : null,
+                          result.carbsG != null ? `Carbs ${formatGrams(result.carbsG)}` : null,
+                          result.fatG != null ? `Fat ${formatGrams(result.fatG)}` : null,
                         ].filter((value): value is string => value !== null);
                         return (
                           <button
@@ -541,7 +544,7 @@ export function AddFoodModal({
                               </div>
                               {result.calories != null && (
                                 <div className="text-xs font-semibold text-foreground whitespace-nowrap">
-                                  {result.calories} cal
+                                  {formatCalories(result.calories)}
                                 </div>
                               )}
                             </div>

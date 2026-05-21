@@ -1,3 +1,4 @@
+import { formatDateMedium, parseValidDate } from "@dofek/format/format";
 import { useState } from "react";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
@@ -11,26 +12,12 @@ import { SECTION_LABELS, useDashboardLayout } from "../lib/dashboardLayoutContex
 import { trpc } from "../lib/trpc.ts";
 import { McpTokensPanel } from "./McpTokensPanel.tsx";
 
-const freeAccessWindowFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
 function getSignupWeekLabel(startDate: string, endDateExclusive: string): string {
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const endExclusive = new Date(`${endDateExclusive}T00:00:00.000Z`);
-  const endInclusive = new Date(endExclusive);
+  const endInclusive = parseValidDate(`${endDateExclusive}T12:00:00.000Z`);
+  if (!endInclusive) return `${formatDateMedium(startDate)} to --`;
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
 
-  const safeStart = Number.isNaN(start.getTime())
-    ? startDate
-    : freeAccessWindowFormatter.format(start);
-  const safeEnd = Number.isNaN(endInclusive.getTime())
-    ? endDateExclusive
-    : freeAccessWindowFormatter.format(endInclusive);
-
-  return `${safeStart} to ${safeEnd}`;
+  return `${formatDateMedium(startDate)} to ${formatDateMedium(endInclusive)}`;
 }
 
 export function SettingsPage() {

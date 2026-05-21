@@ -107,6 +107,8 @@ COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages
 COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY --from=source --chown=node:node /app/packages/format/src ./packages/format/src
+COPY --from=source --chown=node:node /app/packages/format/package.json ./packages/format/
 COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/src
 COPY --from=source --chown=node:node /app/packages/stats/package.json ./packages/stats/
 COPY --from=source --chown=node:node /app/packages/scoring/src ./packages/scoring/src
@@ -137,6 +139,7 @@ RUN ln -sf /app node_modules/dofek && \
     ln -sf /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
     ln -sf /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
+    ln -sf /app/packages/format node_modules/@dofek/format && \
     ln -sf /app/packages/stats node_modules/@dofek/stats && \
     ln -sf /app/packages/scoring node_modules/@dofek/scoring && \
     ln -sf /app/packages/onboarding node_modules/@dofek/onboarding && \

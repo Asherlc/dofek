@@ -1,4 +1,4 @@
-import { formatNumber, formatRelativeTime, formatTime } from "@dofek/format/format";
+import { formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import {
   parseWhoopWearLocation,
@@ -349,7 +349,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
                       {row.recordCount ?? "—"}
                     </td>
                     <td className="px-4 py-2 text-right text-muted tabular-nums">
-                      {row.durationMs != null ? `${formatNumber(row.durationMs / 1000)}s` : "—"}
+                      {row.durationMs != null ? formatDurationSeconds(row.durationMs / 1000) : "—"}
                     </td>
                     <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
                       {row.errorMessage ?? ""}

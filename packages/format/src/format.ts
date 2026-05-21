@@ -4,12 +4,37 @@ export function formatDateYmd(date?: Date): string {
   return `${resolvedDate.getFullYear()}-${String(resolvedDate.getMonth() + 1).padStart(2, "0")}-${String(resolvedDate.getDate()).padStart(2, "0")}`;
 }
 
+/** Format a date as YYYY-MM-DD in a specific timezone. */
+export function formatDateYmdInTimeZone(value: DateInput, timeZone: string): string {
+  const date = parseDateInput(value);
+  if (!date) return "--";
+  const parts = dateTimeFormatter(
+    { year: "numeric", month: "2-digit", day: "2-digit" },
+    timeZone,
+  ).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) return "--";
+  return `${year}-${month}-${day}`;
+}
+
 /** Format a duration in minutes as "Xh Ym" */
 export function formatDurationMinutes(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
   if (hours === 0) return `${mins}m`;
   return `${hours}h ${mins}m`;
+}
+
+/** Format a duration in seconds as "Xh Ym" or "Xs" for short durations. */
+export function formatDurationSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "--";
+  if (Math.abs(seconds) < 60) {
+    const decimals = Number.isInteger(seconds) ? 0 : 1;
+    return `${fixedDecimalFormatter(decimals).format(seconds)}s`;
+  }
+  return formatDurationMinutes(Math.round(seconds / 60));
 }
 
 /** Parse a timestamp string into a Date, returning null if invalid.
@@ -68,14 +93,73 @@ export function formatSleepDebtInline(minutes: number): string {
   return `${hours}h ${mins}m sleep debt (14 days)`;
 }
 
+type DateInput = Date | number | string;
+
+type DateFormatOptions = {
+  timeZone?: string;
+};
+
+/** Format a date for compact labels: "Jan 1" */
+export function formatDateShort(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(value, { month: "short", day: "numeric" }, options);
+}
+
+/** Format a date with year for standard labels: "Jan 1, 2024" */
+export function formatDateMedium(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(value, { month: "short", day: "numeric", year: "numeric" }, options);
+}
+
+/** Format a date with weekday for prominent labels: "Mon, Jan 1, 2024" */
+export function formatDateLong(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(
+    value,
+    { weekday: "short", month: "short", day: "numeric", year: "numeric" },
+    options,
+  );
+}
+
+/** Format a month label: "January 2024" */
+export function formatMonthYear(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(value, { month: "long", year: "numeric" }, options);
+}
+
+/** Format a weekday label: "Mon" */
+export function formatWeekdayShort(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(value, { weekday: "short" }, options);
+}
+
+/** Format a date and time for human display: "Jan 1, 2:30 PM" */
+export function formatDateTime(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(
+    value,
+    {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    },
+    options,
+  );
+}
+
+/** Format a time-only label: "2:30 PM" */
+export function formatTimeOnly(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(value, { hour: "numeric", minute: "2-digit", hour12: true }, options);
+}
+
+/** Format a weekday and time label: "Monday, 2:30 PM" */
+export function formatWeekdayTime(value: DateInput, options: DateFormatOptions = {}): string {
+  return formatDateInput(
+    value,
+    { weekday: "long", hour: "numeric", minute: "2-digit", hour12: true },
+    options,
+  );
+}
+
 /** Format a Date for user-facing display: "Mon, Jan 1, 2024" */
-export function formatDateForDisplay(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+export function formatDateForDisplay(date: DateInput): string {
+  return formatDateLong(date);
 }
 
 /** Check if a Date is today */
@@ -128,32 +212,197 @@ export function formatPace(secondsPerKm: number): string {
 
 /** Format an ISO string as "Jan 1, 2:30 PM" */
 export function formatTime(iso: string): string {
-  const parsedDate = parseValidDate(iso);
-  if (!parsedDate) return "--";
-  return parsedDate.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return formatDateTime(iso);
 }
 
 /** Format a number with a fixed number of decimal places. Returns "--" for non-finite values. */
 export function formatNumber(value: number, decimals = 1): string {
   if (!Number.isFinite(value)) return "--";
-  return value.toFixed(decimals);
+  return fixedDecimalFormatter(decimals).format(value);
 }
 
 /** Format a ratio (0–1) as a percentage string. Returns "--" for non-finite values. */
 export function formatPercent(value: number, decimals = 0): string {
   if (!Number.isFinite(value)) return "--";
-  return `${(value * 100).toFixed(decimals)}%`;
+  return `${fixedDecimalFormatter(decimals).format(value * 100)}%`;
 }
 
 /** Format a number with explicit +/- sign prefix. Zero has no sign. Returns "--" for non-finite values. */
 export function formatSigned(value: number, decimals = 1): string {
   if (!Number.isFinite(value)) return "--";
-  if (value > 0) return `+${value.toFixed(decimals)}`;
-  return value.toFixed(decimals);
+  const formatted = fixedDecimalFormatter(decimals).format(value);
+  if (value > 0) return `+${formatted}`;
+  return formatted;
+}
+
+type NullableNumber = number | null | undefined;
+
+const numberFormatters = new Map<string, Intl.NumberFormat>();
+const unitFormatters = new Map<string, Intl.NumberFormat>();
+const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const SUPPORTED_INTL_UNITS = new Set(["gram", "percent", "millisecond"]);
+
+function fixedDecimalFormatter(decimals: number, useGrouping = false): Intl.NumberFormat {
+  const key = `${decimals}:${useGrouping}`;
+  const existing = numberFormatters.get(key);
+  if (existing) return existing;
+  const formatter = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+    useGrouping,
+  });
+  numberFormatters.set(key, formatter);
+  return formatter;
+}
+
+function fixedUnitFormatter(
+  decimals: number,
+  unit: string,
+  useGrouping = false,
+): Intl.NumberFormat | null {
+  const key = `${unit}:${decimals}:${useGrouping}`;
+  const existing = unitFormatters.get(key);
+  if (existing) return existing;
+  if (!SUPPORTED_INTL_UNITS.has(unit)) return null;
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "unit",
+    unit,
+    unitDisplay: "short",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+    useGrouping,
+  });
+  unitFormatters.set(key, formatter);
+  return formatter;
+}
+
+function formatMetricValue(value: NullableNumber, decimals: number, useGrouping = false): string {
+  if (value == null || !Number.isFinite(value)) return "--";
+  return fixedDecimalFormatter(decimals, useGrouping).format(value);
+}
+
+function formatMetricUnitValue(
+  value: NullableNumber,
+  decimals: number,
+  unit: string,
+  useGrouping = false,
+): string {
+  if (value == null || !Number.isFinite(value)) return "--";
+  const formatter = fixedUnitFormatter(decimals, unit, useGrouping);
+  if (formatter) return formatter.format(value);
+  const unitLabel = FALLBACK_UNIT_LABELS.get(unit) ?? unit;
+  return `${formatMetricValue(value, decimals, useGrouping)} ${unitLabel}`;
+}
+
+function formatDateInput(
+  value: DateInput,
+  dateTimeOptions: Intl.DateTimeFormatOptions,
+  options: DateFormatOptions,
+): string {
+  const date = parseDateInput(value);
+  if (!date) return "--";
+  return dateTimeFormatter(dateTimeOptions, options.timeZone)
+    .format(date)
+    .replace(/\u202f/g, " ");
+}
+
+function dateTimeFormatter(
+  options: Intl.DateTimeFormatOptions,
+  timeZone: string | undefined,
+): Intl.DateTimeFormat {
+  const key = `${JSON.stringify(options)}:${timeZone ?? ""}`;
+  const existing = dateTimeFormatters.get(key);
+  if (existing) return existing;
+  const formatter = new Intl.DateTimeFormat("en-US", { ...options, timeZone });
+  dateTimeFormatters.set(key, formatter);
+  return formatter;
+}
+
+function parseDateInput(value: DateInput): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const dateOnlyMatch = dateOnlyPattern.exec(value);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    return new Date(Date.UTC(year, month - 1, day, 12));
+  }
+  return parseValidDate(value);
+}
+
+/** Format nutrition display values such as calories and grams with 0 decimals. */
+export function formatNutritionNumber(value: NullableNumber): string {
+  return formatMetricValue(value, 0, true);
+}
+
+/** Format calorie display values with 0 decimals. */
+export function formatCalories(value: NullableNumber): string {
+  const formattedValue = formatNutritionNumber(value);
+  return formattedValue === "--" ? formattedValue : `${formattedValue} kcal`;
+}
+
+/** Format nutrition gram display values with 0 decimals. */
+export function formatGrams(value: NullableNumber): string {
+  return formatMetricUnitValue(value, 0, "gram", true);
+}
+
+const NUTRITION_UNITS = new Map([
+  ["g", "gram"],
+  ["mg", "milligram"],
+  ["mcg", "microgram"],
+  ["ml", "milliliter"],
+]);
+
+const FALLBACK_UNIT_LABELS = new Map([
+  ["milligram", "mg"],
+  ["microgram", "mcg"],
+  ["milliliter", "mL"],
+]);
+
+/** Format nutrition display values with their nutrient unit label. */
+export function formatNutritionAmount(value: NullableNumber, unit: string): string {
+  if (unit === "kcal") return formatCalories(value);
+  const intlUnit = NUTRITION_UNITS.get(unit);
+  if (!intlUnit) {
+    const formattedValue = formatNutritionNumber(value);
+    return formattedValue === "--" ? formattedValue : `${formattedValue} ${unit}`;
+  }
+  return formatMetricUnitValue(value, 0, intlUnit, true);
+}
+
+/** Format body composition display values such as weight, body fat, and lean mass with 1 decimal. */
+export function formatBodyCompositionNumber(value: NullableNumber): string {
+  return formatMetricValue(value, 1);
+}
+
+/** Format body composition percentage display values such as body fat with 1 decimal. */
+export function formatBodyCompositionPercent(value: NullableNumber): string {
+  return formatMetricUnitValue(value, 1, "percent");
+}
+
+/** Format oxygen saturation display values with 0 decimals. */
+export function formatSpO2(value: NullableNumber): string {
+  return formatMetricUnitValue(value, 0, "percent");
+}
+
+/** Format heart rate variability display values with 0 decimals. */
+export function formatHRV(value: NullableNumber): string {
+  return formatMetricUnitValue(value, 0, "millisecond");
+}
+
+/** Format intensity display values with 0 decimals. */
+export function formatIntensity(value: NullableNumber): string {
+  return formatMetricUnitValue(value, 0, "percent");
+}
+
+/** Format training load display values with 0 decimals. */
+export function formatTrainingLoad(value: NullableNumber): string {
+  return formatMetricValue(value, 0);
 }

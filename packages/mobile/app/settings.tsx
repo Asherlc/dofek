@@ -1,3 +1,5 @@
+import { formatDateMedium, formatDateTime } from "@dofek/format/format";
+import { UnitConverter } from "@dofek/format/units";
 import { File as ExpoFile, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
@@ -57,7 +59,7 @@ type DataExport = z.infer<typeof DataExportSchema>;
 
 function formatLocalizedDateTime(date: Date | null | undefined): string {
   if (!date) return "n/a";
-  return date.toLocaleString();
+  return formatDateTime(date);
 }
 
 function formatExportSize(sizeBytes: number | null): string {
@@ -68,31 +70,14 @@ function formatExportSize(sizeBytes: number | null): string {
 }
 
 function formatExportDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateMedium(value);
 }
 
-const freeAccessWindowFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
 function formatDateRangeForSignupWeek(startDate: string, endDateExclusive: string): string {
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const endExclusive = new Date(`${endDateExclusive}T00:00:00.000Z`);
-  const endInclusive = new Date(endExclusive);
+  const endInclusive = new Date(`${endDateExclusive}T12:00:00.000Z`);
   endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
-
-  const startValue = Number.isNaN(start.getTime())
-    ? startDate
-    : freeAccessWindowFormatter.format(start);
-  const endValue = Number.isNaN(endInclusive.getTime())
-    ? endDateExclusive
-    : freeAccessWindowFormatter.format(endInclusive);
+  const startValue = formatDateMedium(startDate);
+  const endValue = formatDateMedium(endInclusive);
 
   return `${startValue} to ${endValue}`;
 }
@@ -152,6 +137,7 @@ export default function SettingsScreen() {
   const [goalInput, setGoalInput] = useState("");
   const [editingGoal, setEditingGoal] = useState(false);
   const isImperial = currentUnitSystem === "imperial";
+  const units = new UnitConverter(currentUnitSystem);
   const kgToLbs = 2.20462;
 
   function handleUnitChange(value: UnitSystem) {
@@ -469,10 +455,7 @@ export default function SettingsScreen() {
             </View>
           ) : currentGoalKg != null ? (
             <View style={styles.goalDisplayRow}>
-              <Text style={styles.goalDisplayText}>
-                {(isImperial ? currentGoalKg * kgToLbs : currentGoalKg).toFixed(1)}{" "}
-                {isImperial ? "lbs" : "kg"}
-              </Text>
+              <Text style={styles.goalDisplayText}>{units.formatWeight(currentGoalKg)}</Text>
               <TouchableOpacity
                 onPress={() => {
                   setGoalInput(

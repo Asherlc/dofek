@@ -1,4 +1,10 @@
-import { isToday, isYesterday } from "@dofek/format/format";
+import {
+  formatDurationMinutes,
+  formatIntensity,
+  formatTrainingLoad,
+  isToday,
+  isYesterday,
+} from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   StrainScore,
@@ -158,7 +164,7 @@ function ComponentBar({ label, value, weight }: { label: string; value: number; 
   return (
     <div className="flex items-center gap-3">
       <span className="text-muted text-xs w-[7.5rem] shrink-0">
-        {label} <span className="text-dim">({Math.round(weight * 100)}%)</span>
+        {label} <span className="text-dim">({formatIntensity(weight * 100)})</span>
       </span>
       <div className="flex-1 bg-accent/10 rounded-full h-2 overflow-hidden">
         <div
@@ -274,11 +280,15 @@ function StrainBreakdown({
       {/* Load stats */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
-          <p className="text-sm font-bold text-foreground tabular-nums">{acuteLoad.toFixed(0)}</p>
+          <p className="text-sm font-bold text-foreground tabular-nums">
+            {formatTrainingLoad(acuteLoad)}
+          </p>
           <p className="text-[10px] text-subtle">Acute (7d)</p>
         </div>
         <div>
-          <p className="text-sm font-bold text-foreground tabular-nums">{chronicLoad.toFixed(0)}</p>
+          <p className="text-sm font-bold text-foreground tabular-nums">
+            {formatTrainingLoad(chronicLoad)}
+          </p>
           <p className="text-[10px] text-subtle">Chronic (28d)</p>
         </div>
         <div>
@@ -297,10 +307,6 @@ function StrainBreakdown({
 
 function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) {
   const { actualMinutes, neededMinutes, efficiency } = performance;
-  const actualHours = Math.floor(actualMinutes / 60);
-  const actualMins = Math.round(actualMinutes % 60);
-  const neededHours = Math.floor(neededMinutes / 60);
-  const neededMins = Math.round(neededMinutes % 60);
   const sufficiency = neededMinutes > 0 ? Math.min(actualMinutes / neededMinutes, 1) * 100 : 100;
 
   return (
@@ -313,7 +319,7 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
           <div className="h-full rounded-full bg-blue-400" style={{ width: `${sufficiency}%` }} />
         </div>
         <span className="text-foreground text-xs w-12 text-right font-medium tabular-nums">
-          {actualHours}h {actualMins}m
+          {formatDurationMinutes(actualMinutes)}
         </span>
       </div>
       <div className="flex items-center gap-3">
@@ -327,11 +333,12 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
           />
         </div>
         <span className="text-foreground text-xs w-12 text-right font-medium tabular-nums">
-          {Math.round(efficiency)}%
+          {formatIntensity(efficiency)}
         </span>
       </div>
       <p className="text-dim text-[11px]">
-        Need: {neededHours}h {neededMins}m &middot; Bedtime: {performance.recommendedBedtime}
+        Need: {formatDurationMinutes(neededMinutes)} &middot; Bedtime:{" "}
+        {performance.recommendedBedtime}
       </p>
     </div>
   );
@@ -466,8 +473,6 @@ function SleepRing({
 
   const color = sleepTierColor(tier);
 
-  const actualHours = Math.floor(actualMinutes / 60);
-  const actualMins = Math.round(actualMinutes % 60);
   const displayScore = useCountUp(clampedScore, 800);
 
   return (
@@ -492,7 +497,7 @@ function SleepRing({
         className="text-xs font-semibold px-2 py-0.5 rounded-full"
         style={{ backgroundColor: `${color}20`, color }}
       >
-        {tier} &middot; {actualHours}h {actualMins}m
+        {tier} &middot; {formatDurationMinutes(actualMinutes)}
       </span>
       <p className="text-[11px] text-subtle text-center leading-tight">
         {sleepTierDescription(tier)}

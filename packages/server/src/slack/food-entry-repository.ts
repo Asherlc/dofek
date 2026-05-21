@@ -75,26 +75,6 @@ function parseCalorieGoal(rawValue: unknown): number {
     : DEFAULT_CALORIE_GOAL;
 }
 
-/** Convert a Slack epoch timestamp to a readable local time string using the user's timezone */
-export function slackTimestampToLocalTime(slackTs: string, timezone: string): string {
-  const epochSeconds = Number.parseFloat(slackTs);
-  const date = new Date(epochSeconds * 1000);
-  return date.toLocaleString("en-US", {
-    timeZone: timezone,
-    weekday: "long",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-/** Convert a Slack epoch timestamp to YYYY-MM-DD date string in the user's timezone */
-export function slackTimestampToDateString(slackTs: string, timezone: string): string {
-  const epochSeconds = Number.parseFloat(slackTs);
-  const date = new Date(epochSeconds * 1000);
-  return date.toLocaleDateString("en-CA", { timeZone: timezone });
-}
-
 /**
  * Extract the latest confirm button context from thread messages returned by
  * conversations.replies. Includes both the entry IDs and the message ts so

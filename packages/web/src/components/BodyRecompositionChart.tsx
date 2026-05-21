@@ -1,4 +1,3 @@
-import { formatNumber } from "@dofek/format/format";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
 import {
   chartColors,
@@ -64,11 +63,11 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
       <div className="flex gap-4 text-sm">
         <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
           Fat: {fatChange > 0 ? "+" : ""}
-          {formatNumber(units.convertWeight(fatChange))} {units.weightLabel}
+          {units.formatWeight(fatChange)}
         </span>
         <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
           Lean: {leanChange > 0 ? "+" : ""}
-          {formatNumber(units.convertWeight(leanChange))} {units.weightLabel}
+          {units.formatWeight(leanChange)}
         </span>
       </div>
       <DofekChart option={option} loading={loading} />

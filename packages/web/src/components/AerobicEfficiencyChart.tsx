@@ -104,9 +104,16 @@ export function AerobicEfficiencyChart({
   }));
 
   // Compute trend line across all activities
-  const timestamps = activities.map((a) => new Date(a.date).getTime());
-  const minTime = Math.min(...timestamps);
-  const maxTime = Math.max(...timestamps);
+  const datedActivities = activities.map((activity) => ({
+    activity,
+    time: new Date(activity.date).getTime(),
+  }));
+  const firstActivity = datedActivities.reduce((earliest, current) =>
+    current.time < earliest.time ? current : earliest,
+  );
+  const lastActivity = datedActivities.reduce((latest, current) =>
+    current.time > latest.time ? current : latest,
+  );
   const points: [number, number][] = activities.map((a) => [
     new Date(a.date).getTime(),
     a.efficiencyFactor,
@@ -114,8 +121,8 @@ export function AerobicEfficiencyChart({
   const { slope, intercept } = linearRegression(points);
 
   const trendData = [
-    [new Date(minTime).toISOString().slice(0, 10), slope * minTime + intercept],
-    [new Date(maxTime).toISOString().slice(0, 10), slope * maxTime + intercept],
+    [firstActivity.activity.date, slope * firstActivity.time + intercept],
+    [lastActivity.activity.date, slope * lastActivity.time + intercept],
   ];
 
   const trendDirection = slope > 0 ? "improving" : slope < 0 ? "declining" : "flat";

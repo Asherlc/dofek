@@ -1,3 +1,4 @@
+import { formatDateShort, formatDurationMinutes, formatHRV } from "@dofek/format/format";
 import { StrainZone, sleepPerformanceColor } from "@dofek/scoring/scoring";
 import type { WeeklyReportResult } from "dofek-server/types";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -5,12 +6,6 @@ import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 interface WeeklyReportCardProps {
   data: WeeklyReportResult | undefined;
   loading?: boolean;
-}
-
-function formatHoursMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = Math.round(minutes % 60);
-  return `${hours}h ${remainingMinutes}m`;
 }
 
 export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
@@ -37,13 +32,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
       <div className="flex items-start justify-between mb-5">
         <div>
           <h3 className="text-muted text-sm font-medium mb-1">Weekly Performance</h3>
-          <p className="text-dim text-xs">
-            Week of{" "}
-            {new Date(`${current.weekStart}T12:00:00`).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}
-          </p>
+          <p className="text-dim text-xs">Week of {formatDateShort(current.weekStart)}</p>
         </div>
         {sleepWasTracked ? (
           <div
@@ -62,13 +51,13 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
       <div className="grid grid-cols-2 gap-4 mb-5">
         <StatBlock
           label="Training"
-          value={`${current.trainingHours}h`}
+          value={formatDurationMinutes(current.trainingHours * 60)}
           sub={`${current.activityCount} activities`}
-          prevValue={prevWeek ? `${prevWeek.trainingHours}h` : undefined}
+          prevValue={prevWeek ? formatDurationMinutes(prevWeek.trainingHours * 60) : undefined}
         />
         <StatBlock
           label="Sleep"
-          value={sleepWasTracked ? formatHoursMinutes(current.avgSleepMinutes) : "Not tracked"}
+          value={sleepWasTracked ? formatDurationMinutes(current.avgSleepMinutes) : "Not tracked"}
           sub={
             sleepWasTracked ? (
               <span style={{ color: sleepPerformanceColor(current.sleepPerformancePct) }}>
@@ -80,7 +69,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           }
           prevValue={
             prevWeek && prevWeek.avgSleepMinutes > 0
-              ? formatHoursMinutes(prevWeek.avgSleepMinutes)
+              ? formatDurationMinutes(prevWeek.avgSleepMinutes)
               : undefined
           }
         />
@@ -90,9 +79,9 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           sub="bpm avg"
         />
         <StatBlock
-          label="HRV"
-          value={current.avgHrv != null ? `${current.avgHrv}` : "—"}
-          sub="ms avg"
+          label="Heart Rate Variability (HRV)"
+          value={formatHRV(current.avgHrv)}
+          sub="avg"
         />
       </div>
 

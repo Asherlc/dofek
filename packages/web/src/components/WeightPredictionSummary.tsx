@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatCalories, formatDateMedium } from "@dofek/format/format";
 import type { WeightPrediction } from "../../../server/src/routers/body-analytics.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -7,8 +7,7 @@ interface WeightPredictionSummaryProps {
 }
 
 function formatDate(isoDate: string): string {
-  const date = new Date(`${isoDate}T12:00:00`);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateMedium(isoDate);
 }
 
 export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryProps) {
@@ -16,7 +15,6 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
 
   if (prediction.ratePerWeek == null) return null;
 
-  const rateConverted = units.convertWeight(prediction.ratePerWeek);
   const rateColor =
     Math.abs(prediction.ratePerWeek) < 0.05
       ? "text-muted"
@@ -30,8 +28,8 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
       <div>
         <div className="text-subtle text-xs uppercase">Rate</div>
         <div className={`font-semibold ${rateColor}`}>
-          {rateConverted > 0 ? "+" : ""}
-          {formatNumber(rateConverted)} {units.weightLabel}/wk
+          {prediction.ratePerWeek > 0 ? "+" : ""}
+          {units.formatWeight(prediction.ratePerWeek)}/wk
         </div>
       </div>
 
@@ -41,7 +39,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
           <div className="text-subtle text-xs uppercase">Daily Balance</div>
           <div className="font-medium">
             {prediction.impliedDailyCalories > 0 ? "+" : ""}
-            {Math.round(prediction.impliedDailyCalories)} kcal/day
+            {formatCalories(prediction.impliedDailyCalories)}/day
           </div>
         </div>
       )}
@@ -51,7 +49,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
         <div>
           <div className="text-subtle text-xs uppercase">Goal Estimate</div>
           <div className="font-medium">
-            {formatNumber(units.convertWeight(prediction.goal.goalWeightKg))} {units.weightLabel}
+            {units.formatWeight(prediction.goal.goalWeightKg)}
             {" by "}
             <span className="text-muted">~{formatDate(prediction.goal.estimatedDate)}</span>
           </div>
@@ -62,7 +60,7 @@ export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryP
         <div>
           <div className="text-subtle text-xs uppercase">Goal</div>
           <div className="font-medium text-muted">
-            {formatNumber(units.convertWeight(prediction.goal.goalWeightKg))} {units.weightLabel}
+            {units.formatWeight(prediction.goal.goalWeightKg)}
             {" — estimate unavailable"}
           </div>
         </div>

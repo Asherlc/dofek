@@ -225,6 +225,7 @@ vi.mock("../../lib/health-kit-food-writeback", () => ({
 }));
 
 vi.mock("@dofek/format/format", () => ({
+  formatDateYmd: (date?: Date) => (date ?? new Date()).toISOString().slice(0, 10),
   formatRelativeTime: (date: string) => `${date} ago`,
 }));
 

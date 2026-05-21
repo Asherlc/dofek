@@ -1,3 +1,4 @@
+import { formatGrams } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { MacroBar } from "./MacroBar";
 
@@ -7,7 +8,7 @@ const meta = {
   tags: ["autodocs"],
   args: {
     label: "Protein",
-    grams: 150,
+    grams: formatGrams(150),
     caloriesFromMacro: 600,
     totalCalories: 2000,
     color: "blue",
@@ -23,7 +24,7 @@ export const Protein: Story = {};
 export const Carbs: Story = {
   args: {
     label: "Carbs",
-    grams: 250,
+    grams: formatGrams(250),
     caloriesFromMacro: 1000,
     totalCalories: 2000,
     color: "amber",
@@ -33,7 +34,7 @@ export const Carbs: Story = {
 export const Fat: Story = {
   args: {
     label: "Fat",
-    grams: 44,
+    grams: formatGrams(44),
     caloriesFromMacro: 400,
     totalCalories: 2000,
     color: "red",

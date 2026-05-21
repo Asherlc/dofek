@@ -28,7 +28,7 @@ const nutrientDetails: FoodEntryNutrientDetail[] = [
     unit: "g",
     category: "macro",
     sortOrder: 3,
-    valueText: "41.5 g",
+    valueText: "42 g",
   },
   {
     id: "sodium",

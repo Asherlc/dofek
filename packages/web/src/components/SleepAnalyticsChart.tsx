@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatDurationMinutes, formatNumber } from "@dofek/format/format";
 import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
@@ -12,8 +12,10 @@ interface SleepAnalyticsChartProps {
 }
 
 export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt: number) {
-  const debtHours = Math.round((sleepDebt / 60) * 10) / 10;
-  const debtLabel = sleepDebt > 0 ? `${debtHours}h deficit` : `${Math.abs(debtHours)}h surplus`;
+  const debtLabel =
+    sleepDebt > 0
+      ? `${formatDurationMinutes(sleepDebt)} deficit`
+      : `${formatDurationMinutes(Math.abs(sleepDebt))} surplus`;
   const debtColor = sleepDebtColor(sleepDebt);
 
   return {
@@ -35,26 +37,18 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
         const idx = firstParam.dataIndex;
         const night = nightly[idx];
         if (!night) return "";
-        const totalHr = Math.floor(night.durationMinutes / 60);
-        const totalMin = Math.round(night.durationMinutes % 60);
-        const dateLabel = new Date(`${night.date}T12:00:00`).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
-        let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel} (${totalHr}h ${totalMin}m)</div>`;
+        const dateLabel = formatDateMedium(night.date);
+        let html = `<div style="font-weight:600;margin-bottom:4px">${dateLabel} (${formatDurationMinutes(night.durationMinutes)})</div>`;
         for (const p of params) {
           if (p.seriesName === "7d Avg") {
             if (p.value[1] != null) {
-              const avgHr = Math.floor(p.value[1] / 60);
-              const avgMin = Math.round(p.value[1] % 60);
-              html += `<div>${p.marker} ${p.seriesName}: <b>${avgHr}h ${avgMin}m</b></div>`;
+              html += `<div>${p.marker} ${p.seriesName}: <b>${formatDurationMinutes(p.value[1])}</b></div>`;
             }
             continue;
           }
           if (p.value[1] == null) continue;
           const mins = Math.round((p.value[1] / 100) * night.durationMinutes);
-          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${mins}m)</div>`;
+          html += `<div>${p.marker} ${p.seriesName}: <b>${formatNumber(p.value[1])}%</b> (${formatDurationMinutes(mins)})</div>`;
         }
         return html;
       },

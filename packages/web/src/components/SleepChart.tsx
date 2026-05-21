@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import { sleepStageColors } from "@dofek/scoring/colors";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
@@ -26,11 +27,7 @@ export function SleepChart({ data, loading }: SleepChartProps) {
         if (!params.length) return "";
         const firstParam = params[0];
         if (!firstParam) return "";
-        const date = new Date(firstParam.value[0]).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const date = formatDateMedium(firstParam.value[0]);
         let total = 0;
         const lines = params.map((p) => {
           const val = p.value[1] ?? 0;

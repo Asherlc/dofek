@@ -1,3 +1,4 @@
+import { formatDateMedium } from "@dofek/format/format";
 import nodemailer from "nodemailer";
 
 interface ExportReadyEmailInput {
@@ -36,11 +37,7 @@ export async function sendExportReadyEmail(input: ExportReadyEmailInput): Promis
     port: 587,
     secure: false,
   });
-  const expiresAt = input.expiresAt.toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const expiresAt = formatDateMedium(input.expiresAt);
 
   await transporter.sendMail({
     from: config.fromEmail,

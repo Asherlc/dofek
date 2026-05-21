@@ -108,13 +108,16 @@ describe("Activity summary deduplication", () => {
     canonicalActivityId = aliasRow.id;
     memberActivityId = nonCanonicalMemberId;
 
+    const previousLoadDate = dateDaysAgo(14);
+    const recentLoadDate = dateDaysAgo(3);
+
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
       if (queryText.includes("SELECT date, resting_hr")) {
-        return [{ date: dateDaysAgo(14), resting_hr: 50 }];
+        return [{ date: previousLoadDate, resting_hr: 50 }];
       }
       return [
-        { day: dateDaysAgo(14), trimp: 50 },
-        { day: dateDaysAgo(3), trimp: 52 },
+        { day: previousLoadDate, trimp: 50 },
+        { day: recentLoadDate, trimp: 52 },
       ];
     };
 

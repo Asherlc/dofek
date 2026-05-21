@@ -1,6 +1,8 @@
+import { formatNutritionNumber } from "@dofek/format/format";
+
 interface MacroBarProps {
   label: string;
-  grams: number;
+  grams: string;
   caloriesFromMacro: number;
   totalCalories: number;
   color: "blue" | "amber" | "red";
@@ -21,7 +23,8 @@ export function MacroBar({ label, grams, caloriesFromMacro, totalCalories, color
       <div className="flex items-center justify-between text-sm">
         <span className={`font-medium ${text}`}>{label}</span>
         <span className="text-muted tabular-nums">
-          {grams}g<span className="ml-1.5 text-subtle">({percentage}%)</span>
+          {grams}
+          <span className="ml-1.5 text-subtle">({formatNutritionNumber(percentage)}%)</span>
         </span>
       </div>
       <div className="h-2 rounded-full bg-accent/10 overflow-hidden">

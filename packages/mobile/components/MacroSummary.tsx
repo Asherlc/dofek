@@ -1,3 +1,4 @@
+import { formatCalories, formatGrams } from "@dofek/format/format";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 
@@ -14,7 +15,7 @@ function MacroBar({ label, grams, color }: { label: string; grams: number; color
     <View style={styles.macroItem}>
       <View style={[styles.macroDot, { backgroundColor: color }]} />
       <Text style={styles.macroLabel}>{label}</Text>
-      <Text style={styles.macroValue}>{grams}g</Text>
+      <Text style={styles.macroValue}>{formatGrams(grams)}</Text>
     </View>
   );
 }
@@ -32,13 +33,15 @@ export function MacroSummary({
   return (
     <View style={styles.container}>
       <View style={styles.calorieSection}>
-        <Text style={styles.calorieCount}>{calories}</Text>
-        <Text style={styles.calorieLabel}>of {caloriesGoal} cal</Text>
+        <Text style={styles.calorieCount}>{formatCalories(calories)}</Text>
+        <Text style={styles.calorieLabel}>of {formatCalories(caloriesGoal)}</Text>
         <View style={styles.progressBarBackground}>
           <View style={[styles.progressBarFill, { width: `${progressFraction * 100}%` }]} />
         </View>
         <Text style={styles.remainingText}>
-          {caloriesRemaining > 0 ? `${caloriesRemaining} remaining` : "Goal reached"}
+          {caloriesRemaining > 0
+            ? `${formatCalories(caloriesRemaining)} remaining`
+            : "Goal reached"}
         </Text>
       </View>
 

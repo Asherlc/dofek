@@ -6,6 +6,35 @@ const KM_TO_MILES = 0.621371;
 const METERS_TO_FEET = 3.28084;
 const CM_TO_INCHES = 0.393701;
 const KM_PER_MILE = 1 / KM_TO_MILES;
+const unitFormatters = new Map<string, Intl.NumberFormat>();
+
+function formatUnitValue(
+  value: number,
+  decimals: number,
+  unit: string,
+  fallbackLabel: string,
+): string {
+  const key = `${unit}:${decimals}`;
+  const existing = unitFormatters.get(key);
+  if (existing) return existing.format(value);
+  let formatter: Intl.NumberFormat;
+  try {
+    formatter = new Intl.NumberFormat("en-US", {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      useGrouping: false,
+    });
+  } catch (error) {
+    // Expected compatibility fallback for JS runtimes with limited Intl unit support.
+    if (error instanceof RangeError) return `${value.toFixed(decimals)} ${fallbackLabel}`;
+    throw error;
+  }
+  unitFormatters.set(key, formatter);
+  return formatter.format(value);
+}
 
 // --- UnitConverter class ---
 
@@ -79,27 +108,57 @@ export class UnitConverter {
   // --- Format helpers (convert + label in one call) ---
 
   formatWeight(kg: number): string {
-    return `${this.convertWeight(kg).toFixed(1)} ${this.weightLabel}`;
+    return formatUnitValue(
+      this.convertWeight(kg),
+      1,
+      this.system === "imperial" ? "pound" : "kilogram",
+      this.weightLabel,
+    );
   }
 
   formatDistance(km: number): string {
-    return `${this.convertDistance(km).toFixed(1)} ${this.distanceLabel}`;
+    return formatUnitValue(
+      this.convertDistance(km),
+      1,
+      this.system === "imperial" ? "mile" : "kilometer",
+      this.distanceLabel,
+    );
   }
 
   formatElevation(meters: number): string {
-    return `${this.convertElevation(meters).toFixed(0)} ${this.elevationLabel}`;
+    return formatUnitValue(
+      this.convertElevation(meters),
+      0,
+      this.system === "imperial" ? "foot" : "meter",
+      this.elevationLabel,
+    );
   }
 
   formatTemperature(celsius: number): string {
-    return `${this.convertTemperature(celsius).toFixed(1)} ${this.temperatureLabel}`;
+    return formatUnitValue(
+      this.convertTemperature(celsius),
+      1,
+      this.system === "imperial" ? "fahrenheit" : "celsius",
+      this.temperatureLabel,
+    );
   }
 
   formatSpeed(kmh: number): string {
-    return `${this.convertSpeed(kmh).toFixed(1)} ${this.speedLabel}`;
+    return formatUnitValue(
+      this.convertSpeed(kmh),
+      1,
+      this.system === "imperial" ? "mile-per-hour" : "kilometer-per-hour",
+      this.speedLabel,
+    );
   }
 
   formatHeight(cm: number): string {
-    return `${this.convertHeight(cm).toFixed(1)} ${this.heightLabel}`;
+    return formatUnitValue(
+      this.convertHeight(cm),
+      1,
+      this.system === "imperial" ? "inch" : "centimeter",
+      this.heightLabel,
+    );
   }
 }
 

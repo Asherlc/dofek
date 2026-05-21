@@ -1,4 +1,4 @@
-import { formatNumber, isToday } from "@dofek/format/format";
+import { formatDateShort, formatNumber, isToday } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import { StressScore, trendColor } from "@dofek/scoring/scoring";
 import type { StressResult } from "dofek-server/types";
@@ -46,10 +46,7 @@ export function StressChart({ data, loading }: StressChartProps) {
         const idx = params[0].dataIndex;
         const day = data.daily[idx];
         if (!day) return "";
-        const date = new Date(day.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+        const date = formatDateShort(day.date);
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
         const dayStress = new StressScore(day.stressScore);
         html += `<div>Stress: <b style="color:${dayStress.color}">${formatNumber(day.stressScore)} (${dayStress.label})</b></div>`;

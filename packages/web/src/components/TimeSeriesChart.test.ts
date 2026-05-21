@@ -1,5 +1,21 @@
+/** @vitest-environment jsdom */
+import { isValidElement } from "react";
 import { describe, expect, it } from "vitest";
-import { isSeriesEmpty } from "./TimeSeriesChart.tsx";
+import { isSeriesEmpty, TimeSeriesChart } from "./TimeSeriesChart.tsx";
+
+interface TooltipParam {
+  seriesName: string;
+  value?: [string, number | null];
+  data?: [string, number | null];
+}
+
+interface ChartElementProps {
+  option: {
+    tooltip?: {
+      formatter?: (params: TooltipParam[]) => string;
+    };
+  };
+}
 
 describe("isSeriesEmpty", () => {
   it("returns true when all values are null", () => {
@@ -74,5 +90,36 @@ describe("isSeriesEmpty", () => {
         },
       ]),
     ).toBe(true);
+  });
+});
+
+describe("TimeSeriesChart", () => {
+  it("escapes user-controlled tooltip series names and formatted values", () => {
+    const element = TimeSeriesChart({
+      series: [
+        {
+          name: 'Mood <script>alert("x")</script>',
+          data: [["2026-04-01", 5]],
+          formatValue: () => "<img src=x onerror=alert(1)>",
+        },
+      ],
+    });
+    if (!isValidElement<ChartElementProps>(element)) {
+      throw new Error("Expected TimeSeriesChart to return a chart element");
+    }
+    const formatter = element.props.option.tooltip?.formatter;
+    if (!formatter) throw new Error("Expected tooltip formatter");
+
+    const html = formatter([
+      {
+        seriesName: 'Mood <script>alert("x")</script>',
+        value: ["2026-04-01", 5],
+      },
+    ]);
+
+    expect(html).toContain('Mood &lt;script&gt;alert("x")&lt;/script&gt;');
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("<img src=x");
   });
 });
