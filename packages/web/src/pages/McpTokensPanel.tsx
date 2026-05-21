@@ -39,10 +39,14 @@ export function McpTokensPanel() {
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const mcpEndpoint =
+    typeof window === "undefined" ? "/api/mcp" : `${window.location.origin}/api/mcp`;
+  const tokenForInstall = createdToken ?? "dofek_mcp_your_token";
 
   const activeScopeCount = selectedScopes.size;
   const canCreate =
     name.trim().length > 0 && activeScopeCount > 0 && !createTokenMutation.isPending;
+  const tokenMutationPending = createTokenMutation.isPending || revokeTokenMutation.isPending;
 
   const toggleScope = (scope: McpScope) => {
     setSelectedScopes((current) => {
@@ -96,6 +100,33 @@ export function McpTokensPanel() {
     }
   };
 
+  const rotateToken = async (token: NonNullable<typeof tokens.data>[number]) => {
+    setErrorMessage(null);
+    setCopyStatus(null);
+    let createdReplacement = false;
+    try {
+      const result = await createTokenMutation.mutateAsync({
+        name: token.name,
+        scopes: token.scopes,
+        expiresAt: token.expiresAt ? new Date(token.expiresAt).toISOString() : null,
+      });
+      createdReplacement = true;
+      setCreatedToken(result.token);
+      await revokeTokenMutation.mutateAsync({ tokenId: token.id });
+    } catch (error: unknown) {
+      captureException(error, { context: "rotate-mcp-token" });
+      if (createdReplacement) {
+        setErrorMessage(
+          "New token created, but failed to revoke the old token. Revoke the old token manually.",
+        );
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : "Failed to rotate MCP token.");
+      }
+    } finally {
+      await trpcUtils.mcp.listTokens.invalidate();
+    }
+  };
+
   if (tokens.isLoading) {
     return <p className="text-sm text-subtle">Loading MCP tokens...</p>;
   }
@@ -106,6 +137,44 @@ export function McpTokensPanel() {
 
   return (
     <div className="space-y-5">
+      <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            Install in Model Context Protocol (MCP) client settings
+          </p>
+          <p className="mt-1 text-sm text-subtle">
+            Create a token, then add this remote server to your Model Context Protocol client
+            settings.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-subtle">Remote URL</p>
+          <code className="block overflow-x-auto rounded bg-white/70 px-3 py-2 text-xs text-foreground">
+            {mcpEndpoint}
+          </code>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-subtle">
+            Client settings JavaScript Object Notation (JSON)
+          </p>
+          <pre className="overflow-x-auto rounded bg-white/70 p-3 text-xs text-foreground">
+            <code>{`{
+  "mcpServers": {
+    "dofek": {
+      "url": "${mcpEndpoint}",
+      "headers": {
+        "Authorization": "Bearer ${tokenForInstall}"
+      }
+    }
+  }
+}`}</code>
+          </pre>
+        </div>
+        <p className="text-xs text-dim">
+          Some clients call this file or screen Settings, MCP Servers, or Connectors.
+        </p>
+      </div>
+
       <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
           <label className="space-y-1">
@@ -212,15 +281,26 @@ export function McpTokensPanel() {
                     <p className="mt-1 text-xs text-dim">{token.scopes.join(", ")}</p>
                   </div>
                   {!isRevoked ? (
-                    <button
-                      type="button"
-                      onClick={() => revokeToken(token.id)}
-                      disabled={revokeTokenMutation.isPending}
-                      aria-label={`Revoke ${token.name}`}
-                      className="self-start rounded border border-red-900/40 px-3 py-1.5 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:self-center"
-                    >
-                      Revoke
-                    </button>
+                    <div className="flex flex-wrap gap-2 self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => rotateToken(token)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Rotate ${token.name}`}
+                        className="rounded border border-border-strong px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Rotate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => revokeToken(token.id)}
+                        disabled={tokenMutationPending}
+                        aria-label={`Revoke ${token.name}`}
+                        className="rounded border border-red-900/40 px-3 py-1.5 text-xs text-red-500 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Revoke
+                      </button>
+                    </div>
                   ) : null}
                 </li>
               );
