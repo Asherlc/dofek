@@ -251,6 +251,7 @@ export const sleepNeedRouter = router({
         sensorStore,
         userId: ctx.userId,
         timezone: tz,
+        endDate: input.endDate,
         accessWindow: ctx.accessWindow,
       });
       if (!lastSleep || lastSleep.duration_minutes == null) {

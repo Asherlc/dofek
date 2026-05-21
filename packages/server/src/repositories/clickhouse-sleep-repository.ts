@@ -110,8 +110,13 @@ export async function fetchLatestSleepNight(input: {
   sensorStore: Pick<ActivitySensorStore, "query">;
   userId: string;
   timezone: string;
+  /** Inclusive upper bound on the sleep-day (timezone-shifted). Latest as-of this date. */
+  endDate?: string;
   accessWindow?: AccessWindow;
 }): Promise<ClickHouseSleepNight | null> {
+  const endDateClause = input.endDate
+    ? `AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) <= toDate({endDate:String})`
+    : "";
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
@@ -138,6 +143,7 @@ export async function fetchLatestSleepNight(input: {
       FROM analytics.v_sleep
       WHERE user_id = {userId:UUID}
         AND is_nap = false
+        ${endDateClause}
         ${accessWindowClause(input.accessWindow)}
       ORDER BY started_at DESC
       LIMIT 1
@@ -145,6 +151,7 @@ export async function fetchLatestSleepNight(input: {
     {
       userId: input.userId,
       timezone: input.timezone,
+      ...(input.endDate != null ? { endDate: input.endDate } : {}),
       ...accessWindowParams(input.accessWindow),
     },
   );

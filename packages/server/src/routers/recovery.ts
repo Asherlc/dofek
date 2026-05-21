@@ -710,6 +710,7 @@ export const recoveryRouter = router({
           sensorStore,
           userId: ctx.userId,
           timezone: ctx.timezone,
+          endDate: input.endDate,
           accessWindow: ctx.accessWindow,
         });
 
