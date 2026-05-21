@@ -18,19 +18,35 @@ function makeSensorStore(rows: Array<{ physiological_load: number | null }>): Ac
 }
 
 describe("computeCurrentStrain", () => {
-  it("uses heart-rate physiology load when available", async () => {
+  it("uses heart-rate physiology load when it is higher than activity load", async () => {
     const result = await computeCurrentStrain({
       sensorStore: makeSensorStore([{ physiological_load: 2.2107535185185188 }]),
       userId: "00000000-0000-0000-0000-000000000001",
       timezone: "UTC",
       endDate: "2026-03-28",
-      fallbackActivityLoad: 50,
+      fallbackActivityLoad: 1,
     });
 
     expect(result).toEqual({
       currentStrain: 4.1,
       currentStrainSource: "heart_rate",
       currentPhysiologyLoad: 2.21,
+    });
+  });
+
+  it("uses activity load when sparse heart-rate physiology would lower current strain", async () => {
+    const result = await computeCurrentStrain({
+      sensorStore: makeSensorStore([{ physiological_load: 0.1255 }]),
+      userId: "00000000-0000-0000-0000-000000000001",
+      timezone: "America/Los_Angeles",
+      endDate: "2026-05-20",
+      fallbackActivityLoad: 12.5958,
+    });
+
+    expect(result).toEqual({
+      currentStrain: 9.1,
+      currentStrainSource: "activity",
+      currentPhysiologyLoad: null,
     });
   });
 
