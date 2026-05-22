@@ -1,8 +1,4 @@
-import {
-  formatCalories,
-  formatDateLong,
-  formatGrams,
-} from "@dofek/format/format";
+import { formatCalories, formatDateLong, formatGrams } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   chartColors,

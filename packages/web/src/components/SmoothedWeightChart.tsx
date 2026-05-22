@@ -162,9 +162,7 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
         for (const param of params) {
           const value = param.value[1];
           const unit =
-            param.seriesName === "Weekly Change"
-              ? `${units.weightLabel}/week`
-              : units.weightLabel;
+            param.seriesName === "Weekly Change" ? `${units.weightLabel}/week` : units.weightLabel;
           lines.push(`${param.marker} ${param.seriesName}: ${value} ${unit}`);
         }
         return lines.join("<br/>");
