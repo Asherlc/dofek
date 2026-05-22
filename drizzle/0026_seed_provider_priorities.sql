@@ -17,7 +17,14 @@ CREATE TABLE IF NOT EXISTS fitness.provider_priority_audit (
   id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
   changed_at timestamp with time zone DEFAULT now() NOT NULL,
   changed_by text NOT NULL,
-  priority_table text NOT NULL,
+  priority_table text NOT NULL CHECK (
+    priority_table IN (
+      'provider_priority',
+      'device_priority',
+      'sensor_provider_priority',
+      'sensor_device_priority'
+    )
+  ),
   provider_id text NOT NULL,
   source_name_pattern text,
   channel text,

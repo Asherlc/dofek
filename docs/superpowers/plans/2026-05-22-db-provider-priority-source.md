@@ -1,6 +1,6 @@
 # DB Provider Priority Source Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Follow the tasks in order and check off each step as it is completed.
 
 **Goal:** Make Postgres priority tables the runtime source of truth and remove the runtime `provider-priority.json` sync path.
 
@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Prove global maintenance no longer syncs JSON priorities
+## Task 1: Prove global maintenance no longer syncs JSON priorities
 
 **Files:**
 - Modify: `src/jobs/process-post-sync-job.test.ts`
@@ -36,7 +36,7 @@ Run: `rtk pnpm vitest run src/jobs/process-post-sync-job.test.ts`
 
 Expected: PASS.
 
-### Task 2: Add DB-owned priority schema and seed migration
+## Task 2: Add DB-owned priority schema and seed migration
 
 **Files:**
 - Modify: `src/db/schema.ts`
@@ -75,7 +75,7 @@ Run: `rtk pnpm vitest run src/db/provider-priority.test.ts`
 
 Expected: PASS.
 
-### Task 3: Remove JSON artifact and Docker copy
+## Task 3: Remove JSON artifact and Docker copy
 
 **Files:**
 - Delete: `provider-priority.json`
@@ -102,7 +102,7 @@ Run: `rtk rg -n "provider-priority\\.json|loadProviderPriorityConfig|syncProvide
 
 Expected: no runtime references.
 
-### Task 4: Verify
+## Task 4: Verify
 
 **Files:**
 - Modify if needed: `docs/superpowers/specs/2026-05-22-clickhouse-incremental-deduped-sensor-design.md`

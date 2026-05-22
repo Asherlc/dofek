@@ -15,6 +15,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  DEFAULT_PROVIDER_PRIORITY,
+  DEFAULT_SENSOR_PROVIDER_PRIORITY,
+} from "./provider-priority.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
@@ -265,7 +269,7 @@ export const provider = fitness.table(
 
 export const providerPriority = fitness.table("provider_priority", {
   providerId: text("provider_id").primaryKey(),
-  priority: integer("priority").notNull().default(100),
+  priority: integer("priority").notNull().default(DEFAULT_PROVIDER_PRIORITY),
   sleepPriority: integer("sleep_priority"),
   bodyPriority: integer("body_priority"),
   recoveryPriority: integer("recovery_priority"),
@@ -291,7 +295,7 @@ export const sensorProviderPriority = fitness.table(
   {
     providerId: text("provider_id").notNull(),
     channel: text("channel").notNull(),
-    priority: integer("priority").notNull().default(1000),
+    priority: integer("priority").notNull().default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
   },
   (table) => [primaryKey({ columns: [table.providerId, table.channel] })],
 );
@@ -302,7 +306,7 @@ export const sensorDevicePriority = fitness.table(
     providerId: text("provider_id").notNull(),
     sourceNamePattern: text("source_name_pattern").notNull(),
     channel: text("channel").notNull(),
-    priority: integer("priority").notNull().default(1000),
+    priority: integer("priority").notNull().default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
   },
   (table) => [primaryKey({ columns: [table.providerId, table.sourceNamePattern, table.channel] })],
 );

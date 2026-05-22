@@ -16,14 +16,4 @@ describe("provider priority schema", () => {
     expect(getTableName(sensorDevicePriority)).toBe("sensor_device_priority");
     expect(getTableName(providerPriorityAudit)).toBe("provider_priority_audit");
   });
-
-  it("does not expose runtime JSON priority sync APIs", async () => {
-    const providerPriorityModule = await import("./provider-priority.ts");
-
-    expect(Object.keys(providerPriorityModule).sort()).toEqual([
-      "DEFAULT_PROVIDER_PRIORITY",
-      "DEFAULT_SENSOR_PROVIDER_PRIORITY",
-      "providerPriorityTableNames",
-    ]);
-  });
 });

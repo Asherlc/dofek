@@ -1,5 +1,5 @@
-export const DEFAULT_PROVIDER_PRIORITY = 100;
-export const DEFAULT_SENSOR_PROVIDER_PRIORITY = 1000;
+export const DEFAULT_PROVIDER_PRIORITY = 100 as const;
+export const DEFAULT_SENSOR_PROVIDER_PRIORITY = 1000 as const;
 
 export const providerPriorityTableNames = [
   "provider_priority",
