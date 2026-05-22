@@ -7154,3 +7154,53 @@ reachability before PeerDB/Temporal checks and ClickHouse CDC configuration.
 
 A deploy workflow rerun is required to prove production CDC configuration
 completes after the post-stack data-service readiness checks.
+
+## 2026-05-22: Production Migration Step Timed Out Inspecting Container
+
+### Symptoms
+
+Deploy Web run `26316514322`, job `77476818252`, passed staging completely but
+failed production in `Run migrations` with `Timed out inspecting migration
+container dofek_migrate_26316514322_1`.
+
+### User Impact
+
+Production was briefly slow/unavailable while the single host was saturated.
+`/healthz` timed out during the pressure window, then recovered once Docker and
+the Swarm services settled.
+
+### Evidence
+
+The migration log reached `[migrate] Starting ClickHouse migrations`; it did
+not log a migration failure. The GitHub runner's Docker API request timed out
+on `docker inspect .../containers/dofek_migrate_26316514322_1/json`.
+
+Live host evidence during recovery showed load average above `100`, memory at
+`7.3 GiB / 7.5 GiB` with no swap, direct SSH banner exchange timeouts, and
+ClickHouse background refresh queries scanning `postgres_fitness.metric_stream
+FINAL`. ClickHouse `analytics.schema_migrations` later showed
+`0018_sensor_priority_raw_tables` had already been applied at
+`2026-05-22 19:27:49`, so this run was not blocked on an unapplied ClickHouse
+schema migration.
+
+### Root Cause
+
+The migration workflow ran the container detached, followed it with
+`docker logs --follow`, and polled `docker inspect` over SSH. During heavy
+ClickHouse refreshable materialized view work on the single-node host, Docker's
+control-plane calls became slow enough that the inspection loop false-failed
+even though the migration process had not reported a schema error.
+
+### Fix or Mitigation
+
+Changed the migration step to run the migration container as the foreground
+`docker run --rm` process under the existing four-hour bound. This removes the
+extra `docker inspect` polling loop and makes the step follow the migration
+process exit status directly.
+
+### Remaining Risk
+
+This fixes the deploy control-loop failure mode. The underlying ClickHouse
+refresh load is still high because several refreshable materialized views scan
+`postgres_fitness.metric_stream FINAL`; longer-term work should make those read
+models incremental or otherwise reduce full-table refresh pressure.
