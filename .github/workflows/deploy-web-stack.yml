@@ -589,7 +589,7 @@ jobs:
               --entrypoint temporal \
               temporalio/admin-tools:1.29 \
               --address peerdb-temporal:7233 --namespace default --color never \
-              operator search-attribute list 2>&1); then
+              operator cluster health 2>&1); then
               echo "Temporal frontend is reachable after ${attempt} attempt(s)."
               break
             fi
