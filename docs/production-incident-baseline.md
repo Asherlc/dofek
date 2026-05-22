@@ -6703,3 +6703,40 @@ spikes on the single-node production host. Follow-up work in branch
 `Asherlc/fix-deploy-failure-v3` reduces repeated deploy pull pressure by
 skipping already-present pinned third-party images and reduces the server image
 dependency layer by packaging only the server runtime dependency graph.
+
+## 2026-05-21: Deploy Follow-Up PR Knip Failure
+
+### Symptoms
+
+CI for PR #1163 failed in the `Test / Knip` job. The aggregate lint, test gate,
+and CI gate jobs failed because that required job did not pass.
+
+### User Impact
+
+The deploy hardening PR could not be merged until the dependency analysis gate
+was fixed.
+
+### Evidence
+
+The first fatal CI line was `Unused dependencies (1)` for
+`@opentelemetry/instrumentation` in `package.json`. Local reproduction with
+`CLICKHOUSE_URL=http://localhost:8123 pnpm knip` showed the same unused
+dependency failure.
+
+### Root Cause
+
+`@opentelemetry/instrumentation` was required at runtime by the Docker
+entrypoint through Node's `--import @opentelemetry/instrumentation/hook.mjs`
+flag, but Knip could not see that shell-only module reference in the source
+graph.
+
+### Fix or Mitigation
+
+Added a small source preload module, `src/opentelemetry-hook.mjs`, that imports
+the OpenTelemetry hook. The Docker entrypoint now imports that local preload
+module, and Knip's root workspace includes `.mjs` source entry files.
+
+### Remaining Risk
+
+No known remaining CI risk from this failure. Knip still reports existing
+configuration hints, but it exits successfully.
