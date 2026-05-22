@@ -5,19 +5,16 @@ keeps a native `MergeTree` copy of the raw stream and backfills it from
 Postgres by real Timescale chunk ranges. We do not use ClickHouse
 `MaterializedPostgreSQL` for this hypertable because the hypertable root does
 not contain the physical rows; the data live in Timescale chunk tables.
-PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication. It now
-writes to two targets: `peerdb.metric_stream` for validation and
-`postgres_fitness.metric_stream` for the active analytics source.
+PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication.
+`dofek_metric_stream_analytics` replicates into
+`postgres_fitness.metric_stream`, the active analytics source.
 
 ```text
 Postgres/Timescale fitness.metric_stream
         |                         |
-        | chunk-range native backfill | peerdb peer
-        |                         |
-        |                         |  PeerDB CDC mirrors
-        |                         |                |
-        |                         |                +--> peerdb.metric_stream (validation target)
-        v                         +----------------+
+        | chunk-range native backfill | PeerDB CDC mirror
+        |                         |   (dofek_metric_stream_analytics)
+        v                         v
 ClickHouse postgres_fitness.metric_stream
         |
         | refreshable materialized view, 15-minute cadence
@@ -103,7 +100,6 @@ ClickHouse migrations create and update the databases and read models:
   `analytics.deduped_location` (and GPS-derived fields in
   `analytics.activity_summary`) stop updating for new data until a replacement
   geometry replication strategy is in place.
-- `peerdb.metric_stream`: the PeerDB CDC validation target.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns. Besides the activity/sleep/body/daily/metric stream
   analytics sources, this includes provider inventory mirrors for `food_entry`,
@@ -149,7 +145,17 @@ loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment
 connection values, and applies the declarative PeerDB peer and mirror
 definition. Provider inventory tables are mirrored by
 `dofek_provider_inventory_raw_analytics` so existing raw analytics mirrors do
-not need to be rebuilt when inventory coverage expands. The mirrors use a
+not need to be rebuilt when inventory coverage expands.
+
+**Mirror reconciliation**: The deploy CDC setup checks whether each mirror's
+table list matches the expected mapping in `rawAnalyticsMirrorTableMappings`.
+If any expected table is missing from an existing mirror's config, the setup
+drops and recreates the entire mirror, triggering a full initial snapshot of
+all tables in that mirror. This is destructive on a resource-constrained
+server — only add tables to a mirror mapping if a ClickHouse read model
+actually consumes them.
+
+The mirrors use a
 dedicated publication name, exclude `device_id`, `source_type`, `vector`,
 `point`, and `metadata` from the metric stream mirrors, and enable soft deletes
 so delete events are represented in ClickHouse.

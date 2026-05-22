@@ -11,7 +11,6 @@ interface SourcePostgresClient {
 }
 
 export interface PeerDbSqlTemplateValues {
-  clickHouseDatabase: string;
   clickHouseCredential: string;
   clickHouseHost: string;
   clickHousePort: number;
@@ -52,8 +51,6 @@ const analyticsSourceTables = [
   "provider",
   "provider_priority",
   "device_priority",
-  "sensor_provider_priority",
-  "sensor_device_priority",
   "user_profile",
 ] as const;
 const rawAnalyticsMirrorTableMappings = {
@@ -65,8 +62,6 @@ const rawAnalyticsMirrorTableMappings = {
     "provider",
     "provider_priority",
     "device_priority",
-    "sensor_provider_priority",
-    "sensor_device_priority",
     "user_profile",
   ],
   dofek_provider_inventory_raw_analytics: [
@@ -255,7 +250,6 @@ function buildRuntimeConfig(): RuntimeConfig {
     peerDbUrl: buildDefaultPeerDbUrl(postgresCredential, resolvePeerDbHost(), resolvePeerDbPort()),
     templatePath: process.env.PEERDB_CDC_SQL_TEMPLATE_PATH ?? "src/db/peerdb/metric-stream-cdc.sql",
     templateValues: {
-      clickHouseDatabase: "peerdb",
       clickHouseCredential: decodeURIComponent(clickHouseUrl.password),
       clickHouseHost: resolveTemplateHost(
         "PEERDB_CDC_CLICKHOUSE_HOST",
@@ -280,7 +274,6 @@ function buildRuntimeConfig(): RuntimeConfig {
 
 function buildTemplateReplacements(values: PeerDbSqlTemplateValues): Record<string, string> {
   return {
-    CLICKHOUSE_DATABASE: peerDbStringLiteral(values.clickHouseDatabase),
     CLICKHOUSE_CREDENTIAL: peerDbStringLiteral(values.clickHouseCredential),
     CLICKHOUSE_HOST: peerDbStringLiteral(values.clickHouseHost),
     CLICKHOUSE_PORT: String(values.clickHousePort),
@@ -470,7 +463,6 @@ async function reconcileRawAnalyticsMirrors(peerDbClient: PeerDbClient): Promise
 }
 
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
-  await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
