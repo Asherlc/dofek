@@ -291,17 +291,27 @@ jobs:
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
-          docker pull "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"
-          docker pull "postgres:18-alpine"
-          docker pull "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19"
-          docker pull "ghcr.io/peerdb-io/flow-api:stable-v0.36.19"
-          docker pull "ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19"
-          docker pull "ghcr.io/peerdb-io/flow-worker:stable-v0.36.19"
-          docker pull "ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19"
-          docker pull "temporalio/auto-setup:1.29"
-          docker pull "temporalio/admin-tools:1.29"
-          docker pull "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
-          docker pull "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
+
+          pull_if_missing() {
+            image="$1"
+            if docker image inspect "$image" >/dev/null 2>&1; then
+              echo "Image already present: $image"
+              return 0
+            fi
+            docker pull "$image"
+          }
+
+          pull_if_missing "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"
+          pull_if_missing "postgres:18-alpine"
+          pull_if_missing "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19"
+          pull_if_missing "ghcr.io/peerdb-io/flow-api:stable-v0.36.19"
+          pull_if_missing "ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19"
+          pull_if_missing "ghcr.io/peerdb-io/flow-worker:stable-v0.36.19"
+          pull_if_missing "ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19"
+          pull_if_missing "temporalio/auto-setup:1.29"
+          pull_if_missing "temporalio/admin-tools:1.29"
+          pull_if_missing "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+          pull_if_missing "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
 
       - name: Validate host bind mount paths
         run: |

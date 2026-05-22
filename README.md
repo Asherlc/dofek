@@ -199,12 +199,11 @@ A single image is built from a multi-stage Dockerfile:
 
 ```
 Dockerfile (multi-stage)
-├── prod-deps      — production-only hoisted workspace install
 ├── client-build   — full install + Vite build
 └── server target  — Node 22 runtime with TypeScript sources + built web assets + entrypoint
 ```
 
-The server image copies the workspace source tree plus a production-only hoisted `node_modules`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 22 with `--experimental-transform-types`; there is no separate server transpile step inside the container.
+The server image copies the workspace source tree plus production dependencies from `pnpm --filter dofek-server deploy --legacy --prod`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 22 with `--experimental-transform-types`; there is no separate server transpile step inside the container.
 
 ### Building locally
 

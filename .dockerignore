@@ -3,4 +3,5 @@ dist
 web/dist
 web/node_modules
 .git
+.context
 *.md
