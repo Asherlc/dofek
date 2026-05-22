@@ -359,7 +359,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 {
                   name: "dofek_fitness_raw_analytics",
                   raw_analytics_mirror_config:
-                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
+                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority",
                 },
                 {
                   name: "dofek_provider_inventory_raw_analytics",
