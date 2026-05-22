@@ -72,7 +72,7 @@ describe("LifeEventsRepository", () => {
         category: "supplement",
         ongoing: true,
         notes: "5g daily",
-        created_at: "2025-01-15T10:00:00Z",
+        created_at: "2025-01-15T10:00:00.000Z",
       });
     });
 

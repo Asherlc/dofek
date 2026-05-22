@@ -8,7 +8,7 @@ import {
 import { supplement, supplementNutrient } from "dofek/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -43,8 +43,8 @@ const supplementViewRowSchema = z
     meal: z.string().nullable(),
     sort_order: z.number(),
     nutrition_data_id: z.string().nullable(),
-    created_at: z.string(),
-    updated_at: z.string(),
+    created_at: timestampStringSchema,
+    updated_at: timestampStringSchema,
   })
   .merge(nutrientRowSchema);
 

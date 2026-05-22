@@ -62,7 +62,7 @@ export const foodEntryRowSchema = z
     nutrition_data_id: z.string().nullable(),
     raw: z.unknown().nullable(),
     confirmed: z.boolean(),
-    created_at: z.string(),
+    created_at: timestampStringSchema,
   })
   .merge(nutrientRowSchema);
 
