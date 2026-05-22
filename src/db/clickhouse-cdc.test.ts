@@ -342,6 +342,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
   it("recreates raw analytics mirrors when existing mappings are missing source tables", async () => {
     const peerDbQueries: string[] = [];
+    const clickHouseCommands: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
     await setupClickHouseCdc({
@@ -377,7 +378,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
         async query() {},
       },
       clickHouseClient: {
-        async command() {},
+        async command(options) {
+          clickHouseCommands.push(options.query);
+        },
       },
       templateSql,
       templateValues: {
@@ -398,6 +401,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries).toContainEqual(
       expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
     );
+    const truncateCommands = clickHouseCommands.filter((command) =>
+      command.startsWith("TRUNCATE TABLE"),
+    );
+    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
+    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile");
+    expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
   });
 
   it("splits statements without splitting semicolons inside string literals", async () => {
