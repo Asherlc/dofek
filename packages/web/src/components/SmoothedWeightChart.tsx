@@ -1,3 +1,4 @@
+import { formatDateLong } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
 import type {
   SmoothedWeightRow,
@@ -147,7 +148,26 @@ export function SmoothedWeightChart({ data, prediction, loading }: SmoothedWeigh
 
   const option = {
     grid: dofekGrid("dualAxis", { top: 30, bottom: 30 }),
-    tooltip: dofekTooltip(),
+    tooltip: dofekTooltip({
+      formatter(
+        params: Array<{
+          seriesName: string;
+          value: [string, number];
+          marker: string;
+        }>,
+      ) {
+        const first = params[0];
+        if (!first) return "";
+        const lines = [`<strong>${formatDateLong(first.value[0])}</strong>`];
+        for (const param of params) {
+          const value = param.value[1];
+          const unit =
+            param.seriesName === "Weekly Change" ? `${units.weightLabel}/week` : units.weightLabel;
+          lines.push(`${param.marker} ${param.seriesName}: ${value} ${unit}`);
+        }
+        return lines.join("<br/>");
+      },
+    }),
     legend: dofekLegend(true),
     xAxis: dofekAxis.time(),
     yAxis: [
