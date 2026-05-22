@@ -243,6 +243,10 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         ...buildProviderStatsReadModelStatements(),
       ],
     },
+    {
+      id: "0018_sensor_priority_raw_tables",
+      statements: buildPostgresFitnessRawTableStatements(),
+    },
   ];
 }
 
