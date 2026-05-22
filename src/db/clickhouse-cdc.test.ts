@@ -409,6 +409,69 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
   });
 
+  it("truncates raw analytics tables when a do-initial-copy mirror is absent", async () => {
+    const peerDbQueries: string[] = [];
+    const clickHouseCommands: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("metric_stream_analytics_point_exclude_position")) {
+            return {
+              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
+            };
+          }
+          if (query.includes("raw_analytics_mirror_config")) {
+            return {
+              rows: [
+                {
+                  name: "dofek_provider_inventory_raw_analytics",
+                  raw_analytics_mirror_config:
+                    "food_entry health_event lab_panel lab_result journal_entry",
+                },
+              ],
+            };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: {
+        async command(options) {
+          clickHouseCommands.push(options.query);
+        },
+      },
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries).not.toContain("DROP MIRROR dofek_fitness_raw_analytics");
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+    const truncateCommands = clickHouseCommands.filter((command) =>
+      command.startsWith("TRUNCATE TABLE"),
+    );
+    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
+    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.device_priority");
+    expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
+  });
+
   it("splits statements without splitting semicolons inside string literals", async () => {
     const peerDbQueries: string[] = [];
 

@@ -464,6 +464,7 @@ async function reconcileRawAnalyticsMirrors(
   for (const [mirrorName, tableNames] of Object.entries(rawAnalyticsMirrorTableMappings)) {
     const mirrorRow = mirrorRows.find((row) => row.name === mirrorName);
     if (!mirrorRow) {
+      await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
       continue;
     }
 

@@ -7023,3 +7023,53 @@ own longer timeout.
 This fixes the workflow's readiness probe semantics, but the deploy path still
 needs a successful Actions rerun to prove production post-deploy CDC
 reconciliation reaches completion.
+
+## 2026-05-22: Staging Deploy Failed Recreating Raw Analytics CDC Mirror
+
+### Symptoms
+
+Deploy Web run `26314731200`, job `77471391028`, failed in
+`Deploy Web Staging / Deploy Web Stack` at `Configure ClickHouse CDC`.
+
+### User Impact
+
+The staging deploy failed after the stack deploy completed, so post-deploy
+ClickHouse CDC reconciliation did not complete for staging on that run.
+
+### Evidence
+
+The failing command was the `Configure ClickHouse CDC` one-shot container:
+`node --experimental-transform-types --enable-source-maps
+--disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts`.
+
+The first fatal line was:
+`[clickhouse-cdc] error: unable to submit job: "status: Internal, message:
+\"invalid mirror: rpc error: code = FailedPrecondition desc = failed to
+validate destination connector dofek_clickhouse_postgres_fitness: table
+device_priority exists and is not empty\""`.
+
+### Root Cause
+
+The previous CDC reconciliation path could leave a raw analytics PeerDB mirror
+absent while its ClickHouse destination tables still contained rows; the next
+`CREATE MIRROR ... do_initial_copy = true` then failed PeerDB's non-empty
+destination table validation.
+
+### Fix or Mitigation
+
+Updated raw analytics CDC reconciliation to truncate the mapped ClickHouse
+destination tables when a do-initial-copy mirror is absent, not only after the
+setup command drops an existing stale mirror.
+
+### Validation
+
+Added and ran a regression test for the absent-mirror/non-empty-destination
+state:
+`CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm vitest run
+src/db/clickhouse-cdc.test.ts`.
+
+### Remaining Risk
+
+The code-level fix is validated locally. A deploy workflow rerun is still
+required to prove staging and production post-deploy CDC reconciliation complete
+with the repaired setup command.
