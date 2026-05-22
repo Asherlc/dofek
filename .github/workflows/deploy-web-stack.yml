@@ -526,6 +526,46 @@ jobs:
         if: ${{ steps.deploy_stack.outcome == 'success' }}
         run: docker system df
 
+      - name: Wait for Postgres writable after stack deploy
+        run: |
+          for attempt in $(seq 1 36); do
+            recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              --env-file "$INFISICAL_ENV_FILE" \
+              postgres:18-alpine sh -euc \
+              "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
+              psql --host=db --username=health --dbname=health --no-align --tuples-only --quiet \
+              --command \"SELECT CASE WHEN pg_is_in_recovery() THEN 'recovery' ELSE 'writable' END;\"" 2>&1 || true)
+            recovery_state="$(printf '%s\n' "$recovery_output" | tail -n 1 | tr -d '[:space:]')"
+            if [ "$recovery_state" = "writable" ]; then
+              echo "Postgres is writable after stack deploy."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::Postgres did not become writable within 180s after stack deploy"
+              exit 1
+            fi
+            echo "Postgres post-stack readiness attempt ${attempt}/36: retrying in 5s..."
+            sleep 5
+          done
+
+      - name: Wait for ClickHouse after stack deploy
+        run: |
+          for attempt in $(seq 1 36); do
+            clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              postgres:18-alpine sh -euc \
+              "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
+            if [ "$clickhouse_output" = "Ok." ]; then
+              echo "ClickHouse is reachable after stack deploy."
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::ClickHouse did not become reachable within 180s after stack deploy"
+              exit 1
+            fi
+            echo "ClickHouse post-stack readiness attempt ${attempt}/36: retrying in 5s..."
+            sleep 5
+          done
+
       - name: Wait for PeerDB
         run: |
           for attempt in $(seq 1 36); do

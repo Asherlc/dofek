@@ -7115,3 +7115,42 @@ Raised the Netdata service memory limit from 400 MiB to 768 MiB in
 A deploy workflow rerun is required to prove production stack convergence and
 post-deploy CDC reconciliation complete with the corrected Netdata memory
 limit.
+
+## 2026-05-22: Production CDC Failed Resolving Postgres After Stack Deploy
+
+### Symptoms
+
+Deploy Web run `26316143604`, job `77475687394`, passed production stack
+deployment but failed later in `Configure ClickHouse CDC`.
+
+### User Impact
+
+Production app services rolled out, but the production post-deploy CDC
+configuration step did not complete in that run.
+
+### Evidence
+
+The failing command was the `Configure ClickHouse CDC` one-shot container:
+`node --experimental-transform-types --enable-source-maps
+--disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts`.
+
+The fatal line was `[clickhouse-cdc] Error: getaddrinfo EAI_AGAIN db`.
+Live Swarm state immediately after the failure showed `dofek_db` had recently
+started a new task, and a follow-up one-shot container on the same overlay
+network resolved `db` and reached Postgres successfully.
+
+### Root Cause
+
+The deploy workflow validated Postgres and ClickHouse before `docker stack
+deploy`, but `docker stack deploy` can restart data-service tasks. The CDC
+one-shot then ran without revalidating those post-stack prerequisites.
+
+### Fix or Mitigation
+
+Added post-stack readiness checks for Postgres writability and ClickHouse
+reachability before PeerDB/Temporal checks and ClickHouse CDC configuration.
+
+### Remaining Risk
+
+A deploy workflow rerun is required to prove production CDC configuration
+completes after the post-stack data-service readiness checks.
