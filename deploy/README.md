@@ -10,7 +10,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
   - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
-  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. Its first `metric_stream` mirror writes to `peerdb.metric_stream`; production analytics keep reading the migrated native copy until that initial snapshot is verified.
+  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. It replicates `metric_stream` and raw fitness tables into `postgres_fitness.*` for analytics read models.
   - **Volume**: Terraform provisions a Hetzner Block Storage volume (`data_volume_size_gb`, default `100GB`) attached with `automount=true`.
   - **Stable mount alias**: Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`).
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
