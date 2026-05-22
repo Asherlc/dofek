@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS fitness.sensor_provider_priority (
   provider_id text NOT NULL,
   channel text NOT NULL,
-  priority integer NOT NULL DEFAULT 1000,
+  priority bigint NOT NULL DEFAULT 1000,
   PRIMARY KEY (provider_id, channel)
 );
 --> statement-breakpoint
@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS fitness.sensor_device_priority (
   provider_id text NOT NULL,
   source_name_pattern text NOT NULL,
   channel text NOT NULL,
-  priority integer NOT NULL DEFAULT 1000,
+  priority bigint NOT NULL DEFAULT 1000,
   PRIMARY KEY (provider_id, source_name_pattern, channel)
 );
 --> statement-breakpoint
@@ -34,10 +34,10 @@ CREATE TABLE IF NOT EXISTS fitness.provider_priority_audit (
 );
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS provider_priority_audit_changed_at_idx
-  ON fitness.provider_priority_audit (changed_at);
+ON fitness.provider_priority_audit (changed_at);
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS provider_priority_audit_provider_idx
-  ON fitness.provider_priority_audit (provider_id);
+ON fitness.provider_priority_audit (provider_id);
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION fitness.record_provider_priority_audit()
 RETURNS trigger
@@ -132,28 +132,28 @@ INSERT INTO fitness.provider_priority (
   daily_activity_priority
 )
 VALUES
-  ('wahoo', 10, NULL, NULL, NULL, NULL),
-  ('oura', 80, 10, NULL, 10, 80),
-  ('withings', 15, NULL, 10, NULL, NULL),
-  ('peloton', 20, NULL, NULL, NULL, NULL),
-  ('fatsecret', 25, NULL, NULL, NULL, NULL),
-  ('whoop', 30, 20, NULL, 15, 80),
-  ('apple_health', 90, 25, 80, 25, 15),
-  ('garmin', 15, 40, NULL, 30, 20),
-  ('fitbit', 50, 30, NULL, 40, 30),
-  ('polar', 15, 50, NULL, 30, 50),
-  ('eight_sleep', 100, 50, NULL, NULL, NULL),
-  ('suunto', 20, 50, NULL, 40, 40),
-  ('coros', 20, 50, NULL, 40, 40),
-  ('strava', 40, NULL, NULL, NULL, NULL),
-  ('ride-with-gps', 40, NULL, NULL, NULL, NULL),
-  ('intervals', 40, NULL, NULL, NULL, NULL)
+('wahoo', 10, NULL, NULL, NULL, NULL),
+('oura', 80, 10, NULL, 10, 80),
+('withings', 15, NULL, 10, NULL, NULL),
+('peloton', 20, NULL, NULL, NULL, NULL),
+('fatsecret', 25, NULL, NULL, NULL, NULL),
+('whoop', 30, 20, NULL, 15, 80),
+('apple_health', 90, 25, 80, 25, 15),
+('garmin', 15, 40, NULL, 30, 20),
+('fitbit', 50, 30, NULL, 40, 30),
+('polar', 15, 50, NULL, 30, 50),
+('eight_sleep', 100, 50, NULL, NULL, NULL),
+('suunto', 20, 50, NULL, 40, 40),
+('coros', 20, 50, NULL, 40, 40),
+('strava', 40, NULL, NULL, NULL, NULL),
+('ride-with-gps', 40, NULL, NULL, NULL, NULL),
+('intervals', 40, NULL, NULL, NULL, NULL)
 ON CONFLICT (provider_id) DO UPDATE SET
-  priority = EXCLUDED.priority,
-  sleep_priority = EXCLUDED.sleep_priority,
-  body_priority = EXCLUDED.body_priority,
-  recovery_priority = EXCLUDED.recovery_priority,
-  daily_activity_priority = EXCLUDED.daily_activity_priority;
+  priority = excluded.priority,
+  sleep_priority = excluded.sleep_priority,
+  body_priority = excluded.body_priority,
+  recovery_priority = excluded.recovery_priority,
+  daily_activity_priority = excluded.daily_activity_priority;
 --> statement-breakpoint
 INSERT INTO fitness.device_priority (
   provider_id,
@@ -165,25 +165,25 @@ INSERT INTO fitness.device_priority (
   daily_activity_priority
 )
 VALUES
-  ('apple_health', 'Apple Watch%', 30, 25, NULL, 20, 15),
-  ('apple_health', '%iPhone%', NULL, NULL, NULL, NULL, 50),
-  ('apple_health', 'Wahoo TICKR%', 5, NULL, NULL, 5, NULL),
-  ('apple_health', 'Polar H%', 5, NULL, NULL, 5, NULL),
-  ('apple_health', 'Withings%', NULL, NULL, 10, NULL, NULL),
-  ('garmin', 'Edge%', 10, NULL, NULL, NULL, NULL),
-  ('garmin', 'Forerunner%', 15, NULL, NULL, NULL, NULL),
-  ('garmin', 'Fenix%', 12, NULL, NULL, NULL, NULL),
-  ('garmin', 'Venu%', 25, NULL, NULL, NULL, NULL),
-  ('strava', 'Garmin Edge%', 10, NULL, NULL, NULL, NULL),
-  ('strava', 'Wahoo ELEMNT%', 10, NULL, NULL, NULL, NULL),
-  ('strava', 'Fenix%', 12, NULL, NULL, NULL, NULL),
-  ('strava', 'Forerunner%', 15, NULL, NULL, NULL, NULL),
-  ('strava', 'iPhone%', 50, NULL, NULL, NULL, NULL),
-  ('strava', 'Apple Watch%', 30, NULL, NULL, NULL, NULL),
-  ('ride-with-gps', '%iphone%', 50, NULL, NULL, NULL, NULL)
+('apple_health', 'Apple Watch%', 30, 25, NULL, 20, 15),
+('apple_health', '%iPhone%', NULL, NULL, NULL, NULL, 50),
+('apple_health', 'Wahoo TICKR%', 5, NULL, NULL, 5, NULL),
+('apple_health', 'Polar H%', 5, NULL, NULL, 5, NULL),
+('apple_health', 'Withings%', NULL, NULL, 10, NULL, NULL),
+('garmin', 'Edge%', 10, NULL, NULL, NULL, NULL),
+('garmin', 'Forerunner%', 15, NULL, NULL, NULL, NULL),
+('garmin', 'Fenix%', 12, NULL, NULL, NULL, NULL),
+('garmin', 'Venu%', 25, NULL, NULL, NULL, NULL),
+('strava', 'Garmin Edge%', 10, NULL, NULL, NULL, NULL),
+('strava', 'Wahoo ELEMNT%', 10, NULL, NULL, NULL, NULL),
+('strava', 'Fenix%', 12, NULL, NULL, NULL, NULL),
+('strava', 'Forerunner%', 15, NULL, NULL, NULL, NULL),
+('strava', 'iPhone%', 50, NULL, NULL, NULL, NULL),
+('strava', 'Apple Watch%', 30, NULL, NULL, NULL, NULL),
+('ride-with-gps', '%iphone%', 50, NULL, NULL, NULL, NULL)
 ON CONFLICT (provider_id, source_name_pattern) DO UPDATE SET
-  priority = EXCLUDED.priority,
-  sleep_priority = EXCLUDED.sleep_priority,
-  body_priority = EXCLUDED.body_priority,
-  recovery_priority = EXCLUDED.recovery_priority,
-  daily_activity_priority = EXCLUDED.daily_activity_priority;
+  priority = excluded.priority,
+  sleep_priority = excluded.sleep_priority,
+  body_priority = excluded.body_priority,
+  recovery_priority = excluded.recovery_priority,
+  daily_activity_priority = excluded.daily_activity_priority;

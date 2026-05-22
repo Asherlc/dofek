@@ -295,7 +295,9 @@ export const sensorProviderPriority = fitness.table(
   {
     providerId: text("provider_id").notNull(),
     channel: text("channel").notNull(),
-    priority: integer("priority").notNull().default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
+    priority: bigint("priority", { mode: "number" })
+      .notNull()
+      .default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
   },
   (table) => [primaryKey({ columns: [table.providerId, table.channel] })],
 );
@@ -306,7 +308,9 @@ export const sensorDevicePriority = fitness.table(
     providerId: text("provider_id").notNull(),
     sourceNamePattern: text("source_name_pattern").notNull(),
     channel: text("channel").notNull(),
-    priority: integer("priority").notNull().default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
+    priority: bigint("priority", { mode: "number" })
+      .notNull()
+      .default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
   },
   (table) => [primaryKey({ columns: [table.providerId, table.sourceNamePattern, table.channel] })],
 );

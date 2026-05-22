@@ -496,13 +496,13 @@ entity "sensor_device_priority" {
   provider_id : text
   source_name_pattern : text
   channel : text
-  priority : integer
+  priority : bigint
 }
 
 entity "sensor_provider_priority" {
   provider_id : text
   channel : text
-  priority : integer
+  priority : bigint
 }
 
 entity "session" {

@@ -800,7 +800,7 @@ table fitness.sensor_device_priority {
   provider_id text [not null]
   source_name_pattern text [not null]
   channel text [not null]
-  priority integer [not null, default: 1000]
+  priority bigint [not null, default: 1000]
 
   indexes {
     (provider_id, source_name_pattern, channel) [pk]
@@ -810,7 +810,7 @@ table fitness.sensor_device_priority {
 table fitness.sensor_provider_priority {
   provider_id text [not null]
   channel text [not null]
-  priority integer [not null, default: 1000]
+  priority bigint [not null, default: 1000]
 
   indexes {
     (provider_id, channel) [pk]
