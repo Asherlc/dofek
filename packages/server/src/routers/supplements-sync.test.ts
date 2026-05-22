@@ -48,9 +48,13 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: vi.fn() },
 }));
 
-vi.mock("../lib/typed-sql.ts", () => ({
-  executeWithSchema: vi.fn(async (_db: unknown, _schema: unknown, _query: unknown) => []),
-}));
+vi.mock(import("../lib/typed-sql.ts"), async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    executeWithSchema: vi.fn(async (_db: unknown, _schema: unknown, _query: unknown) => []),
+  };
+});
 
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { toApiSupplement } from "../repositories/supplements-repository.ts";
