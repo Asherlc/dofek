@@ -7073,3 +7073,45 @@ src/db/clickhouse-cdc.test.ts`.
 The code-level fix is validated locally. A deploy workflow rerun is still
 required to prove staging and production post-deploy CDC reconciliation complete
 with the repaired setup command.
+
+## 2026-05-22: Production Deploy Timed Out Waiting For Netdata
+
+### Symptoms
+
+Deploy Web run `26315359822`, job `77473351834`, timed out in
+`Deploy Web Production / Deploy Web Stack` at the `Deploy stack` step.
+
+### User Impact
+
+The application services had already rolled to image `sha-0b7ca67`, but the
+workflow failed before post-deploy pruning, PeerDB/Temporal checks, and
+ClickHouse CDC reconciliation could run in production.
+
+### Evidence
+
+The failing command was `docker stack deploy ... --detach=false dofek`.
+The deploy log showed `verify: Detected task failure`, then repeated
+`overall progress: 0 out of 1 tasks`, and finally Docker returned
+`DeadlineExceeded` for the Netdata service ID.
+
+Live Swarm state showed `dofek_netdata` repeatedly exiting with
+`task: non-zero exit (137)`. Netdata's own crash report showed a 400 MiB
+container memory limit while Netdata used slightly more than that during
+startup.
+
+### Root Cause
+
+The Netdata service memory limit was undersized for the existing Netdata
+database and startup workload, causing OOM-style exit `137` during stack-wide
+deploy convergence.
+
+### Fix or Mitigation
+
+Raised the Netdata service memory limit from 400 MiB to 768 MiB in
+`deploy/stack.yml`.
+
+### Remaining Risk
+
+A deploy workflow rerun is required to prove production stack convergence and
+post-deploy CDC reconciliation complete with the corrected Netdata memory
+limit.
