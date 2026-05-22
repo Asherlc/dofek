@@ -371,6 +371,20 @@ table fitness.data_export {
   }
 }
 
+table fitness.device_priority {
+  provider_id text [not null]
+  source_name_pattern text [not null]
+  priority integer
+  sleep_priority integer
+  body_priority integer
+  recovery_priority integer
+  daily_activity_priority integer
+
+  indexes {
+    (provider_id, source_name_pattern) [pk]
+  }
+}
+
 table fitness.dexa_scan {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
@@ -752,6 +766,54 @@ table fitness.provider {
 
   indexes {
     (user_id, name) [name: 'provider_user_name_idx', unique]
+  }
+}
+
+table fitness.provider_priority {
+  provider_id text [pk, not null]
+  priority integer [not null, default: 100]
+  sleep_priority integer
+  body_priority integer
+  recovery_priority integer
+  daily_activity_priority integer
+}
+
+table fitness.provider_priority_audit {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  changed_at "timestamp with time zone" [not null, default: `now()`]
+  changed_by text [not null]
+  priority_table text [not null]
+  provider_id text [not null]
+  source_name_pattern text
+  channel text
+  old_value jsonb
+  new_value jsonb
+  reason text
+
+  indexes {
+    changed_at [name: 'provider_priority_audit_changed_at_idx']
+    provider_id [name: 'provider_priority_audit_provider_idx']
+  }
+}
+
+table fitness.sensor_device_priority {
+  provider_id text [not null]
+  source_name_pattern text [not null]
+  channel text [not null]
+  priority bigint [not null, default: 1000]
+
+  indexes {
+    (provider_id, source_name_pattern, channel) [pk]
+  }
+}
+
+table fitness.sensor_provider_priority {
+  provider_id text [not null]
+  channel text [not null]
+  priority bigint [not null, default: 1000]
+
+  indexes {
+    (provider_id, channel) [pk]
   }
 }
 

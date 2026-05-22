@@ -52,8 +52,31 @@ const analyticsSourceTables = [
   "provider",
   "provider_priority",
   "device_priority",
+  "sensor_provider_priority",
+  "sensor_device_priority",
   "user_profile",
 ] as const;
+const rawAnalyticsMirrorTableMappings = {
+  dofek_fitness_raw_analytics: [
+    "activity",
+    "sleep_session",
+    "sleep_stage",
+    "daily_metrics",
+    "provider",
+    "provider_priority",
+    "device_priority",
+    "sensor_provider_priority",
+    "sensor_device_priority",
+    "user_profile",
+  ],
+  dofek_provider_inventory_raw_analytics: [
+    "food_entry",
+    "health_event",
+    "lab_panel",
+    "lab_result",
+    "journal_entry",
+  ],
+} as const;
 const peerDbMetadataColumns = [
   "_peerdb_synced_at DateTime64(9) DEFAULT now()",
   "_peerdb_is_deleted Int8 DEFAULT 0",
@@ -82,6 +105,14 @@ function readInteger(value: unknown): number | null {
 
   if (typeof value === "string" && /^\d+$/.test(value)) {
     return Number.parseInt(value, 10);
+  }
+
+  return null;
+}
+
+function readString(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
   }
 
   return null;
@@ -410,12 +441,41 @@ async function reconcileMetricStreamAnalyticsMirror(peerDbClient: PeerDbClient):
   }
 }
 
+async function reconcileRawAnalyticsMirrors(peerDbClient: PeerDbClient): Promise<void> {
+  const mirrorNames = Object.keys(rawAnalyticsMirrorTableMappings);
+  const mirrorNameRows = mirrorNames.map((mirrorName) => `('${mirrorName}')`).join(", ");
+  const result = await peerDbClient.query(`
+    SELECT flows.name, encode(flows.config_proto, 'escape') AS raw_analytics_mirror_config
+    FROM public.flows
+    JOIN (VALUES ${mirrorNameRows}) AS expected_mirrors(name)
+      ON expected_mirrors.name = flows.name
+  `);
+  const mirrorRows = readQueryRows(result);
+
+  for (const [mirrorName, tableNames] of Object.entries(rawAnalyticsMirrorTableMappings)) {
+    const mirrorRow = mirrorRows.find((row) => row.name === mirrorName);
+    if (!mirrorRow) {
+      continue;
+    }
+
+    const mirrorConfig = readString(mirrorRow.raw_analytics_mirror_config);
+    if (mirrorConfig === null) {
+      throw new Error(`Unable to read PeerDB raw analytics mirror configuration for ${mirrorName}`);
+    }
+
+    if (tableNames.some((tableName) => !mirrorConfig.includes(tableName))) {
+      await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
+    }
+  }
+}
+
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await options.clickHouseClient.command({ query: "CREATE DATABASE IF NOT EXISTS peerdb" });
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
   await reconcileMetricStreamAnalyticsMirror(options.peerDbClient);
+  await reconcileRawAnalyticsMirrors(options.peerDbClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);

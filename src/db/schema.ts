@@ -15,6 +15,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  DEFAULT_PROVIDER_PRIORITY,
+  DEFAULT_SENSOR_PROVIDER_PRIORITY,
+} from "./provider-priority.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
@@ -261,6 +265,74 @@ export const provider = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("provider_user_name_idx").on(table.userId, table.name)],
+);
+
+export const providerPriority = fitness.table("provider_priority", {
+  providerId: text("provider_id").primaryKey(),
+  priority: integer("priority").notNull().default(DEFAULT_PROVIDER_PRIORITY),
+  sleepPriority: integer("sleep_priority"),
+  bodyPriority: integer("body_priority"),
+  recoveryPriority: integer("recovery_priority"),
+  dailyActivityPriority: integer("daily_activity_priority"),
+});
+
+export const devicePriority = fitness.table(
+  "device_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    sourceNamePattern: text("source_name_pattern").notNull(),
+    priority: integer("priority"),
+    sleepPriority: integer("sleep_priority"),
+    bodyPriority: integer("body_priority"),
+    recoveryPriority: integer("recovery_priority"),
+    dailyActivityPriority: integer("daily_activity_priority"),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.sourceNamePattern] })],
+);
+
+export const sensorProviderPriority = fitness.table(
+  "sensor_provider_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    channel: text("channel").notNull(),
+    priority: bigint("priority", { mode: "number" })
+      .notNull()
+      .default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.channel] })],
+);
+
+export const sensorDevicePriority = fitness.table(
+  "sensor_device_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    sourceNamePattern: text("source_name_pattern").notNull(),
+    channel: text("channel").notNull(),
+    priority: bigint("priority", { mode: "number" })
+      .notNull()
+      .default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.sourceNamePattern, table.channel] })],
+);
+
+export const providerPriorityAudit = fitness.table(
+  "provider_priority_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+    changedBy: text("changed_by").notNull(),
+    priorityTable: text("priority_table").notNull(),
+    providerId: text("provider_id").notNull(),
+    sourceNamePattern: text("source_name_pattern"),
+    channel: text("channel"),
+    oldValue: jsonb("old_value"),
+    newValue: jsonb("new_value"),
+    reason: text("reason"),
+  },
+  (table) => [
+    index("provider_priority_audit_changed_at_idx").on(table.changedAt),
+    index("provider_priority_audit_provider_idx").on(table.providerId),
+  ],
 );
 
 export const exercise = fitness.table(

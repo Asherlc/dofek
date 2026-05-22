@@ -6,15 +6,8 @@ vi.mock("@sentry/node", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
-const mockLoadProviderPriorityConfig = vi.fn((): unknown => ({ priorities: [] }));
-const mockSyncProviderPriorities = vi.fn();
 const mockRefitAllParams = vi.fn();
 const mockInvalidateByPrefix = vi.fn();
-
-vi.mock("../db/provider-priority.ts", () => ({
-  loadProviderPriorityConfig: () => mockLoadProviderPriorityConfig(),
-  syncProviderPriorities: (...args: unknown[]) => mockSyncProviderPriorities(...args),
-}));
 
 vi.mock("../personalization/refit.ts", () => ({
   refitAllParams: (...args: unknown[]) => mockRefitAllParams(...args),
@@ -66,10 +59,9 @@ describe("processPostSyncJob", () => {
       refreshBodyMeasurements,
     );
 
-    expect(mockLoadProviderPriorityConfig).toHaveBeenCalled();
-    expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
     expect(mockRefitAllParams).not.toHaveBeenCalled();
     expect(getSensorStore).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("does not run per-user refits during global post-sync maintenance", async () => {
@@ -80,8 +72,8 @@ describe("processPostSyncJob", () => {
       refreshBodyMeasurements,
     );
 
-    expect(mockSyncProviderPriorities).toHaveBeenCalledWith(fakeDb, { priorities: [] });
     expect(mockRefitAllParams).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("runs only per-user refit for a user refit job", async () => {
@@ -93,8 +85,6 @@ describe("processPostSyncJob", () => {
     );
 
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
-    expect(mockLoadProviderPriorityConfig).not.toHaveBeenCalled();
-    expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
   });
 
   it("refreshes body measurements before refitting and invalidating user caches", async () => {
@@ -111,19 +101,6 @@ describe("processPostSyncJob", () => {
     );
   });
 
-  it("continues when syncProviderPriorities fails", async () => {
-    mockSyncProviderPriorities.mockRejectedValueOnce(new Error("priorities failed"));
-
-    await processPostSyncJob(
-      makeGlobalMaintenanceJob(),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
-
-    expect(mockRefitAllParams).not.toHaveBeenCalled();
-  });
-
   it("continues when refitAllParams fails", async () => {
     mockRefitAllParams.mockRejectedValueOnce(new Error("refit failed"));
 
@@ -135,36 +112,7 @@ describe("processPostSyncJob", () => {
       refreshBodyMeasurements,
     );
 
-    expect(mockSyncProviderPriorities).not.toHaveBeenCalled();
-  });
-
-  it("skips syncProviderPriorities when config is null", async () => {
-    mockLoadProviderPriorityConfig.mockReturnValueOnce(null);
-
-    await processPostSyncJob(
-      makeGlobalMaintenanceJob(),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
-
-    expect(mockSyncProviderPriorities).not.toHaveBeenCalledWith(fakeDb, null);
-  });
-
-  it("reports errors to Sentry when syncProviderPriorities fails", async () => {
-    const prioritiesError = new Error("priorities failed");
-    mockSyncProviderPriorities.mockRejectedValueOnce(prioritiesError);
-
-    await processPostSyncJob(
-      makeGlobalMaintenanceJob(),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-    );
-
-    expect(mockCaptureException).toHaveBeenCalledWith(prioritiesError, {
-      tags: { postSyncStep: "syncProviderPriorities" },
-    });
+    expect(mockCaptureException).toHaveBeenCalled();
   });
 
   it("reports errors to Sentry when refitAllParams fails", async () => {

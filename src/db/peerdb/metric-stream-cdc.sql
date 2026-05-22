@@ -114,6 +114,14 @@ WITH TABLE MAPPING
     to: device_priority
   },
   {
+    from: fitness.sensor_provider_priority,
+    to: sensor_provider_priority
+  },
+  {
+    from: fitness.sensor_device_priority,
+    to: sensor_device_priority
+  },
+  {
     from: fitness.user_profile,
     to: user_profile
   }

@@ -159,6 +159,16 @@ entity "data_export" {
   error_message : text
 }
 
+entity "device_priority" {
+  provider_id : text
+  source_name_pattern : text
+  priority : integer
+  sleep_priority : integer
+  body_priority : integer
+  recovery_priority : integer
+  daily_activity_priority : integer
+}
+
 entity "dexa_scan" {
   * id : uuid <<PK>>
   --
@@ -355,7 +365,7 @@ entity "mcp_access_token" {
   user_id : uuid <<FK>>
   name : text
   token_hash : text
-  scopes : text[]
+  scopes : text_array
   created_at : timestamp
   last_used_at : timestamp
   expires_at : timestamp
@@ -456,6 +466,43 @@ entity "provider" {
   api_base_url : text
   user_id : uuid <<FK>>
   created_at : timestamp
+}
+
+entity "provider_priority" {
+  * provider_id : text <<PK>>
+  --
+  priority : integer
+  sleep_priority : integer
+  body_priority : integer
+  recovery_priority : integer
+  daily_activity_priority : integer
+}
+
+entity "provider_priority_audit" {
+  * id : uuid <<PK>>
+  --
+  changed_at : timestamp
+  changed_by : text
+  priority_table : text
+  provider_id : text
+  source_name_pattern : text
+  channel : text
+  old_value : jsonb
+  new_value : jsonb
+  reason : text
+}
+
+entity "sensor_device_priority" {
+  provider_id : text
+  source_name_pattern : text
+  channel : text
+  priority : bigint
+}
+
+entity "sensor_provider_priority" {
+  provider_id : text
+  channel : text
+  priority : bigint
 }
 
 entity "session" {
