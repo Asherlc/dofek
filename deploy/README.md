@@ -146,6 +146,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://root@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
+      The workflow also ensures pinned third-party stack images exist on the
+      host, but skips those pulls when the exact image is already present.
       Image cleanup is controlled by this deploy workflow: it prunes unused
       Docker objects before image pulls and prunes obsolete images after a
       successful stack deploy. Do not run a continuous background image pruner

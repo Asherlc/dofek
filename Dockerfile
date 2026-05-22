@@ -9,34 +9,6 @@ FROM base AS source
 WORKDIR /app
 COPY . .
 
-# ── Prod deps: production-only node_modules (flat, no symlinks) ───────
-FROM base AS prod-deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches ./patches
-COPY packages/server/package.json ./packages/server/
-COPY packages/web/package.json ./packages/web/
-COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
-COPY packages/eight-sleep/package.json ./packages/eight-sleep/
-COPY packages/zwift-client/package.json ./packages/zwift-client/
-COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
-COPY packages/velohero-client/package.json ./packages/velohero-client/
-COPY packages/garmin-connect/package.json ./packages/garmin-connect/
-COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
-COPY packages/format/package.json ./packages/format/
-COPY packages/scoring/package.json ./packages/scoring/
-COPY packages/nutrition/package.json ./packages/nutrition/
-COPY packages/training/package.json ./packages/training/
-COPY packages/stats/package.json ./packages/stats/
-COPY packages/onboarding/package.json ./packages/onboarding/
-COPY packages/providers-meta/package.json ./packages/providers-meta/
-COPY packages/auth/package.json ./packages/auth/
-COPY packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
-COPY packages/recovery/package.json ./packages/recovery/
-COPY packages/zones/package.json ./packages/zones/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --prod --node-linker=hoisted
-
 # ── Client build: full install + Vite build (assets copied into server stage)
 FROM base AS client-build
 WORKDIR /app
@@ -72,6 +44,7 @@ RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
     && export SENTRY_AUTH_TOKEN \
     && cd packages/web && pnpm run build
+RUN pnpm --filter dofek-server deploy --legacy --prod /prod/server
 
 # ── Server image (Express API + sync runner) ────────────────────────────
 FROM base AS server
@@ -127,28 +100,28 @@ COPY --from=source --chown=node:node /app/packages/zones/src ./packages/zones/sr
 COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages/zones/
 COPY --from=source --chown=node:node /app/packages/providers-meta/src ./packages/providers-meta/src
 COPY --from=source --chown=node:node /app/packages/providers-meta/package.json ./packages/providers-meta/
-COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=client-build --chown=node:node /prod/server/node_modules ./node_modules
 # Link workspace packages so bare-specifier imports resolve
-# Use ln -sf to overwrite any links pnpm's hoisted mode may have created
-RUN ln -sf /app node_modules/dofek && \
-    ln -sf /app/packages/eight-sleep node_modules/eight-sleep-client && \
-    ln -sf /app/packages/zwift-client node_modules/zwift-client && \
-    ln -sf /app/packages/trainerroad-client node_modules/trainerroad-client && \
-    ln -sf /app/packages/velohero-client node_modules/velohero-client && \
-    ln -sf /app/packages/garmin-connect node_modules/garmin-connect && \
-    ln -sf /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
-    ln -sf /app/packages/whoop-whoop node_modules/whoop-whoop && \
+# Use ln -sfn to overwrite any links pnpm deploy may have created
+RUN ln -sfn /app node_modules/dofek && \
+    ln -sfn /app/packages/eight-sleep node_modules/eight-sleep-client && \
+    ln -sfn /app/packages/zwift-client node_modules/zwift-client && \
+    ln -sfn /app/packages/trainerroad-client node_modules/trainerroad-client && \
+    ln -sfn /app/packages/velohero-client node_modules/velohero-client && \
+    ln -sfn /app/packages/garmin-connect node_modules/garmin-connect && \
+    ln -sfn /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
+    ln -sfn /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
-    ln -sf /app/packages/format node_modules/@dofek/format && \
-    ln -sf /app/packages/stats node_modules/@dofek/stats && \
-    ln -sf /app/packages/scoring node_modules/@dofek/scoring && \
-    ln -sf /app/packages/onboarding node_modules/@dofek/onboarding && \
-    ln -sf /app/packages/training node_modules/@dofek/training && \
-    ln -sf /app/packages/auth node_modules/@dofek/auth && \
-    ln -sf /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
-    ln -sf /app/packages/providers-meta node_modules/@dofek/providers && \
-    ln -sf /app/packages/recovery node_modules/@dofek/recovery && \
-    ln -sf /app/packages/zones node_modules/@dofek/zones
+    ln -sfn /app/packages/format node_modules/@dofek/format && \
+    ln -sfn /app/packages/stats node_modules/@dofek/stats && \
+    ln -sfn /app/packages/scoring node_modules/@dofek/scoring && \
+    ln -sfn /app/packages/onboarding node_modules/@dofek/onboarding && \
+    ln -sfn /app/packages/training node_modules/@dofek/training && \
+    ln -sfn /app/packages/auth node_modules/@dofek/auth && \
+    ln -sfn /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
+    ln -sfn /app/packages/providers-meta node_modules/@dofek/providers && \
+    ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \
+    ln -sfn /app/packages/zones node_modules/@dofek/zones
 
 # Seed script for preview/dev environments
 COPY --from=source --chown=node:node /app/scripts ./scripts

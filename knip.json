@@ -6,9 +6,10 @@
         "src/server.ts",
         "src/db/setup-clickhouse-cdc.ts",
         "src/jobs/worker.ts",
+        "src/opentelemetry-hook.mjs",
         "vitest.config.mutation.ts"
       ],
-      "project": ["src/**/*.ts", "*.config.{ts,js,json}"],
+      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js,json}"],
       "ignoreDependencies": ["sharp", "tsx"],
       "ignoreBinaries": [
         "tsr", "expo", "license-checker",

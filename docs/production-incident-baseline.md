@@ -6725,6 +6725,88 @@ The migration still needs to run in production. `analytics.v_body_measurement`
 will remain stale until that deploy applies the new ClickHouse migration and the
 metric-stream mirror has enough current body rows for the projection to ingest.
 
+## 2026-05-21: Production Deploy Image Pull Disconnected
+
+### Symptoms
+
+The `Deploy Web` workflow run `26258897303` failed in the production
+`Deploy Web Stack` job before migrations or `docker stack deploy`.
+
+### User Impact
+
+Production remained on the prior image tag `sha-5e20f85` while staging deployed
+`sha-ed4e8b8`. During the failure window, the production host became heavily
+loaded and web tasks briefly churned, but the public health endpoint recovered.
+
+### Evidence
+
+The failing step was `Pull deploy images`. The first fatal line was Docker over
+SSH disconnecting during `docker pull ghcr.io/asherlc/dofek:sha-ed4e8b8`:
+`client_loop: send disconnect: Broken pipe`. Production `dockerd` logs in the
+same window showed swarm heartbeat/session timeouts, container healthcheck
+startup timeouts, and resolver timeouts. Host checks showed high load and slow
+Docker commands while root disk still had headroom.
+
+### Root Cause
+
+The production host Docker pull/unpack path became overloaded enough that the
+remote Docker SSH connection died. This was not a missing image, secret, disk
+space, migration, or stack-rendering failure.
+
+### Fix or Mitigation
+
+Reran the failed production deploy job after confirming production had
+recovered enough to serve health checks. The rerun pulled images, applied
+ClickHouse migration `0017_body_measurement_sample_projection`, deployed the
+stack, and completed successfully. Production `web`, `worker`, and
+`training-export-worker` now run `sha-ed4e8b8`; production and staging
+`/healthz` both returned `{"status":"ok"}`.
+
+### Remaining Risk
+
+Image pulls and ClickHouse read-model rebuilds can still create sharp CPU/load
+spikes on the single-node production host. Follow-up work in branch
+`Asherlc/fix-deploy-failure-v3` reduces repeated deploy pull pressure by
+skipping already-present pinned third-party images and reduces the server image
+dependency layer by packaging only the server runtime dependency graph.
+
+## 2026-05-21: Deploy Follow-Up PR Knip Failure
+
+### Symptoms
+
+CI for PR #1163 failed in the `Test / Knip` job. The aggregate lint, test gate,
+and CI gate jobs failed because that required job did not pass.
+
+### User Impact
+
+The deploy hardening PR could not be merged until the dependency analysis gate
+was fixed.
+
+### Evidence
+
+The first fatal CI line was `Unused dependencies (1)` for
+`@opentelemetry/instrumentation` in `package.json`. Local reproduction with
+`CLICKHOUSE_URL=http://localhost:8123 pnpm knip` showed the same unused
+dependency failure.
+
+### Root Cause
+
+`@opentelemetry/instrumentation` was required at runtime by the Docker
+entrypoint through Node's `--import @opentelemetry/instrumentation/hook.mjs`
+flag, but Knip could not see that shell-only module reference in the source
+graph.
+
+### Fix or Mitigation
+
+Added a small source preload module, `src/opentelemetry-hook.mjs`, that imports
+the OpenTelemetry hook. The Docker entrypoint now imports that local preload
+module, and Knip's root workspace includes `.mjs` source entry files.
+
+### Remaining Risk
+
+No known remaining CI risk from this failure. Knip still reports existing
+configuration hints, but it exits successfully.
+
 ## 2026-05-22: Dashboard Recovery Data Missing From Future Readiness Row
 
 ### Symptoms

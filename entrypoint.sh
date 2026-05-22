@@ -17,7 +17,7 @@ if [ -f .env ]; then
 fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
-NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import @opentelemetry/instrumentation/hook.mjs --import ./src/instrumentation.ts"
+NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
 
 case "${1:-sync}" in
   web)
