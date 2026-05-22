@@ -1,9 +1,8 @@
 import {
+  formatDateYmd,
   formatDurationMinutes,
   formatIntensity,
   formatTrainingLoad,
-  isToday,
-  isYesterday,
 } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
@@ -26,6 +25,7 @@ import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
 
 interface DailyOverviewProps {
+  endDate?: string;
   readiness: ReadinessRow[] | undefined;
   workloadRatio: WorkloadRatioResult | undefined;
   sleepPerformance: SleepPerformanceInfo | null | undefined;
@@ -519,7 +519,15 @@ function RingSkeleton() {
 
 type ExpandedRing = "recovery" | "strain" | "sleep" | null;
 
+function isRecentForAnchor(dateString: string, anchorDateString: string): boolean {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  const anchorDate = new Date(`${anchorDateString}T12:00:00Z`);
+  const diffDays = Math.round((anchorDate.getTime() - date.getTime()) / 86_400_000);
+  return diffDays >= 0 && diffDays <= 1;
+}
+
 export function DailyOverview({
+  endDate = formatDateYmd(),
   readiness,
   workloadRatio,
   sleepPerformance,
@@ -535,19 +543,17 @@ export function DailyOverview({
   const latestReadiness = readiness?.length ? readiness[readiness.length - 1] : undefined;
   const readinessIsFresh = (() => {
     if (!latestReadiness) return false;
-    const readinessDate = new Date(`${latestReadiness.date}T00:00:00`);
-    return isToday(readinessDate) || isYesterday(readinessDate);
+    return isRecentForAnchor(latestReadiness.date, endDate);
   })();
   const recoveryScore = readinessIsFresh ? (latestReadiness?.readinessScore ?? null) : null;
   const strain =
     strainTarget?.currentStrain ??
-    (workloadRatio?.displayedDate && isToday(new Date(`${workloadRatio.displayedDate}T00:00:00`))
+    (workloadRatio?.displayedDate && workloadRatio.displayedDate === endDate
       ? (workloadRatio?.displayedStrain ?? 0)
       : 0);
   const sleepIsFresh = (() => {
     if (!sleepPerformance?.sleepDate) return false;
-    const sleepDate = new Date(`${sleepPerformance.sleepDate}T00:00:00`);
-    return isToday(sleepDate) || isYesterday(sleepDate);
+    return isRecentForAnchor(sleepPerformance.sleepDate, endDate);
   })();
   const freshSleepPerformance = sleepIsFresh ? sleepPerformance : null;
 

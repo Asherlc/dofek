@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { formatDateYmd } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DailyOverview } from "./DailyOverview.tsx";
 
 vi.mock("../lib/chartTheme.ts", () => ({
@@ -56,6 +56,10 @@ function findButton(element: HTMLElement): HTMLElement {
 }
 
 describe("DailyOverview", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders loading skeletons when loading", () => {
     render(
       <DailyOverview
@@ -457,6 +461,51 @@ describe("DailyOverview", () => {
       />,
     );
     // Recovery should show yesterday's score (recovery reflects last night's data)
+    expect(screen.getByText("75")).toBeTruthy();
+    expect(screen.getByText("Recovered")).toBeTruthy();
+  });
+
+  it("uses the dashboard query date to decide whether recovery data is fresh", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-23T10:00:00"));
+
+    render(
+      <DailyOverview
+        endDate="2026-03-21"
+        readiness={[
+          {
+            date: "2026-03-20",
+            readinessScore: 75,
+            components: {
+              hrvScore: 80,
+              restingHrScore: 70,
+              sleepScore: 72,
+              respiratoryRateScore: 65,
+            },
+            weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
+          },
+        ]}
+        workloadRatio={{
+          displayedStrain: 12.5,
+          displayedDate: "2026-03-20",
+          timeSeries: [
+            {
+              date: "2026-03-20",
+              dailyLoad: 100,
+              strain: 12.5,
+              acuteLoad: 80,
+              chronicLoad: 70,
+              workloadRatio: 1.14,
+            },
+          ],
+        }}
+        sleepPerformance={null}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
     expect(screen.getByText("75")).toBeTruthy();
     expect(screen.getByText("Recovered")).toBeTruthy();
   });

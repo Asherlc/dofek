@@ -488,6 +488,7 @@ export const recoveryRouter = router({
 	                ON drhr.date = dm.date
               WHERE dm.user_id = ${ctx.userId}
                 AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
+                AND dm.date <= ${dateWindowEnd(input.endDate)}
                 ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
             )
             SELECT
@@ -552,6 +553,7 @@ export const recoveryRouter = router({
 
       for (const metrics of combinedRows) {
         if (metrics.date <= cutoffStr) continue;
+        if (metrics.date > input.endDate) continue;
 
         // HRV score: higher HRV = better recovery (positive z = good)
         let hrvScore = 62;

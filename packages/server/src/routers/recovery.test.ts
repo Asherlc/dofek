@@ -799,6 +799,47 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result[0]?.date).toBe(recentDateStr);
   });
 
+  it("filters out dates after the requested end date", async () => {
+    const rows = [
+      {
+        date: "2026-05-21",
+        hrv: 55,
+        resting_hr: 58,
+        respiratory_rate: 15,
+        hrv_mean_30d: 50,
+        hrv_sd_30d: 10,
+        rhr_mean_30d: 60,
+        rhr_sd_30d: 5,
+        rr_mean_30d: 15,
+        rr_sd_30d: 1,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-05-22",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        rhr_mean_30d: null,
+        rhr_sd_30d: null,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: null,
+      },
+    ];
+
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+      sensorStore: makeSensorStore([[], []]),
+    });
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-05-21" });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.date).toBe("2026-05-21");
+  });
+
   it("defaults to 62 for HRV score when hrv_sd_30d is 0", async () => {
     const today = new Date();
     const recentDate = new Date(today);
