@@ -400,7 +400,7 @@ describe("recoveryRouter", () => {
         },
       ];
       const caller = makeCaller(rows);
-      const result = await caller.readinessScore({ days: 30 });
+      const result = await caller.readinessScore({ days: 30, endDate: today });
 
       expect(result.length).toBeGreaterThan(0);
       const firstRow = result[0];

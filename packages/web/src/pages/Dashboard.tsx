@@ -579,6 +579,7 @@ export function Dashboard() {
 
       {/* Daily Overview — prominent at-a-glance scores */}
       <DailyOverview
+        endDate={endDate}
         readiness={readinessData.data}
         workloadRatio={workloadRatio.data}
         sleepPerformance={sleepPerformance.data}

@@ -6724,3 +6724,87 @@ projection instead of the stale legacy mirror.
 The migration still needs to run in production. `analytics.v_body_measurement`
 will remain stale until that deploy applies the new ClickHouse migration and the
 metric-stream mirror has enough current body rows for the projection to ingest.
+
+## 2026-05-22: Dashboard Recovery Data Missing From Future Readiness Row
+
+### Symptoms
+
+The dashboard showed no recovery status data even though the browser and
+dashboard date were the same local day. Public production health checks for
+`https://dofek.fit/healthz`, `https://dofek.asherlc.com/healthz`, and
+`https://dofek.live/healthz` timed out without a response.
+
+### User Impact
+
+The web dashboard could not reliably load recovery/readiness data. Because the
+public health endpoint also timed out, the impact was broader than a stale
+client-side date check.
+
+### Evidence
+
+`curl --max-time 5 -sS -w '\nHTTP %{http_code} time_total %{time_total}\n'
+https://dofek.fit/healthz` returned `curl: (28) Operation timed out after 5006
+milliseconds with 0 bytes received` and `HTTP 000`. SSH debugging was blocked:
+`ssh -o BatchMode=yes -o ConnectTimeout=5 dofek-server 'printf ok'` failed with
+`Connection timed out during banner exchange` to `157.90.25.125:22`.
+
+Sentry `dofek-server` errors for the prior 6 hours showed repeated
+`Error: getaddrinfo ENOTFOUND redis` at `2026-05-21T23:32:32Z` and
+`2026-05-21T23:32:33Z` under issue `DOFEK-SERVER-D`. No matching Sentry
+readiness/recovery errors appeared in the most recent hour, consistent with the
+host no longer serving or emitting useful app-level telemetry.
+
+Hetzner reported the `dofek` server as `running` on `cax21` with 4 CPU cores and
+8 GB RAM, but host metrics showed saturation after the `Deploy Web` run for
+commit `c86bea2b` completed at `2026-05-22T01:11:20Z`. CPU averaged
+`363.7` out of a 4-core maximum near `400` from `01:15Z` to `01:30Z`, then
+`359.1` from `01:30Z` to `01:45Z`. Disk read IOPS averaged `19,166` from
+`01:15Z` to `01:30Z` and `27,394` from `01:30Z` to `01:45Z`. The same deploy
+introduced the PeerDB dashboard exposure and upgraded PeerDB services to
+`stable-v0.36.19`.
+
+After the host recovered, `https://dofek.fit/healthz` returned `{"status":"ok"}`
+with HTTP 200, SSH worked, and `dofek_web` was healthy at 2/2 replicas. Web logs
+showed `recovery.readinessScore` returning HTTP 200 for user
+`f923fed7-d934-4cd9-8cb9-8e83020d0e69`, so the dashboard symptom was not a live
+transport failure. Redis contained cached readiness results for
+`{"days":30,"endDate":"2026-05-21"}` whose final row was `2026-05-22` with
+default component scores. Postgres `fitness.v_daily_metrics` also contained a
+`2026-05-22` row for the user even though the dashboard end date was
+`2026-05-21`.
+
+### Root Cause
+
+`recovery.readinessScore` applied the lower date bound from `endDate` but did
+not apply an upper `dm.date <= endDate` bound to `fitness.v_daily_metrics`. When
+the server was already on `2026-05-22` UTC but the browser/dashboard local day
+was still `2026-05-21`, the API returned a future `2026-05-22` readiness row.
+The dashboard picked the last row, treated it as neither today nor yesterday in
+the browser's local date, and rendered the recovery ring as no data. The earlier
+host saturation was a separate operational observation during investigation,
+not the direct cause of this specific dashboard empty state.
+
+### Fix or Mitigation
+
+No production mutation was performed during investigation. A code fix was
+prepared to add `dm.date <= endDate` to the readiness-score SQL window and to
+skip any combined readiness rows after `input.endDate` before returning results.
+This prevents future UTC-day rows from becoming the dashboard's latest recovery
+row for local-day requests.
+
+### Validation
+
+Added unit regressions proving `recovery.readinessScore` filters out rows after
+the requested end date and that the dashboard freshness check uses the queried
+date as its anchor. `pnpm lint`, root/server/web `pnpm tsc --noEmit`,
+`CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm test:changed`,
+`CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm test`, and
+`git diff --check` passed.
+
+### Remaining Risk
+
+The code fix still needs to be deployed before production will stop returning
+future readiness rows. The host also showed transient CPU and disk read
+saturation around the PeerDB deploy window; that should be tracked separately if
+it recurs, but it no longer requires a reboot while health checks and SSH are
+responsive.
