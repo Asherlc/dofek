@@ -215,6 +215,21 @@ ${replacingMergeTreeTable("(provider_id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(provider_id, source_name_pattern)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.sensor_provider_priority (
+  provider_id String,
+  channel String,
+  priority Int32,
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(provider_id, channel)")}`,
+    `CREATE TABLE IF NOT EXISTS postgres_fitness.sensor_device_priority (
+  provider_id String,
+  source_name_pattern String,
+  channel String,
+  priority Int32,
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(provider_id, source_name_pattern, channel)")}`,
     `CREATE TABLE IF NOT EXISTS postgres_fitness.user_profile (
   id UUID,
   name String,

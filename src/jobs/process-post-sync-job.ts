@@ -24,19 +24,6 @@ export async function processPostSyncJob(
   if (job.data.type === "global-maintenance") {
     logger.info("[post-sync] Running global post-sync maintenance");
 
-    try {
-      const { loadProviderPriorityConfig, syncProviderPriorities } = await import(
-        "../db/provider-priority.ts"
-      );
-      const config = loadProviderPriorityConfig();
-      if (config) {
-        await syncProviderPriorities(db, config);
-      }
-    } catch (err) {
-      logger.error(`[post-sync] Failed to sync provider priorities: ${err}`);
-      Sentry.captureException(err, { tags: { postSyncStep: "syncProviderPriorities" } });
-    }
-
     logger.info("[post-sync] Global post-sync maintenance complete");
     return;
   }

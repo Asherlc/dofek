@@ -1,6 +1,5 @@
 import assert from "node:assert";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { loadProviderPriorityConfig, syncProviderPriorities } from "../db/provider-priority.ts";
 import { dailyMetrics, sleepSession, TEST_USER_ID } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -11,10 +10,6 @@ let ctx: TestContext;
 beforeAll(async () => {
   ctx = await setupTestDatabase();
   await ensureProvider(ctx.db, "test-provider", "Test Provider");
-  const priorityConfig = loadProviderPriorityConfig();
-  if (priorityConfig) {
-    await syncProviderPriorities(ctx.db, priorityConfig);
-  }
 }, 120_000);
 
 afterAll(async () => {

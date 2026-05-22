@@ -52,6 +52,8 @@ const analyticsSourceTables = [
   "provider",
   "provider_priority",
   "device_priority",
+  "sensor_provider_priority",
+  "sensor_device_priority",
   "user_profile",
 ] as const;
 const peerDbMetadataColumns = [

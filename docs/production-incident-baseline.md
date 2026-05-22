@@ -6890,3 +6890,85 @@ future readiness rows. The host also showed transient CPU and disk read
 saturation around the PeerDB deploy window; that should be tracked separately if
 it recurs, but it no longer requires a reboot while health checks and SSH are
 responsive.
+
+## 2026-05-22 - PeerDB Metric Stream Sync Stale During Host Saturation
+
+### Symptoms
+
+The body weight chart stopped showing new Withings weight samples. Postgres had
+fresh `fitness.metric_stream` `body_weight` rows from 2026-05-21 and
+2026-05-22, but ClickHouse `postgres_fitness.metric_stream`,
+`analytics.body_measurement_sample`, and `analytics.v_body_measurement` were
+stale at 2026-05-20. PeerDB replication slots for metric-stream mirrors were
+inactive or lagging, and Docker Swarm tasks for PeerDB, ClickHouse, Postgres,
+web, and worker had restarted repeatedly.
+
+### User Impact
+
+New provider data was synced into Postgres but did not reach the ClickHouse
+analytics layer, so dashboard charts backed by ClickHouse read models showed
+stale values. The public `https://dofek.fit/healthz` endpoint recovered to HTTP
+200 during investigation, but the host remained under severe load.
+
+### Evidence
+
+The failing path was the PeerDB CDC mirror
+`dofek_metric_stream_analytics`, which reads from the Postgres publication
+`peerdb_metric_stream_no_imu` and writes to ClickHouse. PeerDB logs showed
+`activity Heartbeat timeout`, `context canceled`, and Docker DNS failures such
+as `lookup db on 127.0.0.11:53: no such host` and
+`lookup peerdb-catalog on 127.0.0.11:53: no such host` after Swarm task churn.
+The first fatal Postgres symptom observed during investigation was `FATAL: the
+database system is in recovery mode` after the kernel OOM-killed a Postgres
+process.
+
+The host was saturated while the sync was stale: `uptime` reported load average
+`113.20, 64.17, 44.63`; `free -h` showed 7.4 GiB used out of 7.5 GiB, 84 MiB
+free, 150 MiB available, and no swap. `ps` showed `clickhouse-server` using
+about 155% CPU and 4.0 GiB RSS, `netdata` using about 74% CPU and 334 MiB RSS,
+and Docker/containerd together using significant CPU. `docker ps` and
+`docker service ps` timed out under this load. Netdata repeatedly failed with
+`task: non-zero exit (137)`.
+
+ClickHouse query diagnostics captured a long-running
+`analytics.deduped_sensor` refresh query that inserted into a refreshable
+materialized-view inner table, scanned roughly 566 million rows / 44 GiB from
+`postgres_fitness.metric_stream FINAL`, ran for about 6.4 minutes, and used
+roughly 4.3 GiB of memory. The query shape matched the checked-in
+`analytics.deduped_sensor` refresh SQL, including `linked_best_source`,
+`ambient_best_source`, and `standalone_best_source` CTEs.
+
+### Root Cause
+
+The ClickHouse full-history `analytics.deduped_sensor` refresh is too expensive
+for the current single-node production host when it runs alongside Postgres,
+PeerDB, Docker Swarm, Netdata, and app traffic. It drives memory and CPU
+pressure high enough that Docker health checks, Swarm heartbeats, and internal
+DNS become unreliable; PeerDB then loses heartbeats or database connectivity,
+its CDC mirrors stop catching up, and ClickHouse-backed charts remain stale
+even though provider syncs are writing fresh rows to Postgres. Netdata's OOM
+restart loop is a secondary amplifier of the same host-saturation failure.
+
+### Fix or Mitigation
+
+No production mutation was performed during investigation. The durable fix
+should reduce or remove the full-history `analytics.deduped_sensor` refresh
+cost, then restart/reconcile PeerDB mirrors from a stable host state. Secondary
+cleanup should stop Netdata's OOM loop and remove or recreate any PeerDB mirrors
+whose replication slots are already `lost`, such as the observed provider
+inventory mirror.
+
+### Validation
+
+Validated that provider sync was not the failing layer by comparing fresh
+Postgres `body_weight` rows against stale ClickHouse raw and body read-model
+rows. Validated that the public app recovered with
+`https://dofek.fit/healthz` returning HTTP 200 and `{"status":"ok"}`. The
+underlying sync failure remains unresolved until ClickHouse refresh pressure is
+reduced and PeerDB catches up without heartbeat or Docker DNS failures.
+
+### Remaining Risk
+
+High. The current host can re-enter the same failure mode on the next expensive
+ClickHouse refresh. Until the refresh strategy is changed or capacity/isolation
+is added, PeerDB CDC freshness is not reliable, and chart staleness can recur.
