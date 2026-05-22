@@ -1,6 +1,6 @@
 ---
 name: diagnose-cdc
-description: Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, refreshable materialized view freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration.
+description: "Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, refreshable materialized view freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration."
 ---
 
 # Diagnose CDC
