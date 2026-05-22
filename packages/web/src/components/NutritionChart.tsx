@@ -1,3 +1,8 @@
+import {
+  formatCalories,
+  formatDateLong,
+  formatGrams,
+} from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import {
   chartColors,
@@ -25,7 +30,26 @@ interface NutritionChartProps {
 export function NutritionChart({ data, loading }: NutritionChartProps) {
   const option = {
     grid: dofekGrid("dualAxis"),
-    tooltip: dofekTooltip(),
+    tooltip: dofekTooltip({
+      formatter(
+        params: Array<{
+          seriesName: string;
+          value: [string, number | null];
+          marker: string;
+        }>,
+      ) {
+        const first = params[0];
+        if (!first) return "";
+        const lines = [`<strong>${formatDateLong(first.value[0])}</strong>`];
+        for (const param of params) {
+          const value = param.value[1];
+          const formatted =
+            param.seriesName === "Calories" ? formatCalories(value) : formatGrams(value);
+          lines.push(`${param.marker} ${param.seriesName}: ${formatted}`);
+        }
+        return lines.join("<br/>");
+      },
+    }),
     xAxis: dofekAxis.time(),
     yAxis: [
       dofekAxis.value({ name: "kcal", position: "left" }),
