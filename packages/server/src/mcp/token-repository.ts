@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 export const mcpScopeSchema = z.enum([
   "health:read",
@@ -18,10 +18,10 @@ export interface McpTokenMetadata {
   id: string;
   name: string;
   scopes: McpScope[];
-  createdAt: Date;
-  lastUsedAt: Date | null;
-  expiresAt: Date | null;
-  revokedAt: Date | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
 }
 
 export interface CreateMcpTokenInput {
@@ -53,18 +53,18 @@ const tokenMetadataRowSchema = z.object({
   id: z.string(),
   name: z.string(),
   scopes: z.array(mcpScopeSchema),
-  created_at: z.date(),
-  last_used_at: z.date().nullable().optional(),
-  expires_at: z.date().nullable().optional(),
-  revoked_at: z.date().nullable().optional(),
+  created_at: timestampStringSchema,
+  last_used_at: timestampStringSchema.nullable().optional(),
+  expires_at: timestampStringSchema.nullable().optional(),
+  revoked_at: timestampStringSchema.nullable().optional(),
 });
 
 const validTokenRowSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   scopes: z.array(mcpScopeSchema),
-  expires_at: z.date().nullable(),
-  revoked_at: z.date().nullable(),
+  expires_at: timestampStringSchema.nullable(),
+  revoked_at: timestampStringSchema.nullable(),
 });
 
 type ExecutableDatabase = Pick<Database, "execute">;
@@ -95,11 +95,15 @@ export async function createMcpToken(
 ): Promise<{ token: string; metadata: McpTokenMetadata }> {
   const token = generateMcpToken();
   const tokenHash = hashMcpToken(token);
+  const scopesArray = sql`ARRAY[${sql.join(
+    input.scopes.map((scope) => sql`${scope}`),
+    sql`, `,
+  )}]::text[]`;
   const rows = await executeWithSchema(
     db,
     tokenMetadataRowSchema,
     sql`INSERT INTO fitness.mcp_access_token (user_id, name, token_hash, scopes, expires_at)
-        VALUES (${input.userId}, ${input.name}, ${tokenHash}, ${input.scopes}, ${input.expiresAt})
+        VALUES (${input.userId}, ${input.name}, ${tokenHash}, ${scopesArray}, ${input.expiresAt})
         RETURNING id, name, scopes, created_at, last_used_at, expires_at, revoked_at`,
   );
   const row = rows[0];
@@ -123,7 +127,7 @@ export async function validateMcpToken(
         LIMIT 1`,
   );
   const row = rows[0];
-  if (!row || row.revoked_at || (row.expires_at && row.expires_at <= new Date())) {
+  if (!row || row.revoked_at || (row.expires_at && new Date(row.expires_at) <= new Date())) {
     return null;
   }
 

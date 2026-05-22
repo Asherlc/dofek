@@ -39,7 +39,7 @@ describe("mcpRouter", () => {
         id: "token-id",
         name: "Codex",
         scopes: ["health:read"],
-        created_at: new Date("2026-05-20T12:00:00Z"),
+        created_at: "2026-05-20T12:00:00.000Z",
         last_used_at: null,
         expires_at: null,
         revoked_at: null,
@@ -58,7 +58,7 @@ describe("mcpRouter", () => {
       id: "token-id",
       name: "Codex",
       scopes: ["health:read"],
-      createdAt: new Date("2026-05-20T12:00:00Z"),
+      createdAt: "2026-05-20T12:00:00.000Z",
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
@@ -75,9 +75,9 @@ describe("mcpRouter", () => {
         id: "token-id",
         name: "Codex",
         scopes: ["health:read"],
-        created_at: new Date("2026-05-20T12:00:00Z"),
+        created_at: "2026-05-20T12:00:00.000Z",
         last_used_at: null,
-        expires_at: new Date("2026-06-01T00:00:00Z"),
+        expires_at: "2026-06-01T00:00:00.000Z",
         revoked_at: null,
       },
     ]);
@@ -91,7 +91,7 @@ describe("mcpRouter", () => {
 
     const queryPayload = JSON.stringify(mockExecute.mock.calls[0]?.[0]);
     expect(queryPayload).toContain("2026-06-01T00:00:00.000Z");
-    expect(result.metadata.expiresAt).toEqual(new Date("2026-06-01T00:00:00Z"));
+    expect(result.metadata.expiresAt).toBe("2026-06-01T00:00:00.000Z");
   });
 
   it("lists token metadata without raw tokens or hashes", async () => {
@@ -100,8 +100,8 @@ describe("mcpRouter", () => {
         id: "token-id",
         name: "Codex",
         scopes: ["health:read", "activity:read"],
-        created_at: new Date("2026-05-20T12:00:00Z"),
-        last_used_at: new Date("2026-05-20T12:30:00Z"),
+        created_at: "2026-05-20T12:00:00.000Z",
+        last_used_at: "2026-05-20T12:30:00.000Z",
         expires_at: null,
         revoked_at: null,
       },
@@ -115,8 +115,8 @@ describe("mcpRouter", () => {
         id: "token-id",
         name: "Codex",
         scopes: ["health:read", "activity:read"],
-        createdAt: new Date("2026-05-20T12:00:00Z"),
-        lastUsedAt: new Date("2026-05-20T12:30:00Z"),
+        createdAt: "2026-05-20T12:00:00.000Z",
+        lastUsedAt: "2026-05-20T12:30:00.000Z",
         expiresAt: null,
         revokedAt: null,
       },
@@ -131,17 +131,17 @@ describe("mcpRouter", () => {
         id: "token-id",
         name: "Codex",
         scopes: ["health:read"],
-        created_at: new Date("2026-05-20T12:00:00Z"),
+        created_at: "2026-05-20T12:00:00.000Z",
         last_used_at: null,
         expires_at: null,
-        revoked_at: new Date("2026-05-20T13:00:00Z"),
+        revoked_at: "2026-05-20T13:00:00.000Z",
       },
     ]);
     const caller = createCaller(createContext("user-id"));
 
     const result = await caller.revokeToken({ tokenId: "00000000-0000-0000-0000-000000000001" });
 
-    expect(result?.revokedAt).toEqual(new Date("2026-05-20T13:00:00Z"));
+    expect(result?.revokedAt).toBe("2026-05-20T13:00:00.000Z");
   });
 
   it("rejects revoking a token that does not belong to the user", async () => {

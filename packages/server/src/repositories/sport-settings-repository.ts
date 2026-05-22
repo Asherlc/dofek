@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schema for raw DB rows
@@ -19,8 +19,8 @@ const sportSettingsDbSchema = z.object({
   pace_zone_pcts: z.unknown().nullable(),
   effective_from: z.string(),
   notes: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: timestampStringSchema,
+  updated_at: timestampStringSchema,
 });
 
 // ---------------------------------------------------------------------------
