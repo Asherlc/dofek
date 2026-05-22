@@ -116,7 +116,11 @@ export class SupplementsRepository {
           })
           .returning({ id: supplement.id });
 
-        if (!supplementRow?.id) continue;
+        if (!supplementRow?.id) {
+          throw new Error(
+            `Supplement insert did not return an id (name="${entry.name}", index=${index})`,
+          );
+        }
         const nutrientEntries = nutrientAmountEntriesFromLegacyFields(entry);
         if (nutrientEntries.length > 0) {
           await tx.insert(supplementNutrient).values(

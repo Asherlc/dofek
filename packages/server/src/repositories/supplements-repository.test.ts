@@ -251,12 +251,11 @@ describe("SupplementsRepository", () => {
     expect(supplementInsert?.sortOrder).toBe(0);
   });
 
-  it("save skips nutrient insert when supplement insert returns no id", async () => {
+  it("save throws when supplement insert returns no id, before any nutrient insert", async () => {
     const { repo, insertCalls } = makeRepository(undefined, { returningRows: [] });
-    await expect(repo.save([{ name: "Fish Oil", omega3Mg: 500 }])).resolves.toEqual({
-      success: true,
-      count: 1,
-    });
+    await expect(repo.save([{ name: "Fish Oil", omega3Mg: 500 }])).rejects.toThrow(
+      /Supplement insert did not return an id.*Fish Oil/,
+    );
     expect(insertCalls).toHaveLength(1);
   });
 

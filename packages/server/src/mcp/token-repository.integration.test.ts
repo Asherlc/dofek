@@ -1,12 +1,17 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   createMcpToken,
   listMcpTokens,
   revokeMcpToken,
   validateMcpToken,
 } from "./token-repository.ts";
+
+const insertedUserRowSchema = z.object({ id: z.string() });
+const tokenScopesRowSchema = z.object({ scopes: z.array(z.string()) });
 
 describe("MCP token repository (integration)", () => {
   let ctx: TestContext;
@@ -23,7 +28,9 @@ describe("MCP token repository (integration)", () => {
   beforeEach(async () => {
     await ctx.db.execute(sql`DELETE FROM fitness.mcp_access_token`);
     await ctx.db.execute(sql`DELETE FROM fitness.user_profile WHERE email = 'mcp-test@test.com'`);
-    const rows = await ctx.db.execute<{ id: string }>(
+    const rows = await executeWithSchema(
+      ctx.db,
+      insertedUserRowSchema,
       sql`INSERT INTO fitness.user_profile (name, email)
           VALUES ('MCP Test User', 'mcp-test@test.com') RETURNING id`,
     );
@@ -48,7 +55,9 @@ describe("MCP token repository (integration)", () => {
       "sync:write",
     ]);
 
-    const raw = await ctx.db.execute<{ scopes: string[] }>(
+    const raw = await executeWithSchema(
+      ctx.db,
+      tokenScopesRowSchema,
       sql`SELECT scopes FROM fitness.mcp_access_token WHERE id = ${created.metadata.id}::uuid`,
     );
     expect(raw[0]?.scopes).toEqual([
