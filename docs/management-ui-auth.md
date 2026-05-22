@@ -7,6 +7,7 @@ Traefik forward auth:
 - Databasus
 - CloudBeaver
 - pgAdmin
+- PeerDB
 - Netdata
 
 The Dofek stack runs a local Authentik proxy outpost service named
@@ -47,6 +48,7 @@ for host in \
   databasus.dofek.asherlc.com \
   cloudbeaver.dofek.asherlc.com \
   pgadmin.dofek.asherlc.com \
+  peerdb.dofek.asherlc.com \
   netdata.dofek.asherlc.com
 do
   curl -sk -o /dev/null -w "$host %{http_code}\n" \

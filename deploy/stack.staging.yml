@@ -20,6 +20,10 @@ services:
     deploy:
       replicas: 0
 
+  peerdb-ui:
+    deploy:
+      replicas: 0
+
   portainer:
     deploy:
       replicas: 0

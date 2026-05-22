@@ -70,6 +70,16 @@ on:
         required: false
         type: string
         default: ""
+      peerdb_public_url:
+        description: "Public PeerDB UI URL"
+        required: false
+        type: string
+        default: https://peerdb.dofek.asherlc.com
+      peerdb_host_rule:
+        description: "Traefik Host() rule for PeerDB UI"
+        required: false
+        type: string
+        default: ""
       dispatching_run_id:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
@@ -157,6 +167,8 @@ jobs:
           DATABASUS_HOST_RULE_INPUT: ${{ inputs.databasus_host_rule }}
           CLOUDBEAVER_HOST_RULE_INPUT: ${{ inputs.cloudbeaver_host_rule }}
           PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
+          PEERDB_PUBLIC_URL_INPUT: ${{ inputs.peerdb_public_url || 'https://peerdb.dofek.asherlc.com' }}
+          PEERDB_HOST_RULE_INPUT: ${{ inputs.peerdb_host_rule }}
         run: |
           # deploy/stack.staging.yml overlays staging-only adjustments
           # (e.g. scaling heavy dev/ops UIs to zero on the 4 GB box).
@@ -172,6 +184,7 @@ jobs:
             echo "STACK_NAME=$STACK_NAME"
             echo "PUBLIC_URL=$PUBLIC_URL_INPUT"
             echo "OTA_BASE_URL=$OTA_BASE_URL_INPUT"
+            echo "PEERDB_PUBLIC_URL=$PEERDB_PUBLIC_URL_INPUT"
             echo "STACK_FILE_FLAGS=$STACK_FILE_FLAGS"
           } >> "$GITHUB_ENV"
 
@@ -195,6 +208,7 @@ jobs:
           write_multiline_env DATABASUS_HOST_RULE "$DATABASUS_HOST_RULE_INPUT"
           write_multiline_env CLOUDBEAVER_HOST_RULE "$CLOUDBEAVER_HOST_RULE_INPUT"
           write_multiline_env PGADMIN_HOST_RULE "$PGADMIN_HOST_RULE_INPUT"
+          write_multiline_env PEERDB_HOST_RULE "$PEERDB_HOST_RULE_INPUT"
 
       - name: Create dotenv command runner
         run: |
@@ -279,10 +293,11 @@ jobs:
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
           docker pull "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"
           docker pull "postgres:18-alpine"
-          docker pull "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18"
-          docker pull "ghcr.io/peerdb-io/flow-api:stable-v0.36.18"
-          docker pull "ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.18"
-          docker pull "ghcr.io/peerdb-io/flow-worker:stable-v0.36.18"
+          docker pull "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19"
+          docker pull "ghcr.io/peerdb-io/flow-api:stable-v0.36.19"
+          docker pull "ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19"
+          docker pull "ghcr.io/peerdb-io/flow-worker:stable-v0.36.19"
+          docker pull "ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19"
           docker pull "temporalio/auto-setup:1.29"
           docker pull "temporalio/admin-tools:1.29"
           docker pull "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"

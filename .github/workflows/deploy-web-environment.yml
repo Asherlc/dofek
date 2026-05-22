@@ -81,6 +81,16 @@ on:
         required: false
         type: string
         default: ""
+      peerdb_public_url:
+        description: "Public PeerDB UI URL"
+        required: false
+        type: string
+        default: https://peerdb.dofek.asherlc.com
+      peerdb_host_rule:
+        description: "Traefik Host() rule for PeerDB UI"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -164,5 +174,7 @@ jobs:
       databasus_host_rule: ${{ inputs.databasus_host_rule }}
       cloudbeaver_host_rule: ${{ inputs.cloudbeaver_host_rule }}
       pgadmin_host_rule: ${{ inputs.pgadmin_host_rule }}
+      peerdb_public_url: ${{ inputs.peerdb_public_url }}
+      peerdb_host_rule: ${{ inputs.peerdb_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit

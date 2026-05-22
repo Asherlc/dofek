@@ -76,4 +76,6 @@ jobs:
       databasus_host_rule: 'Host(`staging-databasus.dofek.asherlc.com`)'
       cloudbeaver_host_rule: 'Host(`staging-cloudbeaver.dofek.asherlc.com`)'
       pgadmin_host_rule: 'Host(`staging-pgadmin.dofek.asherlc.com`)'
+      peerdb_public_url: https://staging-peerdb.dofek.asherlc.com
+      peerdb_host_rule: 'Host(`staging-peerdb.dofek.asherlc.com`)'
     secrets: inherit
