@@ -8,10 +8,10 @@ type MockMcpToken = {
   id: string;
   name: string;
   scopes: string[];
-  createdAt: Date;
-  lastUsedAt: Date | null;
-  expiresAt: Date | null;
-  revokedAt: Date | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
 };
 
 const listTokensQuery: {
@@ -113,7 +113,7 @@ describe("McpTokensPanel", () => {
         id: "token-id",
         name: "Codex",
         scopes: ["health:read"],
-        createdAt: new Date("2026-05-20T12:00:00Z"),
+        createdAt: "2026-05-20T12:00:00Z",
         lastUsedAt: null,
         expiresAt: null,
         revokedAt: null,
@@ -144,7 +144,7 @@ describe("McpTokensPanel", () => {
         id: "00000000-0000-0000-0000-000000000001",
         name: "Codex",
         scopes: ["health:read"],
-        createdAt: new Date("2026-05-20T12:00:00Z"),
+        createdAt: "2026-05-20T12:00:00Z",
         lastUsedAt: null,
         expiresAt: null,
         revokedAt: null,
@@ -154,10 +154,10 @@ describe("McpTokensPanel", () => {
       id: "00000000-0000-0000-0000-000000000001",
       name: "Codex",
       scopes: ["health:read"],
-      createdAt: new Date("2026-05-20T12:00:00Z"),
+      createdAt: "2026-05-20T12:00:00Z",
       lastUsedAt: null,
       expiresAt: null,
-      revokedAt: new Date("2026-05-20T12:30:00Z"),
+      revokedAt: "2026-05-20T12:30:00Z",
     });
 
     render(<McpTokensPanel />);
@@ -178,9 +178,9 @@ describe("McpTokensPanel", () => {
         id: "00000000-0000-0000-0000-000000000001",
         name: "Codex",
         scopes: ["health:read", "providers:read"],
-        createdAt: new Date("2026-05-20T12:00:00Z"),
+        createdAt: "2026-05-20T12:00:00Z",
         lastUsedAt: null,
-        expiresAt: new Date("2026-06-01T00:00:00Z"),
+        expiresAt: "2026-06-01T00:00:00Z",
         revokedAt: null,
       },
     ];
@@ -190,9 +190,9 @@ describe("McpTokensPanel", () => {
         id: "00000000-0000-0000-0000-000000000002",
         name: "Codex",
         scopes: ["health:read", "providers:read"],
-        createdAt: new Date("2026-05-21T12:00:00Z"),
+        createdAt: "2026-05-21T12:00:00Z",
         lastUsedAt: null,
-        expiresAt: new Date("2026-06-01T00:00:00Z"),
+        expiresAt: "2026-06-01T00:00:00Z",
         revokedAt: null,
       },
     });
@@ -200,10 +200,10 @@ describe("McpTokensPanel", () => {
       id: "00000000-0000-0000-0000-000000000001",
       name: "Codex",
       scopes: ["health:read", "providers:read"],
-      createdAt: new Date("2026-05-20T12:00:00Z"),
+      createdAt: "2026-05-20T12:00:00Z",
       lastUsedAt: null,
-      expiresAt: new Date("2026-06-01T00:00:00Z"),
-      revokedAt: new Date("2026-05-21T12:01:00Z"),
+      expiresAt: "2026-06-01T00:00:00Z",
+      revokedAt: "2026-05-21T12:01:00Z",
     });
 
     render(<McpTokensPanel />);
@@ -231,7 +231,7 @@ describe("McpTokensPanel", () => {
         id: "00000000-0000-0000-0000-000000000001",
         name: "Codex",
         scopes: ["health:read", "providers:read"],
-        createdAt: new Date("2026-05-20T12:00:00Z"),
+        createdAt: "2026-05-20T12:00:00Z",
         lastUsedAt: null,
         expiresAt: null,
         revokedAt: null,
@@ -243,7 +243,7 @@ describe("McpTokensPanel", () => {
         id: "00000000-0000-0000-0000-000000000002",
         name: "Codex",
         scopes: ["health:read", "providers:read"],
-        createdAt: new Date("2026-05-21T12:00:00Z"),
+        createdAt: "2026-05-21T12:00:00Z",
         lastUsedAt: null,
         expiresAt: null,
         revokedAt: null,
@@ -276,7 +276,7 @@ describe("McpTokensPanel", () => {
         id: "00000000-0000-0000-0000-000000000001",
         name: "Codex",
         scopes: ["health:read"],
-        createdAt: new Date("2026-05-20T12:00:00Z"),
+        createdAt: "2026-05-20T12:00:00Z",
         lastUsedAt: null,
         expiresAt: null,
         revokedAt: null,

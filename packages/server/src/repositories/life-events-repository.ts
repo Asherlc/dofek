@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyComparisonRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
@@ -19,7 +19,7 @@ const lifeEventRowSchema = z.object({
   category: z.string().nullable(),
   ongoing: z.coerce.boolean(),
   notes: z.string().nullable(),
-  created_at: z.string(),
+  created_at: timestampStringSchema,
 });
 
 /** Schema for life event rows from RETURNING * (includes user_id) */

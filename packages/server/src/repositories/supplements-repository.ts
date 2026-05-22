@@ -8,7 +8,7 @@ import {
 import { supplement, supplementNutrient } from "dofek/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -43,8 +43,8 @@ const supplementViewRowSchema = z
     meal: z.string().nullable(),
     sort_order: z.number(),
     nutrition_data_id: z.string().nullable(),
-    created_at: z.string(),
-    updated_at: z.string(),
+    created_at: timestampStringSchema,
+    updated_at: timestampStringSchema,
   })
   .merge(nutrientRowSchema);
 
@@ -101,35 +101,35 @@ export class SupplementsRepository {
       // Delete existing supplements; supplement_nutrient cascades automatically.
       await tx.delete(supplement).where(eq(supplement.userId, this.#userId));
 
-      if (supplements.length > 0) {
-        for (let index = 0; index < supplements.length; index++) {
-          const entry = supplements[index];
-          if (!entry) continue;
-          const [supplementRow] = await tx
-            .insert(supplement)
-            .values({
-              userId: this.#userId,
-              name: entry.name,
-              amount: entry.amount ?? null,
-              unit: entry.unit ?? null,
-              form: entry.form ?? null,
-              description: entry.description ?? null,
-              meal: entry.meal ?? null,
-              sortOrder: index,
-            })
-            .returning({ id: supplement.id });
+      for (const [index, entry] of supplements.entries()) {
+        const [supplementRow] = await tx
+          .insert(supplement)
+          .values({
+            userId: this.#userId,
+            name: entry.name,
+            amount: entry.amount ?? null,
+            unit: entry.unit ?? null,
+            form: entry.form ?? null,
+            description: entry.description ?? null,
+            meal: entry.meal ?? null,
+            sortOrder: index,
+          })
+          .returning({ id: supplement.id });
 
-          if (!supplementRow?.id) continue;
-          const nutrientEntries = nutrientAmountEntriesFromLegacyFields(entry);
-          if (nutrientEntries.length > 0) {
-            await tx.insert(supplementNutrient).values(
-              nutrientEntries.map((nutrientEntry) => ({
-                supplementId: supplementRow.id,
-                nutrientId: nutrientEntry.nutrientId,
-                amount: nutrientEntry.amount,
-              })),
-            );
-          }
+        if (!supplementRow?.id) {
+          throw new Error(
+            `Supplement insert did not return an id (name="${entry.name}", index=${index})`,
+          );
+        }
+        const nutrientEntries = nutrientAmountEntriesFromLegacyFields(entry);
+        if (nutrientEntries.length > 0) {
+          await tx.insert(supplementNutrient).values(
+            nutrientEntries.map((nutrientEntry) => ({
+              supplementId: supplementRow.id,
+              nutrientId: nutrientEntry.nutrientId,
+              amount: nutrientEntry.amount,
+            })),
+          );
         }
       }
     });

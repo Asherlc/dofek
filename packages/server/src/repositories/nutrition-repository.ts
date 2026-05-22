@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -70,7 +70,7 @@ const nutritionDailyDbSchema = z.object({
   fat_g: z.coerce.number().nullable(),
   fiber_g: z.coerce.number().nullable(),
   water_ml: z.coerce.number().nullable(),
-  created_at: z.string(),
+  created_at: timestampStringSchema,
 });
 
 // ---------------------------------------------------------------------------

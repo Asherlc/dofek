@@ -164,7 +164,7 @@ function setupRoutes(
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
     app.get("/auth/dev-login", async (_req, res) => {
       const { setSessionCookie } = await import("./auth/cookies.ts");
-      const rows = await db.execute<{ id: string; expires_at: Date }>(
+      const rows = await db.execute<{ id: string; expires_at: string }>(
         sql`SELECT id, expires_at FROM fitness.session WHERE id = 'dev-session' LIMIT 1`,
       );
       const row = rows[0];

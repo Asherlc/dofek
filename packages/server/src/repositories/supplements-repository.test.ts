@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   type Supplement,
   SupplementsRepository,
   toApiSupplement,
 } from "./supplements-repository.ts";
+
+const supplementInsertValuesSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  amount: z.number().nullable(),
+  unit: z.string().nullable(),
+  form: z.string().nullable(),
+  description: z.string().nullable(),
+  meal: z.string().nullable(),
+  sortOrder: z.number(),
+});
 
 /** All nutrient columns set to null, matching the DB view's snake_case shape. */
 const NULL_NUTRIENTS: Record<string, null> = {
@@ -116,27 +128,39 @@ describe("toApiSupplement", () => {
 // ---------------------------------------------------------------------------
 
 describe("SupplementsRepository", () => {
-  function makeRepository(rows: Record<string, unknown>[] = []) {
+  interface InsertCall {
+    table: unknown;
+    values: unknown;
+  }
+
+  function makeRepository(
+    rows: Record<string, unknown>[] = [],
+    options: { returningRows?: Array<{ id?: string }> } = {},
+  ) {
     const execute = vi.fn().mockResolvedValue(rows);
     const selectReturn = {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
     };
-    const insertReturn = {
-      values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "nd-1" }]),
-      }),
-    };
     const deleteReturn = {
       where: vi.fn().mockResolvedValue(undefined),
     };
+    const insertCalls: InsertCall[] = [];
+    const returningRows = options.returningRows ?? [{ id: "nd-1" }];
     const mockTransaction = vi
       .fn()
       .mockImplementation(async (callback: (tx: Record<string, unknown>) => Promise<unknown>) => {
         const transactionContext = {
           select: vi.fn().mockReturnValue(selectReturn),
-          insert: vi.fn().mockReturnValue(insertReturn),
+          insert: vi.fn().mockImplementation((table: unknown) => ({
+            values: vi.fn().mockImplementation((values: unknown) => {
+              insertCalls.push({ table, values });
+              return {
+                returning: vi.fn().mockResolvedValue(returningRows),
+              };
+            }),
+          })),
           delete: vi.fn().mockReturnValue(deleteReturn),
           execute: vi.fn().mockResolvedValue([]),
         };
@@ -147,7 +171,7 @@ describe("SupplementsRepository", () => {
       transaction: mockTransaction,
     };
     const repo = new SupplementsRepository(db, "user-1");
-    return { repo, execute, transaction: mockTransaction };
+    return { repo, execute, transaction: mockTransaction, insertCalls };
   }
 
   it("list returns empty array when no data", async () => {
@@ -199,5 +223,45 @@ describe("SupplementsRepository", () => {
     const result = await repo.save(supplements);
     expect(result).toEqual({ success: true, count: 2 });
     expect(transaction).toHaveBeenCalledOnce();
+  });
+
+  it("save passes optional supplement fields through to insert when provided", async () => {
+    const { repo, insertCalls } = makeRepository();
+    await repo.save([
+      {
+        name: "Vitamin D",
+        amount: 5000,
+        unit: "IU",
+        form: "softgel",
+        description: "Daily vitamin D3",
+        meal: "breakfast",
+      },
+    ]);
+    const parsedInserts = insertCalls
+      .map((call) => supplementInsertValuesSchema.safeParse(call.values))
+      .filter((result) => result.success)
+      .map((result) => result.data);
+    const supplementInsert = parsedInserts.find((values) => values.name === "Vitamin D");
+    expect(supplementInsert).toBeDefined();
+    expect(supplementInsert?.amount).toBe(5000);
+    expect(supplementInsert?.unit).toBe("IU");
+    expect(supplementInsert?.form).toBe("softgel");
+    expect(supplementInsert?.description).toBe("Daily vitamin D3");
+    expect(supplementInsert?.meal).toBe("breakfast");
+    expect(supplementInsert?.sortOrder).toBe(0);
+  });
+
+  it("save throws when supplement insert returns no id, before any nutrient insert", async () => {
+    const { repo, insertCalls } = makeRepository(undefined, { returningRows: [] });
+    await expect(repo.save([{ name: "Fish Oil", omega3Mg: 500 }])).rejects.toThrow(
+      /Supplement insert did not return an id.*Fish Oil/,
+    );
+    expect(insertCalls).toHaveLength(1);
+  });
+
+  it("save does not insert nutrients when supplement has no nutrient fields", async () => {
+    const { repo, insertCalls } = makeRepository();
+    await repo.save([{ name: "Vitamin D", amount: 5000, unit: "IU" }]);
+    expect(insertCalls).toHaveLength(1);
   });
 });
