@@ -434,7 +434,23 @@ async function reconcileMetricStreamAnalyticsMirror(peerDbClient: PeerDbClient):
   }
 }
 
-async function reconcileRawAnalyticsMirrors(peerDbClient: PeerDbClient): Promise<void> {
+async function truncateClickHouseDestinationTables(
+  clickHouseClient: ClickHouseCommandClient,
+  tableNames: readonly string[],
+): Promise<void> {
+  await Promise.all(
+    tableNames.map((tableName) =>
+      clickHouseClient.command({
+        query: `TRUNCATE TABLE IF EXISTS postgres_fitness.${tableName}`,
+      }),
+    ),
+  );
+}
+
+async function reconcileRawAnalyticsMirrors(
+  peerDbClient: PeerDbClient,
+  clickHouseClient: ClickHouseCommandClient,
+): Promise<void> {
   const mirrorNames = Object.keys(rawAnalyticsMirrorTableMappings);
   const mirrorNameRows = mirrorNames.map((mirrorName) => `('${mirrorName}')`).join(", ");
   const result = await peerDbClient.query(`
@@ -458,6 +474,7 @@ async function reconcileRawAnalyticsMirrors(peerDbClient: PeerDbClient): Promise
 
     if (tableNames.some((tableName) => !mirrorConfig.includes(tableName))) {
       await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
+      await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }
   }
 }
@@ -467,7 +484,7 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
   await reconcileMetricStreamAnalyticsMirror(options.peerDbClient);
-  await reconcileRawAnalyticsMirrors(options.peerDbClient);
+  await reconcileRawAnalyticsMirrors(options.peerDbClient, options.clickHouseClient);
   const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);
