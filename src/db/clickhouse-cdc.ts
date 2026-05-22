@@ -438,11 +438,13 @@ async function truncateClickHouseDestinationTables(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
 ): Promise<void> {
-  for (const tableName of tableNames) {
-    await clickHouseClient.command({
-      query: `TRUNCATE TABLE IF EXISTS postgres_fitness.${tableName}`,
-    });
-  }
+  await Promise.all(
+    tableNames.map((tableName) =>
+      clickHouseClient.command({
+        query: `TRUNCATE TABLE IF EXISTS postgres_fitness.${tableName}`,
+      }),
+    ),
+  );
 }
 
 async function reconcileRawAnalyticsMirrors(
