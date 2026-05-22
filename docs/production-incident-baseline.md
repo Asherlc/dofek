@@ -6972,3 +6972,54 @@ reduced and PeerDB catches up without heartbeat or Docker DNS failures.
 High. The current host can re-enter the same failure mode on the next expensive
 ClickHouse refresh. Until the refresh strategy is changed or capacity/isolation
 is added, PeerDB CDC freshness is not reliable, and chart staleness can recur.
+
+## 2026-05-22: Production Deploy Failed on Temporal Readiness Probe
+
+### Symptoms
+
+Deploy Web run `26264118110`, job `77303730049`, failed in
+`Deploy Web Production / Deploy Web Stack` at `Wait for Temporal`. The stack
+deploy had already completed, PeerDB was reachable, and the following
+post-deploy `Ensure PeerDB Temporal search attributes` and
+`Configure ClickHouse CDC` steps were skipped.
+
+### User Impact
+
+The production deploy workflow reported failure after applying the stack, so
+post-deploy CDC reconciliation did not run in that workflow attempt.
+
+### Evidence
+
+The failing command was the `Wait for Temporal` readiness loop:
+`timeout "${per_attempt_timeout}s" docker run --rm --network "${STACK_NAME}_default"
+--entrypoint temporal temporalio/admin-tools:1.29 --address
+peerdb-temporal:7233 --namespace default --color never operator
+search-attribute list`.
+
+The fatal line was `Temporal frontend did not become reachable within 180s`.
+However, the final captured command output printed the Temporal search
+attribute table, including `MirrorName`, immediately before diagnostics ran.
+Service diagnostics at failure time showed `dofek_peerdb-temporal` and
+`dofek_peerdb-catalog` both running for 11 minutes, and catalog logs showed the
+database ready to accept connections.
+
+### Root Cause
+
+The readiness probe used `operator search-attribute list`, which is heavier
+than a frontend health check and could exceed the 10-second per-attempt timeout
+even after the Temporal frontend had become reachable. The outer 180-second
+deadline then reported Temporal as unreachable despite the final command
+already returning valid search-attribute data.
+
+### Fix or Mitigation
+
+Changed the `Wait for Temporal` readiness probe to use the Temporal CLI's
+lightweight `operator cluster health` command. The search-attribute listing
+remains in the next step, where it is the actual semantic validation and has its
+own longer timeout.
+
+### Remaining Risk
+
+This fixes the workflow's readiness probe semantics, but the deploy path still
+needs a successful Actions rerun to prove production post-deploy CDC
+reconciliation reaches completion.
