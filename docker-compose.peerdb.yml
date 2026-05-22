@@ -172,7 +172,7 @@ services:
       PEERDB_CATALOG_DATABASE: postgres
       PEERDB_PASSWORD: ${POSTGRES_PASSWORD:-health}
       PEERDB_FLOW_SERVER_HTTP: http://peerdb-flow-api:8113
-      NEXTAUTH_SECRET: ${POSTGRES_PASSWORD:-health}
+      NEXTAUTH_SECRET: ${PEERDB_UI_NEXTAUTH_SECRET:-local-dev-peerdb-ui-nextauth-secret-rotate-before-shared-use}
       NEXTAUTH_URL: ${PEERDB_UI_PUBLIC_URL:-http://localhost:3001}
     restart: unless-stopped
     ports:

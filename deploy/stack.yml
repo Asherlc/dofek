@@ -350,7 +350,7 @@ services:
       PEERDB_CATALOG_DATABASE: postgres
       PEERDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       PEERDB_FLOW_SERVER_HTTP: http://peerdb-flow-api:8113
-      NEXTAUTH_SECRET: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      NEXTAUTH_SECRET: ${PEERDB_UI_NEXTAUTH_SECRET:?PEERDB_UI_NEXTAUTH_SECRET is required}
       NEXTAUTH_URL: ${PEERDB_PUBLIC_URL:-https://peerdb.dofek.asherlc.com}
     deploy:
       resources:
