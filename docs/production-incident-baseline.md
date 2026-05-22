@@ -7204,3 +7204,57 @@ This fixes the deploy control-loop failure mode. The underlying ClickHouse
 refresh load is still high because several refreshable materialized views scan
 `postgres_fitness.metric_stream FINAL`; longer-term work should make those read
 models incremental or otherwise reduce full-table refresh pressure.
+
+## 2026-05-22: Production Temporal Readiness Failed During Raw Mirror Snapshot
+
+### Symptoms
+
+Deploy Web run `26316889909`, job `77477969270`, passed staging and got past
+the previous production migration and stack-deploy failure points, then failed
+production in `Wait for Temporal` with `Temporal frontend did not become
+reachable within 180s`.
+
+### User Impact
+
+Production became slow/unavailable during the pressure window. Public
+`/healthz` requests timed out, and direct SSH probes intermittently timed out
+during banner exchange.
+
+### Evidence
+
+The failing command was the Temporal readiness probe:
+`docker run --rm --network dofek_default --entrypoint temporal
+temporalio/admin-tools:1.29 --address peerdb-temporal:7233 --namespace default
+--color never operator cluster health`.
+
+The fatal line was `Temporal frontend did not become reachable within 180s`.
+Temporal logs during the failure contained repeated persistence timeouts such
+as `Persistent fetch operation Failure`, `GetWorkflowExecution ... context
+deadline exceeded`, and `Persistent store operation failure` on
+`/_sys/snapshot-flow-task-queue/2`. The active workflow IDs included
+`qrep-part-clone_dofek_fitness_raw_analytics...`, showing PeerDB snapshot work
+for the raw analytics mirror. Live host evidence after the failure showed load
+average above `100` and `/healthz` timing out.
+
+### Root Cause
+
+The absent raw analytics mirror recovery path truncated existing ClickHouse
+destination tables and then recreated the raw PeerDB mirror with
+`do_initial_copy = true`. On production, that started a large PeerDB initial
+snapshot/backfill through Temporal and the PeerDB catalog Postgres on the same
+single-node host, saturating the host and making Temporal persistence calls time
+out.
+
+### Fix or Mitigation
+
+Changed ClickHouse CDC setup so an absent raw analytics mirror checks
+ClickHouse `system.parts` for existing destination rows. If rows already exist,
+the setup recreates that mirror as CDC-only with `do_initial_copy = false` and
+does not truncate the destination tables. Empty destinations still use initial
+copy for fresh environments.
+
+### Remaining Risk
+
+The failed deploy already started production PeerDB snapshot work, so the host
+may need to drain that work before a clean rerun can complete. A deploy rerun is
+required after the corrected image is built and the host is responsive.

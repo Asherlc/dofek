@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ClickHouseCommandClient } from "./clickhouse.ts";
 
 const peerDbClientMocks = vi.hoisted(() => ({
   Client: vi.fn(),
@@ -12,6 +13,7 @@ const clickHouseClientMocks = vi.hoisted(() => ({
   close: vi.fn(),
   command: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
+  query: vi.fn(),
 }));
 
 vi.mock("pg", () => ({
@@ -42,6 +44,24 @@ function isPeerDbMirrorReconciliationQuery(queryText: string): boolean {
     queryText.includes("metric_stream_analytics_point_exclude_position") ||
     queryText.includes("raw_analytics_mirror_config")
   );
+}
+
+function createTestClickHouseClient(
+  commands: string[] = [],
+  destinationRowCount = 0,
+): ClickHouseCommandClient {
+  return {
+    async command(options) {
+      commands.push(options.query);
+    },
+    async query<TRow extends object>() {
+      return {
+        async json(): Promise<TRow[]> {
+          return JSON.parse(`[{"row_count":${destinationRowCount}}]`);
+        },
+      };
+    },
+  };
 }
 
 describe("PeerDB ClickHouse CDC setup", () => {
@@ -77,6 +97,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     peerDbClientMocks.end.mockReset().mockResolvedValue(undefined);
     peerDbClientMocks.query.mockReset().mockResolvedValue(undefined);
     clickHouseClientMocks.command.mockReset().mockResolvedValue(undefined);
+    clickHouseClientMocks.query.mockReset().mockResolvedValue({
+      json: async () => [{ row_count: 0 }],
+    });
     clickHouseClientMocks.close.mockReset().mockResolvedValue(undefined);
     clickHouseClientMocks.createClickHouseClientFromEnv
       .mockReset()
@@ -163,11 +186,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
           sourcePostgresQueries.push(queryText);
         },
       },
-      clickHouseClient: {
-        async command(options) {
-          clickHouseCommands.push(options.query);
-        },
-      },
+      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
       templateSql: "host = {{POSTGRES_HOST}}, password = {{POSTGRES_CREDENTIAL}}",
       templateValues: {
         clickHouseHost: "clickhouse",
@@ -211,9 +230,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
         sourcePostgresClient: {
           async query() {},
         },
-        clickHouseClient: {
-          async command() {},
-        },
+        clickHouseClient: createTestClickHouseClient(),
         templateSql: "missing = {{MISSING_VALUE}}",
         templateValues: {
           clickHouseHost: "clickhouse",
@@ -250,9 +267,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
           sourcePostgresQueries.push(queryText);
         },
       },
-      clickHouseClient: {
-        async command() {},
-      },
+      clickHouseClient: createTestClickHouseClient(),
       templateSql,
       templateValues: {
         clickHouseHost: "clickhouse",
@@ -317,9 +332,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       sourcePostgresClient: {
         async query() {},
       },
-      clickHouseClient: {
-        async command() {},
-      },
+      clickHouseClient: createTestClickHouseClient(),
       templateSql,
       templateValues: {
         clickHouseHost: "clickhouse",
@@ -377,11 +390,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       sourcePostgresClient: {
         async query() {},
       },
-      clickHouseClient: {
-        async command(options) {
-          clickHouseCommands.push(options.query);
-        },
-      },
+      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
       templateSql,
       templateValues: {
         clickHouseHost: "clickhouse",
@@ -409,7 +418,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
   });
 
-  it("truncates raw analytics tables when a do-initial-copy mirror is absent", async () => {
+  it("recreates absent raw analytics mirrors without initial copy when destination rows already exist", async () => {
     const peerDbQueries: string[] = [];
     const clickHouseCommands: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
@@ -441,11 +450,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       sourcePostgresClient: {
         async query() {},
       },
-      clickHouseClient: {
-        async command(options) {
-          clickHouseCommands.push(options.query);
-        },
-      },
+      clickHouseClient: createTestClickHouseClient(clickHouseCommands, 1),
       templateSql,
       templateValues: {
         clickHouseHost: "clickhouse",
@@ -464,12 +469,18 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries).toContainEqual(
       expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
     );
+    const rawFitnessMirrorQuery = peerDbQueries.find((query) =>
+      query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+    expect(rawFitnessMirrorQuery).toContain("do_initial_copy = false");
+    const providerInventoryMirrorQuery = peerDbQueries.find((query) =>
+      query.includes("CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics"),
+    );
+    expect(providerInventoryMirrorQuery).toContain("do_initial_copy = true");
     const truncateCommands = clickHouseCommands.filter((command) =>
       command.startsWith("TRUNCATE TABLE"),
     );
-    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
-    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.device_priority");
-    expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
+    expect(truncateCommands).toEqual([]);
   });
 
   it("splits statements without splitting semicolons inside string literals", async () => {
@@ -488,9 +499,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       sourcePostgresClient: {
         async query() {},
       },
-      clickHouseClient: {
-        async command() {},
-      },
+      clickHouseClient: createTestClickHouseClient(),
       templateSql: "first {{POSTGRES_CREDENTIAL}}; second;",
       templateValues: {
         clickHouseHost: "clickhouse",
