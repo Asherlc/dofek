@@ -92,7 +92,7 @@ services:
       "
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.18
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -125,7 +125,7 @@ services:
         condition: service_started
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.18
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -133,7 +133,7 @@ services:
         condition: service_started
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.18
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -141,7 +141,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -159,6 +159,25 @@ services:
     depends_on:
       peerdb-catalog:
         condition: service_healthy
+      peerdb-flow-api:
+        condition: service_started
+
+  peerdb-ui:
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      PEERDB_FLOW_SERVER_HTTP: http://peerdb-flow-api:8113
+      NEXTAUTH_SECRET: ${PEERDB_UI_NEXTAUTH_SECRET:-local-dev-peerdb-ui-nextauth-secret-rotate-before-shared-use}
+      NEXTAUTH_URL: ${PEERDB_UI_PUBLIC_URL:-http://localhost:3001}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PEERDB_UI_PORT:-3001}:3000"
+    depends_on:
       peerdb-flow-api:
         condition: service_started
 

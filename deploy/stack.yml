@@ -280,7 +280,7 @@ services:
           memory: 200M
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.18
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -307,7 +307,7 @@ services:
           memory: 128M
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.18
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19
     environment: *peerdb-flow-environment
     deploy:
       resources:
@@ -315,7 +315,7 @@ services:
           memory: 256M
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.18
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
     environment: *peerdb-flow-environment
     deploy:
       resources:
@@ -323,7 +323,7 @@ services:
           memory: 500M
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.18
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -339,6 +339,31 @@ services:
       resources:
         limits:
           memory: 128M
+
+  peerdb-ui:
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.36.19
+    environment:
+      PEERDB_CATALOG_HOST: peerdb-catalog
+      PEERDB_CATALOG_PORT: "5432"
+      PEERDB_CATALOG_USER: postgres
+      PEERDB_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_CATALOG_DATABASE: postgres
+      PEERDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PEERDB_FLOW_SERVER_HTTP: http://peerdb-flow-api:8113
+      NEXTAUTH_SECRET: ${PEERDB_UI_NEXTAUTH_SECRET:?PEERDB_UI_NEXTAUTH_SECRET is required}
+      NEXTAUTH_URL: ${PEERDB_PUBLIC_URL:-https://peerdb.dofek.asherlc.com}
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.peerdb.rule=${PEERDB_HOST_RULE:-Host(`peerdb.dofek.asherlc.com`)}
+        - traefik.http.routers.peerdb.entrypoints=websecure
+        - traefik.http.routers.peerdb.tls=true
+        - traefik.http.routers.peerdb.tls.certresolver=le
+        - traefik.http.routers.peerdb.middlewares=management-auth
+        - traefik.http.services.peerdb.loadbalancer.server.port=3000
 
   databasus:
     image: databasus/databasus:v3.32.1
@@ -476,7 +501,7 @@ services:
           /outpost.goauthentik.io/auth/traefik"
         - traefik.http.middlewares.management-auth.forwardAuth.trustForwardHeader=true
         - traefik.http.middlewares.management-auth.forwardAuth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid
-        - traefik.http.routers.authentik-outpost.rule=(${PORTAINER_HOST_RULE:-Host(`portainer.dofek.asherlc.com`)} || ${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)} || ${DATABASUS_HOST_RULE:-Host(`databasus.dofek.asherlc.com`)} || ${CLOUDBEAVER_HOST_RULE:-Host(`cloudbeaver.dofek.asherlc.com`)} || ${PGADMIN_HOST_RULE:-Host(`pgadmin.dofek.asherlc.com`)}) && PathPrefix(`/outpost.goauthentik.io/`)
+        - traefik.http.routers.authentik-outpost.rule=(${PORTAINER_HOST_RULE:-Host(`portainer.dofek.asherlc.com`)} || ${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)} || ${DATABASUS_HOST_RULE:-Host(`databasus.dofek.asherlc.com`)} || ${CLOUDBEAVER_HOST_RULE:-Host(`cloudbeaver.dofek.asherlc.com`)} || ${PGADMIN_HOST_RULE:-Host(`pgadmin.dofek.asherlc.com`)} || ${PEERDB_HOST_RULE:-Host(`peerdb.dofek.asherlc.com`)}) && PathPrefix(`/outpost.goauthentik.io/`)
         - traefik.http.routers.authentik-outpost.entrypoints=websecure
         - traefik.http.routers.authentik-outpost.tls=true
         - traefik.http.routers.authentik-outpost.tls.certresolver=le

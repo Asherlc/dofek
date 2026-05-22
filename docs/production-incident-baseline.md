@@ -7,6 +7,72 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-21: Dashboard Sleep Missing After PeerDB Raw Fitness Slot Was Lost
+
+### Symptoms
+
+The dashboard did not show last night's sleep even though provider syncs had
+run.
+
+### User Impact
+
+Sleep and sleep-derived dashboard surfaces could show data only through
+`2026-05-20` while canonical Postgres already contained `2026-05-21` sleep.
+
+### Evidence
+
+Postgres `fitness.sleep_session` contained WHOOP sleep from
+`2026-05-21 06:04:08.51+00` to `2026-05-21 14:29:05.13+00`, inserted at
+`2026-05-21 15:00:04.225348+00`. ClickHouse
+`postgres_fitness.sleep_session FINAL` and `analytics.v_sleep` only contained
+sleep through `2026-05-20`. Postgres `pg_replication_slots` showed
+`peerflow_slot_dofek_fitness_raw_analytics` as `active = false` and
+`wal_status = lost`, with no `restart_lsn`.
+
+After the raw fitness mirror was repaired, `analytics.v_activity` contained
+May 21 activities, but `analytics.deduped_sensor` and
+`analytics.activity_summary` were still current only through May 20. A broad
+manual ClickHouse refresh of the sensor-derived activity read models scanned
+hundreds of millions of rows, exceeded the container memory budget, and caused
+ClickHouse to restart.
+
+### Root Cause
+
+The PeerDB logical replication slot for the raw fitness mirror was invalidated
+after Postgres discarded WAL the stalled slot still needed. Once the slot was
+lost, PeerDB could not resume mirroring `fitness.sleep_session` into
+`postgres_fitness.sleep_session`, so the ClickHouse sleep read model stayed
+stale even though provider sync wrote current rows to Postgres.
+
+### Fix or Mitigation
+
+One-off production repair:
+
+- Dropped the broken `dofek_fitness_raw_analytics` PeerDB mirror.
+- Truncated only its affected ClickHouse raw mirror tables
+  (`postgres_fitness.activity`, `sleep_session`, `sleep_stage`,
+  `daily_metrics`, `provider`, `provider_priority`, `device_priority`, and
+  `user_profile`), leaving canonical Postgres untouched.
+- Re-ran the deployed `setupClickHouseCdcFromEnv()` path so PeerDB recreated
+  the mirror with a fresh initial snapshot.
+- Forced `SYSTEM REFRESH VIEW analytics.v_sleep` and invalidated the affected
+  user's server-side query cache.
+
+Validation after repair: `postgres_fitness.sleep_session FINAL` had 105 rows
+with latest `started_at = 2026-05-21 06:04:08.510000`, and
+`analytics.v_sleep` showed the May 21 Apple Health/WHOOP row. The repaired
+Postgres slot was `active = true` and `wal_status = reserved`.
+
+### Remaining Risk
+
+`peerflow_slot_dofek_provider_inventory_raw_analytics` was still `lost` during
+this repair and was intentionally left alone because it was not blocking the
+sleep dashboard. The durable fix should detect lost PeerDB slots, recreate
+affected mirrors safely, and alert before a user-visible stale read model is
+noticed manually. Activity sensor summaries need a targeted repair path; broad
+manual refresh of the refreshable materialized views is too expensive for the
+current single-node ClickHouse memory limit.
+
 ## 2026-05-19: PeerDB Replication Slots Invalidated, Activity Pages Showed No Stats Or Map
 
 ### Symptoms
