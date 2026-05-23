@@ -7456,3 +7456,42 @@ altitude fallback, and low-grade exclusion.
 
 CI still needs to rerun on the branch and the review-app deploy needs to be
 observed after the fixes are pushed.
+
+## 2026-05-23: Aerobic Efficiency E2E ClickHouse Memory Failure
+
+### Symptoms
+
+The web end-to-end CI job timed out waiting for the aerobic-efficiency empty
+state and the direct API assertion saw `500` instead of `200`.
+
+### User Impact
+
+The PR could not pass CI, and an empty or newly imported user could see the
+aerobic-efficiency panel fail instead of rendering the no-data state.
+
+### Evidence
+
+`Test / E2E Tests (Web)` failed in `pnpm e2e:web:run` with
+`Expected to find content: 'No activities with sufficient Zone 2 power + heart
+rate data' but never did`, followed by a direct API failure expecting `200`.
+Server logs showed `efficiency.aerobicEfficiency` taking about 121 seconds and
+then ClickHouse rejecting queries with `(total) memory limit exceeded`.
+
+### Root Cause
+
+`efficiency.aerobicEfficiency` reached the expensive `analytics.activity_summary`
+and `analytics.deduped_sensor` aggregation before proving the user had any
+candidate endurance activities, so the empty E2E user still forced heavy
+ClickHouse read-model scans.
+
+### Fix or Mitigation
+
+Added a cheap `analytics.v_activity` preflight that returns the no-data result
+before scanning activity summaries or sensor samples when there are no candidate
+endurance activities. Updated repository and router tests to cover the new
+query sequence and to prove the empty path does not touch the expensive read
+models.
+
+### Remaining Risk
+
+CI and the review-app deploy still need to be observed on the pushed branch.

@@ -117,6 +117,8 @@ const aerobicEfficiencySampleDiagnosticSchema = z.object({
   activities_with_hr: z.coerce.number(),
 });
 
+type AerobicEfficiencyDiagnostic = z.infer<typeof aerobicEfficiencyDiagnosticSchema>;
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -143,6 +145,19 @@ export class EfficiencyRepository extends BaseRepository {
    */
   async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
     const today = new Date().toISOString().slice(0, 10);
+    const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(days);
+
+    if (activityDiagnostic?.endurance_activities === 0) {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+        activities_with_power: 0,
+        activities_with_hr: 0,
+      });
+      return {
+        maxHr: activityDiagnostic.max_hr,
+        activities: [],
+      };
+    }
+
     const rows = await this.#sensorStore.query(
       efficiencyRowSchema,
       `WITH ${restingHeartRateClickHouseCte()},
@@ -208,7 +223,10 @@ export class EfficiencyRepository extends BaseRepository {
 
     let emptyResultMaxHr: number | null = null;
     if (rows.length === 0) {
-      emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(days).catch((error) => {
+      emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(
+        days,
+        activityDiagnostic,
+      ).catch((error) => {
         Sentry.captureException(error);
         return null;
       });
@@ -232,17 +250,18 @@ export class EfficiencyRepository extends BaseRepository {
   }
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
-  async #loadAerobicEfficiencyDiagnostics(days: number): Promise<number | null> {
-    const activityRows = await this.#sensorStore.query(
+  async #loadAerobicEfficiencyActivityDiagnostics(
+    days: number,
+  ): Promise<AerobicEfficiencyDiagnostic | null> {
+    const rows = await this.#sensorStore.query(
       aerobicEfficiencyDiagnosticSchema,
       `WITH endurance_activities AS (
         SELECT
-          asum.activity_id AS id
-        FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
-        WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          id
+        FROM analytics.v_activity
+        WHERE user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, activity_type)
+          AND started_at > now() - INTERVAL {days:Int32} DAY
       )
       SELECT
         (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
@@ -255,16 +274,25 @@ export class EfficiencyRepository extends BaseRepository {
       },
     );
 
-    const activityDiagnostic = activityRows[0];
+    return rows[0] ?? null;
+  }
+
+  /** Log a brief diagnostic when aerobic efficiency returns no results. */
+  async #loadAerobicEfficiencyDiagnostics(
+    days: number,
+    knownActivityDiagnostic: AerobicEfficiencyDiagnostic | null,
+  ): Promise<number | null> {
+    const activityDiagnostic =
+      knownActivityDiagnostic ?? (await this.#loadAerobicEfficiencyActivityDiagnostics(days));
     if (!activityDiagnostic) {
       return null;
     }
 
     if (activityDiagnostic.endurance_activities === 0) {
-      logger.warn(
-        `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
-          `max_hr=${activityDiagnostic.max_hr}, endurance_activities=0, with_power=0, with_hr=0`,
-      );
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+        activities_with_power: 0,
+        activities_with_hr: 0,
+      });
       return activityDiagnostic.max_hr;
     }
 
@@ -310,6 +338,15 @@ export class EfficiencyRepository extends BaseRepository {
     );
 
     const sampleDiagnostic = sampleRows[0] ?? { activities_with_power: 0, activities_with_hr: 0 };
+    this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, sampleDiagnostic);
+    return activityDiagnostic.max_hr;
+  }
+
+  #logAerobicEfficiencyEmptyDiagnostic(
+    activityDiagnostic: AerobicEfficiencyDiagnostic,
+    days: number,
+    sampleDiagnostic: z.infer<typeof aerobicEfficiencySampleDiagnosticSchema>,
+  ): void {
     logger.warn(
       `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
         `max_hr=${activityDiagnostic.max_hr}, ` +
@@ -317,7 +354,6 @@ export class EfficiencyRepository extends BaseRepository {
         `with_power=${sampleDiagnostic.activities_with_power}, ` +
         `with_hr=${sampleDiagnostic.activities_with_hr}`,
     );
-    return activityDiagnostic.max_hr;
   }
 
   /**

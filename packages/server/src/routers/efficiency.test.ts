@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -21,13 +22,31 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(rows: unknown[]): any {
+function getRowMaxHeartRate(row: unknown): unknown {
+  if (row !== null && typeof row === "object" && "max_hr" in row) {
+    return row.max_hr;
+  }
+  return null;
+}
+
+function makeSensorStore(rows: unknown[]): ActivitySensorStore {
   // Mirror ClickHouseActivitySensorStore.query: parse rows through the supplied
   // Zod schema so timestampStringSchema and friends actually run.
-  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
-    return rows.map((row) => schema.parse(row));
-  });
+  const query = vi
+    .fn()
+    .mockImplementation(
+      async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
+        if (queryText?.includes("toInt32(count()) AS endurance_activities")) {
+          return [
+            schema.parse({
+              max_hr: getRowMaxHeartRate(rows[0]),
+              endurance_activities: rows.length,
+            }),
+          ];
+        }
+        return rows.map((row) => schema.parse(row));
+      },
+    );
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -39,7 +58,7 @@ function makeSensorStore(rows: unknown[]): any {
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
-  };
+  } satisfies ActivitySensorStore;
 }
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
