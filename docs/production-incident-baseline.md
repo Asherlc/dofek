@@ -7258,3 +7258,67 @@ copy for fresh environments.
 The failed deploy already started production PeerDB snapshot work, so the host
 may need to drain that work before a clean rerun can complete. A deploy rerun is
 required after the corrected image is built and the host is responsive.
+
+## 2026-05-23: Production Recovery After ClickHouse Refresh Saturation
+
+### Symptoms
+
+Production was responsive only intermittently after the raw mirror snapshot
+incident. ClickHouse body measurements were stale even though fresh
+`body_weight` rows existed in Postgres for `2026-05-21` and `2026-05-22`.
+
+### User Impact
+
+The public app could time out during the pressure window, deploys were at risk
+of failing readiness checks, and ClickHouse-backed body measurements missed the
+latest weight entries.
+
+### Evidence
+
+Two long-running ClickHouse refresh queries were active:
+`24cc4e2e-3116-4087-8ae3-80c8970b3ad2` for
+`analytics.provider_stats` and `009a34da-cc79-4631-a45d-c61288dc93d0` for
+`analytics.deduped_sensor`. They had read hundreds of millions of rows from
+`postgres_fitness.metric_stream FINAL`.
+
+Postgres had `body_weight` data through `2026-05-22 14:27:06+00`, while
+ClickHouse `postgres_fitness.metric_stream`, `analytics.body_measurement_sample`,
+and `analytics.v_body_measurement` were all stale at
+`2026-05-20 14:09:23`. The PeerDB metric-stream slot was active and reserved
+with only megabytes of WAL lag, which showed the stale body rows had been missed
+when the metric stream mirror was recreated as CDC-only after existing
+ClickHouse rows were detected.
+
+### Root Cause
+
+Full-history refreshes of `analytics.deduped_sensor` and
+`analytics.provider_stats` saturated the single-node production host. Separately,
+the CDC-only mirror recovery avoided another full snapshot but skipped source
+rows that were inserted while the metric-stream mirror was absent.
+
+### Fix or Mitigation
+
+Killed the two long-running ClickHouse queries and paused their automatic
+refreshes with `SYSTEM STOP VIEW analytics.deduped_sensor` and
+`SYSTEM STOP VIEW analytics.provider_stats`. Deployed
+`ghcr.io/asherlc/dofek:sha-a6195ef` and
+`ghcr.io/asherlc/dofek-ml:sha-a6195ef` with production Deploy Web run
+`26318078567`, which completed successfully including the ClickHouse CDC setup
+step.
+
+Backfilled 8 missing body-measurement metric-stream rows from Postgres into
+ClickHouse for the gap after `2026-05-20 14:09:23+00`, then refreshed
+`analytics.v_body_measurement`. After repair, ClickHouse
+`postgres_fitness.metric_stream`, `analytics.body_measurement_sample`, and
+`analytics.v_body_measurement` all showed latest body weight
+`2026-05-22 14:27:06`.
+
+### Remaining Risk
+
+`analytics.deduped_sensor` and `analytics.provider_stats` are intentionally
+disabled to keep production responsive. Activity sensor analytics and provider
+stats can remain stale until those read models are redesigned or re-enabled
+with an incremental/smaller refresh strategy. Production logs also showed
+repeated `Unexpected end of JSON input` errors on cached provider routes after
+the deploy; derived Redis query-cache state was cleared, but that log pattern
+should be followed up separately if it recurs.
