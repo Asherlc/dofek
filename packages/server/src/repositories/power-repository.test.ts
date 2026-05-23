@@ -55,6 +55,17 @@ describe("PowerRepository", () => {
       expect(result.model).toBeNull();
     });
 
+    it("does not scan power samples when no raw activities exist", async () => {
+      const analyticsStore = makeAnalyticsStore();
+      const db = makeDb([{ raw_activity_count: 0 }]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore, db);
+      const result = await repo.getPowerCurve(90);
+
+      expect(result).toEqual({ points: [], model: null });
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      expect(analyticsStore.getPowerCurveSamples).not.toHaveBeenCalled();
+    });
+
     it("reads power samples from the ClickHouse analytics store instead of Postgres", async () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
@@ -116,6 +127,18 @@ describe("PowerRepository", () => {
       expect(result.trend).toEqual([]);
       expect(result.currentEftp).toBeNull();
       expect(result.model).toBeNull();
+    });
+
+    it("does not scan normalized power or power curve samples when no raw activities exist", async () => {
+      const analyticsStore = makeAnalyticsStore();
+      const db = makeDb([{ raw_activity_count: 0 }]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore, db);
+      const result = await repo.getEftpTrend(365);
+
+      expect(result).toEqual({ trend: [], currentEftp: null, model: null });
+      expect(db.execute).toHaveBeenCalledTimes(1);
+      expect(analyticsStore.getNormalizedPowerSamples).not.toHaveBeenCalled();
+      expect(analyticsStore.getPowerCurveSamples).not.toHaveBeenCalled();
     });
 
     it("reads eFTP samples from the ClickHouse analytics store instead of Postgres", async () => {

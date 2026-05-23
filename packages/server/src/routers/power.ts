@@ -17,7 +17,7 @@ export const powerRouter = router({
             "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
         });
       }
-      const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
+      const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
       return repo.getPowerCurve(input.days);
     }),
   eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
@@ -30,7 +30,7 @@ export const powerRouter = router({
             "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
         });
       }
-      const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
+      const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
       return repo.getEftpTrend(input.days);
     }),
 });

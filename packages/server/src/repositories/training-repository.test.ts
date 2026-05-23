@@ -38,10 +38,7 @@ describe("TrainingRepository", () => {
     accessWindow?: AccessWindow,
     rawActivityCount = rows.length,
   ) {
-    // Tests pass `rows` to be returned by either PG or CH; the migration
-    // moved most queries to CH, but for backward-compat with this test's
-    // pattern, mock both to return the same rows.
-    const execute = vi.fn().mockResolvedValue(rows);
+    const execute = vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]);
     const db = { execute };
     const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore, accessWindow);
@@ -56,30 +53,27 @@ describe("TrainingRepository", () => {
     });
 
     it("does not scan the activity read model when no raw activities exist", async () => {
-      const { repo, sensorStore } = makeRepository([]);
+      const { repo, execute, sensorStore } = makeRepository([]);
 
       const result = await repo.getWeeklyVolume(90);
 
       expect(result).toEqual([]);
-      expect(sensorStore.query).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain(
-        "FROM postgres_fitness.activity FINAL",
-      );
-      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("reads weekly volume from ClickHouse activity read model", async () => {
       const { repo, execute, sensorStore } = makeRepository([], undefined, 1);
       await repo.getWeeklyVolume(90);
 
-      expect(execute).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(1);
       expect(sensorStore.query).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.anything(),
         expect.stringContaining("FROM analytics.activity_summary"),
         expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
       );
-      expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
     });
 
     it("does not add access-window filters for full access", async () => {
@@ -87,8 +81,8 @@ describe("TrainingRepository", () => {
       const { repo, sensorStore } = makeRepository([], accessWindow, 1);
       await repo.getWeeklyVolume(30);
 
-      const query = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-      const params = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
       expect(query).toContain("FROM analytics.activity_summary");
       expect(query).not.toContain("analytics.v_activity");
@@ -108,8 +102,8 @@ describe("TrainingRepository", () => {
       const { repo, sensorStore } = makeRepository([], accessWindow, 1);
       await repo.getWeeklyVolume(30);
 
-      const query = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-      const params = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
       expect(query).toContain("AND started_at >= toDateTime({accessStart:String})");
       expect(query).toContain("AND started_at < toDateTime({accessEnd:String})");
@@ -165,7 +159,7 @@ describe("TrainingRepository", () => {
 
       await repo.getHrZones(90);
 
-      const query = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(query).toContain("am.resting_hr + (am.max_hr - am.resting_hr)");
       expect(query).not.toContain("{restingHr:Float64}");
       expect(query).not.toContain("{maxHr:Float64}");
@@ -182,7 +176,7 @@ describe("TrainingRepository", () => {
     it("selects the activity view id into the UI row id", async () => {
       const { repo, sensorStore } = makeRepository([], undefined, 1);
       await repo.getActivityStats(90);
-      const query = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(query).toContain("toString(a.activity_id) AS id");
       expect(query).toContain("FROM analytics.activity_summary a");
       expect(query).not.toContain("analytics.v_activity");

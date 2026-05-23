@@ -8,6 +8,7 @@ import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -32,10 +33,6 @@ type ActivityRow = z.infer<typeof combinedActivityRowSchema>;
 const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
   np: z.coerce.number(),
-});
-
-const rawActivityCountRowSchema = z.object({
-  raw_activity_count: z.coerce.number(),
 });
 
 // ---------------------------------------------------------------------------
@@ -237,20 +234,10 @@ export class PmcRepository extends BaseRepository {
   // ── Private helpers ─────────────────────────────────────────────────
 
   async #loadRawActivityCount(days: number): Promise<number> {
-    const rows = await this.#sensorStore.query(
-      rawActivityCountRowSchema,
-      `SELECT toInt32(count()) AS raw_activity_count
-      FROM postgres_fitness.activity FINAL
-      WHERE user_id = {userId:UUID}
-        AND _peerdb_is_deleted = 0
-        AND started_at > now() - INTERVAL {days:Int32} DAY`,
-      {
-        userId: this.userId,
-        days,
-      },
-    );
-
-    return rows[0]?.raw_activity_count ?? 0;
+    return countRawActivities(this.db, {
+      userId: this.userId,
+      days,
+    });
   }
 
   #buildRegressionModel(

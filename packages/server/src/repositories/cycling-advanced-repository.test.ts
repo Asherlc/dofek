@@ -227,10 +227,7 @@ describe("CyclingAdvancedRepository", () => {
   }
 
   function makeRepository(rows: Record<string, unknown>[] = [], rawActivityCount = rows.length) {
-    // After the CH migration every cycling-advanced query routes through
-    // sensorStore. The PG db stays for completeness but is unused by the
-    // migrated methods.
-    const execute = vi.fn();
+    const execute = vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]);
     const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new CyclingAdvancedRepository({ execute }, "user-1", "UTC", sensorStore);
     return { repo, execute, sensorStore };
@@ -397,23 +394,14 @@ describe("CyclingAdvancedRepository", () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getActivityVariability(90, 20, 0);
 
-      expect(sensorStore.query).toHaveBeenCalledTimes(1);
-      expect(sensorStore.query.mock.calls[0]?.[1]).toContain(
-        "FROM postgres_fitness.activity FINAL",
-      );
-      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.activity_summary");
-      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.deduped_sensor");
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("returns ActivityVariabilityModel instances when data exists", async () => {
-      // First sensorStore.query call -> raw activity count; second -> FTP estimate;
-      // third -> variability rows.
+      // First sensorStore.query call -> FTP estimate; second -> variability rows.
       const sensorStore = makeSensorStore([]);
       sensorStore.query = vi
         .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ raw_activity_count: 1 }].map((row) => schema.parse(row)),
-        )
         .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
           [{ ftp: 250 }].map((row) => schema.parse(row)),
         )
@@ -430,7 +418,7 @@ describe("CyclingAdvancedRepository", () => {
           ].map((row) => schema.parse(row)),
         );
       const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn() },
+        { execute: vi.fn().mockResolvedValue([{ raw_activity_count: 1 }]) },
         "user-1",
         "UTC",
         sensorStore,
@@ -439,8 +427,8 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.models).toHaveLength(1);
       expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
       expect(result.totalCount).toBe(1);
-      expect(sensorStore.query).toHaveBeenCalledTimes(3);
-      const [, query, params] = sensorStore.query.mock.calls[2];
+      expect(sensorStore.query).toHaveBeenCalledTimes(2);
+      const [, query, params] = sensorStore.query.mock.calls[1];
       expect(query).toContain("RANGE BETWEEN 29 PRECEDING AND CURRENT ROW");
       expect(query).toContain("pow(avg(pow(r.rolling_30s_power, 4)), 0.25)");
       expect(query).toContain("LIMIT {limit:Int32}");
@@ -467,12 +455,7 @@ describe("CyclingAdvancedRepository", () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getVerticalAscentRates(90);
 
-      expect(sensorStore.query).toHaveBeenCalledTimes(1);
-      expect(sensorStore.query.mock.calls[0]?.[1]).toContain(
-        "FROM postgres_fitness.activity FINAL",
-      );
-      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.activity_summary");
-      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.deduped_sensor");
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("returns VerticalAscentModel instances", async () => {
@@ -508,13 +491,13 @@ describe("CyclingAdvancedRepository", () => {
       const result = await repo.getVerticalAscentRates(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.toDetail().activityName).toBe("Garmin Ride");
-      expect(sensorStore.query).toHaveBeenCalledTimes(2);
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
 
     it("queries vertical ascent with grade fallback and minimum climb duration", async () => {
       const { repo, sensorStore } = makeRepository([], 1);
       await repo.getVerticalAscentRates(90);
-      const [, query, params] = sensorStore.query.mock.calls[1];
+      const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("LEFT JOIN grade_activities");
       expect(query).toContain("LEFT JOIN grade_points");
       expect(query).toContain("(NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)");

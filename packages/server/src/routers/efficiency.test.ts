@@ -61,6 +61,17 @@ function makeSensorStore(rows: unknown[]): ActivitySensorStore {
   } satisfies ActivitySensorStore;
 }
 
+function makeAerobicEfficiencyDb(rows: unknown[]) {
+  return {
+    execute: vi.fn().mockResolvedValue([
+      {
+        max_hr: getRowMaxHeartRate(rows[0]),
+        endurance_activities: rows.length,
+      },
+    ]),
+  };
+}
+
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
   return {
@@ -114,7 +125,7 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeAerobicEfficiencyDb(rows),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore(rows),
@@ -136,7 +147,7 @@ describe("efficiencyRouter", () => {
 
     it("returns null maxHr when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeAerobicEfficiencyDb([]),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore([]),
@@ -163,7 +174,7 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeAerobicEfficiencyDb(rows),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore(rows),
@@ -197,7 +208,7 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeAerobicEfficiencyDb(rows),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore(rows),
@@ -225,7 +236,7 @@ describe("efficiencyRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeAerobicEfficiencyDb([]),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore(rows),
@@ -434,7 +445,7 @@ describe("efficiencyRouter", () => {
       // limited window doesn't crash and that the result still surfaces
       // the empty CH dataset cleanly.
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeAerobicEfficiencyDb([]),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore([]),

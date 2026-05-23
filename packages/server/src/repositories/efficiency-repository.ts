@@ -2,6 +2,7 @@ import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { computePolarizationIndex, HEART_RATE_ZONES, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -252,26 +253,22 @@ export class EfficiencyRepository extends BaseRepository {
   async #loadAerobicEfficiencyActivityDiagnostics(
     days: number,
   ): Promise<AerobicEfficiencyDiagnostic | null> {
-    const rows = await this.#sensorStore.query(
+    const rows = await this.query(
       aerobicEfficiencyDiagnosticSchema,
-      `WITH endurance_activities AS (
-        SELECT
-          id
-        FROM postgres_fitness.activity FINAL
-        WHERE user_id = {userId:UUID}
-          AND _peerdb_is_deleted = 0
-          AND has({enduranceTypes:Array(String)}, activity_type)
-          AND started_at > now() - INTERVAL {days:Int32} DAY
-      )
-      SELECT
-        (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
-        toInt32(count()) AS endurance_activities
-      FROM endurance_activities`,
-      {
-        userId: this.userId,
-        days,
-        enduranceTypes: ENDURANCE_TYPES,
-      },
+      sql`WITH endurance_activities AS (
+            SELECT id
+            FROM fitness.activity
+            WHERE user_id = ${this.userId}::uuid
+              AND activity_type IN (${sql.join(
+                ENDURANCE_TYPES.map((activityType) => sql`${activityType}`),
+                sql`, `,
+              )})
+              AND started_at > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'
+          )
+          SELECT
+            (SELECT max_hr FROM fitness.user_profile WHERE id = ${this.userId}::uuid) AS max_hr,
+            count(*)::int AS endurance_activities
+          FROM endurance_activities`,
     );
 
     return rows[0] ?? null;

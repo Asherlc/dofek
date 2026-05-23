@@ -11,6 +11,7 @@ import {
   heartRateZoneSqlParams,
   heartRateZoneSumColumns,
 } from "./heart-rate-zone-sql.ts";
+import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
@@ -32,10 +33,6 @@ const weeklyVolumeRowSchema = z.object({
 });
 
 export type WeeklyVolumeRow = z.infer<typeof weeklyVolumeRowSchema>;
-
-const rawActivityCountRowSchema = z.object({
-  raw_activity_count: z.coerce.number(),
-});
 
 const hrZoneRowSchema = z.object({
   max_hr: z.number().nullable(),
@@ -104,9 +101,8 @@ export class TrainingRepository extends BaseRepository {
     const rawActivityCount = await this.#loadRawActivityCount(
       days,
       undefined,
-      "AND ended_at IS NOT NULL",
-      accessWindowPredicate,
-      accessWindowParams,
+      true,
+      this.accessWindow,
     );
     if (rawActivityCount === 0) {
       return [];
@@ -137,11 +133,7 @@ export class TrainingRepository extends BaseRepository {
 
   /** HR zone distribution per week using the canonical Karvonen model. */
   async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
-    const rawActivityCount = await this.#loadRawActivityCount(
-      days,
-      ENDURANCE_TYPES,
-      "AND ended_at IS NOT NULL",
-    );
+    const rawActivityCount = await this.#loadRawActivityCount(days, ENDURANCE_TYPES, true);
     if (rawActivityCount === 0) {
       return { maxHr: null, weeks: [] };
     }
@@ -256,31 +248,15 @@ export class TrainingRepository extends BaseRepository {
   async #loadRawActivityCount(
     days: number,
     activityTypes?: string[],
-    extraPredicate = "",
-    accessWindowPredicate = "",
-    accessWindowParams: Record<string, string> = {},
+    requireEndedAt = false,
+    accessWindow?: AccessWindow,
   ): Promise<number> {
-    const activityTypePredicate = activityTypes
-      ? "AND has({activityTypes:Array(String)}, activity_type)"
-      : "";
-    const rows = await this.#sensorStore.query(
-      rawActivityCountRowSchema,
-      `SELECT toInt32(count()) AS raw_activity_count
-      FROM postgres_fitness.activity FINAL
-      WHERE user_id = {userId:UUID}
-        AND _peerdb_is_deleted = 0
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-        ${extraPredicate}
-        ${activityTypePredicate}
-        ${accessWindowPredicate}`,
-      {
-        userId: this.userId,
-        days,
-        ...(activityTypes ? { activityTypes } : {}),
-        ...accessWindowParams,
-      },
-    );
-
-    return rows[0]?.raw_activity_count ?? 0;
+    return countRawActivities(this.db, {
+      userId: this.userId,
+      days,
+      activityTypes,
+      requireEndedAt,
+      accessWindow,
+    });
   }
 }

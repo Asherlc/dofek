@@ -7568,3 +7568,16 @@ request timing out behind those in-flight ClickHouse queries. PMC and cycling
 activity variability now perform a raw `postgres_fitness.activity FINAL` count
 first and return empty results before touching the expensive read models when
 the user has no raw activities.
+
+### Follow-up
+
+The next E2E rerun still failed at `pnpm e2e:web:run`. The first fatal line
+remained the missing cycling empty state, and the direct
+`efficiency.aerobicEfficiency` API check timed out after 30 seconds. Server logs
+showed `power.powerCurve` and `power.eftpTrend` queries running for roughly
+316-319 seconds, and the new no-activity guards were still using ClickHouse's
+`postgres_fitness.activity` mirror, which left no-activity preflights competing
+with the same overloaded ClickHouse connection. The no-activity guards now read
+raw activity existence from source Postgres `fitness.activity` instead, and the
+power curve/eFTP repositories return empty results before scanning ClickHouse
+when the user has no raw activities.

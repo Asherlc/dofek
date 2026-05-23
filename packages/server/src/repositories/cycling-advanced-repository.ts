@@ -12,6 +12,7 @@ import {
   TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
+import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
@@ -58,26 +59,24 @@ const pedalRowSchema = z.object({
   avg_pedal_smoothness: z.coerce.number(),
 });
 
-const rawActivityCountRowSchema = z.object({
-  raw_activity_count: z.coerce.number(),
-});
-
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
 
 /** Data access for advanced cycling analytics. */
 export class CyclingAdvancedRepository {
+  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
 
   constructor(
-    _db: Pick<Database, "execute">,
+    db: Pick<Database, "execute">,
     userId: string,
     timezone: string,
     sensorStore: ActivitySensorStore,
   ) {
+    this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
     this.#sensorStore = sensorStore;
@@ -597,21 +596,10 @@ export class CyclingAdvancedRepository {
   }
 
   async #loadRawActivityCount(days: number): Promise<number> {
-    const rows = await this.#sensorStore.query(
-      rawActivityCountRowSchema,
-      `SELECT toInt32(count()) AS raw_activity_count
-      FROM postgres_fitness.activity FINAL
-      WHERE user_id = {userId:UUID}
-        AND _peerdb_is_deleted = 0
-        AND has({enduranceTypes:Array(String)}, activity_type)
-        AND started_at > now() - INTERVAL {days:Int32} DAY`,
-      {
-        userId: this.#userId,
-        days,
-        enduranceTypes: ENDURANCE_TYPES,
-      },
-    );
-
-    return rows[0]?.raw_activity_count ?? 0;
+    return countRawActivities(this.#db, {
+      userId: this.#userId,
+      days,
+      activityTypes: ENDURANCE_TYPES,
+    });
   }
 }

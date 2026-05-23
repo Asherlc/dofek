@@ -72,9 +72,7 @@ function makeRepo(
   timezone = "UTC",
   rawActivityCount = activityRows.length,
 ) {
-  // loadPersonalizedParams is mocked at module level (returns null),
-  // so db.execute is never called.
-  const db = { execute: vi.fn() };
+  const db = { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
   const sensorStore = makeSensorStore(activityRows, npRows, rawActivityCount);
   return new PmcRepository(db, "user-1", timezone, sensorStore);
 }
@@ -85,10 +83,11 @@ function makeRepoHarness(
   timezone = "UTC",
   rawActivityCount = activityRows.length,
 ) {
-  const db = { execute: vi.fn() };
+  const db = { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
   const sensorStore = makeSensorStore(activityRows, npRows, rawActivityCount);
   return {
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
+    execute: db.execute,
     query: sensorStore.query,
   };
 }
@@ -109,15 +108,13 @@ describe("PmcRepository", () => {
     });
 
     it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
-      const { repo, query } = makeRepoHarness([], [], "UTC", 0);
+      const { repo, execute, query } = makeRepoHarness([], [], "UTC", 0);
 
       const result = await repo.getChart(180);
 
       expect(result.data).toEqual([]);
-      expect(query).toHaveBeenCalledTimes(1);
-      expect(query.mock.calls[0]?.[1]).toContain("FROM postgres_fitness.activity FINAL");
-      expect(query.mock.calls[0]?.[1]).not.toContain("analytics.activity_summary");
-      expect(query.mock.calls[0]?.[1]).not.toContain("analytics.deduped_sensor");
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(query).not.toHaveBeenCalled();
     });
 
     it("returns empty result when global max HR is null", async () => {
@@ -470,7 +467,7 @@ describe("PmcRepository", () => {
       await repo.getChart(30);
 
       expect(query).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.anything(),
         expect.stringContaining("analytics.activity_summary"),
         expect.objectContaining({
@@ -480,17 +477,17 @@ describe("PmcRepository", () => {
         }),
       );
       expect(query).toHaveBeenNthCalledWith(
-        3,
+        2,
         expect.anything(),
         expect.stringContaining("analytics.deduped_sensor"),
         { userId: "user-1", queryDays: 407 },
       );
+      expect(query.mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
       expect(query.mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
-      expect(query.mock.calls[2]?.[1]).not.toContain("analytics.v_activity");
-      expect(query.mock.calls[1]?.[1]).toContain(
+      expect(query.mock.calls[0]?.[1]).toContain(
         "AND activity.started_at > now() - INTERVAL {queryDays:Int32} DAY",
       );
-      expect(query.mock.calls[1]?.[1]).toContain("AND activity.ended_at IS NOT NULL");
+      expect(query.mock.calls[0]?.[1]).toContain("AND activity.ended_at IS NOT NULL");
     });
 
     it("extends queryDays from requested days when request exceeds the minimum history", async () => {
@@ -499,7 +496,7 @@ describe("PmcRepository", () => {
       await repo.getChart(400);
 
       expect(query).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.anything(),
         expect.stringContaining("INTERVAL {queryDays:Int32} DAY"),
         expect.objectContaining({ userId: "user-1", timezone: "UTC", queryDays: 442 }),
