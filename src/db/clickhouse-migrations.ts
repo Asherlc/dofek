@@ -113,11 +113,9 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         "DROP TABLE IF EXISTS analytics.activity_summary",
-        "DROP VIEW IF EXISTS analytics.deduped_sensor",
         "DROP TABLE IF EXISTS analytics.deduped_sensor",
         "DROP VIEW IF EXISTS fitness.activity_summary",
         "DROP TABLE IF EXISTS fitness.activity_summary",
-        "DROP VIEW IF EXISTS fitness.deduped_sensor",
         "DROP TABLE IF EXISTS fitness.deduped_sensor",
         "DROP TABLE IF EXISTS fitness.activity_sensor_window",
         "DROP TABLE IF EXISTS fitness.metric_stream_sync_log",
@@ -133,7 +131,6 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         "DROP TABLE IF EXISTS analytics.activity_summary",
-        "DROP VIEW IF EXISTS analytics.deduped_sensor",
         "DROP TABLE IF EXISTS analytics.deduped_sensor",
         "DROP DATABASE IF EXISTS postgres_fitness SYNC",
         ...buildClickHouseBootstrapStatements(postgresConnectionString),
@@ -152,7 +149,6 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         "DROP TABLE IF EXISTS analytics.activity_summary",
-        "DROP VIEW IF EXISTS analytics.deduped_sensor",
         "DROP TABLE IF EXISTS analytics.deduped_sensor",
         "DROP VIEW IF EXISTS analytics.v_activity_members",
         "DROP TABLE IF EXISTS analytics.v_activity_members",
@@ -194,7 +190,6 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
       statements: [
         "DROP VIEW IF EXISTS analytics.activity_summary",
         "DROP TABLE IF EXISTS analytics.activity_summary",
-        "DROP VIEW IF EXISTS analytics.deduped_sensor",
         "DROP TABLE IF EXISTS analytics.deduped_sensor",
         ...buildClickHouseBootstrapStatements(postgresConnectionString),
       ],
@@ -365,7 +360,6 @@ async function replaceNativeMetricStreamAndBackfill(
   const resetStatements = [
     "DROP VIEW IF EXISTS analytics.activity_summary",
     "DROP TABLE IF EXISTS analytics.activity_summary",
-    "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
   ];
 
@@ -436,7 +430,6 @@ async function rebuildMetricStreamLocationPoint(
     "DROP TABLE IF EXISTS analytics.activity_summary",
     "DROP VIEW IF EXISTS analytics.deduped_location",
     "DROP TABLE IF EXISTS analytics.deduped_location",
-    "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
   ];
 
@@ -502,7 +495,6 @@ async function replaceLegacyMetricStreamIfNeeded(
     "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
     "DROP VIEW IF EXISTS analytics.activity_summary",
     "DROP TABLE IF EXISTS analytics.activity_summary",
-    "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
     "DROP TABLE IF EXISTS postgres_fitness.metric_stream",

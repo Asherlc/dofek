@@ -7414,3 +7414,45 @@ Production still needs this migration deployed and observed. The incremental
 dirty-key worker has a hard backlog-drain limit and fails loudly if it cannot
 catch up, so future failures should surface as post-sync job errors instead of
 silent stale analytics.
+
+## 2026-05-23: Incremental Deduped Sensor CI Migration Failure
+
+### Symptoms
+
+The review-app deploy and web end-to-end test setup failed during fresh
+ClickHouse migrations. Several Stryker shards also failed before mutation
+testing began.
+
+### User Impact
+
+The PR could not pass CI or deploy a review app, blocking release of the
+full-refresh removal work.
+
+### Evidence
+
+`Deploy Review App` and `Test / E2E Tests (Web)` both failed while applying
+ClickHouse migration `0004_reenable_materialized_metric_stream` with
+`Table analytics.deduped_sensor is not a View.` Stryker dry runs failed on
+`Router data coverage cyclingAdvanced verticalAscentRate uses nearby grade when
+present and altitude fallback otherwise` with `Test timed out in 30000ms`.
+
+### Root Cause
+
+The ClickHouse migration sequence still issued `DROP VIEW IF EXISTS
+analytics.deduped_sensor` after `analytics.deduped_sensor` had become a table;
+ClickHouse errors when `DROP VIEW` targets a table. The Stryker timeout came
+from a heavy integration fixture that inserted five-second altitude/grade
+samples across three synthetic activities before syncing ClickHouse.
+
+### Fix or Mitigation
+
+Removed stale `DROP VIEW` statements for `deduped_sensor` and kept the
+relation-safe `DROP TABLE IF EXISTS` form, which ClickHouse accepts for both
+tables and views. Reduced the vertical-ascent fixture density from five-second
+to thirty-second samples while preserving coverage of offset grade matching,
+altitude fallback, and low-grade exclusion.
+
+### Remaining Risk
+
+CI still needs to rerun on the branch and the review-app deploy needs to be
+observed after the fixes are pushed.

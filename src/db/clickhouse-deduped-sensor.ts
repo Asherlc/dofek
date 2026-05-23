@@ -301,7 +301,6 @@ export function buildIncrementalDedupedSensorMigrationStatements(): string[] {
   return [
     "DROP VIEW IF EXISTS analytics.sensor_scalar_sample_ingest",
     "DROP VIEW IF EXISTS analytics.sensor_dirty_key_ingest",
-    "DROP VIEW IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.sensor_dirty_key",
     "DROP TABLE IF EXISTS analytics.sensor_scalar_sample",

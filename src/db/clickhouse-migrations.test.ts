@@ -26,6 +26,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("DROP TABLE IF EXISTS fitness.metric_stream");
     expect(sql).toContain("DROP TABLE IF EXISTS fitness.deduped_sensor");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.deduped_sensor");
+    expect(sql).not.toContain("DROP VIEW IF EXISTS analytics.deduped_sensor");
     expect(sql).toContain("DROP DATABASE IF EXISTS postgres_fitness SYNC");
     expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(1);
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");

@@ -609,7 +609,7 @@ describe("Router data coverage", () => {
       );
 
       const sensorValues: string[] = [];
-      for (let second = 0; second <= 600; second += 5) {
+      for (let second = 0; second <= 600; second += 30) {
         const offsetAltitudeTimestamp = new Date(startedAt.getTime() + second * 1000).toISOString();
         const offsetGradeTimestamp = new Date(
           startedAt.getTime() + second * 1000 + 2000,
