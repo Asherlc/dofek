@@ -61,6 +61,9 @@ activity_members AS (
   FROM analytics.v_activity_members
 ),
 linked_best_source AS (
+  -- Pick one coherent route source per activity. Point-by-point GPS dedupe can
+  -- stitch together provider tracks with different smoothing, sampling rates,
+  -- pause handling, and timestamp rounding, which distorts route-derived math.
   SELECT
     best_source.activity_id AS activity_id,
     best_source.provider_id AS provider_id

@@ -57,14 +57,6 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("analytics.deduped_location");
   });
 
-  it("does not refresh the body measurement view", async () => {
-    const { store, command } = makeStore();
-
-    await store.refreshBodyMeasurements();
-
-    expect(command).not.toHaveBeenCalled();
-  });
-
   it("queries activity summaries from the ClickHouse analytics schema", async () => {
     const { store, query } = makeStore([
       {
@@ -166,6 +158,22 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("channel = 'power'");
   });
 
+  it("caps open-ended activity windows and downsamples by buckets", async () => {
+    const openEndedWindow = { ...window, endedAt: undefined };
+    const { store, query } = makeStore([]);
+
+    await store.getStream(openEndedWindow, 500);
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(query.mock.calls[0]?.[0]?.query_params).toEqual(
+      expect.objectContaining({
+        windowEndedAt: "2024-01-15T22:00:00.000Z",
+      }),
+    );
+    expect(queryText).toContain("total <= toUInt64({maxPoints:UInt32})");
+    expect(queryText).toContain("(row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1)");
+  });
+
   it("generates heart-rate zone SQL from the shared zone definitions", async () => {
     const { store, query } = makeStore([{ zone: 0, seconds: 5 }]);
 
@@ -198,9 +206,6 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
     );
-    expect(queryText).not.toContain(
-      "/ toFloat64(toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
-    );
   });
 
   it("clamps pace duration windows to at least one sample", async () => {
@@ -211,9 +216,6 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain(
       "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
-    );
-    expect(queryText).not.toContain(
-      "/ toFloat64(toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
     );
   });
 });

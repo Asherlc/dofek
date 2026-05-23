@@ -375,10 +375,7 @@ SELECT
   max(dirty_keys.max_peerdb_synced_at) AS max_peerdb_synced_at,
   now64(9) AS processed_at,
   CAST(NULL, 'Nullable(String)') AS failure_message,
-  greatest(
-    pending_keys.max_dirty_version + 1,
-    toUInt64(toUnixTimestamp64Nano(now64(9)))
-  ) AS dirty_version
+  pending_keys.max_dirty_version AS dirty_version
 FROM pending_keys
 INNER JOIN analytics.sensor_dirty_key AS dirty_keys
   ON dirty_keys.user_id = pending_keys.user_id

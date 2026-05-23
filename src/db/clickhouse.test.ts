@@ -193,8 +193,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_trend_daily");
-    expect(sql).toContain("countIf(samples.channel = 'speed') AS speed_samples");
-    expect(sql).toContain("uniqExact(activity.id) AS activity_count");
+    expect(sql).toContain("countIf(distinct_samples.channel = 'speed') AS speed_samples");
+    expect(sql).toContain("uniqExact(activity_id) AS activity_count");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");

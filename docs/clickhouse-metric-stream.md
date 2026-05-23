@@ -86,6 +86,35 @@ metric stream, distinct nutrition day, lab panel, lab result, and journal entry
 counts. The provider detail UI still treats these as raw provider-owned record
 counts, not deduped analytical sample counts.
 
+## Scalar And Location Projections
+
+Scalar sensor samples and location samples use separate ClickHouse projections
+because they have different deduplication semantics.
+
+`analytics.deduped_sensor` is optimized for scalar channels such as heart rate,
+power, cadence, speed, and altitude. For those channels, the useful atomic unit
+is one `(user_id, channel, recorded_at)` key. The incremental pipeline can
+recompute a single changed key and select the best live sample with
+provider/device priority rules.
+
+GPS location is different. The useful unit is a coherent route for an activity,
+not an independently selected point at each timestamp. Providers can report the
+same route with different sampling rates, timestamp rounding, pause trimming,
+smoothing, altitude correction, and GPS filtering. If location were deduped
+point-by-point with the scalar rules, a derived route could silently stitch
+Apple, Garmin, Strava, or other provider points together. That stitched route
+may not match any route a provider actually recorded, and route-sensitive
+metrics such as distance, centroid, and map shape can be inflated, deflated, or
+visibly jagged by small provider-to-provider differences.
+
+For that reason, `analytics.deduped_location` remains a separate activity-route
+projection. It selects a route source for an activity, currently by valid
+location sample count with deterministic provider tie-breaking, and then uses
+that source's ordered points for GPS-derived activity summary fields. This is
+not mainly a table-shape constraint; the table shape could change. The core
+constraint is preserving route coherence while keeping scalar sensor dedupe a
+small per-key incremental pipeline.
+
 ## Sync Model
 
 ClickHouse migrations run from the normal one-shot `migrate` container when

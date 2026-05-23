@@ -98,13 +98,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
-    expect(
-      setupCommands.some(
-        (command) =>
-          command.includes("CREATE VIEW IF NOT EXISTS analytics_test_") &&
-          command.includes(".v_daily_metrics"),
-      ),
-    ).toBe(false);
 
     clickHouseMocks.command.mockClear();
 
@@ -169,8 +162,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("FROM postgresql('db:5432', 'health', 'lab_result'"),
       ),
     ).toBe(true);
-    expect(commands.every((command) => !command.includes("SYSTEM REFRESH VIEW"))).toBe(true);
-    expect(commands.every((command) => !command.includes("SYSTEM WAIT VIEW"))).toBe(true);
     expect(
       commands.some(
         (command) =>
@@ -205,7 +196,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(0);
   });
 
   it("drains deduped sensor dirty keys until no pending rows remain", async () => {

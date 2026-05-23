@@ -57,6 +57,7 @@ describe("ClickHouse deduped sensor dirty-key processing", () => {
     expect(processedMarkerSql).toContain(
       "dirty_keys.dirty_version <= pending_keys.max_dirty_version",
     );
+    expect(processedMarkerSql).toContain("pending_keys.max_dirty_version AS dirty_version");
     expect(processedMarkerSql).not.toContain("LIMIT 25");
   });
 });

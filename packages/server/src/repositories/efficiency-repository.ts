@@ -243,19 +243,29 @@ export class EfficiencyRepository extends BaseRepository {
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+      ),
+      sensor_samples_by_activity AS (
+        SELECT
+          ea.id AS activity_id,
+          countIf(ds.channel = 'power' AND ds.scalar > 0) AS power_samples,
+          countIf(ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL) AS heart_rate_samples
+        FROM endurance_activities ea
+        INNER JOIN analytics.deduped_sensor ds
+          ON ds.user_id = ea.user_id
+        WHERE ds.recorded_at >= ea.started_at
+          AND ds.recorded_at <= coalesce(ea.ended_at, ea.started_at + INTERVAL 12 HOUR)
+          AND ds.channel IN ('heart_rate', 'power')
+          AND ds.is_deleted = 0
+        GROUP BY ea.id
       )
       SELECT
         (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
-        toInt32(count(DISTINCT id)) AS endurance_activities,
-        toInt32(count(DISTINCT if(ds.channel = 'power' AND ds.scalar > 0, ea.id, NULL))) AS activities_with_power,
-        toInt32(count(DISTINCT if(ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL, ea.id, NULL))) AS activities_with_hr
+        toInt32(count()) AS endurance_activities,
+        toInt32(countIf(sensor_samples.power_samples > 0)) AS activities_with_power,
+        toInt32(countIf(sensor_samples.heart_rate_samples > 0)) AS activities_with_hr
       FROM endurance_activities ea
-      LEFT JOIN analytics.deduped_sensor ds
-        ON ds.user_id = ea.user_id
-       AND ds.recorded_at >= ea.started_at
-       AND ds.recorded_at <= coalesce(ea.ended_at, ea.started_at + INTERVAL 12 HOUR)
-       AND ds.channel IN ('heart_rate', 'power')
-       AND ds.is_deleted = 0`,
+      LEFT JOIN sensor_samples_by_activity sensor_samples
+        ON sensor_samples.activity_id = ea.id`,
       {
         userId: this.userId,
         days,
