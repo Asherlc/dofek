@@ -146,7 +146,9 @@ export class EfficiencyRepository extends BaseRepository {
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
           asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
           a.activity_type AS activity_type,
           a.name AS name,
@@ -173,11 +175,16 @@ export class EfficiencyRepository extends BaseRepository {
         toInt32(count()) AS z2_samples
       FROM activity_meta am
       INNER JOIN analytics.deduped_sensor hr
-        ON hr.activity_id = am.id AND hr.channel = 'heart_rate'
+        ON hr.user_id = am.user_id
+       AND hr.recorded_at >= am.started_at
+       AND hr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+       AND hr.channel = 'heart_rate'
+       AND hr.is_deleted = 0
       INNER JOIN analytics.deduped_sensor pwr
-        ON pwr.activity_id = am.id
+        ON pwr.user_id = hr.user_id
        AND pwr.channel = 'power'
        AND pwr.recorded_at = hr.recorded_at
+       AND pwr.is_deleted = 0
       WHERE hr.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
         AND hr.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
         AND pwr.scalar > 0
@@ -226,7 +233,11 @@ export class EfficiencyRepository extends BaseRepository {
     const rows = await this.#sensorStore.query(
       aerobicEfficiencyDiagnosticSchema,
       `WITH endurance_activities AS (
-        SELECT asum.activity_id AS id
+        SELECT
+          asum.activity_id AS id,
+          asum.user_id AS user_id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at
         FROM analytics.activity_summary asum
         INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
@@ -236,10 +247,15 @@ export class EfficiencyRepository extends BaseRepository {
       SELECT
         (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
         toInt32(count(DISTINCT id)) AS endurance_activities,
-        toInt32(count(DISTINCT if(ds.channel = 'power' AND ds.scalar > 0, ds.activity_id, NULL))) AS activities_with_power,
-        toInt32(count(DISTINCT if(ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL, ds.activity_id, NULL))) AS activities_with_hr
+        toInt32(count(DISTINCT if(ds.channel = 'power' AND ds.scalar > 0, ea.id, NULL))) AS activities_with_power,
+        toInt32(count(DISTINCT if(ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL, ea.id, NULL))) AS activities_with_hr
       FROM endurance_activities ea
-      LEFT JOIN analytics.deduped_sensor ds ON ds.activity_id = ea.id`,
+      LEFT JOIN analytics.deduped_sensor ds
+        ON ds.user_id = ea.user_id
+       AND ds.recorded_at >= ea.started_at
+       AND ds.recorded_at <= coalesce(ea.ended_at, ea.started_at + INTERVAL 12 HOUR)
+       AND ds.channel IN ('heart_rate', 'power')
+       AND ds.is_deleted = 0`,
       {
         userId: this.userId,
         days,
@@ -270,7 +286,9 @@ export class EfficiencyRepository extends BaseRepository {
       `WITH activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
           asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
           a.activity_type AS activity_type,
           a.name AS name
@@ -282,17 +300,24 @@ export class EfficiencyRepository extends BaseRepository {
       ),
       activity_halves AS (
         SELECT
-          pwr.activity_id AS activity_id,
+          am.id AS activity_id,
           pwr.scalar AS power,
           hr.scalar AS heart_rate,
-          ntile(2) OVER (PARTITION BY pwr.activity_id ORDER BY pwr.recorded_at) AS half
+          ntile(2) OVER (PARTITION BY am.id ORDER BY pwr.recorded_at) AS half
         FROM analytics.deduped_sensor pwr
+        INNER JOIN activity_meta am
+          ON pwr.user_id = am.user_id
+         AND pwr.recorded_at >= am.started_at
+         AND pwr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
         INNER JOIN analytics.deduped_sensor hr
-          ON hr.activity_id = pwr.activity_id
+          ON hr.user_id = pwr.user_id
          AND hr.recorded_at = pwr.recorded_at
          AND hr.channel = 'heart_rate'
-        INNER JOIN activity_meta am ON am.id = pwr.activity_id
-        WHERE pwr.channel = 'power' AND pwr.scalar > 0 AND hr.scalar > 0
+         AND hr.is_deleted = 0
+        WHERE pwr.channel = 'power'
+          AND pwr.scalar > 0
+          AND pwr.is_deleted = 0
+          AND hr.scalar > 0
       ),
       half_ratios AS (
         SELECT
@@ -349,6 +374,9 @@ export class EfficiencyRepository extends BaseRepository {
       `WITH activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
           up.max_hr AS max_hr
         FROM analytics.activity_summary asum
@@ -367,8 +395,12 @@ export class EfficiencyRepository extends BaseRepository {
                        AND ds.scalar < am.max_hr * {p2:Float64})) AS z2_seconds,
         toInt32(countIf(ds.scalar >= am.max_hr * {p2:Float64})) AS z3_seconds
       FROM analytics.deduped_sensor ds
-      INNER JOIN activity_meta am ON am.id = ds.activity_id
+      INNER JOIN activity_meta am
+        ON ds.user_id = am.user_id
+       AND ds.recorded_at >= am.started_at
+       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
       WHERE ds.channel = 'heart_rate'
+        AND ds.is_deleted = 0
       GROUP BY am.max_hr, toMonday(am.activity_date)
       ORDER BY week`,
       {

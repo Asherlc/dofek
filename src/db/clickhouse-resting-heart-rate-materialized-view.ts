@@ -23,11 +23,23 @@ heart_rate_samples AS (
   FROM sleep_windows
   INNER JOIN analytics.deduped_sensor AS samples
     ON samples.user_id = sleep_windows.user_id
+  LEFT JOIN (
+    SELECT
+      toNullable(id) AS activity_id,
+      user_id,
+      started_at,
+      ended_at
+    FROM analytics.v_activity
+  ) AS activity
+    ON activity.user_id = samples.user_id
+   AND samples.recorded_at >= activity.started_at
+   AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
   WHERE samples.channel = 'heart_rate'
     AND samples.recorded_at >= sleep_windows.started_at
     AND samples.recorded_at <= sleep_windows.ended_at
-    AND samples.activity_id IS NULL
+    AND samples.is_deleted = 0
     AND samples.scalar IS NOT NULL
+    AND activity.activity_id IS NULL
 )
 SELECT
   sleep_id,

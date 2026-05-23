@@ -950,24 +950,28 @@ LEFT JOIN journal_entry_counts
 function buildActivityTrendDailyReadModelSql(): string {
   return `${standardViewHeader("analytics.activity_trend_daily")}
 SELECT
-  user_id,
-  toDate(recorded_at) AS bucket_date,
-  CAST(avgIf(scalar, channel = 'heart_rate'), 'Nullable(Float64)') AS avg_hr,
-  CAST(maxIf(scalar, channel = 'heart_rate'), 'Nullable(Int16)') AS max_hr,
-  CAST(avgIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Float64)') AS avg_power,
-  CAST(maxIf(scalar, channel = 'power' AND scalar > 0), 'Nullable(Int16)') AS max_power,
-  CAST(avgIf(scalar, channel = 'cadence' AND scalar > 0), 'Nullable(Float64)') AS avg_cadence,
-  CAST(avgIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS avg_speed,
+  activity.user_id AS user_id,
+  toDate(samples.recorded_at) AS bucket_date,
+  CAST(avgIf(samples.scalar, samples.channel = 'heart_rate'), 'Nullable(Float64)') AS avg_hr,
+  CAST(maxIf(samples.scalar, samples.channel = 'heart_rate'), 'Nullable(Int16)') AS max_hr,
+  CAST(avgIf(samples.scalar, samples.channel = 'power' AND samples.scalar > 0), 'Nullable(Float64)') AS avg_power,
+  CAST(maxIf(samples.scalar, samples.channel = 'power' AND samples.scalar > 0), 'Nullable(Int16)') AS max_power,
+  CAST(avgIf(samples.scalar, samples.channel = 'cadence' AND samples.scalar > 0), 'Nullable(Float64)') AS avg_cadence,
+  CAST(avgIf(samples.scalar, samples.channel = 'speed'), 'Nullable(Float64)') AS avg_speed,
   count() AS total_samples,
-  countIf(channel = 'heart_rate') AS hr_samples,
-  countIf(channel = 'power' AND scalar > 0) AS power_samples,
-  countIf(channel = 'cadence' AND scalar > 0) AS cadence_samples,
-  countIf(channel = 'speed') AS speed_samples,
-  uniqExact(activity_id) AS activity_count
-FROM analytics.deduped_sensor
-WHERE activity_id IS NOT NULL
-  AND scalar IS NOT NULL
-GROUP BY user_id, bucket_date`;
+  countIf(samples.channel = 'heart_rate') AS hr_samples,
+  countIf(samples.channel = 'power' AND samples.scalar > 0) AS power_samples,
+  countIf(samples.channel = 'cadence' AND samples.scalar > 0) AS cadence_samples,
+  countIf(samples.channel = 'speed') AS speed_samples,
+  uniqExact(activity.id) AS activity_count
+FROM analytics.v_activity AS activity
+INNER JOIN analytics.deduped_sensor AS samples
+  ON samples.user_id = activity.user_id
+ AND samples.recorded_at >= activity.started_at
+ AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
+WHERE samples.is_deleted = 0
+  AND samples.scalar IS NOT NULL
+GROUP BY activity.user_id, bucket_date`;
 }
 
 export function buildProviderStatsCreateReadModelStatements(): string[] {

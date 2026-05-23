@@ -42,7 +42,10 @@ export async function getClickHousePowerCurveSamples(
     query: `
         WITH activity_info AS (
           SELECT
-            deduped_samples.activity_id AS activity_id,
+            activity.id AS activity_id,
+            activity.user_id AS user_id,
+            activity.started_at AS started_at,
+            activity.ended_at AS ended_at,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS activity_date,
             greatest(
               toInt32(round(
@@ -53,24 +56,30 @@ export async function getClickHousePowerCurveSamples(
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN analytics.v_activity AS activity
-            ON activity.id = deduped_samples.activity_id
+            ON activity.user_id = deduped_samples.user_id
+           AND deduped_samples.recorded_at >= activity.started_at
+           AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
+            AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
-          GROUP BY deduped_samples.activity_id, activity.started_at
+          GROUP BY activity.id, activity.user_id, activity.started_at, activity.ended_at
           HAVING count() > 1
         )
         SELECT
-          toString(deduped_samples.activity_id) AS activity_id,
+          toString(activity_info.activity_id) AS activity_id,
           activity_info.activity_date AS activity_date,
           ifNull(deduped_samples.scalar, 0) AS power,
           activity_info.interval_s AS interval_s
         FROM analytics.deduped_sensor AS deduped_samples
         INNER JOIN activity_info
-          ON activity_info.activity_id = deduped_samples.activity_id
+          ON activity_info.user_id = deduped_samples.user_id
+         AND deduped_samples.recorded_at >= activity_info.started_at
+         AND deduped_samples.recorded_at <= coalesce(activity_info.ended_at, activity_info.started_at + INTERVAL 12 HOUR)
         WHERE deduped_samples.channel = 'power'
-        ORDER BY deduped_samples.activity_id, deduped_samples.recorded_at
+          AND deduped_samples.is_deleted = 0
+        ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
     query_params: userWindowParams(days, userId, timezone),
@@ -88,7 +97,10 @@ export async function getClickHouseNormalizedPowerSamples(
     query: `
         WITH activity_info AS (
           SELECT
-            deduped_samples.activity_id AS activity_id,
+            activity.id AS activity_id,
+            activity.user_id AS user_id,
+            activity.started_at AS started_at,
+            activity.ended_at AS ended_at,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS activity_date,
             activity.name AS activity_name,
             greatest(
@@ -100,27 +112,33 @@ export async function getClickHouseNormalizedPowerSamples(
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN analytics.v_activity AS activity
-            ON activity.id = deduped_samples.activity_id
+            ON activity.user_id = deduped_samples.user_id
+           AND deduped_samples.recorded_at >= activity.started_at
+           AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
             AND deduped_samples.scalar > 0
+            AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
-          GROUP BY deduped_samples.activity_id, activity.started_at, activity.name
+          GROUP BY activity.id, activity.user_id, activity.started_at, activity.ended_at, activity.name
           HAVING count() >= 240
         )
         SELECT
-          toString(deduped_samples.activity_id) AS activity_id,
+          toString(activity_info.activity_id) AS activity_id,
           activity_info.activity_date AS activity_date,
           activity_info.activity_name AS activity_name,
           deduped_samples.scalar AS power,
           activity_info.interval_s AS interval_s
         FROM analytics.deduped_sensor AS deduped_samples
         INNER JOIN activity_info
-          ON activity_info.activity_id = deduped_samples.activity_id
+          ON activity_info.user_id = deduped_samples.user_id
+         AND deduped_samples.recorded_at >= activity_info.started_at
+         AND deduped_samples.recorded_at <= coalesce(activity_info.ended_at, activity_info.started_at + INTERVAL 12 HOUR)
         WHERE deduped_samples.channel = 'power'
           AND deduped_samples.scalar > 0
-        ORDER BY deduped_samples.activity_id, deduped_samples.recorded_at
+          AND deduped_samples.is_deleted = 0
+        ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
     query_params: userWindowParams(days, userId, timezone),
@@ -144,6 +162,7 @@ export async function getClickHouseVo2MaxEstimates(
             user_id,
             activity_type,
             started_at,
+            ended_at,
             toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date
           FROM analytics.v_activity
           WHERE user_id = {userId:UUID}
@@ -161,25 +180,28 @@ export async function getClickHouseVo2MaxEstimates(
         ),
         power_samples AS (
           SELECT
-            deduped_samples.activity_id AS activity_id,
+            activities.id AS activity_id,
             activities.activity_date AS activity_date,
             deduped_samples.recorded_at AS recorded_at,
             deduped_samples.scalar AS power,
             row_number() OVER (
-              PARTITION BY deduped_samples.activity_id
+              PARTITION BY activities.id
               ORDER BY deduped_samples.recorded_at
             ) AS row_number,
             sum(deduped_samples.scalar) OVER (
-              PARTITION BY deduped_samples.activity_id
+              PARTITION BY activities.id
               ORDER BY deduped_samples.recorded_at
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN activities
-            ON activities.id = deduped_samples.activity_id
+            ON activities.user_id = deduped_samples.user_id
+           AND deduped_samples.recorded_at >= activities.started_at
+           AND deduped_samples.recorded_at <= coalesce(activities.ended_at, activities.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
             AND deduped_samples.scalar > 0
+            AND deduped_samples.is_deleted = 0
         ),
         power_sample_rate AS (
           SELECT
@@ -229,7 +251,7 @@ export async function getClickHouseVo2MaxEstimates(
         ),
         acsm_segments AS (
           SELECT
-            deduped_samples.activity_id AS activity_id,
+            activities.id AS activity_id,
             activities.activity_date AS activity_date,
             intDiv(toUInt32(dateDiff('second', activities.started_at, deduped_samples.recorded_at)), 300) AS segment_index,
             avgIf(deduped_samples.scalar * 60, deduped_samples.channel = 'speed') AS speed_meters_per_minute,
@@ -239,12 +261,15 @@ export async function getClickHouseVo2MaxEstimates(
               / nullIf(avgIf(deduped_samples.scalar, deduped_samples.channel = 'speed') * 300, 0) AS grade_fraction
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN activities
-            ON activities.id = deduped_samples.activity_id
+            ON activities.user_id = deduped_samples.user_id
+           AND deduped_samples.recorded_at >= activities.started_at
+           AND deduped_samples.recorded_at <= coalesce(activities.ended_at, activities.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
             AND has({outdoorVo2MaxActivityTypes:Array(String)}, activities.activity_type)
             AND deduped_samples.channel IN ('speed', 'heart_rate', 'altitude')
             AND deduped_samples.scalar IS NOT NULL
-          GROUP BY deduped_samples.activity_id, activities.activity_date, segment_index
+            AND deduped_samples.is_deleted = 0
+          GROUP BY activities.id, activities.activity_date, segment_index
           HAVING
             countIf(deduped_samples.channel = 'speed') >= 60
             AND countIf(deduped_samples.channel = 'heart_rate') >= 60

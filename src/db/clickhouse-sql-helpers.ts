@@ -12,18 +12,3 @@ export function standardViewHeader(viewName: string): string {
   return `CREATE VIEW IF NOT EXISTS ${viewName}
 AS`;
 }
-
-export function refreshableMergeTreeViewHeader(
-  viewName: string,
-  orderBy: string,
-  refreshOffset = "",
-  refreshEvery = "1 MINUTE",
-): string {
-  const offsetClause = refreshOffset ? ` OFFSET ${refreshOffset}` : "";
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
-REFRESH EVERY ${refreshEvery}${offsetClause}
-ENGINE = MergeTree
-ORDER BY ${orderBy}
-SETTINGS allow_nullable_key = 1
-AS`;
-}

@@ -158,7 +158,11 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
+    expect(queryText).toContain(
+      "recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})",
+    );
+    expect(queryText).toContain("recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})");
+    expect(queryText).toContain("is_deleted = 0");
     expect(queryText).toContain("channel = 'power'");
   });
 

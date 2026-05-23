@@ -9,6 +9,7 @@ import {
   createClickHouseClientFromEnv,
   parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
+import { processDedupedSensorDirtyKeys } from "../../../../src/db/clickhouse-deduped-sensor.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 
@@ -39,6 +40,7 @@ const clickHouseTestSetupSemaphoreDirectory = join(
 );
 const clickHouseTestSetupSlotCount = 2;
 const clickHouseTestSetupSlotTimeoutMilliseconds = 55_000;
+const clickHouseTestSensorDirtyKeyMaxBatches = 1000;
 const clickHouseTestSetupStaleSlotMilliseconds = 300_000;
 const rawTableSyncs: RawTableSync[] = [
   {
@@ -280,14 +282,13 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
 ];
-const analyticsRefreshOrder = [
+const analyticsBuildOrder = [
   "analytics.v_activity",
   "analytics.v_activity_members",
   "analytics.v_sleep",
   "analytics.v_body_measurement",
   "analytics.v_daily_metrics",
   "analytics.provider_stats",
-  "analytics.deduped_sensor",
   "analytics.resting_heart_rate_sleep_window",
   "analytics.deduped_location",
   "analytics.activity_summary",
@@ -422,11 +423,17 @@ nutrition_daily UInt64,
 lab_panels UInt64,
 lab_results UInt64,
 journal_entries UInt64`,
-    deduped_sensor: `activity_id Nullable(UUID),
-user_id UUID,
+    deduped_sensor: `user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
+recorded_date Date,
 channel String,
-scalar Nullable(Float32)`,
+scalar Nullable(Float32),
+provider_id Nullable(String),
+source_metric_stream_id Nullable(UUID),
+provider_priority UInt16,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
     deduped_location: `activity_id UUID,
 user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
@@ -502,25 +509,6 @@ function rewriteClickHouseTestCommand(
   precomputedAnalyticsSelectByName: Map<string, string>,
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
-  const materializedViewMatch = rewrittenQuery.match(
-    /^CREATE MATERIALIZED VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nREFRESH EVERY[^\n]*\nENGINE = MergeTree\nORDER BY [^\n]+\n(?:SETTINGS allow_nullable_key = 1\n)?AS\n?([\s\S]*)$/,
-  );
-
-  if (materializedViewMatch) {
-    const viewName = materializedViewMatch[1];
-    const selectSql = materializedViewMatch[2];
-    if (!viewName || !selectSql) {
-      throw new Error("Could not parse ClickHouse test materialized view statement");
-    }
-    const trimmedSelectSql = selectSql.trim();
-    precomputedAnalyticsSelectByName.set(viewName, trimmedSelectSql);
-    const tableStatement = buildTestAnalyticsTableStatement(viewName);
-    if (!tableStatement) {
-      throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
-    }
-    return [tableStatement];
-  }
-
   const viewMatch = rewrittenQuery.match(
     /^CREATE VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nAS\n?([\s\S]*)$/,
   );
@@ -544,18 +532,14 @@ function rewriteClickHouseTestCommand(
     return [rewrittenQuery.replace("DROP VIEW IF EXISTS", "DROP TABLE IF EXISTS")];
   }
 
-  const refreshViewPrefix = `SYSTEM REFRESH VIEW ${databases.analytics}.`;
-  if (rewrittenQuery.startsWith(refreshViewPrefix)) {
-    const viewName = rewrittenQuery.slice("SYSTEM REFRESH VIEW ".length);
+  const rebuildAnalyticsPrefix = `REBUILD TEST ANALYTICS TABLE ${databases.analytics}.`;
+  if (rewrittenQuery.startsWith(rebuildAnalyticsPrefix)) {
+    const viewName = rewrittenQuery.slice("REBUILD TEST ANALYTICS TABLE ".length);
     const selectSql = precomputedAnalyticsSelectByName.get(viewName);
     if (!selectSql) {
       throw new Error(`Missing ClickHouse test analytics SELECT for ${viewName}`);
     }
     return [`TRUNCATE TABLE ${viewName}`, `INSERT INTO ${viewName}\n${selectSql}`];
-  }
-
-  if (rewrittenQuery.startsWith(`SYSTEM WAIT VIEW ${databases.analytics}.`)) {
-    return ["SELECT 1"];
   }
 
   return [rewrittenQuery];
@@ -725,8 +709,17 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
     });
   }
 
-  for (const viewName of analyticsRefreshOrder) {
-    await client.command({ query: `SYSTEM REFRESH VIEW ${viewName}` });
-    await client.command({ query: `SYSTEM WAIT VIEW ${viewName}` });
+  for (let batchIndex = 0; batchIndex < clickHouseTestSensorDirtyKeyMaxBatches; batchIndex += 1) {
+    const processedDirtyKeys = await processDedupedSensorDirtyKeys(client);
+    if (processedDirtyKeys === 0) {
+      break;
+    }
+    if (batchIndex === clickHouseTestSensorDirtyKeyMaxBatches - 1) {
+      throw new Error("ClickHouse test sensor dirty-key backlog did not drain");
+    }
+  }
+
+  for (const viewName of analyticsBuildOrder) {
+    await client.command({ query: `REBUILD TEST ANALYTICS TABLE ${viewName}` });
   }
 }

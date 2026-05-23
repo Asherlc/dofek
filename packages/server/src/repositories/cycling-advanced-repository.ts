@@ -306,21 +306,25 @@ export class CyclingAdvancedRepository {
       ftpSchema,
       `WITH activity_power AS (
         SELECT
-          ds.activity_id AS activity_id,
+          a.id AS activity_id,
           ds.recorded_at AS recorded_at,
           row_number() OVER (
-            PARTITION BY ds.activity_id ORDER BY ds.recorded_at
+            PARTITION BY a.id ORDER BY ds.recorded_at
           ) AS rn,
           sum(coalesce(ds.scalar, 0)) OVER (
-            PARTITION BY ds.activity_id ORDER BY ds.recorded_at
+            PARTITION BY a.id ORDER BY ds.recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
           ) AS cumsum
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a ON a.id = ds.activity_id
+        INNER JOIN analytics.v_activity a
+          ON a.user_id = ds.user_id
+         AND ds.recorded_at >= a.started_at
+         AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE ds.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
           AND ds.channel = 'power'
+          AND ds.is_deleted = 0
       ),
       sample_rate AS (
         SELECT
@@ -363,19 +367,23 @@ export class CyclingAdvancedRepository {
       variabilityRowSchema,
       `WITH rolling AS (
         SELECT
-          ds.activity_id AS activity_id,
+          a.id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY ds.activity_id
+            PARTITION BY a.id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a ON a.id = ds.activity_id
+        INNER JOIN analytics.v_activity a
+          ON a.user_id = ds.user_id
+         AND ds.recorded_at >= a.started_at
+         AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE ds.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
           AND ds.channel = 'power'
           AND ds.scalar > 0
+          AND ds.is_deleted = 0
       ),
       grouped AS (
         SELECT
@@ -434,44 +442,56 @@ export class CyclingAdvancedRepository {
       vamRowSchema,
       `WITH altitude_points AS (
         SELECT
-          alt.activity_id AS activity_id,
+          a.id AS activity_id,
           alt.scalar AS altitude,
           alt.recorded_at AS recorded_at,
           lagInFrame(alt.scalar) OVER (
-            PARTITION BY alt.activity_id ORDER BY alt.recorded_at
+            PARTITION BY a.id ORDER BY alt.recorded_at
           ) AS prev_altitude,
           lagInFrame(alt.recorded_at) OVER (
-            PARTITION BY alt.activity_id ORDER BY alt.recorded_at
+            PARTITION BY a.id ORDER BY alt.recorded_at
           ) AS prev_recorded_at
         FROM analytics.deduped_sensor alt
-        INNER JOIN analytics.v_activity a ON a.id = alt.activity_id
+        INNER JOIN analytics.v_activity a
+          ON a.user_id = alt.user_id
+         AND alt.recorded_at >= a.started_at
+         AND alt.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE a.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
           AND alt.channel = 'altitude'
+          AND alt.is_deleted = 0
       ),
       grade_activities AS (
         SELECT DISTINCT
-          grd.activity_id AS activity_id,
+          a.id AS activity_id,
           1 AS has_grade_samples
         FROM analytics.deduped_sensor grd
-        INNER JOIN analytics.v_activity a ON a.id = grd.activity_id
+        INNER JOIN analytics.v_activity a
+          ON a.user_id = grd.user_id
+         AND grd.recorded_at >= a.started_at
+         AND grd.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE a.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
           AND grd.channel = 'grade'
+          AND grd.is_deleted = 0
       ),
       grade_points AS (
         SELECT
-          grd.activity_id AS activity_id,
+          a.id AS activity_id,
           grd.recorded_at AS recorded_at,
           grd.scalar AS grade
         FROM analytics.deduped_sensor grd
-        INNER JOIN analytics.v_activity a ON a.id = grd.activity_id
+        INNER JOIN analytics.v_activity a
+          ON a.user_id = grd.user_id
+         AND grd.recorded_at >= a.started_at
+         AND grd.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE a.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, a.activity_type)
           AND a.started_at > now() - INTERVAL {days:Int32} DAY
           AND grd.channel = 'grade'
+          AND grd.is_deleted = 0
       ),
       climbing_segments AS (
         SELECT

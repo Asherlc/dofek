@@ -8,6 +8,7 @@ import {
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
+import { buildIncrementalDedupedSensorMigrationStatements } from "./clickhouse-deduped-sensor.ts";
 import {
   buildActivitySummaryReadModelStatements,
   buildDedupedLocationReadModelStatements,
@@ -230,7 +231,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     },
     {
       id: "0016_reduce_metric_stream_refresh_load",
-      statements: ["ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE"],
+      statements: [],
     },
     {
       id: "0017_body_measurement_sample_projection",
@@ -270,6 +271,21 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         ...buildAnalyticsFitnessReadModelStatements(),
         ...buildRestingHeartRateSleepWindowMaterializedViewStatements(),
         ...buildDedupedLocationReadModelStatements(),
+        ...buildActivitySummaryReadModelStatements(),
+        ...buildActivityTrendDailyReadModelStatements(),
+      ],
+    },
+    {
+      id: "0020_incremental_deduped_sensor",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        "DROP VIEW IF EXISTS analytics.activity_trend_daily",
+        "DROP TABLE IF EXISTS analytics.activity_trend_daily",
+        "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
+        "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
+        ...buildIncrementalDedupedSensorMigrationStatements(),
+        ...buildRestingHeartRateSleepWindowMaterializedViewStatements(),
         ...buildActivitySummaryReadModelStatements(),
         ...buildActivityTrendDailyReadModelStatements(),
       ],
@@ -372,8 +388,6 @@ async function replaceNativeMetricStreamAndBackfill(
   }
 
   await backfillNativeMetricStream(client, postgresConnectionString);
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
 }
 
 async function repairNativeMetricStreamBackfill(
@@ -391,8 +405,6 @@ async function repairNativeMetricStreamBackfill(
     "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
   );
   await backfillNativeMetricStream(client, postgresConnectionString);
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
 }
 
 async function metricStreamMirrorHasColumns(
@@ -450,15 +462,11 @@ async function rebuildMetricStreamLocationPoint(
   }
 
   await backfillNativeMetricStream(client, postgresConnectionString);
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
 }
 
 function shouldRunBeforeMetricStreamBackfill(statement: string): boolean {
-  return (
-    !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor") &&
-    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_sensor")
-  );
+  void statement;
+  return true;
 }
 
 async function shouldReplacePostgresFitnessDatabase(
@@ -511,8 +519,6 @@ async function replaceLegacyMetricStreamIfNeeded(
   }
 
   await backfillNativeMetricStream(client, postgresConnectionString);
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
 }
 
 async function shouldReplaceMetricStreamTable(client: ClickHouseCommandClient): Promise<boolean> {

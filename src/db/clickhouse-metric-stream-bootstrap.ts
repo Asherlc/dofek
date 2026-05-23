@@ -1,3 +1,4 @@
+import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
 import {
   buildActivityTrendDailyCreateReadModelStatements,
@@ -40,265 +41,7 @@ ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
     "CREATE DATABASE IF NOT EXISTS analytics",
     ...metricStreamStatements,
     ...buildAnalyticsFitnessReadModelStatements(),
-    `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor
-REFRESH EVERY 15 MINUTE
-ENGINE = MergeTree
-ORDER BY (user_id, activity_id, channel, recorded_at)
-SETTINGS allow_nullable_key = 1
-AS
-WITH
-activity_members AS (
-  SELECT
-    activity_id,
-    user_id,
-    started_at,
-    ended_at,
-    member_activity_id
-  FROM analytics.v_activity_members
-),
-linked_best_source AS (
-  SELECT
-    best_source.activity_id AS activity_id,
-    best_source.channel AS channel,
-    best_source.provider_id AS provider_id
-  FROM (
-    SELECT
-      activity_members.activity_id AS activity_id,
-      metric_stream.metric_channel AS channel,
-      metric_stream.metric_provider_id AS provider_id,
-      count() AS sample_count,
-      row_number() OVER (
-        PARTITION BY activity_members.activity_id, metric_stream.metric_channel
-        ORDER BY count() DESC, metric_stream.metric_provider_id ASC
-      ) AS row_number
-    FROM (
-      SELECT
-        activity_id AS metric_activity_id,
-        channel AS metric_channel,
-        provider_id AS metric_provider_id,
-        scalar AS metric_scalar
-      FROM postgres_fitness.metric_stream FINAL
-      WHERE _peerdb_is_deleted = 0
-    ) AS metric_stream
-    INNER JOIN activity_members
-      ON metric_stream.metric_activity_id = activity_members.member_activity_id
-    WHERE metric_stream.metric_activity_id IS NOT NULL
-      AND metric_stream.metric_scalar IS NOT NULL
-    GROUP BY activity_members.activity_id, metric_stream.metric_channel, metric_stream.metric_provider_id
-  ) AS best_source
-  WHERE best_source.row_number = 1
-),
-linked_sample_bounds AS (
-  SELECT
-    activity_members.activity_id AS activity_id,
-    max(metric_stream.metric_recorded_at) AS last_linked_sample_at
-  FROM (
-    SELECT
-      activity_id AS metric_activity_id,
-      recorded_at AS metric_recorded_at
-    FROM postgres_fitness.metric_stream FINAL
-    WHERE _peerdb_is_deleted = 0
-  ) AS metric_stream
-  INNER JOIN activity_members
-    ON metric_stream.metric_activity_id = activity_members.member_activity_id
-  WHERE metric_stream.metric_activity_id IS NOT NULL
-  GROUP BY activity_members.activity_id
-),
-fallback_windows AS (
-  SELECT
-    activity.id AS activity_id,
-    activity.user_id AS user_id,
-    activity.started_at AS started_at,
-    coalesce(activity.ended_at, linked_sample_bounds.last_linked_sample_at) AS fallback_ended_at
-  FROM analytics.v_activity AS activity
-  LEFT JOIN linked_sample_bounds
-    ON linked_sample_bounds.activity_id = activity.id
-),
-ambient_best_source AS (
-  SELECT
-    best_source.activity_id AS activity_id,
-    best_source.channel AS channel,
-    best_source.provider_id AS provider_id
-  FROM (
-    SELECT
-      fallback_windows.activity_id AS activity_id,
-      metric_stream.metric_channel AS channel,
-      metric_stream.metric_provider_id AS provider_id,
-      count() AS sample_count,
-      row_number() OVER (
-        PARTITION BY fallback_windows.activity_id, metric_stream.metric_channel
-        ORDER BY count() DESC, metric_stream.metric_provider_id ASC
-      ) AS row_number
-    FROM (
-      SELECT
-        activity_id AS metric_activity_id,
-        user_id AS metric_user_id,
-        recorded_at AS metric_recorded_at,
-        channel AS metric_channel,
-        provider_id AS metric_provider_id,
-        scalar AS metric_scalar
-      FROM postgres_fitness.metric_stream FINAL
-      WHERE _peerdb_is_deleted = 0
-    ) AS metric_stream
-    INNER JOIN fallback_windows
-      ON fallback_windows.user_id = metric_stream.metric_user_id
-    LEFT JOIN linked_best_source
-      ON linked_best_source.activity_id = fallback_windows.activity_id
-     AND linked_best_source.channel = metric_stream.metric_channel
-    WHERE metric_stream.metric_activity_id IS NULL
-      AND fallback_windows.fallback_ended_at IS NOT NULL
-      AND metric_stream.metric_recorded_at >= fallback_windows.started_at
-      AND metric_stream.metric_recorded_at <= fallback_windows.fallback_ended_at
-      AND metric_stream.metric_scalar IS NOT NULL
-      AND linked_best_source.activity_id IS NULL
-    GROUP BY fallback_windows.activity_id, metric_stream.metric_channel, metric_stream.metric_provider_id
-  ) AS best_source
-  WHERE best_source.row_number = 1
-),
-standalone_best_source AS (
-  SELECT
-    best_source.user_id AS user_id,
-    best_source.date AS date,
-    best_source.channel AS channel,
-    best_source.provider_id AS provider_id
-  FROM (
-    SELECT
-      metric_stream.metric_user_id AS user_id,
-      toDate(metric_stream.metric_recorded_at) AS date,
-      metric_stream.metric_channel AS channel,
-      metric_stream.metric_provider_id AS provider_id,
-      count() AS sample_count,
-      row_number() OVER (
-        PARTITION BY metric_stream.metric_user_id, toDate(metric_stream.metric_recorded_at), metric_stream.metric_channel
-        ORDER BY count() DESC, metric_stream.metric_provider_id ASC
-      ) AS row_number
-    FROM (
-      SELECT
-        activity_id AS metric_activity_id,
-        user_id AS metric_user_id,
-        recorded_at AS metric_recorded_at,
-        channel AS metric_channel,
-        provider_id AS metric_provider_id,
-        scalar AS metric_scalar
-      FROM postgres_fitness.metric_stream FINAL
-      WHERE _peerdb_is_deleted = 0
-    ) AS metric_stream
-    WHERE metric_stream.metric_activity_id IS NULL
-      AND metric_stream.metric_scalar IS NOT NULL
-    GROUP BY metric_stream.metric_user_id, toDate(metric_stream.metric_recorded_at), metric_stream.metric_channel, metric_stream.metric_provider_id
-  ) AS best_source
-  WHERE best_source.row_number = 1
-),
-linked_samples AS (
-  SELECT
-    activity_members.activity_id AS activity_id,
-    activity_members.user_id AS user_id,
-    metric_stream.metric_recorded_at AS recorded_at,
-    metric_stream.metric_channel AS channel,
-    max(metric_stream.metric_scalar) AS scalar
-  FROM (
-    SELECT
-      activity_id AS metric_activity_id,
-      recorded_at AS metric_recorded_at,
-      channel AS metric_channel,
-      provider_id AS metric_provider_id,
-      scalar AS metric_scalar
-    FROM postgres_fitness.metric_stream FINAL
-    WHERE _peerdb_is_deleted = 0
-  ) AS metric_stream
-  INNER JOIN activity_members
-    ON metric_stream.metric_activity_id = activity_members.member_activity_id
-  INNER JOIN linked_best_source
-    ON linked_best_source.activity_id = activity_members.activity_id
-   AND linked_best_source.channel = metric_stream.metric_channel
-   AND linked_best_source.provider_id = metric_stream.metric_provider_id
-  WHERE metric_stream.metric_activity_id IS NOT NULL
-    AND metric_stream.metric_scalar IS NOT NULL
-  GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.metric_recorded_at, metric_stream.metric_channel
-),
-ambient_samples AS (
-  SELECT
-    fallback_windows.activity_id AS activity_id,
-    fallback_windows.user_id AS user_id,
-    metric_stream.metric_recorded_at AS recorded_at,
-    metric_stream.metric_channel AS channel,
-    max(metric_stream.metric_scalar) AS scalar
-  FROM (
-    SELECT
-      activity_id AS metric_activity_id,
-      user_id AS metric_user_id,
-      recorded_at AS metric_recorded_at,
-      channel AS metric_channel,
-      provider_id AS metric_provider_id,
-      scalar AS metric_scalar
-    FROM postgres_fitness.metric_stream FINAL
-    WHERE _peerdb_is_deleted = 0
-  ) AS metric_stream
-  INNER JOIN fallback_windows
-    ON fallback_windows.user_id = metric_stream.metric_user_id
-  INNER JOIN ambient_best_source
-    ON ambient_best_source.activity_id = fallback_windows.activity_id
-   AND ambient_best_source.channel = metric_stream.metric_channel
-   AND ambient_best_source.provider_id = metric_stream.metric_provider_id
-  WHERE metric_stream.metric_activity_id IS NULL
-    AND fallback_windows.fallback_ended_at IS NOT NULL
-    AND metric_stream.metric_recorded_at >= fallback_windows.started_at
-    AND metric_stream.metric_recorded_at <= fallback_windows.fallback_ended_at
-    AND metric_stream.metric_scalar IS NOT NULL
-  GROUP BY fallback_windows.activity_id, fallback_windows.user_id, metric_stream.metric_recorded_at, metric_stream.metric_channel
-),
-standalone_samples AS (
-  SELECT
-    CAST(NULL, 'Nullable(UUID)') AS activity_id,
-    metric_stream.metric_user_id AS user_id,
-    metric_stream.metric_recorded_at AS recorded_at,
-    metric_stream.metric_channel AS channel,
-    max(metric_stream.metric_scalar) AS scalar
-  FROM (
-    SELECT
-      activity_id AS metric_activity_id,
-      user_id AS metric_user_id,
-      recorded_at AS metric_recorded_at,
-      channel AS metric_channel,
-      provider_id AS metric_provider_id,
-      scalar AS metric_scalar
-    FROM postgres_fitness.metric_stream FINAL
-    WHERE _peerdb_is_deleted = 0
-  ) AS metric_stream
-  INNER JOIN standalone_best_source
-    ON standalone_best_source.user_id = metric_stream.metric_user_id
-   AND standalone_best_source.date = toDate(metric_stream.metric_recorded_at)
-   AND standalone_best_source.channel = metric_stream.metric_channel
-   AND standalone_best_source.provider_id = metric_stream.metric_provider_id
-  WHERE metric_stream.metric_activity_id IS NULL
-    AND metric_stream.metric_scalar IS NOT NULL
-  GROUP BY metric_stream.metric_user_id, metric_stream.metric_recorded_at, metric_stream.metric_channel
-)
-SELECT
-  CAST(linked_samples.activity_id, 'Nullable(UUID)') AS activity_id,
-  linked_samples.user_id AS user_id,
-  linked_samples.recorded_at AS recorded_at,
-  linked_samples.channel AS channel,
-  linked_samples.scalar AS scalar
-FROM linked_samples
-UNION ALL
-SELECT
-  CAST(ambient_samples.activity_id, 'Nullable(UUID)') AS activity_id,
-  ambient_samples.user_id AS user_id,
-  ambient_samples.recorded_at AS recorded_at,
-  ambient_samples.channel AS channel,
-  ambient_samples.scalar AS scalar
-FROM ambient_samples
-UNION ALL
-SELECT
-  standalone_samples.activity_id AS activity_id,
-  standalone_samples.user_id AS user_id,
-  standalone_samples.recorded_at AS recorded_at,
-  standalone_samples.channel AS channel,
-  standalone_samples.scalar AS scalar
-FROM standalone_samples`,
-    "SYSTEM REFRESH VIEW analytics.deduped_sensor",
-    "SYSTEM WAIT VIEW analytics.deduped_sensor",
+    ...buildIncrementalDedupedSensorStatements(),
     buildRestingHeartRateSleepWindowMaterializedViewSql(),
     ...buildDedupedLocationReadModelStatements(),
     ...buildActivitySummaryReadModelStatements(),
@@ -371,10 +114,6 @@ export function buildActivitySummaryReadModelStatements(
   return [
     `${standardViewHeader(viewName)}
 WITH
-deduped_samples AS (
-  SELECT activity_id, user_id, recorded_at, channel, scalar
-  FROM analytics.deduped_sensor
-),
 activity_bounds AS (
   SELECT
     id AS activity_id,
@@ -384,6 +123,21 @@ activity_bounds AS (
     started_at,
     ended_at
   FROM analytics.v_activity
+),
+deduped_samples AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    sensor_samples.user_id AS user_id,
+    sensor_samples.recorded_at AS recorded_at,
+    sensor_samples.channel AS channel,
+    sensor_samples.scalar AS scalar
+  FROM activity_bounds
+  INNER JOIN analytics.deduped_sensor AS sensor_samples
+    ON sensor_samples.user_id = activity_bounds.user_id
+   AND sensor_samples.recorded_at >= activity_bounds.started_at
+   AND sensor_samples.recorded_at <= coalesce(activity_bounds.ended_at, activity_bounds.started_at + INTERVAL 12 HOUR)
+  WHERE sensor_samples.is_deleted = 0
+    AND sensor_samples.scalar IS NOT NULL
 ),
 altitude_deltas AS (
   SELECT

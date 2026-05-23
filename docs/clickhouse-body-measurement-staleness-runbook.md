@@ -84,17 +84,18 @@ SQL
 REMOTE
 ```
 
-If `analytics.deduped_sensor` is running a full-history refresh over
-`postgres_fitness.metric_stream FINAL` and the host is unhealthy, stop the
-active query and pause that refreshable view. Record the query IDs first.
+If a ClickHouse query is scanning all of `postgres_fitness.metric_stream FINAL`
+and the host is unhealthy, stop the active query after recording the query ID.
+The current sensor pipeline is incremental; do not pause or depend on a
+refreshable sensor view.
 
 ```sql
 KILL QUERY WHERE query_id IN ('<query-id-1>', '<query-id-2>') SYNC;
-SYSTEM STOP VIEW analytics.deduped_sensor;
 ```
 
-This is an operational mitigation: activity sensor analytics can remain stale
-while this view is disabled. Document it in
+Then inspect `analytics.sensor_dirty_key` backlog and the latest
+`analytics.sensor_scalar_sample._peerdb_synced_at` to confirm the incremental
+pipeline is advancing. Document the incident in
 `docs/production-incident-baseline.md`.
 
 ## 3. Decide Whether CDC Missed a Gap

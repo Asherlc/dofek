@@ -37,11 +37,7 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.activity_trend_daily",
       ]) {
         await client.command({
-          query: `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
-REFRESH EVERY 1 MINUTE
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS allow_nullable_key = 1
+          query: `CREATE VIEW IF NOT EXISTS ${viewName}
 AS
 SELECT 1 AS value`,
         });
@@ -173,6 +169,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(11);
+    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(0);
   });
 });

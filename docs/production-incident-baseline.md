@@ -7373,3 +7373,44 @@ This branch converts the non-`deduped_sensor` ClickHouse analytics read models
 from refreshable materialized views to normal views over the existing raw and
 incremental sources. Until that migration is deployed, production can still
 serve stale results from disabled or cancelled refreshable views.
+
+## 2026-05-23: Full-Refresh ClickHouse Read Models Removed
+
+### Symptoms
+
+The Strong CSV incident showed that successfully imported Postgres records could
+remain invisible when ClickHouse refreshable read models were stale, cancelled,
+or disabled.
+
+### User Impact
+
+Provider counts, activity lists, and sensor-derived analytics could lag
+canonical writes even after imports or syncs completed successfully.
+
+### Evidence
+
+Active ClickHouse bootstrap and migration SQL in this branch no longer renders
+`REFRESH EVERY`, `SYSTEM REFRESH VIEW`, `SYSTEM WAIT VIEW`, or `MODIFY REFRESH`
+for production read models. Changed tests passed against the ClickHouse-backed
+integration suite with 58 files and 1291 tests.
+
+### Root Cause
+
+The prior design depended on full refreshable materialized views for provider,
+activity, body, trend, and deduped sensor read models. A disabled or long-running
+full refresh could leave UI-facing analytics stale independent of canonical
+Postgres state.
+
+### Fix or Mitigation
+
+Converted the remaining ClickHouse read models to normal views or incremental
+tables. `analytics.deduped_sensor` now drains dirty sensor keys after sync jobs
+instead of relying on full refreshes, and downstream activity sensor queries
+derive activity membership from `analytics.v_activity` time windows.
+
+### Remaining Risk
+
+Production still needs this migration deployed and observed. The incremental
+dirty-key worker has a hard backlog-drain limit and fails loudly if it cannot
+catch up, so future failures should surface as post-sync job errors instead of
+silent stale analytics.

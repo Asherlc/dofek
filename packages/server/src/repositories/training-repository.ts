@@ -129,6 +129,9 @@ export class TrainingRepository extends BaseRepository {
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
@@ -148,8 +151,13 @@ export class TrainingRepository extends BaseRepository {
           am.max_hr AS max_hr,
           ${heartRateZoneCountColumns("ds.scalar", activityMetaHeartRateExpressions)}
         FROM analytics.deduped_sensor ds
-        INNER JOIN activity_meta am ON am.id = ds.activity_id
-        WHERE ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL
+        INNER JOIN activity_meta am
+          ON ds.user_id = am.user_id
+         AND ds.recorded_at >= am.started_at
+         AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+        WHERE ds.channel = 'heart_rate'
+          AND ds.scalar IS NOT NULL
+          AND ds.is_deleted = 0
         GROUP BY am.activity_date, am.max_hr
       )
       SELECT
@@ -181,12 +189,18 @@ export class TrainingRepository extends BaseRepository {
       activityStatsRowSchema,
       `WITH sample_counts AS (
         SELECT
-          activity_id,
-          countIf(channel = 'heart_rate') AS hr_samples,
-          countIf(channel = 'power') AS power_samples
-        FROM analytics.deduped_sensor
-        WHERE user_id = {userId:UUID}
-        GROUP BY activity_id
+          a.id AS activity_id,
+          countIf(samples.channel = 'heart_rate') AS hr_samples,
+          countIf(samples.channel = 'power') AS power_samples
+        FROM analytics.deduped_sensor AS samples
+        INNER JOIN analytics.v_activity AS a
+          ON a.user_id = samples.user_id
+         AND samples.recorded_at >= a.started_at
+         AND samples.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
+        WHERE samples.user_id = {userId:UUID}
+          AND samples.channel IN ('heart_rate', 'power')
+          AND samples.is_deleted = 0
+        GROUP BY a.id
       )
       SELECT
         toString(a.id) AS id,

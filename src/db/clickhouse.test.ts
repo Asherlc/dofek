@@ -134,14 +134,28 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
-    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).toContain("ENGINE = ReplacingMergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).not.toContain("REFRESH EVERY");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
     expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor\nREFRESH EVERY 15 MINUTE",
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_scalar_sample_ingest TO analytics.sensor_scalar_sample",
     );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_dirty_key_ingest TO analytics.sensor_dirty_key",
+    );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).not.toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    const dedupedSensorDefinition = sql.slice(
+      sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
+      sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key"),
+    );
+    expect(dedupedSensorDefinition).not.toContain("activity_id");
     expect(sql).toContain("tupleElement(metric_stream.point, 2)");
     expect(sql).toContain("tupleElement(metric_stream.point, 1)");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
@@ -163,9 +177,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.deduped_location");
-    expect(sql.indexOf("SYSTEM WAIT VIEW analytics.deduped_sensor")).toBeLessThan(
-      sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
-    );
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.v_body_measurement");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.v_body_measurement");
@@ -182,8 +193,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_trend_daily");
-    expect(sql).toContain("countIf(channel = 'speed') AS speed_samples");
-    expect(sql).toContain("uniqExact(activity_id) AS activity_count");
+    expect(sql).toContain("countIf(samples.channel = 'speed') AS speed_samples");
+    expect(sql).toContain("uniqExact(activity.id) AS activity_count");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
@@ -221,7 +232,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("best.created_at AS created_at");
     expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
     expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
-    expect(sql).toContain("FROM analytics.deduped_sensor");
+    expect(sql).toContain("JOIN analytics.deduped_sensor AS");
     expect(sql).toContain("FROM analytics.v_sleep");
     expect(sql).toContain("arrayAvg(arraySlice(");
     expect(sql).toContain(
