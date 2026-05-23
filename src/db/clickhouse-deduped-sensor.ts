@@ -30,7 +30,16 @@ const dirtyKeyRowSchema = z.object({
   user_id: z.string(),
   channel: z.string(),
   recorded_at: z.string(),
+  max_dirty_version: z.string(),
 });
+
+type DirtyKeyRow = z.infer<typeof dirtyKeyRowSchema>;
+
+const maxDedupedSensorDirtyKeyBatchSize = 1000;
+
+function clickHouseStringLiteral(value: string): string {
+  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+}
 
 function sensorScalarChannelListSql(): string {
   return sensorScalarChannels.map((channel) => `'${channel}'`).join(",\n      ");
@@ -227,6 +236,10 @@ FROM pending_keys
 LEFT JOIN (
   SELECT *
   FROM analytics.sensor_scalar_sample FINAL
+  WHERE (user_id, channel, recorded_at) IN (
+    SELECT user_id, channel, recorded_at
+    FROM pending_keys
+  )
 ) AS samples
   ON samples.user_id = pending_keys.user_id
  AND samples.channel = pending_keys.channel
@@ -255,6 +268,23 @@ function buildPendingDirtyKeySql(limit: number): string {
   HAVING maxIf(dirty_version, processed_at IS NULL) > maxIf(dirty_version, processed_at IS NOT NULL)
   ORDER BY max_peerdb_synced_at ASC
   LIMIT ${limit}`;
+}
+
+function buildPendingDirtyKeySnapshotSql(pendingRows: DirtyKeyRow[]): string {
+  const values = pendingRows
+    .map(
+      (row) =>
+        `(${clickHouseStringLiteral(row.user_id)}, ${clickHouseStringLiteral(row.channel)}, ${clickHouseStringLiteral(row.recorded_at)}, ${clickHouseStringLiteral(row.max_dirty_version)})`,
+    )
+    .join(",\n  ");
+  return `SELECT
+    user_id,
+    channel,
+    recorded_at,
+    max_dirty_version
+  FROM VALUES('user_id UUID, channel String, recorded_at DateTime64(6, \\'UTC\\'), max_dirty_version UInt64',
+  ${values}
+  )`;
 }
 
 export function buildIncrementalDedupedSensorStatements(): string[] {
@@ -287,10 +317,15 @@ export function buildIncrementalDedupedSensorMigrationStatements(): string[] {
 
 export async function processDedupedSensorDirtyKeys(
   client: ClickHouseDirtyKeyClient,
-  limit = 10_000,
+  limit = maxDedupedSensorDirtyKeyBatchSize,
 ): Promise<number> {
   if (!Number.isInteger(limit) || limit <= 0) {
     throw new Error("ClickHouse deduped sensor dirty-key limit must be a positive integer");
+  }
+  if (limit > maxDedupedSensorDirtyKeyBatchSize) {
+    throw new Error(
+      `ClickHouse deduped sensor dirty-key limit must be at most ${maxDedupedSensorDirtyKeyBatchSize}`,
+    );
   }
 
   const pendingResult = await client.query<Record<string, unknown>>({
@@ -298,7 +333,8 @@ export async function processDedupedSensorDirtyKeys(
       SELECT
         toString(user_id) AS user_id,
         channel,
-        toString(recorded_at) AS recorded_at
+        toString(recorded_at) AS recorded_at,
+        toString(max_dirty_version) AS max_dirty_version
       FROM (
         ${buildPendingDirtyKeySql(limit)}
       )
@@ -310,7 +346,7 @@ export async function processDedupedSensorDirtyKeys(
     return 0;
   }
 
-  const pendingKeySql = buildPendingDirtyKeySql(limit);
+  const pendingKeySql = buildPendingDirtyKeySnapshotSql(pendingRows);
 
   await client.command({
     query: buildDedupedSensorRecomputeInsertSql(pendingKeySql),
@@ -327,18 +363,32 @@ export async function processDedupedSensorDirtyKeys(
   failure_message,
   dirty_version
 )
+WITH pending_keys AS (
+  ${pendingKeySql}
+)
 SELECT
-  user_id,
-  channel,
-  recorded_at,
-  min_peerdb_synced_at,
-  max_peerdb_synced_at,
+  pending_keys.user_id AS user_id,
+  pending_keys.channel AS channel,
+  pending_keys.recorded_at AS recorded_at,
+  min(dirty_keys.min_peerdb_synced_at) AS min_peerdb_synced_at,
+  max(dirty_keys.max_peerdb_synced_at) AS max_peerdb_synced_at,
   now64(9) AS processed_at,
   CAST(NULL, 'Nullable(String)') AS failure_message,
-  greatest(max_dirty_version + 1, toUInt64(toUnixTimestamp64Nano(now64(9)))) AS dirty_version
-FROM (
-  ${pendingKeySql}
-)`,
+  greatest(
+    pending_keys.max_dirty_version + 1,
+    toUInt64(toUnixTimestamp64Nano(now64(9)))
+  ) AS dirty_version
+FROM pending_keys
+INNER JOIN analytics.sensor_dirty_key AS dirty_keys
+  ON dirty_keys.user_id = pending_keys.user_id
+ AND dirty_keys.channel = pending_keys.channel
+ AND dirty_keys.recorded_at = pending_keys.recorded_at
+ AND dirty_keys.dirty_version <= pending_keys.max_dirty_version
+GROUP BY
+  pending_keys.user_id,
+  pending_keys.channel,
+  pending_keys.recorded_at,
+  pending_keys.max_dirty_version`,
   });
 
   return pendingRows.length;
