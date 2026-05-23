@@ -1,5 +1,12 @@
 import { z } from "zod";
-import type { ClickHouseClient } from "./clickhouse.ts";
+
+interface ClickHouseDirtyKeyClient {
+  command(options: { query: string }): Promise<unknown>;
+  query<TRow extends object>(options: {
+    query: string;
+    format: "JSONEachRow";
+  }): Promise<{ json(): Promise<TRow[]> }>;
+}
 
 const sensorScalarChannels = [
   "heart_rate",
@@ -279,7 +286,7 @@ export function buildIncrementalDedupedSensorMigrationStatements(): string[] {
 }
 
 export async function processDedupedSensorDirtyKeys(
-  client: ClickHouseClient,
+  client: ClickHouseDirtyKeyClient,
   limit = 10_000,
 ): Promise<number> {
   if (!Number.isInteger(limit) || limit <= 0) {
