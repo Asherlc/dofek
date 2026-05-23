@@ -1,3 +1,4 @@
+import { TupleParam } from "@clickhouse/client";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildDedupedSensorRecomputeInsertSql,
@@ -40,15 +41,19 @@ describe("ClickHouse deduped sensor dirty-key processing", () => {
 
     const recomputeSql = String(command.mock.calls[0]?.[0].query);
     const processedMarkerSql = String(command.mock.calls[1]?.[0].query);
-    const snapshotFragments = [
-      "FROM VALUES('user_id UUID, channel String, recorded_at DateTime64(6, \\'UTC\\'), max_dirty_version UInt64'",
-      "('00000000-0000-4000-8000-000000000001', 'heart_rate', '2026-05-23 05:00:00.000000', '123456789')",
-    ];
+    const snapshotFragment =
+      "arrayJoin({pendingKeys:Array(Tuple(UUID, String, DateTime64(6, 'UTC'), String))}) AS pending_key";
 
-    for (const snapshotFragment of snapshotFragments) {
-      expect(recomputeSql).toContain(snapshotFragment);
-      expect(processedMarkerSql).toContain(snapshotFragment);
-    }
+    expect(recomputeSql).toContain(snapshotFragment);
+    expect(processedMarkerSql).toContain(snapshotFragment);
+    expect(recomputeSql).not.toContain("00000000-0000-4000-8000-000000000001");
+    expect(processedMarkerSql).not.toContain("00000000-0000-4000-8000-000000000001");
+    expect(command.mock.calls[0]?.[0].query_params).toEqual({
+      pendingKeys: [expect.any(TupleParam)],
+    });
+    expect(command.mock.calls[1]?.[0].query_params).toEqual(
+      command.mock.calls[0]?.[0].query_params,
+    );
     expect(processedMarkerSql).toContain(
       "dirty_keys.dirty_version <= pending_keys.max_dirty_version",
     );

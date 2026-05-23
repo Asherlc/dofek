@@ -1,7 +1,8 @@
+import { TupleParam } from "@clickhouse/client";
 import { z } from "zod";
 
 interface ClickHouseDirtyKeyClient {
-  command(options: { query: string }): Promise<unknown>;
+  command(options: { query: string; query_params?: Record<string, unknown> }): Promise<unknown>;
   query<TRow extends object>(options: {
     query: string;
     format: "JSONEachRow";
@@ -35,11 +36,8 @@ const dirtyKeyRowSchema = z.object({
 
 type DirtyKeyRow = z.infer<typeof dirtyKeyRowSchema>;
 
-const maxDedupedSensorDirtyKeyBatchSize = 1000;
-
-function clickHouseStringLiteral(value: string): string {
-  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
-}
+const maxDedupedSensorDirtyKeyBatchSize = 500;
+const pendingKeyQueryParamType = "Array(Tuple(UUID, String, DateTime64(6, 'UTC'), String))";
 
 function sensorScalarChannelListSql(): string {
   return sensorScalarChannels.map((channel) => `'${channel}'`).join(",\n      ");
@@ -270,21 +268,23 @@ function buildPendingDirtyKeySql(limit: number): string {
   LIMIT ${limit}`;
 }
 
-function buildPendingDirtyKeySnapshotSql(pendingRows: DirtyKeyRow[]): string {
-  const values = pendingRows
-    .map(
-      (row) =>
-        `(${clickHouseStringLiteral(row.user_id)}, ${clickHouseStringLiteral(row.channel)}, ${clickHouseStringLiteral(row.recorded_at)}, ${clickHouseStringLiteral(row.max_dirty_version)})`,
-    )
-    .join(",\n  ");
+function buildPendingDirtyKeySnapshotSql(): string {
   return `SELECT
-    user_id,
-    channel,
-    recorded_at,
-    max_dirty_version
-  FROM VALUES('user_id UUID, channel String, recorded_at DateTime64(6, \\'UTC\\'), max_dirty_version UInt64',
-  ${values}
+    tupleElement(pending_key, 1) AS user_id,
+    tupleElement(pending_key, 2) AS channel,
+    tupleElement(pending_key, 3) AS recorded_at,
+    toUInt64(tupleElement(pending_key, 4)) AS max_dirty_version
+  FROM (
+    SELECT arrayJoin({pendingKeys:${pendingKeyQueryParamType}}) AS pending_key
   )`;
+}
+
+function buildPendingDirtyKeyQueryParams(pendingRows: DirtyKeyRow[]): Record<string, unknown> {
+  return {
+    pendingKeys: pendingRows.map(
+      (row) => new TupleParam([row.user_id, row.channel, row.recorded_at, row.max_dirty_version]),
+    ),
+  };
 }
 
 export function buildIncrementalDedupedSensorStatements(): string[] {
@@ -346,10 +346,12 @@ export async function processDedupedSensorDirtyKeys(
     return 0;
   }
 
-  const pendingKeySql = buildPendingDirtyKeySnapshotSql(pendingRows);
+  const pendingKeySql = buildPendingDirtyKeySnapshotSql();
+  const pendingKeyQueryParams = buildPendingDirtyKeyQueryParams(pendingRows);
 
   await client.command({
     query: buildDedupedSensorRecomputeInsertSql(pendingKeySql),
+    query_params: pendingKeyQueryParams,
   });
 
   await client.command({
@@ -389,6 +391,7 @@ GROUP BY
   pending_keys.channel,
   pending_keys.recorded_at,
   pending_keys.max_dirty_version`,
+    query_params: pendingKeyQueryParams,
   });
 
   return pendingRows.length;

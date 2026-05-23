@@ -5,6 +5,7 @@ export interface ClickHouseCommandClient {
   command(options: {
     query: string;
     clickhouse_settings?: Record<string, string | number | boolean>;
+    query_params?: Record<string, unknown>;
   }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;
