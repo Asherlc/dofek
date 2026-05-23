@@ -89,18 +89,18 @@ export class PmcRepository extends BaseRepository {
       ),
       sample_counts AS (
         SELECT
-          activity.id AS activity_id,
+          activity.activity_id AS activity_id,
           countIf(samples.channel = 'power') AS power_samples,
           countIf(samples.channel = 'heart_rate') AS hr_samples
         FROM analytics.deduped_sensor AS samples
-        INNER JOIN analytics.v_activity AS activity
+        INNER JOIN analytics.activity_summary AS activity
           ON activity.user_id = samples.user_id
          AND samples.recorded_at >= activity.started_at
          AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
         WHERE samples.user_id = {userId:UUID}
           AND samples.channel IN ('heart_rate', 'power')
           AND samples.is_deleted = 0
-        GROUP BY activity.id
+        GROUP BY activity.activity_id
       )
       SELECT
         ub.global_max_hr AS global_max_hr,
@@ -144,14 +144,14 @@ export class PmcRepository extends BaseRepository {
       normalizedPowerRowSchema,
       `WITH rolling AS (
         SELECT
-          a.id AS activity_id,
+          a.activity_id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY a.id
+            PARTITION BY a.activity_id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a
+        INNER JOIN analytics.activity_summary a
           ON a.user_id = ds.user_id
          AND ds.recorded_at >= a.started_at
          AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)

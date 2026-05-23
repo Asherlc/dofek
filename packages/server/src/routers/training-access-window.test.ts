@@ -133,7 +133,7 @@ describe("trainingRouter access window gating", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      expect.stringContaining("FROM analytics.v_activity a"),
+      expect.stringContaining("FROM analytics.activity_summary a"),
       { userId: "user-1", days: 30 },
     );
   });

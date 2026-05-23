@@ -143,6 +143,10 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     await repo.getAerobicEfficiency(90);
 
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain(
+      "FROM analytics.activity_summary",
+    );
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
   });
 
   it("does not run diagnostics when the main aggregation returns rows", async () => {
@@ -199,6 +203,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=192, endurance_activities=3, with_power=2, with_hr=1",
     );
     expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(sensorStore.query).mock.calls[2]?.[1]).not.toContain("analytics.v_activity");
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),

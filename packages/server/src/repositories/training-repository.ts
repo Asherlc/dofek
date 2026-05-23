@@ -119,7 +119,7 @@ export class TrainingRepository extends BaseRepository {
         activity_type,
         toInt32(count()) AS count,
         round(sum(dateDiff('second', started_at, ended_at)) / 3600, 2) AS hours
-      FROM analytics.v_activity
+      FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         AND started_at > now() - INTERVAL {days:Int32} DAY
         AND ended_at IS NOT NULL
@@ -160,12 +160,11 @@ export class TrainingRepository extends BaseRepository {
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       ),
@@ -218,36 +217,35 @@ export class TrainingRepository extends BaseRepository {
       activityStatsRowSchema,
       `WITH sample_counts AS (
         SELECT
-          a.id AS activity_id,
+          a.activity_id AS activity_id,
           countIf(samples.channel = 'heart_rate') AS hr_samples,
           countIf(samples.channel = 'power') AS power_samples
         FROM analytics.deduped_sensor AS samples
-        INNER JOIN analytics.v_activity AS a
+        INNER JOIN analytics.activity_summary AS a
           ON a.user_id = samples.user_id
          AND samples.recorded_at >= a.started_at
          AND samples.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE samples.user_id = {userId:UUID}
           AND samples.channel IN ('heart_rate', 'power')
           AND samples.is_deleted = 0
-        GROUP BY a.id
+        GROUP BY a.activity_id
       )
       SELECT
-        toString(a.id) AS id,
+        toString(a.activity_id) AS id,
         a.activity_type AS activity_type,
         a.name AS name,
         formatDateTime(a.started_at, '%Y-%m-%dT%H:%i:%SZ') AS started_at,
         formatDateTime(a.ended_at, '%Y-%m-%dT%H:%i:%SZ') AS ended_at,
-        round(asum.avg_hr, 1) AS avg_hr,
-        asum.max_hr AS max_hr,
-        round(asum.avg_power, 1) AS avg_power,
-        asum.max_power AS max_power,
-        round(asum.avg_cadence, 1) AS avg_cadence,
+        round(a.avg_hr, 1) AS avg_hr,
+        a.max_hr AS max_hr,
+        round(a.avg_power, 1) AS avg_power,
+        a.max_power AS max_power,
+        round(a.avg_cadence, 1) AS avg_cadence,
         coalesce(sc.hr_samples, 0) AS hr_samples,
         coalesce(sc.power_samples, 0) AS power_samples,
-        asum.total_distance AS distance_meters
-      FROM analytics.v_activity a
-      LEFT JOIN analytics.activity_summary asum ON asum.activity_id = a.id
-      LEFT JOIN sample_counts sc ON sc.activity_id = a.id
+        a.total_distance AS distance_meters
+      FROM analytics.activity_summary a
+      LEFT JOIN sample_counts sc ON sc.activity_id = a.activity_id
       WHERE a.user_id = {userId:UUID}
         AND a.started_at > now() - INTERVAL {days:Int32} DAY
       ORDER BY a.started_at DESC`,

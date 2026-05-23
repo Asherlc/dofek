@@ -275,7 +275,8 @@ describe("CyclingAdvancedRepository", () => {
       const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("analytics.activity_summary");
       expect(query).toContain("INTERVAL ({days:Int32} + 42) DAY");
-      expect(query).toContain("has({enduranceTypes:Array(String)}, a.activity_type)");
+      expect(query).toContain("has({enduranceTypes:Array(String)}, asum.activity_type)");
+      expect(query).not.toContain("analytics.v_activity");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
@@ -365,6 +366,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).toContain("round(1200.0 / sr.interval_s)");
       expect(query).toContain("* 0.95");
       expect(query).toContain("ds.channel = 'power'");
+      expect(query).not.toContain("analytics.v_activity");
       expect(params).toMatchObject({
         userId: "user-1",
         days: 60,
@@ -417,6 +419,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).toContain("pow(avg(pow(r.rolling_30s_power, 4)), 0.25)");
       expect(query).toContain("LIMIT {limit:Int32}");
       expect(query).toContain("OFFSET {offset:Int32}");
+      expect(query).not.toContain("analytics.v_activity");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
@@ -478,6 +481,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).toContain(
         "HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60",
       );
+      expect(query).not.toContain("analytics.v_activity");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
@@ -516,6 +520,7 @@ describe("CyclingAdvancedRepository", () => {
       const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("analytics.activity_summary");
       expect(query).toContain("asum.avg_left_balance IS NOT NULL");
+      expect(query).not.toContain("analytics.v_activity");
       expect(query).toContain("(asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2");
       expect(query).toContain("(asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2");
       expect(params).toMatchObject({

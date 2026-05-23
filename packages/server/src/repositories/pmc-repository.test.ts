@@ -459,6 +459,8 @@ describe("PmcRepository", () => {
         expect.stringContaining("analytics.deduped_sensor"),
         { userId: "user-1", queryDays: 407 },
       );
+      expect(query.mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
+      expect(query.mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
     });
 
     it("extends queryDays from requested days when request exceeds the minimum history", async () => {

@@ -168,17 +168,16 @@ export class EfficiencyRepository extends BaseRepository {
           asum.started_at AS started_at,
           asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-          a.activity_type AS activity_type,
-          a.name AS name,
+          asum.activity_type AS activity_type,
+          asum.name AS name,
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       )
@@ -306,9 +305,8 @@ export class EfficiencyRepository extends BaseRepository {
           asum.started_at AS started_at,
           asum.ended_at AS ended_at
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
       ),
       sensor_samples_by_activity AS (
@@ -372,12 +370,11 @@ export class EfficiencyRepository extends BaseRepository {
           asum.started_at AS started_at,
           asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-          a.activity_type AS activity_type,
-          a.name AS name
+          asum.activity_type AS activity_type,
+          asum.name AS name
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
       ),
       activity_halves AS (
@@ -462,10 +459,9 @@ export class EfficiencyRepository extends BaseRepository {
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
           up.max_hr AS max_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       )

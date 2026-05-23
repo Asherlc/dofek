@@ -76,9 +76,10 @@ describe("TrainingRepository", () => {
       expect(sensorStore.query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
-        expect.stringContaining("FROM analytics.v_activity"),
+        expect.stringContaining("FROM analytics.activity_summary"),
         expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
       );
+      expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
     });
 
     it("does not add access-window filters for full access", async () => {
@@ -89,7 +90,8 @@ describe("TrainingRepository", () => {
       const query = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
       const params = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
 
-      expect(query).toContain("FROM analytics.v_activity");
+      expect(query).toContain("FROM analytics.activity_summary");
+      expect(query).not.toContain("analytics.v_activity");
       expect(query).not.toContain("toDateTime({accessStart:String})");
       expect(query).not.toContain("toDateTime({accessEnd:String})");
       expect(params).toEqual({ userId: "user-1", timezone: "UTC", days: 30 });
@@ -181,8 +183,9 @@ describe("TrainingRepository", () => {
       const { repo, sensorStore } = makeRepository([], undefined, 1);
       await repo.getActivityStats(90);
       const query = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-      expect(query).toContain("toString(a.id) AS id");
-      expect(query).toContain("FROM analytics.v_activity a");
+      expect(query).toContain("toString(a.activity_id) AS id");
+      expect(query).toContain("FROM analytics.activity_summary a");
+      expect(query).not.toContain("analytics.v_activity");
     });
 
     it("returns activity stats rows", async () => {
