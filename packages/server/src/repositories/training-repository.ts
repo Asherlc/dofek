@@ -33,6 +33,10 @@ const weeklyVolumeRowSchema = z.object({
 
 export type WeeklyVolumeRow = z.infer<typeof weeklyVolumeRowSchema>;
 
+const rawActivityCountRowSchema = z.object({
+  raw_activity_count: z.coerce.number(),
+});
+
 const hrZoneRowSchema = z.object({
   max_hr: z.number().nullable(),
   week: dateStringSchema,
@@ -89,13 +93,24 @@ export class TrainingRepository extends BaseRepository {
         ? ""
         : `AND started_at >= toDateTime({accessStart:String})
           AND started_at < toDateTime({accessEnd:String})`;
-    const accessWindowParams =
+    const accessWindowParams: Record<string, string> =
       this.accessWindow.kind === "full"
         ? {}
         : {
             accessStart: this.accessWindow.startDate,
             accessEnd: this.accessWindow.endDateExclusive,
           };
+
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      undefined,
+      "AND ended_at IS NOT NULL",
+      accessWindowPredicate,
+      accessWindowParams,
+    );
+    if (rawActivityCount === 0) {
+      return [];
+    }
 
     return this.#sensorStore.query(
       weeklyVolumeRowSchema,
@@ -122,6 +137,15 @@ export class TrainingRepository extends BaseRepository {
 
   /** HR zone distribution per week using the canonical Karvonen model. */
   async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      ENDURANCE_TYPES,
+      "AND ended_at IS NOT NULL",
+    );
+    if (rawActivityCount === 0) {
+      return { maxHr: null, weeks: [] };
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
       hrZoneRowSchema,
@@ -185,6 +209,11 @@ export class TrainingRepository extends BaseRepository {
 
   /** Per-activity summary with HR and power stats. */
   async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
+    const rawActivityCount = await this.#loadRawActivityCount(days);
+    if (rawActivityCount === 0) {
+      return [];
+    }
+
     return this.#sensorStore.query(
       activityStatsRowSchema,
       `WITH sample_counts AS (
@@ -224,5 +253,36 @@ export class TrainingRepository extends BaseRepository {
       ORDER BY a.started_at DESC`,
       { userId: this.userId, days },
     );
+  }
+
+  async #loadRawActivityCount(
+    days: number,
+    activityTypes?: string[],
+    extraPredicate = "",
+    accessWindowPredicate = "",
+    accessWindowParams: Record<string, string> = {},
+  ): Promise<number> {
+    const activityTypePredicate = activityTypes
+      ? "AND has({activityTypes:Array(String)}, activity_type)"
+      : "";
+    const rows = await this.#sensorStore.query(
+      rawActivityCountRowSchema,
+      `SELECT toInt32(count()) AS raw_activity_count
+      FROM postgres_fitness.activity FINAL
+      WHERE user_id = {userId:UUID}
+        AND _peerdb_is_deleted = 0
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${extraPredicate}
+        ${activityTypePredicate}
+        ${accessWindowPredicate}`,
+      {
+        userId: this.userId,
+        days,
+        ...(activityTypes ? { activityTypes } : {}),
+        ...accessWindowParams,
+      },
+    );
+
+    return rows[0]?.raw_activity_count ?? 0;
   }
 }

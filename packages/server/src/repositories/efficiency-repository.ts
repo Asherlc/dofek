@@ -258,8 +258,9 @@ export class EfficiencyRepository extends BaseRepository {
       `WITH endurance_activities AS (
         SELECT
           id
-        FROM analytics.v_activity
+        FROM postgres_fitness.activity FINAL
         WHERE user_id = {userId:UUID}
+          AND _peerdb_is_deleted = 0
           AND has({enduranceTypes:Array(String)}, activity_type)
           AND started_at > now() - INTERVAL {days:Int32} DAY
       )

@@ -107,6 +107,10 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     await repo.getAerobicEfficiency(90);
 
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain(
+      "FROM postgres_fitness.activity FINAL",
+    );
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
     expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain(
       "analytics.activity_summary",
     );

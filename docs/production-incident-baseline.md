@@ -7473,24 +7473,30 @@ aerobic-efficiency panel fail instead of rendering the no-data state.
 
 `Test / E2E Tests (Web)` failed in `pnpm e2e:web:run` with
 `Expected to find content: 'No activities with sufficient Zone 2 power + heart
-rate data' but never did`, followed by a direct API failure expecting `200`.
-Server logs showed `efficiency.aerobicEfficiency` taking about 121 seconds and
-then ClickHouse rejecting queries with `(total) memory limit exceeded`.
+rate data' but never did`. A later run failed `training.weeklyVolume` with
+`cy.request() timed out waiting 30000ms`. Server logs showed
+`efficiency.aerobicEfficiency` taking 5-18 seconds in the cycling spec, then
+`pmc.chart`, `dailyMetrics.trends`, `sleep.list`, and `weeklyReport.report`
+queries ran long enough for ClickHouse to reject requests with `(total) memory
+limit exceeded`.
 
 ### Root Cause
 
-`efficiency.aerobicEfficiency` reached the expensive `analytics.activity_summary`
-and `analytics.deduped_sensor` aggregation before proving the user had any
-candidate endurance activities, so the empty E2E user still forced heavy
-ClickHouse read-model scans.
+The first preflight still read `analytics.v_activity`, whose recursive activity
+deduplication can scan the full activity graph before the empty user's filter
+helps. `training.weeklyVolume`, `training.hrZones`, and `training.activityStats`
+also read `analytics.v_activity` directly, so empty-user routes still forced
+expensive ClickHouse read-model scans before returning no-data responses.
 
 ### Fix or Mitigation
 
-Added a cheap `analytics.v_activity` preflight that returns the no-data result
-before scanning activity summaries or sensor samples when there are no candidate
-endurance activities. Updated repository and router tests to cover the new
-query sequence and to prove the empty path does not touch the expensive read
-models.
+Moved the empty-user preflights to raw mirrored
+`postgres_fitness.activity FINAL` rows so they can prove there are no candidate
+activities before invoking `analytics.v_activity`, `analytics.activity_summary`,
+or `analytics.deduped_sensor`. Added the same raw-activity short-circuit to
+training weekly volume, heart-rate zones, and activity stats. Updated
+repository and router tests to cover the new query sequence and prove the empty
+path does not touch the expensive read models.
 
 ### Remaining Risk
 

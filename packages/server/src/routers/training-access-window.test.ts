@@ -87,21 +87,24 @@ describe("trainingRouter access window gating", () => {
 
   it("activityStats returns per-activity rows from the analytics store", async () => {
     const sensorStore = makeMockSensorStore([
-      {
-        id: "activity-1",
-        activity_type: "running",
-        name: "Morning Run",
-        started_at: "2026-05-19T14:00:00.000Z",
-        ended_at: "2026-05-19T15:00:00.000Z",
-        avg_hr: 145.5,
-        max_hr: 172,
-        avg_power: null,
-        max_power: null,
-        avg_cadence: 82,
-        hr_samples: 3600,
-        power_samples: 0,
-        distance_meters: 10500,
-      },
+      [{ raw_activity_count: 1 }],
+      [
+        {
+          id: "activity-1",
+          activity_type: "running",
+          name: "Morning Run",
+          started_at: "2026-05-19T14:00:00.000Z",
+          ended_at: "2026-05-19T15:00:00.000Z",
+          avg_hr: 145.5,
+          max_hr: 172,
+          avg_power: null,
+          max_power: null,
+          avg_cadence: 82,
+          hr_samples: 3600,
+          power_samples: 0,
+          distance_meters: 10500,
+        },
+      ],
     ]);
     const caller = createCaller({
       db: { execute: vi.fn() },
@@ -127,7 +130,8 @@ describe("trainingRouter access window gating", () => {
         distance_meters: 10500,
       },
     ]);
-    expect(sensorStore.query).toHaveBeenCalledWith(
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
       expect.anything(),
       expect.stringContaining("FROM analytics.v_activity a"),
       { userId: "user-1", days: 30 },
