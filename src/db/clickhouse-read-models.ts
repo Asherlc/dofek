@@ -1,7 +1,7 @@
 import {
   peerDbMetadataColumnDefinitions,
-  refreshableMergeTreeViewHeader,
   replacingMergeTreeTable,
+  standardViewHeader,
 } from "./clickhouse-sql-helpers.ts";
 
 const bodyMeasurementChannels = [
@@ -111,7 +111,7 @@ export function buildBodyMeasurementSampleProjectionMigrationStatements(): strin
 }
 
 function buildActivityReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader("analytics.v_activity", "(user_id, started_at, id)")}
+  return `${standardViewHeader("analytics.v_activity")}
 WITH RECURSIVE
 active_activity AS (
   SELECT *
@@ -285,10 +285,7 @@ FROM merged`;
 }
 
 function buildActivityMembersReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader(
-    "analytics.v_activity_members",
-    "(user_id, started_at, activity_id, member_activity_id)",
-  )}
+  return `${standardViewHeader("analytics.v_activity_members")}
 SELECT
   id AS activity_id,
   user_id,
@@ -299,7 +296,7 @@ FROM analytics.v_activity`;
 }
 
 function buildSleepReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader("analytics.v_sleep", "(user_id, started_at, id)")}
+  return `${standardViewHeader("analytics.v_sleep")}
 WITH RECURSIVE
 active_sleep AS (
   SELECT *
@@ -496,12 +493,7 @@ GROUP BY
 }
 
 function buildBodyMeasurementReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader(
-    "analytics.v_body_measurement",
-    "(user_id, recorded_at, id)",
-    "",
-    "15 MINUTE",
-  )}
+  return `${standardViewHeader("analytics.v_body_measurement")}
 WITH RECURSIVE
 body_measurement_samples AS (
   SELECT
@@ -697,7 +689,7 @@ GROUP BY best.id, best.provider_id, best.user_id, best.external_id, best.recorde
 }
 
 function buildDailyMetricsReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader("analytics.v_daily_metrics", "(user_id, date)")}
+  return `${standardViewHeader("analytics.v_daily_metrics")}
 WITH
 active_daily_metrics AS (
   SELECT *
@@ -787,12 +779,7 @@ GROUP BY date, user_id`;
 }
 
 function buildProviderStatsReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader(
-    "analytics.provider_stats",
-    "(user_id, provider_id)",
-    "",
-    "15 MINUTE",
-  )}
+  return `${standardViewHeader("analytics.provider_stats")}
 WITH
 providers AS (
   SELECT DISTINCT user_id, id AS provider_id
@@ -961,12 +948,7 @@ LEFT JOIN journal_entry_counts
 }
 
 function buildActivityTrendDailyReadModelSql(): string {
-  return `${refreshableMergeTreeViewHeader(
-    "analytics.activity_trend_daily",
-    "(user_id, bucket_date)",
-    "20 SECOND",
-    "15 MINUTE",
-  )}
+  return `${standardViewHeader("analytics.activity_trend_daily")}
 SELECT
   user_id,
   toDate(recorded_at) AS bucket_date,
@@ -989,11 +971,7 @@ GROUP BY user_id, bucket_date`;
 }
 
 export function buildProviderStatsCreateReadModelStatements(): string[] {
-  return [
-    buildProviderStatsReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.provider_stats",
-    "SYSTEM WAIT VIEW analytics.provider_stats",
-  ];
+  return [buildProviderStatsReadModelSql()];
 }
 
 export function buildProviderStatsReadModelStatements(): string[] {
@@ -1005,11 +983,7 @@ export function buildProviderStatsReadModelStatements(): string[] {
 }
 
 export function buildActivityTrendDailyCreateReadModelStatements(): string[] {
-  return [
-    buildActivityTrendDailyReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
-    "SYSTEM WAIT VIEW analytics.activity_trend_daily",
-  ];
+  return [buildActivityTrendDailyReadModelSql()];
 }
 
 export function buildActivityTrendDailyReadModelStatements(): string[] {
@@ -1023,20 +997,10 @@ export function buildActivityTrendDailyReadModelStatements(): string[] {
 export function buildAnalyticsFitnessReadModelStatements(): string[] {
   return [
     buildActivityReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.v_activity",
-    "SYSTEM WAIT VIEW analytics.v_activity",
     buildActivityMembersReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.v_activity_members",
-    "SYSTEM WAIT VIEW analytics.v_activity_members",
     buildSleepReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.v_sleep",
-    "SYSTEM WAIT VIEW analytics.v_sleep",
     buildBodyMeasurementReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.v_body_measurement",
-    "SYSTEM WAIT VIEW analytics.v_body_measurement",
     buildDailyMetricsReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.v_daily_metrics",
-    "SYSTEM WAIT VIEW analytics.v_daily_metrics",
     ...buildProviderStatsCreateReadModelStatements(),
   ];
 }
@@ -1046,7 +1010,5 @@ export function buildBodyMeasurementReadModelStatements(): string[] {
     "DROP VIEW IF EXISTS analytics.v_body_measurement",
     "DROP TABLE IF EXISTS analytics.v_body_measurement",
     buildBodyMeasurementReadModelSql(),
-    "SYSTEM REFRESH VIEW analytics.v_body_measurement",
-    "SYSTEM WAIT VIEW analytics.v_body_measurement",
   ];
 }

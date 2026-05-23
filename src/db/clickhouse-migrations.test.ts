@@ -42,45 +42,33 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
     expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(
       sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor/g),
     ).toHaveLength(4);
     expect(sql).toContain("standalone_samples AS");
     expect(sql).toContain("CAST(NULL, 'Nullable(UUID)') AS activity_id");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary_centroids_next",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next");
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
+    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(5);
     expect(
-      sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics\.activity_summary\b/g),
-    ).toHaveLength(4);
-    expect(
-      sql.match(
-        /CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g,
-      ),
+      sql.match(/CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g),
     ).toHaveLength(1);
     expect(sql).toContain(
       "RENAME TABLE analytics.activity_summary TO analytics.activity_summary_before_centroids, analytics.activity_summary_centroids_next TO analytics.activity_summary",
     );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.activity_trend_daily");
-    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
     expect(sql).toContain("ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE");
-    expect(sql).toContain("ALTER TABLE analytics.deduped_location MODIFY REFRESH EVERY 15 MINUTE");
-    expect(sql).toContain(
-      "ALTER TABLE analytics.activity_summary MODIFY REFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
-    );
-    expect(sql).toContain("ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE");
-    expect(sql).toContain(
-      "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
-    );
+    expect(sql).not.toContain("ALTER TABLE analytics.deduped_location MODIFY REFRESH");
+    expect(sql).not.toContain("ALTER TABLE analytics.activity_summary MODIFY REFRESH");
+    expect(sql).not.toContain("ALTER TABLE analytics.v_body_measurement MODIFY REFRESH");
+    expect(sql).not.toContain("ALTER TABLE analytics.provider_stats MODIFY REFRESH");
+    expect(sql).not.toContain("ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
@@ -97,25 +85,21 @@ describe("buildClickHouseMigrationStatements", () => {
       "\n",
     );
 
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
-    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
     expect(
       sql.indexOf("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor"),
     ).toBeLessThan(
-      sql.indexOf(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-      ),
+      sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
     );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
@@ -172,7 +156,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(18);
+    expect(count).toBe(19);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -209,9 +193,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining(
-          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily",
-        ),
+        query: expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily"),
       }),
     );
     expect(command).toHaveBeenCalledWith(
@@ -239,7 +221,7 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(36);
+    expect(systemTableQueries).toHaveLength(77);
     expect(command).toHaveBeenCalledWith({
       query: expect.stringContaining(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
@@ -250,9 +232,7 @@ describe("runClickHouseMigrations", () => {
       },
     });
     expect(command).toHaveBeenCalledWith({
-      query: expect.stringContaining(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary",
-      ),
+      query: expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
       clickhouse_settings: {
         allow_experimental_nullable_tuple_type: 1,
         allow_experimental_refreshable_materialized_view: 1,
@@ -495,7 +475,7 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
       }),
     );
-    expect(command).toHaveBeenCalledWith(
+    expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
       }),
@@ -611,12 +591,12 @@ describe("runClickHouseMigrations", () => {
         query: "SYSTEM REFRESH VIEW analytics.deduped_sensor",
       }),
     );
-    expect(command).toHaveBeenCalledWith(
+    expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SYSTEM REFRESH VIEW analytics.deduped_location",
       }),
     );
-    expect(command).toHaveBeenCalledWith(
+    expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SYSTEM REFRESH VIEW analytics.activity_summary",
       }),
@@ -916,7 +896,7 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
       }),
     );
-    expect(command).toHaveBeenCalledWith(
+    expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
         query: "SYSTEM REFRESH VIEW analytics.provider_stats",
       }),

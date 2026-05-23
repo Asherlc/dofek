@@ -521,6 +521,25 @@ function rewriteClickHouseTestCommand(
     return [tableStatement];
   }
 
+  const viewMatch = rewrittenQuery.match(
+    /^CREATE VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nAS\n?([\s\S]*)$/,
+  );
+
+  if (viewMatch) {
+    const viewName = viewMatch[1];
+    const selectSql = viewMatch[2];
+    if (!viewName || !selectSql) {
+      throw new Error("Could not parse ClickHouse test view statement");
+    }
+    const trimmedSelectSql = selectSql.trim();
+    precomputedAnalyticsSelectByName.set(viewName, trimmedSelectSql);
+    const tableStatement = buildTestAnalyticsTableStatement(viewName);
+    if (!tableStatement) {
+      throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
+    }
+    return [tableStatement];
+  }
+
   if (rewrittenQuery.startsWith(`DROP VIEW IF EXISTS ${databases.analytics}.`)) {
     return [rewrittenQuery.replace("DROP VIEW IF EXISTS", "DROP TABLE IF EXISTS")];
   }

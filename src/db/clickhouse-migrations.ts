@@ -8,10 +8,14 @@ import {
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
-import { buildActivitySummaryReadModelStatements } from "./clickhouse-metric-stream-bootstrap.ts";
+import {
+  buildActivitySummaryReadModelStatements,
+  buildDedupedLocationReadModelStatements,
+} from "./clickhouse-metric-stream-bootstrap.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
 import {
   buildActivityTrendDailyReadModelStatements,
+  buildAnalyticsFitnessReadModelStatements,
   buildBodyMeasurementReadModelStatements,
   buildBodyMeasurementSampleProjectionMigrationStatements,
   buildProviderStatsReadModelStatements,
@@ -226,14 +230,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     },
     {
       id: "0016_reduce_metric_stream_refresh_load",
-      statements: [
-        "ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE",
-        "ALTER TABLE analytics.deduped_location MODIFY REFRESH EVERY 15 MINUTE",
-        "ALTER TABLE analytics.activity_summary MODIFY REFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
-        "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
-        "ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE",
-        "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
-      ],
+      statements: ["ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE"],
     },
     {
       id: "0017_body_measurement_sample_projection",
@@ -246,6 +243,36 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     {
       id: "0018_sensor_priority_raw_tables",
       statements: buildPostgresFitnessRawTableStatements(),
+    },
+    {
+      id: "0019_non_sensor_read_models_as_views",
+      statements: [
+        "DROP VIEW IF EXISTS analytics.activity_summary",
+        "DROP TABLE IF EXISTS analytics.activity_summary",
+        "DROP VIEW IF EXISTS analytics.activity_trend_daily",
+        "DROP TABLE IF EXISTS analytics.activity_trend_daily",
+        "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
+        "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
+        "DROP VIEW IF EXISTS analytics.deduped_location",
+        "DROP TABLE IF EXISTS analytics.deduped_location",
+        "DROP VIEW IF EXISTS analytics.provider_stats",
+        "DROP TABLE IF EXISTS analytics.provider_stats",
+        "DROP VIEW IF EXISTS analytics.v_daily_metrics",
+        "DROP TABLE IF EXISTS analytics.v_daily_metrics",
+        "DROP VIEW IF EXISTS analytics.v_body_measurement",
+        "DROP TABLE IF EXISTS analytics.v_body_measurement",
+        "DROP VIEW IF EXISTS analytics.v_sleep",
+        "DROP TABLE IF EXISTS analytics.v_sleep",
+        "DROP VIEW IF EXISTS analytics.v_activity_members",
+        "DROP TABLE IF EXISTS analytics.v_activity_members",
+        "DROP VIEW IF EXISTS analytics.v_activity",
+        "DROP TABLE IF EXISTS analytics.v_activity",
+        ...buildAnalyticsFitnessReadModelStatements(),
+        ...buildRestingHeartRateSleepWindowMaterializedViewStatements(),
+        ...buildDedupedLocationReadModelStatements(),
+        ...buildActivitySummaryReadModelStatements(),
+        ...buildActivityTrendDailyReadModelStatements(),
+      ],
     },
   ];
 }
@@ -347,10 +374,6 @@ async function replaceNativeMetricStreamAndBackfill(
   await backfillNativeMetricStream(client, postgresConnectionString);
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
 }
 
 async function repairNativeMetricStreamBackfill(
@@ -370,15 +393,6 @@ async function repairNativeMetricStreamBackfill(
   await backfillNativeMetricStream(client, postgresConnectionString);
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
-  await runClickHouseMigrationStatement(
-    client,
-    "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
-  );
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_trend_daily");
 }
 
 async function metricStreamMirrorHasColumns(
@@ -438,20 +452,12 @@ async function rebuildMetricStreamLocationPoint(
   await backfillNativeMetricStream(client, postgresConnectionString);
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
 }
 
 function shouldRunBeforeMetricStreamBackfill(statement: string): boolean {
   return (
     !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor") &&
-    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_sensor") &&
-    !statement.startsWith("SYSTEM REFRESH VIEW analytics.deduped_location") &&
-    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_location") &&
-    !statement.startsWith("SYSTEM REFRESH VIEW analytics.activity_summary") &&
-    !statement.startsWith("SYSTEM WAIT VIEW analytics.activity_summary")
+    !statement.startsWith("SYSTEM WAIT VIEW analytics.deduped_sensor")
   );
 }
 
@@ -505,14 +511,8 @@ async function replaceLegacyMetricStreamIfNeeded(
   }
 
   await backfillNativeMetricStream(client, postgresConnectionString);
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.provider_stats");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.provider_stats");
   await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_sensor");
   await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_sensor");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.deduped_location");
-  await runClickHouseMigrationStatement(client, "SYSTEM REFRESH VIEW analytics.activity_summary");
-  await runClickHouseMigrationStatement(client, "SYSTEM WAIT VIEW analytics.activity_summary");
 }
 
 async function shouldReplaceMetricStreamTable(client: ClickHouseCommandClient): Promise<boolean> {
@@ -798,10 +798,21 @@ async function runClickHouseMigrationStatement(
     await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
     await waitForClickHouseTable(client, "analytics", "v_activity_members");
   }
-  if (statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary")) {
+  if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.deduped_location")) {
+    await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+    await waitForClickHouseTable(client, "analytics", "v_activity_members");
+  }
+  if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.activity_summary")) {
     await waitForClickHouseTable(client, "analytics", "deduped_sensor");
     await waitForClickHouseTable(client, "analytics", "deduped_location");
     await waitForClickHouseTable(client, "analytics", "v_activity");
+  }
+  if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily")) {
+    await waitForClickHouseTable(client, "analytics", "deduped_sensor");
+  }
+  if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window")) {
+    await waitForClickHouseTable(client, "analytics", "deduped_sensor");
+    await waitForClickHouseTable(client, "analytics", "v_sleep");
   }
 
   await client.command({

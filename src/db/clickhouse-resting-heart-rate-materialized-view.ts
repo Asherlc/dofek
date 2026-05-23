@@ -1,9 +1,5 @@
 export function buildRestingHeartRateSleepWindowMaterializedViewSql(): string {
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
-REFRESH EVERY 1 DAY OFFSET 4 HOUR
-ENGINE = MergeTree
-ORDER BY (user_id, ended_at, sleep_id)
-SETTINGS allow_nullable_key = 1
+  return `CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
 AS
 WITH sleep_windows AS (
   SELECT
@@ -55,7 +51,5 @@ export function buildRestingHeartRateSleepWindowMaterializedViewStatements(): st
     "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
     "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
     buildRestingHeartRateSleepWindowMaterializedViewSql(),
-    "SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window",
-    "SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window",
   ];
 }

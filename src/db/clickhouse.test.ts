@@ -144,53 +144,44 @@ describe("buildClickHouseBootstrapStatements", () => {
     );
     expect(sql).toContain("tupleElement(metric_stream.point, 2)");
     expect(sql).toContain("tupleElement(metric_stream.point, 1)");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary\nREFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).not.toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_summary");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_summary");
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
-    expect(sql).toContain("REFRESH EVERY 1 MINUTE");
     expect(sql).toContain("FROM postgres_fitness.metric_stream");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-    );
-    expect(sql).toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
-    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain("SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location\nREFRESH EVERY 15 MINUTE",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.deduped_location");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.deduped_location");
     expect(sql.indexOf("SYSTEM WAIT VIEW analytics.deduped_sensor")).toBeLessThan(
-      sql.indexOf(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-      ),
+      sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
     );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement\nREFRESH EVERY 15 MINUTE",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.v_body_measurement");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.v_body_measurement");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
     );
     expect(sql).toContain("FROM analytics.body_measurement_sample FINAL");
     expect(sql).not.toContain("FROM postgres_fitness.body_measurement");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats\nREFRESH EVERY 15 MINUTE",
-    );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily\nREFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.provider_stats");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.provider_stats");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_trend_daily");
     expect(sql).toContain("countIf(channel = 'speed') AS speed_samples");
     expect(sql).toContain("uniqExact(activity_id) AS activity_count");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");

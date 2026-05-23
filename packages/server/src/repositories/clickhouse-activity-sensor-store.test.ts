@@ -57,17 +57,12 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("analytics.deduped_location");
   });
 
-  it("refreshes body measurement read model", async () => {
+  it("does not refresh the body measurement view", async () => {
     const { store, command } = makeStore();
 
     await store.refreshBodyMeasurements();
 
-    expect(command).toHaveBeenNthCalledWith(1, {
-      query: "SYSTEM REFRESH VIEW analytics.v_body_measurement",
-    });
-    expect(command).toHaveBeenNthCalledWith(2, {
-      query: "SYSTEM WAIT VIEW analytics.v_body_measurement",
-    });
+    expect(command).not.toHaveBeenCalled();
   });
 
   it("queries activity summaries from the ClickHouse analytics schema", async () => {

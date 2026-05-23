@@ -7322,3 +7322,54 @@ with an incremental/smaller refresh strategy. Production logs also showed
 repeated `Unexpected end of JSON input` errors on cached provider routes after
 the deploy; derived Redis query-cache state was cleared, but that log pattern
 should be followed up separately if it recurs.
+
+## 2026-05-23: Strong CSV Import Hidden By Stale ClickHouse Read Models
+
+### Symptoms
+
+A Strong CSV upload completed successfully in production, but the app showed no
+Strong records and the imported strength workouts did not appear in the
+Activities screen.
+
+### User Impact
+
+The user's imported Strong workout history was present in canonical Postgres
+storage but hidden from provider-detail and activity-list UI surfaces.
+
+### Evidence
+
+Worker logs showed `Strong CSV import complete: 88 workouts imported, 0 errors
+in 2.2s`. Postgres had 88 `fitness.activity` rows and 991
+`fitness.strength_set` rows for provider `strong-csv`, all under user
+`f923fed7-d934-4cd9-8cb9-8e83020d0e69`. `fitness.v_activity` also exposed 88
+Strong activities, including 6 in the current four-week Activities window.
+
+ClickHouse `analytics.provider_stats` initially reported
+`strong-csv.activities = 0` and `system.view_refreshes` showed
+`analytics.provider_stats` as `Disabled` with exception `cancelled`. After
+starting and refreshing the view, `analytics.provider_stats` reported
+`strong-csv.activities = 88`. `analytics.activity_summary` then contained the 6
+recent Strong strength activities used by `calendar.weekList`.
+
+### Root Cause
+
+The Strong import wrote canonical data successfully, but UI read paths depended
+on ClickHouse refreshable materialized views. `analytics.provider_stats` had
+been disabled/cancelled during prior production pressure, so provider-detail
+counts were stale. The Activities screen also depends on
+`analytics.activity_summary`, and cached `calendar.weekList` responses could
+continue serving the old empty result after the ClickHouse model caught up.
+
+### Fix or Mitigation
+
+Restarted and refreshed `analytics.provider_stats`, confirmed
+`strong-csv.activities = 88`, confirmed `analytics.activity_summary` had 6
+recent Strong activities, and cleared the affected user's Redis query-cache
+entries.
+
+### Remaining Risk
+
+This branch converts the non-`deduped_sensor` ClickHouse analytics read models
+from refreshable materialized views to normal views over the existing raw and
+incremental sources. Until that migration is deployed, production can still
+serve stale results from disabled or cancelled refreshable views.

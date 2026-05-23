@@ -21,11 +21,11 @@ ClickHouse postgres_fitness.metric_stream
         v
 ClickHouse analytics.deduped_sensor
         |
-        | refreshable materialized view, 15-minute cadence
+        | normal view
         v
 ClickHouse analytics.activity_summary
         |
-        | refreshable materialized view, 15-minute cadence
+        | normal view
         v
 ClickHouse analytics.activity_trend_daily
         |
@@ -33,10 +33,15 @@ ClickHouse analytics.activity_trend_daily
 Activity stream, zone, summary, and trend reads
 ```
 
+Location rows are exposed through `analytics.deduped_location`, also as a normal
+view. `analytics.deduped_sensor` is the only refreshable read model in this
+chain.
+
 Runtime API queries must read `analytics.deduped_sensor`,
 `analytics.activity_summary`, or `analytics.activity_trend_daily`, not the raw
-metric stream. The raw ClickHouse table exists only as the source for
-ClickHouse refresh jobs. Derived rows are never synced back to Postgres.
+metric stream. The raw ClickHouse table exists only as the source for the
+deduped sensor refresh and normal analytics views. Derived rows are never synced
+back to Postgres.
 
 ## Local Development
 
@@ -62,11 +67,13 @@ Use these local URLs:
 ## Query Model
 
 Activity routes resolve authorization, access windows, and canonical activity
-membership in Postgres. Stream, heart-rate-zone, power-zone, and activity
-summary reads then query stored ClickHouse `analytics.*` materialized views. The
-app does not issue raw `metric_stream` analytical reads for those endpoints.
-Daily and weekly trend reads use `analytics.activity_trend_daily`; weekly rows
-are rolled up from daily rows at query time.
+membership in Postgres. Stream and heart-rate/power-zone reads query the stored
+`analytics.deduped_sensor` refreshable materialized view. Activity summary,
+location, provider stats, sleep/body/daily metrics, and trend reads query normal
+ClickHouse `analytics.*` views over the raw mirrors and incremental projection
+tables. The app does not issue raw `metric_stream` analytical reads for those
+endpoints. Daily and weekly trend reads use `analytics.activity_trend_daily`;
+weekly rows are rolled up from daily rows at query time.
 
 Provider record inventory uses the ClickHouse `analytics.provider_stats` read
 model for all provider-owned record counts displayed by sync/provider detail:
@@ -105,25 +112,24 @@ ClickHouse migrations create and update the databases and read models:
   analytics sources, this includes provider inventory mirrors for `food_entry`,
   `health_event`, `lab_panel`, `lab_result`, and `journal_entry`.
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
-  `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: ClickHouse
-  read models over the raw mirrors.
+  `analytics.v_body_measurement`, `analytics.v_daily_metrics`, and
+  `analytics.provider_stats`: normal ClickHouse views over the raw mirrors and
+  body sample projection.
 - `analytics.body_measurement_sample`: a narrow `ReplacingMergeTree`
   projection of body-related `metric_stream` channels. It is backfilled once by
   migration and kept current by `analytics.body_measurement_sample_ingest`, so
-  `analytics.v_body_measurement` can refresh without repeatedly scanning the
-  full metric stream mirror.
+  `analytics.v_body_measurement` does not scan the full metric stream mirror.
 - `analytics.deduped_sensor`: a refreshable materialized view refreshed every
   15 minutes from the copied raw rows and activity membership.
-- `analytics.deduped_location`: a refreshable materialized view refreshed every
-  15 minutes from `postgres_fitness.metric_stream` location rows. While the
-  PeerDB mirror excludes `point`, new rows have `point = NULL` and this view
-  does not advance for new data.
-- `analytics.activity_summary`: a refreshable materialized view refreshed every
-  15 minutes from `analytics.deduped_sensor`.
-- `analytics.activity_trend_daily`: a refreshable materialized view with one
-  activity-linked sensor trend row per user and UTC day. It is derived from
-  `analytics.deduped_sensor`, refreshes every 15 minutes, and is safe to drop
-  and rebuild.
+- `analytics.deduped_location`: a normal view over
+  `postgres_fitness.metric_stream` location rows. While the PeerDB mirror
+  excludes `point`, new rows have `point = NULL` and this view does not advance
+  for new data.
+- `analytics.activity_summary`: a normal view over `analytics.deduped_sensor`,
+  `analytics.deduped_location`, and `analytics.v_activity`.
+- `analytics.activity_trend_daily`: a normal view with one activity-linked
+  sensor trend row per user and UTC day. It is derived from
+  `analytics.deduped_sensor`.
 
 Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
 table rather than a table created by PeerDB, it must include PeerDB's CDC

@@ -45,7 +45,7 @@ docker exec -i "$clickhouse" sh -lc 'clickhouse-client --password "$CLICKHOUSE_P
 SELECT database, view, status, last_refresh_time, last_success_time, exception
 FROM system.view_refreshes
 WHERE database = 'analytics'
-  AND view IN ('deduped_sensor', 'provider_stats', 'v_body_measurement')
+  AND view = 'deduped_sensor'
 ORDER BY view;
 
 SELECT source, latest, rows FROM
@@ -84,19 +84,17 @@ SQL
 REMOTE
 ```
 
-If `analytics.deduped_sensor` or `analytics.provider_stats` is running a
-full-history refresh over `postgres_fitness.metric_stream FINAL` and the host is
-unhealthy, stop the active query and pause that refreshable view. Record the
-query IDs first.
+If `analytics.deduped_sensor` is running a full-history refresh over
+`postgres_fitness.metric_stream FINAL` and the host is unhealthy, stop the
+active query and pause that refreshable view. Record the query IDs first.
 
 ```sql
 KILL QUERY WHERE query_id IN ('<query-id-1>', '<query-id-2>') SYNC;
 SYSTEM STOP VIEW analytics.deduped_sensor;
-SYSTEM STOP VIEW analytics.provider_stats;
 ```
 
-This is an operational mitigation: activity sensor analytics and provider stats
-can remain stale while these views are disabled. Document it in
+This is an operational mitigation: activity sensor analytics can remain stale
+while this view is disabled. Document it in
 `docs/production-incident-baseline.md`.
 
 ## 3. Decide Whether CDC Missed a Gap
@@ -170,19 +168,13 @@ The ClickHouse materialized view
 `analytics.body_measurement_sample_ingest` should ingest these inserted raw rows
 into `analytics.body_measurement_sample`.
 
-## 4. Refresh and Verify the Body Read Model
+## 4. Verify the Body Read Model
 
 ```bash
 ssh dofek-server 'bash -s' <<'REMOTE'
 set -euo pipefail
 clickhouse=$(docker ps --format '{{.Names}}' | grep dofek_clickhouse | head -1)
 docker exec -i "$clickhouse" sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD"' <<'SQL'
-SYSTEM REFRESH VIEW analytics.v_body_measurement;
-
-SELECT database, view, status, last_refresh_time, last_success_time, exception
-FROM system.view_refreshes
-WHERE database = 'analytics' AND view = 'v_body_measurement';
-
 SELECT source, latest, rows FROM
 (
   SELECT 'postgres_fitness.metric_stream' AS source, max(recorded_at) AS latest, count() AS rows

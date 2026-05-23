@@ -8,6 +8,11 @@ ORDER BY ${orderBy}
 SETTINGS allow_nullable_key = 1`;
 }
 
+export function standardViewHeader(viewName: string): string {
+  return `CREATE VIEW IF NOT EXISTS ${viewName}
+AS`;
+}
+
 export function refreshableMergeTreeViewHeader(
   viewName: string,
   orderBy: string,

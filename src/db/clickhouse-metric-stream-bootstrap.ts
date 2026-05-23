@@ -8,6 +8,7 @@ import { buildRestingHeartRateSleepWindowMaterializedViewSql } from "./clickhous
 import {
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
+  standardViewHeader,
 } from "./clickhouse-sql-helpers.ts";
 
 export function buildClickHouseBootstrapStatementsForNativeMetricStream(
@@ -299,13 +300,15 @@ FROM standalone_samples`,
     "SYSTEM REFRESH VIEW analytics.deduped_sensor",
     "SYSTEM WAIT VIEW analytics.deduped_sensor",
     buildRestingHeartRateSleepWindowMaterializedViewSql(),
-    "SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window",
-    "SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window",
-    `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location
-REFRESH EVERY 15 MINUTE
-ENGINE = MergeTree
-ORDER BY (user_id, activity_id, recorded_at)
-AS
+    ...buildDedupedLocationReadModelStatements(),
+    ...buildActivitySummaryReadModelStatements(),
+    ...buildActivityTrendDailyCreateReadModelStatements(),
+  ];
+}
+
+export function buildDedupedLocationReadModelStatements(): string[] {
+  return [
+    `${standardViewHeader("analytics.deduped_location")}
 WITH
 activity_members AS (
   SELECT
@@ -359,10 +362,6 @@ WHERE metric_stream._peerdb_is_deleted = 0
   AND metric_stream.channel = 'location'
   AND metric_stream.point IS NOT NULL
 GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.recorded_at`,
-    "SYSTEM REFRESH VIEW analytics.deduped_location",
-    "SYSTEM WAIT VIEW analytics.deduped_location",
-    ...buildActivitySummaryReadModelStatements(),
-    ...buildActivityTrendDailyCreateReadModelStatements(),
   ];
 }
 
@@ -370,12 +369,7 @@ export function buildActivitySummaryReadModelStatements(
   viewName = "analytics.activity_summary",
 ): string[] {
   return [
-    `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
-REFRESH EVERY 15 MINUTE OFFSET 10 SECOND
-ENGINE = MergeTree
-ORDER BY (user_id, started_at, activity_id)
-SETTINGS allow_nullable_key = 1
-AS
+    `${standardViewHeader(viewName)}
 WITH
 deduped_samples AS (
   SELECT activity_id, user_id, recorded_at, channel, scalar
@@ -544,7 +538,5 @@ LEFT JOIN distance_per_activity
   ON distance_per_activity.activity_id = activity_bounds.activity_id
 LEFT JOIN location_centroids
   ON location_centroids.activity_id = activity_bounds.activity_id`,
-    `SYSTEM REFRESH VIEW ${viewName}`,
-    `SYSTEM WAIT VIEW ${viewName}`,
   ];
 }
