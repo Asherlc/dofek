@@ -7023,3 +7023,302 @@ own longer timeout.
 This fixes the workflow's readiness probe semantics, but the deploy path still
 needs a successful Actions rerun to prove production post-deploy CDC
 reconciliation reaches completion.
+
+## 2026-05-22: Staging Deploy Failed Recreating Raw Analytics CDC Mirror
+
+### Symptoms
+
+Deploy Web run `26314731200`, job `77471391028`, failed in
+`Deploy Web Staging / Deploy Web Stack` at `Configure ClickHouse CDC`.
+
+### User Impact
+
+The staging deploy failed after the stack deploy completed, so post-deploy
+ClickHouse CDC reconciliation did not complete for staging on that run.
+
+### Evidence
+
+The failing command was the `Configure ClickHouse CDC` one-shot container:
+`node --experimental-transform-types --enable-source-maps
+--disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts`.
+
+The first fatal line was:
+`[clickhouse-cdc] error: unable to submit job: "status: Internal, message:
+\"invalid mirror: rpc error: code = FailedPrecondition desc = failed to
+validate destination connector dofek_clickhouse_postgres_fitness: table
+device_priority exists and is not empty\""`.
+
+### Root Cause
+
+The previous CDC reconciliation path could leave a raw analytics PeerDB mirror
+absent while its ClickHouse destination tables still contained rows; the next
+`CREATE MIRROR ... do_initial_copy = true` then failed PeerDB's non-empty
+destination table validation.
+
+### Fix or Mitigation
+
+Updated raw analytics CDC reconciliation to truncate the mapped ClickHouse
+destination tables when a do-initial-copy mirror is absent, not only after the
+setup command drops an existing stale mirror.
+
+### Validation
+
+Added and ran a regression test for the absent-mirror/non-empty-destination
+state:
+`CLICKHOUSE_URL=http://default:health@localhost:8123 pnpm vitest run
+src/db/clickhouse-cdc.test.ts`.
+
+### Remaining Risk
+
+The code-level fix is validated locally. A deploy workflow rerun is still
+required to prove staging and production post-deploy CDC reconciliation complete
+with the repaired setup command.
+
+## 2026-05-22: Production Deploy Timed Out Waiting For Netdata
+
+### Symptoms
+
+Deploy Web run `26315359822`, job `77473351834`, timed out in
+`Deploy Web Production / Deploy Web Stack` at the `Deploy stack` step.
+
+### User Impact
+
+The application services had already rolled to image `sha-0b7ca67`, but the
+workflow failed before post-deploy pruning, PeerDB/Temporal checks, and
+ClickHouse CDC reconciliation could run in production.
+
+### Evidence
+
+The failing command was `docker stack deploy ... --detach=false dofek`.
+The deploy log showed `verify: Detected task failure`, then repeated
+`overall progress: 0 out of 1 tasks`, and finally Docker returned
+`DeadlineExceeded` for the Netdata service ID.
+
+Live Swarm state showed `dofek_netdata` repeatedly exiting with
+`task: non-zero exit (137)`. Netdata's own crash report showed a 400 MiB
+container memory limit while Netdata used slightly more than that during
+startup.
+
+### Root Cause
+
+The Netdata service memory limit was undersized for the existing Netdata
+database and startup workload, causing OOM-style exit `137` during stack-wide
+deploy convergence.
+
+### Fix or Mitigation
+
+Raised the Netdata service memory limit from 400 MiB to 768 MiB in
+`deploy/stack.yml`.
+
+### Remaining Risk
+
+A deploy workflow rerun is required to prove production stack convergence and
+post-deploy CDC reconciliation complete with the corrected Netdata memory
+limit.
+
+## 2026-05-22: Production CDC Failed Resolving Postgres After Stack Deploy
+
+### Symptoms
+
+Deploy Web run `26316143604`, job `77475687394`, passed production stack
+deployment but failed later in `Configure ClickHouse CDC`.
+
+### User Impact
+
+Production app services rolled out, but the production post-deploy CDC
+configuration step did not complete in that run.
+
+### Evidence
+
+The failing command was the `Configure ClickHouse CDC` one-shot container:
+`node --experimental-transform-types --enable-source-maps
+--disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts`.
+
+The fatal line was `[clickhouse-cdc] Error: getaddrinfo EAI_AGAIN db`.
+Live Swarm state immediately after the failure showed `dofek_db` had recently
+started a new task, and a follow-up one-shot container on the same overlay
+network resolved `db` and reached Postgres successfully.
+
+### Root Cause
+
+The deploy workflow validated Postgres and ClickHouse before `docker stack
+deploy`, but `docker stack deploy` can restart data-service tasks. The CDC
+one-shot then ran without revalidating those post-stack prerequisites.
+
+### Fix or Mitigation
+
+Added post-stack readiness checks for Postgres writability and ClickHouse
+reachability before PeerDB/Temporal checks and ClickHouse CDC configuration.
+
+### Remaining Risk
+
+A deploy workflow rerun is required to prove production CDC configuration
+completes after the post-stack data-service readiness checks.
+
+## 2026-05-22: Production Migration Step Timed Out Inspecting Container
+
+### Symptoms
+
+Deploy Web run `26316514322`, job `77476818252`, passed staging completely but
+failed production in `Run migrations` with `Timed out inspecting migration
+container dofek_migrate_26316514322_1`.
+
+### User Impact
+
+Production was briefly slow/unavailable while the single host was saturated.
+`/healthz` timed out during the pressure window, then recovered once Docker and
+the Swarm services settled.
+
+### Evidence
+
+The migration log reached `[migrate] Starting ClickHouse migrations`; it did
+not log a migration failure. The GitHub runner's Docker API request timed out
+on `docker inspect .../containers/dofek_migrate_26316514322_1/json`.
+
+Live host evidence during recovery showed load average above `100`, memory at
+`7.3 GiB / 7.5 GiB` with no swap, direct SSH banner exchange timeouts, and
+ClickHouse background refresh queries scanning `postgres_fitness.metric_stream
+FINAL`. ClickHouse `analytics.schema_migrations` later showed
+`0018_sensor_priority_raw_tables` had already been applied at
+`2026-05-22 19:27:49`, so this run was not blocked on an unapplied ClickHouse
+schema migration.
+
+### Root Cause
+
+The migration workflow ran the container detached, followed it with
+`docker logs --follow`, and polled `docker inspect` over SSH. During heavy
+ClickHouse refreshable materialized view work on the single-node host, Docker's
+control-plane calls became slow enough that the inspection loop false-failed
+even though the migration process had not reported a schema error.
+
+### Fix or Mitigation
+
+Changed the migration step to run the migration container as the foreground
+`docker run --rm` process under the existing four-hour bound. This removes the
+extra `docker inspect` polling loop and makes the step follow the migration
+process exit status directly.
+
+### Remaining Risk
+
+This fixes the deploy control-loop failure mode. The underlying ClickHouse
+refresh load is still high because several refreshable materialized views scan
+`postgres_fitness.metric_stream FINAL`; longer-term work should make those read
+models incremental or otherwise reduce full-table refresh pressure.
+
+## 2026-05-22: Production Temporal Readiness Failed During Raw Mirror Snapshot
+
+### Symptoms
+
+Deploy Web run `26316889909`, job `77477969270`, passed staging and got past
+the previous production migration and stack-deploy failure points, then failed
+production in `Wait for Temporal` with `Temporal frontend did not become
+reachable within 180s`.
+
+### User Impact
+
+Production became slow/unavailable during the pressure window. Public
+`/healthz` requests timed out, and direct SSH probes intermittently timed out
+during banner exchange.
+
+### Evidence
+
+The failing command was the Temporal readiness probe:
+`docker run --rm --network dofek_default --entrypoint temporal
+temporalio/admin-tools:1.29 --address peerdb-temporal:7233 --namespace default
+--color never operator cluster health`.
+
+The fatal line was `Temporal frontend did not become reachable within 180s`.
+Temporal logs during the failure contained repeated persistence timeouts such
+as `Persistent fetch operation Failure`, `GetWorkflowExecution ... context
+deadline exceeded`, and `Persistent store operation failure` on
+`/_sys/snapshot-flow-task-queue/2`. The active workflow IDs included
+`qrep-part-clone_dofek_fitness_raw_analytics...`, showing PeerDB snapshot work
+for the raw analytics mirror. Live host evidence after the failure showed load
+average above `100` and `/healthz` timing out.
+
+### Root Cause
+
+The absent raw analytics mirror recovery path truncated existing ClickHouse
+destination tables and then recreated the raw PeerDB mirror with
+`do_initial_copy = true`. On production, that started a large PeerDB initial
+snapshot/backfill through Temporal and the PeerDB catalog Postgres on the same
+single-node host, saturating the host and making Temporal persistence calls time
+out.
+
+### Fix or Mitigation
+
+Changed ClickHouse CDC setup so an absent raw analytics mirror checks
+ClickHouse `system.parts` for existing destination rows. If rows already exist,
+the setup recreates that mirror as CDC-only with `do_initial_copy = false` and
+does not truncate the destination tables. Empty destinations still use initial
+copy for fresh environments.
+
+### Remaining Risk
+
+The failed deploy already started production PeerDB snapshot work, so the host
+may need to drain that work before a clean rerun can complete. A deploy rerun is
+required after the corrected image is built and the host is responsive.
+
+## 2026-05-23: Production Recovery After ClickHouse Refresh Saturation
+
+### Symptoms
+
+Production was responsive only intermittently after the raw mirror snapshot
+incident. ClickHouse body measurements were stale even though fresh
+`body_weight` rows existed in Postgres for `2026-05-21` and `2026-05-22`.
+
+### User Impact
+
+The public app could time out during the pressure window, deploys were at risk
+of failing readiness checks, and ClickHouse-backed body measurements missed the
+latest weight entries.
+
+### Evidence
+
+Two long-running ClickHouse refresh queries were active:
+`24cc4e2e-3116-4087-8ae3-80c8970b3ad2` for
+`analytics.provider_stats` and `009a34da-cc79-4631-a45d-c61288dc93d0` for
+`analytics.deduped_sensor`. They had read hundreds of millions of rows from
+`postgres_fitness.metric_stream FINAL`.
+
+Postgres had `body_weight` data through `2026-05-22 14:27:06+00`, while
+ClickHouse `postgres_fitness.metric_stream`, `analytics.body_measurement_sample`,
+and `analytics.v_body_measurement` were all stale at
+`2026-05-20 14:09:23`. The PeerDB metric-stream slot was active and reserved
+with only megabytes of WAL lag, which showed the stale body rows had been missed
+when the metric stream mirror was recreated as CDC-only after existing
+ClickHouse rows were detected.
+
+### Root Cause
+
+Full-history refreshes of `analytics.deduped_sensor` and
+`analytics.provider_stats` saturated the single-node production host. Separately,
+the CDC-only mirror recovery avoided another full snapshot but skipped source
+rows that were inserted while the metric-stream mirror was absent.
+
+### Fix or Mitigation
+
+Killed the two long-running ClickHouse queries and paused their automatic
+refreshes with `SYSTEM STOP VIEW analytics.deduped_sensor` and
+`SYSTEM STOP VIEW analytics.provider_stats`. Deployed
+`ghcr.io/asherlc/dofek:sha-a6195ef` and
+`ghcr.io/asherlc/dofek-ml:sha-a6195ef` with production Deploy Web run
+`26318078567`, which completed successfully including the ClickHouse CDC setup
+step.
+
+Backfilled 8 missing body-measurement metric-stream rows from Postgres into
+ClickHouse for the gap after `2026-05-20 14:09:23+00`, then refreshed
+`analytics.v_body_measurement`. After repair, ClickHouse
+`postgres_fitness.metric_stream`, `analytics.body_measurement_sample`, and
+`analytics.v_body_measurement` all showed latest body weight
+`2026-05-22 14:27:06`.
+
+### Remaining Risk
+
+`analytics.deduped_sensor` and `analytics.provider_stats` are intentionally
+disabled to keep production responsive. Activity sensor analytics and provider
+stats can remain stale until those read models are redesigned or re-enabled
+with an incremental/smaller refresh strategy. Production logs also showed
+repeated `Unexpected end of JSON input` errors on cached provider routes after
+the deploy; derived Redis query-cache state was cleared, but that log pattern
+should be followed up separately if it recurs.

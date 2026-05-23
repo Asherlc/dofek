@@ -83,7 +83,7 @@ WITH TABLE MAPPING
   }
 )
 WITH (
-  do_initial_copy = true,
+  do_initial_copy = {{FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY}},
   max_batch_size = 1000000,
   sync_interval = 60,
   publication_name = 'peerdb_metric_stream_publication',
@@ -116,7 +116,7 @@ WITH TABLE MAPPING
   }
 )
 WITH (
-  do_initial_copy = true,
+  do_initial_copy = {{PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY}},
   max_batch_size = 1000000,
   sync_interval = 60,
   publication_name = 'peerdb_metric_stream_publication',

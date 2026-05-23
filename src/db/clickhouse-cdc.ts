@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { z } from "zod";
 import { type ClickHouseCommandClient, createClickHouseClientFromEnv } from "./clickhouse.ts";
 
 interface PeerDbClient {
@@ -21,6 +22,23 @@ export interface PeerDbSqlTemplateValues {
   postgresPort: number;
   postgresUser: string;
 }
+
+interface RawAnalyticsInitialCopyValues {
+  dofek_fitness_raw_analytics: boolean;
+  dofek_provider_inventory_raw_analytics: boolean;
+}
+
+interface ClickHouseRowCount {
+  row_count: number | string | null;
+}
+
+const clickHouseRowCountRowsSchema = z
+  .array(
+    z.object({
+      row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
+    }),
+  )
+  .min(1);
 
 interface SetupClickHouseCdcOptions {
   peerDbClient: PeerDbClient;
@@ -53,7 +71,14 @@ const analyticsSourceTables = [
   "device_priority",
   "user_profile",
 ] as const;
-const rawAnalyticsMirrorTableMappings = {
+const rawAnalyticsMirrorNames = [
+  "dofek_fitness_raw_analytics",
+  "dofek_provider_inventory_raw_analytics",
+] as const;
+const rawAnalyticsMirrorTableMappings: Record<
+  (typeof rawAnalyticsMirrorNames)[number],
+  readonly string[]
+> = {
   dofek_fitness_raw_analytics: [
     "activity",
     "sleep_session",
@@ -71,7 +96,11 @@ const rawAnalyticsMirrorTableMappings = {
     "lab_result",
     "journal_entry",
   ],
-} as const;
+};
+const defaultRawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues = {
+  dofek_fitness_raw_analytics: true,
+  dofek_provider_inventory_raw_analytics: true,
+};
 const peerDbMetadataColumns = [
   "_peerdb_synced_at DateTime64(9) DEFAULT now()",
   "_peerdb_is_deleted Int8 DEFAULT 0",
@@ -272,12 +301,21 @@ function buildRuntimeConfig(): RuntimeConfig {
   };
 }
 
-function buildTemplateReplacements(values: PeerDbSqlTemplateValues): Record<string, string> {
+function buildTemplateReplacements(
+  values: PeerDbSqlTemplateValues,
+  rawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues,
+): Record<string, string> {
   return {
     CLICKHOUSE_CREDENTIAL: peerDbStringLiteral(values.clickHouseCredential),
     CLICKHOUSE_HOST: peerDbStringLiteral(values.clickHouseHost),
     CLICKHOUSE_PORT: String(values.clickHousePort),
     CLICKHOUSE_USER: peerDbStringLiteral(values.clickHouseUser),
+    FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY: String(
+      rawAnalyticsInitialCopyValues.dofek_fitness_raw_analytics,
+    ),
+    PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
+      rawAnalyticsInitialCopyValues.dofek_provider_inventory_raw_analytics,
+    ),
     POSTGRES_CREDENTIAL: peerDbStringLiteral(values.postgresCredential),
     POSTGRES_DATABASE: peerDbStringLiteral(values.postgresDatabase),
     POSTGRES_HOST: peerDbStringLiteral(values.postgresHost),
@@ -286,8 +324,12 @@ function buildTemplateReplacements(values: PeerDbSqlTemplateValues): Record<stri
   };
 }
 
-function renderPeerDbSqlTemplate(templateSql: string, values: PeerDbSqlTemplateValues): string {
-  const replacements = buildTemplateReplacements(values);
+function renderPeerDbSqlTemplate(
+  templateSql: string,
+  values: PeerDbSqlTemplateValues,
+  rawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues = defaultRawAnalyticsInitialCopyValues,
+): string {
+  const replacements = buildTemplateReplacements(values, rawAnalyticsInitialCopyValues);
   return templateSql.replaceAll(/\{\{([A-Z0-9_]+)\}\}/g, (_match, placeholderName: string) => {
     const replacement = replacements[placeholderName];
     if (replacement === undefined) {
@@ -447,12 +489,45 @@ async function truncateClickHouseDestinationTables(
   );
 }
 
+async function clickHouseDestinationTablesHaveRows(
+  clickHouseClient: ClickHouseCommandClient,
+  tableNames: readonly string[],
+): Promise<boolean> {
+  if (!clickHouseClient.query) {
+    throw new Error("ClickHouse raw analytics mirror reconciliation requires query support");
+  }
+
+  const tableNameList = tableNames.map(peerDbStringLiteral).join(", ");
+  const result = await clickHouseClient.query<ClickHouseRowCount>({
+    query: `
+      SELECT coalesce(sum(rows), 0) AS row_count
+      FROM system.parts
+      WHERE database = 'postgres_fitness'
+        AND table IN (${tableNameList})
+        AND active = 1
+    `,
+    format: "JSONEachRow",
+  });
+  const rows = clickHouseRowCountRowsSchema.parse(await result.json());
+  const row = rows[0];
+  if (!row) {
+    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  }
+  const rowCount = readInteger(row.row_count);
+  if (rowCount === null) {
+    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  }
+  return rowCount > 0;
+}
+
 async function reconcileRawAnalyticsMirrors(
   peerDbClient: PeerDbClient,
   clickHouseClient: ClickHouseCommandClient,
-): Promise<void> {
-  const mirrorNames = Object.keys(rawAnalyticsMirrorTableMappings);
-  const mirrorNameRows = mirrorNames.map((mirrorName) => `('${mirrorName}')`).join(", ");
+): Promise<RawAnalyticsInitialCopyValues> {
+  const rawAnalyticsInitialCopyValues = { ...defaultRawAnalyticsInitialCopyValues };
+  const mirrorNameRows = rawAnalyticsMirrorNames
+    .map((mirrorName) => `('${mirrorName}')`)
+    .join(", ");
   const result = await peerDbClient.query(`
     SELECT flows.name, encode(flows.config_proto, 'escape') AS raw_analytics_mirror_config
     FROM public.flows
@@ -461,9 +536,13 @@ async function reconcileRawAnalyticsMirrors(
   `);
   const mirrorRows = readQueryRows(result);
 
-  for (const [mirrorName, tableNames] of Object.entries(rawAnalyticsMirrorTableMappings)) {
+  for (const mirrorName of rawAnalyticsMirrorNames) {
+    const tableNames = rawAnalyticsMirrorTableMappings[mirrorName];
     const mirrorRow = mirrorRows.find((row) => row.name === mirrorName);
     if (!mirrorRow) {
+      if (await clickHouseDestinationTablesHaveRows(clickHouseClient, tableNames)) {
+        rawAnalyticsInitialCopyValues[mirrorName] = false;
+      }
       continue;
     }
 
@@ -477,6 +556,8 @@ async function reconcileRawAnalyticsMirrors(
       await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }
   }
+
+  return rawAnalyticsInitialCopyValues;
 }
 
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
@@ -484,8 +565,15 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
   await reconcileMetricStreamAnalyticsMirror(options.peerDbClient);
-  await reconcileRawAnalyticsMirrors(options.peerDbClient, options.clickHouseClient);
-  const renderedSql = renderPeerDbSqlTemplate(options.templateSql, options.templateValues);
+  const rawAnalyticsInitialCopyValues = await reconcileRawAnalyticsMirrors(
+    options.peerDbClient,
+    options.clickHouseClient,
+  );
+  const renderedSql = renderPeerDbSqlTemplate(
+    options.templateSql,
+    options.templateValues,
+    rawAnalyticsInitialCopyValues,
+  );
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     await options.peerDbClient.query(statement);
   }
