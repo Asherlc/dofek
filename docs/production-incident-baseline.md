@@ -7486,10 +7486,11 @@ requests with `(total) memory limit exceeded`.
 The first preflight still read `analytics.v_activity`, whose recursive activity
 deduplication can scan the full activity graph before the empty user's filter
 helps. `training.weeklyVolume`, `training.hrZones`, `training.activityStats`,
-`pmc.chart`, aerobic-efficiency queries, and cycling-advanced queries also
-joined `analytics.v_activity` for activity metadata already present on
-`analytics.activity_summary`, so no-result reads still forced expensive
-ClickHouse read-model scans before rendering empty states.
+`pmc.chart`, aerobic-efficiency queries, power-curve/eFTP queries, and
+cycling-advanced queries also joined `analytics.v_activity` for activity
+metadata already present on `analytics.activity_summary`, so no-result reads
+still forced expensive ClickHouse read-model scans before rendering empty
+states.
 
 ### Fix or Mitigation
 
@@ -7499,7 +7500,7 @@ activities before invoking `analytics.activity_summary` or
 `analytics.deduped_sensor`. Added the same raw-activity short-circuit to
 training weekly volume, heart-rate zones, and activity stats. Removed
 `analytics.v_activity` joins from the hot activity-analytics repositories
-(`training`, `pmc`, `efficiency`, and `cyclingAdvanced`) where
+(`training`, `pmc`, `efficiency`, `power`, and `cyclingAdvanced`) where
 `analytics.activity_summary` already carries the canonical activity id, type,
 name, and time window. Updated repository and router tests to cover the new
 query sequence and prove these hot paths no longer touch the recursive activity

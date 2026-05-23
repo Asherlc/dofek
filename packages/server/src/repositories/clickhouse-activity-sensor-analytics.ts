@@ -42,7 +42,7 @@ export async function getClickHousePowerCurveSamples(
     query: `
         WITH activity_info AS (
           SELECT
-            activity.id AS activity_id,
+            activity.activity_id AS activity_id,
             activity.user_id AS user_id,
             activity.started_at AS started_at,
             activity.ended_at AS ended_at,
@@ -55,7 +55,7 @@ export async function getClickHousePowerCurveSamples(
               1
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN analytics.v_activity AS activity
+          INNER JOIN analytics.activity_summary AS activity
             ON activity.user_id = deduped_samples.user_id
            AND deduped_samples.recorded_at >= activity.started_at
            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
@@ -64,7 +64,7 @@ export async function getClickHousePowerCurveSamples(
             AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
-          GROUP BY activity.id, activity.user_id, activity.started_at, activity.ended_at
+          GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at
           HAVING count() > 1
         )
         SELECT
@@ -97,7 +97,7 @@ export async function getClickHouseNormalizedPowerSamples(
     query: `
         WITH activity_info AS (
           SELECT
-            activity.id AS activity_id,
+            activity.activity_id AS activity_id,
             activity.user_id AS user_id,
             activity.started_at AS started_at,
             activity.ended_at AS ended_at,
@@ -111,7 +111,7 @@ export async function getClickHouseNormalizedPowerSamples(
               1
             ) AS interval_s
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN analytics.v_activity AS activity
+          INNER JOIN analytics.activity_summary AS activity
             ON activity.user_id = deduped_samples.user_id
            AND deduped_samples.recorded_at >= activity.started_at
            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
@@ -121,7 +121,7 @@ export async function getClickHouseNormalizedPowerSamples(
             AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
-          GROUP BY activity.id, activity.user_id, activity.started_at, activity.ended_at, activity.name
+          GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at, activity.name
           HAVING count() >= 240
         )
         SELECT
