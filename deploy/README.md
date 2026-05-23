@@ -273,6 +273,13 @@ If management subdomains return `404 page not found`, use:
 - `docs/traefik-subdomain-404-runbook.md`
 - `docs/review-apps.md` for PR-specific shared-front-door routes
 
+### Deployment Runbook: Stale ClickHouse Body Measurements
+
+If yesterday's or today's body weight exists in Postgres but is missing from
+ClickHouse-backed body measurement reads, use:
+
+- `docs/clickhouse-body-measurement-staleness-runbook.md`
+
 ## Management UIs
 - **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)
 - **Netdata**: `https://netdata.dofek.asherlc.com` (Protected by Authentik)
