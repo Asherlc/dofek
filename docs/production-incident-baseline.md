@@ -7517,3 +7517,42 @@ user id and sample channel, so it could aggregate full-history sensor rows
 before the outer `activity_summary` window filter applied. The CTE now applies
 the same expanded `queryDays` activity window and requires completed activities,
 keeping PMC sample-count work proportional to the requested training window.
+
+## 2026-05-23: Cycling Empty-State E2E Hidden by Background Fetching
+
+### Symptoms
+
+The web end-to-end CI job failed during the cycling no-data spec, and the test
+and CI gates failed downstream from that job.
+
+### User Impact
+
+Empty cycling charts could keep showing loading skeletons after their own
+queries had finished if another page query was still in flight, hiding the
+actual no-data message.
+
+### Evidence
+
+`Test / E2E Tests (Web)` failed in the `pnpm e2e:web:run` step while running
+`pnpm exec cypress run`. The first failed Cypress test was `shows empty states
+for charts when no data exists`, followed by the fatal cancellation line
+`The runner has received a shutdown signal`.
+
+### Root Cause
+
+`DofekChart` used the global React Query fetching count to replace empty states
+with loading skeletons. On the cycling page, unrelated slow queries could keep
+the global fetching count above zero even after an individual chart's own query
+had loaded and returned no rows.
+
+### Fix or Mitigation
+
+Changed `DofekChart` so the skeleton is controlled by the chart's own `loading`
+prop. Once the chart has loaded and `empty` is true, it renders the empty
+message immediately. The global fetching count still drives only the subtle
+refresh spinner for charts that already have data.
+
+### Remaining Risk
+
+CI needs to rerun on the pushed branch to confirm the E2E spec now reaches the
+cycling empty-state assertions reliably.
