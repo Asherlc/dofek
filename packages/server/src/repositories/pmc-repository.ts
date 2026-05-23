@@ -100,6 +100,8 @@ export class PmcRepository extends BaseRepository {
         WHERE samples.user_id = {userId:UUID}
           AND samples.channel IN ('heart_rate', 'power')
           AND samples.is_deleted = 0
+          AND activity.started_at > now() - INTERVAL {queryDays:Int32} DAY
+          AND activity.ended_at IS NOT NULL
         GROUP BY activity.activity_id
       )
       SELECT

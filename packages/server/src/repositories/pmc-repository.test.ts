@@ -461,6 +461,10 @@ describe("PmcRepository", () => {
       );
       expect(query.mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
       expect(query.mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "AND activity.started_at > now() - INTERVAL {queryDays:Int32} DAY",
+      );
+      expect(query.mock.calls[0]?.[1]).toContain("AND activity.ended_at IS NOT NULL");
     });
 
     it("extends queryDays from requested days when request exceeds the minimum history", async () => {

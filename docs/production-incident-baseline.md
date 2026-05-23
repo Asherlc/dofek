@@ -7509,3 +7509,11 @@ view.
 ### Remaining Risk
 
 CI and the review-app deploy still need to be observed on the pushed branch.
+
+### Follow-up
+
+Code review found the `pmc.chart` `sample_counts` CTE was still bounded only by
+user id and sample channel, so it could aggregate full-history sensor rows
+before the outer `activity_summary` window filter applied. The CTE now applies
+the same expanded `queryDays` activity window and requires completed activities,
+keeping PMC sample-count work proportional to the requested training window.
