@@ -476,8 +476,12 @@ jobs:
 
       - name: Wait for Postgres writable after stack deploy
         run: |
-          for attempt in $(seq 1 36); do
-            recovery_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+          readiness_attempts=36
+          command_timeout_seconds=15
+          retry_sleep_seconds=5
+          readiness_timeout_seconds=$((readiness_attempts * command_timeout_seconds + (readiness_attempts - 1) * retry_sleep_seconds))
+          for attempt in $(seq 1 "$readiness_attempts"); do
+            recovery_output=$(timeout "${command_timeout_seconds}s" docker run --rm --network "${STACK_NAME}_default" \
               --env-file "$INFISICAL_ENV_FILE" \
               postgres:18-alpine sh -euc \
               "PGPASSWORD=\"\$POSTGRES_PASSWORD\" \
@@ -488,30 +492,34 @@ jobs:
               echo "Postgres is writable after stack deploy."
               break
             fi
-            if [ "$attempt" -eq 36 ]; then
-              echo "::error::Postgres did not become writable within 180s after stack deploy"
+            if [ "$attempt" -eq "$readiness_attempts" ]; then
+              echo "::error::Postgres did not become writable within ${readiness_timeout_seconds}s after stack deploy"
               exit 1
             fi
-            echo "Postgres post-stack readiness attempt ${attempt}/36: retrying in 5s..."
-            sleep 5
+            echo "Postgres post-stack readiness attempt ${attempt}/${readiness_attempts}: retrying in ${retry_sleep_seconds}s..."
+            sleep "$retry_sleep_seconds"
           done
 
       - name: Wait for ClickHouse after stack deploy
         run: |
-          for attempt in $(seq 1 36); do
-            clickhouse_output=$(timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+          readiness_attempts=36
+          command_timeout_seconds=15
+          retry_sleep_seconds=5
+          readiness_timeout_seconds=$((readiness_attempts * command_timeout_seconds + (readiness_attempts - 1) * retry_sleep_seconds))
+          for attempt in $(seq 1 "$readiness_attempts"); do
+            clickhouse_output=$(timeout "${command_timeout_seconds}s" docker run --rm --network "${STACK_NAME}_default" \
               postgres:18-alpine sh -euc \
               "wget -qO- http://clickhouse:8123/ping" 2>&1 || true)
             if [ "$clickhouse_output" = "Ok." ]; then
               echo "ClickHouse is reachable after stack deploy."
               break
             fi
-            if [ "$attempt" -eq 36 ]; then
-              echo "::error::ClickHouse did not become reachable within 180s after stack deploy"
+            if [ "$attempt" -eq "$readiness_attempts" ]; then
+              echo "::error::ClickHouse did not become reachable within ${readiness_timeout_seconds}s after stack deploy"
               exit 1
             fi
-            echo "ClickHouse post-stack readiness attempt ${attempt}/36: retrying in 5s..."
-            sleep 5
+            echo "ClickHouse post-stack readiness attempt ${attempt}/${readiness_attempts}: retrying in ${retry_sleep_seconds}s..."
+            sleep "$retry_sleep_seconds"
           done
 
       - name: Wait for PeerDB

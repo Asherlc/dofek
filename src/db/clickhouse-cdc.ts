@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { z } from "zod";
 import { type ClickHouseCommandClient, createClickHouseClientFromEnv } from "./clickhouse.ts";
 
 interface PeerDbClient {
@@ -30,6 +31,14 @@ interface RawAnalyticsInitialCopyValues {
 interface ClickHouseRowCount {
   row_count: number | string | null;
 }
+
+const clickHouseRowCountRowsSchema = z
+  .array(
+    z.object({
+      row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
+    }),
+  )
+  .min(1);
 
 interface SetupClickHouseCdcOptions {
   peerDbClient: PeerDbClient;
@@ -499,8 +508,12 @@ async function clickHouseDestinationTablesHaveRows(
     `,
     format: "JSONEachRow",
   });
-  const [row] = await result.json();
-  const rowCount = readInteger(row?.row_count);
+  const rows = clickHouseRowCountRowsSchema.parse(await result.json());
+  const row = rows[0];
+  if (!row) {
+    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  }
+  const rowCount = readInteger(row.row_count);
   if (rowCount === null) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
