@@ -108,6 +108,10 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         {
           max_hr: "192",
           endurance_activities: "3",
+        },
+      ],
+      [
+        {
           activities_with_power: "2",
           activities_with_hr: "1",
         },
@@ -122,7 +126,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=192, endurance_activities=3, with_power=2, with_hr=1",
     );
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenCalledTimes(3);
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
@@ -132,6 +136,33 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         days: 90,
         enduranceTypes: expect.arrayContaining(["cycling", "running"]),
       }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not scan deduped sensor diagnostics when no endurance activities exist", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [],
+      [
+        {
+          max_hr: null,
+          endurance_activities: "0",
+        },
+      ],
+    ]);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    const result = await repo.getAerobicEfficiency(90);
+
+    expect(result).toEqual({ maxHr: null, activities: [] });
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).not.toContain(
+      "analytics.deduped_sensor",
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=null, endurance_activities=0, with_power=0, with_hr=0",
     );
 
     warnSpy.mockRestore();

@@ -110,6 +110,9 @@ const polarizationRowSchema = z.object({
 const aerobicEfficiencyDiagnosticSchema = z.object({
   max_hr: z.coerce.number().nullable(),
   endurance_activities: z.coerce.number(),
+});
+
+const aerobicEfficiencySampleDiagnosticSchema = z.object({
   activities_with_power: z.coerce.number(),
   activities_with_hr: z.coerce.number(),
 });
@@ -230,8 +233,43 @@ export class EfficiencyRepository extends BaseRepository {
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
   async #loadAerobicEfficiencyDiagnostics(days: number): Promise<number | null> {
-    const rows = await this.#sensorStore.query(
+    const activityRows = await this.#sensorStore.query(
       aerobicEfficiencyDiagnosticSchema,
+      `WITH endurance_activities AS (
+        SELECT
+          asum.activity_id AS id
+        FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
+        WHERE asum.user_id = {userId:UUID}
+          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+      )
+      SELECT
+        (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
+        toInt32(count()) AS endurance_activities
+      FROM endurance_activities`,
+      {
+        userId: this.userId,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
+    );
+
+    const activityDiagnostic = activityRows[0];
+    if (!activityDiagnostic) {
+      return null;
+    }
+
+    if (activityDiagnostic.endurance_activities === 0) {
+      logger.warn(
+        `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
+          `max_hr=${activityDiagnostic.max_hr}, endurance_activities=0, with_power=0, with_hr=0`,
+      );
+      return activityDiagnostic.max_hr;
+    }
+
+    const sampleRows = await this.#sensorStore.query(
+      aerobicEfficiencySampleDiagnosticSchema,
       `WITH endurance_activities AS (
         SELECT
           asum.activity_id AS id,
@@ -259,8 +297,6 @@ export class EfficiencyRepository extends BaseRepository {
         GROUP BY ea.id
       )
       SELECT
-        (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
-        toInt32(count()) AS endurance_activities,
         toInt32(countIf(sensor_samples.power_samples > 0)) AS activities_with_power,
         toInt32(countIf(sensor_samples.heart_rate_samples > 0)) AS activities_with_hr
       FROM endurance_activities ea
@@ -273,16 +309,15 @@ export class EfficiencyRepository extends BaseRepository {
       },
     );
 
-    const diag = rows[0];
-    if (diag) {
-      logger.warn(
-        `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
-          `max_hr=${diag.max_hr}, endurance_activities=${diag.endurance_activities}, ` +
-          `with_power=${diag.activities_with_power}, with_hr=${diag.activities_with_hr}`,
-      );
-      return diag.max_hr;
-    }
-    return null;
+    const sampleDiagnostic = sampleRows[0] ?? { activities_with_power: 0, activities_with_hr: 0 };
+    logger.warn(
+      `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
+        `max_hr=${activityDiagnostic.max_hr}, ` +
+        `endurance_activities=${activityDiagnostic.endurance_activities}, ` +
+        `with_power=${sampleDiagnostic.activities_with_power}, ` +
+        `with_hr=${sampleDiagnostic.activities_with_hr}`,
+    );
+    return activityDiagnostic.max_hr;
   }
 
   /**
