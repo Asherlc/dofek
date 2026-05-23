@@ -201,12 +201,15 @@ describe("PedalDynamicsModel", () => {
 
 describe("CyclingAdvancedRepository", () => {
   // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-  function makeSensorStore(rows: unknown[]): any {
+  function makeSensorStore(rows: unknown[], rawActivityCount = rows.length): any {
     // Mirror ClickHouseActivitySensorStore.query: parse rows through the
     // supplied Zod schema so coerce/transform validators actually run.
     const query = vi
       .fn()
-      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
+        if (queryText.includes("raw_activity_count")) {
+          return [schema.parse({ raw_activity_count: rawActivityCount })];
+        }
         return rows.map((row) => schema.parse(row));
       });
     return {
@@ -223,12 +226,12 @@ describe("CyclingAdvancedRepository", () => {
     };
   }
 
-  function makeRepository(rows: Record<string, unknown>[] = []) {
+  function makeRepository(rows: Record<string, unknown>[] = [], rawActivityCount = rows.length) {
     // After the CH migration every cycling-advanced query routes through
     // sensorStore. The PG db stays for completeness but is unused by the
     // migrated methods.
     const execute = vi.fn();
-    const sensorStore = makeSensorStore(rows);
+    const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new CyclingAdvancedRepository({ execute }, "user-1", "UTC", sensorStore);
     return { repo, execute, sensorStore };
   }
@@ -376,18 +379,41 @@ describe("CyclingAdvancedRepository", () => {
   });
 
   describe("getActivityVariability", () => {
-    it("returns empty result when no FTP", async () => {
+    it("does not estimate FTP or scan sensors when no raw activities exist", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getActivityVariability(90, 20, 0);
       expect(result.models).toEqual([]);
       expect(result.totalCount).toBe(0);
     });
 
+    it("returns empty result when raw activities exist but no FTP", async () => {
+      const { repo } = makeRepository([], 1);
+      const result = await repo.getActivityVariability(90, 20, 0);
+      expect(result.models).toEqual([]);
+      expect(result.totalCount).toBe(0);
+    });
+
+    it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getActivityVariability(90, 20, 0);
+
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query.mock.calls[0]?.[1]).toContain(
+        "FROM postgres_fitness.activity FINAL",
+      );
+      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.activity_summary");
+      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.deduped_sensor");
+    });
+
     it("returns ActivityVariabilityModel instances when data exists", async () => {
-      // First sensorStore.query call → FTP estimate; second → variability rows.
+      // First sensorStore.query call -> raw activity count; second -> FTP estimate;
+      // third -> variability rows.
       const sensorStore = makeSensorStore([]);
       sensorStore.query = vi
         .fn()
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ raw_activity_count: 1 }].map((row) => schema.parse(row)),
+        )
         .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
           [{ ftp: 250 }].map((row) => schema.parse(row)),
         )
@@ -413,8 +439,8 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.models).toHaveLength(1);
       expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
       expect(result.totalCount).toBe(1);
-      expect(sensorStore.query).toHaveBeenCalledTimes(2);
-      const [, query, params] = sensorStore.query.mock.calls[1];
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+      const [, query, params] = sensorStore.query.mock.calls[2];
       expect(query).toContain("RANGE BETWEEN 29 PRECEDING AND CURRENT ROW");
       expect(query).toContain("pow(avg(pow(r.rolling_30s_power, 4)), 0.25)");
       expect(query).toContain("LIMIT {limit:Int32}");
@@ -437,6 +463,18 @@ describe("CyclingAdvancedRepository", () => {
       expect(result).toEqual([]);
     });
 
+    it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getVerticalAscentRates(90);
+
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query.mock.calls[0]?.[1]).toContain(
+        "FROM postgres_fitness.activity FINAL",
+      );
+      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.activity_summary");
+      expect(sensorStore.query.mock.calls[0]?.[1]).not.toContain("analytics.deduped_sensor");
+    });
+
     it("returns VerticalAscentModel instances", async () => {
       const { repo } = makeRepository([
         {
@@ -456,25 +494,27 @@ describe("CyclingAdvancedRepository", () => {
       // Regression test: the original query INNER-JOINed the grade channel,
       // which returned empty for providers that don't emit grade (Garmin, Wahoo).
       // The CH query LEFT-JOINs grade activities, so altitude-only providers still match.
-      const { repo, sensorStore } = makeRepository([
-        {
-          date: "2024-04-01",
-          name: "Garmin Ride",
-          elevation_gain: 800,
-          climbing_seconds: 2400,
-        },
-      ]);
+      const { repo, sensorStore } = makeRepository(
+        [
+          {
+            date: "2024-04-01",
+            name: "Garmin Ride",
+            elevation_gain: 800,
+            climbing_seconds: 2400,
+          },
+        ],
+        1,
+      );
       const result = await repo.getVerticalAscentRates(90);
       expect(result).toHaveLength(1);
       expect(result[0]?.toDetail().activityName).toBe("Garmin Ride");
-      // Single CH query.
-      expect(sensorStore.query).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query).toHaveBeenCalledTimes(2);
     });
 
     it("queries vertical ascent with grade fallback and minimum climb duration", async () => {
-      const { repo, sensorStore } = makeRepository([]);
+      const { repo, sensorStore } = makeRepository([], 1);
       await repo.getVerticalAscentRates(90);
-      const [, query, params] = sensorStore.query.mock.calls[0];
+      const [, query, params] = sensorStore.query.mock.calls[1];
       expect(query).toContain("LEFT JOIN grade_activities");
       expect(query).toContain("LEFT JOIN grade_points");
       expect(query).toContain("(NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)");

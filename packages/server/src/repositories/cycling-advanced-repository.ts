@@ -58,6 +58,10 @@ const pedalRowSchema = z.object({
   avg_pedal_smoothness: z.coerce.number(),
 });
 
+const rawActivityCountRowSchema = z.object({
+  raw_activity_count: z.coerce.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -358,6 +362,10 @@ export class CyclingAdvancedRepository {
     limit: number,
     offset: number,
   ): Promise<{ models: ActivityVariabilityModel[]; totalCount: number }> {
+    if ((await this.#loadRawActivityCount(days)) === 0) {
+      return { models: [], totalCount: 0 };
+    }
+
     const ftp = await this.getEstimatedFtp(days);
     if (!ftp) return { models: [], totalCount: 0 };
 
@@ -436,6 +444,10 @@ export class CyclingAdvancedRepository {
   /** Vertical ascent rate (VAM) for climbing segments. Uses grade samples when
    *  available, falling back to altitude-only diffs otherwise. */
   async getVerticalAscentRates(days: number): Promise<VerticalAscentModel[]> {
+    if ((await this.#loadRawActivityCount(days)) === 0) {
+      return [];
+    }
+
     const rows = await this.#sensorStore.query(
       vamRowSchema,
       `WITH altitude_points AS (
@@ -582,5 +594,24 @@ export class CyclingAdvancedRepository {
           avgPedalSmoothness: row.avg_pedal_smoothness,
         }),
     );
+  }
+
+  async #loadRawActivityCount(days: number): Promise<number> {
+    const rows = await this.#sensorStore.query(
+      rawActivityCountRowSchema,
+      `SELECT toInt32(count()) AS raw_activity_count
+      FROM postgres_fitness.activity FINAL
+      WHERE user_id = {userId:UUID}
+        AND _peerdb_is_deleted = 0
+        AND has({enduranceTypes:Array(String)}, activity_type)
+        AND started_at > now() - INTERVAL {days:Int32} DAY`,
+      {
+        userId: this.#userId,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
+    );
+
+    return rows[0]?.raw_activity_count ?? 0;
   }
 }

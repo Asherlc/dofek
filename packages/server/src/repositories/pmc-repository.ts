@@ -34,6 +34,10 @@ const normalizedPowerRowSchema = z.object({
   np: z.coerce.number(),
 });
 
+const rawActivityCountRowSchema = z.object({
+  raw_activity_count: z.coerce.number(),
+});
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -65,6 +69,13 @@ export class PmcRepository extends BaseRepository {
     const minHistoryDays = 365;
     const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
     const today = new Date().toISOString().slice(0, 10);
+
+    if ((await this.#loadRawActivityCount(queryDays)) === 0) {
+      return {
+        data: [],
+        model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+      };
+    }
 
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
     // user_profile is accessed via ClickHouse read models.
@@ -224,6 +235,23 @@ export class PmcRepository extends BaseRepository {
   }
 
   // ── Private helpers ─────────────────────────────────────────────────
+
+  async #loadRawActivityCount(days: number): Promise<number> {
+    const rows = await this.#sensorStore.query(
+      rawActivityCountRowSchema,
+      `SELECT toInt32(count()) AS raw_activity_count
+      FROM postgres_fitness.activity FINAL
+      WHERE user_id = {userId:UUID}
+        AND _peerdb_is_deleted = 0
+        AND started_at > now() - INTERVAL {days:Int32} DAY`,
+      {
+        userId: this.userId,
+        days,
+      },
+    );
+
+    return rows[0]?.raw_activity_count ?? 0;
+  }
 
   #buildRegressionModel(
     activities: ActivityRow[],

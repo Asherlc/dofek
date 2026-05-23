@@ -75,9 +75,14 @@ import { powerRouter } from "./power.ts";
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
 
-function makeSensorStore(rows: unknown[] = []): SensorStore {
+function makeSensorStore(rows: unknown[] = [], rawActivityCount = rows.length): SensorStore {
   return {
-    query: vi.fn().mockResolvedValue(rows),
+    query: vi.fn().mockImplementation((_schema: unknown, queryText = "") => {
+      if (String(queryText).includes("raw_activity_count")) {
+        return Promise.resolve([{ raw_activity_count: rawActivityCount }]);
+      }
+      return Promise.resolve(rows);
+    }),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),

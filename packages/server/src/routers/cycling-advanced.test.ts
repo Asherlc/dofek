@@ -22,13 +22,18 @@ vi.mock("../trpc.ts", async () => {
 // Apply Zod schema to mock CH rows so the same coerce/transform logic that runs
 // in production also runs in tests. Mirrors ClickHouseActivitySensorStore.query.
 // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(rowSets: unknown[][]): any {
-  const query = vi.fn();
-  for (const rows of rowSets) {
-    query.mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-      rows.map((row) => schema.parse(row)),
-    );
-  }
+function makeSensorStore(rowSets: unknown[][], rawActivityCount = rowSets.length > 0 ? 1 : 0): any {
+  let rowSetIndex = 0;
+  const query = vi
+    .fn()
+    .mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
+      if (queryText.includes("raw_activity_count")) {
+        return [schema.parse({ raw_activity_count: rawActivityCount })];
+      }
+      const rows = rowSets[rowSetIndex] ?? [];
+      rowSetIndex += 1;
+      return rows.map((row) => schema.parse(row));
+    });
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -47,12 +52,12 @@ import { cyclingAdvancedRouter } from "./cycling-advanced.ts";
 
 const createCaller = createTestCallerFactory(cyclingAdvancedRouter);
 
-function makeCaller(rowSets: unknown[][]) {
+function makeCaller(rowSets: unknown[][], rawActivityCount?: number) {
   return createCaller({
     db: { execute: vi.fn() },
     userId: "user-1",
     timezone: "UTC",
-    sensorStore: makeSensorStore(rowSets),
+    sensorStore: makeSensorStore(rowSets, rawActivityCount),
   });
 }
 

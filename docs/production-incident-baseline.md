@@ -7556,3 +7556,15 @@ refresh spinner for charts that already have data.
 
 CI needs to rerun on the pushed branch to confirm the E2E spec now reaches the
 cycling empty-state assertions reliably.
+
+### Follow-up
+
+The next CI run showed the empty-state assertion still failing because the page
+was waiting on backend calls, not just chart rendering. `pmc.chart` and
+`cyclingAdvanced.activityVariability` kept scanning `analytics.activity_summary`
+and `analytics.deduped_sensor` for the no-activity E2E user, with slow-query
+logs around 95 seconds and the direct `efficiency.aerobicEfficiency` Cypress
+request timing out behind those in-flight ClickHouse queries. PMC and cycling
+activity variability now perform a raw `postgres_fitness.activity FINAL` count
+first and return empty results before touching the expensive read models when
+the user has no raw activities.
