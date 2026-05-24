@@ -320,16 +320,21 @@ jobs:
 
       - name: Validate host bind mount paths
         run: |
-          docker run --rm \
-            --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
-            postgres:18-alpine sh -euc '
-              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
-                if [ ! -d "$path" ]; then
-                  echo "::error::Required host bind mount path is missing: $path"
-                  exit 1
-                fi
-              done
-            '
+          server_host="${DOCKER_HOST#ssh://root@}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "root@${server_host}" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+            if [ ! -d "$path" ]; then
+              echo "::error::Required host bind mount path is missing: $path"
+              exit 1
+            fi
+          done
+          REMOTE
 
       - name: Bootstrap stack (if data services are missing)
         env:

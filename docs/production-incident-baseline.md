@@ -7696,3 +7696,18 @@ step did not need to prune because the root filesystem already had far more
 than the required 8 GiB free. The workflow now checks free space before
 pruning, skips Docker prune when the precondition is already satisfied, and
 still hard-fails if the host remains below 8 GiB after cleanup.
+
+### Follow-up
+
+Deploy run `26356818633` confirmed the disk-headroom fix: `Reclaim Docker root
+disk headroom` passed and skipped the unnecessary prune. The deploy later
+failed in `Validate host bind mount paths`. The failing command was a
+Docker-over-SSH `docker run --rm --mount type=bind,source=/mnt/dofek-data...`
+used only to check that host directories existed. The first fatal line was
+`docker: error during connect: Post "http://docker.example.com/v1.48/containers/create":
+command [ssh -o ConnectTimeout=30 -T -l root -- *** docker system dial-stdio]
+has exited with exit status 255`, followed by `client_loop: send disconnect:
+Broken pipe` and Docker exit 125. The step did not need a container or Docker
+daemon interaction to validate host filesystem paths. The workflow now checks
+the same required directories with a direct SSH `test -d` loop on the host,
+leaving Docker-over-SSH for actual Docker operations.
