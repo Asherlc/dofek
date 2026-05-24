@@ -7789,3 +7789,29 @@ service before CI could finish, a second hard reset was followed by
 `docker service scale dofek_cloudbeaver=0`, matching the already-committed
 `deploy/stack.yml` desired state, to keep the host reachable until the normal
 branch deploy can apply the same change through CI.
+
+### Follow-up
+
+Deploy run `26362822406` confirmed that disabling CloudBeaver restored SSH
+setup, image pulls, and the pre-migration readiness steps. The run then failed
+in `Run migrations`; the migration container started as
+`dofek_migrate_26362822406_1`, then logged `error: [migrate] Error: connect
+ECONNREFUSED 10.0.1.97:5432` before the workflow emitted
+`##[error]Migration failed`.
+
+Host evidence showed the refused address was the Swarm VIP for `dofek_db`.
+That refusal was a symptom of broader service churn: `dofek_clickhouse` was
+restarting every few dozen seconds with Swarm task failures
+`task: non-zero exit (137)`, web tasks failed with `socket hang up` and
+`Timeout error`, and kernel OOM logs repeatedly killed `clickhouse-serv` at
+about 4.6-5.0 GiB RSS on a 7.5 GiB host with no swap. The root cause was the
+production ClickHouse container being allowed to consume too much of the
+single-node host's memory during analytics join work, causing host-level OOM
+kills and downstream database/ClickHouse connection failures during deploy.
+
+The branch now lowers the ClickHouse container limit from 5 GiB to 4 GiB,
+adds a checked-in 3 GiB ClickHouse `max_server_memory_usage` config, mounts that
+config in production/local/review ClickHouse containers, adds a production
+ClickHouse healthcheck, and treats recent DB/ClickHouse task failures as a
+bootstrap condition so the corrected data-service stack can be applied before
+the migration container runs.

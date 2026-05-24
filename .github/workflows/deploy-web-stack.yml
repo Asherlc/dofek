@@ -350,6 +350,8 @@ jobs:
         run: |
           db_running=false
           clickhouse_running=false
+          db_recent_failure=false
+          clickhouse_recent_failure=false
           if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
             docker service ps "${STACK_NAME}_db" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
             db_running=true
@@ -358,11 +360,22 @@ jobs:
             docker service ps "${STACK_NAME}_clickhouse" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
             clickhouse_running=true
           fi
+          if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
+            docker service ps "${STACK_NAME}_db" --filter desired-state=shutdown --format '{{.CurrentState}} {{.Error}}' \
+              | grep -Eq '^(Failed|Rejected) (([0-9]+ seconds?)|(about a minute)|([0-9]+ minutes?)) ago'; then
+            db_recent_failure=true
+          fi
+          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1 && \
+            docker service ps "${STACK_NAME}_clickhouse" --filter desired-state=shutdown --format '{{.CurrentState}} {{.Error}}' \
+              | grep -Eq '^(Failed|Rejected) (([0-9]+ seconds?)|(about a minute)|([0-9]+ minutes?)) ago'; then
+            clickhouse_recent_failure=true
+          fi
 
-          if [ "$db_running" = true ] && [ "$clickhouse_running" = true ]; then
-            echo "Swarm DB and ClickHouse services exist with running tasks; skipping bootstrap deploy."
+          if [ "$db_running" = true ] && [ "$clickhouse_running" = true ] && \
+            [ "$db_recent_failure" = false ] && [ "$clickhouse_recent_failure" = false ]; then
+            echo "Swarm DB and ClickHouse services exist with running tasks and no recent failures; skipping bootstrap deploy."
           else
-            echo "Swarm DB or ClickHouse service is missing or not running; running bootstrap stack deploy."
+            echo "Swarm DB or ClickHouse service is missing, not running, or recently failed; running bootstrap stack deploy."
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth "$STACK_NAME"
           fi
 
