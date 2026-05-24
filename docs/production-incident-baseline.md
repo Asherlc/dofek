@@ -7751,3 +7751,32 @@ wait loop already retried connection-refused errors; it now also retries the
 ClickHouse client's exact `Timeout error.` response, with a regression test
 covering the retry behavior. No arbitrary sleep or larger deploy timeout was
 added.
+
+### Follow-up
+
+Deploy run `26361342212` failed before touching production in `Setup SSH`. The
+failing command was the shared `.github/actions/setup-ssh-host` loop running
+`ssh-keyscan -T "$keyscan_timeout" -H "$SSH_HOST"` before any Infisical export,
+image pull, migration, or stack deploy step. The first fatal line was
+`SSH host key for *** did not become available within 235s`; every attempt
+reported `ssh-keyscan returned no key` while `tcp/22: reachable (no SSH banner
+yet)`.
+
+External diagnostics showed this was host saturation, not a branch deploy
+secret or GitHub checkout failure: Hetzner metrics had production pinned near
+400% CPU from before the deploy attempt, local SSH started timing out during
+banner exchange, `https://dofek.asherlc.com/healthz` timed out, and Axiom logs
+showed system-wide load symptoms including Netdata heartbeat delays, Postgres
+`autovacuum worker took too long to start; canceled`, and Temporal/PeerDB
+`context deadline exceeded` polling failures. The earliest repeated causal log
+pattern was the optional `cloudbeaver` management service crash-looping on its
+persisted workspace with `JdbcSQLSyntaxErrorException: Duplicate column name
+"UPDATE_TIME"` and `CloudBeaver ... Error initializing database`.
+
+The direct mitigation in this branch is to scale the optional production
+`cloudbeaver` service to zero in `deploy/stack.yml`, matching the existing
+staging pattern for heavy management UIs. This removes the crash-looping
+service from the production convergence set so the core app, database,
+ClickHouse, PeerDB, and deploy path can recover. Remaining risk: CloudBeaver
+will stay unavailable until its persisted workspace is repaired or replaced and
+the service is explicitly re-enabled.

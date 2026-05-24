@@ -387,6 +387,7 @@ services:
     volumes:
       - /mnt/dofek-data/cloudbeaver:/opt/cloudbeaver/workspace
     deploy:
+      replicas: 0
       resources:
         limits:
           memory: 300M
