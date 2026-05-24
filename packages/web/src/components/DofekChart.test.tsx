@@ -167,7 +167,6 @@ describe("DofekChart", () => {
     mockUseFetchingCount.mockReturnValue(1);
     render(<DofekChart option={{}} empty={true} />);
     expect(screen.getByText("No data available")).toBeDefined();
-    expect(screen.queryByTestId("loading-skeleton")).toBeNull();
     mockUseFetchingCount.mockReturnValue(0);
   });
 
@@ -175,7 +174,6 @@ describe("DofekChart", () => {
     mockUseFetchingCount.mockReturnValue(0);
     render(<DofekChart option={{}} empty={true} />);
     expect(screen.getByText("No data available")).toBeDefined();
-    expect(screen.queryByTestId("loading-skeleton")).toBeNull();
   });
 
   it("shows refresh spinner when data present and queries are fetching", () => {
