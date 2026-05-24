@@ -7653,3 +7653,16 @@ runs the one-shot migration container detached and polls its status with short
 Docker commands, so a long-running ClickHouse migration does not depend on one
 continuous SSH-backed `docker run` wait. The workflow still prints migration
 logs and fails on the migration container's actual exit code.
+
+### Follow-up
+
+The next deploy run `26351247460` stayed connected past the previous
+Docker-over-SSH failure and surfaced the underlying migration error. The
+migration container printed `Applying ClickHouse migration:
+0020_incremental_deduped_sensor`, then failed with `Error: socket hang up`.
+That migration still performed an all-history sensor scalar backfill and
+all-history deduped sensor recompute in single ClickHouse commands. The
+incremental deduped sensor migration now runs through a dedicated migration
+function that creates the same final tables/views but backfills
+`analytics.sensor_scalar_sample` and `analytics.deduped_sensor` in seven-day
+recorded-at ranges, logging each range before running it.

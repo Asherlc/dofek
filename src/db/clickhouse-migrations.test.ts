@@ -145,6 +145,11 @@ describe("buildClickHouseMigrationStatements", () => {
       if (queryText.includes("system.tables")) {
         return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
       }
+      if (queryText.includes("min_recorded_at_ms")) {
+        return {
+          json: vi.fn().mockResolvedValue([{ min_recorded_at_ms: null, max_recorded_at_ms: null }]),
+        };
+      }
       return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
     });
 
@@ -192,6 +197,11 @@ describe("runClickHouseMigrations", () => {
       }
       if (queryText.includes("system.databases")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
+      }
+      if (queryText.includes("min_recorded_at_ms")) {
+        return {
+          json: vi.fn().mockResolvedValue([{ min_recorded_at_ms: null, max_recorded_at_ms: null }]),
+        };
       }
       return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
     });
@@ -265,6 +275,63 @@ describe("runClickHouseMigrations", () => {
         allow_experimental_refreshable_materialized_view: 1,
       },
     });
+  });
+
+  it("splits incremental deduped sensor backfill into seven-day ranges", async () => {
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+      }
+      if (queryText.includes("0020_incremental_deduped_sensor")) {
+        return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+      }
+      if (queryText.includes("min_recorded_at_ms")) {
+        return {
+          json: vi.fn().mockResolvedValue([
+            {
+              min_recorded_at_ms: String(Date.UTC(2026, 0, 1)),
+              max_recorded_at_ms: String(Date.UTC(2026, 0, 10)),
+            },
+          ]),
+        };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
+    });
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    const sensorScalarBackfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO analytics.sensor_scalar_sample"));
+    const dedupedSensorBackfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO analytics.deduped_sensor"));
+
+    expect(sensorScalarBackfillStatements).toHaveLength(2);
+    expect(dedupedSensorBackfillStatements).toHaveLength(2);
+    expect(sensorScalarBackfillStatements[0]).toContain(
+      "recorded_at >= toDateTime64('2026-01-01 00:00:00.000', 6, 'UTC')",
+    );
+    expect(sensorScalarBackfillStatements[0]).toContain(
+      "recorded_at < toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
+    );
+    expect(sensorScalarBackfillStatements[1]).toContain(
+      "recorded_at >= toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
+    );
+    expect(sensorScalarBackfillStatements[1]).toContain(
+      "recorded_at < toDateTime64('2026-01-10 00:00:00.001', 6, 'UTC')",
+    );
+    expect(dedupedSensorBackfillStatements[1]).toContain(
+      "WHERE recorded_at >= toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
+    );
+    expect(dedupedSensorBackfillStatements[1]).toContain(
+      "AND recorded_at < toDateTime64('2026-01-10 00:00:00.001', 6, 'UTC')",
+    );
   });
 
   it("fails when the ClickHouse client cannot query migration state", async () => {

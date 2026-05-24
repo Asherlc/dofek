@@ -8,7 +8,14 @@ import {
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "./clickhouse.ts";
-import { buildIncrementalDedupedSensorMigrationStatements } from "./clickhouse-deduped-sensor.ts";
+import {
+  buildDedupedSensorBackfillSql,
+  buildIncrementalDedupedSensorBaseTableStatements,
+  buildIncrementalDedupedSensorIngestStatements,
+  buildIncrementalDedupedSensorMigrationStatements,
+  buildIncrementalDedupedSensorResetStatements,
+  buildSensorScalarSampleBackfillSql,
+} from "./clickhouse-deduped-sensor.ts";
 import {
   buildActivitySummaryReadModelStatements,
   buildDedupedLocationReadModelStatements,
@@ -81,6 +88,7 @@ const clickHouseDatabaseEngineRowSchema = z.object({
 });
 
 const METRIC_STREAM_BACKFILL_RANGE_MILLISECONDS = 5 * 60 * 1_000;
+const DEDUPED_SENSOR_BACKFILL_RANGE_MILLISECONDS = 7 * 24 * 60 * 60 * 1_000;
 const CURRENT_METRIC_STREAM_REQUIRED_COLUMNS = [
   "external_id",
   "device_id",
@@ -88,6 +96,11 @@ const CURRENT_METRIC_STREAM_REQUIRED_COLUMNS = [
   "activity_id",
   "point",
 ];
+
+const dedupedSensorBackfillBoundsSchema = z.object({
+  min_recorded_at_ms: z.string().nullable(),
+  max_recorded_at_ms: z.string().nullable(),
+});
 
 function clickHouseStringLiteral(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
@@ -98,13 +111,10 @@ interface ClickHouseMigrationBase {
   requiresPreviouslyAppliedMigrationId?: string;
 }
 
-type ClickHouseMigration =
-  | ({
-      statements: string[];
-    } & ClickHouseMigrationBase)
-  | ({
-      run: (client: ClickHouseCommandClient, postgresConnectionString: string) => Promise<void>;
-    } & ClickHouseMigrationBase);
+interface ClickHouseMigration extends ClickHouseMigrationBase {
+  statements: string[];
+  run?: (client: ClickHouseCommandClient, postgresConnectionString: string) => Promise<void>;
+}
 
 function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {
   return [
@@ -142,6 +152,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     },
     {
       id: "0006_backfill_native_metric_stream",
+      statements: [],
       run: replaceNativeMetricStreamAndBackfill,
     },
     {
@@ -169,6 +180,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     },
     {
       id: "0007_repair_legacy_metric_stream_engine",
+      statements: [],
       run: replaceLegacyMetricStreamIfNeeded,
     },
     {
@@ -201,10 +213,12 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
     {
       id: "0012_repair_metric_stream_backfill",
       requiresPreviouslyAppliedMigrationId: "0006_backfill_native_metric_stream",
+      statements: [],
       run: repairNativeMetricStreamBackfill,
     },
     {
       id: "0013_metric_stream_location_point",
+      statements: [],
       run: rebuildMetricStreamLocationPoint,
     },
     {
@@ -281,6 +295,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         ...buildActivitySummaryReadModelStatements(),
         ...buildActivityTrendDailyReadModelStatements(),
       ],
+      run: migrateIncrementalDedupedSensor,
     },
   ];
 }
@@ -333,12 +348,12 @@ ORDER BY id`,
       logger.info(
         `[migrate] Skipping ClickHouse migration body: ${migration.id} requires ${migration.requiresPreviouslyAppliedMigrationId} to have been applied before this run`,
       );
-    } else if ("statements" in migration) {
+    } else if (migration.run) {
+      await migration.run(client, postgresConnectionString);
+    } else {
       for (const statement of migration.statements) {
         await runClickHouseMigrationStatement(client, statement);
       }
-    } else {
-      await migration.run(client, postgresConnectionString);
     }
     await client.command({
       query: `INSERT INTO analytics.schema_migrations (id) VALUES (${migrationId})`,
@@ -348,6 +363,96 @@ ORDER BY id`,
   }
 
   return appliedCount;
+}
+
+async function migrateIncrementalDedupedSensor(
+  client: ClickHouseCommandClient,
+  _postgresConnectionString: string,
+): Promise<void> {
+  const resetStatements = [
+    "DROP VIEW IF EXISTS analytics.activity_summary",
+    "DROP TABLE IF EXISTS analytics.activity_summary",
+    "DROP VIEW IF EXISTS analytics.activity_trend_daily",
+    "DROP TABLE IF EXISTS analytics.activity_trend_daily",
+    "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
+    "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
+    ...buildIncrementalDedupedSensorResetStatements(),
+    ...buildIncrementalDedupedSensorBaseTableStatements(),
+  ];
+
+  for (const statement of resetStatements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  const backfillRanges = await getDedupedSensorBackfillRanges(client);
+  if (backfillRanges.length === 0) {
+    logger.info("[migrate] Incremental deduped sensor backfill has no scalar rows");
+  }
+  for (const [rangeIndex, backfillRange] of backfillRanges.entries()) {
+    const rangeSql = {
+      lowerBound: clickHouseDateTimeLiteral(backfillRange.lowerBound),
+      upperBound: clickHouseDateTimeLiteral(backfillRange.upperBound),
+    };
+    logger.info(
+      `[migrate] Backfilling incremental deduped sensor range ${rangeIndex + 1}/${backfillRanges.length}: ${backfillRange.lowerBound.toISOString()} to ${backfillRange.upperBound.toISOString()}`,
+    );
+    await runClickHouseMigrationStatement(client, buildSensorScalarSampleBackfillSql(rangeSql));
+    await runClickHouseMigrationStatement(client, buildDedupedSensorBackfillSql(rangeSql));
+  }
+
+  const finalStatements = [
+    ...buildIncrementalDedupedSensorIngestStatements(),
+    ...buildRestingHeartRateSleepWindowMaterializedViewStatements(),
+    ...buildActivitySummaryReadModelStatements(),
+    ...buildActivityTrendDailyReadModelStatements(),
+  ];
+  for (const statement of finalStatements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+}
+
+async function getDedupedSensorBackfillRanges(
+  client: ClickHouseCommandClient,
+): Promise<MetricStreamBackfillRange[]> {
+  if (!client.query) {
+    throw new Error("ClickHouse deduped sensor backfill requires a query-capable client");
+  }
+
+  await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
+  const result = await client.query<Record<string, unknown>>({
+    query: `SELECT
+  if(count() = 0, NULL, toString(toUnixTimestamp64Milli(min(recorded_at)))) AS min_recorded_at_ms,
+  if(count() = 0, NULL, toString(toUnixTimestamp64Milli(max(recorded_at)))) AS max_recorded_at_ms
+FROM postgres_fitness.metric_stream FINAL
+WHERE scalar IS NOT NULL`,
+    format: "JSONEachRow",
+  });
+  const row = dedupedSensorBackfillBoundsSchema.parse((await result.json())[0] ?? {});
+  if (!row.min_recorded_at_ms || !row.max_recorded_at_ms) {
+    return [];
+  }
+
+  const minRecordedAtMs = Number(row.min_recorded_at_ms);
+  const maxRecordedAtMs = Number(row.max_recorded_at_ms);
+  if (!Number.isFinite(minRecordedAtMs) || !Number.isFinite(maxRecordedAtMs)) {
+    throw new Error("ClickHouse deduped sensor backfill bounds were not finite timestamps");
+  }
+
+  const inclusiveUpperBoundMs = maxRecordedAtMs + 1;
+  const ranges: MetricStreamBackfillRange[] = [];
+  for (
+    let lowerBoundMs = minRecordedAtMs;
+    lowerBoundMs < inclusiveUpperBoundMs;
+    lowerBoundMs += DEDUPED_SENSOR_BACKFILL_RANGE_MILLISECONDS
+  ) {
+    ranges.push({
+      lowerBound: new Date(lowerBoundMs),
+      upperBound: new Date(
+        Math.min(lowerBoundMs + DEDUPED_SENSOR_BACKFILL_RANGE_MILLISECONDS, inclusiveUpperBoundMs),
+      ),
+    });
+  }
+  return ranges;
 }
 
 async function replaceNativeMetricStreamAndBackfill(

@@ -39,6 +39,11 @@ type DirtyKeyRow = z.infer<typeof dirtyKeyRowSchema>;
 const maxDedupedSensorDirtyKeyBatchSize = 500;
 const pendingKeyQueryParamType = "Array(Tuple(UUID, String, DateTime64(6, 'UTC'), String))";
 
+interface RecordedAtRangeSql {
+  lowerBound: string;
+  upperBound: string;
+}
+
 function sensorScalarChannelListSql(): string {
   return sensorScalarChannels.map((channel) => `'${channel}'`).join(",\n      ");
 }
@@ -46,6 +51,7 @@ function sensorScalarChannelListSql(): string {
 function sensorScalarSampleSelectSql(
   sourceTable: string,
   sourceFinalClause: "" | " FINAL",
+  recordedAtRange?: RecordedAtRangeSql,
 ): string {
   return `WITH
 metric_stream_rows AS (
@@ -55,6 +61,7 @@ metric_stream_rows AS (
     AND channel IN (
       ${sensorScalarChannelListSql()}
     )
+    ${recordedAtRange ? `AND recorded_at >= ${recordedAtRange.lowerBound}\n    AND recorded_at < ${recordedAtRange.upperBound}` : ""}
 ),
 active_sensor_provider_priority AS (
   SELECT provider_id, channel, priority
@@ -134,7 +141,7 @@ AS
 ${sensorScalarSampleSelectSql("postgres_fitness.metric_stream", "")}`;
 }
 
-function buildSensorScalarSampleBackfillSql(): string {
+export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
   return `INSERT INTO analytics.sensor_scalar_sample (
   id,
   user_id,
@@ -149,7 +156,7 @@ function buildSensorScalarSampleBackfillSql(): string {
   _peerdb_is_deleted,
   _peerdb_version
 )
-${sensorScalarSampleSelectSql("postgres_fitness.metric_stream", " FINAL")}`;
+${sensorScalarSampleSelectSql("postgres_fitness.metric_stream", " FINAL", recordedAtRange)}`;
 }
 
 function buildDedupedSensorTableSql(): string {
@@ -245,12 +252,16 @@ LEFT JOIN (
 GROUP BY pending_keys.user_id, pending_keys.channel, pending_keys.recorded_at`;
 }
 
-function buildDedupedSensorBackfillSql(): string {
+export function buildDedupedSensorBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
   return buildDedupedSensorRecomputeInsertSql(`SELECT DISTINCT
     user_id,
     channel,
     recorded_at
-  FROM analytics.sensor_scalar_sample FINAL`);
+  FROM analytics.sensor_scalar_sample FINAL${
+    recordedAtRange
+      ? `\n  WHERE recorded_at >= ${recordedAtRange.lowerBound}\n    AND recorded_at < ${recordedAtRange.upperBound}`
+      : ""
+  }`);
 }
 
 function buildPendingDirtyKeySql(limit: number): string {
@@ -297,20 +308,35 @@ export function buildIncrementalDedupedSensorStatements(): string[] {
   ];
 }
 
-export function buildIncrementalDedupedSensorMigrationStatements(): string[] {
+export function buildIncrementalDedupedSensorResetStatements(): string[] {
   return [
     "DROP VIEW IF EXISTS analytics.sensor_scalar_sample_ingest",
     "DROP VIEW IF EXISTS analytics.sensor_dirty_key_ingest",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.sensor_dirty_key",
     "DROP TABLE IF EXISTS analytics.sensor_scalar_sample",
+  ];
+}
+
+export function buildIncrementalDedupedSensorBaseTableStatements(): string[] {
+  return [
     buildSensorScalarSampleTableSql(),
     buildDedupedSensorTableSql(),
     buildSensorDirtyKeyTableSql(),
+  ];
+}
+
+export function buildIncrementalDedupedSensorIngestStatements(): string[] {
+  return [buildSensorScalarSampleIngestSql(), buildSensorDirtyKeyIngestSql()];
+}
+
+export function buildIncrementalDedupedSensorMigrationStatements(): string[] {
+  return [
+    ...buildIncrementalDedupedSensorResetStatements(),
+    ...buildIncrementalDedupedSensorBaseTableStatements(),
     buildSensorScalarSampleBackfillSql(),
     buildDedupedSensorBackfillSql(),
-    buildSensorScalarSampleIngestSql(),
-    buildSensorDirtyKeyIngestSql(),
+    ...buildIncrementalDedupedSensorIngestStatements(),
   ];
 }
 
