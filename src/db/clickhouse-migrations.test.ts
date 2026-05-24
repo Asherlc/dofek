@@ -45,7 +45,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
-    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(6);
+    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(5);
     expect(
       sql.match(/CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g),
     ).toHaveLength(1);
@@ -106,6 +106,68 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity");
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("connected_components AS");
+  });
+
+  it("rebuilds sensor-dependent views after the incremental deduped sensor table", async () => {
+    const appliedBeforeIncrementalCutover = new Set([
+      "0001_clickhouse_analytics_schema_cleanup",
+      "0002_clickhouse_postgres_bridge_and_activity_read_models",
+      "0004_reenable_materialized_metric_stream",
+      "0005_backfill_materialized_metric_stream",
+      "0006_backfill_native_metric_stream",
+      "0007_remaining_postgres_views_to_clickhouse",
+      "0007_repair_legacy_metric_stream_engine",
+      "0008_complete_provider_stats_raw_mirrors",
+      "0009_drop_derived_resting_heart_rate_read_model",
+      "0010_include_standalone_deduped_sensor_samples",
+      "0011_activity_trend_daily_read_model",
+      "0012_repair_metric_stream_backfill",
+      "0013_metric_stream_location_point",
+      "0014_resting_heart_rate_sleep_window_materialized_view",
+      "0015_activity_summary_centroids",
+      "0016_reduce_metric_stream_refresh_load",
+      "0017_body_measurement_sample_projection",
+      "0018_sensor_priority_raw_tables",
+    ]);
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      const migrationMatch = queryText.match(/WHERE id = '([^']+)'/);
+      const migrationId = migrationMatch?.[1];
+      if (migrationId) {
+        return {
+          json: vi
+            .fn()
+            .mockResolvedValue([
+              { migration_count: appliedBeforeIncrementalCutover.has(migrationId) ? 1 : 0 },
+            ]),
+        };
+      }
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+    });
+
+    await runClickHouseMigrations({ command, query }, "postgres://health:fixture@db:5432/health");
+
+    const commandSql = command.mock.calls.map(([options]) => String(options.query));
+    const incrementalDedupedSensorTableIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
+    );
+    const restingHeartRateViewIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
+    );
+    const activitySummaryViewIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+    );
+    const activityTrendDailyViewIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily"),
+    );
+
+    expect(incrementalDedupedSensorTableIndex).toBeGreaterThanOrEqual(0);
+    expect(restingHeartRateViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
+    expect(activitySummaryViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
+    expect(activityTrendDailyViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
   });
 });
 

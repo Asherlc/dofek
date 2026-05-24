@@ -264,10 +264,7 @@ function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigra
         "DROP VIEW IF EXISTS analytics.v_activity",
         "DROP TABLE IF EXISTS analytics.v_activity",
         ...buildAnalyticsFitnessReadModelStatements(),
-        ...buildRestingHeartRateSleepWindowMaterializedViewStatements(),
         ...buildDedupedLocationReadModelStatements(),
-        ...buildActivitySummaryReadModelStatements(),
-        ...buildActivityTrendDailyReadModelStatements(),
       ],
     },
     {

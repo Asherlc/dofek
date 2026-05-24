@@ -7592,3 +7592,43 @@ short-circuit branches. The repository tests now assert that weekly volume and
 heart-rate zone preflights require ended activities, that heart-rate zones
 preflight only endurance activity types, and that empty raw activity counts do
 not fall through to ClickHouse read-model queries.
+
+## 2026-05-24: Branch Deploy Blocked by ClickHouse Migration Ordering
+
+### Symptoms
+
+The branch deploy run for `Asherlc/strong-csv-no-records` failed in
+`Build + Deploy / Deploy Web Stack` while applying ClickHouse migrations.
+
+### User Impact
+
+The PR branch could not be deployed for verification. The stack rollout did not
+proceed because the migration container failed before `docker stack deploy`.
+
+### Evidence
+
+Workflow run `26348714913` failed in the `Run migrations` step. The first fatal
+ClickHouse line was `Identifier 'samples.is_deleted' cannot be resolved from
+table with name samples` while creating
+`analytics.resting_heart_rate_sleep_window` from `analytics.deduped_sensor`.
+
+### Root Cause
+
+Migration `0019_non_sensor_read_models_as_views` rebuilt sensor-dependent views
+before migration `0020_incremental_deduped_sensor` upgraded
+`analytics.deduped_sensor` to the incremental schema that includes
+`is_deleted`. Production still had the older `deduped_sensor` shape, so `0019`
+referenced a column that did not exist yet and stopped the deploy.
+
+### Fix or Mitigation
+
+Moved the sensor-dependent view rebuilds out of `0019`; `0020` already rebuilds
+those views after recreating the incremental `deduped_sensor` table. Added a
+regression test that simulates production with migrations through `0018`
+applied and verifies the dependent views are rebuilt only after
+`analytics.deduped_sensor` is recreated.
+
+### Remaining Risk
+
+The fixed branch still needs a fresh CI pass and branch deploy to confirm the
+pending production migration sequence applies cleanly.
