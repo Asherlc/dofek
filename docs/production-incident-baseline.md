@@ -7711,3 +7711,20 @@ Broken pipe` and Docker exit 125. The step did not need a container or Docker
 daemon interaction to validate host filesystem paths. The workflow now checks
 the same required directories with a direct SSH `test -d` loop on the host,
 leaving Docker-over-SSH for actual Docker operations.
+
+### Follow-up
+
+Deploy run `26358289913` confirmed the direct SSH bind-path validation had not
+yet been reached. The run failed earlier in `Pull deploy images` while
+prefetching public dependency images. The failing command was the
+`pull_if_missing "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"` Docker pull
+inside the image prefetch step. The first fatal line was
+`error during connect: Post "http://docker.example.com/v1.48/images/create?fromImage=timescale%2Ftimescaledb-ha&tag=pg18.3-ts2.26.4-all":
+command [ssh -o ConnectTimeout=30 -T -l root -- *** docker system dial-stdio]
+has exited with exit status 255`, followed by `Connection timed out during
+banner exchange`. The private branch images had already pulled successfully,
+but the public dependency prefetch path still opened a fresh Docker-over-SSH
+connection per image. The workflow now keeps the private GHCR pulls on
+Docker-over-SSH so they can use the runner's registry login, and pulls the
+public dependency images through one direct SSH session on the host to avoid
+repeated Docker-over-SSH handshakes for static public images.
