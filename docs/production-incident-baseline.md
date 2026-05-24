@@ -7581,3 +7581,14 @@ with the same overloaded ClickHouse connection. The no-activity guards now read
 raw activity existence from source Postgres `fitness.activity` instead, and the
 power curve/eFTP repositories return empty results before scanning ClickHouse
 when the user has no raw activities.
+
+### Follow-up
+
+`Test / Stryker (11)` failed after the Postgres raw-activity preflight changes.
+The failing step was Stryker, and the fatal line was `Final mutation score 73.91
+under breaking threshold 75`. All surviving mutants were in
+`training-repository.ts`, mostly around the raw activity preflight and empty
+short-circuit branches. The repository tests now assert that weekly volume and
+heart-rate zone preflights require ended activities, that heart-rate zones
+preflight only endurance activity types, and that empty raw activity counts do
+not fall through to ClickHouse read-model queries.

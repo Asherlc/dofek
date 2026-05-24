@@ -8,6 +8,26 @@ import { TrainingRepository } from "./training-repository.ts";
 // ---------------------------------------------------------------------------
 
 describe("TrainingRepository", () => {
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  function collectSqlText(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (!isRecord(value)) return "";
+    if (Array.isArray(value.value)) {
+      return value.value.map((chunk) => (typeof chunk === "string" ? chunk : "")).join("");
+    }
+    if (Array.isArray(value.queryChunks)) {
+      return value.queryChunks.map((chunk) => collectSqlText(chunk)).join("");
+    }
+    return "";
+  }
+
+  function executedSql(execute: ReturnType<typeof vi.fn>, callIndex = 0): string {
+    return collectSqlText(execute.mock.calls[callIndex]?.[0]);
+  }
+
   function makeSensorStore(rows: unknown[], rawActivityCount = rows.length): ActivitySensorStore {
     // Mirror ClickHouseActivitySensorStore.query: parse each row through the
     // supplied Zod schema so timestampStringSchema and friends actually run.
@@ -59,6 +79,7 @@ describe("TrainingRepository", () => {
 
       expect(result).toEqual([]);
       expect(execute).toHaveBeenCalledTimes(1);
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
       expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
@@ -129,9 +150,12 @@ describe("TrainingRepository", () => {
 
   describe("getHrZones", () => {
     it("returns null maxHr and empty weeks when no data", async () => {
-      const { repo } = makeRepository([]);
+      const { repo, execute, sensorStore } = makeRepository([]);
       const result = await repo.getHrZones(90);
       expect(result).toEqual({ maxHr: null, weeks: [] });
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
+      expect(executedSql(execute)).toContain("activity_type IN");
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("returns maxHr and zone rows", async () => {
@@ -168,9 +192,10 @@ describe("TrainingRepository", () => {
 
   describe("getActivityStats", () => {
     it("returns empty array when no data", async () => {
-      const { repo } = makeRepository([]);
+      const { repo, sensorStore } = makeRepository([]);
       const result = await repo.getActivityStats(90);
       expect(result).toEqual([]);
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("selects the activity view id into the UI row id", async () => {
