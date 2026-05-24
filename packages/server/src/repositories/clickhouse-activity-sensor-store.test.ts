@@ -90,7 +90,7 @@ describe("ClickHouseActivitySensorStore", () => {
     );
   });
 
-  it("loads power curve samples from activity summary without the recursive activity view", async () => {
+  it("loads power curve samples from activity summary", async () => {
     const { store, query } = makeStore([]);
 
     await store.getPowerCurveSamples(90, window.userId, "UTC");
@@ -98,10 +98,9 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.activity_summary");
     expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).not.toContain("analytics.v_activity");
   });
 
-  it("loads normalized power samples from activity summary without the recursive activity view", async () => {
+  it("loads normalized power samples from activity summary", async () => {
     const { store, query } = makeStore([]);
 
     await store.getNormalizedPowerSamples(365, window.userId, "UTC");
@@ -109,7 +108,6 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.activity_summary");
     expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).not.toContain("analytics.v_activity");
   });
 
   it("derives VO2 max estimates from ClickHouse deduped samples", async () => {

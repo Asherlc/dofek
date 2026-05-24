@@ -121,12 +121,64 @@ function splitSqlStatements(content: string): SqlStatement[] {
   let statementStart = 0;
   let startLineNumber = 1;
   let currentLineNumber = 1;
+  let inSingleQuotedString = false;
+  let inDoubleQuotedIdentifier = false;
+  let dollarQuotedDelimiter: string | null = null;
 
   for (let index = 0; index < content.length; index += 1) {
     const character = content[index] ?? "";
+    const nextCharacter = content[index + 1] ?? "";
     if (character === "\n") {
       currentLineNumber += 1;
     }
+
+    if (dollarQuotedDelimiter) {
+      if (content.startsWith(dollarQuotedDelimiter, index)) {
+        index += dollarQuotedDelimiter.length - 1;
+        dollarQuotedDelimiter = null;
+      }
+      continue;
+    }
+
+    if (inSingleQuotedString) {
+      if (character === "'") {
+        if (nextCharacter === "'") {
+          index += 1;
+        } else {
+          inSingleQuotedString = false;
+        }
+      }
+      continue;
+    }
+
+    if (inDoubleQuotedIdentifier) {
+      if (character === '"') {
+        if (nextCharacter === '"') {
+          index += 1;
+        } else {
+          inDoubleQuotedIdentifier = false;
+        }
+      }
+      continue;
+    }
+
+    if (character === "'") {
+      inSingleQuotedString = true;
+      continue;
+    }
+
+    if (character === '"') {
+      inDoubleQuotedIdentifier = true;
+      continue;
+    }
+
+    const delimiter = readDollarQuotedDelimiter(content, index);
+    if (delimiter) {
+      dollarQuotedDelimiter = delimiter;
+      index += delimiter.length - 1;
+      continue;
+    }
+
     if (character !== ";") {
       continue;
     }
@@ -153,6 +205,11 @@ function splitSqlStatements(content: string): SqlStatement[] {
   }
 
   return statements;
+}
+
+function readDollarQuotedDelimiter(content: string, index: number): string | null {
+  const match = content.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/);
+  return match?.[0] ?? null;
 }
 
 function countLeadingNewlines(value: string): number {

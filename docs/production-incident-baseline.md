@@ -7510,7 +7510,7 @@ view.
 
 CI and the review-app deploy still need to be observed on the pushed branch.
 
-### Follow-up
+### Follow-up (PMC sample count window)
 
 Code review found the `pmc.chart` `sample_counts` CTE was still bounded only by
 user id and sample channel, so it could aggregate full-history sensor rows
@@ -7557,7 +7557,7 @@ refresh spinner for charts that already have data.
 CI needs to rerun on the pushed branch to confirm the E2E spec now reaches the
 cycling empty-state assertions reliably.
 
-### Follow-up
+### Follow-up (Cycling background queries)
 
 The next CI run showed the empty-state assertion still failing because the page
 was waiting on backend calls, not just chart rendering. `pmc.chart` and
@@ -7569,7 +7569,7 @@ activity variability now perform a raw `postgres_fitness.activity FINAL` count
 first and return empty results before touching the expensive read models when
 the user has no raw activities.
 
-### Follow-up
+### Follow-up (Raw activity preflight)
 
 The next E2E rerun still failed at `pnpm e2e:web:run`. The first fatal line
 remained the missing cycling empty state, and the direct
@@ -7582,7 +7582,7 @@ raw activity existence from source Postgres `fitness.activity` instead, and the
 power curve/eFTP repositories return empty results before scanning ClickHouse
 when the user has no raw activities.
 
-### Follow-up
+### Follow-up (Stryker 11)
 
 `Test / Stryker (11)` failed after the Postgres raw-activity preflight changes.
 The failing step was Stryker, and the fatal line was `Final mutation score 73.91
@@ -7633,7 +7633,7 @@ applied and verifies the dependent views are rebuilt only after
 The fixed branch still needs a fresh CI pass and branch deploy to confirm the
 pending production migration sequence applies cleanly.
 
-### Follow-up
+### Follow-up (Spell check)
 
 The next CI run failed early in `Test / Spell Check`, and the aggregate
 `Test / Lint & Static Analysis` job failed because it depends on that check.
@@ -7642,7 +7642,7 @@ The first fatal line was
 test helper variable now uses `IncrementalMigration` wording instead of the
 unrecognized term.
 
-### Follow-up
+### Follow-up (Deploy run 26350086210)
 
 After CI passed, the branch deploy run `26350086210` got past the original SQL
 ordering failure: `0019_non_sensor_read_models_as_views` applied and
@@ -7654,7 +7654,7 @@ Docker commands, so a long-running ClickHouse migration does not depend on one
 continuous SSH-backed `docker run` wait. The workflow still prints migration
 logs and fails on the migration container's actual exit code.
 
-### Follow-up
+### Follow-up (Deploy run 26351247460)
 
 The next deploy run `26351247460` stayed connected past the previous
 Docker-over-SSH failure and surfaced the underlying migration error. The
@@ -7667,7 +7667,7 @@ function that creates the same final tables/views but backfills
 `analytics.sensor_scalar_sample` and `analytics.deduped_sensor` in seven-day
 recorded-at ranges, logging each range before running it.
 
-### Follow-up
+### Follow-up (Deploy run 26352812408)
 
 Deploy run `26352812408` confirmed the chunked ClickHouse migration path on
 production: `0020_incremental_deduped_sensor` applied after 591 logged
@@ -7684,7 +7684,7 @@ branch now treats transient remote Docker inspect failures as retryable for a
 bounded number of attempts before failing loudly with the last inspect output
 and migration logs.
 
-### Follow-up
+### Follow-up (Deploy run 26355597585)
 
 Deploy run `26355597585` failed before migrations in `Reclaim Docker root disk
 headroom`. The command printed `/dev/root 145G 56G 90G 39% /`, then
@@ -7697,7 +7697,7 @@ than the required 8 GiB free. The workflow now checks free space before
 pruning, skips Docker prune when the precondition is already satisfied, and
 still hard-fails if the host remains below 8 GiB after cleanup.
 
-### Follow-up
+### Follow-up (Deploy run 26356818633)
 
 Deploy run `26356818633` confirmed the disk-headroom fix: `Reclaim Docker root
 disk headroom` passed and skipped the unnecessary prune. The deploy later
@@ -7712,7 +7712,7 @@ daemon interaction to validate host filesystem paths. The workflow now checks
 the same required directories with a direct SSH `test -d` loop on the host,
 leaving Docker-over-SSH for actual Docker operations.
 
-### Follow-up
+### Follow-up (Deploy run 26358289913)
 
 Deploy run `26358289913` confirmed the direct SSH bind-path validation had not
 yet been reached. The run failed earlier in `Pull deploy images` while
@@ -7729,7 +7729,7 @@ Docker-over-SSH so they can use the runner's registry login, and pulls the
 public dependency images through one direct SSH session on the host to avoid
 repeated Docker-over-SSH handshakes for static public images.
 
-### Follow-up
+### Follow-up (Deploy run 26359577017)
 
 Deploy run `26359577017` confirmed the image prefetch path and migrations, then
 failed in `Deploy stack` while Swarm was updating services. The failing command
@@ -7752,7 +7752,7 @@ ClickHouse client's exact `Timeout error.` response, with a regression test
 covering the retry behavior. No arbitrary sleep or larger deploy timeout was
 added.
 
-### Follow-up
+### Follow-up (Deploy run 26361342212)
 
 Deploy run `26361342212` failed before touching production in `Setup SSH`. The
 failing command was the shared `.github/actions/setup-ssh-host` loop running
@@ -7790,7 +7790,7 @@ service before CI could finish, a second hard reset was followed by
 `deploy/stack.yml` desired state, to keep the host reachable until the normal
 branch deploy can apply the same change through CI.
 
-### Follow-up
+### Follow-up (Deploy run 26362822406)
 
 Deploy run `26362822406` confirmed that disabling CloudBeaver restored SSH
 setup, image pulls, and the pre-migration readiness steps. The run then failed
@@ -7816,7 +7816,7 @@ ClickHouse healthcheck, and treats recent DB/ClickHouse task failures as a
 bootstrap condition so the corrected data-service stack can be applied before
 the migration container runs.
 
-### Follow-up
+### Follow-up (Deploy run 26364429876)
 
 Deploy run `26364429876` was triggered from the branch after PR CI passed. It
 confirmed the previous SSH setup problem was fixed and completed image pulls,

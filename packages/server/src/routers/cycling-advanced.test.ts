@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -21,8 +22,10 @@ vi.mock("../trpc.ts", async () => {
 
 // Apply Zod schema to mock CH rows so the same coerce/transform logic that runs
 // in production also runs in tests. Mirrors ClickHouseActivitySensorStore.query.
-// biome-ignore lint/suspicious/noExplicitAny: test mock helper
-function makeSensorStore(rowSets: unknown[][], rawActivityCount = rowSets.length > 0 ? 1 : 0): any {
+function makeSensorStore(
+  rowSets: unknown[][],
+  rawActivityCount = rowSets.length > 0 ? 1 : 0,
+): ActivitySensorStore {
   let rowSetIndex = 0;
   const query = vi
     .fn()

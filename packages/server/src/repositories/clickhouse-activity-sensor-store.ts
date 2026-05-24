@@ -358,6 +358,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           FROM analytics.deduped_location
           WHERE user_id = {userId:UUID}
             AND activity_id IN {activityIds:Array(UUID)}
+            AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
+            AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
         ),
         sample_times AS (
           SELECT recorded_at FROM deduped_samples

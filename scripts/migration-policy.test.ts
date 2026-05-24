@@ -86,4 +86,17 @@ UPDATE fitness.user_profile SET timezone = 'UTC' WHERE timezone IS NULL;
       "unbounded-delete",
     ]);
   });
+
+  it("does not split statements on semicolons inside SQL literals", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0027_literal_semicolon.sql",
+      `
+UPDATE fitness.provider SET name = 'safe;still safe' WHERE id = 'provider-1';
+UPDATE fitness.provider SET name = $$safe;still safe$$ WHERE id = 'provider-2';
+UPDATE fitness.provider SET "display;name" = 'safe' WHERE id = 'provider-3';
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
 });

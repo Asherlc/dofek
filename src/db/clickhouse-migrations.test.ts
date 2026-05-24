@@ -12,8 +12,8 @@ vi.mock("pg", () => ({
   escapeIdentifier: (value: string) => `"${value.replaceAll('"', '""')}"`,
 }));
 
-import { createMigration as createBackfillMaterializedMetricStreamMigration } from "./clickhouse-migrations/0005_backfill_materialized_metric_stream.ts";
-import { createMigration as createDropDerivedRestingHeartRateMigration } from "./clickhouse-migrations/0009_drop_derived_resting_heart_rate_read_model.ts";
+import * as backfillMaterializedMetricStreamMigration from "./clickhouse-migrations/0005_backfill_materialized_metric_stream.ts";
+import * as dropDerivedRestingHeartRateMigration from "./clickhouse-migrations/0009_drop_derived_resting_heart_rate_read_model.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -49,11 +49,11 @@ describe("buildClickHouseMigrationStatements", () => {
   });
 
   it("keeps custom-run migrations free of accidental static statements", () => {
-    expect(createBackfillMaterializedMetricStreamMigration().statements).toEqual([]);
+    expect(backfillMaterializedMetricStreamMigration.createMigration().statements).toEqual([]);
   });
 
   it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
-    expect(createDropDerivedRestingHeartRateMigration().statements).toEqual([
+    expect(dropDerivedRestingHeartRateMigration.createMigration().statements).toEqual([
       "DROP VIEW IF EXISTS analytics.derived_resting_heart_rate",
       "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
     ]);
@@ -1300,11 +1300,11 @@ describe("runClickHouseMigrationStatement", () => {
     },
     {
       statement: "CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily AS SELECT 1",
-      waitedTables: ["analytics.deduped_sensor"],
+      waitedTables: ["analytics.deduped_sensor", "analytics.v_activity"],
     },
     {
       statement: "CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window AS SELECT 1",
-      waitedTables: ["analytics.deduped_sensor", "analytics.v_sleep"],
+      waitedTables: ["analytics.deduped_sensor", "analytics.v_activity", "analytics.v_sleep"],
     },
   ])("waits for dependencies before running $statement", async ({ statement, waitedTables }) => {
     const client = makeClient();

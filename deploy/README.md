@@ -126,10 +126,10 @@ CI (main) -> build dofek + dofek-ml (same tag)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
-              -> bootstrap stack if <stack>_db is missing
+              -> pre-migration stack apply without pruning
               -> wait for postgres writable
               -> migrate (one-shot container on <stack>_default)
-              -> docker stack deploy <stack>
+              -> prune deploy <stack> with requested app image tag
 ```
 
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.

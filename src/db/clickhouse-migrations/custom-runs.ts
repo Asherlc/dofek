@@ -20,10 +20,6 @@ import { buildRestingHeartRateSleepWindowMaterializedViewStatements } from "../c
 import { clickHouseStringLiteral } from "./sql.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 
-interface MigrationCountRow {
-  migration_count: number | string;
-}
-
 interface MetricStreamBackfillChunkRow {
   lower_bound: string | null;
   upper_bound: string | null;
@@ -76,6 +72,12 @@ const timescaleChunkRowSchema = z.object({
 const clickHouseDatabaseEngineRowSchema = z.object({
   engine: z.string(),
 });
+
+const migrationCountRowSchema = z.object({
+  migration_count: z.union([z.number(), z.string()]),
+});
+
+type MigrationCountRow = z.infer<typeof migrationCountRowSchema>;
 
 const dedupedSensorBackfillBoundsSchema = z.object({
   min_recorded_at_ms: z.string().nullable(),
@@ -316,7 +318,8 @@ WHERE database = 'postgres_fitness'
     format: "JSONEachRow",
   });
   const rows = await result.json();
-  return Number(rows[0]?.migration_count ?? 0) === columns.length;
+  const parsedRows = z.array(migrationCountRowSchema).parse(rows);
+  return Number(parsedRows[0]?.migration_count ?? 0) === columns.length;
 }
 
 function shouldRunBeforeMetricStreamBackfill(statement: string): boolean {

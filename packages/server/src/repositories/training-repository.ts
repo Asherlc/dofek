@@ -168,11 +168,11 @@ export class TrainingRepository extends BaseRepository {
         FROM analytics.deduped_sensor ds
         INNER JOIN activity_meta am
           ON ds.user_id = am.user_id
-         AND ds.recorded_at >= am.started_at
-         AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
         WHERE ds.channel = 'heart_rate'
           AND ds.scalar IS NOT NULL
           AND ds.is_deleted = 0
+          AND ds.recorded_at >= am.started_at
+          AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
         GROUP BY am.activity_date, am.max_hr
       )
       SELECT
@@ -215,11 +215,12 @@ export class TrainingRepository extends BaseRepository {
         FROM analytics.deduped_sensor AS samples
         INNER JOIN analytics.activity_summary AS a
           ON a.user_id = samples.user_id
-         AND samples.recorded_at >= a.started_at
-         AND samples.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE samples.user_id = {userId:UUID}
           AND samples.channel IN ('heart_rate', 'power')
           AND samples.is_deleted = 0
+          AND samples.recorded_at >= a.started_at
+          AND samples.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
+          AND a.started_at > now() - INTERVAL {days:Int32} DAY
         GROUP BY a.activity_id
       )
       SELECT

@@ -23,9 +23,11 @@ export async function runClickHouseMigrationStatement(
   }
   if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily")) {
     await waitForClickHouseTable(client, "analytics", "deduped_sensor");
+    await waitForClickHouseTable(client, "analytics", "v_activity");
   }
   if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window")) {
     await waitForClickHouseTable(client, "analytics", "deduped_sensor");
+    await waitForClickHouseTable(client, "analytics", "v_activity");
     await waitForClickHouseTable(client, "analytics", "v_sleep");
   }
 
