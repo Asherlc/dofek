@@ -7641,3 +7641,15 @@ The first fatal line was
 `src/db/clickhouse-migrations.test.ts:112:35 - Unknown word (Cutover)`. The
 test helper variable now uses `IncrementalMigration` wording instead of the
 unrecognized term.
+
+### Follow-up
+
+After CI passed, the branch deploy run `26350086210` got past the original SQL
+ordering failure: `0019_non_sensor_read_models_as_views` applied and
+`0020_incremental_deduped_sensor` started. The deploy then failed in the
+foreground Docker-over-SSH migration command with `client_loop: send
+disconnect: Broken pipe`, followed by Docker exit 125. The migration step now
+runs the one-shot migration container detached and polls its status with short
+Docker commands, so a long-running ClickHouse migration does not depend on one
+continuous SSH-backed `docker run` wait. The workflow still prints migration
+logs and fails on the migration container's actual exit code.

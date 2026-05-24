@@ -400,34 +400,46 @@ jobs:
 
           echo "Starting migration container ${migration_container}..."
           cleanup_migration_container
-          # Heavy data migrations (e.g. hypertable backfills moving body
-          # measurements into fitness.metric_stream) can legitimately run for
-          # hours on prod. Sized to fit the slowest known migration with
-          # headroom; if a future migration would exceed this, restructure it
-          # rather than bumping again. Keep this as the foreground docker run:
-          # polling docker inspect over SSH can false-fail when ClickHouse
-          # background refreshes saturate the single-node host.
+          # Heavy data migrations can legitimately run for hours on prod. Use a
+          # detached container and short status polls so one long-lived
+          # Docker-over-SSH wait cannot drop while ClickHouse is busy.
           migration_timeout_seconds=14400
-          set +e
-          timeout "${migration_timeout_seconds}s" docker run --rm --name "$migration_container" --network "${STACK_NAME}_default" \
+          migration_started_at="$(date +%s)"
+          docker run -d --name "$migration_container" --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
-          migration_status=$?
-          set -e
+
+          while true; do
+            elapsed_seconds="$(($(date +%s) - migration_started_at))"
+            if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
+              echo "::error::Migration exceeded ${migration_timeout_seconds}s"
+              docker logs "$migration_container" || true
+              cleanup_migration_container
+              exit 1
+            fi
+
+            inspect_output="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$migration_container")"
+            migration_state="$(printf '%s\n' "$inspect_output" | awk '{print $1}')"
+            migration_status="$(printf '%s\n' "$inspect_output" | awk '{print $2}')"
+            if [ "$migration_state" = "exited" ] || [ "$migration_state" = "dead" ]; then
+              break
+            fi
+
+            echo "Migration container ${migration_container} is ${migration_state} after ${elapsed_seconds}s..."
+            sleep 60
+          done
+
+          docker logs "$migration_container" || true
           trap - EXIT
-          if [ "$migration_status" -eq 124 ]; then
-            echo "::error::Migration exceeded ${migration_timeout_seconds}s"
-            cleanup_migration_container
-            exit 1
-          fi
           if [ "$migration_status" -ne 0 ]; then
             cleanup_migration_container
             echo "::error::Migration failed"
             exit "$migration_status"
           fi
+          cleanup_migration_container
           echo "Migration succeeded."
 
       - name: Deploy stack
