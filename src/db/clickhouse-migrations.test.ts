@@ -12,12 +12,38 @@ vi.mock("pg", () => ({
   escapeIdentifier: (value: string) => `"${value.replaceAll('"', '""')}"`,
 }));
 
+import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import {
   buildClickHouseMigrationStatements,
   runClickHouseMigrations,
 } from "./clickhouse-migrations.ts";
 
 describe("buildClickHouseMigrationStatements", () => {
+  it("loads ClickHouse migrations from ordered per-file modules", () => {
+    expect(clickHouseMigrationFileNames).toEqual([
+      "0001_clickhouse_analytics_schema_cleanup.ts",
+      "0002_clickhouse_postgres_bridge_and_activity_read_models.ts",
+      "0004_reenable_materialized_metric_stream.ts",
+      "0005_backfill_materialized_metric_stream.ts",
+      "0006_backfill_native_metric_stream.ts",
+      "0007_remaining_postgres_views_to_clickhouse.ts",
+      "0007_repair_legacy_metric_stream_engine.ts",
+      "0008_complete_provider_stats_raw_mirrors.ts",
+      "0009_drop_derived_resting_heart_rate_read_model.ts",
+      "0010_include_standalone_deduped_sensor_samples.ts",
+      "0011_activity_trend_daily_read_model.ts",
+      "0012_repair_metric_stream_backfill.ts",
+      "0013_metric_stream_location_point.ts",
+      "0014_resting_heart_rate_sleep_window_materialized_view.ts",
+      "0015_activity_summary_centroids.ts",
+      "0016_reduce_metric_stream_refresh_load.ts",
+      "0017_body_measurement_sample_projection.ts",
+      "0018_sensor_priority_raw_tables.ts",
+      "0019_non_sensor_read_models_as_views.ts",
+      "0020_incremental_deduped_sensor.ts",
+    ]);
+  });
+
   it("keeps destructive cleanup and analytics table creation in migration statements", () => {
     const sql = buildClickHouseMigrationStatements("postgres://health:fixture@db:5432/health").join(
       "\n",

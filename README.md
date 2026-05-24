@@ -130,6 +130,7 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
+├── src/db/clickhouse-migrations/   # Ordered file-per-migration ClickHouse registry modules
 ├── deploy/                        # Terraform + Docker Swarm production stack — see deploy/README.md
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
@@ -186,6 +187,9 @@ Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write 
 - `drizzle/0001_seed_journal_questions.sql` seeds canonical journal questions on fresh installs and is idempotent for existing environments.
 - For existing environments that already have rows in `drizzle.__drizzle_migrations`, `runMigrations()` auto-marks pending `*_baseline.sql` files as applied without executing them.
 - Add all new migrations as forward-only files in `drizzle/` (for example, `0003_add_...sql`, `0004_add_...sql`).
+- ClickHouse migrations live as ordered TypeScript modules in `src/db/clickhouse-migrations/`; add one file per migration and register it in `src/db/clickhouse-migrations/registry.ts`.
+- Deploy migrations must be schema-only. Do not inline historical backfills, full read-model refreshes, `INSERT ... SELECT` data moves, ClickHouse mutations, or `OPTIMIZE FINAL` in deploy migrations. Put large data work in resumable scripts or jobs with progress tracking and a separate cutover/validation step.
+- `pnpm lint:migrations` checks changed `drizzle/*.sql` files for deploy-blocking data work. CI runs the same policy check in the Migration Lint job before Squawk.
 
 ## Docker
 

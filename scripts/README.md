@@ -30,6 +30,7 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   - Handles standalone lines, inline comments, and specific test patterns like `MockFetchFn`.
 - `no-suppressions.sh`: Checks for lint or type suppressions (e.g., `eslint-disable`, `biome-ignore`).
 - `exact-versions.sh`: Ensures all dependencies in `package.json` use exact versions (no `^` or `~`).
+- `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.
 - `generate-icons.mjs`: Script to generate app icons for web and mobile.
 
 ## Reverse Engineering (WHOOP)
