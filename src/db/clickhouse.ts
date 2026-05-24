@@ -120,7 +120,7 @@ async function smokeTestClickHouseTable(
     throw new Error("ClickHouse smoke verification requires a query-capable client");
   }
   const result = await client.query({
-    query: `SELECT count() AS smoke_count FROM ${tableName} LIMIT 1`,
+    query: `SELECT * FROM ${tableName} LIMIT 0`,
     format: "JSONEachRow",
   });
   await result.json();

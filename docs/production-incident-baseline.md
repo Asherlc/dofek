@@ -7945,3 +7945,25 @@ phase: it now uses a temporary stack overlay that sets `web`, `worker`, and
 `training-export-worker` replicas to zero before readiness checks and
 migrations. The final stack deploy remains the only step that restores app
 replicas from `deploy/stack.yml`.
+
+### Follow-up
+
+Deploy run `26369862049` confirmed the pre-migration quiesce overlay worked:
+image build, SSH setup, stack render, pre-migration stack apply, Postgres
+readiness, ClickHouse readiness, and migrations all passed. The run was then
+cancelled during final stack rollout after restored web/worker tasks repeatedly
+caused ClickHouse OOM kills. The first app fatal line was `[web] Failed to
+start: Error: socket hang up`; kernel evidence showed ClickHouse killed by
+global and cgroup OOM during the same window.
+
+The root cause was the server startup ClickHouse smoke test issuing
+`SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1`.
+`analytics.activity_summary` is now a ClickHouse view, so `count()` forced the
+full activity summary view to execute during every web boot. That was enough to
+exhaust ClickHouse memory and make the web healthcheck fail before the final
+rollout could converge.
+
+The direct fix is to make ClickHouse startup smoke verification compile each
+object with `SELECT * FROM <object> LIMIT 0` after the existing `system.tables`
+existence checks. This still fails loudly on missing/invalid objects without
+materializing expensive views at app startup.

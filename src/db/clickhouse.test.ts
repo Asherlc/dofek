@@ -248,9 +248,7 @@ describe("bootstrapClickHouseFromEnv", () => {
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
       json: vi
         .fn()
-        .mockResolvedValue(
-          queryText.includes("system.tables") ? [{ table_count: 1 }] : [{ smoke_count: 0 }],
-        ),
+        .mockResolvedValue(queryText.includes("system.tables") ? [{ table_count: 1 }] : []),
     }));
     const client = { command, query };
 
@@ -278,19 +276,19 @@ describe("bootstrapClickHouseFromEnv", () => {
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM postgres_fitness.metric_stream LIMIT 1",
+      query: "SELECT * FROM postgres_fitness.metric_stream LIMIT 0",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.deduped_sensor LIMIT 1",
+      query: "SELECT * FROM analytics.deduped_sensor LIMIT 0",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1",
+      query: "SELECT * FROM analytics.activity_summary LIMIT 0",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.activity_trend_daily LIMIT 1",
+      query: "SELECT * FROM analytics.activity_trend_daily LIMIT 0",
       format: "JSONEachRow",
     });
   });
