@@ -412,6 +412,8 @@ jobs:
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
 
+          inspect_failure_count=0
+          max_inspect_failures=10
           while true; do
             elapsed_seconds="$(($(date +%s) - migration_started_at))"
             if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
@@ -421,7 +423,25 @@ jobs:
               exit 1
             fi
 
-            inspect_output="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$migration_container")"
+            set +e
+            inspect_output="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$migration_container" 2>&1)"
+            inspect_status=$?
+            set -e
+            if [ "$inspect_status" -ne 0 ]; then
+              inspect_failure_count="$((inspect_failure_count + 1))"
+              if [ "$inspect_failure_count" -ge "$max_inspect_failures" ]; then
+                echo "::error::Could not inspect migration container after ${inspect_failure_count} attempts"
+                printf '%s\n' "$inspect_output"
+                docker logs "$migration_container" || true
+                cleanup_migration_container
+                exit "$inspect_status"
+              fi
+              echo "Migration container inspect attempt ${inspect_failure_count}/${max_inspect_failures} failed after ${elapsed_seconds}s; retrying..."
+              printf '%s\n' "$inspect_output"
+              sleep 15
+              continue
+            fi
+            inspect_failure_count=0
             migration_state="$(printf '%s\n' "$inspect_output" | awk '{print $1}')"
             migration_status="$(printf '%s\n' "$inspect_output" | awk '{print $2}')"
             if [ "$migration_state" = "exited" ] || [ "$migration_state" = "dead" ]; then

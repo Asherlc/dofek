@@ -7666,3 +7666,20 @@ incremental deduped sensor migration now runs through a dedicated migration
 function that creates the same final tables/views but backfills
 `analytics.sensor_scalar_sample` and `analytics.deduped_sensor` in seven-day
 recorded-at ranges, logging each range before running it.
+
+### Follow-up
+
+Deploy run `26352812408` confirmed the chunked ClickHouse migration path on
+production: `0020_incremental_deduped_sensor` applied after 591 logged
+seven-day ranges and printed `Migration succeeded.` The same run then failed
+later in `Deploy stack`; `docker stack deploy --detach=false` exceeded its 20
+minute wrapper after Swarm updated many services and then stalled around
+management/supporting services. A retry run, `26354114245`, reached migrations
+without replaying the ClickHouse backfill but failed in the detached migration
+monitor: the polling command
+`docker inspect --format '{{.State.Status}} {{.State.ExitCode}}'
+dofek_migrate_26354114245_1` hit `Connection timed out during banner exchange`
+over Docker-over-SSH. The migration container itself was detached, so the
+branch now treats transient remote Docker inspect failures as retryable for a
+bounded number of attempts before failing loudly with the last inspect output
+and migration logs.
