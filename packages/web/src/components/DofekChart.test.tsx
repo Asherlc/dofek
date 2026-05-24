@@ -167,6 +167,7 @@ describe("DofekChart", () => {
     mockUseFetchingCount.mockReturnValue(1);
     render(<DofekChart option={{}} empty={true} />);
     expect(screen.getByText("No data available")).toBeDefined();
+    expect(screen.queryByTestId("loading-skeleton")).toBeNull();
     mockUseFetchingCount.mockReturnValue(0);
   });
 
