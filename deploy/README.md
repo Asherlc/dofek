@@ -154,15 +154,18 @@ CI (main) -> build dofek + dofek-ml (same tag)
       on the production host, because newly pulled deploy images are not
       referenced by a service until after migrations complete.
    5. Apply the stack configuration before migrations with a non-prune,
-      detached `docker stack deploy`. On existing stacks this uses the
-      currently deployed app image tag, so database, ClickHouse, network,
-      config, and resource-limit changes are applied before migrations without
-      rolling new app code ahead of schema changes. On clean-slate hosts it uses
-      the deploy image tag so the DB service and overlay network exist before
-      readiness checks. The deploy workflow then waits explicitly for Postgres
-      and ClickHouse before running migrations instead of keeping a long-lived
-      Docker-over-SSH stack-deploy wait open while the single-node host restarts
-      services.
+      detached `docker stack deploy` and a temporary overlay that sets app
+      worker/web replicas to zero. On existing stacks this uses the currently
+      deployed app image tag, so database, ClickHouse, network, config, and
+      resource-limit changes are applied before migrations without rolling new
+      app code ahead of schema changes or letting old app tasks issue expensive
+      analytics queries during the migration window. On clean-slate hosts it
+      uses the deploy image tag so the DB service and overlay network exist
+      before readiness checks. The final stack deploy restores the app service
+      replicas from `deploy/stack.yml`. The deploy workflow waits explicitly
+      for Postgres and ClickHouse before running migrations instead of keeping a
+      long-lived Docker-over-SSH stack-deploy wait open while the single-node
+      host restarts services.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    7. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.

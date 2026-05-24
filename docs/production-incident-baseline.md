@@ -7919,3 +7919,29 @@ The direct fix is to rotate the ClickHouse memory config key in
 `deploy/stack.yml` to `clickhouse_memory_limits_4g` while keeping the same
 container mount path. The next stack deploy will create a new Swarm config
 object and attach it to ClickHouse instead of trying to mutate the old one.
+
+### Follow-up
+
+Deploy run `26368809440` confirmed the rotated Swarm config fixed the previous
+failure: the pre-migration stack apply, Postgres readiness check, and
+ClickHouse readiness check passed. The run then failed in `Run migrations`
+while starting the migration container. The first fatal line was `docker: error
+during connect: Head "http://docker.example.com/_ping": command [ssh ... docker
+system dial-stdio] has exited with exit status 255`, followed by `Connection
+timed out during banner exchange`.
+
+Host evidence showed the pre-migration stack apply restored old app services
+before migrations: `dofek_web` was desired `0/2` with repeated task failures,
+`dofek_worker` was restarting, and ClickHouse was repeatedly killed by its
+memory cgroup at about 4.57 GiB RSS. ClickHouse logs showed concurrent
+analytics queries against `postgres_fitness.*` immediately before each kill.
+The root cause was the pre-migration stack apply allowing old app/worker tasks
+to issue expensive analytics queries against ClickHouse during the migration
+window, exhausting the ClickHouse cgroup and overloading the host SSH control
+plane before the migration container could start.
+
+The direct fix is to make the pre-migration stack apply a data-service/config
+phase: it now uses a temporary stack overlay that sets `web`, `worker`, and
+`training-export-worker` replicas to zero before readiness checks and
+migrations. The final stack deploy remains the only step that restores app
+replicas from `deploy/stack.yml`.

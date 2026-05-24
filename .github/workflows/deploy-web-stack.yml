@@ -380,9 +380,23 @@ jobs:
           fi
 
           set +e
+          pre_migration_stack_file="$RUNNER_TEMP/pre-migration-stack.yml"
+          cat > "$pre_migration_stack_file" <<'YAML'
+          services:
+            web:
+              deploy:
+                replicas: 0
+            worker:
+              deploy:
+                replicas: 0
+            training-export-worker:
+              deploy:
+                replicas: 0
+          YAML
+
           IMAGE_TAG="$pre_migration_image_tag" timeout 20m \
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-              docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --detach=true "$STACK_NAME"
+              docker stack deploy $STACK_FILE_FLAGS -c "$pre_migration_stack_file" --with-registry-auth --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
