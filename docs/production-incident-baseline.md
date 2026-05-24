@@ -7899,3 +7899,23 @@ for the committed deploy fix to run, `dofek_web` and optional `dofek_netdata`
 were temporarily scaled to zero by hand. This was an outage mitigation only;
 the next successful stack deploy must restore service specs from
 `deploy/stack.yml`.
+
+### Follow-up
+
+Deploy run `26368662541` failed in `Apply stack config before migrations`
+before readiness checks or migrations ran. The exact failing command was the
+pre-migration `docker stack deploy ... --detach=true` call. The first fatal
+line was `failed to update config dofek_clickhouse_memory_limits: Error
+response from daemon: rpc error: code = InvalidArgument desc = only updates to
+Labels are allowed`.
+
+The root cause was Docker Swarm config immutability. The branch changed the
+contents of `deploy/clickhouse/config.d/memory-limits.xml` from a 3 GiB
+ClickHouse server cap to a 4 GiB cap while reusing the existing stack config
+key `clickhouse_memory_limits`. Swarm cannot update config contents in place;
+it only allows label updates on an existing config object.
+
+The direct fix is to rotate the ClickHouse memory config key in
+`deploy/stack.yml` to `clickhouse_memory_limits_4g` while keeping the same
+container mount path. The next stack deploy will create a new Swarm config
+object and attach it to ClickHouse instead of trying to mutate the old one.
