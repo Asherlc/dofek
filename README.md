@@ -50,20 +50,11 @@ Each data source is a **provider plugin** that implements a simple interface. Th
 ## Quick Start
 
 ```bash
-# Start local infrastructure
-docker compose up -d db clickhouse redis
-
 # Install dependencies
 pnpm install
 
-# Configure local-only env vars (gitignored). Connection strings live here
-# rather than .env because they target your Docker host.
-cat > .env.local <<'EOF'
-CLICKHOUSE_URL=http://default:health@localhost:8123
-REDIS_URL=redis://localhost:6379
-POSTGRES_PASSWORD=health
-CLICKHOUSE_PASSWORD=health
-EOF
+# Start local infrastructure with collision-free stable local ports
+pnpm compose:up
 
 # Log in to Infisical (see "Secrets" section below) and store the credential
 # encryption key — required for boot, see "Credential encryption at rest":
@@ -142,11 +133,11 @@ Use `@dofek/format` for display formatting instead of local rounding, string-bui
 
 ```bash
 # Postgres + ClickHouse + Redis (required for any dev workflow)
-docker compose up -d db clickhouse redis
+pnpm compose:up
 
 # PeerDB CDC stack — required for the API server, since its boot path waits
 # for postgres_fitness.metric_stream and analytics views in ClickHouse.
-docker compose -f docker-compose.yml -f docker-compose.peerdb.yml up -d
+docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.peerdb.yml up -d
 # (The peerdb-temporal-init container auto-registers the MirrorName Temporal
 # search attribute that PeerDB workflows depend on. It exits after running.)
 # PeerDB UI is available at http://localhost:3001 when the PeerDB stack is up.

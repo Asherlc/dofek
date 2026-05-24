@@ -1,7 +1,7 @@
 # Dev backing services. Run the app outside Docker for fast iteration.
 #
 # Usage:
-#   docker compose up -d
+#   pnpm compose:up
 #   pnpm dev              # sync runner
 #   cd packages/web && pnpm dev   # Vite dev server
 #   cd packages/server && pnpm dev # Express API server
@@ -23,7 +23,7 @@ services:
       POSTGRES_USER: health
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-health}
     ports:
-      - "127.0.0.1:5435:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-0}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,8 +40,8 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-health}
     ports:
-      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
-      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-0}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-0}:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
@@ -60,7 +60,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-0}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
