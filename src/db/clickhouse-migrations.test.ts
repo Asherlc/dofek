@@ -109,7 +109,7 @@ describe("buildClickHouseMigrationStatements", () => {
   });
 
   it("rebuilds sensor-dependent views after the incremental deduped sensor table", async () => {
-    const appliedBeforeIncrementalCutover = new Set([
+    const appliedBeforeIncrementalMigration = new Set([
       "0001_clickhouse_analytics_schema_cleanup",
       "0002_clickhouse_postgres_bridge_and_activity_read_models",
       "0004_reenable_materialized_metric_stream",
@@ -138,7 +138,7 @@ describe("buildClickHouseMigrationStatements", () => {
           json: vi
             .fn()
             .mockResolvedValue([
-              { migration_count: appliedBeforeIncrementalCutover.has(migrationId) ? 1 : 0 },
+              { migration_count: appliedBeforeIncrementalMigration.has(migrationId) ? 1 : 0 },
             ]),
         };
       }

@@ -7632,3 +7632,12 @@ applied and verifies the dependent views are rebuilt only after
 
 The fixed branch still needs a fresh CI pass and branch deploy to confirm the
 pending production migration sequence applies cleanly.
+
+### Follow-up
+
+The next CI run failed early in `Test / Spell Check`, and the aggregate
+`Test / Lint & Static Analysis` job failed because it depends on that check.
+The first fatal line was
+`src/db/clickhouse-migrations.test.ts:112:35 - Unknown word (Cutover)`. The
+test helper variable now uses `IncrementalMigration` wording instead of the
+unrecognized term.
