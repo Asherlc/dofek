@@ -7846,3 +7846,34 @@ ClickHouse, network, config, and resource-limit changes are in place before
 migrations without rolling new app code ahead of schema changes. Clean-slate
 hosts still use the requested deploy image tag because there is no previous app
 release to preserve.
+
+### Follow-up
+
+Deploy run `26366695503` validated CI on the cleaner pre-migration stack-apply
+approach, then failed in `Apply stack config before migrations` before
+migrations ran. The exact failing command was the pre-migration
+`docker stack deploy ... --detach=false` call. The first fatal line was
+`error during connect: Get "http://docker.example.com/v1.48/info": command
+[ssh ... docker system dial-stdio] has exited with exit status 255`, followed
+by `Connection timed out during banner exchange`.
+
+Two issues were visible in the same step. First, the current-service probe used
+`if docker service inspect ...; then ... else ... fi`, so any Docker control
+plane failure was treated as a clean-slate stack and logged `No existing web
+service`. Second, `--detach=false` kept a long-lived Docker-over-SSH stack
+deploy wait open while the single-node host restarted many stack services,
+which made SSH banner exchange unreliable under the restart load. Host evidence
+showed load above 250 and app services restarting immediately after the failed
+step.
+
+The direct fix is to make the service probe distinguish a real missing service
+from Docker/SSH failures and to run the pre-migration stack apply detached. The
+workflow already waits explicitly for Postgres and ClickHouse before migrations,
+so it no longer needs a full stack convergence wait before the schema step.
+
+A hard Hetzner reset restored SSH temporarily after the failed run, but the live
+stack was still on the old ClickHouse spec (`5GiB` container limit and no
+`memory-limits.xml` mount) and web tasks continued to churn while waiting for
+ClickHouse bootstrap verification. The durable recovery remains the committed
+deploy ordering fix plus a rerun of the branch deploy so the checked-in
+ClickHouse resource/config limits are applied through Swarm.
