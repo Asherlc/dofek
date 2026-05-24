@@ -7780,3 +7780,12 @@ service from the production convergence set so the core app, database,
 ClickHouse, PeerDB, and deploy path can recover. Remaining risk: CloudBeaver
 will stay unavailable until its persisted workspace is repaired or replaced and
 the service is explicitly re-enabled.
+
+The first Hetzner `reboot_server` action returned success but did not actually
+restart the host (`uptime` still showed 3 days), so SSH timed out again within
+minutes. A hard `reset_server` restarted the machine and restored SSH with load
+near zero. Because the old stack still started the crash-looping CloudBeaver
+service before CI could finish, a second hard reset was followed by
+`docker service scale dofek_cloudbeaver=0`, matching the already-committed
+`deploy/stack.yml` desired state, to keep the host reachable until the normal
+branch deploy can apply the same change through CI.
