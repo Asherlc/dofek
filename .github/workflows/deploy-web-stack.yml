@@ -344,55 +344,43 @@ jobs:
           done
           REMOTE
 
-      - name: Bootstrap stack (if data services are missing)
+      - name: Apply stack config before migrations
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          DEPLOY_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          db_running=false
-          clickhouse_running=false
-          db_recent_failure=false
-          clickhouse_recent_failure=false
-          clickhouse_spec_drift=false
-          if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
-            docker service ps "${STACK_NAME}_db" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
-            db_running=true
-          fi
-          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1 && \
-            docker service ps "${STACK_NAME}_clickhouse" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
-            clickhouse_running=true
-          fi
-          if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
-            docker service ps "${STACK_NAME}_db" --filter desired-state=shutdown --format '{{.CurrentState}} {{.Error}}' \
-              | grep -Eq '^(Failed|Rejected) (([0-9]+ seconds?)|(about a minute)|([0-9]+ minutes?)) ago'; then
-            db_recent_failure=true
-          fi
-          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1 && \
-            docker service ps "${STACK_NAME}_clickhouse" --filter desired-state=shutdown --format '{{.CurrentState}} {{.Error}}' \
-              | grep -Eq '^(Failed|Rejected) (([0-9]+ seconds?)|(about a minute)|([0-9]+ minutes?)) ago'; then
-            clickhouse_recent_failure=true
-          fi
-          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1; then
-            clickhouse_memory_limit="$(
-              docker service inspect "${STACK_NAME}_clickhouse" \
-                --format '{{.Spec.TaskTemplate.Resources.Limits.MemoryBytes}}'
+          pre_migration_image_tag="$DEPLOY_IMAGE_TAG"
+          if docker service inspect "${STACK_NAME}_web" >/dev/null 2>&1; then
+            current_web_image="$(
+              docker service inspect "${STACK_NAME}_web" \
+                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
             )"
-            clickhouse_memory_config="$(
-              docker service inspect "${STACK_NAME}_clickhouse" \
-                --format '{{range .Spec.TaskTemplate.ContainerSpec.Configs}}{{printf "%s %s\n" .ConfigName .File.Name}}{{end}}' \
-                | grep -F 'clickhouse_memory_limits /etc/clickhouse-server/config.d/memory-limits.xml' || true
-            )"
-            if [ "$clickhouse_memory_limit" != "4294967296" ] || [ -z "$clickhouse_memory_config" ]; then
-              clickhouse_spec_drift=true
-            fi
+            current_web_image_without_digest="${current_web_image%@*}"
+            case "$current_web_image_without_digest" in
+              ghcr.io/asherlc/dofek:*)
+                pre_migration_image_tag="${current_web_image_without_digest#ghcr.io/asherlc/dofek:}"
+                ;;
+              *)
+                echo "::error::Unexpected current web image: ${current_web_image}"
+                exit 1
+                ;;
+            esac
+
+            echo "Applying stack config before migrations with current app image tag ${pre_migration_image_tag}."
+          else
+            echo "No existing web service; applying initial stack with deploy image tag ${pre_migration_image_tag}."
           fi
 
-          if [ "$db_running" = true ] && [ "$clickhouse_running" = true ] && \
-            [ "$db_recent_failure" = false ] && [ "$clickhouse_recent_failure" = false ] && \
-            [ "$clickhouse_spec_drift" = false ]; then
-            echo "Swarm DB and ClickHouse services exist with running tasks, no recent failures, and current ClickHouse resource config; skipping bootstrap deploy."
-          else
-            echo "Swarm DB or ClickHouse service is missing, not running, recently failed, or has stale ClickHouse resource config; running bootstrap stack deploy."
-            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth "$STACK_NAME"
+          set +e
+          IMAGE_TAG="$pre_migration_image_tag" timeout 20m \
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --detach=false "$STACK_NAME"
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "::error::pre-migration docker stack deploy exceeded 20m"
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
           fi
 
       - name: Wait for Postgres writable

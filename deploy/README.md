@@ -153,8 +153,13 @@ CI (main) -> build dofek + dofek-ml (same tag)
       successful stack deploy. Do not run a continuous background image pruner
       on the production host, because newly pulled deploy images are not
       referenced by a service until after migrations complete.
-   5. Bootstrap step for clean-slate hosts: if `docker service inspect <stack>_db` fails, run
-      `docker stack deploy -c deploy/stack.yml --with-registry-auth <stack>` first so the swarm DB service and overlay network exist.
+   5. Apply the stack configuration before migrations with a non-prune
+      `docker stack deploy`. On existing stacks this uses the currently
+      deployed app image tag, so database, ClickHouse, network, config, and
+      resource-limit changes are applied before migrations without rolling new
+      app code ahead of schema changes. On clean-slate hosts it uses the deploy
+      image tag so the DB service and overlay network exist before readiness
+      checks.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    7. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
@@ -259,10 +264,16 @@ Missing keys fail the workflow immediately with an explicit key name.
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `<stack>_db` and `<stack>_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
 
-The deploy workflow handles this with a bootstrap gate:
-- If `<stack>_db` exists, continue normally.
-- If `<stack>_db` is missing, run a non-prune stack deploy first to create the swarm services/network.
-- After bootstrap, run DB readiness and migrations, then run the normal prune deploy.
+The deploy workflow handles this by always applying the stack configuration
+before migrations:
+
+- On existing stacks, the pre-migration deploy uses the currently running app
+  image tag so infrastructure/config changes are applied while app code remains
+  on the old release.
+- On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
+  because there is no old release to preserve.
+- After the pre-migration stack apply, the workflow runs DB readiness,
+  migrations, and then the normal prune deploy with the requested app image tag.
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.
 

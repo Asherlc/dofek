@@ -7838,9 +7838,11 @@ ran. During the same window Hetzner CPU metrics showed the production host
 pinned near 400%, local SSH probes timed out during banner exchange, and public
 `/healthz` requests timed out.
 
-The direct fix is to treat stale live ClickHouse service resource config as a
-bootstrap condition. The deploy workflow now inspects `dofek_clickhouse` before
-migrations and runs the pre-migration stack deploy unless the service already
-has both the 4 GiB Docker memory limit and the
-`clickhouse_memory_limits` config mounted at
-`/etc/clickhouse-server/config.d/memory-limits.xml`.
+The direct fix is to make the deploy ordering explicit instead of adding a
+ClickHouse-specific stale-spec check. The deploy workflow now always applies
+the stack configuration before migrations. If an app stack already exists, that
+pre-migration stack apply uses the currently deployed app image tag so database,
+ClickHouse, network, config, and resource-limit changes are in place before
+migrations without rolling new app code ahead of schema changes. Clean-slate
+hosts still use the requested deploy image tag because there is no previous app
+release to preserve.
