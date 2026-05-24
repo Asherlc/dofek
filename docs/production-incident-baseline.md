@@ -7963,7 +7963,10 @@ full activity summary view to execute during every web boot. That was enough to
 exhaust ClickHouse memory and make the web healthcheck fail before the final
 rollout could converge.
 
-The direct fix is to make ClickHouse startup smoke verification compile each
-object with `SELECT * FROM <object> LIMIT 0` after the existing `system.tables`
-existence checks. This still fails loudly on missing/invalid objects without
-materializing expensive views at app startup.
+The first attempted fix changed startup smoke verification to
+`SELECT * FROM <object> LIMIT 0`, but ClickHouse still expanded the recursive
+view plan and hit the same memory path. The direct fix is to keep startup
+verification entirely in metadata: after the existing `system.tables` existence
+checks, the server now checks `system.columns` for each required object instead
+of querying the object itself. This still fails loudly on missing objects with no
+visible columns without materializing expensive views at app startup.
