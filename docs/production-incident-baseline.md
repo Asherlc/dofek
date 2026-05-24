@@ -7877,3 +7877,25 @@ stack was still on the old ClickHouse spec (`5GiB` container limit and no
 ClickHouse bootstrap verification. The durable recovery remains the committed
 deploy ordering fix plus a rerun of the branch deploy so the checked-in
 ClickHouse resource/config limits are applied through Swarm.
+
+### Follow-up
+
+Deploy run `26368319681` confirmed the detached pre-migration stack apply works:
+`Apply stack config before migrations`, `Wait for Postgres writable`, and
+`Wait for ClickHouse` all passed. The run then failed in `Run migrations`. The
+first fatal migration line was `(total) memory limit exceeded: would use 3.79
+GiB ... maximum: 3.00 GiB`.
+
+That proved the checked-in 3 GiB ClickHouse server cap was below the observed
+production migration workload. The cap prevented host-level OOM, but it also
+blocked the normal ClickHouse migration query path before the final app rollout.
+The branch raises `max_server_memory_usage` to 4 GiB and gives the container a
+4500 MiB cgroup limit. This keeps ClickHouse below the earlier 4.6-5.0 GiB
+host-OOM range while allowing the measured 3.79 GiB migration query to run.
+
+During the same incident window the old web stack was already unhealthy and
+crash-looping on ClickHouse bootstrap. To keep the host reachable long enough
+for the committed deploy fix to run, `dofek_web` and optional `dofek_netdata`
+were temporarily scaled to zero by hand. This was an outage mitigation only;
+the next successful stack deploy must restore service specs from
+`deploy/stack.yml`.
