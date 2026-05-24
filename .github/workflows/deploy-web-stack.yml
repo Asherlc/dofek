@@ -352,6 +352,7 @@ jobs:
           clickhouse_running=false
           db_recent_failure=false
           clickhouse_recent_failure=false
+          clickhouse_spec_drift=false
           if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
             docker service ps "${STACK_NAME}_db" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
             db_running=true
@@ -370,12 +371,27 @@ jobs:
               | grep -Eq '^(Failed|Rejected) (([0-9]+ seconds?)|(about a minute)|([0-9]+ minutes?)) ago'; then
             clickhouse_recent_failure=true
           fi
+          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1; then
+            clickhouse_memory_limit="$(
+              docker service inspect "${STACK_NAME}_clickhouse" \
+                --format '{{.Spec.TaskTemplate.Resources.Limits.MemoryBytes}}'
+            )"
+            clickhouse_memory_config="$(
+              docker service inspect "${STACK_NAME}_clickhouse" \
+                --format '{{range .Spec.TaskTemplate.ContainerSpec.Configs}}{{printf "%s %s\n" .ConfigName .File.Name}}{{end}}' \
+                | grep -F 'clickhouse_memory_limits /etc/clickhouse-server/config.d/memory-limits.xml' || true
+            )"
+            if [ "$clickhouse_memory_limit" != "4294967296" ] || [ -z "$clickhouse_memory_config" ]; then
+              clickhouse_spec_drift=true
+            fi
+          fi
 
           if [ "$db_running" = true ] && [ "$clickhouse_running" = true ] && \
-            [ "$db_recent_failure" = false ] && [ "$clickhouse_recent_failure" = false ]; then
-            echo "Swarm DB and ClickHouse services exist with running tasks and no recent failures; skipping bootstrap deploy."
+            [ "$db_recent_failure" = false ] && [ "$clickhouse_recent_failure" = false ] && \
+            [ "$clickhouse_spec_drift" = false ]; then
+            echo "Swarm DB and ClickHouse services exist with running tasks, no recent failures, and current ClickHouse resource config; skipping bootstrap deploy."
           else
-            echo "Swarm DB or ClickHouse service is missing, not running, or recently failed; running bootstrap stack deploy."
+            echo "Swarm DB or ClickHouse service is missing, not running, recently failed, or has stale ClickHouse resource config; running bootstrap stack deploy."
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth "$STACK_NAME"
           fi
 

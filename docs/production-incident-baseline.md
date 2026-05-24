@@ -7815,3 +7815,32 @@ config in production/local/review ClickHouse containers, adds a production
 ClickHouse healthcheck, and treats recent DB/ClickHouse task failures as a
 bootstrap condition so the corrected data-service stack can be applied before
 the migration container runs.
+
+### Follow-up
+
+Deploy run `26364429876` was triggered from the branch after PR CI passed. It
+confirmed the previous SSH setup problem was fixed and completed image pulls,
+bind mount validation, bootstrap evaluation, and pre-migration Postgres and
+ClickHouse readiness checks. The run then failed again in `Run migrations`.
+The exact failing command was the detached migration container
+`dofek_migrate_26364429876_1`, and the first fatal application line was
+`error: [migrate] Error: connect ECONNREFUSED 10.0.1.97:5432`. The workflow
+also logged an SSH control-plane symptom while polling that container:
+`Connection timed out during banner exchange`.
+
+The causal gap was in the new bootstrap guard. It only checked whether DB and
+ClickHouse tasks were running and whether they had recent failed tasks, so it
+logged `Swarm DB and ClickHouse services exist with running tasks and no recent
+failures; skipping bootstrap deploy.` Because the live ClickHouse service still
+had the old resource/config spec, the new 4 GiB container limit and 3 GiB
+ClickHouse server memory limit were not applied before the migration container
+ran. During the same window Hetzner CPU metrics showed the production host
+pinned near 400%, local SSH probes timed out during banner exchange, and public
+`/healthz` requests timed out.
+
+The direct fix is to treat stale live ClickHouse service resource config as a
+bootstrap condition. The deploy workflow now inspects `dofek_clickhouse` before
+migrations and runs the pre-migration stack deploy unless the service already
+has both the 4 GiB Docker memory limit and the
+`clickhouse_memory_limits` config mounted at
+`/etc/clickhouse-server/config.d/memory-limits.xml`.
