@@ -166,5 +166,8 @@ export async function waitForClickHouseTable(
 }
 
 function isTransientClickHouseStartupError(error: unknown): error is Error {
-  return error instanceof Error && error.message.includes("ECONNREFUSED");
+  return (
+    error instanceof Error &&
+    (error.message.includes("ECONNREFUSED") || error.message === "Timeout error.")
+  );
 }

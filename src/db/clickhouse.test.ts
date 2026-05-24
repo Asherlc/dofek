@@ -369,6 +369,35 @@ describe("waitForClickHouseTable", () => {
     }
   });
 
+  it("retries transient ClickHouse request timeouts during startup", async () => {
+    vi.useFakeTimers();
+    try {
+      let queryCount = 0;
+      const query = vi.fn().mockImplementation(() => {
+        queryCount += 1;
+        if (queryCount < 3) {
+          throw new Error("Timeout error.");
+        }
+        return {
+          json: vi.fn().mockResolvedValue([{ table_count: 1 }]),
+        };
+      });
+
+      const result = waitForClickHouseTable(
+        { command: vi.fn().mockResolvedValue(undefined), query },
+        "postgres_fitness",
+        "metric_stream",
+      );
+
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(result).resolves.toBeUndefined();
+      expect(query).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("throws a timeout error when the table never appears", async () => {
     vi.useFakeTimers();
     try {

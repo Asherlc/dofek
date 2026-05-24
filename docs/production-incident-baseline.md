@@ -7728,3 +7728,26 @@ connection per image. The workflow now keeps the private GHCR pulls on
 Docker-over-SSH so they can use the runner's registry login, and pulls the
 public dependency images through one direct SSH session on the host to avoid
 repeated Docker-over-SSH handshakes for static public images.
+
+### Follow-up
+
+Deploy run `26359577017` confirmed the image prefetch path and migrations, then
+failed in `Deploy stack` while Swarm was updating services. The failing command
+was `timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack
+deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=false
+"$STACK_NAME"`. The first fatal line was `yh2hm4dz5w3hrospbru4mp04w: Error
+response from daemon: rpc error: code = DeadlineExceeded desc = context
+deadline exceeded`, followed by `dofek_web` rollback pausing because task
+`hi4i7bd1ktymuasvlmznjit2p` failed or terminated early. Host diagnostics showed
+`dofek_web` in `rollback_paused`, web service logs showed repeated `[web]
+Failed to start: Error: Timeout error.`, and worker logs from the same rollout
+showed transient ClickHouse/database reachability errors including
+`ECONNREFUSED 10.0.1.8:8123` and `getaddrinfo ENOTFOUND db`.
+
+The root cause was the web process's ClickHouse startup bootstrap treating the
+ClickHouse client request timeout as fatal while ClickHouse, database DNS, or
+overlay networking was transient during stack rollout. The existing startup
+wait loop already retried connection-refused errors; it now also retries the
+ClickHouse client's exact `Timeout error.` response, with a regression test
+covering the retry behavior. No arbitrary sleep or larger deploy timeout was
+added.
