@@ -83,6 +83,60 @@ describe("PmcTrainingLoadCalculator", () => {
     );
   });
 
+  it("uses heart-rate training stress when threshold power is unavailable", () => {
+    const trainingStressCalculator = new TrainingStressCalculator(1.92, 1.67);
+    const calculator = new PmcTrainingLoadCalculator(trainingStressCalculator);
+
+    const dailyLoad = calculator.calculateDailyLoad({
+      activities: [makeActivityRow({ id: "power-without-threshold" })],
+      normalizedPowerByActivity: new Map([["power-without-threshold", 220]]),
+      thresholdPower: null,
+      trainingStressModel: null,
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+
+    expect(dailyLoad.get("2026-05-20")).toBeCloseTo(
+      trainingStressCalculator.computeHrTss(60, 150, 190, 60),
+    );
+  });
+
+  it("uses heart-rate training stress when threshold power exists but normalized power is missing", () => {
+    const trainingStressCalculator = new TrainingStressCalculator(1.92, 1.67);
+    const calculator = new PmcTrainingLoadCalculator(trainingStressCalculator);
+
+    const dailyLoad = calculator.calculateDailyLoad({
+      activities: [makeActivityRow({ id: "missing-normalized-power" })],
+      normalizedPowerByActivity: new Map(),
+      thresholdPower: 190,
+      trainingStressModel: null,
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+
+    expect(dailyLoad.get("2026-05-20")).toBeCloseTo(
+      trainingStressCalculator.computeHrTss(60, 150, 190, 60),
+    );
+  });
+
+  it("uses heart-rate training stress when normalized power is zero", () => {
+    const trainingStressCalculator = new TrainingStressCalculator(1.92, 1.67);
+    const calculator = new PmcTrainingLoadCalculator(trainingStressCalculator);
+
+    const dailyLoad = calculator.calculateDailyLoad({
+      activities: [makeActivityRow({ id: "zero-normalized-power" })],
+      normalizedPowerByActivity: new Map([["zero-normalized-power", 0]]),
+      thresholdPower: 190,
+      trainingStressModel: null,
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+
+    expect(dailyLoad.get("2026-05-20")).toBeCloseTo(
+      trainingStressCalculator.computeHrTss(60, 150, 190, 60),
+    );
+  });
+
   it("uses a learned training stress model for heart-rate-only activities when one exists", () => {
     const trainingStressCalculator = new TrainingStressCalculator(1.92, 1.67);
     const calculator = new PmcTrainingLoadCalculator(trainingStressCalculator);
@@ -137,6 +191,34 @@ describe("PmcTrainingLoadCalculator", () => {
     expect(result.pairedData[0]?.trimp).toBeGreaterThan(0);
     expect(result.pairedData[0]?.powerTss).toBeGreaterThan(0);
     expect(result.trainingStressModel).toBeNull();
+  });
+
+  it("does not build paired model inputs from activities with zero heart-rate load", () => {
+    const calculator = new PmcTrainingLoadCalculator(new TrainingStressCalculator(1.92, 1.67));
+
+    const result = calculator.buildTrainingStressModel(
+      [makeActivityRow({ id: "zero-heart-rate-load", avg_hr: 60 })],
+      new Map([["zero-heart-rate-load", 220]]),
+      190,
+      190,
+      60,
+    );
+
+    expect(result).toEqual({ trainingStressModel: null, pairedData: [] });
+  });
+
+  it("does not build paired model inputs from activities with zero power training stress", () => {
+    const calculator = new PmcTrainingLoadCalculator(new TrainingStressCalculator(1.92, 1.67));
+
+    const result = calculator.buildTrainingStressModel(
+      [makeActivityRow({ id: "zero-power-training-stress" })],
+      new Map([["zero-power-training-stress", 220]]),
+      0,
+      190,
+      60,
+    );
+
+    expect(result).toEqual({ trainingStressModel: null, pairedData: [] });
   });
 
   it("does not build paired model inputs without threshold power", () => {
