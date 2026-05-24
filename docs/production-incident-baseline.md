@@ -7970,3 +7970,21 @@ verification entirely in metadata: after the existing `system.tables` existence
 checks, the server now checks `system.columns` for each required object instead
 of querying the object itself. This still fails loudly on missing objects with no
 visible columns without materializing expensive views at app startup.
+
+### Follow-up
+
+Deploy run `26370427808` on commit `e3807d7b` verified the metadata-only
+ClickHouse smoke test fix in production. The run completed the image builds,
+pre-migration quiesced stack apply, Postgres and ClickHouse readiness checks,
+migrations, final stack deploy, PeerDB checks, Temporal search attribute
+setup, and ClickHouse CDC configuration successfully.
+
+Post-deploy validation showed `dofek_web` restored to `2/2`, `dofek_worker` to
+`1/1`, `dofek_training-export-worker` to `1/1`, and `dofek_clickhouse` to
+`1/1`, all on the expected `sha-e3807d7` branch image where applicable. The
+public `https://dofek.asherlc.com/healthz` endpoint returned
+`{"status":"ok"}`, and the app root returned HTTP 200. ClickHouse was running
+with a 4,500 MiB cgroup cap and the rotated
+`dofek_clickhouse_memory_limits_4g` Swarm config. Kernel OOM evidence stopped
+before the successful deploy started, with no new OOM kills during or after the
+successful rollout.
