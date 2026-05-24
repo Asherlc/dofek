@@ -174,10 +174,17 @@ export default function RecoveryScreen() {
 
   // HRV trend
   const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days, endDate });
+  const hrvBaselineQuery = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const hrvData = hrvQuery.data ?? [];
+  const hrvBaselineData = hrvBaselineQuery.data ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
+  const latestRestingHeartRate = hrvBaselineData[hrvBaselineData.length - 1];
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
+  const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
+    d.resting_hr != null ? [d.resting_hr] : [],
+  );
   const hrvBaseline = latestHrv?.rollingMean;
+  const restingHeartRateBaseline = latestRestingHeartRate?.resting_hr_mean_7d;
 
   // Readiness trend
   const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
@@ -330,6 +337,31 @@ export default function RecoveryScreen() {
                 ? computeTrend(
                     hrvValues[hrvValues.length - 1] ?? 0,
                     hrvValues[hrvValues.length - 2] ?? 0,
+                  )
+                : undefined
+            }
+          />
+
+          <MetricCard
+            title="Resting Heart Rate"
+            value={
+              latestRestingHeartRate?.resting_hr != null
+                ? formatNumber(latestRestingHeartRate.resting_hr, 0)
+                : "--"
+            }
+            unit="bpm"
+            trend={restingHeartRateValues.slice(-14)}
+            color={colors.warning}
+            subtitle={
+              restingHeartRateBaseline != null
+                ? `7-day baseline: ${formatNumber(restingHeartRateBaseline, 0)} bpm`
+                : undefined
+            }
+            trendDirection={
+              restingHeartRateValues.length >= 2
+                ? computeTrend(
+                    restingHeartRateValues[restingHeartRateValues.length - 1] ?? 0,
+                    restingHeartRateValues[restingHeartRateValues.length - 2] ?? 0,
                   )
                 : undefined
             }
