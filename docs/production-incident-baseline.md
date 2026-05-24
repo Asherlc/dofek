@@ -7683,3 +7683,16 @@ over Docker-over-SSH. The migration container itself was detached, so the
 branch now treats transient remote Docker inspect failures as retryable for a
 bounded number of attempts before failing loudly with the last inspect output
 and migration logs.
+
+### Follow-up
+
+Deploy run `26355597585` failed before migrations in `Reclaim Docker root disk
+headroom`. The command printed `/dev/root 145G 56G 90G 39% /`, then
+`docker system df` reported `failed to retrieve container list: rw layer
+snapshot not found for container 9b85e23837a384fbf7f171f65a7a6af2d4d4943ecfeb0346d58b4c16a6f611f0`.
+The next command, `docker system prune --all --force`, eventually failed over
+Docker-over-SSH with `client_loop: send disconnect: Broken pipe`. The cleanup
+step did not need to prune because the root filesystem already had far more
+than the required 8 GiB free. The workflow now checks free space before
+pruning, skips Docker prune when the precondition is already satisfied, and
+still hard-fails if the host remains below 8 GiB after cleanup.
