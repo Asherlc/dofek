@@ -12,11 +12,15 @@ vi.mock("pg", () => ({
   escapeIdentifier: (value: string) => `"${value.replaceAll('"', '""')}"`,
 }));
 
+import { createMigration as createBackfillMaterializedMetricStreamMigration } from "./clickhouse-migrations/0005_backfill_materialized_metric_stream.ts";
+import { createMigration as createDropDerivedRestingHeartRateMigration } from "./clickhouse-migrations/0009_drop_derived_resting_heart_rate_read_model.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
+import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
   buildClickHouseMigrationStatements,
   runClickHouseMigrations,
 } from "./clickhouse-migrations.ts";
+import { replacingMergeTreeTable } from "./clickhouse-sql-helpers.ts";
 
 describe("buildClickHouseMigrationStatements", () => {
   it("loads ClickHouse migrations from ordered per-file modules", () => {
@@ -42,6 +46,25 @@ describe("buildClickHouseMigrationStatements", () => {
       "0019_non_sensor_read_models_as_views.ts",
       "0020_incremental_deduped_sensor.ts",
     ]);
+  });
+
+  it("keeps custom-run migrations free of accidental static statements", () => {
+    expect(createBackfillMaterializedMetricStreamMigration().statements).toEqual([]);
+  });
+
+  it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
+    expect(createDropDerivedRestingHeartRateMigration().statements).toEqual([
+      "DROP VIEW IF EXISTS analytics.derived_resting_heart_rate",
+      "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
+    ]);
+  });
+
+  it("renders the shared ReplacingMergeTree table engine helper", () => {
+    expect(
+      replacingMergeTreeTable("(user_id, recorded_at)"),
+    ).toBe(`ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (user_id, recorded_at)
+SETTINGS allow_nullable_key = 1`);
   });
 
   it("keeps destructive cleanup and analytics table creation in migration statements", () => {
@@ -1244,5 +1267,83 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("DROP TABLE IF EXISTS fitness.metric_stream"),
       }),
     );
+  });
+});
+
+describe("runClickHouseMigrationStatement", () => {
+  function makeClient() {
+    return {
+      command: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ table_count: 1 }]),
+      }),
+    };
+  }
+
+  it.each([
+    {
+      statement:
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor TO analytics.deduped_sensor AS SELECT 1",
+      waitedTables: ["postgres_fitness.metric_stream", "analytics.v_activity_members"],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.deduped_location AS SELECT 1",
+      waitedTables: ["postgres_fitness.metric_stream", "analytics.v_activity_members"],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.activity_summary AS SELECT 1",
+      waitedTables: [
+        "analytics.deduped_sensor",
+        "analytics.deduped_location",
+        "analytics.v_activity",
+      ],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily AS SELECT 1",
+      waitedTables: ["analytics.deduped_sensor"],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window AS SELECT 1",
+      waitedTables: ["analytics.deduped_sensor", "analytics.v_sleep"],
+    },
+  ])("waits for dependencies before running $statement", async ({ statement, waitedTables }) => {
+    const client = makeClient();
+
+    await runClickHouseMigrationStatement(client, statement);
+
+    const waitQueries = client.query.mock.calls.map(([options]) => String(options.query));
+    expect(waitQueries).toHaveLength(waitedTables.length);
+    for (const waitedTable of waitedTables) {
+      const [database, table] = waitedTable.split(".");
+      expect(
+        waitQueries.some(
+          (queryText) =>
+            queryText.includes(`database = '${database}'`) &&
+            queryText.includes(`name = '${table}'`),
+        ),
+      ).toBe(true);
+    }
+    expect(client.command).toHaveBeenCalledWith({
+      query: statement,
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
+  });
+
+  it("does not wait for unrelated migration statements", async () => {
+    const client = makeClient();
+
+    await runClickHouseMigrationStatement(client, "CREATE TABLE analytics.unrelated (id String)");
+
+    expect(client.query).not.toHaveBeenCalled();
+    expect(client.command).toHaveBeenCalledWith({
+      query: "CREATE TABLE analytics.unrelated (id String)",
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
   });
 });

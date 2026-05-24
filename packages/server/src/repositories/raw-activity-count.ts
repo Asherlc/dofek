@@ -28,8 +28,8 @@ export async function countRawActivities(
   const endedAtPredicate = input.requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
   const accessWindowPredicate =
     input.accessWindow?.kind === "limited"
-      ? sql`AND started_at >= ${input.accessWindow.startDate}::timestamptz
-            AND started_at < ${input.accessWindow.endDateExclusive}::timestamptz`
+      ? sql`AND started_at >= ${input.accessWindow.startDate}
+            AND started_at < ${input.accessWindow.endDateExclusive}`
       : sql``;
 
   const rows = await executeWithSchema(
@@ -37,8 +37,8 @@ export async function countRawActivities(
     rawActivityCountRowSchema,
     sql`SELECT count(*)::int AS raw_activity_count
         FROM fitness.activity
-        WHERE user_id = ${input.userId}::uuid
-          AND started_at > CURRENT_TIMESTAMP - ${input.days}::int * INTERVAL '1 day'
+        WHERE user_id = ${input.userId}
+          AND started_at > CURRENT_TIMESTAMP - ${input.days} * INTERVAL '1 day'
           ${endedAtPredicate}
           ${activityTypePredicate}
           ${accessWindowPredicate}`,
