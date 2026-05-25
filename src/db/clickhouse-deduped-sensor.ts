@@ -109,7 +109,7 @@ function buildSensorScalarSampleTableSql(): string {
   _peerdb_version Int64
 )
 ENGINE = ReplacingMergeTree(_peerdb_version)
-ORDER BY (user_id, channel, recorded_date, recorded_at, provider_priority, provider_id, id)`;
+ORDER BY (user_id, channel, recorded_date, recorded_at, provider_id, id)`;
 }
 
 export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {

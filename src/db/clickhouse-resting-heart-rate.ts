@@ -11,7 +11,7 @@ export function buildRestingHeartRateSleepWindowTableSql(): string {
   resting_hr Nullable(Int32),
   refresh_version UInt64,
   is_deleted UInt8,
-  refreshed_at DateTime64(9)
+  refreshed_at DateTime64(9, 'UTC')
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, sleep_id)`;

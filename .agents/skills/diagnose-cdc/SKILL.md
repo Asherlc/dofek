@@ -59,7 +59,7 @@ incremental dbt models populated by the `analytics-worker` service. First check
 the worker logs:
 
 ```bash
-docker service logs --tail 100 dofek_analytics-worker
+ssh dofek-server 'docker service logs --tail 100 dofek_analytics-worker'
 ```
 
 Then inspect the dbt-owned target tables directly:
@@ -72,8 +72,9 @@ SELECT max(refreshed_at) FROM analytics.resting_heart_rate_sleep_window;
 
 If these timestamps are current but rows are missing, the upstream mirror or raw
 source data is the problem. If timestamps are stale, debug `analytics-worker`
-and run `./scripts/dbt-analytics.sh --select sensor_scalar_sample deduped_sensor
-resting_heart_rate_sleep_window` from a configured app container.
+and run `dbt build --project-dir analytics --profiles-dir analytics --select
+sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window` from a
+configured app container.
 
 The relevant read models:
 

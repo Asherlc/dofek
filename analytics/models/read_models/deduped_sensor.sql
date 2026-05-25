@@ -7,20 +7,18 @@
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 
-WITH target_state AS (
+WITH
+{% if is_incremental() %}
+target_state AS (
     SELECT
-        {% if is_incremental() %}
-            coalesce(
-                max(refreshed_at),
-                toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-            ) AS last_refreshed_at,
-            count() = 0 AS is_empty
-        FROM {{ this }}
-        {% else %}
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS last_refreshed_at,
-            true AS is_empty
-        {% endif %}
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at,
+        count() = 0 AS is_empty
+    FROM {{ this }}
 ),
+{% endif %}
 
 dirty_keys AS (
     SELECT DISTINCT

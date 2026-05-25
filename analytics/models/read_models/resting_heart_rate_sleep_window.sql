@@ -22,14 +22,19 @@ WITH target_state AS (
         {% endif %}
 ),
 
-active_sleep AS (
+sleep_source AS (
     SELECT
         id AS sleep_id,
         user_id,
         started_at,
-        assumeNotNull(ended_at) AS ended_at,
+        ended_at,
         _peerdb_synced_at,
-        dateDiff('second', started_at, assumeNotNull(ended_at)) AS duration_seconds,
+        _peerdb_is_deleted,
+        if(
+            ended_at IS NULL,
+            CAST(NULL, 'Nullable(Int64)'),
+            dateDiff('second', started_at, assumeNotNull(ended_at))
+        ) AS duration_seconds,
         multiIf(
             sleep_type IN ('nap', 'late_nap', 'rest'), true,
             sleep_type IN ('sleep', 'long_sleep', 'main'), false,
@@ -38,6 +43,29 @@ active_sleep AS (
             false
         ) AS is_nap
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
+),
+
+activity_source AS (
+    SELECT
+        id,
+        user_id,
+        started_at,
+        coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at,
+        _peerdb_synced_at,
+        _peerdb_is_deleted
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+),
+
+active_sleep AS (
+    SELECT
+        sleep_id,
+        user_id,
+        started_at,
+        assumeNotNull(ended_at) AS ended_at,
+        _peerdb_synced_at,
+        assumeNotNull(duration_seconds) AS duration_seconds,
+        is_nap
+    FROM sleep_source
     WHERE _peerdb_is_deleted = 0
         AND ended_at IS NOT NULL
 ),
@@ -47,17 +75,25 @@ active_activity AS (
         id,
         user_id,
         started_at,
-        coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at,
+        ended_at,
         _peerdb_synced_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    FROM activity_source
     WHERE _peerdb_is_deleted = 0
+),
+
+activity_windows AS (
+    SELECT
+        user_id,
+        groupArray(tuple(started_at, ended_at)) AS windows
+    FROM active_activity
+    GROUP BY user_id
 ),
 
 sleep_dirty_keys AS (
     SELECT
         user_id,
         sleep_id
-    FROM active_sleep
+    FROM sleep_source
     WHERE
         {% if is_incremental() %}
             (
@@ -73,30 +109,28 @@ sleep_dirty_keys AS (
         {% else %}
             started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
         {% endif %}
-        AND is_nap = false
 ),
 
 activity_dirty_keys AS (
     SELECT
         active_sleep.user_id AS user_id,
         active_sleep.sleep_id AS sleep_id
-    FROM active_activity
+    FROM activity_source
     INNER JOIN active_sleep
-        ON active_sleep.user_id = active_activity.user_id
-        AND active_activity.started_at <= active_sleep.ended_at
-        AND active_activity.ended_at >= active_sleep.started_at
+        ON active_sleep.user_id = activity_source.user_id
+        AND activity_source.started_at <= active_sleep.ended_at
+        AND activity_source.ended_at >= active_sleep.started_at
     WHERE
         {% if is_incremental() %}
             (
                 NOT (SELECT is_empty FROM target_state)
-                AND active_activity._peerdb_synced_at > (
+                AND activity_source._peerdb_synced_at > (
                     SELECT last_refreshed_at FROM target_state
                 )
             )
         {% else %}
             1 = 0
         {% endif %}
-        AND active_sleep.is_nap = false
 ),
 
 sensor_dirty_keys AS (
@@ -118,7 +152,6 @@ sensor_dirty_keys AS (
             1 = 0
         {% endif %}
         AND samples.channel = 'heart_rate'
-        AND active_sleep.is_nap = false
 ),
 
 dirty_keys AS (
@@ -159,15 +192,18 @@ heart_rate_samples AS (
     FROM current_sleep
     INNER JOIN {{ ref('deduped_sensor') }} AS samples FINAL
         ON samples.user_id = current_sleep.user_id
-        AND samples.recorded_at >= current_sleep.started_at
+    LEFT JOIN activity_windows
+        ON activity_windows.user_id = samples.user_id
+    WHERE samples.recorded_at >= current_sleep.started_at
         AND samples.recorded_at <= current_sleep.ended_at
-    LEFT ANTI JOIN active_activity
-        ON active_activity.user_id = samples.user_id
-        AND samples.recorded_at >= active_activity.started_at
-        AND samples.recorded_at <= active_activity.ended_at
-    WHERE samples.channel = 'heart_rate'
+        AND samples.channel = 'heart_rate'
         AND samples.is_deleted = 0
         AND samples.scalar IS NOT NULL
+        AND NOT arrayExists(
+            activity_window -> samples.recorded_at >= tupleElement(activity_window, 1)
+            AND samples.recorded_at <= tupleElement(activity_window, 2),
+            activity_windows.windows
+        )
 ),
 
 computed_windows AS (
@@ -201,7 +237,7 @@ SELECT
     CAST(computed_windows.resting_hr, 'Nullable(Int32)') AS resting_hr,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(computed_windows.resting_hr IS NULL, 1, 0) AS is_deleted,
-    now64(9) AS refreshed_at
+    now64(9, 'UTC') AS refreshed_at
 FROM dirty_keys
 LEFT JOIN computed_windows
     ON computed_windows.user_id = dirty_keys.user_id

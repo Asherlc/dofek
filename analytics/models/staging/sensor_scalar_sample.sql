@@ -2,30 +2,47 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(_peerdb_version)',
-    order_by='(user_id, channel, recorded_date, recorded_at, provider_priority, provider_id, id)'
+    order_by='(user_id, channel, recorded_date, recorded_at, provider_id, id)'
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 
-WITH target_state AS (
+WITH
+{% if is_incremental() %}
+target_state AS (
     SELECT
-        {% if is_incremental() %}
-            coalesce(
-                max(_peerdb_synced_at),
-                toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-            ) AS last_synced_at,
-            count() = 0 AS is_empty
-        FROM {{ this }}
-        {% else %}
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS last_synced_at,
-            true AS is_empty
-        {% endif %}
+        coalesce(
+            max(_peerdb_synced_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_synced_at,
+        count() = 0 AS is_empty
+    FROM {{ this }}
 ),
+
+changed_priority_keys AS (
+    SELECT DISTINCT
+        provider_id,
+        channel
+    FROM (
+        SELECT
+            provider_id,
+            channel
+        FROM {{ source('postgres_fitness', 'sensor_provider_priority') }} FINAL
+        WHERE _peerdb_synced_at > (SELECT last_synced_at FROM target_state)
+        UNION ALL
+        SELECT
+            provider_id,
+            channel
+        FROM {{ source('postgres_fitness', 'sensor_device_priority') }} FINAL
+        WHERE _peerdb_synced_at > (SELECT last_synced_at FROM target_state)
+    )
+),
+{% endif %}
 
 metric_stream_rows AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'metric_stream') }} FINAL
-    WHERE scalar IS NOT NULL
+    WHERE scalar IS NOT null
         AND channel IN (
             'heart_rate',
             'power',
@@ -52,6 +69,15 @@ metric_stream_rows AS (
                 OR (
                     NOT (SELECT is_empty FROM target_state)
                     AND _peerdb_synced_at > (SELECT last_synced_at FROM target_state)
+                )
+                OR (
+                    NOT (SELECT is_empty FROM target_state)
+                    AND (provider_id, channel) IN (
+                        SELECT
+                            provider_id,
+                            channel
+                        FROM changed_priority_keys
+                    )
                 )
             )
         {% else %}
@@ -97,7 +123,7 @@ device_priority_match AS (
         INNER JOIN active_sensor_device_priority
             ON active_sensor_device_priority.provider_id = metric_stream_rows.provider_id
             AND active_sensor_device_priority.channel = metric_stream_rows.channel
-            AND metric_stream_rows.device_id IS NOT NULL
+            AND metric_stream_rows.device_id IS NOT null
             AND assumeNotNull(metric_stream_rows.device_id)
             LIKE active_sensor_device_priority.source_name_pattern
     )
@@ -120,7 +146,7 @@ SELECT
     ) AS provider_priority,
     metric_stream_rows._peerdb_synced_at AS _peerdb_synced_at,
     metric_stream_rows._peerdb_is_deleted AS _peerdb_is_deleted,
-    metric_stream_rows._peerdb_version AS _peerdb_version
+    toInt64(toUnixTimestamp64Nano(now64(9))) AS _peerdb_version
 FROM metric_stream_rows
 LEFT JOIN active_sensor_provider_priority
     ON active_sensor_provider_priority.provider_id = metric_stream_rows.provider_id

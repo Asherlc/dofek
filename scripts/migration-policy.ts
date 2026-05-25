@@ -32,7 +32,7 @@ const riskyStatementRules: MigrationPolicyRule[] = [
   },
   {
     ruleName: "clickhouse-naive-materialized-view",
-    pattern: /\bCREATE\s+MATERIALIZED\s+VIEW\b(?![\s\S]*\bTO\b)(?![\s\S]*\bREFRESH\s+EVERY\b)/i,
+    pattern: /\bCREATE\s+MATERIALIZED\s+VIEW\b/i,
     message:
       "ClickHouse read models must use dbt incremental models or insert-triggered TO-table projections, not naive materialized views.",
   },
@@ -117,6 +117,82 @@ function stripSqlComments(content: string): string {
         inSingleQuotedString = !inSingleQuotedString;
       }
     }
+  }
+
+  return output;
+}
+
+function stripSqlStrings(content: string): string {
+  let output = "";
+  let inSingleQuotedString = false;
+  let inDoubleQuotedIdentifier = false;
+  let dollarQuotedDelimiter: string | null = null;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index] ?? "";
+    const nextCharacter = content[index + 1] ?? "";
+
+    if (dollarQuotedDelimiter) {
+      if (character === "\n") {
+        output += "\n";
+      } else {
+        output += " ";
+      }
+      if (content.startsWith(dollarQuotedDelimiter, index)) {
+        output += " ".repeat(dollarQuotedDelimiter.length - 1);
+        index += dollarQuotedDelimiter.length - 1;
+        dollarQuotedDelimiter = null;
+      }
+      continue;
+    }
+
+    if (inSingleQuotedString) {
+      output += character === "\n" ? "\n" : " ";
+      if (character === "'") {
+        if (nextCharacter === "'") {
+          output += " ";
+          index += 1;
+        } else {
+          inSingleQuotedString = false;
+        }
+      }
+      continue;
+    }
+
+    if (inDoubleQuotedIdentifier) {
+      output += character === "\n" || character === '"' ? character : " ";
+      if (character === '"') {
+        if (nextCharacter === '"') {
+          output += " ";
+          index += 1;
+        } else {
+          inDoubleQuotedIdentifier = false;
+        }
+      }
+      continue;
+    }
+
+    const delimiter = readDollarQuotedDelimiter(content, index);
+    if (delimiter) {
+      output += " ".repeat(delimiter.length);
+      index += delimiter.length - 1;
+      dollarQuotedDelimiter = delimiter;
+      continue;
+    }
+
+    if (character === "'") {
+      output += " ";
+      inSingleQuotedString = true;
+      continue;
+    }
+
+    if (character === '"') {
+      output += character;
+      inDoubleQuotedIdentifier = true;
+      continue;
+    }
+
+    output += character;
   }
 
   return output;
@@ -254,6 +330,28 @@ function isUnboundedDelete(statement: string): boolean {
   return /^\s*DELETE\s+FROM\b/i.test(statement) && !/\bWHERE\b/i.test(statement);
 }
 
+function isNaiveClickHouseMaterializedView(statement: string): boolean {
+  const statementWithoutStrings = stripSqlStrings(statement);
+  const createMatch = statementWithoutStrings.match(/\bCREATE\s+MATERIALIZED\s+VIEW\b/i);
+  if (createMatch?.index == null) {
+    return false;
+  }
+  if (/\bREFRESH\s+EVERY\b/i.test(statementWithoutStrings)) {
+    return false;
+  }
+
+  const afterCreate = statementWithoutStrings.slice(createMatch.index);
+  const asMatch = afterCreate.match(/\bAS\b/i);
+  if (asMatch?.index == null) {
+    return false;
+  }
+
+  const header = afterCreate.slice(0, asMatch.index);
+  const toTargetPattern =
+    /\bTO\s+(?:[A-Za-z_][A-Za-z0-9_]*|"[^"]*"|`[^`]*`)(?:\s*\.\s*(?:[A-Za-z_][A-Za-z0-9_]*|"[^"]*"|`[^`]*`))?/i;
+  return !toTargetPattern.test(header);
+}
+
 export function lintMigrationPolicyFile(
   filePath: string,
   content: string,
@@ -264,6 +362,13 @@ export function lintMigrationPolicyFile(
 
   for (const statement of statements) {
     for (const rule of riskyStatementRules) {
+      if (rule.ruleName === "clickhouse-naive-materialized-view") {
+        if (isNaiveClickHouseMaterializedView(statement.text)) {
+          violations.push(buildViolation(filePath, statement, rule));
+        }
+        continue;
+      }
+
       if (rule.pattern.test(statement.text)) {
         violations.push(buildViolation(filePath, statement, rule));
       }

@@ -57,8 +57,8 @@ RUN apk add --no-cache curl ca-certificates python3 py3-pip && \
     ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.4.1.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
-    pip3 install --break-system-packages \
-      dbt-core==1.11.11 \
+    pip3 install --no-cache-dir --break-system-packages \
+      dbt-core==1.10.22 \
       dbt-clickhouse==1.10.0 \
       sqlfluff==4.2.1 \
       sqlfluff-templater-dbt==4.2.1 && \

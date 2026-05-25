@@ -537,6 +537,13 @@ active_activity AS (
   FROM ${databases.postgresFitness}.activity FINAL
   WHERE _peerdb_is_deleted = 0
 ),
+activity_windows AS (
+  SELECT
+    user_id,
+    groupArray(tuple(started_at, ended_at)) AS windows
+  FROM active_activity
+  GROUP BY user_id
+),
 heart_rate_samples AS (
   SELECT
     active_sleep.sleep_id AS sleep_id,
@@ -548,16 +555,19 @@ heart_rate_samples AS (
   FROM active_sleep
   INNER JOIN ${databases.analytics}.deduped_sensor AS samples
     ON samples.user_id = active_sleep.user_id
-   AND samples.recorded_at >= active_sleep.started_at
-   AND samples.recorded_at <= active_sleep.ended_at
-  LEFT ANTI JOIN active_activity
-    ON active_activity.user_id = samples.user_id
-   AND samples.recorded_at >= active_activity.started_at
-   AND samples.recorded_at <= active_activity.ended_at
+  LEFT JOIN activity_windows
+    ON activity_windows.user_id = samples.user_id
   WHERE active_sleep.is_nap = false
+    AND samples.recorded_at >= active_sleep.started_at
+    AND samples.recorded_at <= active_sleep.ended_at
     AND samples.channel = 'heart_rate'
     AND samples.is_deleted = 0
     AND samples.scalar IS NOT NULL
+    AND NOT arrayExists(
+      activity_window -> samples.recorded_at >= tupleElement(activity_window, 1)
+        AND samples.recorded_at <= tupleElement(activity_window, 2),
+      activity_windows.windows
+    )
 ),
 computed_windows AS (
   SELECT
@@ -589,7 +599,7 @@ SELECT
   CAST(computed_windows.resting_hr, 'Nullable(Int32)') AS resting_hr,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   if(computed_windows.resting_hr IS NULL, 1, 0) AS is_deleted,
-  now64(9) AS refreshed_at
+  now64(9, 'UTC') AS refreshed_at
 FROM active_sleep
 LEFT JOIN computed_windows
   ON computed_windows.user_id = active_sleep.user_id

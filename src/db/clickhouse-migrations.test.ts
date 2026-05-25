@@ -16,6 +16,7 @@ import * as backfillMaterializedMetricStreamMigration from "./clickhouse-migrati
 import * as repairLegacyMetricStreamEngineMigration from "./clickhouse-migrations/0007_repair_legacy_metric_stream_engine.ts";
 import * as dropDerivedRestingHeartRateMigration from "./clickhouse-migrations/0009_drop_derived_resting_heart_rate_read_model.ts";
 import * as repairMetricStreamBackfillMigration from "./clickhouse-migrations/0012_repair_metric_stream_backfill.ts";
+import * as restingHeartRateSleepWindowMigration from "./clickhouse-migrations/0014_resting_heart_rate_sleep_window_materialized_view.ts";
 import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/0019_non_sensor_read_models_as_views.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
@@ -56,6 +57,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(backfillMaterializedMetricStreamMigration.createMigration().statements).toEqual([]);
     expect(repairLegacyMetricStreamEngineMigration.createMigration().statements).toEqual([]);
     expect(repairMetricStreamBackfillMigration.createMigration().statements).toEqual([]);
+    expect(restingHeartRateSleepWindowMigration.createMigration().statements).toEqual([]);
   });
 
   it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
