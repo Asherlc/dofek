@@ -1,4 +1,4 @@
-import { buildActivityTrendDailyReadModelStatements } from "../clickhouse-read-models.ts";
+import { buildActivityTrendDailyReadModelStatements } from "../clickhouse-activity-trend-read-model.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {

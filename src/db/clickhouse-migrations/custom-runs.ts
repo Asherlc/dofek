@@ -7,6 +7,7 @@ import {
   parsePostgresConnectionForClickHouse,
   waitForClickHouseTable,
 } from "../clickhouse.ts";
+import { buildActivityTrendDailyReadModelStatements } from "../clickhouse-activity-trend-read-model.ts";
 import {
   buildDedupedSensorBackfillSql,
   buildIncrementalDedupedSensorBaseTableStatements,
@@ -15,7 +16,6 @@ import {
   buildSensorScalarSampleBackfillSql,
 } from "../clickhouse-deduped-sensor.ts";
 import { buildActivitySummaryReadModelStatements } from "../clickhouse-metric-stream-bootstrap.ts";
-import { buildActivityTrendDailyReadModelStatements } from "../clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowMaterializedViewStatements } from "../clickhouse-resting-heart-rate-materialized-view.ts";
 import { clickHouseStringLiteral } from "./sql.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";

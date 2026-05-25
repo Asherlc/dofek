@@ -428,6 +428,57 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
   });
 
+  it("recreates raw analytics mirrors when existing mappings only contain partial table-name matches", async () => {
+    const peerDbQueries: string[] = [];
+    const clickHouseCommands: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("metric_stream_analytics_point_exclude_position")) {
+            return {
+              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
+            };
+          }
+          if (query.includes("raw_analytics_mirror_config")) {
+            return {
+              rows: [
+                {
+                  name: "dofek_fitness_raw_analytics",
+                  raw_analytics_mirror_config:
+                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile_archive",
+                },
+              ],
+            };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_fitness_raw_analytics");
+    expect(clickHouseCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile");
+  });
+
   it("recreates absent raw analytics mirrors without initial copy when destination rows already exist", async () => {
     const peerDbQueries: string[] = [];
     const clickHouseCommands: string[] = [];
