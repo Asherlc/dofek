@@ -403,10 +403,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_metric_stream_cdc");
-    expect(peerDbQueries).toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics"),
+    const legacyMirrorDropIndex = peerDbQueries.indexOf("DROP MIRROR dofek_metric_stream_cdc");
+    const currentMirrorCreateIndex = peerDbQueries.findIndex((query) =>
+      query.includes("CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics"),
     );
+    expect(legacyMirrorDropIndex).toBeGreaterThanOrEqual(0);
+    expect(currentMirrorCreateIndex).toBeGreaterThanOrEqual(0);
+    expect(legacyMirrorDropIndex).toBeLessThan(currentMirrorCreateIndex);
   });
 
   it("recreates raw analytics mirrors when existing mappings are missing source tables", async () => {

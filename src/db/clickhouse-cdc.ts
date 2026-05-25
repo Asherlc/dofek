@@ -494,7 +494,7 @@ async function dropLegacyMetricStreamCdcMirror(peerDbClient: PeerDbClient): Prom
   const result = await peerDbClient.query(`
     SELECT 1 AS legacy_metric_stream_cdc_mirror_exists
     FROM public.flows
-    WHERE name = '${legacyMetricStreamCdcMirrorName}'
+    WHERE name = ${peerDbStringLiteral(legacyMetricStreamCdcMirrorName)}
   `);
   const [mirrorRow] = readQueryRows(result);
   if (!mirrorRow) {
