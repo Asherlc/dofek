@@ -1,10 +1,9 @@
-import type { PmcChartResult } from "@dofek/training/pmc";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
-
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
+import type { PmcChartResult } from "../../../training/src/pmc.ts";
+import { TrainingStressCalculator } from "../../../training/src/training-load.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
