@@ -202,7 +202,7 @@ heart_rate_samples AS (
         AND NOT arrayExists(
             activity_window -> samples.recorded_at >= tupleElement(activity_window, 1)
             AND samples.recorded_at <= tupleElement(activity_window, 2),
-            activity_windows.windows
+            ifNull(activity_windows.windows, [])
         )
 ),
 

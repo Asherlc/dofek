@@ -8161,14 +8161,20 @@ new incremental tables are populated.
 
 ### Follow-up (PR #1180 review app run 26422484061)
 
-After the dbt production profile was updated to require `CLICKHOUSE_PASSWORD`,
-the PR review app deploy failed while running migrations. Postgres and
-ClickHouse migrations completed, but the dbt build failed with ClickHouse
-`REQUIRED_PASSWORD` for `http://clickhouse:8123` because the review app `web`
-container received `CLICKHOUSE_URL` but not `CLICKHOUSE_PASSWORD`.
-
-The fix passes `CLICKHOUSE_PASSWORD` into the review app `web` container from
-the same required `POSTGRES_PASSWORD` value used to initialize the local
-ClickHouse service. This keeps the production dbt profile fail-fast behavior
-and makes review app, E2E, and production-style migration environments use the
-same explicit password contract.
+- Date: 2026-05-25.
+- Symptoms: PR #1180 review app deploy failed while running migrations after
+  Postgres and ClickHouse migrations completed.
+- User Impact: No production user impact; the failure blocked review app
+  validation and production deployment from this branch.
+- Evidence: The dbt build failed against `http://clickhouse:8123` with
+  ClickHouse `REQUIRED_PASSWORD`.
+- Root Cause: The dbt production profile change made `CLICKHOUSE_PASSWORD`
+  required, but the review app `web` container received `CLICKHOUSE_URL`
+  without `CLICKHOUSE_PASSWORD`.
+- Fix/Mitigation: Pass `CLICKHOUSE_PASSWORD` into the review app `web`
+  container from the same required `POSTGRES_PASSWORD` value used to initialize
+  the local ClickHouse service.
+- Remaining Risk: Low; review app, E2E, and production-style migration
+  environments now share the same explicit ClickHouse password contract.
+- Follow-Up Work: Continue monitoring production rollout for the original
+  ClickHouse memory and dashboard latency risks described above.

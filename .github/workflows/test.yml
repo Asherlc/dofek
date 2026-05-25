@@ -143,9 +143,11 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:26.3.3.20-alpine
+        image: clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -159,6 +161,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
       - run: pnpm lint
