@@ -349,11 +349,16 @@ jobs:
           DEPLOY_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           pre_migration_image_tag="$DEPLOY_IMAGE_TAG"
-          if docker service inspect "${STACK_NAME}_web" >/dev/null 2>&1; then
-            current_web_image="$(
-              docker service inspect "${STACK_NAME}_web" \
-                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
-            )"
+          service_inspect_error="$RUNNER_TEMP/${STACK_NAME}_web.inspect.err"
+          set +e
+          current_web_image="$(
+            docker service inspect "${STACK_NAME}_web" \
+              --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' \
+              2>"$service_inspect_error"
+          )"
+          inspect_status=$?
+          set -e
+          if [ "$inspect_status" -eq 0 ]; then
             current_web_image_without_digest="${current_web_image%@*}"
             case "$current_web_image_without_digest" in
               ghcr.io/asherlc/dofek:*)
@@ -366,14 +371,32 @@ jobs:
             esac
 
             echo "Applying stack config before migrations with current app image tag ${pre_migration_image_tag}."
-          else
+          elif grep -qiE 'no such service|not found' "$service_inspect_error"; then
             echo "No existing web service; applying initial stack with deploy image tag ${pre_migration_image_tag}."
+          else
+            echo "::error::Unable to inspect ${STACK_NAME}_web before pre-migration stack apply"
+            cat "$service_inspect_error"
+            exit "$inspect_status"
           fi
 
           set +e
+          pre_migration_stack_file="$RUNNER_TEMP/pre-migration-stack.yml"
+          cat > "$pre_migration_stack_file" <<'YAML'
+          services:
+            web:
+              deploy:
+                replicas: 0
+            worker:
+              deploy:
+                replicas: 0
+            training-export-worker:
+              deploy:
+                replicas: 0
+          YAML
+
           IMAGE_TAG="$pre_migration_image_tag" timeout 20m \
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-              docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --detach=false "$STACK_NAME"
+              docker stack deploy $STACK_FILE_FLAGS -c "$pre_migration_stack_file" --with-registry-auth --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then

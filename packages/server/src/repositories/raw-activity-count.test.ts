@@ -30,11 +30,11 @@ describe("countRawActivities", () => {
     expect(count).toBe(3);
     expect(renderedQueries).toHaveLength(1);
     const renderedQuery = renderedQueries[0];
-    expect(renderedQuery?.sql).toContain("WHERE user_id = $1");
-    expect(renderedQuery?.sql).toContain("CURRENT_TIMESTAMP - $2 * INTERVAL '1 day'");
+    expect(renderedQuery?.sql).toContain("WHERE user_id = $1::uuid");
+    expect(renderedQuery?.sql).toContain("CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'");
     expect(renderedQuery?.sql).toContain("activity_type IN ($3)");
-    expect(renderedQuery?.sql).toContain("started_at >= $4");
-    expect(renderedQuery?.sql).toContain("started_at < $5");
+    expect(renderedQuery?.sql).toContain("started_at >= $4::timestamptz");
+    expect(renderedQuery?.sql).toContain("started_at < $5::timestamptz");
     expect(renderedQuery?.sql).not.toContain("= ::uuid");
     expect(renderedQuery?.sql).not.toContain("- ::int");
     expect(renderedQuery?.params).toEqual([

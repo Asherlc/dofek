@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockTrendsData: Record<string, unknown> | undefined;
 let mockDailyMetricsData: Record<string, unknown>[];
+let mockHrvBaselineData: Record<string, unknown>[];
 let mockHrvVariabilityData: Record<string, unknown>[];
 let mockReadinessData: Record<string, unknown>[];
 let sparkLinePropsCalls: Record<string, unknown>[];
@@ -24,6 +25,7 @@ vi.mock("../../lib/trpc", () => ({
     dailyMetrics: {
       trends: { useQuery: () => ({ data: mockTrendsData, isLoading: false }) },
       list: { useQuery: () => ({ data: mockDailyMetricsData, isLoading: false }) },
+      hrvBaseline: { useQuery: () => ({ data: mockHrvBaselineData, isLoading: false }) },
     },
     bodyAnalytics: {
       smoothedWeight: q(() => []),
@@ -88,6 +90,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockTrendsData = undefined;
     mockDailyMetricsData = [];
+    mockHrvBaselineData = [];
     mockHrvVariabilityData = [];
     mockReadinessData = [];
     sparkLinePropsCalls = [];
@@ -106,6 +109,36 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
     expect(screen.getByText("44 ms")).toBeTruthy();
     expect(screen.queryByText("24")).toBeNull();
+  });
+
+  it("displays Resting Heart Rate from the baseline query", async () => {
+    mockHrvBaselineData = [
+      {
+        date: "2026-04-05",
+        hrv: 50,
+        resting_hr: 56,
+        resting_hr_mean_7d: 57,
+      },
+      {
+        date: "2026-04-06",
+        hrv: 44,
+        resting_hr: 54,
+        resting_hr_mean_7d: 55,
+      },
+    ];
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
+    expect(screen.getByText("54")).toBeTruthy();
+    expect(screen.getByText("7-day baseline: 55 bpm")).toBeTruthy();
+
+    const restingHeartRateSparklineCall = sparkLinePropsCalls.find((sparkLineProps) => {
+      const data = sparkLineProps.data;
+      return Array.isArray(data) && data[0] === 56 && data[1] === 54;
+    });
+    expect(restingHeartRateSparklineCall).toBeDefined();
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {
@@ -180,7 +213,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
 
     // Breakdown weight labels should not be visible initially
     expect(screen.queryByText("50%")).toBeNull();
-    expect(screen.queryByText("Resting Heart Rate")).toBeNull();
+    expect(screen.queryByText("Respiratory Rate")).toBeNull();
 
     // Tap the recovery score to expand
     fireEvent.click(screen.getByText("75"));
@@ -188,7 +221,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     // Component breakdown with weight percentages should now be visible
     expect(screen.getByText("50%")).toBeTruthy(); // HRV weight
     expect(screen.getByText("20%")).toBeTruthy(); // RHR weight
-    expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
+    expect(screen.getAllByText("Resting Heart Rate").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Respiratory Rate")).toBeTruthy();
   });
 

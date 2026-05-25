@@ -249,7 +249,7 @@ describe("bootstrapClickHouseFromEnv", () => {
       json: vi
         .fn()
         .mockResolvedValue(
-          queryText.includes("system.tables") ? [{ table_count: 1 }] : [{ smoke_count: 0 }],
+          queryText.includes("system.tables") ? [{ table_count: 1 }] : [{ column_count: 1 }],
         ),
     }));
     const client = { command, query };
@@ -278,19 +278,23 @@ describe("bootstrapClickHouseFromEnv", () => {
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM postgres_fitness.metric_stream LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'postgres_fitness' AND table = 'metric_stream'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.deduped_sensor LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'deduped_sensor'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'activity_summary'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.activity_trend_daily LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'activity_trend_daily'",
       format: "JSONEachRow",
     });
   });

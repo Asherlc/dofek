@@ -196,7 +196,7 @@ services:
       - source: clickhouse_system_log_ttl
         target: /etc/clickhouse-server/config.d/system-log-ttl.xml
         mode: 0444
-      - source: clickhouse_memory_limits
+      - source: clickhouse_memory_limits_4g
         target: /etc/clickhouse-server/config.d/memory-limits.xml
         mode: 0444
     healthcheck:
@@ -212,7 +212,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 4500M
 
   peerdb-catalog:
     image: postgres:18-alpine
@@ -573,5 +573,5 @@ configs:
     file: ./clickhouse/users.d/allow-experimental-nullable-tuple-type.xml
   clickhouse_system_log_ttl:
     file: ./clickhouse/config.d/system-log-ttl.xml
-  clickhouse_memory_limits:
+  clickhouse_memory_limits_4g:
     file: ./clickhouse/config.d/memory-limits.xml

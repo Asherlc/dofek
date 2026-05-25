@@ -7846,3 +7846,145 @@ ClickHouse, network, config, and resource-limit changes are in place before
 migrations without rolling new app code ahead of schema changes. Clean-slate
 hosts still use the requested deploy image tag because there is no previous app
 release to preserve.
+
+### Follow-up (Deploy run 26366695503)
+
+Deploy run `26366695503` validated CI on the cleaner pre-migration stack-apply
+approach, then failed in `Apply stack config before migrations` before
+migrations ran. The exact failing command was the pre-migration
+`docker stack deploy ... --detach=false` call. The first fatal line was
+`error during connect: Get "http://docker.example.com/v1.48/info": command
+[ssh ... docker system dial-stdio] has exited with exit status 255`, followed
+by `Connection timed out during banner exchange`.
+
+Two issues were visible in the same step. First, the current-service probe used
+`if docker service inspect ...; then ... else ... fi`, so any Docker control
+plane failure was treated as a clean-slate stack and logged `No existing web
+service`. Second, `--detach=false` kept a long-lived Docker-over-SSH stack
+deploy wait open while the single-node host restarted many stack services,
+which made SSH banner exchange unreliable under the restart load. Host evidence
+showed load above 250 and app services restarting immediately after the failed
+step.
+
+The direct fix is to make the service probe distinguish a real missing service
+from Docker/SSH failures and to run the pre-migration stack apply detached. The
+workflow already waits explicitly for Postgres and ClickHouse before migrations,
+so it no longer needs a full stack convergence wait before the schema step.
+
+A hard Hetzner reset restored SSH temporarily after the failed run, but the live
+stack was still on the old ClickHouse spec (`5GiB` container limit and no
+`memory-limits.xml` mount) and web tasks continued to churn while waiting for
+ClickHouse bootstrap verification. The durable recovery remains the committed
+deploy ordering fix plus a rerun of the branch deploy so the checked-in
+ClickHouse resource/config limits are applied through Swarm.
+
+### Follow-up (Deploy run 26368319681)
+
+Deploy run `26368319681` confirmed the detached pre-migration stack apply works:
+`Apply stack config before migrations`, `Wait for Postgres writable`, and
+`Wait for ClickHouse` all passed. The run then failed in `Run migrations`. The
+first fatal migration line was `(total) memory limit exceeded: would use 3.79
+GiB ... maximum: 3.00 GiB`.
+
+That proved the checked-in 3 GiB ClickHouse server cap was below the observed
+production migration workload. The cap prevented host-level OOM, but it also
+blocked the normal ClickHouse migration query path before the final app rollout.
+The branch raises `max_server_memory_usage` to 4 GiB and gives the container a
+4500 MiB cgroup limit. This keeps ClickHouse below the earlier 4.6-5.0 GiB
+host-OOM range while allowing the measured 3.79 GiB migration query to run.
+
+During the same incident window the old web stack was already unhealthy and
+crash-looping on ClickHouse bootstrap. To keep the host reachable long enough
+for the committed deploy fix to run, `dofek_web` and optional `dofek_netdata`
+were temporarily scaled to zero by hand. This was an outage mitigation only;
+the next successful stack deploy must restore service specs from
+`deploy/stack.yml`.
+
+### Follow-up (Deploy run 26368662541)
+
+Deploy run `26368662541` failed in `Apply stack config before migrations`
+before readiness checks or migrations ran. The exact failing command was the
+pre-migration `docker stack deploy ... --detach=true` call. The first fatal
+line was `failed to update config dofek_clickhouse_memory_limits: Error
+response from daemon: rpc error: code = InvalidArgument desc = only updates to
+Labels are allowed`.
+
+The root cause was Docker Swarm config immutability. The branch changed the
+contents of `deploy/clickhouse/config.d/memory-limits.xml` from a 3 GiB
+ClickHouse server cap to a 4 GiB cap while reusing the existing stack config
+key `clickhouse_memory_limits`. Swarm cannot update config contents in place;
+it only allows label updates on an existing config object.
+
+The direct fix is to rotate the ClickHouse memory config key in
+`deploy/stack.yml` to `clickhouse_memory_limits_4g` while keeping the same
+container mount path. The next stack deploy will create a new Swarm config
+object and attach it to ClickHouse instead of trying to mutate the old one.
+
+### Follow-up (Deploy run 26368809440)
+
+Deploy run `26368809440` confirmed the rotated Swarm config fixed the previous
+failure: the pre-migration stack apply, Postgres readiness check, and
+ClickHouse readiness check passed. The run then failed in `Run migrations`
+while starting the migration container. The first fatal line was `docker: error
+during connect: Head "http://docker.example.com/_ping": command [ssh ... docker
+system dial-stdio] has exited with exit status 255`, followed by `Connection
+timed out during banner exchange`.
+
+Host evidence showed the pre-migration stack apply restored old app services
+before migrations: `dofek_web` was desired `0/2` with repeated task failures,
+`dofek_worker` was restarting, and ClickHouse was repeatedly killed by its
+memory cgroup at about 4.57 GiB RSS. ClickHouse logs showed concurrent
+analytics queries against `postgres_fitness.*` immediately before each kill.
+The root cause was the pre-migration stack apply allowing old app/worker tasks
+to issue expensive analytics queries against ClickHouse during the migration
+window, exhausting the ClickHouse cgroup and overloading the host SSH control
+plane before the migration container could start.
+
+The direct fix is to make the pre-migration stack apply a data-service/config
+phase: it now uses a temporary stack overlay that sets `web`, `worker`, and
+`training-export-worker` replicas to zero before readiness checks and
+migrations. The final stack deploy remains the only step that restores app
+replicas from `deploy/stack.yml`.
+
+### Follow-up (Deploy run 26369862049)
+
+Deploy run `26369862049` confirmed the pre-migration quiesce overlay worked:
+image build, SSH setup, stack render, pre-migration stack apply, Postgres
+readiness, ClickHouse readiness, and migrations all passed. The run was then
+cancelled during final stack rollout after restored web/worker tasks repeatedly
+caused ClickHouse OOM kills. The first app fatal line was `[web] Failed to
+start: Error: socket hang up`; kernel evidence showed ClickHouse killed by
+global and cgroup OOM during the same window.
+
+The root cause was the server startup ClickHouse smoke test issuing
+`SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1`.
+`analytics.activity_summary` is now a ClickHouse view, so `count()` forced the
+full activity summary view to execute during every web boot. That was enough to
+exhaust ClickHouse memory and make the web healthcheck fail before the final
+rollout could converge.
+
+The first attempted fix changed startup smoke verification to
+`SELECT * FROM <object> LIMIT 0`, but ClickHouse still expanded the recursive
+view plan and hit the same memory path. The direct fix is to keep startup
+verification entirely in metadata: after the existing `system.tables` existence
+checks, the server now checks `system.columns` for each required object instead
+of querying the object itself. This still fails loudly on missing objects with no
+visible columns without materializing expensive views at app startup.
+
+### Follow-up (Deploy run 26370427808)
+
+Deploy run `26370427808` on commit `e3807d7b` verified the metadata-only
+ClickHouse smoke test fix in production. The run completed the image builds,
+pre-migration quiesced stack apply, Postgres and ClickHouse readiness checks,
+migrations, final stack deploy, PeerDB checks, Temporal search attribute
+setup, and ClickHouse CDC configuration successfully.
+
+Post-deploy validation showed `dofek_web` restored to `2/2`, `dofek_worker` to
+`1/1`, `dofek_training-export-worker` to `1/1`, and `dofek_clickhouse` to
+`1/1`, all on the expected `sha-e3807d7` branch image where applicable. The
+public `https://dofek.asherlc.com/healthz` endpoint returned
+`{"status":"ok"}`, and the app root returned HTTP 200. ClickHouse was running
+with a 4,500 MiB cgroup cap and the rotated
+`dofek_clickhouse_memory_limits_4g` Swarm config. Kernel OOM evidence stopped
+before the successful deploy started, with no new OOM kills during or after the
+successful rollout.
