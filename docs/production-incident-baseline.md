@@ -8158,3 +8158,17 @@ Fix prepared in this branch:
 Remaining risk: this change still needs production rollout and observation of
 `analytics-worker` cadence, ClickHouse memory, and dashboard latency after the
 new incremental tables are populated.
+
+### Follow-up (PR #1180 review app run 26422484061)
+
+After the dbt production profile was updated to require `CLICKHOUSE_PASSWORD`,
+the PR review app deploy failed while running migrations. Postgres and
+ClickHouse migrations completed, but the dbt build failed with ClickHouse
+`REQUIRED_PASSWORD` for `http://clickhouse:8123` because the review app `web`
+container received `CLICKHOUSE_URL` but not `CLICKHOUSE_PASSWORD`.
+
+The fix passes `CLICKHOUSE_PASSWORD` into the review app `web` container from
+the same required `POSTGRES_PASSWORD` value used to initialize the local
+ClickHouse service. This keeps the production dbt profile fail-fast behavior
+and makes review app, E2E, and production-style migration environments use the
+same explicit password contract.
