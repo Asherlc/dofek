@@ -13,7 +13,10 @@ vi.mock("pg", () => ({
 }));
 
 import * as backfillMaterializedMetricStreamMigration from "./clickhouse-migrations/0005_backfill_materialized_metric_stream.ts";
+import * as repairLegacyMetricStreamEngineMigration from "./clickhouse-migrations/0007_repair_legacy_metric_stream_engine.ts";
 import * as dropDerivedRestingHeartRateMigration from "./clickhouse-migrations/0009_drop_derived_resting_heart_rate_read_model.ts";
+import * as repairMetricStreamBackfillMigration from "./clickhouse-migrations/0012_repair_metric_stream_backfill.ts";
+import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/0019_non_sensor_read_models_as_views.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -50,6 +53,8 @@ describe("buildClickHouseMigrationStatements", () => {
 
   it("keeps custom-run migrations free of accidental static statements", () => {
     expect(backfillMaterializedMetricStreamMigration.createMigration().statements).toEqual([]);
+    expect(repairLegacyMetricStreamEngineMigration.createMigration().statements).toEqual([]);
+    expect(repairMetricStreamBackfillMigration.createMigration().statements).toEqual([]);
   });
 
   it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
@@ -57,6 +62,39 @@ describe("buildClickHouseMigrationStatements", () => {
       "DROP VIEW IF EXISTS analytics.derived_resting_heart_rate",
       "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
     ]);
+  });
+
+  it("keeps non-sensor read model rebuild statements in its migration file", () => {
+    const statements = nonSensorReadModelsAsViewsMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements).toHaveLength(27);
+    expect(statements.slice(0, 20)).toEqual([
+      "DROP VIEW IF EXISTS analytics.activity_summary",
+      "DROP TABLE IF EXISTS analytics.activity_summary",
+      "DROP VIEW IF EXISTS analytics.activity_trend_daily",
+      "DROP TABLE IF EXISTS analytics.activity_trend_daily",
+      "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
+      "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
+      "DROP VIEW IF EXISTS analytics.deduped_location",
+      "DROP TABLE IF EXISTS analytics.deduped_location",
+      "DROP VIEW IF EXISTS analytics.provider_stats",
+      "DROP TABLE IF EXISTS analytics.provider_stats",
+      "DROP VIEW IF EXISTS analytics.v_daily_metrics",
+      "DROP TABLE IF EXISTS analytics.v_daily_metrics",
+      "DROP VIEW IF EXISTS analytics.v_body_measurement",
+      "DROP TABLE IF EXISTS analytics.v_body_measurement",
+      "DROP VIEW IF EXISTS analytics.v_sleep",
+      "DROP TABLE IF EXISTS analytics.v_sleep",
+      "DROP VIEW IF EXISTS analytics.v_activity_members",
+      "DROP TABLE IF EXISTS analytics.v_activity_members",
+      "DROP VIEW IF EXISTS analytics.v_activity",
+      "DROP TABLE IF EXISTS analytics.v_activity",
+    ]);
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(statementSql).toContain("FROM postgres_fitness.food_entry FINAL");
   });
 
   it("renders the shared ReplacingMergeTree table engine helper", () => {
