@@ -1,5 +1,3 @@
-import type { PmcChartResult, TssModelInfo } from "@dofek/training/pmc";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
 import {
   type PmcActivityRow,
@@ -21,13 +19,26 @@ interface PmcChartInput {
   displayDays: number;
 }
 
+interface PmcChartModel {
+  type: "learned" | "generic";
+  pairedActivities: number;
+  r2: number | null;
+  ftp: number | null;
+}
+
+interface PmcChart {
+  data: ReturnType<PmcEwmaCalculator["compute"]>;
+  model: PmcChartModel;
+}
+
 export class PmcChartCalculator {
   readonly #trainingLoadCalculator: PmcTrainingLoadCalculator;
   readonly #ewmaCalculator: PmcEwmaCalculator;
 
   constructor(options: PmcChartCalculatorOptions) {
-    this.#trainingLoadCalculator = new PmcTrainingLoadCalculator(
-      new TrainingStressCalculator(options.genderFactor, options.exponent),
+    this.#trainingLoadCalculator = PmcTrainingLoadCalculator.fromTrainingImpulseConstants(
+      options.genderFactor,
+      options.exponent,
     );
     this.#ewmaCalculator = new PmcEwmaCalculator({
       chronicTrainingLoadDays: options.chronicTrainingLoadDays,
@@ -35,7 +46,7 @@ export class PmcChartCalculator {
     });
   }
 
-  buildChart(input: PmcChartInput): PmcChartResult {
+  buildChart(input: PmcChartInput): PmcChart {
     const globalMaxHeartRate =
       input.activityRows.length > 0 ? Number(input.activityRows[0]?.global_max_hr) : null;
     if (!globalMaxHeartRate) {
@@ -50,7 +61,7 @@ export class PmcChartCalculator {
     const normalizedPowerByActivity = new Map(
       input.normalizedPowerRows.map((row) => [row.activity_id, Number(row.np)]),
     );
-    const thresholdPower = TrainingStressCalculator.estimateFtp(input.activityRows);
+    const thresholdPower = this.#trainingLoadCalculator.estimateThresholdPower(input.activityRows);
     const { trainingStressModel, pairedData } =
       this.#trainingLoadCalculator.buildTrainingStressModel(
         input.activityRows,
@@ -72,7 +83,7 @@ export class PmcChartCalculator {
       queryDays: input.queryDays,
       displayDays: input.displayDays,
     });
-    const model: TssModelInfo =
+    const model: PmcChartModel =
       trainingStressModel != null
         ? {
             type: "learned",

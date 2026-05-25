@@ -19,6 +19,32 @@ function makeActivityRow(overrides: Partial<PmcActivityRow> = {}): PmcActivityRo
 }
 
 describe("PmcTrainingLoadCalculator", () => {
+  it("creates calculators from personalized training impulse constants", () => {
+    const calculator = PmcTrainingLoadCalculator.fromTrainingImpulseConstants(1.92, 1.67);
+
+    const dailyLoad = calculator.calculateDailyLoad({
+      activities: [makeActivityRow({ avg_power: null, power_samples: 0 })],
+      normalizedPowerByActivity: new Map(),
+      thresholdPower: null,
+      trainingStressModel: null,
+      globalMaxHeartRate: 190,
+      restingHeartRate: 60,
+    });
+
+    expect(dailyLoad.get("2026-05-20")).toBeGreaterThan(0);
+  });
+
+  it("estimates threshold power from activity rows", () => {
+    const calculator = new PmcTrainingLoadCalculator(new TrainingStressCalculator(1.92, 1.67));
+
+    const thresholdPower = calculator.estimateThresholdPower([
+      makeActivityRow({ id: "low", avg_power: 190, power_samples: 3600 }),
+      makeActivityRow({ id: "high", avg_power: 220, power_samples: 3600 }),
+    ]);
+
+    expect(thresholdPower).toBe(209);
+  });
+
   it("uses power training stress when normalized power and threshold power exist", () => {
     const calculator = new PmcTrainingLoadCalculator(new TrainingStressCalculator(1.92, 1.67));
 

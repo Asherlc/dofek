@@ -41,8 +41,19 @@ interface PmcDailyLoadInput {
 export class PmcTrainingLoadCalculator {
   readonly #calculator: TrainingStressCalculator;
 
+  static fromTrainingImpulseConstants(
+    genderFactor: number,
+    exponent: number,
+  ): PmcTrainingLoadCalculator {
+    return new PmcTrainingLoadCalculator(new TrainingStressCalculator(genderFactor, exponent));
+  }
+
   constructor(calculator: TrainingStressCalculator) {
     this.#calculator = calculator;
+  }
+
+  estimateThresholdPower(activities: PmcActivityRow[]): number | null {
+    return TrainingStressCalculator.estimateFtp(activities);
   }
 
   buildTrainingStressModel(
