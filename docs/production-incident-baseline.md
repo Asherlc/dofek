@@ -7,6 +7,75 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-25: Startup Cache Warmup Saturated ClickHouse And Caused Public 521s
+
+### Symptoms
+
+Public health checks for `https://dofek.asherlc.com/healthz`,
+`https://dofek.fit/healthz`, and `https://dofek.live/healthz` returned
+Cloudflare `521` or timed out. SSH intermittently timed out during banner
+exchange. Swarm showed `dofek_web` at `0/2`, `dofek_worker` at `0/1`, and
+`dofek_clickhouse` at `0/1` during the outage window, while Traefik remained
+up.
+
+### User Impact
+
+The public web app was unavailable while web tasks and ClickHouse churned. The
+service recovered without a code or stack change, but remains vulnerable to the
+same startup warmup pattern until the warmup or underlying ClickHouse queries
+are changed.
+
+### Evidence
+
+At `2026-05-25 15:56 UTC`, the host reported load around `208` and SSH banner
+exchange timed out. Kernel OOM logs showed ClickHouse killed inside its memory
+cgroup at `2026-05-25 15:56:33 UTC` with about `4.56 GiB` anonymous RSS, and
+Netdata repeatedly hit its own memory cgroup. Web logs from the same window
+showed both web replicas starting and running `warmCache()`. Repeated warmup
+failures included:
+
+- `dailyMetrics.trends(30)` failing with ClickHouse total memory limit
+  exceeded after about `19-38s`.
+- `sync.providerStats` timing out after about `120s`.
+- `insights.compute(90)`, `training.weeklyVolume(90)`,
+  `training.hrZones(90)`, `pmc.chart(90)`, `power.powerCurve(90)`,
+  `power.eftpTrend(90)`, and cycling analytics warmups failing with ClickHouse
+  memory errors, socket hangups, `ECONNREFUSED`, or DNS lookup failures for
+  `clickhouse`/`redis`.
+
+ClickHouse `system.processes` later showed two live `analytics.provider_stats`
+queries, each reading about `33 GiB` and over `437M` rows. `system.query_log`
+showed repeated memory-limit failures from queries against
+`analytics.resting_heart_rate_sleep_window`, `analytics.activity_summary`,
+`analytics.deduped_sensor`, and `analytics.provider_stats`.
+
+### Root Cause
+
+The server startup cache warmup runs on every web replica and executes many
+expensive ClickHouse-backed dashboard and analytics queries sequentially per
+replica but concurrently across replicas. After web task restarts, the two
+replicas formed a cold-start thundering herd over normal ClickHouse views that
+scan large read models. The ClickHouse query memory cap stopped individual
+queries, but the concurrent workload still drove ClickHouse into cgroup OOM,
+made dependent API queries fail, and destabilized Swarm service discovery
+enough to produce `ENOTFOUND`/`ECONNREFUSED` errors for `clickhouse`, `redis`,
+and `db`.
+
+### Fix or Mitigation
+
+The fix removes startup cache warming from `runStartupTasks()` and deletes the
+unused warm-cache module, so web replica starts no longer issue heavyweight
+ClickHouse-backed warmup queries. Production still needs this change deployed.
+During investigation, production temporarily became reachable again after the
+churn subsided: `https://dofek.asherlc.com/healthz` returned `{"status":"ok"}`.
+
+### Remaining Risk
+
+The immediate fix is not active until deployed. Separately,
+`analytics.provider_stats` and the resting-heart-rate/activity analytics views
+need query or read-model changes so normal user requests do not scan hundreds
+of millions of rows on the single-node ClickHouse host.
+
 ## 2026-05-21: Dashboard Sleep Missing After PeerDB Raw Fitness Slot Was Lost
 
 ### Symptoms
