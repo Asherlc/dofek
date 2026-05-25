@@ -1,9 +1,10 @@
+import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
+import { TrainingStressCalculator } from "@dofek/training/training-load";
+
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
-import type { PmcChartResult } from "../../../training/src/pmc.ts";
-import { TrainingStressCalculator } from "../../../training/src/training-load.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -34,6 +35,11 @@ const normalizedPowerRowSchema = z.object({
   np: z.coerce.number(),
 });
 
+type PmcRepositoryChartResult = PmcChartResult & {
+  data: PmcDataPoint[];
+  model: TssModelInfo;
+};
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -53,7 +59,7 @@ export class PmcRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getChart(days: number): Promise<PmcChartResult> {
+  async getChart(days: number): Promise<PmcRepositoryChartResult> {
     // Load personalized algorithm parameters
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
