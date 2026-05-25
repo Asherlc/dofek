@@ -1,5 +1,3 @@
-import { TrainingStressCalculator } from "@dofek/training/training-load";
-
 export interface PmcActivityRow {
   global_max_hr: number | null;
   resting_hr: number;
@@ -29,6 +27,30 @@ interface PmcTrainingStressModelResult {
   pairedData: { trimp: number; powerTss: number }[];
 }
 
+export interface PmcTrainingLoadAlgorithms {
+  estimateThresholdPower(activities: PmcActivityRow[]): number | null;
+  computeTrainingImpulse(
+    durationMin: number,
+    avgHr: number,
+    maxHr: number,
+    restingHr: number,
+  ): number;
+  computePowerTrainingStressScore(
+    normalizedPower: number,
+    thresholdPower: number,
+    durationMin: number,
+  ): number;
+  computeHeartRateTrainingStressScore(
+    durationMin: number,
+    avgHr: number,
+    maxHr: number,
+    restingHr: number,
+  ): number;
+  buildTrainingStressModel(
+    pairedData: { trimp: number; powerTss: number }[],
+  ): PmcTrainingStressModel | null;
+}
+
 interface PmcDailyLoadInput {
   activities: PmcActivityRow[];
   normalizedPowerByActivity: Map<string, number>;
@@ -39,21 +61,14 @@ interface PmcDailyLoadInput {
 }
 
 export class PmcTrainingLoadCalculator {
-  readonly #calculator: TrainingStressCalculator;
+  readonly #algorithms: PmcTrainingLoadAlgorithms;
 
-  static fromTrainingImpulseConstants(
-    genderFactor: number,
-    exponent: number,
-  ): PmcTrainingLoadCalculator {
-    return new PmcTrainingLoadCalculator(new TrainingStressCalculator(genderFactor, exponent));
-  }
-
-  constructor(calculator: TrainingStressCalculator) {
-    this.#calculator = calculator;
+  constructor(algorithms: PmcTrainingLoadAlgorithms) {
+    this.#algorithms = algorithms;
   }
 
   estimateThresholdPower(activities: PmcActivityRow[]): number | null {
-    return TrainingStressCalculator.estimateFtp(activities);
+    return this.#algorithms.estimateThresholdPower(activities);
   }
 
   buildTrainingStressModel(
@@ -72,13 +87,13 @@ export class PmcTrainingLoadCalculator {
         const normalizedPower = normalizedPowerByActivity.get(activity.id);
 
         if (normalizedPower != null && normalizedPower > 0) {
-          const trimp = this.#calculator.computeTrimp(
+          const trimp = this.#algorithms.computeTrainingImpulse(
             durationMin,
             avgHr,
             globalMaxHeartRate,
             restingHeartRate,
           );
-          const powerTss = TrainingStressCalculator.computePowerTss(
+          const powerTss = this.#algorithms.computePowerTrainingStressScore(
             normalizedPower,
             thresholdPower,
             durationMin,
@@ -91,7 +106,7 @@ export class PmcTrainingLoadCalculator {
     }
 
     return {
-      trainingStressModel: TrainingStressCalculator.buildTssModel(pairedData),
+      trainingStressModel: this.#algorithms.buildTrainingStressModel(pairedData),
       pairedData,
     };
   }
@@ -107,13 +122,13 @@ export class PmcTrainingLoadCalculator {
       let trainingStressScore: number;
 
       if (input.thresholdPower != null && normalizedPower != null && normalizedPower > 0) {
-        trainingStressScore = TrainingStressCalculator.computePowerTss(
+        trainingStressScore = this.#algorithms.computePowerTrainingStressScore(
           normalizedPower,
           input.thresholdPower,
           durationMin,
         );
       } else if (input.trainingStressModel != null) {
-        const trimp = this.#calculator.computeTrimp(
+        const trimp = this.#algorithms.computeTrainingImpulse(
           durationMin,
           avgHr,
           input.globalMaxHeartRate,
@@ -124,7 +139,7 @@ export class PmcTrainingLoadCalculator {
           input.trainingStressModel.slope * trimp + input.trainingStressModel.intercept,
         );
       } else {
-        trainingStressScore = this.#calculator.computeHrTss(
+        trainingStressScore = this.#algorithms.computeHeartRateTrainingStressScore(
           durationMin,
           avgHr,
           input.globalMaxHeartRate,

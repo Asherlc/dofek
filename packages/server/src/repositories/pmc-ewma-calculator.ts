@@ -1,5 +1,3 @@
-import type { PmcDataPoint } from "@dofek/training/pmc";
-
 interface PmcEwmaCalculatorOptions {
   chronicTrainingLoadDays: number;
   acuteTrainingLoadDays: number;
@@ -9,6 +7,14 @@ interface PmcEwmaInput {
   dailyLoad: Map<string, number>;
   queryDays: number;
   displayDays: number;
+}
+
+interface PmcDataPoint {
+  date: string;
+  load: number;
+  ctl: number;
+  atl: number;
+  tsb: number;
 }
 
 export class PmcEwmaCalculator {

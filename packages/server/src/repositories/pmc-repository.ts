@@ -1,4 +1,5 @@
 import type { PmcChartResult } from "@dofek/training/pmc";
+import { TrainingStressCalculator } from "@dofek/training/training-load";
 
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
@@ -8,6 +9,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
+import { PmcTrainingLoadCalculator } from "./pmc-training-load-calculator.ts";
 import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
@@ -167,11 +169,21 @@ export class PmcRepository extends BaseRepository {
       { userId: this.userId, queryDays },
     );
 
+    const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
+    const trainingLoadCalculator = new PmcTrainingLoadCalculator({
+      estimateThresholdPower: TrainingStressCalculator.estimateFtp,
+      computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
+        trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
+      computePowerTrainingStressScore: TrainingStressCalculator.computePowerTss,
+      computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
+        trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
+      buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
+    });
+
     const chartCalculator = new PmcChartCalculator({
       chronicTrainingLoadDays,
       acuteTrainingLoadDays,
-      genderFactor,
-      exponent,
+      trainingLoadCalculator,
     });
     return chartCalculator.buildChart({
       activityRows,

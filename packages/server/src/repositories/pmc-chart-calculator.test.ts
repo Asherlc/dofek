@@ -1,6 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
-import type { PmcActivityRow, PmcNormalizedPowerRow } from "./pmc-training-load-calculator.ts";
+import {
+  type PmcActivityRow,
+  type PmcNormalizedPowerRow,
+  PmcTrainingLoadCalculator,
+} from "./pmc-training-load-calculator.ts";
+
+function makeTrainingLoadCalculator(): PmcTrainingLoadCalculator {
+  return new PmcTrainingLoadCalculator({
+    estimateThresholdPower: (activities) =>
+      activities.some((activity) => activity.avg_power != null && activity.power_samples > 0)
+        ? 190
+        : null,
+    computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) => {
+      if (maxHr <= restingHr || avgHr <= restingHr) return 0;
+      return durationMin * ((avgHr - restingHr) / (maxHr - restingHr));
+    },
+    computePowerTrainingStressScore: (normalizedPower, thresholdPower, durationMin) => {
+      if (thresholdPower <= 0) return 0;
+      return (normalizedPower / thresholdPower) * durationMin;
+    },
+    computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) => {
+      if (maxHr <= restingHr || avgHr <= restingHr) return 0;
+      return durationMin * ((avgHr - restingHr) / (maxHr - restingHr));
+    },
+    buildTrainingStressModel: (pairedData) =>
+      pairedData.length >= 10 ? { slope: 1, intercept: 0, r2: 0.9996 } : null,
+  });
+}
+
+function makeCalculator(): PmcChartCalculator {
+  return new PmcChartCalculator({
+    chronicTrainingLoadDays: 42,
+    acuteTrainingLoadDays: 7,
+    trainingLoadCalculator: makeTrainingLoadCalculator(),
+  });
+}
 
 function makeActivityRow(overrides: Partial<PmcActivityRow> = {}): PmcActivityRow {
   const date = new Date();
@@ -61,12 +96,7 @@ function makeLearnedModelInput(): {
 
 describe("PmcChartCalculator", () => {
   it("returns the generic empty model when there is no global max heart rate", () => {
-    const calculator = new PmcChartCalculator({
-      chronicTrainingLoadDays: 42,
-      acuteTrainingLoadDays: 7,
-      genderFactor: 1.92,
-      exponent: 1.67,
-    });
+    const calculator = makeCalculator();
 
     const result = calculator.buildChart({
       activityRows: [makeActivityRow({ global_max_hr: null })],
@@ -82,12 +112,7 @@ describe("PmcChartCalculator", () => {
   });
 
   it("builds chart data and threshold power from activity rows", () => {
-    const calculator = new PmcChartCalculator({
-      chronicTrainingLoadDays: 42,
-      acuteTrainingLoadDays: 7,
-      genderFactor: 1.92,
-      exponent: 1.67,
-    });
+    const calculator = makeCalculator();
 
     const result = calculator.buildChart({
       activityRows: [makeActivityRow({ id: "power-activity", avg_power: 200 })],
@@ -101,12 +126,7 @@ describe("PmcChartCalculator", () => {
   });
 
   it("returns rounded learned model metadata when enough paired activities fit", () => {
-    const calculator = new PmcChartCalculator({
-      chronicTrainingLoadDays: 42,
-      acuteTrainingLoadDays: 7,
-      genderFactor: 1.92,
-      exponent: 1.67,
-    });
+    const calculator = makeCalculator();
     const { activityRows, normalizedPowerRows } = makeLearnedModelInput();
 
     const result = calculator.buildChart({
@@ -125,18 +145,8 @@ describe("PmcChartCalculator", () => {
   });
 
   it("uses resting heart rate from activity rows when calculating load", () => {
-    const lowRestingCalculator = new PmcChartCalculator({
-      chronicTrainingLoadDays: 42,
-      acuteTrainingLoadDays: 7,
-      genderFactor: 1.92,
-      exponent: 1.67,
-    });
-    const highRestingCalculator = new PmcChartCalculator({
-      chronicTrainingLoadDays: 42,
-      acuteTrainingLoadDays: 7,
-      genderFactor: 1.92,
-      exponent: 1.67,
-    });
+    const lowRestingCalculator = makeCalculator();
+    const highRestingCalculator = makeCalculator();
 
     const lowRestingResult = lowRestingCalculator.buildChart({
       activityRows: [makeActivityRow({ avg_power: null, power_samples: 0, resting_hr: 40 })],

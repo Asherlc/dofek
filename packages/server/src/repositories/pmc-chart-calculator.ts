@@ -1,15 +1,14 @@
 import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
-import {
-  type PmcActivityRow,
-  type PmcNormalizedPowerRow,
+import type {
+  PmcActivityRow,
+  PmcNormalizedPowerRow,
   PmcTrainingLoadCalculator,
 } from "./pmc-training-load-calculator.ts";
 
 interface PmcChartCalculatorOptions {
   chronicTrainingLoadDays: number;
   acuteTrainingLoadDays: number;
-  genderFactor: number;
-  exponent: number;
+  trainingLoadCalculator: PmcTrainingLoadCalculator;
 }
 
 interface PmcChartInput {
@@ -36,10 +35,7 @@ export class PmcChartCalculator {
   readonly #ewmaCalculator: PmcEwmaCalculator;
 
   constructor(options: PmcChartCalculatorOptions) {
-    this.#trainingLoadCalculator = PmcTrainingLoadCalculator.fromTrainingImpulseConstants(
-      options.genderFactor,
-      options.exponent,
-    );
+    this.#trainingLoadCalculator = options.trainingLoadCalculator;
     this.#ewmaCalculator = new PmcEwmaCalculator({
       chronicTrainingLoadDays: options.chronicTrainingLoadDays,
       acuteTrainingLoadDays: options.acuteTrainingLoadDays,
