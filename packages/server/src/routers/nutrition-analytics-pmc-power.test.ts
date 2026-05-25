@@ -75,9 +75,14 @@ import { powerRouter } from "./power.ts";
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
 
-function makeSensorStore(rows: unknown[] = []): SensorStore {
+function makeSensorStore(rows: unknown[] = [], rawActivityCount = rows.length): SensorStore {
   return {
-    query: vi.fn().mockResolvedValue(rows),
+    query: vi.fn().mockImplementation((_schema: unknown, queryText = "") => {
+      if (String(queryText).includes("raw_activity_count")) {
+        return Promise.resolve([{ raw_activity_count: rawActivityCount }]);
+      }
+      return Promise.resolve(rows);
+    }),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -88,6 +93,10 @@ function makeSensorStore(rows: unknown[] = []): SensorStore {
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
   };
+}
+
+function makeRawActivityCountDb(rawActivityCount: number) {
+  return { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
 }
 
 describe("nutritionAnalyticsRouter", () => {
@@ -274,7 +283,7 @@ describe("pmcRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: makeRawActivityCountDb(rows.length),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore(rows),
@@ -306,7 +315,7 @@ describe("pmcRouter", () => {
         });
       }
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: makeRawActivityCountDb(rows.length),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: makeSensorStore(rows),
@@ -367,7 +376,7 @@ describe("powerRouter", () => {
         Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
       );
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
@@ -383,7 +392,7 @@ describe("powerRouter", () => {
 
     it("returns empty points when no data", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
         sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
@@ -394,7 +403,7 @@ describe("powerRouter", () => {
 
     it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
       const caller = createCaller({
-        db: { execute: vi.fn() },
+        db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
       });
@@ -409,24 +418,21 @@ describe("powerRouter", () => {
 
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
-      const execute = vi.fn();
       // First call: Normalized Power samples — 300 samples at 1s with ~260W average
       const normalizedPowerSamples = makePowerSamples(
         "act-1",
         "2024-01-15",
         Array.from({ length: 300 }, () => 260),
       ).map((s) => ({ ...s, activity_name: "Ride" }));
-      execute.mockResolvedValueOnce(normalizedPowerSamples);
       // Second call: power curve samples — 1200 samples for CP model
       const pcSamples = makePowerSamples(
         "act-1",
         "2024-01-15",
         Array.from({ length: 1200 }, (_, i) => 250 + Math.round(50 * Math.sin(i / 100))),
       );
-      execute.mockResolvedValueOnce(pcSamples);
 
       const caller = createCaller({
-        db: { execute },
+        db: makeRawActivityCountDb(1),
         sensorStore: {
           getNormalizedPowerSamples: vi.fn().mockResolvedValue(normalizedPowerSamples),
           getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),

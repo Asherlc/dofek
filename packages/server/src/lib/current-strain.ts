@@ -34,6 +34,7 @@ export async function computeCurrentStrain({
         AND channel = 'heart_rate'
         AND scalar IS NOT NULL
         AND scalar > 0
+        AND is_deleted = 0
         AND toDate(toTimeZone(recorded_at, {timezone:String})) = toDate({endDate:String})
     )
     SELECT

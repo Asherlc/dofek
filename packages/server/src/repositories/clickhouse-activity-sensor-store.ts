@@ -30,6 +30,8 @@ interface ClickHouseActivitySensorClient
   extends ClickHouseQueryClient,
     Pick<ClickHouseCommandClient, "command"> {}
 
+const maxActivityWindowMs = 12 * 60 * 60 * 1000;
+
 export interface ActivitySummaryReadModelRow {
   activity_id: string;
   avg_hr: number | null;
@@ -45,9 +47,15 @@ export interface ActivitySummaryReadModelRow {
   sample_count: number | null;
 }
 
+function maxActivityWindowEndedAt(startedAt: string): string {
+  return new Date(new Date(startedAt).getTime() + maxActivityWindowMs).toISOString();
+}
+
 function queryParams(window: ActivitySensorWindow, extra: Record<string, unknown>) {
   return {
     activityIds: [...new Set([window.activityId, ...window.memberActivityIds])],
+    windowStartedAt: window.startedAt,
+    windowEndedAt: window.endedAt ?? maxActivityWindowEndedAt(window.startedAt),
     userId: window.userId,
     ...extra,
   };
@@ -76,7 +84,9 @@ function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
         scalar
       FROM analytics.deduped_sensor
       WHERE user_id = {userId:UUID}
-        AND activity_id IN {activityIds:Array(UUID)}
+        AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
+        AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
+        AND is_deleted = 0
         AND ${channelPredicate}
     )
   `;
@@ -171,25 +181,28 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       query: `
         WITH activity_samples AS (
           SELECT
-            deduped_samples.activity_id AS activity_id,
+            activity.id AS activity_id,
             deduped_samples.recorded_at AS recorded_at,
             deduped_samples.scalar AS heart_rate,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS activity_date,
             row_number() OVER (
-              PARTITION BY deduped_samples.activity_id
+              PARTITION BY activity.id
               ORDER BY deduped_samples.recorded_at
             ) AS row_number,
             sum(deduped_samples.scalar) OVER (
-              PARTITION BY deduped_samples.activity_id
+              PARTITION BY activity.id
               ORDER BY deduped_samples.recorded_at
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN analytics.v_activity AS activity
-            ON activity.id = deduped_samples.activity_id
+            ON activity.user_id = deduped_samples.user_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'heart_rate'
             AND deduped_samples.scalar > 0
+            AND deduped_samples.is_deleted = 0
+            AND deduped_samples.recorded_at >= activity.started_at
+            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
         ),
@@ -255,25 +268,28 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       query: `
         WITH activity_samples AS (
           SELECT
-            deduped_samples.activity_id AS activity_id,
+            activity.id AS activity_id,
             deduped_samples.recorded_at AS recorded_at,
             deduped_samples.scalar AS speed,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS activity_date,
             row_number() OVER (
-              PARTITION BY deduped_samples.activity_id
+              PARTITION BY activity.id
               ORDER BY deduped_samples.recorded_at
             ) AS row_number,
             sum(deduped_samples.scalar) OVER (
-              PARTITION BY deduped_samples.activity_id
+              PARTITION BY activity.id
               ORDER BY deduped_samples.recorded_at
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN analytics.v_activity AS activity
-            ON activity.id = deduped_samples.activity_id
+            ON activity.user_id = deduped_samples.user_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'speed'
             AND deduped_samples.scalar > 0
+            AND deduped_samples.is_deleted = 0
+            AND deduped_samples.recorded_at >= activity.started_at
+            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
         ),
@@ -379,7 +395,15 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           ON scalar_points.recorded_at = sample_times.recorded_at
         LEFT JOIN location_samples
           ON location_samples.recorded_at = sample_times.recorded_at
-        WHERE row_number % greatest(1, intDiv(total, {maxPoints:UInt32})) = 0
+        WHERE total <= toUInt64({maxPoints:UInt32})
+           OR row_number = 1
+           OR intDiv(
+             (row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1),
+             greatest(total - 1, 1)
+           ) > intDiv(
+             toUInt64(greatest(toInt64(row_number) - 2, 0)) * (toUInt64({maxPoints:UInt32}) - 1),
+             greatest(total - 1, 1)
+           )
         ORDER BY sample_times.recorded_at
       `,
       format: "JSONEachRow",

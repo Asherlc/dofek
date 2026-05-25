@@ -3,7 +3,8 @@
  * and consistent sizing so individual charts only define their ECharts option.
  *
  * Automatically detects background fetching via React Query's useIsFetching():
- * - Empty data + fetch in progress → loading skeleton (not "No data")
+ * - Loading query → loading skeleton
+ * - Empty data after this chart loaded → empty message
  * - Data present + fetch in progress → subtle refresh spinner overlay
  *
  * Usage:
@@ -48,10 +49,6 @@ export function DofekChart({
   }
 
   if (empty) {
-    // Data is empty but a refetch is running — show skeleton, not "No data"
-    if (fetchingCount > 0) {
-      return <ChartLoadingSkeleton height={height} />;
-    }
     return (
       <div className="flex items-center justify-center" style={{ height }}>
         <span className="text-dim text-sm">{emptyMessage}</span>

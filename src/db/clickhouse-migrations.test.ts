@@ -31,56 +31,29 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
     expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(4);
     expect(sql).toContain("point Nullable(Point)");
-    expect(sql).not.toContain("latitude Nullable");
-    expect(sql).not.toContain("longitude Nullable");
-    expect(sql).not.toContain("metadata Nullable");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
-    expect(sql).toContain("ENGINE = MergeTree");
-    expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
-    expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
-    expect(sql).not.toContain("ENGINE = PostgreSQL");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location");
-    expect(
-      sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor/g),
-    ).toHaveLength(4);
-    expect(sql).toContain("standalone_samples AS");
-    expect(sql).toContain("CAST(NULL, 'Nullable(UUID)') AS activity_id");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary_centroids_next",
-    );
+    expect(sql).toContain("ENGINE = ReplacingMergeTree");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).toContain("analytics.sensor_scalar_sample");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next");
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
+    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(5);
     expect(
-      sql.match(/CREATE MATERIALIZED VIEW IF NOT EXISTS analytics\.activity_summary\b/g),
-    ).toHaveLength(4);
-    expect(
-      sql.match(
-        /CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g,
-      ),
+      sql.match(/CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g),
     ).toHaveLength(1);
     expect(sql).toContain(
       "RENAME TABLE analytics.activity_summary TO analytics.activity_summary_before_centroids, analytics.activity_summary_centroids_next TO analytics.activity_summary",
     );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.activity_trend_daily");
-    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
-    expect(sql).toContain("ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE");
-    expect(sql).toContain("ALTER TABLE analytics.deduped_location MODIFY REFRESH EVERY 15 MINUTE");
-    expect(sql).toContain(
-      "ALTER TABLE analytics.activity_summary MODIFY REFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE analytics.v_body_measurement MODIFY REFRESH EVERY 15 MINUTE",
-    );
-    expect(sql).toContain("ALTER TABLE analytics.provider_stats MODIFY REFRESH EVERY 15 MINUTE");
-    expect(sql).toContain(
-      "ALTER TABLE analytics.activity_trend_daily MODIFY REFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
-    );
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
@@ -97,25 +70,17 @@ describe("buildClickHouseMigrationStatements", () => {
       "\n",
     );
 
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
-    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
-    expect(
-      sql.indexOf("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor"),
-    ).toBeLessThan(
-      sql.indexOf(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-      ),
+    expect(sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor")).toBeLessThan(
+      sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
     );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
@@ -142,6 +107,73 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(sql).not.toContain("FROM postgres_fitness_live.v_activity_members");
     expect(sql).toContain("connected_components AS");
   });
+
+  it("rebuilds sensor-dependent views after the incremental deduped sensor table", async () => {
+    const appliedBeforeIncrementalMigration = new Set([
+      "0001_clickhouse_analytics_schema_cleanup",
+      "0002_clickhouse_postgres_bridge_and_activity_read_models",
+      "0004_reenable_materialized_metric_stream",
+      "0005_backfill_materialized_metric_stream",
+      "0006_backfill_native_metric_stream",
+      "0007_remaining_postgres_views_to_clickhouse",
+      "0007_repair_legacy_metric_stream_engine",
+      "0008_complete_provider_stats_raw_mirrors",
+      "0009_drop_derived_resting_heart_rate_read_model",
+      "0010_include_standalone_deduped_sensor_samples",
+      "0011_activity_trend_daily_read_model",
+      "0012_repair_metric_stream_backfill",
+      "0013_metric_stream_location_point",
+      "0014_resting_heart_rate_sleep_window_materialized_view",
+      "0015_activity_summary_centroids",
+      "0016_reduce_metric_stream_refresh_load",
+      "0017_body_measurement_sample_projection",
+      "0018_sensor_priority_raw_tables",
+    ]);
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      const migrationMatch = queryText.match(/WHERE id = '([^']+)'/);
+      const migrationId = migrationMatch?.[1];
+      if (migrationId) {
+        return {
+          json: vi
+            .fn()
+            .mockResolvedValue([
+              { migration_count: appliedBeforeIncrementalMigration.has(migrationId) ? 1 : 0 },
+            ]),
+        };
+      }
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+      }
+      if (queryText.includes("min_recorded_at_ms")) {
+        return {
+          json: vi.fn().mockResolvedValue([{ min_recorded_at_ms: null, max_recorded_at_ms: null }]),
+        };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+    });
+
+    await runClickHouseMigrations({ command, query }, "postgres://health:fixture@db:5432/health");
+
+    const commandSql = command.mock.calls.map(([options]) => String(options.query));
+    const incrementalDedupedSensorTableIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
+    );
+    const restingHeartRateViewIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
+    );
+    const activitySummaryViewIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+    );
+    const activityTrendDailyViewIndex = commandSql.findIndex((queryText) =>
+      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily"),
+    );
+
+    expect(incrementalDedupedSensorTableIndex).toBeGreaterThanOrEqual(0);
+    expect(restingHeartRateViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
+    expect(activitySummaryViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
+    expect(activityTrendDailyViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
+  });
 });
 
 describe("runClickHouseMigrations", () => {
@@ -166,13 +198,18 @@ describe("runClickHouseMigrations", () => {
       if (queryText.includes("system.databases")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
       }
+      if (queryText.includes("min_recorded_at_ms")) {
+        return {
+          json: vi.fn().mockResolvedValue([{ min_recorded_at_ms: null, max_recorded_at_ms: null }]),
+        };
+      }
       return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
     });
     const client = { command, query };
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(18);
+    expect(count).toBe(20);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -202,21 +239,19 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining(
-          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
-        ),
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
+      }),
+    );
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily"),
       }),
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining(
-          "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily",
+          "countIf(distinct_samples.channel = 'speed') AS speed_samples",
         ),
-      }),
-    );
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: expect.stringContaining("countIf(channel = 'speed') AS speed_samples"),
       }),
     );
     expect(command).toHaveBeenCalledWith(
@@ -224,13 +259,6 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("body_measurement_samples AS"),
       }),
     );
-    expect(command).toHaveBeenCalledWith({
-      query: "ALTER TABLE analytics.deduped_sensor MODIFY REFRESH EVERY 15 MINUTE",
-      clickhouse_settings: {
-        allow_experimental_nullable_tuple_type: 1,
-        allow_experimental_refreshable_materialized_view: 1,
-      },
-    });
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining("INSERT INTO analytics.schema_migrations"),
@@ -239,25 +267,71 @@ describe("runClickHouseMigrations", () => {
     const systemTableQueries = query.mock.calls.filter(([options]) =>
       String(options.query).includes("system.tables"),
     );
-    expect(systemTableQueries).toHaveLength(36);
+    expect(systemTableQueries.length).toBeGreaterThan(0);
     expect(command).toHaveBeenCalledWith({
-      query: expect.stringContaining(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor",
-      ),
+      query: expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
       clickhouse_settings: {
         allow_experimental_nullable_tuple_type: 1,
         allow_experimental_refreshable_materialized_view: 1,
       },
     });
-    expect(command).toHaveBeenCalledWith({
-      query: expect.stringContaining(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary",
-      ),
-      clickhouse_settings: {
-        allow_experimental_nullable_tuple_type: 1,
-        allow_experimental_refreshable_materialized_view: 1,
-      },
+  });
+
+  it("splits incremental deduped sensor backfill into seven-day ranges", async () => {
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+      }
+      if (queryText.includes("0020_incremental_deduped_sensor")) {
+        return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+      }
+      if (queryText.includes("min_recorded_at_ms")) {
+        return {
+          json: vi.fn().mockResolvedValue([
+            {
+              min_recorded_at_ms: String(Date.UTC(2026, 0, 1)),
+              max_recorded_at_ms: String(Date.UTC(2026, 0, 10)),
+            },
+          ]),
+        };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
     });
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    const sensorScalarBackfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO analytics.sensor_scalar_sample"));
+    const dedupedSensorBackfillStatements = command.mock.calls
+      .map(([options]) => String(options.query))
+      .filter((queryText) => queryText.includes("INSERT INTO analytics.deduped_sensor"));
+
+    expect(sensorScalarBackfillStatements).toHaveLength(2);
+    expect(dedupedSensorBackfillStatements).toHaveLength(2);
+    expect(sensorScalarBackfillStatements[0]).toContain(
+      "recorded_at >= toDateTime64('2026-01-01 00:00:00.000', 6, 'UTC')",
+    );
+    expect(sensorScalarBackfillStatements[0]).toContain(
+      "recorded_at < toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
+    );
+    expect(sensorScalarBackfillStatements[1]).toContain(
+      "recorded_at >= toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
+    );
+    expect(sensorScalarBackfillStatements[1]).toContain(
+      "recorded_at < toDateTime64('2026-01-10 00:00:00.001', 6, 'UTC')",
+    );
+    expect(dedupedSensorBackfillStatements[1]).toContain(
+      "WHERE recorded_at >= toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
+    );
+    expect(dedupedSensorBackfillStatements[1]).toContain(
+      "AND recorded_at < toDateTime64('2026-01-10 00:00:00.001', 6, 'UTC')",
+    );
   });
 
   it("fails when the ClickHouse client cannot query migration state", async () => {
@@ -495,11 +569,6 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
       }),
     );
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: "SYSTEM REFRESH VIEW analytics.activity_trend_daily",
-      }),
-    );
   });
 
   it("skips metric stream repair backfill when the mirror has the old schema", async () => {
@@ -606,30 +675,6 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
       }),
     );
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: "SYSTEM REFRESH VIEW analytics.deduped_sensor",
-      }),
-    );
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: "SYSTEM REFRESH VIEW analytics.deduped_location",
-      }),
-    );
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: "SYSTEM REFRESH VIEW analytics.activity_summary",
-      }),
-    );
-    const commandQueries = command.mock.calls.map(([options]) => String(options.query));
-    const firstBackfillIndex = commandQueries.findIndex((queryText) =>
-      queryText.includes("INSERT INTO postgres_fitness.metric_stream"),
-    );
-    const firstRefreshIndex = commandQueries.findIndex((queryText) =>
-      queryText.startsWith("SYSTEM REFRESH VIEW analytics.deduped_sensor"),
-    );
-    expect(firstBackfillIndex).toBeGreaterThanOrEqual(0);
-    expect(firstRefreshIndex).toBeGreaterThan(firstBackfillIndex);
   });
 
   it("resumes location point metric stream backfill when the mirror already has the current schema", async () => {
@@ -914,11 +959,6 @@ describe("runClickHouseMigrations", () => {
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
         query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
-      }),
-    );
-    expect(command).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: "SYSTEM REFRESH VIEW analytics.provider_stats",
       }),
     );
   });

@@ -5,6 +5,8 @@ import { logger } from "../logger.ts";
 import type { RefitSensorStore } from "../personalization/refit.ts";
 import type { PostSyncJobData } from "./queues.ts";
 
+const maxSensorDirtyKeyBatches = 1000;
+
 /** Minimal Job interface — only the subset processPostSyncJob actually uses. */
 export interface PostSyncJob {
   data: PostSyncJobData;
@@ -20,7 +22,29 @@ export async function processPostSyncJob(
   db: SyncDatabase,
   getSensorStore: () => RefitSensorStore,
   refreshBodyMeasurements: () => Promise<void>,
+  processSensorDirtyKeys: () => Promise<number>,
 ) {
+  try {
+    let processedDirtyKeys = 0;
+    for (let batchIndex = 0; batchIndex < maxSensorDirtyKeyBatches; batchIndex++) {
+      const processedBatchDirtyKeys = await processSensorDirtyKeys();
+      processedDirtyKeys += processedBatchDirtyKeys;
+      if (processedBatchDirtyKeys === 0) {
+        logger.info(`[post-sync] Processed ${processedDirtyKeys} ClickHouse sensor dirty keys.`);
+        break;
+      }
+      if (batchIndex === maxSensorDirtyKeyBatches - 1) {
+        throw new Error(
+          `ClickHouse sensor dirty-key backlog did not drain after ${maxSensorDirtyKeyBatches} batches`,
+        );
+      }
+    }
+  } catch (err) {
+    logger.error(`[post-sync] Failed to process ClickHouse sensor dirty keys: ${err}`);
+    Sentry.captureException(err, { tags: { postSyncStep: "processSensorDirtyKeys" } });
+    throw err;
+  }
+
   if (job.data.type === "global-maintenance") {
     logger.info("[post-sync] Running global post-sync maintenance");
 

@@ -122,3 +122,24 @@ WITH (
   publication_name = 'peerdb_metric_stream_publication',
   soft_delete = true
 );
+
+CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics
+FROM dofek_postgres TO dofek_clickhouse_postgres_fitness
+WITH TABLE MAPPING
+(
+  {
+    from: fitness.sensor_provider_priority,
+    to: sensor_provider_priority
+  },
+  {
+    from: fitness.sensor_device_priority,
+    to: sensor_device_priority
+  }
+)
+WITH (
+  do_initial_copy = {{SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY}},
+  max_batch_size = 1000000,
+  sync_interval = 60,
+  publication_name = 'peerdb_metric_stream_publication',
+  soft_delete = true
+);

@@ -71,9 +71,11 @@ The `sensor_sample` table uses a "medium layout" — one row per (timestamp, cha
 
 **Why this layout?** Different sensors sample at different rates (GPS at 1Hz, IMU at 50Hz, HR from BLE at variable rates). The medium layout handles any sample rate without schema changes. New sensor types just add a new channel name — no migrations needed.
 
-**Dedup strategy:** When the same metric (e.g., heart_rate) comes from multiple sources (WHOOP API at 1Hz, WHOOP BLE at 50Hz), per (activity_id, channel), the provider with the most samples wins. The most granular source is automatically preferred without any knowledge of source types.
-
-**Ambient fallback heads up:** `analytics.deduped_sensor` uses ambient rows (`activity_id IS NULL`) as a fallback per (activity, channel) only when that activity has zero linked rows for the channel. The fallback window is bounded to `[activity.started_at, COALESCE(activity.ended_at, last_linked_sample_at)]`, where `last_linked_sample_at` is the latest linked sample timestamp for the canonical activity. Ambient rows outside this window are ignored.
+**Dedup strategy:** `analytics.deduped_sensor` is activity-agnostic. For each
+`(user_id, channel, recorded_at)` key, the best scalar sample wins according to
+the mirrored `fitness.sensor_provider_priority` and
+`fitness.sensor_device_priority` tables, with deterministic tie-breakers.
+Activity readers apply activity time windows when they query the table.
 
 **Source type:** The `source_type` column ('ble', 'file', 'api') is informational — for debugging and auditing. It is NOT used for dedup priority.
 
@@ -122,7 +124,7 @@ tables through ClickHouse replication.
 
 | Table | Purpose |
 |-------|---------|
-| `analytics.deduped_sensor` | Stored per-activity sensor sample selection for stream and zone reads. |
+| `analytics.deduped_sensor` | Activity-agnostic best scalar sensor sample per user, channel, and timestamp for stream and zone reads. |
 | `analytics.activity_summary` | Pre-computed per-activity aggregates (avg/max HR, power, GPS distance, elevation) from deduped sensor samples. |
 | `analytics.activity_trend_daily` | Daily activity trend rollup from deduped sensor samples; weekly trend endpoints roll this up at query time. |
 | `analytics.activity_training_summary` | Per-activity training summary and histograms used by app analytics. |

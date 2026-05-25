@@ -70,6 +70,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ../../deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
       - ../../deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ../../deploy/clickhouse/config.d/memory-limits.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     restart: unless-stopped
     healthcheck:
       test:

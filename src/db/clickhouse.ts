@@ -5,6 +5,7 @@ export interface ClickHouseCommandClient {
   command(options: {
     query: string;
     clickhouse_settings?: Record<string, string | number | boolean>;
+    query_params?: Record<string, unknown>;
   }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;
@@ -28,6 +29,10 @@ interface ClickHouseClientOptions {
 
 interface TableCountRow {
   table_count: number | string;
+}
+
+interface ColumnCountRow {
+  column_count: number | string;
 }
 
 const CLICKHOUSE_TABLE_WAIT_ATTEMPTS = 180;
@@ -118,11 +123,22 @@ async function smokeTestClickHouseTable(
   if (!client.query) {
     throw new Error("ClickHouse smoke verification requires a query-capable client");
   }
-  const result = await client.query({
-    query: `SELECT count() AS smoke_count FROM ${tableName} LIMIT 1`,
+  const [database, table] = tableName.split(".", 2);
+  if (!database || !table) {
+    throw new Error(
+      `ClickHouse smoke verification requires database-qualified table: ${tableName}`,
+    );
+  }
+  const result = await client.query<ColumnCountRow>({
+    query: `SELECT count() AS column_count FROM system.columns WHERE database = ${clickHouseStringLiteral(
+      database,
+    )} AND table = ${clickHouseStringLiteral(table)}`,
     format: "JSONEachRow",
   });
-  await result.json();
+  const rows = await result.json();
+  if (Number(rows[0]?.column_count ?? 0) === 0) {
+    throw new Error(`ClickHouse object ${tableName} has no visible columns`);
+  }
 }
 
 export async function waitForClickHouseTable(
@@ -165,5 +181,8 @@ export async function waitForClickHouseTable(
 }
 
 function isTransientClickHouseStartupError(error: unknown): error is Error {
-  return error instanceof Error && error.message.includes("ECONNREFUSED");
+  return (
+    error instanceof Error &&
+    (error.message.includes("ECONNREFUSED") || error.message === "Timeout error.")
+  );
 }

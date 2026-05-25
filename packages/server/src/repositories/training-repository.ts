@@ -11,6 +11,7 @@ import {
   heartRateZoneSqlParams,
   heartRateZoneSumColumns,
 } from "./heart-rate-zone-sql.ts";
+import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
@@ -89,13 +90,23 @@ export class TrainingRepository extends BaseRepository {
         ? ""
         : `AND started_at >= toDateTime({accessStart:String})
           AND started_at < toDateTime({accessEnd:String})`;
-    const accessWindowParams =
+    const accessWindowParams: Record<string, string> =
       this.accessWindow.kind === "full"
         ? {}
         : {
             accessStart: this.accessWindow.startDate,
             accessEnd: this.accessWindow.endDateExclusive,
           };
+
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      undefined,
+      true,
+      this.accessWindow,
+    );
+    if (rawActivityCount === 0) {
+      return [];
+    }
 
     return this.#sensorStore.query(
       weeklyVolumeRowSchema,
@@ -104,7 +115,7 @@ export class TrainingRepository extends BaseRepository {
         activity_type,
         toInt32(count()) AS count,
         round(sum(dateDiff('second', started_at, ended_at)) / 3600, 2) AS hours
-      FROM analytics.v_activity
+      FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         AND started_at > now() - INTERVAL {days:Int32} DAY
         AND ended_at IS NOT NULL
@@ -122,6 +133,11 @@ export class TrainingRepository extends BaseRepository {
 
   /** HR zone distribution per week using the canonical Karvonen model. */
   async getHrZones(days: number): Promise<{ maxHr: number | null; weeks: HrZoneRow[] }> {
+    const rawActivityCount = await this.#loadRawActivityCount(days, ENDURANCE_TYPES, true);
+    if (rawActivityCount === 0) {
+      return { maxHr: null, weeks: [] };
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
       hrZoneRowSchema,
@@ -129,16 +145,18 @@ export class TrainingRepository extends BaseRepository {
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       ),
@@ -148,8 +166,13 @@ export class TrainingRepository extends BaseRepository {
           am.max_hr AS max_hr,
           ${heartRateZoneCountColumns("ds.scalar", activityMetaHeartRateExpressions)}
         FROM analytics.deduped_sensor ds
-        INNER JOIN activity_meta am ON am.id = ds.activity_id
-        WHERE ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL
+        INNER JOIN activity_meta am
+          ON ds.user_id = am.user_id
+         AND ds.recorded_at >= am.started_at
+         AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+        WHERE ds.channel = 'heart_rate'
+          AND ds.scalar IS NOT NULL
+          AND ds.is_deleted = 0
         GROUP BY am.activity_date, am.max_hr
       )
       SELECT
@@ -177,38 +200,63 @@ export class TrainingRepository extends BaseRepository {
 
   /** Per-activity summary with HR and power stats. */
   async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
+    const rawActivityCount = await this.#loadRawActivityCount(days);
+    if (rawActivityCount === 0) {
+      return [];
+    }
+
     return this.#sensorStore.query(
       activityStatsRowSchema,
       `WITH sample_counts AS (
         SELECT
-          activity_id,
-          countIf(channel = 'heart_rate') AS hr_samples,
-          countIf(channel = 'power') AS power_samples
-        FROM analytics.deduped_sensor
-        WHERE user_id = {userId:UUID}
-        GROUP BY activity_id
+          a.activity_id AS activity_id,
+          countIf(samples.channel = 'heart_rate') AS hr_samples,
+          countIf(samples.channel = 'power') AS power_samples
+        FROM analytics.deduped_sensor AS samples
+        INNER JOIN analytics.activity_summary AS a
+          ON a.user_id = samples.user_id
+         AND samples.recorded_at >= a.started_at
+         AND samples.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
+        WHERE samples.user_id = {userId:UUID}
+          AND samples.channel IN ('heart_rate', 'power')
+          AND samples.is_deleted = 0
+        GROUP BY a.activity_id
       )
       SELECT
-        toString(a.id) AS id,
+        toString(a.activity_id) AS id,
         a.activity_type AS activity_type,
         a.name AS name,
         formatDateTime(a.started_at, '%Y-%m-%dT%H:%i:%SZ') AS started_at,
         formatDateTime(a.ended_at, '%Y-%m-%dT%H:%i:%SZ') AS ended_at,
-        round(asum.avg_hr, 1) AS avg_hr,
-        asum.max_hr AS max_hr,
-        round(asum.avg_power, 1) AS avg_power,
-        asum.max_power AS max_power,
-        round(asum.avg_cadence, 1) AS avg_cadence,
+        round(a.avg_hr, 1) AS avg_hr,
+        a.max_hr AS max_hr,
+        round(a.avg_power, 1) AS avg_power,
+        a.max_power AS max_power,
+        round(a.avg_cadence, 1) AS avg_cadence,
         coalesce(sc.hr_samples, 0) AS hr_samples,
         coalesce(sc.power_samples, 0) AS power_samples,
-        asum.total_distance AS distance_meters
-      FROM analytics.v_activity a
-      LEFT JOIN analytics.activity_summary asum ON asum.activity_id = a.id
-      LEFT JOIN sample_counts sc ON sc.activity_id = a.id
+        a.total_distance AS distance_meters
+      FROM analytics.activity_summary a
+      LEFT JOIN sample_counts sc ON sc.activity_id = a.activity_id
       WHERE a.user_id = {userId:UUID}
         AND a.started_at > now() - INTERVAL {days:Int32} DAY
       ORDER BY a.started_at DESC`,
       { userId: this.userId, days },
     );
+  }
+
+  async #loadRawActivityCount(
+    days: number,
+    activityTypes?: string[],
+    requireEndedAt = false,
+    accessWindow?: AccessWindow,
+  ): Promise<number> {
+    return countRawActivities(this.db, {
+      userId: this.userId,
+      days,
+      activityTypes,
+      requireEndedAt,
+      accessWindow,
+    });
   }
 }

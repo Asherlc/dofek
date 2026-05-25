@@ -1,9 +1,5 @@
 export function buildRestingHeartRateSleepWindowMaterializedViewSql(): string {
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
-REFRESH EVERY 1 DAY OFFSET 4 HOUR
-ENGINE = MergeTree
-ORDER BY (user_id, ended_at, sleep_id)
-SETTINGS allow_nullable_key = 1
+  return `CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
 AS
 WITH sleep_windows AS (
   SELECT
@@ -27,11 +23,23 @@ heart_rate_samples AS (
   FROM sleep_windows
   INNER JOIN analytics.deduped_sensor AS samples
     ON samples.user_id = sleep_windows.user_id
+  LEFT JOIN (
+    SELECT
+      toNullable(id) AS activity_id,
+      user_id,
+      started_at,
+      ended_at
+    FROM analytics.v_activity
+  ) AS activity
+    ON activity.user_id = samples.user_id
+   AND samples.recorded_at >= activity.started_at
+   AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
   WHERE samples.channel = 'heart_rate'
     AND samples.recorded_at >= sleep_windows.started_at
     AND samples.recorded_at <= sleep_windows.ended_at
-    AND samples.activity_id IS NULL
+    AND samples.is_deleted = 0
     AND samples.scalar IS NOT NULL
+    AND activity.activity_id IS NULL
 )
 SELECT
   sleep_id,
@@ -55,7 +63,5 @@ export function buildRestingHeartRateSleepWindowMaterializedViewStatements(): st
     "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
     "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
     buildRestingHeartRateSleepWindowMaterializedViewSql(),
-    "SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window",
-    "SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window",
   ];
 }

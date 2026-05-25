@@ -2,6 +2,7 @@ import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { computePolarizationIndex, HEART_RATE_ZONES, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -110,9 +111,14 @@ const polarizationRowSchema = z.object({
 const aerobicEfficiencyDiagnosticSchema = z.object({
   max_hr: z.coerce.number().nullable(),
   endurance_activities: z.coerce.number(),
+});
+
+const aerobicEfficiencySampleDiagnosticSchema = z.object({
   activities_with_power: z.coerce.number(),
   activities_with_hr: z.coerce.number(),
 });
+
+type AerobicEfficiencyDiagnostic = z.infer<typeof aerobicEfficiencyDiagnosticSchema>;
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -140,25 +146,39 @@ export class EfficiencyRepository extends BaseRepository {
    */
   async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
     const today = new Date().toISOString().slice(0, 10);
+    const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(days);
+
+    if (activityDiagnostic?.endurance_activities === 0) {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+        activities_with_power: 0,
+        activities_with_hr: 0,
+      });
+      return {
+        maxHr: activityDiagnostic.max_hr,
+        activities: [],
+      };
+    }
+
     const rows = await this.#sensorStore.query(
       efficiencyRowSchema,
       `WITH ${restingHeartRateClickHouseCte()},
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
           asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-          a.activity_type AS activity_type,
-          a.name AS name,
+          asum.activity_type AS activity_type,
+          asum.name AS name,
           up.max_hr AS max_hr,
           coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       )
@@ -173,11 +193,16 @@ export class EfficiencyRepository extends BaseRepository {
         toInt32(count()) AS z2_samples
       FROM activity_meta am
       INNER JOIN analytics.deduped_sensor hr
-        ON hr.activity_id = am.id AND hr.channel = 'heart_rate'
+        ON hr.user_id = am.user_id
+       AND hr.recorded_at >= am.started_at
+       AND hr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+       AND hr.channel = 'heart_rate'
+       AND hr.is_deleted = 0
       INNER JOIN analytics.deduped_sensor pwr
-        ON pwr.activity_id = am.id
+        ON pwr.user_id = hr.user_id
        AND pwr.channel = 'power'
        AND pwr.recorded_at = hr.recorded_at
+       AND pwr.is_deleted = 0
       WHERE hr.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * {b1:Float64}
         AND hr.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * {b2:Float64}
         AND pwr.scalar > 0
@@ -198,7 +223,10 @@ export class EfficiencyRepository extends BaseRepository {
 
     let emptyResultMaxHr: number | null = null;
     if (rows.length === 0) {
-      emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(days).catch((error) => {
+      emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(
+        days,
+        activityDiagnostic,
+      ).catch((error) => {
         Sentry.captureException(error);
         return null;
       });
@@ -222,24 +250,82 @@ export class EfficiencyRepository extends BaseRepository {
   }
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
-  async #loadAerobicEfficiencyDiagnostics(days: number): Promise<number | null> {
-    const rows = await this.#sensorStore.query(
+  async #loadAerobicEfficiencyActivityDiagnostics(
+    days: number,
+  ): Promise<AerobicEfficiencyDiagnostic | null> {
+    const rows = await this.query(
       aerobicEfficiencyDiagnosticSchema,
+      sql`WITH endurance_activities AS (
+            SELECT id
+            FROM fitness.activity
+            WHERE user_id = ${this.userId}::uuid
+              AND activity_type IN (${sql.join(
+                ENDURANCE_TYPES.map((activityType) => sql`${activityType}`),
+                sql`, `,
+              )})
+              AND started_at > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'
+          )
+          SELECT
+            (SELECT max_hr FROM fitness.user_profile WHERE id = ${this.userId}::uuid) AS max_hr,
+            count(*)::int AS endurance_activities
+          FROM endurance_activities`,
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /** Log a brief diagnostic when aerobic efficiency returns no results. */
+  async #loadAerobicEfficiencyDiagnostics(
+    days: number,
+    knownActivityDiagnostic: AerobicEfficiencyDiagnostic | null,
+  ): Promise<number | null> {
+    const activityDiagnostic =
+      knownActivityDiagnostic ?? (await this.#loadAerobicEfficiencyActivityDiagnostics(days));
+    if (!activityDiagnostic) {
+      return null;
+    }
+
+    if (activityDiagnostic.endurance_activities === 0) {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+        activities_with_power: 0,
+        activities_with_hr: 0,
+      });
+      return activityDiagnostic.max_hr;
+    }
+
+    const sampleRows = await this.#sensorStore.query(
+      aerobicEfficiencySampleDiagnosticSchema,
       `WITH endurance_activities AS (
-        SELECT asum.activity_id AS id
+        SELECT
+          asum.activity_id AS id,
+          asum.user_id AS user_id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+      ),
+      sensor_samples_by_activity AS (
+        SELECT
+          ea.id AS activity_id,
+          countIf(ds.channel = 'power' AND ds.scalar > 0) AS power_samples,
+          countIf(ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL) AS heart_rate_samples
+        FROM endurance_activities ea
+        INNER JOIN analytics.deduped_sensor ds
+          ON ds.user_id = ea.user_id
+        WHERE ds.recorded_at >= ea.started_at
+          AND ds.recorded_at <= coalesce(ea.ended_at, ea.started_at + INTERVAL 12 HOUR)
+          AND ds.channel IN ('heart_rate', 'power')
+          AND ds.is_deleted = 0
+        GROUP BY ea.id
       )
       SELECT
-        (SELECT max_hr FROM postgres_fitness.user_profile_current WHERE id = {userId:UUID}) AS max_hr,
-        toInt32(count(DISTINCT id)) AS endurance_activities,
-        toInt32(count(DISTINCT if(ds.channel = 'power' AND ds.scalar > 0, ds.activity_id, NULL))) AS activities_with_power,
-        toInt32(count(DISTINCT if(ds.channel = 'heart_rate' AND ds.scalar IS NOT NULL, ds.activity_id, NULL))) AS activities_with_hr
+        toInt32(countIf(sensor_samples.power_samples > 0)) AS activities_with_power,
+        toInt32(countIf(sensor_samples.heart_rate_samples > 0)) AS activities_with_hr
       FROM endurance_activities ea
-      LEFT JOIN analytics.deduped_sensor ds ON ds.activity_id = ea.id`,
+      LEFT JOIN sensor_samples_by_activity sensor_samples
+        ON sensor_samples.activity_id = ea.id`,
       {
         userId: this.userId,
         days,
@@ -247,16 +333,23 @@ export class EfficiencyRepository extends BaseRepository {
       },
     );
 
-    const diag = rows[0];
-    if (diag) {
-      logger.warn(
-        `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
-          `max_hr=${diag.max_hr}, endurance_activities=${diag.endurance_activities}, ` +
-          `with_power=${diag.activities_with_power}, with_hr=${diag.activities_with_hr}`,
-      );
-      return diag.max_hr;
-    }
-    return null;
+    const sampleDiagnostic = sampleRows[0] ?? { activities_with_power: 0, activities_with_hr: 0 };
+    this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, sampleDiagnostic);
+    return activityDiagnostic.max_hr;
+  }
+
+  #logAerobicEfficiencyEmptyDiagnostic(
+    activityDiagnostic: AerobicEfficiencyDiagnostic,
+    days: number,
+    sampleDiagnostic: z.infer<typeof aerobicEfficiencySampleDiagnosticSchema>,
+  ): void {
+    logger.warn(
+      `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
+        `max_hr=${activityDiagnostic.max_hr}, ` +
+        `endurance_activities=${activityDiagnostic.endurance_activities}, ` +
+        `with_power=${sampleDiagnostic.activities_with_power}, ` +
+        `with_hr=${sampleDiagnostic.activities_with_hr}`,
+    );
   }
 
   /**
@@ -270,29 +363,37 @@ export class EfficiencyRepository extends BaseRepository {
       `WITH activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
           asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
-          a.activity_type AS activity_type,
-          a.name AS name
+          asum.activity_type AS activity_type,
+          asum.name AS name
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
       ),
       activity_halves AS (
         SELECT
-          pwr.activity_id AS activity_id,
+          am.id AS activity_id,
           pwr.scalar AS power,
           hr.scalar AS heart_rate,
-          ntile(2) OVER (PARTITION BY pwr.activity_id ORDER BY pwr.recorded_at) AS half
+          ntile(2) OVER (PARTITION BY am.id ORDER BY pwr.recorded_at) AS half
         FROM analytics.deduped_sensor pwr
+        INNER JOIN activity_meta am
+          ON pwr.user_id = am.user_id
+         AND pwr.recorded_at >= am.started_at
+         AND pwr.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
         INNER JOIN analytics.deduped_sensor hr
-          ON hr.activity_id = pwr.activity_id
+          ON hr.user_id = pwr.user_id
          AND hr.recorded_at = pwr.recorded_at
          AND hr.channel = 'heart_rate'
-        INNER JOIN activity_meta am ON am.id = pwr.activity_id
-        WHERE pwr.channel = 'power' AND pwr.scalar > 0 AND hr.scalar > 0
+         AND hr.is_deleted = 0
+        WHERE pwr.channel = 'power'
+          AND pwr.scalar > 0
+          AND pwr.is_deleted = 0
+          AND hr.scalar > 0
       ),
       half_ratios AS (
         SELECT
@@ -349,13 +450,15 @@ export class EfficiencyRepository extends BaseRepository {
       `WITH activity_meta AS (
         SELECT
           asum.activity_id AS id,
+          asum.user_id AS user_id,
+          asum.started_at AS started_at,
+          asum.ended_at AS ended_at,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
           up.max_hr AS max_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity a ON a.id = asum.activity_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
+          AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       )
@@ -367,8 +470,12 @@ export class EfficiencyRepository extends BaseRepository {
                        AND ds.scalar < am.max_hr * {p2:Float64})) AS z2_seconds,
         toInt32(countIf(ds.scalar >= am.max_hr * {p2:Float64})) AS z3_seconds
       FROM analytics.deduped_sensor ds
-      INNER JOIN activity_meta am ON am.id = ds.activity_id
+      INNER JOIN activity_meta am
+        ON ds.user_id = am.user_id
+       AND ds.recorded_at >= am.started_at
+       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
       WHERE ds.channel = 'heart_rate'
+        AND ds.is_deleted = 0
       GROUP BY am.max_hr, toMonday(am.activity_date)
       ORDER BY week`,
       {

@@ -275,10 +275,15 @@ jobs:
         run: |
           df -h /
           docker system df || true
-          docker system prune --all --force
+          minimum_kb=$((8 * 1024 * 1024))
+          available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
+          if [ "$available_kb" -lt "$minimum_kb" ]; then
+            docker system prune --all --force
+          else
+            echo "Root filesystem already has at least 8 GiB free; skipping Docker prune."
+          fi
           df -h /
           available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-          minimum_kb=$((8 * 1024 * 1024))
           if [ "$available_kb" -lt "$minimum_kb" ]; then
             echo "::error::Root filesystem has less than 8 GiB free after Docker cleanup; aborting before image pulls."
             exit 1
@@ -292,6 +297,14 @@ jobs:
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
 
+          server_host="${DOCKER_HOST#ssh://root@}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "root@${server_host}" 'bash -se' <<'REMOTE'
+          set -euo pipefail
           pull_if_missing() {
             image="$1"
             if docker image inspect "$image" >/dev/null 2>&1; then
@@ -300,7 +313,6 @@ jobs:
             fi
             docker pull "$image"
           }
-
           pull_if_missing "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"
           pull_if_missing "postgres:18-alpine"
           pull_if_missing "ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19"
@@ -312,40 +324,86 @@ jobs:
           pull_if_missing "temporalio/admin-tools:1.29"
           pull_if_missing "minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
           pull_if_missing "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
+          REMOTE
 
       - name: Validate host bind mount paths
         run: |
-          docker run --rm \
-            --mount type=bind,source=/mnt/dofek-data,target=/mnt/dofek-data,readonly \
-            postgres:18-alpine sh -euc '
-              for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
-                if [ ! -d "$path" ]; then
-                  echo "::error::Required host bind mount path is missing: $path"
-                  exit 1
-                fi
-              done
-            '
+          server_host="${DOCKER_HOST#ssh://root@}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
 
-      - name: Bootstrap stack (if data services are missing)
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "root@${server_host}" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+            if [ ! -d "$path" ]; then
+              echo "::error::Required host bind mount path is missing: $path"
+              exit 1
+            fi
+          done
+          REMOTE
+
+      - name: Apply stack config before migrations
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          DEPLOY_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          db_running=false
-          clickhouse_running=false
-          if docker service inspect "${STACK_NAME}_db" >/dev/null 2>&1 && \
-            docker service ps "${STACK_NAME}_db" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
-            db_running=true
-          fi
-          if docker service inspect "${STACK_NAME}_clickhouse" >/dev/null 2>&1 && \
-            docker service ps "${STACK_NAME}_clickhouse" --filter desired-state=running --format '{{.CurrentState}}' | grep -q '^Running'; then
-            clickhouse_running=true
+          pre_migration_image_tag="$DEPLOY_IMAGE_TAG"
+          service_inspect_error="$RUNNER_TEMP/${STACK_NAME}_web.inspect.err"
+          set +e
+          current_web_image="$(
+            docker service inspect "${STACK_NAME}_web" \
+              --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' \
+              2>"$service_inspect_error"
+          )"
+          inspect_status=$?
+          set -e
+          if [ "$inspect_status" -eq 0 ]; then
+            current_web_image_without_digest="${current_web_image%@*}"
+            case "$current_web_image_without_digest" in
+              ghcr.io/asherlc/dofek:*)
+                pre_migration_image_tag="${current_web_image_without_digest#ghcr.io/asherlc/dofek:}"
+                ;;
+              *)
+                echo "::error::Unexpected current web image: ${current_web_image}"
+                exit 1
+                ;;
+            esac
+
+            echo "Applying stack config before migrations with current app image tag ${pre_migration_image_tag}."
+          elif grep -qiE 'no such service|not found' "$service_inspect_error"; then
+            echo "No existing web service; applying initial stack with deploy image tag ${pre_migration_image_tag}."
+          else
+            echo "::error::Unable to inspect ${STACK_NAME}_web before pre-migration stack apply"
+            cat "$service_inspect_error"
+            exit "$inspect_status"
           fi
 
-          if [ "$db_running" = true ] && [ "$clickhouse_running" = true ]; then
-            echo "Swarm DB and ClickHouse services exist with running tasks; skipping bootstrap deploy."
-          else
-            echo "Swarm DB or ClickHouse service is missing or not running; running bootstrap stack deploy."
-            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth "$STACK_NAME"
+          set +e
+          pre_migration_stack_file="$RUNNER_TEMP/pre-migration-stack.yml"
+          cat > "$pre_migration_stack_file" <<'YAML'
+          services:
+            web:
+              deploy:
+                replicas: 0
+            worker:
+              deploy:
+                replicas: 0
+            training-export-worker:
+              deploy:
+                replicas: 0
+          YAML
+
+          IMAGE_TAG="$pre_migration_image_tag" timeout 20m \
+            node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+              docker stack deploy $STACK_FILE_FLAGS -c "$pre_migration_stack_file" --with-registry-auth --detach=true "$STACK_NAME"
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "::error::pre-migration docker stack deploy exceeded 20m"
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
           fi
 
       - name: Wait for Postgres writable
@@ -400,34 +458,66 @@ jobs:
 
           echo "Starting migration container ${migration_container}..."
           cleanup_migration_container
-          # Heavy data migrations (e.g. hypertable backfills moving body
-          # measurements into fitness.metric_stream) can legitimately run for
-          # hours on prod. Sized to fit the slowest known migration with
-          # headroom; if a future migration would exceed this, restructure it
-          # rather than bumping again. Keep this as the foreground docker run:
-          # polling docker inspect over SSH can false-fail when ClickHouse
-          # background refreshes saturate the single-node host.
+          # Heavy data migrations can legitimately run for hours on prod. Use a
+          # detached container and short status polls so one long-lived
+          # Docker-over-SSH wait cannot drop while ClickHouse is busy.
           migration_timeout_seconds=14400
-          set +e
-          timeout "${migration_timeout_seconds}s" docker run --rm --name "$migration_container" --network "${STACK_NAME}_default" \
+          migration_started_at="$(date +%s)"
+          docker run -d --name "$migration_container" --network "${STACK_NAME}_default" \
             --env-file "$INFISICAL_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
-          migration_status=$?
-          set -e
+
+          inspect_failure_count=0
+          max_inspect_failures=10
+          while true; do
+            elapsed_seconds="$(($(date +%s) - migration_started_at))"
+            if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
+              echo "::error::Migration exceeded ${migration_timeout_seconds}s"
+              docker logs "$migration_container" || true
+              cleanup_migration_container
+              exit 1
+            fi
+
+            set +e
+            inspect_output="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$migration_container" 2>&1)"
+            inspect_status=$?
+            set -e
+            if [ "$inspect_status" -ne 0 ]; then
+              inspect_failure_count="$((inspect_failure_count + 1))"
+              if [ "$inspect_failure_count" -ge "$max_inspect_failures" ]; then
+                echo "::error::Could not inspect migration container after ${inspect_failure_count} attempts"
+                printf '%s\n' "$inspect_output"
+                docker logs "$migration_container" || true
+                cleanup_migration_container
+                exit "$inspect_status"
+              fi
+              echo "Migration container inspect attempt ${inspect_failure_count}/${max_inspect_failures} failed after ${elapsed_seconds}s; retrying..."
+              printf '%s\n' "$inspect_output"
+              sleep 15
+              continue
+            fi
+            inspect_failure_count=0
+            migration_state="$(printf '%s\n' "$inspect_output" | awk '{print $1}')"
+            migration_status="$(printf '%s\n' "$inspect_output" | awk '{print $2}')"
+            if [ "$migration_state" = "exited" ] || [ "$migration_state" = "dead" ]; then
+              break
+            fi
+
+            echo "Migration container ${migration_container} is ${migration_state} after ${elapsed_seconds}s..."
+            sleep 60
+          done
+
+          docker logs "$migration_container" || true
           trap - EXIT
-          if [ "$migration_status" -eq 124 ]; then
-            echo "::error::Migration exceeded ${migration_timeout_seconds}s"
-            cleanup_migration_container
-            exit 1
-          fi
           if [ "$migration_status" -ne 0 ]; then
             cleanup_migration_container
             echo "::error::Migration failed"
             exit "$migration_status"
           fi
+          cleanup_migration_container
           echo "Migration succeeded."
 
       - name: Deploy stack

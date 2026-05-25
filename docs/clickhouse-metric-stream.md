@@ -17,15 +17,19 @@ Postgres/Timescale fitness.metric_stream
         v                         v
 ClickHouse postgres_fitness.metric_stream
         |
-        | refreshable materialized view, 15-minute cadence
+        | native incremental projection
+        v
+ClickHouse analytics.sensor_scalar_sample
+        |
+        | dirty-key bounded recompute
         v
 ClickHouse analytics.deduped_sensor
         |
-        | refreshable materialized view, 15-minute cadence
+        | normal view
         v
 ClickHouse analytics.activity_summary
         |
-        | refreshable materialized view, 15-minute cadence
+        | normal view
         v
 ClickHouse analytics.activity_trend_daily
         |
@@ -33,10 +37,14 @@ ClickHouse analytics.activity_trend_daily
 Activity stream, zone, summary, and trend reads
 ```
 
+Location rows are exposed through `analytics.deduped_location`, also as a normal
+view. There are no ClickHouse full-refresh read models in this chain.
+
 Runtime API queries must read `analytics.deduped_sensor`,
 `analytics.activity_summary`, or `analytics.activity_trend_daily`, not the raw
-metric stream. The raw ClickHouse table exists only as the source for
-ClickHouse refresh jobs. Derived rows are never synced back to Postgres.
+metric stream. The raw ClickHouse table exists only as the source for the
+deduped sensor incremental projection and normal analytics views. Derived rows
+are never synced back to Postgres.
 
 ## Local Development
 
@@ -62,8 +70,11 @@ Use these local URLs:
 ## Query Model
 
 Activity routes resolve authorization, access windows, and canonical activity
-membership in Postgres. Stream, heart-rate-zone, power-zone, and activity
-summary reads then query stored ClickHouse `analytics.*` materialized views. The
+membership in Postgres. Stream and heart-rate/power-zone reads query
+`analytics.deduped_sensor` by user, channel, and activity time window; the
+sensor table does not store `activity_id`. Activity summary, location, provider
+stats, sleep/body/daily metrics, and trend reads query normal ClickHouse
+`analytics.*` views over the raw mirrors and incremental projection tables. The
 app does not issue raw `metric_stream` analytical reads for those endpoints.
 Daily and weekly trend reads use `analytics.activity_trend_daily`; weekly rows
 are rolled up from daily rows at query time.
@@ -74,6 +85,35 @@ activity, daily metric, sleep, body measurement, food entry, health event,
 metric stream, distinct nutrition day, lab panel, lab result, and journal entry
 counts. The provider detail UI still treats these as raw provider-owned record
 counts, not deduped analytical sample counts.
+
+## Scalar And Location Projections
+
+Scalar sensor samples and location samples use separate ClickHouse projections
+because they have different deduplication semantics.
+
+`analytics.deduped_sensor` is optimized for scalar channels such as heart rate,
+power, cadence, speed, and altitude. For those channels, the useful atomic unit
+is one `(user_id, channel, recorded_at)` key. The incremental pipeline can
+recompute a single changed key and select the best live sample with
+provider/device priority rules.
+
+GPS location is different. The useful unit is a coherent route for an activity,
+not an independently selected point at each timestamp. Providers can report the
+same route with different sampling rates, timestamp rounding, pause trimming,
+smoothing, altitude correction, and GPS filtering. If location were deduped
+point-by-point with the scalar rules, a derived route could silently stitch
+Apple, Garmin, Strava, or other provider points together. That stitched route
+may not match any route a provider actually recorded, and route-sensitive
+metrics such as distance, centroid, and map shape can be inflated, deflated, or
+visibly jagged by small provider-to-provider differences.
+
+For that reason, `analytics.deduped_location` remains a separate activity-route
+projection. It selects a route source for an activity, currently by valid
+location sample count with deterministic provider tie-breaking, and then uses
+that source's ordered points for GPS-derived activity summary fields. This is
+not mainly a table-shape constraint; the table shape could change. The core
+constraint is preserving route coherence while keeping scalar sensor dedupe a
+small per-key incremental pipeline.
 
 ## Sync Model
 
@@ -103,27 +143,36 @@ ClickHouse migrations create and update the databases and read models:
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
   metadata columns. Besides the activity/sleep/body/daily/metric stream
   analytics sources, this includes provider inventory mirrors for `food_entry`,
-  `health_event`, `lab_panel`, `lab_result`, and `journal_entry`.
+  `health_event`, `lab_panel`, `lab_result`, and `journal_entry`, plus
+  `sensor_provider_priority` and `sensor_device_priority` for sensor-channel
+  deduplication.
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
-  `analytics.v_body_measurement`, and `analytics.v_daily_metrics`: ClickHouse
-  read models over the raw mirrors.
+  `analytics.v_body_measurement`, `analytics.v_daily_metrics`, and
+  `analytics.provider_stats`: normal ClickHouse views over the raw mirrors and
+  body sample projection.
 - `analytics.body_measurement_sample`: a narrow `ReplacingMergeTree`
   projection of body-related `metric_stream` channels. It is backfilled once by
   migration and kept current by `analytics.body_measurement_sample_ingest`, so
-  `analytics.v_body_measurement` can refresh without repeatedly scanning the
-  full metric stream mirror.
-- `analytics.deduped_sensor`: a refreshable materialized view refreshed every
-  15 minutes from the copied raw rows and activity membership.
-- `analytics.deduped_location`: a refreshable materialized view refreshed every
-  15 minutes from `postgres_fitness.metric_stream` location rows. While the
-  PeerDB mirror excludes `point`, new rows have `point = NULL` and this view
-  does not advance for new data.
-- `analytics.activity_summary`: a refreshable materialized view refreshed every
-  15 minutes from `analytics.deduped_sensor`.
-- `analytics.activity_trend_daily`: a refreshable materialized view with one
-  activity-linked sensor trend row per user and UTC day. It is derived from
-  `analytics.deduped_sensor`, refreshes every 15 minutes, and is safe to drop
-  and rebuild.
+  `analytics.v_body_measurement` does not scan the full metric stream mirror.
+- `analytics.sensor_scalar_sample`: a narrow `ReplacingMergeTree` projection of
+  activity sensor scalar channels. It is backfilled once by migration and kept
+  current by `analytics.sensor_scalar_sample_ingest`.
+- `analytics.sensor_dirty_key`: a bounded queue of changed
+  `(user_id, channel, recorded_at)` keys. The post-sync worker recomputes only
+  those keys into `analytics.deduped_sensor`.
+- `analytics.deduped_sensor`: an activity-agnostic `ReplacingMergeTree` table
+  containing the best live scalar sample per `(user_id, channel, recorded_at)`
+  according to mirrored sensor provider/device priority tables. It has no
+  `activity_id`; activity reads join samples to activities by time window.
+- `analytics.deduped_location`: a normal view over
+  `postgres_fitness.metric_stream` location rows. While the PeerDB mirror
+  excludes `point`, new rows have `point = NULL` and this view does not advance
+  for new data.
+- `analytics.activity_summary`: a normal view over `analytics.deduped_sensor`,
+  `analytics.deduped_location`, and `analytics.v_activity`.
+- `analytics.activity_trend_daily`: a normal view with one activity-linked
+  sensor trend row per user and UTC day. It is derived from
+  `analytics.deduped_sensor`.
 
 Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
 table rather than a table created by PeerDB, it must include PeerDB's CDC
@@ -145,7 +194,9 @@ loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment
 connection values, and applies the declarative PeerDB peer and mirror
 definition. Provider inventory tables are mirrored by
 `dofek_provider_inventory_raw_analytics` so existing raw analytics mirrors do
-not need to be rebuilt when inventory coverage expands.
+not need to be rebuilt when inventory coverage expands. Sensor priority tables
+are mirrored by `dofek_sensor_priority_raw_analytics` so priority changes do
+not require rebuilding the broader raw analytics mirrors.
 
 **Mirror reconciliation**: The deploy CDC setup checks whether each mirror's
 table list matches the expected mapping in `rawAnalyticsMirrorTableMappings`.

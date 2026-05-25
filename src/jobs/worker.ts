@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { Worker } from "bullmq";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { processDedupedSensorDirtyKeys } from "../db/clickhouse-deduped-sensor.ts";
 import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-refresh.ts";
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
@@ -55,6 +56,10 @@ function getRefitSensorStore() {
 
 async function refreshPostSyncBodyMeasurements() {
   await refreshBodyMeasurementReadModel(getClickHouseClient());
+}
+
+async function processPostSyncSensorDirtyKeys() {
+  return processDedupedSensorDirtyKeys(getClickHouseClient());
 }
 
 // ── Per-provider sync workers ──
@@ -112,7 +117,13 @@ const postSyncWorker = new Worker<PostSyncJobData>(
   POST_SYNC_QUEUE,
   (job) =>
     jobContext.run(job, () =>
-      processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
+      processPostSyncJob(
+        job,
+        db,
+        getRefitSensorStore,
+        refreshPostSyncBodyMeasurements,
+        processPostSyncSensorDirtyKeys,
+      ),
     ),
   { connection, concurrency: 1 },
 );

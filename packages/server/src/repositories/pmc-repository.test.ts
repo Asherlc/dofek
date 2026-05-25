@@ -36,10 +36,22 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeSensorStore(activityRows: unknown[], npRows: unknown[]): ActivitySensorStore {
-  const query = vi.fn();
-  query.mockResolvedValueOnce(activityRows);
-  query.mockResolvedValueOnce(npRows);
+function makeSensorStore(
+  activityRows: unknown[],
+  npRows: unknown[],
+  rawActivityCount = activityRows.length,
+): ActivitySensorStore {
+  const query = vi
+    .fn()
+    .mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
+      if (queryText.includes("raw_activity_count")) {
+        return [schema.parse({ raw_activity_count: rawActivityCount })];
+      }
+      if (queryText.includes("rolling_30s_power")) {
+        return npRows.map((row) => schema.parse(row));
+      }
+      return activityRows.map((row) => schema.parse(row));
+    });
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -58,11 +70,10 @@ function makeRepo(
   activityRows: Record<string, unknown>[] = [],
   npRows: Record<string, unknown>[] = [],
   timezone = "UTC",
+  rawActivityCount = activityRows.length,
 ) {
-  // loadPersonalizedParams is mocked at module level (returns null),
-  // so db.execute is never called.
-  const db = { execute: vi.fn() };
-  const sensorStore = makeSensorStore(activityRows, npRows);
+  const db = { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
+  const sensorStore = makeSensorStore(activityRows, npRows, rawActivityCount);
   return new PmcRepository(db, "user-1", timezone, sensorStore);
 }
 
@@ -70,11 +81,13 @@ function makeRepoHarness(
   activityRows: Record<string, unknown>[] = [],
   npRows: Record<string, unknown>[] = [],
   timezone = "UTC",
+  rawActivityCount = activityRows.length,
 ) {
-  const db = { execute: vi.fn() };
-  const sensorStore = makeSensorStore(activityRows, npRows);
+  const db = { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
+  const sensorStore = makeSensorStore(activityRows, npRows, rawActivityCount);
   return {
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
+    execute: db.execute,
     query: sensorStore.query,
   };
 }
@@ -82,7 +95,7 @@ function makeRepoHarness(
 describe("PmcRepository", () => {
   describe("getChart", () => {
     it("returns empty data with generic model when no activities", async () => {
-      const repo = makeRepo([], []);
+      const repo = makeRepo([], [], "UTC", 0);
       const result = await repo.getChart(180);
 
       expect(result.data).toEqual([]);
@@ -92,6 +105,16 @@ describe("PmcRepository", () => {
         r2: null,
         ftp: null,
       });
+    });
+
+    it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
+      const { repo, execute, query } = makeRepoHarness([], [], "UTC", 0);
+
+      const result = await repo.getChart(180);
+
+      expect(result.data).toEqual([]);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(query).not.toHaveBeenCalled();
     });
 
     it("returns empty result when global max HR is null", async () => {
@@ -459,10 +482,16 @@ describe("PmcRepository", () => {
         expect.stringContaining("analytics.deduped_sensor"),
         { userId: "user-1", queryDays: 407 },
       );
+      expect(query.mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
+      expect(query.mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "AND activity.started_at > now() - INTERVAL {queryDays:Int32} DAY",
+      );
+      expect(query.mock.calls[0]?.[1]).toContain("AND activity.ended_at IS NOT NULL");
     });
 
     it("extends queryDays from requested days when request exceeds the minimum history", async () => {
-      const { repo, query } = makeRepoHarness([], []);
+      const { repo, query } = makeRepoHarness([], [], "UTC", 1);
 
       await repo.getChart(400);
 
