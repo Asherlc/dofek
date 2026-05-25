@@ -78,6 +78,8 @@ async function resolvePort(input: {
 
 const postgresPassword = process.env.POSTGRES_PASSWORD ?? "health";
 const clickHousePassword = process.env.CLICKHOUSE_PASSWORD ?? "health";
+const postgresPasswordUrlEncoded = encodeURIComponent(postgresPassword);
+const clickHousePasswordUrlEncoded = encodeURIComponent(clickHousePassword);
 const existingEnv = {
   ...readDotenv(join(process.cwd(), ".env.local")),
   ...process.env,
@@ -114,8 +116,8 @@ const dotenv = [
   `CLICKHOUSE_HTTP_PORT=${clickHouseHttpPort}`,
   `CLICKHOUSE_NATIVE_PORT=${clickHouseNativePort}`,
   `REDIS_PORT=${redisPort}`,
-  `DATABASE_URL=postgres://health:${dotenvEscape(postgresPassword)}@127.0.0.1:${databasePort}/health`,
-  `CLICKHOUSE_URL=http://default:${dotenvEscape(clickHousePassword)}@127.0.0.1:${clickHouseHttpPort}`,
+  `DATABASE_URL=postgres://health:${postgresPasswordUrlEncoded}@127.0.0.1:${databasePort}/health`,
+  `CLICKHOUSE_URL=http://default:${clickHousePasswordUrlEncoded}@127.0.0.1:${clickHouseHttpPort}`,
   `REDIS_URL=redis://127.0.0.1:${redisPort}`,
   "",
 ].join("\n");
