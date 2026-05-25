@@ -1,7 +1,6 @@
-import { TrainingStressCalculator } from "@dofek/training/training-load";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
-import type { PmcActivityRow } from "./pmc-training-load-calculator.ts";
+import type { PmcActivityRow, PmcNormalizedPowerRow } from "./pmc-training-load-calculator.ts";
 
 function makeActivityRow(overrides: Partial<PmcActivityRow> = {}): PmcActivityRow {
   const date = new Date();
@@ -20,6 +19,44 @@ function makeActivityRow(overrides: Partial<PmcActivityRow> = {}): PmcActivityRo
     hr_samples: 3600,
     ...overrides,
   };
+}
+
+function makeLearnedModelInput(): {
+  activityRows: PmcActivityRow[];
+  normalizedPowerRows: PmcNormalizedPowerRow[];
+} {
+  const thresholdPower = 190;
+  const globalMaxHeartRate = 190;
+  const restingHeartRate = 60;
+  const genderFactor = 1.92;
+  const exponent = 1.67;
+  const activityRows: PmcActivityRow[] = [];
+  const normalizedPowerRows: PmcNormalizedPowerRow[] = [];
+
+  for (let index = 0; index < 10; index += 1) {
+    const avgHeartRate = 120 + index * 5;
+    const deltaHeartRateRatio =
+      (avgHeartRate - restingHeartRate) / (globalMaxHeartRate - restingHeartRate);
+    const trimp =
+      60 * deltaHeartRateRatio * genderFactor * Math.exp(exponent * deltaHeartRateRatio);
+    const powerTss = trimp * 1.25 + 4;
+    const normalizedPower = thresholdPower * Math.sqrt(powerTss / 100);
+    const date = new Date();
+    date.setDate(date.getDate() - 20 + index);
+    const activityId = `learned-model-${index}`;
+
+    activityRows.push(
+      makeActivityRow({
+        id: activityId,
+        date: date.toISOString().slice(0, 10),
+        avg_hr: avgHeartRate,
+        avg_power: 200,
+      }),
+    );
+    normalizedPowerRows.push({ activity_id: activityId, np: normalizedPower });
+  }
+
+  return { activityRows, normalizedPowerRows };
 }
 
 describe("PmcChartCalculator", () => {
@@ -63,38 +100,28 @@ describe("PmcChartCalculator", () => {
     expect(result.data.length).toBeGreaterThan(0);
   });
 
-  it("returns rounded learned model metadata when model building succeeds", () => {
-    const buildModelSpy = vi
-      .spyOn(TrainingStressCalculator, "buildTssModel")
-      .mockReturnValue({ slope: 1.25, intercept: 4, r2: 0.4567 });
+  it("returns rounded learned model metadata when enough paired activities fit", () => {
+    const calculator = new PmcChartCalculator({
+      chronicTrainingLoadDays: 42,
+      acuteTrainingLoadDays: 7,
+      genderFactor: 1.92,
+      exponent: 1.67,
+    });
+    const { activityRows, normalizedPowerRows } = makeLearnedModelInput();
 
-    try {
-      const calculator = new PmcChartCalculator({
-        chronicTrainingLoadDays: 42,
-        acuteTrainingLoadDays: 7,
-        genderFactor: 1.92,
-        exponent: 1.67,
-      });
+    const result = calculator.buildChart({
+      activityRows,
+      normalizedPowerRows,
+      queryDays: 407,
+      displayDays: 90,
+    });
 
-      const result = calculator.buildChart({
-        activityRows: [makeActivityRow({ id: "learned-model", avg_power: 200 })],
-        normalizedPowerRows: [{ activity_id: "learned-model", np: 220 }],
-        queryDays: 407,
-        displayDays: 90,
-      });
-
-      expect(buildModelSpy).toHaveBeenCalledWith([
-        expect.objectContaining({ trimp: expect.any(Number), powerTss: expect.any(Number) }),
-      ]);
-      expect(result.model).toEqual({
-        type: "learned",
-        pairedActivities: 1,
-        r2: 0.457,
-        ftp: 190,
-      });
-    } finally {
-      buildModelSpy.mockRestore();
-    }
+    expect(result.model).toEqual({
+      type: "learned",
+      pairedActivities: 10,
+      r2: 1,
+      ftp: 190,
+    });
   });
 
   it("uses resting heart rate from activity rows when calculating load", () => {

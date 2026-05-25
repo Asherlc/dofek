@@ -29,7 +29,7 @@ function tryComposePort(input: ComposeServicePort): string | undefined {
 }
 
 function dotenvEscape(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n");
+  return value.replaceAll("\\", "\\\\").replaceAll("$", "\\$").replaceAll("\n", "\\n");
 }
 
 function readDotenv(path: string): Record<string, string> {
