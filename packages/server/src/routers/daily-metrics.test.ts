@@ -81,12 +81,73 @@ describe("dailyMetricsRouter", () => {
   });
 
   describe("hrvBaseline", () => {
+    it("fetches derived resting heart rate rows for the baseline chart", async () => {
+      const rows = [
+        {
+          date: "2024-01-16",
+          hrv: 60,
+          resting_hr: 53,
+          mean_60d: 55,
+          sd_60d: 5,
+          mean_7d: 58,
+          resting_hr_mean_7d: 54,
+        },
+      ];
+      const execute = vi.fn().mockResolvedValue(rows);
+      const sensorStore = makeMockSensorStore([{ date: "2024-01-16", resting_hr: 53 }]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      const result = await caller.hrvBaseline({ days: 30, endDate: "2024-01-16" });
+
+      expect(result[0]?.resting_hr).toBe(53);
+      expect(result[0]?.resting_hr_mean_7d).toBe(54);
+      expect(sensorStore.query).toHaveBeenCalledOnce();
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(queryText).toContain("analytics.resting_heart_rate_sleep_window");
+      expect(queryParams).toMatchObject({
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+        rhrEndDate: "2024-01-16",
+        rhrWindowStart: "2023-10-18",
+      });
+    });
+
     it("filters rows by cutoff date derived from endDate param", async () => {
       // today=2024-01-16, days=30 → cutoff = 2023-12-17
       const rows = [
-        { date: "2023-12-16", hrv: 50, mean_60d: 52, sd_60d: 5, mean_7d: 51 },
-        { date: "2023-12-17", hrv: 55, mean_60d: 53, sd_60d: 5, mean_7d: 52 },
-        { date: "2024-01-16", hrv: 60, mean_60d: 55, sd_60d: 5, mean_7d: 58 },
+        {
+          date: "2023-12-16",
+          hrv: 50,
+          resting_hr: 57,
+          mean_60d: 52,
+          sd_60d: 5,
+          mean_7d: 51,
+          resting_hr_mean_7d: 56,
+        },
+        {
+          date: "2023-12-17",
+          hrv: 55,
+          resting_hr: 56,
+          mean_60d: 53,
+          sd_60d: 5,
+          mean_7d: 52,
+          resting_hr_mean_7d: 55,
+        },
+        {
+          date: "2024-01-16",
+          hrv: 60,
+          resting_hr: 53,
+          mean_60d: 55,
+          sd_60d: 5,
+          mean_7d: 58,
+          resting_hr_mean_7d: 54,
+        },
       ];
       const caller = makeCaller(rows);
       const result = await caller.hrvBaseline({ days: 30, endDate: "2024-01-16" });

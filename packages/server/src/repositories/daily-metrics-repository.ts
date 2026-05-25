@@ -32,9 +32,11 @@ export type DailyMetricsViewRow = z.infer<typeof dailyMetricsViewRowSchema>;
 const hrvBaselineRowSchema = z.object({
   date: dateStringSchema,
   hrv: z.coerce.number().nullable(),
+  resting_hr: z.coerce.number().nullable(),
   mean_60d: z.coerce.number().nullable(),
   sd_60d: z.coerce.number().nullable(),
   mean_7d: z.coerce.number().nullable(),
+  resting_hr_mean_7d: z.coerce.number().nullable(),
 });
 
 export type HrvBaselineRow = z.infer<typeof hrvBaselineRowSchema>;
@@ -100,17 +102,43 @@ export class DailyMetricsRepository extends BaseRepository {
    * to produce accurate rolling averages from the first requested day, then
    * filters down to the requested date range client-side.
    */
-  async getHrvBaseline(days: number, endDate: string): Promise<HrvBaselineRow[]> {
+  async getHrvBaseline(
+    days: number,
+    endDate: string,
+    restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
+  ): Promise<HrvBaselineRow[]> {
     const warmupDays = days + 60;
     const rows = await this.query(
       hrvBaselineRowSchema,
-      sql`SELECT date, hrv,
+      sql`WITH ${restingHeartRateCte},
+          base_dates AS (
+            SELECT date
+            FROM fitness.v_daily_metrics
+            WHERE user_id = ${this.userId}
+              AND date > ${dateWindowStart(endDate, warmupDays)}
+            UNION
+            SELECT date
+            FROM resting_heart_rate
+          ),
+          current AS (
+            SELECT
+              base_dates.date,
+              dm.hrv,
+              drhr.resting_hr
+            FROM base_dates
+            LEFT JOIN fitness.v_daily_metrics dm
+              ON dm.user_id = ${this.userId}
+             AND dm.date = base_dates.date
+            LEFT JOIN resting_heart_rate drhr
+              ON drhr.date = base_dates.date
+            WHERE base_dates.date > ${dateWindowStart(endDate, warmupDays)}
+          )
+          SELECT date, hrv, resting_hr,
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS mean_60d,
             STDDEV(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS sd_60d,
-            AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS mean_7d
-          FROM fitness.v_daily_metrics
-          WHERE user_id = ${this.userId}
-            AND date > ${dateWindowStart(endDate, warmupDays)}
+            AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS mean_7d,
+            AVG(resting_hr) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS resting_hr_mean_7d
+          FROM current
           ORDER BY date ASC`,
     );
 

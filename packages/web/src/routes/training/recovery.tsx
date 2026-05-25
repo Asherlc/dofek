@@ -2,6 +2,7 @@ import { formatDateYmd } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import { HrvBaselineChart } from "../../components/HrvBaselineChart.tsx";
 import { HrvVariabilityChart } from "../../components/HrvVariabilityChart.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
@@ -18,6 +19,7 @@ function RecoveryTab() {
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const hrvVariability = trpc.recovery.hrvVariability.useQuery({ days, endDate });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days });
   const readiness = trpc.recovery.readinessScore.useQuery({ days, endDate });
@@ -44,6 +46,13 @@ function RecoveryTab() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Section
+          title="Heart Rate Variability & Resting Heart Rate"
+          subtitle="Daily recovery vitals with 7-day averages"
+        >
+          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+        </Section>
+
         <Section title="HRV Coefficient of Variation" subtitle="7-day rolling HRV variability">
           <HrvVariabilityChart
             data={hrvVariability.data ?? []}
