@@ -243,10 +243,15 @@ export class IntervalsRepository {
           maxIf(scalar, channel = 'speed') AS speed,
           maxIf(scalar, channel = 'cadence') AS cadence,
           maxIf(scalar, channel = 'altitude') AS altitude
-        FROM analytics.deduped_sensor
-        WHERE activity_id = {activityId:UUID}
-          AND user_id = {userId:UUID}
+        FROM analytics.deduped_sensor AS sensor_samples
+        INNER JOIN analytics.v_activity AS activity
+          ON activity.id = {activityId:UUID}
+         AND activity.user_id = sensor_samples.user_id
+         AND sensor_samples.recorded_at >= activity.started_at
+         AND sensor_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
+        WHERE sensor_samples.user_id = {userId:UUID}
           AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
+          AND is_deleted = 0
         GROUP BY recorded_at
       ),
       location_samples AS (
@@ -328,10 +333,15 @@ export class IntervalsRepository {
           maxIf(scalar, channel = 'heart_rate') AS heart_rate,
           maxIf(scalar, channel = 'speed') AS speed,
           maxIf(scalar, channel = 'cadence') AS cadence
-        FROM analytics.deduped_sensor
-        WHERE activity_id = {activityId:UUID}
-          AND user_id = {userId:UUID}
+        FROM analytics.deduped_sensor AS sensor_samples
+        INNER JOIN analytics.v_activity AS activity
+          ON activity.id = {activityId:UUID}
+         AND activity.user_id = sensor_samples.user_id
+         AND sensor_samples.recorded_at >= activity.started_at
+         AND sensor_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
+        WHERE sensor_samples.user_id = {userId:UUID}
           AND channel IN ('power', 'heart_rate', 'speed', 'cadence')
+          AND is_deleted = 0
         GROUP BY recorded_at
       )
       SELECT

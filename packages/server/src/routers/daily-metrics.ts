@@ -37,7 +37,14 @@ export const dailyMetricsRouter = router({
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      return repo.getHrvBaseline(input.days, input.endDate);
+      const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
+        sensorStore: requireSensorStore(ctx.sensorStore, "dailyMetrics.hrvBaseline"),
+        userId: ctx.userId,
+        timezone: ctx.timezone,
+        endDate: input.endDate,
+        days: input.days + 60,
+      });
+      return repo.getHrvBaseline(input.days, input.endDate, restingHeartRateCte);
     }),
 
   trends: cachedProtectedQuery(CacheTTL.MEDIUM)

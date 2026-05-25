@@ -57,19 +57,6 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("analytics.deduped_location");
   });
 
-  it("refreshes body measurement read model", async () => {
-    const { store, command } = makeStore();
-
-    await store.refreshBodyMeasurements();
-
-    expect(command).toHaveBeenNthCalledWith(1, {
-      query: "SYSTEM REFRESH VIEW analytics.v_body_measurement",
-    });
-    expect(command).toHaveBeenNthCalledWith(2, {
-      query: "SYSTEM WAIT VIEW analytics.v_body_measurement",
-    });
-  });
-
   it("queries activity summaries from the ClickHouse analytics schema", async () => {
     const { store, query } = makeStore([
       {
@@ -101,6 +88,28 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "activity_id IN (\n          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))",
     );
+  });
+
+  it("loads power curve samples from activity summary without the recursive activity view", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getPowerCurveSamples(90, window.userId, "UTC");
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("analytics.activity_summary");
+    expect(queryText).toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("analytics.v_activity");
+  });
+
+  it("loads normalized power samples from activity summary without the recursive activity view", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getNormalizedPowerSamples(365, window.userId, "UTC");
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("analytics.activity_summary");
+    expect(queryText).toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("analytics.v_activity");
   });
 
   it("derives VO2 max estimates from ClickHouse deduped samples", async () => {
@@ -163,8 +172,28 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
+    expect(queryText).toContain(
+      "recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})",
+    );
+    expect(queryText).toContain("recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})");
+    expect(queryText).toContain("is_deleted = 0");
     expect(queryText).toContain("channel = 'power'");
+  });
+
+  it("caps open-ended activity windows and downsamples by buckets", async () => {
+    const openEndedWindow = { ...window, endedAt: undefined };
+    const { store, query } = makeStore([]);
+
+    await store.getStream(openEndedWindow, 500);
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(query.mock.calls[0]?.[0]?.query_params).toEqual(
+      expect.objectContaining({
+        windowEndedAt: "2024-01-15T22:00:00.000Z",
+      }),
+    );
+    expect(queryText).toContain("total <= toUInt64({maxPoints:UInt32})");
+    expect(queryText).toContain("(row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1)");
   });
 
   it("generates heart-rate zone SQL from the shared zone definitions", async () => {
@@ -199,9 +228,6 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
     );
-    expect(queryText).not.toContain(
-      "/ toFloat64(toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
-    );
   });
 
   it("clamps pace duration windows to at least one sample", async () => {
@@ -212,9 +238,6 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain(
       "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
-    );
-    expect(queryText).not.toContain(
-      "/ toFloat64(toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
     );
   });
 });

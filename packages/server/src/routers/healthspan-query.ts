@@ -100,6 +100,7 @@ async function fetchHrZoneTime(
     `WITH activity_metadata AS (
       SELECT
         asum.activity_id AS activity_id,
+        asum.user_id AS user_id,
         asum.started_at AS started_at,
         asum.ended_at AS ended_at,
         dateDiff('second', asum.started_at, asum.ended_at) / 60.0 AS duration_minutes,
@@ -143,9 +144,12 @@ async function fetchHrZoneTime(
           AND am.ftp IS NOT NULL
           AND ds.scalar >= am.ftp * {powerThreshold:Float64}) AS power_hi_count
       FROM activity_metadata AS am
-      LEFT JOIN analytics.deduped_sensor AS ds
-        ON ds.activity_id = am.activity_id
-       AND ds.channel IN ('heart_rate', 'power')
+      INNER JOIN analytics.deduped_sensor AS ds
+        ON ds.user_id = am.user_id
+      WHERE ds.recorded_at >= am.started_at
+        AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+        AND ds.channel IN ('heart_rate', 'power')
+        AND ds.is_deleted = 0
       GROUP BY am.activity_id, am.duration_minutes, am.max_hr, am.ftp, am.resting_hr
     )
     SELECT

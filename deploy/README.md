@@ -50,7 +50,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
 - PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, `max_locks_per_transaction=4096` for large Timescale chunk scans, and logical replication settings needed by ClickHouse change-data capture.
-- ClickHouse has a 5 GiB container memory limit so large `metric_stream` read-model refreshes can complete without hitting ClickHouse's internal memory ceiling. It also loads checked-in server profile settings from `deploy/clickhouse/users.d/` and server settings from `deploy/clickhouse/config.d/`; the production stack mounts these as Docker Swarm configs so app-managed geospatial `Nullable(Point)` columns and seven-day system-log TTL retention work without manual server changes.
+- ClickHouse has a 4500 MiB container memory limit and a checked-in 4 GiB `max_server_memory_usage` cap so large analytics queries fail inside ClickHouse instead of triggering host-level OOM kills on the single-node host. It also loads checked-in server profile settings from `deploy/clickhouse/users.d/` and server settings from `deploy/clickhouse/config.d/`; the production stack mounts these as Docker Swarm configs so app-managed geospatial `Nullable(Point)` columns, bounded memory, and seven-day system-log TTL retention work without manual server changes. Docker Swarm config contents are immutable, so changing a checked-in config file must also rotate the config key in `deploy/stack.yml` (for example `clickhouse_memory_limits_4g`) instead of reusing the same config name with new contents.
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
@@ -126,7 +126,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
-              -> bootstrap stack if <stack>_db is missing
+              -> apply stack config with current app tag
               -> wait for postgres writable
               -> migrate (one-shot container on <stack>_default)
               -> docker stack deploy <stack>
@@ -153,8 +153,19 @@ CI (main) -> build dofek + dofek-ml (same tag)
       successful stack deploy. Do not run a continuous background image pruner
       on the production host, because newly pulled deploy images are not
       referenced by a service until after migrations complete.
-   5. Bootstrap step for clean-slate hosts: if `docker service inspect <stack>_db` fails, run
-      `docker stack deploy -c deploy/stack.yml --with-registry-auth <stack>` first so the swarm DB service and overlay network exist.
+   5. Apply the stack configuration before migrations with a non-prune,
+      detached `docker stack deploy` and a temporary overlay that sets app
+      worker/web replicas to zero. On existing stacks this uses the currently
+      deployed app image tag, so database, ClickHouse, network, config, and
+      resource-limit changes are applied before migrations without rolling new
+      app code ahead of schema changes or letting old app tasks issue expensive
+      analytics queries during the migration window. On clean-slate hosts it
+      uses the deploy image tag so the DB service and overlay network exist
+      before readiness checks. The final stack deploy restores the app service
+      replicas from `deploy/stack.yml`. The deploy workflow waits explicitly
+      for Postgres and ClickHouse before running migrations instead of keeping a
+      long-lived Docker-over-SSH stack-deploy wait open while the single-node
+      host restarts services.
    6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
    7. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
@@ -259,10 +270,16 @@ Missing keys fail the workflow immediately with an explicit key name.
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `<stack>_db` and `<stack>_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
 
-The deploy workflow handles this with a bootstrap gate:
-- If `<stack>_db` exists, continue normally.
-- If `<stack>_db` is missing, run a non-prune stack deploy first to create the swarm services/network.
-- After bootstrap, run DB readiness and migrations, then run the normal prune deploy.
+The deploy workflow handles this by always applying the stack configuration
+before migrations:
+
+- On existing stacks, the pre-migration deploy uses the currently running app
+  image tag so infrastructure/config changes are applied while app code remains
+  on the old release.
+- On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
+  because there is no old release to preserve.
+- After the pre-migration stack apply, the workflow runs DB readiness,
+  migrations, and then the normal prune deploy with the requested app image tag.
 
 This preserves migration gating while remaining safe for both warm updates and scratch deployments.
 

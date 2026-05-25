@@ -8,6 +8,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
+import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,13 @@ export class PmcRepository extends BaseRepository {
     const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
     const today = new Date().toISOString().slice(0, 10);
 
+    if ((await this.#loadRawActivityCount(queryDays)) === 0) {
+      return {
+        data: [],
+        model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+      };
+    }
+
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
     // user_profile is accessed via ClickHouse read models.
     // Sample counts come from analytics.deduped_sensor since CH activity_summary
@@ -86,12 +94,20 @@ export class PmcRepository extends BaseRepository {
       ),
       sample_counts AS (
         SELECT
-          activity_id,
-          countIf(channel = 'power') AS power_samples,
-          countIf(channel = 'heart_rate') AS hr_samples
-        FROM analytics.deduped_sensor
-        WHERE user_id = {userId:UUID}
-        GROUP BY activity_id
+          activity.activity_id AS activity_id,
+          countIf(samples.channel = 'power') AS power_samples,
+          countIf(samples.channel = 'heart_rate') AS hr_samples
+        FROM analytics.deduped_sensor AS samples
+        INNER JOIN analytics.activity_summary AS activity
+          ON activity.user_id = samples.user_id
+         AND samples.recorded_at >= activity.started_at
+         AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
+        WHERE samples.user_id = {userId:UUID}
+          AND samples.channel IN ('heart_rate', 'power')
+          AND samples.is_deleted = 0
+          AND activity.started_at > now() - INTERVAL {queryDays:Int32} DAY
+          AND activity.ended_at IS NOT NULL
+        GROUP BY activity.activity_id
       )
       SELECT
         ub.global_max_hr AS global_max_hr,
@@ -125,18 +141,22 @@ export class PmcRepository extends BaseRepository {
       normalizedPowerRowSchema,
       `WITH rolling AS (
         SELECT
-          ds.activity_id AS activity_id,
+          a.activity_id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY ds.activity_id
+            PARTITION BY a.activity_id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a ON a.id = ds.activity_id
+        INNER JOIN analytics.activity_summary a
+          ON a.user_id = ds.user_id
+         AND ds.recorded_at >= a.started_at
+         AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE ds.user_id = {userId:UUID}
           AND a.started_at > now() - INTERVAL {queryDays:Int32} DAY
           AND ds.channel = 'power'
           AND ds.scalar > 0
+          AND ds.is_deleted = 0
       )
       SELECT
         toString(activity_id) AS activity_id,
@@ -158,6 +178,13 @@ export class PmcRepository extends BaseRepository {
       normalizedPowerRows,
       queryDays,
       displayDays: days,
+    });
+  }
+
+  async #loadRawActivityCount(days: number): Promise<number> {
+    return countRawActivities(this.db, {
+      userId: this.userId,
+      days,
     });
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import { TrainingRepository } from "./training-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -7,13 +8,35 @@ import { TrainingRepository } from "./training-repository.ts";
 // ---------------------------------------------------------------------------
 
 describe("TrainingRepository", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: test mock helper
-  function makeSensorStore(rows: unknown[]): any {
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  function collectSqlText(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (!isRecord(value)) return "";
+    if (Array.isArray(value.value)) {
+      return value.value.map((chunk) => (typeof chunk === "string" ? chunk : "")).join("");
+    }
+    if (Array.isArray(value.queryChunks)) {
+      return value.queryChunks.map((chunk) => collectSqlText(chunk)).join("");
+    }
+    return "";
+  }
+
+  function executedSql(execute: ReturnType<typeof vi.fn>, callIndex = 0): string {
+    return collectSqlText(execute.mock.calls[callIndex]?.[0]);
+  }
+
+  function makeSensorStore(rows: unknown[], rawActivityCount = rows.length): ActivitySensorStore {
     // Mirror ClickHouseActivitySensorStore.query: parse each row through the
     // supplied Zod schema so timestampStringSchema and friends actually run.
     const query = vi
       .fn()
-      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+      .mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
+        if (queryText.includes("raw_activity_count")) {
+          return [schema.parse({ raw_activity_count: rawActivityCount })];
+        }
         return rows.map((row) => schema.parse(row));
       });
     return {
@@ -30,13 +53,14 @@ describe("TrainingRepository", () => {
     };
   }
 
-  function makeRepository(rows: Record<string, unknown>[] = [], accessWindow?: AccessWindow) {
-    // Tests pass `rows` to be returned by either PG or CH; the migration
-    // moved most queries to CH, but for backward-compat with this test's
-    // pattern, mock both to return the same rows.
-    const execute = vi.fn().mockResolvedValue(rows);
+  function makeRepository(
+    rows: Record<string, unknown>[] = [],
+    accessWindow?: AccessWindow,
+    rawActivityCount = rows.length,
+  ) {
+    const execute = vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]);
     const db = { execute };
-    const sensorStore = makeSensorStore(rows);
+    const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore, accessWindow);
     return { repo, execute, sensorStore };
   }
@@ -48,27 +72,41 @@ describe("TrainingRepository", () => {
       expect(result).toEqual([]);
     });
 
-    it("reads weekly volume from ClickHouse activity read model", async () => {
+    it("does not scan the activity read model when no raw activities exist", async () => {
       const { repo, execute, sensorStore } = makeRepository([]);
+
+      const result = await repo.getWeeklyVolume(90);
+
+      expect(result).toEqual([]);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
+      expect(sensorStore.query).not.toHaveBeenCalled();
+    });
+
+    it("reads weekly volume from ClickHouse activity read model", async () => {
+      const { repo, execute, sensorStore } = makeRepository([], undefined, 1);
       await repo.getWeeklyVolume(90);
 
-      expect(execute).not.toHaveBeenCalled();
-      expect(sensorStore.query).toHaveBeenCalledWith(
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query).toHaveBeenNthCalledWith(
+        1,
         expect.anything(),
-        expect.stringContaining("FROM analytics.v_activity"),
+        expect.stringContaining("FROM analytics.activity_summary"),
         expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
       );
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
     });
 
     it("does not add access-window filters for full access", async () => {
       const accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
-      const { repo, sensorStore } = makeRepository([], accessWindow);
+      const { repo, sensorStore } = makeRepository([], accessWindow, 1);
       await repo.getWeeklyVolume(30);
 
-      const query = sensorStore.query.mock.calls[0]?.[1];
-      const params = sensorStore.query.mock.calls[0]?.[2];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
-      expect(query).toContain("FROM analytics.v_activity");
+      expect(query).toContain("FROM analytics.activity_summary");
+      expect(query).not.toContain("analytics.v_activity");
       expect(query).not.toContain("toDateTime({accessStart:String})");
       expect(query).not.toContain("toDateTime({accessEnd:String})");
       expect(params).toEqual({ userId: "user-1", timezone: "UTC", days: 30 });
@@ -82,11 +120,11 @@ describe("TrainingRepository", () => {
         startDate: "2024-01-01T00:00:00Z",
         endDateExclusive: "2024-01-08T00:00:00Z",
       };
-      const { repo, sensorStore } = makeRepository([], accessWindow);
+      const { repo, sensorStore } = makeRepository([], accessWindow, 1);
       await repo.getWeeklyVolume(30);
 
-      const query = sensorStore.query.mock.calls[0]?.[1];
-      const params = sensorStore.query.mock.calls[0]?.[2];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
       expect(query).toContain("AND started_at >= toDateTime({accessStart:String})");
       expect(query).toContain("AND started_at < toDateTime({accessEnd:String})");
@@ -112,9 +150,12 @@ describe("TrainingRepository", () => {
 
   describe("getHrZones", () => {
     it("returns null maxHr and empty weeks when no data", async () => {
-      const { repo } = makeRepository([]);
+      const { repo, execute, sensorStore } = makeRepository([]);
       const result = await repo.getHrZones(90);
       expect(result).toEqual({ maxHr: null, weeks: [] });
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
+      expect(executedSql(execute)).toContain("activity_type IN");
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("returns maxHr and zone rows", async () => {
@@ -138,11 +179,11 @@ describe("TrainingRepository", () => {
     });
 
     it("uses activity-specific heart-rate values in canonical zone SQL", async () => {
-      const { repo, sensorStore } = makeRepository([]);
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
 
       await repo.getHrZones(90);
 
-      const query = sensorStore.query.mock.calls[0]?.[1];
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(query).toContain("am.resting_hr + (am.max_hr - am.resting_hr)");
       expect(query).not.toContain("{restingHr:Float64}");
       expect(query).not.toContain("{maxHr:Float64}");
@@ -151,17 +192,19 @@ describe("TrainingRepository", () => {
 
   describe("getActivityStats", () => {
     it("returns empty array when no data", async () => {
-      const { repo } = makeRepository([]);
+      const { repo, sensorStore } = makeRepository([]);
       const result = await repo.getActivityStats(90);
       expect(result).toEqual([]);
+      expect(sensorStore.query).not.toHaveBeenCalled();
     });
 
     it("selects the activity view id into the UI row id", async () => {
-      const { repo, sensorStore } = makeRepository([]);
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
       await repo.getActivityStats(90);
-      const query = sensorStore.query.mock.calls[0]?.[1];
-      expect(query).toContain("toString(a.id) AS id");
-      expect(query).toContain("FROM analytics.v_activity a");
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      expect(query).toContain("toString(a.activity_id) AS id");
+      expect(query).toContain("FROM analytics.activity_summary a");
+      expect(query).not.toContain("analytics.v_activity");
     });
 
     it("returns activity stats rows", async () => {

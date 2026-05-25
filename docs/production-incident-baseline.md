@@ -7322,3 +7322,669 @@ with an incremental/smaller refresh strategy. Production logs also showed
 repeated `Unexpected end of JSON input` errors on cached provider routes after
 the deploy; derived Redis query-cache state was cleared, but that log pattern
 should be followed up separately if it recurs.
+
+## 2026-05-23: Strong CSV Import Hidden By Stale ClickHouse Read Models
+
+### Symptoms
+
+A Strong CSV upload completed successfully in production, but the app showed no
+Strong records and the imported strength workouts did not appear in the
+Activities screen.
+
+### User Impact
+
+The user's imported Strong workout history was present in canonical Postgres
+storage but hidden from provider-detail and activity-list UI surfaces.
+
+### Evidence
+
+Worker logs showed `Strong CSV import complete: 88 workouts imported, 0 errors
+in 2.2s`. Postgres had 88 `fitness.activity` rows and 991
+`fitness.strength_set` rows for provider `strong-csv`, all under user
+`f923fed7-d934-4cd9-8cb9-8e83020d0e69`. `fitness.v_activity` also exposed 88
+Strong activities, including 6 in the current four-week Activities window.
+
+ClickHouse `analytics.provider_stats` initially reported
+`strong-csv.activities = 0` and `system.view_refreshes` showed
+`analytics.provider_stats` as `Disabled` with exception `cancelled`. After
+starting and refreshing the view, `analytics.provider_stats` reported
+`strong-csv.activities = 88`. `analytics.activity_summary` then contained the 6
+recent Strong strength activities used by `calendar.weekList`.
+
+### Root Cause
+
+The Strong import wrote canonical data successfully, but UI read paths depended
+on ClickHouse refreshable materialized views. `analytics.provider_stats` had
+been disabled/cancelled during prior production pressure, so provider-detail
+counts were stale. The Activities screen also depends on
+`analytics.activity_summary`, and cached `calendar.weekList` responses could
+continue serving the old empty result after the ClickHouse model caught up.
+
+### Fix or Mitigation
+
+Restarted and refreshed `analytics.provider_stats`, confirmed
+`strong-csv.activities = 88`, confirmed `analytics.activity_summary` had 6
+recent Strong activities, and cleared the affected user's Redis query-cache
+entries.
+
+### Remaining Risk
+
+This branch converts the non-`deduped_sensor` ClickHouse analytics read models
+from refreshable materialized views to normal views over the existing raw and
+incremental sources. Until that migration is deployed, production can still
+serve stale results from disabled or cancelled refreshable views.
+
+## 2026-05-23: Full-Refresh ClickHouse Read Models Removed
+
+### Symptoms
+
+The Strong CSV incident showed that successfully imported Postgres records could
+remain invisible when ClickHouse refreshable read models were stale, cancelled,
+or disabled.
+
+### User Impact
+
+Provider counts, activity lists, and sensor-derived analytics could lag
+canonical writes even after imports or syncs completed successfully.
+
+### Evidence
+
+Active ClickHouse bootstrap and migration SQL in this branch no longer renders
+`REFRESH EVERY`, `SYSTEM REFRESH VIEW`, `SYSTEM WAIT VIEW`, or `MODIFY REFRESH`
+for production read models. Changed tests passed against the ClickHouse-backed
+integration suite with 58 files and 1291 tests.
+
+### Root Cause
+
+The prior design depended on full refreshable materialized views for provider,
+activity, body, trend, and deduped sensor read models. A disabled or long-running
+full refresh could leave UI-facing analytics stale independent of canonical
+Postgres state.
+
+### Fix or Mitigation
+
+Converted the remaining ClickHouse read models to normal views or incremental
+tables. `analytics.deduped_sensor` now drains dirty sensor keys after sync jobs
+instead of relying on full refreshes, and downstream activity sensor queries
+derive activity membership from `analytics.v_activity` time windows.
+
+### Remaining Risk
+
+Production still needs this migration deployed and observed. The incremental
+dirty-key worker has a hard backlog-drain limit and fails loudly if it cannot
+catch up, so future failures should surface as post-sync job errors instead of
+silent stale analytics.
+
+## 2026-05-23: Incremental Deduped Sensor CI Migration Failure
+
+### Symptoms
+
+The review-app deploy and web end-to-end test setup failed during fresh
+ClickHouse migrations. Several Stryker shards also failed before mutation
+testing began.
+
+### User Impact
+
+The PR could not pass CI or deploy a review app, blocking release of the
+full-refresh removal work.
+
+### Evidence
+
+`Deploy Review App` and `Test / E2E Tests (Web)` both failed while applying
+ClickHouse migration `0004_reenable_materialized_metric_stream` with
+`Table analytics.deduped_sensor is not a View.` Stryker dry runs failed on
+`Router data coverage cyclingAdvanced verticalAscentRate uses nearby grade when
+present and altitude fallback otherwise` with `Test timed out in 30000ms`.
+
+### Root Cause
+
+The ClickHouse migration sequence still issued `DROP VIEW IF EXISTS
+analytics.deduped_sensor` after `analytics.deduped_sensor` had become a table;
+ClickHouse errors when `DROP VIEW` targets a table. The Stryker timeout came
+from a heavy integration fixture that inserted five-second altitude/grade
+samples across three synthetic activities before syncing ClickHouse.
+
+### Fix or Mitigation
+
+Removed stale `DROP VIEW` statements for `deduped_sensor` and kept the
+relation-safe `DROP TABLE IF EXISTS` form, which ClickHouse accepts for both
+tables and views. Reduced the vertical-ascent fixture density from five-second
+to thirty-second samples while preserving coverage of offset grade matching,
+altitude fallback, and low-grade exclusion.
+
+### Remaining Risk
+
+CI still needs to rerun on the branch and the review-app deploy needs to be
+observed after the fixes are pushed.
+
+## 2026-05-23: Aerobic Efficiency E2E ClickHouse Memory Failure
+
+### Symptoms
+
+The web end-to-end CI job timed out waiting for the aerobic-efficiency empty
+state and the direct API assertion saw `500` instead of `200`.
+
+### User Impact
+
+The PR could not pass CI, and an empty or newly imported user could see the
+aerobic-efficiency panel fail instead of rendering the no-data state.
+
+### Evidence
+
+`Test / E2E Tests (Web)` failed in `pnpm e2e:web:run` with
+`Expected to find content: 'No activities with sufficient Zone 2 power + heart
+rate data' but never did`. A later run failed `training.weeklyVolume` with
+`cy.request() timed out waiting 30000ms`. After the first raw-activity
+short-circuit, the cycling empty-state user still showed
+`efficiency.aerobicEfficiency` taking 6-12 seconds and `pmc.chart` taking up to
+107 seconds. Server logs also showed `dailyMetrics.trends`, `sleep.list`, and
+`weeklyReport.report` queries running long enough for ClickHouse to reject
+requests with `(total) memory limit exceeded`.
+
+### Root Cause
+
+The first preflight still read `analytics.v_activity`, whose recursive activity
+deduplication can scan the full activity graph before the empty user's filter
+helps. `training.weeklyVolume`, `training.hrZones`, `training.activityStats`,
+`pmc.chart`, aerobic-efficiency queries, power-curve/eFTP queries, and
+cycling-advanced queries also joined `analytics.v_activity` for activity
+metadata already present on `analytics.activity_summary`, so no-result reads
+still forced expensive ClickHouse read-model scans before rendering empty
+states.
+
+### Fix or Mitigation
+
+Moved the empty-user preflights to raw mirrored
+`postgres_fitness.activity FINAL` rows so they can prove there are no candidate
+activities before invoking `analytics.activity_summary` or
+`analytics.deduped_sensor`. Added the same raw-activity short-circuit to
+training weekly volume, heart-rate zones, and activity stats. Removed
+`analytics.v_activity` joins from the hot activity-analytics repositories
+(`training`, `pmc`, `efficiency`, `power`, and `cyclingAdvanced`) where
+`analytics.activity_summary` already carries the canonical activity id, type,
+name, and time window. Updated repository and router tests to cover the new
+query sequence and prove these hot paths no longer touch the recursive activity
+view.
+
+### Remaining Risk
+
+CI and the review-app deploy still need to be observed on the pushed branch.
+
+### Follow-up
+
+Code review found the `pmc.chart` `sample_counts` CTE was still bounded only by
+user id and sample channel, so it could aggregate full-history sensor rows
+before the outer `activity_summary` window filter applied. The CTE now applies
+the same expanded `queryDays` activity window and requires completed activities,
+keeping PMC sample-count work proportional to the requested training window.
+
+## 2026-05-23: Cycling Empty-State E2E Hidden by Background Fetching
+
+### Symptoms
+
+The web end-to-end CI job failed during the cycling no-data spec, and the test
+and CI gates failed downstream from that job.
+
+### User Impact
+
+Empty cycling charts could keep showing loading skeletons after their own
+queries had finished if another page query was still in flight, hiding the
+actual no-data message.
+
+### Evidence
+
+`Test / E2E Tests (Web)` failed in the `pnpm e2e:web:run` step while running
+`pnpm exec cypress run`. The first failed Cypress test was `shows empty states
+for charts when no data exists`, followed by the fatal cancellation line
+`The runner has received a shutdown signal`.
+
+### Root Cause
+
+`DofekChart` used the global React Query fetching count to replace empty states
+with loading skeletons. On the cycling page, unrelated slow queries could keep
+the global fetching count above zero even after an individual chart's own query
+had loaded and returned no rows.
+
+### Fix or Mitigation
+
+Changed `DofekChart` so the skeleton is controlled by the chart's own `loading`
+prop. Once the chart has loaded and `empty` is true, it renders the empty
+message immediately. The global fetching count still drives only the subtle
+refresh spinner for charts that already have data.
+
+### Remaining Risk
+
+CI needs to rerun on the pushed branch to confirm the E2E spec now reaches the
+cycling empty-state assertions reliably.
+
+### Follow-up
+
+The next CI run showed the empty-state assertion still failing because the page
+was waiting on backend calls, not just chart rendering. `pmc.chart` and
+`cyclingAdvanced.activityVariability` kept scanning `analytics.activity_summary`
+and `analytics.deduped_sensor` for the no-activity E2E user, with slow-query
+logs around 95 seconds and the direct `efficiency.aerobicEfficiency` Cypress
+request timing out behind those in-flight ClickHouse queries. PMC and cycling
+activity variability now perform a raw `postgres_fitness.activity FINAL` count
+first and return empty results before touching the expensive read models when
+the user has no raw activities.
+
+### Follow-up
+
+The next E2E rerun still failed at `pnpm e2e:web:run`. The first fatal line
+remained the missing cycling empty state, and the direct
+`efficiency.aerobicEfficiency` API check timed out after 30 seconds. Server logs
+showed `power.powerCurve` and `power.eftpTrend` queries running for roughly
+316-319 seconds, and the new no-activity guards were still using ClickHouse's
+`postgres_fitness.activity` mirror, which left no-activity preflights competing
+with the same overloaded ClickHouse connection. The no-activity guards now read
+raw activity existence from source Postgres `fitness.activity` instead, and the
+power curve/eFTP repositories return empty results before scanning ClickHouse
+when the user has no raw activities.
+
+### Follow-up
+
+`Test / Stryker (11)` failed after the Postgres raw-activity preflight changes.
+The failing step was Stryker, and the fatal line was `Final mutation score 73.91
+under breaking threshold 75`. All surviving mutants were in
+`training-repository.ts`, mostly around the raw activity preflight and empty
+short-circuit branches. The repository tests now assert that weekly volume and
+heart-rate zone preflights require ended activities, that heart-rate zones
+preflight only endurance activity types, and that empty raw activity counts do
+not fall through to ClickHouse read-model queries.
+
+## 2026-05-24: Branch Deploy Blocked by ClickHouse Migration Ordering
+
+### Symptoms
+
+The branch deploy run for `Asherlc/strong-csv-no-records` failed in
+`Build + Deploy / Deploy Web Stack` while applying ClickHouse migrations.
+
+### User Impact
+
+The PR branch could not be deployed for verification. The stack rollout did not
+proceed because the migration container failed before `docker stack deploy`.
+
+### Evidence
+
+Workflow run `26348714913` failed in the `Run migrations` step. The first fatal
+ClickHouse line was `Identifier 'samples.is_deleted' cannot be resolved from
+table with name samples` while creating
+`analytics.resting_heart_rate_sleep_window` from `analytics.deduped_sensor`.
+
+### Root Cause
+
+Migration `0019_non_sensor_read_models_as_views` rebuilt sensor-dependent views
+before migration `0020_incremental_deduped_sensor` upgraded
+`analytics.deduped_sensor` to the incremental schema that includes
+`is_deleted`. Production still had the older `deduped_sensor` shape, so `0019`
+referenced a column that did not exist yet and stopped the deploy.
+
+### Fix or Mitigation
+
+Moved the sensor-dependent view rebuilds out of `0019`; `0020` already rebuilds
+those views after recreating the incremental `deduped_sensor` table. Added a
+regression test that simulates production with migrations through `0018`
+applied and verifies the dependent views are rebuilt only after
+`analytics.deduped_sensor` is recreated.
+
+### Remaining Risk
+
+The fixed branch still needs a fresh CI pass and branch deploy to confirm the
+pending production migration sequence applies cleanly.
+
+### Follow-up
+
+The next CI run failed early in `Test / Spell Check`, and the aggregate
+`Test / Lint & Static Analysis` job failed because it depends on that check.
+The first fatal line was
+`src/db/clickhouse-migrations.test.ts:112:35 - Unknown word (Cutover)`. The
+test helper variable now uses `IncrementalMigration` wording instead of the
+unrecognized term.
+
+### Follow-up
+
+After CI passed, the branch deploy run `26350086210` got past the original SQL
+ordering failure: `0019_non_sensor_read_models_as_views` applied and
+`0020_incremental_deduped_sensor` started. The deploy then failed in the
+foreground Docker-over-SSH migration command with `client_loop: send
+disconnect: Broken pipe`, followed by Docker exit 125. The migration step now
+runs the one-shot migration container detached and polls its status with short
+Docker commands, so a long-running ClickHouse migration does not depend on one
+continuous SSH-backed `docker run` wait. The workflow still prints migration
+logs and fails on the migration container's actual exit code.
+
+### Follow-up
+
+The next deploy run `26351247460` stayed connected past the previous
+Docker-over-SSH failure and surfaced the underlying migration error. The
+migration container printed `Applying ClickHouse migration:
+0020_incremental_deduped_sensor`, then failed with `Error: socket hang up`.
+That migration still performed an all-history sensor scalar backfill and
+all-history deduped sensor recompute in single ClickHouse commands. The
+incremental deduped sensor migration now runs through a dedicated migration
+function that creates the same final tables/views but backfills
+`analytics.sensor_scalar_sample` and `analytics.deduped_sensor` in seven-day
+recorded-at ranges, logging each range before running it.
+
+### Follow-up
+
+Deploy run `26352812408` confirmed the chunked ClickHouse migration path on
+production: `0020_incremental_deduped_sensor` applied after 591 logged
+seven-day ranges and printed `Migration succeeded.` The same run then failed
+later in `Deploy stack`; `docker stack deploy --detach=false` exceeded its 20
+minute wrapper after Swarm updated many services and then stalled around
+management/supporting services. A retry run, `26354114245`, reached migrations
+without replaying the ClickHouse backfill but failed in the detached migration
+monitor: the polling command
+`docker inspect --format '{{.State.Status}} {{.State.ExitCode}}'
+dofek_migrate_26354114245_1` hit `Connection timed out during banner exchange`
+over Docker-over-SSH. The migration container itself was detached, so the
+branch now treats transient remote Docker inspect failures as retryable for a
+bounded number of attempts before failing loudly with the last inspect output
+and migration logs.
+
+### Follow-up
+
+Deploy run `26355597585` failed before migrations in `Reclaim Docker root disk
+headroom`. The command printed `/dev/root 145G 56G 90G 39% /`, then
+`docker system df` reported `failed to retrieve container list: rw layer
+snapshot not found for container 9b85e23837a384fbf7f171f65a7a6af2d4d4943ecfeb0346d58b4c16a6f611f0`.
+The next command, `docker system prune --all --force`, eventually failed over
+Docker-over-SSH with `client_loop: send disconnect: Broken pipe`. The cleanup
+step did not need to prune because the root filesystem already had far more
+than the required 8 GiB free. The workflow now checks free space before
+pruning, skips Docker prune when the precondition is already satisfied, and
+still hard-fails if the host remains below 8 GiB after cleanup.
+
+### Follow-up
+
+Deploy run `26356818633` confirmed the disk-headroom fix: `Reclaim Docker root
+disk headroom` passed and skipped the unnecessary prune. The deploy later
+failed in `Validate host bind mount paths`. The failing command was a
+Docker-over-SSH `docker run --rm --mount type=bind,source=/mnt/dofek-data...`
+used only to check that host directories existed. The first fatal line was
+`docker: error during connect: Post "http://docker.example.com/v1.48/containers/create":
+command [ssh -o ConnectTimeout=30 -T -l root -- *** docker system dial-stdio]
+has exited with exit status 255`, followed by `client_loop: send disconnect:
+Broken pipe` and Docker exit 125. The step did not need a container or Docker
+daemon interaction to validate host filesystem paths. The workflow now checks
+the same required directories with a direct SSH `test -d` loop on the host,
+leaving Docker-over-SSH for actual Docker operations.
+
+### Follow-up
+
+Deploy run `26358289913` confirmed the direct SSH bind-path validation had not
+yet been reached. The run failed earlier in `Pull deploy images` while
+prefetching public dependency images. The failing command was the
+`pull_if_missing "timescale/timescaledb-ha:pg18.3-ts2.26.4-all"` Docker pull
+inside the image prefetch step. The first fatal line was
+`error during connect: Post "http://docker.example.com/v1.48/images/create?fromImage=timescale%2Ftimescaledb-ha&tag=pg18.3-ts2.26.4-all":
+command [ssh -o ConnectTimeout=30 -T -l root -- *** docker system dial-stdio]
+has exited with exit status 255`, followed by `Connection timed out during
+banner exchange`. The private branch images had already pulled successfully,
+but the public dependency prefetch path still opened a fresh Docker-over-SSH
+connection per image. The workflow now keeps the private GHCR pulls on
+Docker-over-SSH so they can use the runner's registry login, and pulls the
+public dependency images through one direct SSH session on the host to avoid
+repeated Docker-over-SSH handshakes for static public images.
+
+### Follow-up
+
+Deploy run `26359577017` confirmed the image prefetch path and migrations, then
+failed in `Deploy stack` while Swarm was updating services. The failing command
+was `timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack
+deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=false
+"$STACK_NAME"`. The first fatal line was `yh2hm4dz5w3hrospbru4mp04w: Error
+response from daemon: rpc error: code = DeadlineExceeded desc = context
+deadline exceeded`, followed by `dofek_web` rollback pausing because task
+`hi4i7bd1ktymuasvlmznjit2p` failed or terminated early. Host diagnostics showed
+`dofek_web` in `rollback_paused`, web service logs showed repeated `[web]
+Failed to start: Error: Timeout error.`, and worker logs from the same rollout
+showed transient ClickHouse/database reachability errors including
+`ECONNREFUSED 10.0.1.8:8123` and `getaddrinfo ENOTFOUND db`.
+
+The root cause was the web process's ClickHouse startup bootstrap treating the
+ClickHouse client request timeout as fatal while ClickHouse, database DNS, or
+overlay networking was transient during stack rollout. The existing startup
+wait loop already retried connection-refused errors; it now also retries the
+ClickHouse client's exact `Timeout error.` response, with a regression test
+covering the retry behavior. No arbitrary sleep or larger deploy timeout was
+added.
+
+### Follow-up
+
+Deploy run `26361342212` failed before touching production in `Setup SSH`. The
+failing command was the shared `.github/actions/setup-ssh-host` loop running
+`ssh-keyscan -T "$keyscan_timeout" -H "$SSH_HOST"` before any Infisical export,
+image pull, migration, or stack deploy step. The first fatal line was
+`SSH host key for *** did not become available within 235s`; every attempt
+reported `ssh-keyscan returned no key` while `tcp/22: reachable (no SSH banner
+yet)`.
+
+External diagnostics showed this was host saturation, not a branch deploy
+secret or GitHub checkout failure: Hetzner metrics had production pinned near
+400% CPU from before the deploy attempt, local SSH started timing out during
+banner exchange, `https://dofek.asherlc.com/healthz` timed out, and Axiom logs
+showed system-wide load symptoms including Netdata heartbeat delays, Postgres
+`autovacuum worker took too long to start; canceled`, and Temporal/PeerDB
+`context deadline exceeded` polling failures. The earliest repeated causal log
+pattern was the optional `cloudbeaver` management service crash-looping on its
+persisted workspace with `JdbcSQLSyntaxErrorException: Duplicate column name
+"UPDATE_TIME"` and `CloudBeaver ... Error initializing database`.
+
+The direct mitigation in this branch is to scale the optional production
+`cloudbeaver` service to zero in `deploy/stack.yml`, matching the existing
+staging pattern for heavy management UIs. This removes the crash-looping
+service from the production convergence set so the core app, database,
+ClickHouse, PeerDB, and deploy path can recover. Remaining risk: CloudBeaver
+will stay unavailable until its persisted workspace is repaired or replaced and
+the service is explicitly re-enabled.
+
+The first Hetzner `reboot_server` action returned success but did not actually
+restart the host (`uptime` still showed 3 days), so SSH timed out again within
+minutes. A hard `reset_server` restarted the machine and restored SSH with load
+near zero. Because the old stack still started the crash-looping CloudBeaver
+service before CI could finish, a second hard reset was followed by
+`docker service scale dofek_cloudbeaver=0`, matching the already-committed
+`deploy/stack.yml` desired state, to keep the host reachable until the normal
+branch deploy can apply the same change through CI.
+
+### Follow-up
+
+Deploy run `26362822406` confirmed that disabling CloudBeaver restored SSH
+setup, image pulls, and the pre-migration readiness steps. The run then failed
+in `Run migrations`; the migration container started as
+`dofek_migrate_26362822406_1`, then logged `error: [migrate] Error: connect
+ECONNREFUSED 10.0.1.97:5432` before the workflow emitted
+`##[error]Migration failed`.
+
+Host evidence showed the refused address was the Swarm VIP for `dofek_db`.
+That refusal was a symptom of broader service churn: `dofek_clickhouse` was
+restarting every few dozen seconds with Swarm task failures
+`task: non-zero exit (137)`, web tasks failed with `socket hang up` and
+`Timeout error`, and kernel OOM logs repeatedly killed `clickhouse-serv` at
+about 4.6-5.0 GiB RSS on a 7.5 GiB host with no swap. The root cause was the
+production ClickHouse container being allowed to consume too much of the
+single-node host's memory during analytics join work, causing host-level OOM
+kills and downstream database/ClickHouse connection failures during deploy.
+
+The branch now lowers the ClickHouse container limit from 5 GiB to 4 GiB,
+adds a checked-in 3 GiB ClickHouse `max_server_memory_usage` config, mounts that
+config in production/local/review ClickHouse containers, adds a production
+ClickHouse healthcheck, and treats recent DB/ClickHouse task failures as a
+bootstrap condition so the corrected data-service stack can be applied before
+the migration container runs.
+
+### Follow-up
+
+Deploy run `26364429876` was triggered from the branch after PR CI passed. It
+confirmed the previous SSH setup problem was fixed and completed image pulls,
+bind mount validation, bootstrap evaluation, and pre-migration Postgres and
+ClickHouse readiness checks. The run then failed again in `Run migrations`.
+The exact failing command was the detached migration container
+`dofek_migrate_26364429876_1`, and the first fatal application line was
+`error: [migrate] Error: connect ECONNREFUSED 10.0.1.97:5432`. The workflow
+also logged an SSH control-plane symptom while polling that container:
+`Connection timed out during banner exchange`.
+
+The causal gap was in the new bootstrap guard. It only checked whether DB and
+ClickHouse tasks were running and whether they had recent failed tasks, so it
+logged `Swarm DB and ClickHouse services exist with running tasks and no recent
+failures; skipping bootstrap deploy.` Because the live ClickHouse service still
+had the old resource/config spec, the new 4 GiB container limit and 3 GiB
+ClickHouse server memory limit were not applied before the migration container
+ran. During the same window Hetzner CPU metrics showed the production host
+pinned near 400%, local SSH probes timed out during banner exchange, and public
+`/healthz` requests timed out.
+
+The direct fix is to make the deploy ordering explicit instead of adding a
+ClickHouse-specific stale-spec check. The deploy workflow now always applies
+the stack configuration before migrations. If an app stack already exists, that
+pre-migration stack apply uses the currently deployed app image tag so database,
+ClickHouse, network, config, and resource-limit changes are in place before
+migrations without rolling new app code ahead of schema changes. Clean-slate
+hosts still use the requested deploy image tag because there is no previous app
+release to preserve.
+
+### Follow-up
+
+Deploy run `26366695503` validated CI on the cleaner pre-migration stack-apply
+approach, then failed in `Apply stack config before migrations` before
+migrations ran. The exact failing command was the pre-migration
+`docker stack deploy ... --detach=false` call. The first fatal line was
+`error during connect: Get "http://docker.example.com/v1.48/info": command
+[ssh ... docker system dial-stdio] has exited with exit status 255`, followed
+by `Connection timed out during banner exchange`.
+
+Two issues were visible in the same step. First, the current-service probe used
+`if docker service inspect ...; then ... else ... fi`, so any Docker control
+plane failure was treated as a clean-slate stack and logged `No existing web
+service`. Second, `--detach=false` kept a long-lived Docker-over-SSH stack
+deploy wait open while the single-node host restarted many stack services,
+which made SSH banner exchange unreliable under the restart load. Host evidence
+showed load above 250 and app services restarting immediately after the failed
+step.
+
+The direct fix is to make the service probe distinguish a real missing service
+from Docker/SSH failures and to run the pre-migration stack apply detached. The
+workflow already waits explicitly for Postgres and ClickHouse before migrations,
+so it no longer needs a full stack convergence wait before the schema step.
+
+A hard Hetzner reset restored SSH temporarily after the failed run, but the live
+stack was still on the old ClickHouse spec (`5GiB` container limit and no
+`memory-limits.xml` mount) and web tasks continued to churn while waiting for
+ClickHouse bootstrap verification. The durable recovery remains the committed
+deploy ordering fix plus a rerun of the branch deploy so the checked-in
+ClickHouse resource/config limits are applied through Swarm.
+
+### Follow-up
+
+Deploy run `26368319681` confirmed the detached pre-migration stack apply works:
+`Apply stack config before migrations`, `Wait for Postgres writable`, and
+`Wait for ClickHouse` all passed. The run then failed in `Run migrations`. The
+first fatal migration line was `(total) memory limit exceeded: would use 3.79
+GiB ... maximum: 3.00 GiB`.
+
+That proved the checked-in 3 GiB ClickHouse server cap was below the observed
+production migration workload. The cap prevented host-level OOM, but it also
+blocked the normal ClickHouse migration query path before the final app rollout.
+The branch raises `max_server_memory_usage` to 4 GiB and gives the container a
+4500 MiB cgroup limit. This keeps ClickHouse below the earlier 4.6-5.0 GiB
+host-OOM range while allowing the measured 3.79 GiB migration query to run.
+
+During the same incident window the old web stack was already unhealthy and
+crash-looping on ClickHouse bootstrap. To keep the host reachable long enough
+for the committed deploy fix to run, `dofek_web` and optional `dofek_netdata`
+were temporarily scaled to zero by hand. This was an outage mitigation only;
+the next successful stack deploy must restore service specs from
+`deploy/stack.yml`.
+
+### Follow-up
+
+Deploy run `26368662541` failed in `Apply stack config before migrations`
+before readiness checks or migrations ran. The exact failing command was the
+pre-migration `docker stack deploy ... --detach=true` call. The first fatal
+line was `failed to update config dofek_clickhouse_memory_limits: Error
+response from daemon: rpc error: code = InvalidArgument desc = only updates to
+Labels are allowed`.
+
+The root cause was Docker Swarm config immutability. The branch changed the
+contents of `deploy/clickhouse/config.d/memory-limits.xml` from a 3 GiB
+ClickHouse server cap to a 4 GiB cap while reusing the existing stack config
+key `clickhouse_memory_limits`. Swarm cannot update config contents in place;
+it only allows label updates on an existing config object.
+
+The direct fix is to rotate the ClickHouse memory config key in
+`deploy/stack.yml` to `clickhouse_memory_limits_4g` while keeping the same
+container mount path. The next stack deploy will create a new Swarm config
+object and attach it to ClickHouse instead of trying to mutate the old one.
+
+### Follow-up
+
+Deploy run `26368809440` confirmed the rotated Swarm config fixed the previous
+failure: the pre-migration stack apply, Postgres readiness check, and
+ClickHouse readiness check passed. The run then failed in `Run migrations`
+while starting the migration container. The first fatal line was `docker: error
+during connect: Head "http://docker.example.com/_ping": command [ssh ... docker
+system dial-stdio] has exited with exit status 255`, followed by `Connection
+timed out during banner exchange`.
+
+Host evidence showed the pre-migration stack apply restored old app services
+before migrations: `dofek_web` was desired `0/2` with repeated task failures,
+`dofek_worker` was restarting, and ClickHouse was repeatedly killed by its
+memory cgroup at about 4.57 GiB RSS. ClickHouse logs showed concurrent
+analytics queries against `postgres_fitness.*` immediately before each kill.
+The root cause was the pre-migration stack apply allowing old app/worker tasks
+to issue expensive analytics queries against ClickHouse during the migration
+window, exhausting the ClickHouse cgroup and overloading the host SSH control
+plane before the migration container could start.
+
+The direct fix is to make the pre-migration stack apply a data-service/config
+phase: it now uses a temporary stack overlay that sets `web`, `worker`, and
+`training-export-worker` replicas to zero before readiness checks and
+migrations. The final stack deploy remains the only step that restores app
+replicas from `deploy/stack.yml`.
+
+### Follow-up
+
+Deploy run `26369862049` confirmed the pre-migration quiesce overlay worked:
+image build, SSH setup, stack render, pre-migration stack apply, Postgres
+readiness, ClickHouse readiness, and migrations all passed. The run was then
+cancelled during final stack rollout after restored web/worker tasks repeatedly
+caused ClickHouse OOM kills. The first app fatal line was `[web] Failed to
+start: Error: socket hang up`; kernel evidence showed ClickHouse killed by
+global and cgroup OOM during the same window.
+
+The root cause was the server startup ClickHouse smoke test issuing
+`SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1`.
+`analytics.activity_summary` is now a ClickHouse view, so `count()` forced the
+full activity summary view to execute during every web boot. That was enough to
+exhaust ClickHouse memory and make the web healthcheck fail before the final
+rollout could converge.
+
+The first attempted fix changed startup smoke verification to
+`SELECT * FROM <object> LIMIT 0`, but ClickHouse still expanded the recursive
+view plan and hit the same memory path. The direct fix is to keep startup
+verification entirely in metadata: after the existing `system.tables` existence
+checks, the server now checks `system.columns` for each required object instead
+of querying the object itself. This still fails loudly on missing objects with no
+visible columns without materializing expensive views at app startup.
+
+### Follow-up
+
+Deploy run `26370427808` on commit `e3807d7b` verified the metadata-only
+ClickHouse smoke test fix in production. The run completed the image builds,
+pre-migration quiesced stack apply, Postgres and ClickHouse readiness checks,
+migrations, final stack deploy, PeerDB checks, Temporal search attribute
+setup, and ClickHouse CDC configuration successfully.
+
+Post-deploy validation showed `dofek_web` restored to `2/2`, `dofek_worker` to
+`1/1`, `dofek_training-export-worker` to `1/1`, and `dofek_clickhouse` to
+`1/1`, all on the expected `sha-e3807d7` branch image where applicable. The
+public `https://dofek.asherlc.com/healthz` endpoint returned
+`{"status":"ok"}`, and the app root returned HTTP 200. ClickHouse was running
+with a 4,500 MiB cgroup cap and the rotated
+`dofek_clickhouse_memory_limits_4g` Swarm config. Kernel OOM evidence stopped
+before the successful deploy started, with no new OOM kills during or after the
+successful rollout.

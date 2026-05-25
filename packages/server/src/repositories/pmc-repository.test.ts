@@ -45,9 +45,12 @@ function makeSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[],
 ): ActivitySensorStore {
-  const query = vi.fn();
-  query.mockResolvedValueOnce(activityRows);
-  query.mockResolvedValueOnce(normalizedPowerRows);
+  const query = vi.fn(
+    async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
+      const rows = queryText.includes("rolling_30s_power") ? normalizedPowerRows : activityRows;
+      return rows.map((row) => schema.parse(row));
+    },
+  );
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -66,17 +69,43 @@ function makeRepoHarness(
   activityRows: Record<string, unknown>[] = [],
   normalizedPowerRows: Record<string, unknown>[] = [],
   timezone = "UTC",
+  rawActivityCount = activityRows.length,
 ) {
-  const db = { execute: vi.fn() };
+  const db = { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
   const sensorStore = makeSensorStore(activityRows, normalizedPowerRows);
   return {
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
+    execute: db.execute,
     query: sensorStore.query,
   };
 }
 
 describe("PmcRepository", () => {
   describe("getChart", () => {
+    it("returns empty data with generic model when no raw activities exist", async () => {
+      const { repo } = makeRepoHarness([], [], "UTC", 0);
+
+      const result = await repo.getChart(180);
+
+      expect(result.data).toEqual([]);
+      expect(result.model).toEqual({
+        type: "generic",
+        pairedActivities: 0,
+        r2: null,
+        ftp: null,
+      });
+    });
+
+    it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
+      const { repo, execute, query } = makeRepoHarness([], [], "UTC", 0);
+
+      const result = await repo.getChart(180);
+
+      expect(result.data).toEqual([]);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(query).not.toHaveBeenCalled();
+    });
+
     it("passes timezone and expanded query window to ClickHouse activity and power queries", async () => {
       const { repo, query } = makeRepoHarness(
         [makeActivityRow({ avg_power: null, power_samples: 0 })],
@@ -105,7 +134,7 @@ describe("PmcRepository", () => {
     });
 
     it("extends query history when requested display days exceed the minimum history", async () => {
-      const { repo, query } = makeRepoHarness([], []);
+      const { repo, query } = makeRepoHarness([], [], "UTC", 1);
 
       await repo.getChart(400);
 
@@ -134,13 +163,13 @@ describe("PmcRepository", () => {
       expect(query).toHaveBeenNthCalledWith(
         1,
         expect.anything(),
-        expect.stringContaining("countIf(channel = 'heart_rate') AS hr_samples"),
+        expect.stringContaining("countIf(samples.channel = 'heart_rate') AS hr_samples"),
         expect.anything(),
       );
       expect(query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
-        expect.stringContaining("INNER JOIN analytics.v_activity a ON a.id = ds.activity_id"),
+        expect.stringContaining("INNER JOIN analytics.activity_summary a"),
         expect.anything(),
       );
     });

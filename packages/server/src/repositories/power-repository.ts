@@ -5,7 +5,9 @@ import {
   DURATION_LABELS,
   fitCriticalPower,
 } from "@dofek/training/power-analysis";
+import type { Database } from "dofek/db";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { countRawActivities } from "./raw-activity-count.ts";
 
 // ── Repository ───────────────────────────────────────────────
 
@@ -13,11 +15,18 @@ export class PowerRepository {
   readonly #userId: string;
   readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
+  readonly #db: Pick<Database, "execute"> | undefined;
 
-  constructor(userId: string, timezone: string, sensorStore: ActivitySensorStore) {
+  constructor(
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+    db?: Pick<Database, "execute">,
+  ) {
     this.#userId = userId;
     this.#timezone = timezone;
     this.#sensorStore = sensorStore;
+    this.#db = db;
   }
 
   /**
@@ -33,6 +42,10 @@ export class PowerRepository {
     }[];
     model: CriticalPowerModel | null;
   }> {
+    if ((await this.#loadRawActivityCount(days)) === 0) {
+      return { points: [], model: null };
+    }
+
     const samples = await this.#sensorStore.getPowerCurveSamples(
       days,
       this.#userId,
@@ -61,6 +74,10 @@ export class PowerRepository {
     currentEftp: number | null;
     model: CriticalPowerModel | null;
   }> {
+    if ((await this.#loadRawActivityCount(days)) === 0) {
+      return { trend: [], currentEftp: null, model: null };
+    }
+
     const normalizedPowerSamples = await this.#sensorStore.getNormalizedPowerSamples(
       days,
       this.#userId,
@@ -98,5 +115,13 @@ export class PowerRepository {
     }
 
     return { trend, currentEftp, model };
+  }
+
+  async #loadRawActivityCount(days: number): Promise<number> {
+    if (!this.#db) return 1;
+    return countRawActivities(this.#db, {
+      userId: this.#userId,
+      days,
+    });
   }
 }

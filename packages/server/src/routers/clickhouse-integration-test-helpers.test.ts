@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import {
   createClickHouseTestActivitySensorStore,
@@ -9,6 +9,7 @@ const clickHouseMocks = vi.hoisted(() => ({
   close: vi.fn(),
   command: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
+  processDedupedSensorDirtyKeys: vi.fn(),
   query: vi.fn(),
 }));
 
@@ -17,6 +18,15 @@ vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
   return {
     ...original,
     createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
+  };
+});
+
+vi.mock("../../../../src/db/clickhouse-deduped-sensor.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../../../../src/db/clickhouse-deduped-sensor.ts")>();
+  return {
+    ...original,
+    processDedupedSensorDirtyKeys: clickHouseMocks.processDedupedSensorDirtyKeys,
   };
 });
 
@@ -37,11 +47,7 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.activity_trend_daily",
       ]) {
         await client.command({
-          query: `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
-REFRESH EVERY 1 MINUTE
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS allow_nullable_key = 1
+          query: `CREATE VIEW IF NOT EXISTS ${viewName}
 AS
 SELECT 1 AS value`,
         });
@@ -54,7 +60,7 @@ SELECT 1 AS value`,
 const mockRunClickHouseMigrations = vi.mocked(runClickHouseMigrations);
 
 describe("clickhouse integration test helpers", () => {
-  it("syncs raw mirrored tables and populates stored test analytics tables", async () => {
+  beforeEach(() => {
     clickHouseMocks.command.mockReset().mockResolvedValue(undefined);
     clickHouseMocks.query.mockReset().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) });
     clickHouseMocks.close.mockReset().mockResolvedValue(undefined);
@@ -63,6 +69,10 @@ describe("clickhouse integration test helpers", () => {
       command: clickHouseMocks.command,
       query: clickHouseMocks.query,
     });
+    clickHouseMocks.processDedupedSensorDirtyKeys.mockReset().mockResolvedValue(0);
+  });
+
+  it("syncs raw mirrored tables and populates stored test analytics tables", async () => {
     const testContext = {
       addCleanup: vi.fn(),
       connectionString: "postgres://health:fixture@db:5432/health",
@@ -79,6 +89,13 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS postgres_fitness_test_") &&
           command.includes(".metric_stream"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
 
@@ -145,13 +162,19 @@ describe("clickhouse integration test helpers", () => {
           command.includes("FROM postgresql('db:5432', 'health', 'lab_result'"),
       ),
     ).toBe(true);
-    expect(commands.every((command) => !command.includes("SYSTEM REFRESH VIEW"))).toBe(true);
-    expect(commands.every((command) => !command.includes("SYSTEM WAIT VIEW"))).toBe(true);
     expect(
       commands.some(
         (command) =>
           command.includes("TRUNCATE TABLE analytics_test_") &&
           command.endsWith(".v_daily_metrics"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".v_daily_metrics") &&
+          command.includes("\nSELECT"),
       ),
     ).toBe(true);
     expect(
@@ -173,6 +196,33 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-    expect(commands.filter((command) => command === "SELECT 1")).toHaveLength(11);
+  });
+
+  it("drains deduped sensor dirty keys until no pending rows remain", async () => {
+    clickHouseMocks.processDedupedSensorDirtyKeys
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0);
+    const testContext = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+
+    await createClickHouseTestActivitySensorStore(testContext);
+
+    expect(clickHouseMocks.processDedupedSensorDirtyKeys).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails when the deduped sensor dirty-key backlog does not drain", async () => {
+    clickHouseMocks.processDedupedSensorDirtyKeys.mockResolvedValue(1);
+    const testContext = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+
+    await expect(createClickHouseTestActivitySensorStore(testContext)).rejects.toThrow(
+      "ClickHouse test sensor dirty-key backlog did not drain",
+    );
+    expect(clickHouseMocks.processDedupedSensorDirtyKeys).toHaveBeenCalledTimes(1000);
   });
 });

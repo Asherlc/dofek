@@ -9,13 +9,29 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(() => "event-id"),
 }));
 
+function getRowMaxHeartRate(row: unknown): unknown {
+  if (row !== null && typeof row === "object" && "max_hr" in row) {
+    return row.max_hr;
+  }
+  return null;
+}
+
 function makeSensorStore(rows: unknown[]): ActivitySensorStore {
-  // Mirror ClickHouseActivitySensorStore.query: parse each row through the
-  // supplied Zod schema. Sequential calls return the same `rows`, which works
-  // because every getter in this repo issues exactly one CH query.
-  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
-    return rows.map((row) => schema.parse(row));
-  });
+  const query = vi
+    .fn()
+    .mockImplementation(
+      async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
+        if (queryText?.includes("toInt32(count()) AS endurance_activities")) {
+          return [
+            schema.parse({
+              max_hr: getRowMaxHeartRate(rows[0]),
+              endurance_activities: rows.length,
+            }),
+          ];
+        }
+        return rows.map((row) => schema.parse(row));
+      },
+    );
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -30,13 +46,16 @@ function makeSensorStore(rows: unknown[]): ActivitySensorStore {
   } satisfies ActivitySensorStore;
 }
 
+const diagnosticsBySensorStore = new WeakMap<ActivitySensorStore, Record<string, unknown>[]>();
+
 function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): ActivitySensorStore {
   const rowQueue = rowsByCall.map((rows) => [...rows]);
+  const diagnosticRows = rowQueue.shift() ?? [];
   const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
     const rows = rowQueue.shift() ?? [];
     return rows.map((row) => schema.parse(row));
   });
-  return {
+  const sensorStore = {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
@@ -48,19 +67,24 @@ function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): Act
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
   } satisfies ActivitySensorStore;
+  diagnosticsBySensorStore.set(sensorStore, diagnosticRows);
+  return sensorStore;
 }
 
 function makeRepository(rows: Record<string, unknown>[] = []) {
-  // After the CH migration, all efficiency queries route through sensorStore.
-  // The diagnostic logger inside getAerobicEfficiency also uses sensorStore.
-  const execute = vi.fn();
+  const execute = vi.fn().mockResolvedValue([
+    {
+      max_hr: getRowMaxHeartRate(rows[0]),
+      endurance_activities: rows.length,
+    },
+  ]);
   const sensorStore = makeSensorStore(rows);
   const repo = new EfficiencyRepository({ execute }, "user-1", "UTC", sensorStore);
   return { repo, execute, sensorStore };
 }
 
 function makeRepositoryWithSensorStore(sensorStore: ActivitySensorStore) {
-  const execute = vi.fn();
+  const execute = vi.fn().mockResolvedValue(diagnosticsBySensorStore.get(sensorStore) ?? []);
   const repo = new EfficiencyRepository({ execute }, "user-1", "UTC", sensorStore);
   return { repo, execute, sensorStore };
 }
@@ -76,25 +100,71 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(result).toEqual({ maxHr: null, activities: [] });
   });
 
-  it("issues a CH query for the main aggregation and a diagnostic CH query when empty", async () => {
-    const { repo, sensorStore } = makeRepository([]);
+  it("returns before the main aggregation when no endurance activities exist", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [
+        {
+          max_hr: null,
+          endurance_activities: "0",
+        },
+      ],
+    ]);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
     await repo.getAerobicEfficiency(90);
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+
+    expect(sensorStore.query).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 
-  it("does not run diagnostics when the main aggregation returns rows", async () => {
-    const { repo, sensorStore } = makeRepository([
+  it("continues to the main aggregation when endurance activities exist", async () => {
+    const { repo, sensorStore } = makeRepository([{ max_hr: 190 }]);
+    vi.mocked(sensorStore.query).mockResolvedValueOnce([
       {
-        max_hr: "190",
+        max_hr: 190,
         date: "2025-06-01",
         activity_type: "cycling",
         name: "Morning Ride",
-        avg_power_z2: "180.5",
-        avg_hr_z2: "135.2",
-        efficiency_factor: "1.335",
-        z2_samples: "1800",
+        avg_power_z2: 180,
+        avg_hr_z2: 135,
+        efficiency_factor: 1.333,
+        z2_samples: 1800,
       },
     ]);
+
+    await repo.getAerobicEfficiency(90);
+
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain(
+      "FROM analytics.activity_summary",
+    );
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
+  });
+
+  it("does not run diagnostics when the main aggregation returns rows", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [
+        {
+          max_hr: "190",
+          endurance_activities: "1",
+        },
+      ],
+      [
+        {
+          max_hr: "190",
+          date: "2025-06-01",
+          activity_type: "cycling",
+          name: "Morning Ride",
+          avg_power_z2: "180.5",
+          avg_hr_z2: "135.2",
+          efficiency_factor: "1.335",
+          z2_samples: "1800",
+        },
+      ],
+    ]);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
 
     await repo.getAerobicEfficiency(90);
 
@@ -103,11 +173,15 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
 
   it("uses diagnostic max heart rate and logs context when no activities qualify", async () => {
     const sensorStore = makeSequentialSensorStore([
-      [],
       [
         {
           max_hr: "192",
           endurance_activities: "3",
+        },
+      ],
+      [],
+      [
+        {
           activities_with_power: "2",
           activities_with_hr: "1",
         },
@@ -123,6 +197,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=192, endurance_activities=3, with_power=2, with_hr=1",
     );
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
@@ -132,6 +207,29 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         days: 90,
         enduranceTypes: expect.arrayContaining(["cycling", "running"]),
       }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not scan deduped sensor diagnostics when no endurance activities exist", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [
+        {
+          max_hr: null,
+          endurance_activities: "0",
+        },
+      ],
+    ]);
+    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    const result = await repo.getAerobicEfficiency(90);
+
+    expect(result).toEqual({ maxHr: null, activities: [] });
+    expect(sensorStore.query).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=null, endurance_activities=0, with_power=0, with_hr=0",
     );
 
     warnSpy.mockRestore();
@@ -157,7 +255,8 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const diagnosticError = new Error("diagnostic query failed");
     const sensorStore = makeSequentialSensorStore([]);
     vi.mocked(sensorStore.query).mockResolvedValueOnce([]).mockRejectedValueOnce(diagnosticError);
-    const { repo } = makeRepositoryWithSensorStore(sensorStore);
+    const { repo, execute } = makeRepositoryWithSensorStore(sensorStore);
+    execute.mockResolvedValueOnce([{ max_hr: 190, endurance_activities: 1 }]);
     const captureException = vi.mocked(Sentry.captureException);
     captureException.mockClear();
 

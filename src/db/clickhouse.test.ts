@@ -134,64 +134,66 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
-    expect(sql).toContain("ENGINE = MergeTree");
+    expect(sql).toContain("ENGINE = ReplacingMergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).not.toContain("REFRESH EVERY");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
     expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor\nREFRESH EVERY 15 MINUTE",
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_scalar_sample_ingest TO analytics.sensor_scalar_sample",
     );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
+    expect(sql).toContain(
+      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_dirty_key_ingest TO analytics.sensor_dirty_key",
+    );
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).not.toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
+    const dedupedSensorDefinition = sql.slice(
+      sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
+      sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key"),
+    );
+    expect(dedupedSensorDefinition).not.toContain("activity_id");
     expect(sql).toContain("tupleElement(metric_stream.point, 2)");
     expect(sql).toContain("tupleElement(metric_stream.point, 1)");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary\nREFRESH EVERY 15 MINUTE OFFSET 10 SECOND",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).not.toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_summary");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_summary");
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
-    expect(sql).toContain("REFRESH EVERY 1 MINUTE");
     expect(sql).toContain("FROM postgres_fitness.metric_stream");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_activity_members");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_sleep");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-    );
-    expect(sql).toContain("REFRESH EVERY 1 DAY OFFSET 4 HOUR");
-    expect(sql).toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain("SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_location\nREFRESH EVERY 15 MINUTE",
-    );
-    expect(sql.indexOf("SYSTEM WAIT VIEW analytics.deduped_sensor")).toBeLessThan(
-      sql.indexOf(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
-      ),
-    );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement\nREFRESH EVERY 15 MINUTE",
-    );
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.deduped_location");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.deduped_location");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.v_body_measurement");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.v_body_measurement");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");
     expect(sql).toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.body_measurement_sample_ingest TO analytics.body_measurement_sample",
     );
     expect(sql).toContain("FROM analytics.body_measurement_sample FINAL");
     expect(sql).not.toContain("FROM postgres_fitness.body_measurement");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_daily_metrics");
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_stats\nREFRESH EVERY 15 MINUTE",
-    );
-    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.activity_trend_daily\nREFRESH EVERY 15 MINUTE OFFSET 20 SECOND",
-    );
-    expect(sql).toContain("countIf(channel = 'speed') AS speed_samples");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.provider_stats");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.provider_stats");
+    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
+    expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
+    expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_trend_daily");
+    expect(sql).toContain("countIf(distinct_samples.channel = 'speed') AS speed_samples");
     expect(sql).toContain("uniqExact(activity_id) AS activity_count");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
@@ -230,7 +232,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("best.created_at AS created_at");
     expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
     expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
-    expect(sql).toContain("FROM analytics.deduped_sensor");
+    expect(sql).toContain("JOIN analytics.deduped_sensor AS");
     expect(sql).toContain("FROM analytics.v_sleep");
     expect(sql).toContain("arrayAvg(arraySlice(");
     expect(sql).toContain(
@@ -247,7 +249,7 @@ describe("bootstrapClickHouseFromEnv", () => {
       json: vi
         .fn()
         .mockResolvedValue(
-          queryText.includes("system.tables") ? [{ table_count: 1 }] : [{ smoke_count: 0 }],
+          queryText.includes("system.tables") ? [{ table_count: 1 }] : [{ column_count: 1 }],
         ),
     }));
     const client = { command, query };
@@ -276,19 +278,23 @@ describe("bootstrapClickHouseFromEnv", () => {
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM postgres_fitness.metric_stream LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'postgres_fitness' AND table = 'metric_stream'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.deduped_sensor LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'deduped_sensor'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.activity_summary LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'activity_summary'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
-      query: "SELECT count() AS smoke_count FROM analytics.activity_trend_daily LIMIT 1",
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'activity_trend_daily'",
       format: "JSONEachRow",
     });
   });
@@ -346,6 +352,35 @@ describe("waitForClickHouseTable", () => {
         queryCount += 1;
         if (queryCount < 3) {
           throw new Error("connect ECONNREFUSED 10.0.1.8:8123");
+        }
+        return {
+          json: vi.fn().mockResolvedValue([{ table_count: 1 }]),
+        };
+      });
+
+      const result = waitForClickHouseTable(
+        { command: vi.fn().mockResolvedValue(undefined), query },
+        "postgres_fitness",
+        "metric_stream",
+      );
+
+      await vi.advanceTimersByTimeAsync(3_000);
+
+      await expect(result).resolves.toBeUndefined();
+      expect(query).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries transient ClickHouse request timeouts during startup", async () => {
+    vi.useFakeTimers();
+    try {
+      let queryCount = 0;
+      const query = vi.fn().mockImplementation(() => {
+        queryCount += 1;
+        if (queryCount < 3) {
+          throw new Error("Timeout error.");
         }
         return {
           json: vi.fn().mockResolvedValue([{ table_count: 1 }]),

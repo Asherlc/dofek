@@ -36,9 +36,11 @@ function makeHrvBaselineRow(overrides: Record<string, unknown> = {}): Record<str
   return {
     date: "2025-03-15",
     hrv: "45",
+    resting_hr: null,
     mean_60d: "42.5",
     sd_60d: "8.3",
     mean_7d: "44.1",
+    resting_hr_mean_7d: null,
     ...overrides,
   };
 }

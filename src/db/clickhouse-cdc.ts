@@ -26,6 +26,7 @@ export interface PeerDbSqlTemplateValues {
 interface RawAnalyticsInitialCopyValues {
   dofek_fitness_raw_analytics: boolean;
   dofek_provider_inventory_raw_analytics: boolean;
+  dofek_sensor_priority_raw_analytics: boolean;
 }
 
 interface ClickHouseRowCount {
@@ -69,11 +70,14 @@ const analyticsSourceTables = [
   "provider",
   "provider_priority",
   "device_priority",
+  "sensor_provider_priority",
+  "sensor_device_priority",
   "user_profile",
 ] as const;
 const rawAnalyticsMirrorNames = [
   "dofek_fitness_raw_analytics",
   "dofek_provider_inventory_raw_analytics",
+  "dofek_sensor_priority_raw_analytics",
 ] as const;
 const rawAnalyticsMirrorTableMappings: Record<
   (typeof rawAnalyticsMirrorNames)[number],
@@ -96,10 +100,12 @@ const rawAnalyticsMirrorTableMappings: Record<
     "lab_result",
     "journal_entry",
   ],
+  dofek_sensor_priority_raw_analytics: ["sensor_provider_priority", "sensor_device_priority"],
 };
 const defaultRawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues = {
   dofek_fitness_raw_analytics: true,
   dofek_provider_inventory_raw_analytics: true,
+  dofek_sensor_priority_raw_analytics: true,
 };
 const peerDbMetadataColumns = [
   "_peerdb_synced_at DateTime64(9) DEFAULT now()",
@@ -315,6 +321,9 @@ function buildTemplateReplacements(
     ),
     PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
       rawAnalyticsInitialCopyValues.dofek_provider_inventory_raw_analytics,
+    ),
+    SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY: String(
+      rawAnalyticsInitialCopyValues.dofek_sensor_priority_raw_analytics,
     ),
     POSTGRES_CREDENTIAL: peerDbStringLiteral(values.postgresCredential),
     POSTGRES_DATABASE: peerDbStringLiteral(values.postgresDatabase),
