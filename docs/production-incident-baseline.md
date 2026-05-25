@@ -7,6 +7,74 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-25: Deploy Web Failed On Netdata OOM And Stale PeerDB Mirror Slot
+
+### Symptoms
+
+The `Deploy Web` workflow for commit `83f82b1fccb707046ce26632f34334e902eeb1bb`
+failed. The production `Deploy stack` step failed before post-deploy checks,
+and the staging deployment later failed in `Configure ClickHouse CDC`.
+
+### User Impact
+
+Production application services still rolled to `sha-83f82b1`, but the
+workflow reported failure and skipped the post-deploy readiness, PeerDB, and
+CDC setup checks. Staging also ended with CDC setup incomplete.
+
+### Evidence
+
+The linked production job failed in `Deploy stack` with:
+
+```text
+qqiyjespsj1efpwpou1sqgywq: Error response from daemon: rpc error: code = DeadlineExceeded desc = context deadline exceeded
+```
+
+The service ID mapped to `dofek_netdata`. Production Swarm showed
+`dofek_netdata` at `0/1`, and `docker service ps dofek_netdata` showed repeated
+task failures with `task: non-zero exit (137)`. Netdata's crash report showed a
+container memory view of about `805 MiB` total and about `799 MiB` used by
+Netdata while the stack configured a `768M` memory limit.
+
+The staging `Configure ClickHouse CDC` step failed with:
+
+```text
+FATAL: number of requested standby connections exceeds "max_wal_senders" (currently 4)
+```
+
+Staging Postgres had `max_wal_senders = 4`, `max_replication_slots = 4`, and
+four active slots:
+
+- `peerflow_slot_dofek_fitness_raw_analytics`
+- `peerflow_slot_dofek_metric_stream_analytics`
+- `peerflow_slot_dofek_metric_stream_cdc`
+- `peerflow_slot_dofek_provider_inventory_raw_analytics`
+
+PeerDB catalog still contained the obsolete `dofek_metric_stream_cdc` flow.
+
+### Root Cause
+
+Production failed because the Netdata service's memory limit was below the
+memory Netdata needed to load its persisted dbengine state on startup, causing
+repeated exit-137 restarts and Swarm deploy convergence failure. Staging failed
+because a legacy PeerDB mirror, `dofek_metric_stream_cdc`, still held one of
+the four configured logical replication slots, leaving no sender capacity for
+the current sensor-priority mirror creation path.
+
+### Fix or Mitigation
+
+The repo fix gives Netdata explicit dbengine retention limits and lowers the
+Swarm memory cap to `512M`. Netdata now keeps two bounded tiers: one day of
+per-second data and fourteen days of per-minute data, each capped at `256MiB`.
+ClickHouse CDC setup also drops the obsolete `dofek_metric_stream_cdc` mirror
+before creating current mirrors. This frees the stale logical replication slot
+through PeerDB instead of increasing Postgres replication caps.
+
+### Remaining Risk
+
+Netdata no longer keeps the default long per-hour tier on this host. If memory
+still grows beyond the `512M` cap, the next investigation should inspect metric
+cardinality and collector scope before raising the limit.
+
 ## 2026-05-25: Startup Cache Warmup Saturated ClickHouse And Caused Public 521s
 
 ### Symptoms

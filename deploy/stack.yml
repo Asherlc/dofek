@@ -540,10 +540,13 @@ services:
       - /sys:/host/sys:ro
       - /etc/os-release:/host/etc/os-release:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: netdata_db_limits_v1
+        target: /etc/netdata/netdata.conf
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 512M
       labels:
         - traefik.enable=true
         - traefik.http.routers.netdata.rule=${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)}
@@ -575,3 +578,5 @@ configs:
     file: ./clickhouse/config.d/system-log-ttl.xml
   clickhouse_memory_limits_4g:
     file: ./clickhouse/config.d/memory-limits.xml
+  netdata_db_limits_v1:
+    file: ./netdata/netdata.conf

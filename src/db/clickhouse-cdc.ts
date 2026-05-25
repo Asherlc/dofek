@@ -112,6 +112,7 @@ const peerDbMetadataColumns = [
   "_peerdb_is_deleted Int8 DEFAULT 0",
   "_peerdb_version Int64 DEFAULT 0",
 ] as const;
+const legacyMetricStreamCdcMirrorName = "dofek_metric_stream_cdc";
 
 function readQueryRows(queryResult: unknown): Array<Record<string, unknown>> {
   if (typeof queryResult !== "object" || queryResult === null || !("rows" in queryResult)) {
@@ -489,6 +490,20 @@ async function reconcileMetricStreamAnalyticsMirror(peerDbClient: PeerDbClient):
   }
 }
 
+async function dropLegacyMetricStreamCdcMirror(peerDbClient: PeerDbClient): Promise<void> {
+  const result = await peerDbClient.query(`
+    SELECT 1 AS legacy_metric_stream_cdc_mirror_exists
+    FROM public.flows
+    WHERE name = ${peerDbStringLiteral(legacyMetricStreamCdcMirrorName)}
+  `);
+  const [mirrorRow] = readQueryRows(result);
+  if (!mirrorRow) {
+    return;
+  }
+
+  await peerDbClient.query(`DROP MIRROR ${legacyMetricStreamCdcMirrorName}`);
+}
+
 async function truncateClickHouseDestinationTables(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
@@ -579,6 +594,7 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
   await reconcileMetricStreamAnalyticsMirror(options.peerDbClient);
+  await dropLegacyMetricStreamCdcMirror(options.peerDbClient);
   const rawAnalyticsInitialCopyValues = await reconcileRawAnalyticsMirrors(
     options.peerDbClient,
     options.clickHouseClient,
