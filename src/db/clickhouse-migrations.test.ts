@@ -18,6 +18,7 @@ import * as dropDerivedRestingHeartRateMigration from "./clickhouse-migrations/0
 import * as repairMetricStreamBackfillMigration from "./clickhouse-migrations/0012_repair_metric_stream_backfill.ts";
 import * as restingHeartRateSleepWindowMigration from "./clickhouse-migrations/0014_resting_heart_rate_sleep_window_materialized_view.ts";
 import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/0019_non_sensor_read_models_as_views.ts";
+import * as incrementalRestingHeartRateMigration from "./clickhouse-migrations/0021_incremental_resting_heart_rate.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -88,6 +89,24 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(statementSql).toContain("FROM postgres_fitness.food_entry FINAL");
+  });
+
+  it("keeps incremental resting heart rate cleanup and table creation in its migration file", () => {
+    const statements = incrementalRestingHeartRateMigration.createMigration().statements;
+
+    expect(statements).toHaveLength(8);
+    expect(statements.slice(0, 7)).toEqual([
+      "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_dirty_key_ingest",
+      "DROP TABLE IF EXISTS analytics.resting_heart_rate_activity_dirty_key_ingest",
+      "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
+      "DROP TABLE IF EXISTS analytics.resting_heart_rate_dirty_key",
+      "DROP TABLE IF EXISTS analytics.sensor_scalar_sample_ingest",
+      "DROP TABLE IF EXISTS analytics.sensor_dirty_key_ingest",
+      "DROP TABLE IF EXISTS analytics.sensor_dirty_key",
+    ]);
+    expect(statements.at(-1)).toContain(
+      "CREATE TABLE IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
+    );
   });
 
   it("renders the shared ReplacingMergeTree table engine helper", () => {

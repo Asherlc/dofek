@@ -56,6 +56,7 @@ services:
     environment:
       DATABASE_URL: postgres://health:health@db:5432/health
       CLICKHOUSE_URL: http://default:health@clickhouse:8123
+      CLICKHOUSE_PASSWORD: health
       NODE_ENV: test
     depends_on:
       db:
@@ -75,6 +76,7 @@ services:
     environment:
       DATABASE_URL: postgres://health:health@db:5432/health
       CLICKHOUSE_URL: http://default:health@clickhouse:8123
+      CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
       PORT: "3000"
       NODE_ENV: test
