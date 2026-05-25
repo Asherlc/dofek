@@ -9,7 +9,6 @@ const clickHouseMocks = vi.hoisted(() => ({
   close: vi.fn(),
   command: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
-  processDedupedSensorDirtyKeys: vi.fn(),
   query: vi.fn(),
 }));
 
@@ -18,15 +17,6 @@ vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
   return {
     ...original,
     createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
-  };
-});
-
-vi.mock("../../../../src/db/clickhouse-deduped-sensor.ts", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("../../../../src/db/clickhouse-deduped-sensor.ts")>();
-  return {
-    ...original,
-    processDedupedSensorDirtyKeys: clickHouseMocks.processDedupedSensorDirtyKeys,
   };
 });
 
@@ -69,7 +59,6 @@ describe("clickhouse integration test helpers", () => {
       command: clickHouseMocks.command,
       query: clickHouseMocks.query,
     });
-    clickHouseMocks.processDedupedSensorDirtyKeys.mockReset().mockResolvedValue(0);
   });
 
   it("syncs raw mirrored tables and populates stored test analytics tables", async () => {
@@ -187,6 +176,22 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".sensor_scalar_sample") &&
+          command.includes("FROM postgres_fitness_test_"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".deduped_sensor") &&
+          command.includes("FROM analytics_test_"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
           command.includes(".resting_heart_rate_sleep_window"),
       ),
     ).toBe(true);
@@ -196,33 +201,5 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
-  });
-
-  it("drains deduped sensor dirty keys until no pending rows remain", async () => {
-    clickHouseMocks.processDedupedSensorDirtyKeys
-      .mockResolvedValueOnce(4)
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(0);
-    const testContext = {
-      addCleanup: vi.fn(),
-      connectionString: "postgres://health:fixture@db:5432/health",
-    };
-
-    await createClickHouseTestActivitySensorStore(testContext);
-
-    expect(clickHouseMocks.processDedupedSensorDirtyKeys).toHaveBeenCalledTimes(3);
-  });
-
-  it("fails when the deduped sensor dirty-key backlog does not drain", async () => {
-    clickHouseMocks.processDedupedSensorDirtyKeys.mockResolvedValue(1);
-    const testContext = {
-      addCleanup: vi.fn(),
-      connectionString: "postgres://health:fixture@db:5432/health",
-    };
-
-    await expect(createClickHouseTestActivitySensorStore(testContext)).rejects.toThrow(
-      "ClickHouse test sensor dirty-key backlog did not drain",
-    );
-    expect(clickHouseMocks.processDedupedSensorDirtyKeys).toHaveBeenCalledTimes(1000);
   });
 });

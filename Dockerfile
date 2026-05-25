@@ -52,14 +52,21 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 # Docker CLI for worker container management (startWorker)
-RUN apk add --no-cache curl ca-certificates && \
+RUN apk add --no-cache curl ca-certificates python3 py3-pip && \
+    apk add --no-cache --virtual .dbt-build-deps build-base python3-dev && \
     ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.4.1.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
-    apk del curl
+    pip3 install --break-system-packages \
+      dbt-core==1.11.11 \
+      dbt-clickhouse==1.10.0 \
+      sqlfluff==4.2.1 \
+      sqlfluff-templater-dbt==4.2.1 && \
+    apk del curl .dbt-build-deps
 
 
 COPY --from=source --chown=node:node /app/src ./src
+COPY --from=source --chown=node:node /app/analytics ./analytics
 COPY --from=source --chown=node:node /app/drizzle ./drizzle
 COPY --from=source --chown=node:node /app/package.json .
 COPY --from=source --chown=node:node /app/pnpm-workspace.yaml .

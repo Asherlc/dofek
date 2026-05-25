@@ -1,14 +1,3 @@
-import { TupleParam } from "@clickhouse/client";
-import { z } from "zod";
-
-interface ClickHouseDirtyKeyClient {
-  command(options: { query: string; query_params?: Record<string, unknown> }): Promise<unknown>;
-  query<TRow extends object>(options: {
-    query: string;
-    format: "JSONEachRow";
-  }): Promise<{ json(): Promise<TRow[]> }>;
-}
-
 const sensorScalarChannels = [
   "heart_rate",
   "power",
@@ -26,18 +15,6 @@ const sensorScalarChannels = [
   "ground_contact_time",
   "stride_length",
 ] as const;
-
-const dirtyKeyRowSchema = z.object({
-  user_id: z.string(),
-  channel: z.string(),
-  recorded_at: z.string(),
-  max_dirty_version: z.string(),
-});
-
-type DirtyKeyRow = z.infer<typeof dirtyKeyRowSchema>;
-
-const maxDedupedSensorDirtyKeyBatchSize = 500;
-const pendingKeyQueryParamType = "Array(Tuple(UUID, String, DateTime64(6, 'UTC'), String))";
 
 interface RecordedAtRangeSql {
   lowerBound: string;
@@ -135,12 +112,6 @@ ENGINE = ReplacingMergeTree(_peerdb_version)
 ORDER BY (user_id, channel, recorded_date, recorded_at, provider_priority, provider_id, id)`;
 }
 
-function buildSensorScalarSampleIngestSql(): string {
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_scalar_sample_ingest TO analytics.sensor_scalar_sample
-AS
-${sensorScalarSampleSelectSql("postgres_fitness.metric_stream", "")}`;
-}
-
 export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtRangeSql): string {
   return `INSERT INTO analytics.sensor_scalar_sample (
   id,
@@ -175,37 +146,6 @@ function buildDedupedSensorTableSql(): string {
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, channel, recorded_date, recorded_at)`;
-}
-
-function buildSensorDirtyKeyTableSql(): string {
-  return `CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key (
-  user_id UUID,
-  channel LowCardinality(String),
-  recorded_at DateTime64(6, 'UTC'),
-  min_peerdb_synced_at DateTime64(9),
-  max_peerdb_synced_at DateTime64(9),
-  processed_at Nullable(DateTime64(9)),
-  failure_message Nullable(String),
-  dirty_version UInt64
-)
-ENGINE = ReplacingMergeTree(dirty_version)
-ORDER BY (user_id, channel, recorded_at)`;
-}
-
-function buildSensorDirtyKeyIngestSql(): string {
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_dirty_key_ingest TO analytics.sensor_dirty_key
-AS
-SELECT
-  user_id,
-  channel,
-  recorded_at,
-  min(_peerdb_synced_at) AS min_peerdb_synced_at,
-  max(_peerdb_synced_at) AS max_peerdb_synced_at,
-  CAST(NULL, 'Nullable(DateTime64(9))') AS processed_at,
-  CAST(NULL, 'Nullable(String)') AS failure_message,
-  toUInt64(toUnixTimestamp64Nano(max(_peerdb_synced_at))) AS dirty_version
-FROM analytics.sensor_scalar_sample
-GROUP BY user_id, channel, recorded_at`;
 }
 
 export function buildDedupedSensorRecomputeInsertSql(pendingKeySql: string): string {
@@ -264,54 +204,14 @@ export function buildDedupedSensorBackfillSql(recordedAtRange?: RecordedAtRangeS
   }`);
 }
 
-function buildPendingDirtyKeySql(limit: number): string {
-  return `SELECT
-    user_id,
-    channel,
-    recorded_at,
-    min(min_peerdb_synced_at) AS min_peerdb_synced_at,
-    max(max_peerdb_synced_at) AS max_peerdb_synced_at,
-    max(dirty_version) AS max_dirty_version
-  FROM analytics.sensor_dirty_key
-  GROUP BY user_id, channel, recorded_at
-  HAVING maxIf(dirty_version, processed_at IS NULL) > maxIf(dirty_version, processed_at IS NOT NULL)
-  ORDER BY max_peerdb_synced_at ASC
-  LIMIT ${limit}`;
-}
-
-function buildPendingDirtyKeySnapshotSql(): string {
-  return `SELECT
-    tupleElement(pending_key, 1) AS user_id,
-    tupleElement(pending_key, 2) AS channel,
-    tupleElement(pending_key, 3) AS recorded_at,
-    toUInt64(tupleElement(pending_key, 4)) AS max_dirty_version
-  FROM (
-    SELECT arrayJoin({pendingKeys:${pendingKeyQueryParamType}}) AS pending_key
-  )`;
-}
-
-function buildPendingDirtyKeyQueryParams(pendingRows: DirtyKeyRow[]): Record<string, unknown> {
-  return {
-    pendingKeys: pendingRows.map(
-      (row) => new TupleParam([row.user_id, row.channel, row.recorded_at, row.max_dirty_version]),
-    ),
-  };
-}
-
 export function buildIncrementalDedupedSensorStatements(): string[] {
-  return [
-    buildSensorScalarSampleTableSql(),
-    buildDedupedSensorTableSql(),
-    buildSensorDirtyKeyTableSql(),
-    buildSensorScalarSampleIngestSql(),
-    buildSensorDirtyKeyIngestSql(),
-  ];
+  return [buildSensorScalarSampleTableSql(), buildDedupedSensorTableSql()];
 }
 
 export function buildIncrementalDedupedSensorResetStatements(): string[] {
   return [
-    "DROP VIEW IF EXISTS analytics.sensor_scalar_sample_ingest",
-    "DROP VIEW IF EXISTS analytics.sensor_dirty_key_ingest",
+    "DROP TABLE IF EXISTS analytics.sensor_scalar_sample_ingest",
+    "DROP TABLE IF EXISTS analytics.sensor_dirty_key_ingest",
     "DROP TABLE IF EXISTS analytics.deduped_sensor",
     "DROP TABLE IF EXISTS analytics.sensor_dirty_key",
     "DROP TABLE IF EXISTS analytics.sensor_scalar_sample",
@@ -319,102 +219,17 @@ export function buildIncrementalDedupedSensorResetStatements(): string[] {
 }
 
 export function buildIncrementalDedupedSensorBaseTableStatements(): string[] {
-  return [
-    buildSensorScalarSampleTableSql(),
-    buildDedupedSensorTableSql(),
-    buildSensorDirtyKeyTableSql(),
-  ];
+  return [buildSensorScalarSampleTableSql(), buildDedupedSensorTableSql()];
 }
 
 export function buildIncrementalDedupedSensorIngestStatements(): string[] {
-  return [buildSensorScalarSampleIngestSql(), buildSensorDirtyKeyIngestSql()];
+  return [];
 }
 
 export function buildIncrementalDedupedSensorMigrationStatements(): string[] {
   return [
     ...buildIncrementalDedupedSensorResetStatements(),
     ...buildIncrementalDedupedSensorBaseTableStatements(),
-    buildSensorScalarSampleBackfillSql(),
-    buildDedupedSensorBackfillSql(),
     ...buildIncrementalDedupedSensorIngestStatements(),
   ];
-}
-
-export async function processDedupedSensorDirtyKeys(
-  client: ClickHouseDirtyKeyClient,
-  limit = maxDedupedSensorDirtyKeyBatchSize,
-): Promise<number> {
-  if (!Number.isInteger(limit) || limit <= 0) {
-    throw new Error("ClickHouse deduped sensor dirty-key limit must be a positive integer");
-  }
-  if (limit > maxDedupedSensorDirtyKeyBatchSize) {
-    throw new Error(
-      `ClickHouse deduped sensor dirty-key limit must be at most ${maxDedupedSensorDirtyKeyBatchSize}`,
-    );
-  }
-
-  const pendingResult = await client.query<Record<string, unknown>>({
-    query: `
-      SELECT
-        toString(user_id) AS user_id,
-        channel,
-        toString(recorded_at) AS recorded_at,
-        toString(max_dirty_version) AS max_dirty_version
-      FROM (
-        ${buildPendingDirtyKeySql(limit)}
-      )
-    `,
-    format: "JSONEachRow",
-  });
-  const pendingRows = z.array(dirtyKeyRowSchema).parse(await pendingResult.json());
-  if (pendingRows.length === 0) {
-    return 0;
-  }
-
-  const pendingKeySql = buildPendingDirtyKeySnapshotSql();
-  const pendingKeyQueryParams = buildPendingDirtyKeyQueryParams(pendingRows);
-
-  await client.command({
-    query: buildDedupedSensorRecomputeInsertSql(pendingKeySql),
-    query_params: pendingKeyQueryParams,
-  });
-
-  await client.command({
-    query: `INSERT INTO analytics.sensor_dirty_key (
-  user_id,
-  channel,
-  recorded_at,
-  min_peerdb_synced_at,
-  max_peerdb_synced_at,
-  processed_at,
-  failure_message,
-  dirty_version
-)
-WITH pending_keys AS (
-  ${pendingKeySql}
-)
-SELECT
-  pending_keys.user_id AS user_id,
-  pending_keys.channel AS channel,
-  pending_keys.recorded_at AS recorded_at,
-  min(dirty_keys.min_peerdb_synced_at) AS min_peerdb_synced_at,
-  max(dirty_keys.max_peerdb_synced_at) AS max_peerdb_synced_at,
-  now64(9) AS processed_at,
-  CAST(NULL, 'Nullable(String)') AS failure_message,
-  pending_keys.max_dirty_version AS dirty_version
-FROM pending_keys
-INNER JOIN analytics.sensor_dirty_key AS dirty_keys
-  ON dirty_keys.user_id = pending_keys.user_id
- AND dirty_keys.channel = pending_keys.channel
- AND dirty_keys.recorded_at = pending_keys.recorded_at
- AND dirty_keys.dirty_version <= pending_keys.max_dirty_version
-GROUP BY
-  pending_keys.user_id,
-  pending_keys.channel,
-  pending_keys.recorded_at,
-  pending_keys.max_dirty_version`,
-    query_params: pendingKeyQueryParams,
-  });
-
-  return pendingRows.length;
 }

@@ -71,6 +71,37 @@ OPTIMIZE TABLE analytics.deduped_sensor FINAL;
     ]);
   });
 
+  it("blocks naive ClickHouse materialized read models", () => {
+    const violations = lintMigrationPolicyFile(
+      "src/db/clickhouse-sql/bad-read-model.sql",
+      `
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
+AS SELECT * FROM analytics.deduped_sensor;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad-read-model.sql",
+        lineNumber: 2,
+        ruleName: "clickhouse-naive-materialized-view",
+      }),
+    ]);
+  });
+
+  it("allows ClickHouse insert-triggered materialized views that target incremental tables", () => {
+    const violations = lintMigrationPolicyFile(
+      "src/db/clickhouse-sql/incremental-ingest.sql",
+      `
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_dirty_key_ingest
+TO analytics.resting_heart_rate_dirty_key
+AS SELECT id FROM postgres_fitness.sleep_session;
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
   it("blocks unbounded update and delete statements", () => {
     const violations = lintMigrationPolicyFile(
       "drizzle/0027_bad_dml.sql",

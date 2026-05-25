@@ -142,18 +142,13 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("SYSTEM REFRESH VIEW");
     expect(sql).not.toContain("SYSTEM WAIT VIEW");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_scalar_sample_ingest TO analytics.sensor_scalar_sample",
-    );
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
-    expect(sql).toContain(
-      "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.sensor_dirty_key_ingest TO analytics.sensor_dirty_key",
-    );
+    expect(sql).not.toContain("analytics.sensor_dirty_key");
+    expect(sql).not.toContain("analytics.sensor_scalar_sample_ingest");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
     expect(sql).not.toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor");
     const dedupedSensorDefinition = sql.slice(
       sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
-      sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key"),
+      sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.deduped_location"),
     );
     expect(dedupedSensorDefinition).not.toContain("activity_id");
     expect(sql).toContain("tupleElement(metric_stream.point, 2)");
@@ -171,7 +166,8 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("analytics.resting_heart_rate_dirty_key");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.resting_heart_rate_sleep_window");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.resting_heart_rate_sleep_window");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
@@ -233,8 +229,6 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("GROUP BY\n    provider_id,\n    user_id,\n    measurement_key");
     expect(sql).not.toContain("ifNull(external_id, toString(id)) AS external_id");
     expect(sql).toContain("JOIN analytics.deduped_sensor AS");
-    expect(sql).toContain("FROM analytics.v_sleep");
-    expect(sql).toContain("arrayAvg(arraySlice(");
     expect(sql).toContain(
       "if(activity_bounds.activity_type IN ('indoor_cycling', 'virtual_cycling')",
     );

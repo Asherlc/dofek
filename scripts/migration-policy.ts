@@ -31,6 +31,12 @@ const riskyStatementRules: MigrationPolicyRule[] = [
     message: "Deploy migrations must not populate materialized views inline.",
   },
   {
+    ruleName: "clickhouse-naive-materialized-view",
+    pattern: /\bCREATE\s+MATERIALIZED\s+VIEW\b(?![\s\S]*\bTO\b)(?![\s\S]*\bREFRESH\s+EVERY\b)/i,
+    message:
+      "ClickHouse read models must use dbt incremental models or insert-triggered TO-table projections, not naive materialized views.",
+  },
+  {
     ruleName: "system-refresh-view",
     pattern: /\bSYSTEM\s+REFRESH\s+VIEW\b/i,
     message: "Deploy migrations must not refresh ClickHouse views inline.",

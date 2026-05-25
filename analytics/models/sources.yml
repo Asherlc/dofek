@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: postgres_fitness
+    schema: postgres_fitness
+    tables:
+      - name: activity
+      - name: metric_stream
+      - name: sensor_device_priority
+      - name: sensor_provider_priority
+      - name: sleep_session

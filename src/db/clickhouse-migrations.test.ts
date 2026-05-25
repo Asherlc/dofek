@@ -48,6 +48,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0018_sensor_priority_raw_tables.ts",
       "0019_non_sensor_read_models_as_views.ts",
       "0020_incremental_deduped_sensor.ts",
+      "0021_incremental_resting_heart_rate.ts",
     ]);
   });
 
@@ -68,27 +69,17 @@ describe("buildClickHouseMigrationStatements", () => {
     const statements = nonSensorReadModelsAsViewsMigration.createMigration().statements;
     const statementSql = statements.join("\n");
 
-    expect(statements).toHaveLength(27);
-    expect(statements.slice(0, 20)).toEqual([
-      "DROP VIEW IF EXISTS analytics.activity_summary",
+    expect(statements).toHaveLength(17);
+    expect(statements.slice(0, 10)).toEqual([
       "DROP TABLE IF EXISTS analytics.activity_summary",
-      "DROP VIEW IF EXISTS analytics.activity_trend_daily",
       "DROP TABLE IF EXISTS analytics.activity_trend_daily",
-      "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
       "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
-      "DROP VIEW IF EXISTS analytics.deduped_location",
       "DROP TABLE IF EXISTS analytics.deduped_location",
-      "DROP VIEW IF EXISTS analytics.provider_stats",
       "DROP TABLE IF EXISTS analytics.provider_stats",
-      "DROP VIEW IF EXISTS analytics.v_daily_metrics",
       "DROP TABLE IF EXISTS analytics.v_daily_metrics",
-      "DROP VIEW IF EXISTS analytics.v_body_measurement",
       "DROP TABLE IF EXISTS analytics.v_body_measurement",
-      "DROP VIEW IF EXISTS analytics.v_sleep",
       "DROP TABLE IF EXISTS analytics.v_sleep",
-      "DROP VIEW IF EXISTS analytics.v_activity_members",
       "DROP TABLE IF EXISTS analytics.v_activity_members",
-      "DROP VIEW IF EXISTS analytics.v_activity",
       "DROP TABLE IF EXISTS analytics.v_activity",
     ]);
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
@@ -123,8 +114,8 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("ENGINE = ReplacingMergeTree");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
+    expect(sql).not.toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
     expect(sql).toContain("analytics.sensor_scalar_sample");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
@@ -160,11 +151,12 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
-    expect(sql).toContain("DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window");
-    expect(sql.indexOf("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor")).toBeLessThan(
-      sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.resting_heart_rate_sleep_window");
+    expect(sql).not.toContain("CREATE TABLE IF NOT EXISTS analytics.resting_heart_rate_dirty_key");
+    expect(sql).not.toContain(
+      "CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window",
     );
+    expect(sql).toContain("DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
@@ -246,9 +238,6 @@ SETTINGS allow_nullable_key = 1`);
     const incrementalDedupedSensorTableIndex = commandSql.findIndex((queryText) =>
       queryText.includes("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor"),
     );
-    const restingHeartRateViewIndex = commandSql.findIndex((queryText) =>
-      queryText.includes("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window"),
-    );
     const activitySummaryViewIndex = commandSql.findIndex((queryText) =>
       queryText.includes("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
     );
@@ -257,7 +246,6 @@ SETTINGS allow_nullable_key = 1`);
     );
 
     expect(incrementalDedupedSensorTableIndex).toBeGreaterThanOrEqual(0);
-    expect(restingHeartRateViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
     expect(activitySummaryViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
     expect(activityTrendDailyViewIndex).toBeGreaterThan(incrementalDedupedSensorTableIndex);
   });
@@ -296,7 +284,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(20);
+    expect(count).toBe(21);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -364,7 +352,7 @@ describe("runClickHouseMigrations", () => {
     });
   });
 
-  it("splits incremental deduped sensor backfill into seven-day ranges", async () => {
+  it("keeps incremental deduped sensor migration schema-only because dbt owns population", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
       if (queryText.includes("system.tables")) {
@@ -372,16 +360,6 @@ describe("runClickHouseMigrations", () => {
       }
       if (queryText.includes("0020_incremental_deduped_sensor")) {
         return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
-      }
-      if (queryText.includes("min_recorded_at_ms")) {
-        return {
-          json: vi.fn().mockResolvedValue([
-            {
-              min_recorded_at_ms: String(Date.UTC(2026, 0, 1)),
-              max_recorded_at_ms: String(Date.UTC(2026, 0, 10)),
-            },
-          ]),
-        };
       }
       return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
     });
@@ -392,32 +370,16 @@ describe("runClickHouseMigrations", () => {
     );
 
     expect(count).toBe(1);
-    const sensorScalarBackfillStatements = command.mock.calls
-      .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO analytics.sensor_scalar_sample"));
-    const dedupedSensorBackfillStatements = command.mock.calls
-      .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO analytics.deduped_sensor"));
-
-    expect(sensorScalarBackfillStatements).toHaveLength(2);
-    expect(dedupedSensorBackfillStatements).toHaveLength(2);
-    expect(sensorScalarBackfillStatements[0]).toContain(
-      "recorded_at >= toDateTime64('2026-01-01 00:00:00.000', 6, 'UTC')",
-    );
-    expect(sensorScalarBackfillStatements[0]).toContain(
-      "recorded_at < toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
-    );
-    expect(sensorScalarBackfillStatements[1]).toContain(
-      "recorded_at >= toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
-    );
-    expect(sensorScalarBackfillStatements[1]).toContain(
-      "recorded_at < toDateTime64('2026-01-10 00:00:00.001', 6, 'UTC')",
-    );
-    expect(dedupedSensorBackfillStatements[1]).toContain(
-      "WHERE recorded_at >= toDateTime64('2026-01-08 00:00:00.000', 6, 'UTC')",
-    );
-    expect(dedupedSensorBackfillStatements[1]).toContain(
-      "AND recorded_at < toDateTime64('2026-01-10 00:00:00.001', 6, 'UTC')",
+    const commandSql = command.mock.calls.map(([options]) => String(options.query)).join("\n");
+    expect(commandSql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
+    expect(commandSql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
+    expect(commandSql).not.toContain("INSERT INTO analytics.sensor_scalar_sample");
+    expect(commandSql).not.toContain("INSERT INTO analytics.deduped_sensor");
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query:
+          "INSERT INTO analytics.schema_migrations (id) VALUES ('0020_incremental_deduped_sensor')",
+      }),
     );
   });
 
@@ -1339,10 +1301,6 @@ describe("runClickHouseMigrationStatement", () => {
     {
       statement: "CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily AS SELECT 1",
       waitedTables: ["analytics.deduped_sensor", "analytics.v_activity"],
-    },
-    {
-      statement: "CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window AS SELECT 1",
-      waitedTables: ["analytics.deduped_sensor", "analytics.v_activity", "analytics.v_sleep"],
     },
   ])("waits for dependencies before running $statement", async ({ statement, waitedTables }) => {
     const client = makeClient();

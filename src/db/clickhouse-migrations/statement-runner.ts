@@ -25,12 +25,6 @@ export async function runClickHouseMigrationStatement(
     await waitForClickHouseTable(client, "analytics", "deduped_sensor");
     await waitForClickHouseTable(client, "analytics", "v_activity");
   }
-  if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window")) {
-    await waitForClickHouseTable(client, "analytics", "deduped_sensor");
-    await waitForClickHouseTable(client, "analytics", "v_activity");
-    await waitForClickHouseTable(client, "analytics", "v_sleep");
-  }
-
   await client.command({
     query: statement,
     clickhouse_settings: {

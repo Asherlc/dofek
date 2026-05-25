@@ -25,20 +25,32 @@ case "${1:-sync}" in
     ;;
   sync)
     $NODE src/db/run-migrate.ts
+    dbt build --project-dir analytics --profiles-dir analytics
     exec $NODE src/index.ts sync
     ;;
   worker)
     $NODE src/db/run-migrate.ts
+    dbt build --project-dir analytics --profiles-dir analytics
     exec $NODE src/jobs/worker.ts
     ;;
   migrate)
-    exec $NODE src/db/run-migrate.ts
+    $NODE src/db/run-migrate.ts
+    exec dbt build --project-dir analytics --profiles-dir analytics
+    ;;
+  analytics)
+    exec dbt build --project-dir analytics --profiles-dir analytics
+    ;;
+  analytics-worker)
+    while true; do
+      dbt build --project-dir analytics --profiles-dir analytics --select sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window
+      sleep "${ANALYTICS_BUILD_INTERVAL_SECONDS:-60}"
+    done
     ;;
   seed)
     exec $NODE scripts/seed-dev-db.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', or 'seed')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', or 'seed')" >&2
     exit 1
     ;;
 esac

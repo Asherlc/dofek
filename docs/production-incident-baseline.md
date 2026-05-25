@@ -8125,3 +8125,36 @@ with a 4,500 MiB cgroup cap and the rotated
 `dofek_clickhouse_memory_limits_4g` Swarm config. Kernel OOM evidence stopped
 before the successful deploy started, with no new OOM kills during or after the
 successful rollout.
+
+## 2026-05-25: Dashboard ClickHouse DNS errors caused by ClickHouse OOM restarts
+
+The dashboard returned `getaddrinfo ENOTFOUND clickhouse` for
+`recovery.workloadRatio` in production. DNS was healthy in the current web
+container when checked, but historical web logs showed DNS/connection errors
+around ClickHouse restarts. Kernel logs showed ClickHouse killed by OOM
+multiple times on May 25, 2026, with `clickhouse-serv` using roughly 4.56 GiB
+RSS immediately before the kills.
+
+ClickHouse query logs around the same window showed heavy dashboard/read-model
+queries, including resting-heart-rate work over
+`analytics.resting_heart_rate_sleep_window` and other analytics scans. The exact
+killed query cannot be proven because a process killed by the kernel may not
+finish writing a query-log row, but the timeline ties the user-visible DNS
+errors to ClickHouse restarts rather than Docker DNS misconfiguration.
+
+Fix prepared in this branch:
+
+- Moved `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, and
+  `analytics.resting_heart_rate_sleep_window` to incremental dbt-clickhouse
+  models under `analytics/models/`.
+- Added a dedicated `analytics-worker` service that runs dbt builds outside web
+  and BullMQ worker request paths.
+- Removed the custom dirty-key worker path for `deduped_sensor` and the naive
+  RHR materialized/read-time recomputation path.
+- Added SQLFluff/dbt source linting plus the custom migration policy that blocks
+  naive ClickHouse materialized views, `REFRESH EVERY`, `SYSTEM REFRESH/WAIT`,
+  and inline deploy backfills.
+
+Remaining risk: this change still needs production rollout and observation of
+`analytics-worker` cadence, ClickHouse memory, and dashboard latency after the
+new incremental tables are populated.

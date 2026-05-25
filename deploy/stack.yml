@@ -119,6 +119,32 @@ services:
         order: start-first
         failure_action: rollback
 
+  analytics-worker:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["analytics-worker"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      OTEL_SERVICE_NAME: dofek-analytics-worker
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f analytics-worker || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+      update_config:
+        order: start-first
+        failure_action: rollback
+
   training-export-worker:
     image: ghcr.io/asherlc/dofek-ml:${IMAGE_TAG:-latest}
     environment:
