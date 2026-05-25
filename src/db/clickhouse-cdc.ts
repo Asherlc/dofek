@@ -148,6 +148,10 @@ function readString(value: unknown): string | null {
   return null;
 }
 
+function readMirrorConfigTokens(mirrorConfig: string): Set<string> {
+  return new Set(mirrorConfig.split(/[^A-Za-z0-9_]+/).filter((token) => token.length > 0));
+}
+
 function peerDbStringLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
@@ -560,7 +564,8 @@ async function reconcileRawAnalyticsMirrors(
       throw new Error(`Unable to read PeerDB raw analytics mirror configuration for ${mirrorName}`);
     }
 
-    if (tableNames.some((tableName) => !mirrorConfig.includes(tableName))) {
+    const mirrorConfigTokens = readMirrorConfigTokens(mirrorConfig);
+    if (tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))) {
       await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
       await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }

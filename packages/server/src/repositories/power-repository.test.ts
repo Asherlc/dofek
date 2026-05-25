@@ -623,24 +623,27 @@ describe("PowerRepository", () => {
     });
 
     it("date filter uses >= for cutoff comparison (not strictly >)", async () => {
-      // return date >= cutoff — use 89 days to stay safely within window
-      const exactCutoff = new Date();
-      exactCutoff.setDate(exactCutoff.getDate() - 89);
-      const cutoffStr = exactCutoff.toISOString().slice(0, 10);
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date("2026-05-24T12:00:00.000Z"));
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+        const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+          activity_id: "act-gte",
+          activity_date: cutoff.toISOString(),
+          activity_name: "Boundary Ride",
+          power: 240,
+          interval_s: 1,
+        }));
+        const db = makeDb(normalizedPowerSamples, []);
+        const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
+        const result = await repo.getEftpTrend(365);
 
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-gte",
-        activity_date: cutoffStr,
-        activity_name: "Boundary Ride",
-        power: 240,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
-      const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
-
-      // 240*0.95=228, should be included
-      expect(result.currentEftp).toBe(228);
+        // 240*0.95=228, should be included exactly at the 90-day cutoff.
+        expect(result.currentEftp).toBe(228);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("currentEftp prefers model.cp over fallback when model exists", async () => {

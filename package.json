@@ -88,6 +88,7 @@
     "lint": "biome check . --max-diagnostics=500",
     "lint:fix": "biome check --write .",
     "lint:css": "stylelint \"**/*.css\"",
+    "lint:migrations": "sh -c 'files=$(git diff --diff-filter=AM --name-only origin/main...HEAD -- \"drizzle/*.sql\"); if [ -z \"$files\" ]; then echo \"No changed migrations to lint\"; else tsx scripts/migration-policy.ts $files; fi'",
     "sherif": "sherif",
     "format": "biome format --write .",
     "test": "vitest",

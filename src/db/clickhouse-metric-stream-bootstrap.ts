@@ -1,7 +1,7 @@
+import { buildActivityTrendDailyCreateReadModelStatements } from "./clickhouse-activity-trend-read-model.ts";
 import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
 import {
-  buildActivityTrendDailyCreateReadModelStatements,
   buildAnalyticsFitnessReadModelStatements,
   buildBodyMeasurementSampleProjectionStatements,
 } from "./clickhouse-read-models.ts";

@@ -167,4 +167,7 @@ Every data ingestion path that writes `fitness.metric_stream` must set a stable 
 
 Daily metrics use per-category dedup priority (see `src/db/dedup.ts`) to prefer the most accurate source for each metric when multiple providers report the same data.
 
-Sensor sample dedup: per (activity_id, channel), the provider with the most samples wins. This ensures the most granular source (e.g., BLE at 50Hz vs API at 1Hz) is automatically preferred.
+Sensor sample dedup: ClickHouse selects one scalar sample per
+`(user_id, channel, recorded_at)` key using sensor provider and device priority
+tables with deterministic tie-breakers. Activity queries apply their own time
+windows afterward; sample counts per activity do not choose the winning source.

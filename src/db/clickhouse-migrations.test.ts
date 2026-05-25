@@ -12,12 +12,99 @@ vi.mock("pg", () => ({
   escapeIdentifier: (value: string) => `"${value.replaceAll('"', '""')}"`,
 }));
 
+import * as backfillMaterializedMetricStreamMigration from "./clickhouse-migrations/0005_backfill_materialized_metric_stream.ts";
+import * as repairLegacyMetricStreamEngineMigration from "./clickhouse-migrations/0007_repair_legacy_metric_stream_engine.ts";
+import * as dropDerivedRestingHeartRateMigration from "./clickhouse-migrations/0009_drop_derived_resting_heart_rate_read_model.ts";
+import * as repairMetricStreamBackfillMigration from "./clickhouse-migrations/0012_repair_metric_stream_backfill.ts";
+import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/0019_non_sensor_read_models_as_views.ts";
+import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
+import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
   buildClickHouseMigrationStatements,
   runClickHouseMigrations,
 } from "./clickhouse-migrations.ts";
+import { replacingMergeTreeTable } from "./clickhouse-sql-helpers.ts";
 
 describe("buildClickHouseMigrationStatements", () => {
+  it("loads ClickHouse migrations from ordered per-file modules", () => {
+    expect(clickHouseMigrationFileNames).toEqual([
+      "0001_clickhouse_analytics_schema_cleanup.ts",
+      "0002_clickhouse_postgres_bridge_and_activity_read_models.ts",
+      "0004_reenable_materialized_metric_stream.ts",
+      "0005_backfill_materialized_metric_stream.ts",
+      "0006_backfill_native_metric_stream.ts",
+      "0007_remaining_postgres_views_to_clickhouse.ts",
+      "0007_repair_legacy_metric_stream_engine.ts",
+      "0008_complete_provider_stats_raw_mirrors.ts",
+      "0009_drop_derived_resting_heart_rate_read_model.ts",
+      "0010_include_standalone_deduped_sensor_samples.ts",
+      "0011_activity_trend_daily_read_model.ts",
+      "0012_repair_metric_stream_backfill.ts",
+      "0013_metric_stream_location_point.ts",
+      "0014_resting_heart_rate_sleep_window_materialized_view.ts",
+      "0015_activity_summary_centroids.ts",
+      "0016_reduce_metric_stream_refresh_load.ts",
+      "0017_body_measurement_sample_projection.ts",
+      "0018_sensor_priority_raw_tables.ts",
+      "0019_non_sensor_read_models_as_views.ts",
+      "0020_incremental_deduped_sensor.ts",
+    ]);
+  });
+
+  it("keeps custom-run migrations free of accidental static statements", () => {
+    expect(backfillMaterializedMetricStreamMigration.createMigration().statements).toEqual([]);
+    expect(repairLegacyMetricStreamEngineMigration.createMigration().statements).toEqual([]);
+    expect(repairMetricStreamBackfillMigration.createMigration().statements).toEqual([]);
+  });
+
+  it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
+    expect(dropDerivedRestingHeartRateMigration.createMigration().statements).toEqual([
+      "DROP VIEW IF EXISTS analytics.derived_resting_heart_rate",
+      "DROP TABLE IF EXISTS analytics.derived_resting_heart_rate",
+    ]);
+  });
+
+  it("keeps non-sensor read model rebuild statements in its migration file", () => {
+    const statements = nonSensorReadModelsAsViewsMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements).toHaveLength(27);
+    expect(statements.slice(0, 20)).toEqual([
+      "DROP VIEW IF EXISTS analytics.activity_summary",
+      "DROP TABLE IF EXISTS analytics.activity_summary",
+      "DROP VIEW IF EXISTS analytics.activity_trend_daily",
+      "DROP TABLE IF EXISTS analytics.activity_trend_daily",
+      "DROP VIEW IF EXISTS analytics.resting_heart_rate_sleep_window",
+      "DROP TABLE IF EXISTS analytics.resting_heart_rate_sleep_window",
+      "DROP VIEW IF EXISTS analytics.deduped_location",
+      "DROP TABLE IF EXISTS analytics.deduped_location",
+      "DROP VIEW IF EXISTS analytics.provider_stats",
+      "DROP TABLE IF EXISTS analytics.provider_stats",
+      "DROP VIEW IF EXISTS analytics.v_daily_metrics",
+      "DROP TABLE IF EXISTS analytics.v_daily_metrics",
+      "DROP VIEW IF EXISTS analytics.v_body_measurement",
+      "DROP TABLE IF EXISTS analytics.v_body_measurement",
+      "DROP VIEW IF EXISTS analytics.v_sleep",
+      "DROP TABLE IF EXISTS analytics.v_sleep",
+      "DROP VIEW IF EXISTS analytics.v_activity_members",
+      "DROP TABLE IF EXISTS analytics.v_activity_members",
+      "DROP VIEW IF EXISTS analytics.v_activity",
+      "DROP TABLE IF EXISTS analytics.v_activity",
+    ]);
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(statementSql).toContain("FROM postgres_fitness.food_entry FINAL");
+  });
+
+  it("renders the shared ReplacingMergeTree table engine helper", () => {
+    expect(
+      replacingMergeTreeTable("(user_id, recorded_at)"),
+    ).toBe(`ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (user_id, recorded_at)
+SETTINGS allow_nullable_key = 1`);
+  });
+
   it("keeps destructive cleanup and analytics table creation in migration statements", () => {
     const sql = buildClickHouseMigrationStatements("postgres://health:fixture@db:5432/health").join(
       "\n",
@@ -1218,5 +1305,83 @@ describe("runClickHouseMigrations", () => {
         query: expect.stringContaining("DROP TABLE IF EXISTS fitness.metric_stream"),
       }),
     );
+  });
+});
+
+describe("runClickHouseMigrationStatement", () => {
+  function makeClient() {
+    return {
+      command: vi.fn().mockResolvedValue(undefined),
+      query: vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ table_count: 1 }]),
+      }),
+    };
+  }
+
+  it.each([
+    {
+      statement:
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor TO analytics.deduped_sensor AS SELECT 1",
+      waitedTables: ["postgres_fitness.metric_stream", "analytics.v_activity_members"],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.deduped_location AS SELECT 1",
+      waitedTables: ["postgres_fitness.metric_stream", "analytics.v_activity_members"],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.activity_summary AS SELECT 1",
+      waitedTables: [
+        "analytics.deduped_sensor",
+        "analytics.deduped_location",
+        "analytics.v_activity",
+      ],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily AS SELECT 1",
+      waitedTables: ["analytics.deduped_sensor", "analytics.v_activity"],
+    },
+    {
+      statement: "CREATE VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window AS SELECT 1",
+      waitedTables: ["analytics.deduped_sensor", "analytics.v_activity", "analytics.v_sleep"],
+    },
+  ])("waits for dependencies before running $statement", async ({ statement, waitedTables }) => {
+    const client = makeClient();
+
+    await runClickHouseMigrationStatement(client, statement);
+
+    const waitQueries = client.query.mock.calls.map(([options]) => String(options.query));
+    expect(waitQueries).toHaveLength(waitedTables.length);
+    for (const waitedTable of waitedTables) {
+      const [database, table] = waitedTable.split(".");
+      expect(
+        waitQueries.some(
+          (queryText) =>
+            queryText.includes(`database = '${database}'`) &&
+            queryText.includes(`name = '${table}'`),
+        ),
+      ).toBe(true);
+    }
+    expect(client.command).toHaveBeenCalledWith({
+      query: statement,
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
+  });
+
+  it("does not wait for unrelated migration statements", async () => {
+    const client = makeClient();
+
+    await runClickHouseMigrationStatement(client, "CREATE TABLE analytics.unrelated (id String)");
+
+    expect(client.query).not.toHaveBeenCalled();
+    expect(client.command).toHaveBeenCalledWith({
+      query: "CREATE TABLE analytics.unrelated (id String)",
+      clickhouse_settings: {
+        allow_experimental_nullable_tuple_type: 1,
+        allow_experimental_refreshable_materialized_view: 1,
+      },
+    });
   });
 });

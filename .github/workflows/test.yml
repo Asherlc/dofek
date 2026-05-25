@@ -941,6 +941,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
       - name: Lint new migration SQL
         run: |
           NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- 'drizzle/*.sql' \
@@ -950,6 +951,7 @@ jobs:
             echo "No new migrations to lint"
             exit 0
           fi
+          pnpm tsx scripts/migration-policy.ts $NEW_MIGRATIONS
           pip install squawk-cli
           echo "Linting migrations:"
           echo "$NEW_MIGRATIONS"
