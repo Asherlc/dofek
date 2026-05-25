@@ -102,6 +102,7 @@ pnpm workspace monorepo:
 ```
 dofek/
 ├── src/                           # Root package — sync runner, providers, DB schema
+│   ├── db/clickhouse-migrations/  # Ordered file-per-migration ClickHouse registry modules
 │   └── providers/                 # Provider plugin implementations
 ├── packages/
 │   ├── server/                    # dofek-server — Express + tRPC API + BullMQ jobs
@@ -130,7 +131,6 @@ dofek/
 ├── cypress/                       # E2E tests (Cypress)
 ├── drizzle/                       # SQL migrations (0000_baseline.sql + forward migrations)
 │   └── _views/                    # Canonical materialized view definitions
-├── src/db/clickhouse-migrations/   # Ordered file-per-migration ClickHouse registry modules
 ├── deploy/                        # Terraform + Docker Swarm production stack — see deploy/README.md
 └── Dockerfile                     # Multi-stage: server image with built web assets
 ```
