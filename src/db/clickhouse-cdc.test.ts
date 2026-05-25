@@ -42,6 +42,7 @@ function credentialedUrl(
 function isPeerDbMirrorReconciliationQuery(queryText: string): boolean {
   return (
     queryText.includes("metric_stream_analytics_point_exclude_position") ||
+    queryText.includes("legacy_metric_stream_cdc_mirror_exists") ||
     queryText.includes("raw_analytics_mirror_config")
   );
 }
@@ -359,6 +360,55 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
   });
 
+  it("drops the obsolete metric stream CDC mirror before creating current mirrors", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("metric_stream_analytics_point_exclude_position")) {
+            return {
+              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
+            };
+          }
+          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            return {
+              rows: [{ legacy_metric_stream_cdc_mirror_exists: 1 }],
+            };
+          }
+          if (query.includes("raw_analytics_mirror_config")) {
+            return { rows: [] };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient(),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_metric_stream_cdc");
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics"),
+    );
+  });
+
   it("recreates raw analytics mirrors when existing mappings are missing source tables", async () => {
     const peerDbQueries: string[] = [];
     const clickHouseCommands: string[] = [];
@@ -372,6 +422,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
             return {
               rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
             };
+          }
+          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
             return {
@@ -442,6 +495,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
               rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
             };
           }
+          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            return { rows: [] };
+          }
           if (query.includes("raw_analytics_mirror_config")) {
             return {
               rows: [
@@ -492,6 +548,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
             return {
               rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
             };
+          }
+          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
             return {
