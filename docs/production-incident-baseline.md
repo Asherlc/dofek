@@ -63,8 +63,8 @@ and `db`.
 
 ### Fix or Mitigation
 
-This branch removes startup cache warming from `runStartupTasks()` and deletes
-the unused warm-cache module, so web replica starts no longer issue heavyweight
+The fix removes startup cache warming from `runStartupTasks()` and deletes the
+unused warm-cache module, so web replica starts no longer issue heavyweight
 ClickHouse-backed warmup queries. Production still needs this change deployed.
 During investigation, production temporarily became reachable again after the
 churn subsided: `https://dofek.asherlc.com/healthz` returned `{"status":"ok"}`.
