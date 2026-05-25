@@ -79,6 +79,8 @@
     "dev": "./scripts/with-env.sh tsx src/index.ts",
     "sync": "./scripts/with-env.sh tsx src/index.ts sync",
     "auth": "./scripts/with-env.sh tsx src/index.ts auth",
+    "compose:env": "tsx scripts/compose-env.ts",
+    "compose:up": "pnpm compose:env --write && docker compose --env-file .env.local up -d db clickhouse redis && pnpm compose:env --write",
     "migrate": "./scripts/with-env.sh drizzle-kit migrate && tsx scripts/generate-schema-diagram.ts",
     "setup-db": "./scripts/with-env.sh tsx src/db/run-migrate.ts",
     "seed": "tsx scripts/seed-dev-db.ts",

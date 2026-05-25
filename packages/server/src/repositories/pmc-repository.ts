@@ -8,6 +8,8 @@ import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
+import { PmcTrainingLoadCalculator } from "./pmc-training-load-calculator.ts";
 import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
@@ -28,12 +30,15 @@ const combinedActivityRowSchema = z.object({
   hr_samples: z.coerce.number(),
 });
 
-type ActivityRow = z.infer<typeof combinedActivityRowSchema>;
-
 const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
   np: z.coerce.number(),
 });
+
+type PmcRepositoryChartResult = PmcChartResult & {
+  data: PmcDataPoint[];
+  model: TssModelInfo;
+};
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -54,13 +59,12 @@ export class PmcRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getChart(days: number): Promise<PmcChartResult> {
+  async getChart(days: number): Promise<PmcRepositoryChartResult> {
     // Load personalized algorithm parameters
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
     const { chronicTrainingLoadDays, acuteTrainingLoadDays } = effective.exponentialMovingAverage;
     const { genderFactor, exponent } = effective.trainingImpulseConstants;
-    const calculator = new TrainingStressCalculator(genderFactor, exponent);
 
     // Fetch enough history for EWMA convergence, regardless of display range.
     const minHistoryDays = 365;
@@ -139,18 +143,8 @@ export class PmcRepository extends BaseRepository {
       },
     );
 
-    const globalMaxHr = activityRows.length > 0 ? Number(activityRows[0]?.global_max_hr) : null;
-    if (!globalMaxHr) {
-      return {
-        data: [],
-        model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
-      };
-    }
-
-    const restingHr = activityRows.length > 0 ? Number(activityRows[0]?.resting_hr) : 60;
-
     // QUERY 2: Normalized Power per activity from analytics.deduped_sensor.
-    const npRows = await this.#sensorStore.query(
+    const normalizedPowerRows = await this.#sensorStore.query(
       normalizedPowerRowSchema,
       `WITH rolling AS (
         SELECT
@@ -179,181 +173,35 @@ export class PmcRepository extends BaseRepository {
       HAVING count() >= 60`,
       { userId: this.userId, queryDays },
     );
-    const npByActivity = new Map(npRows.map((row) => [row.activity_id, Number(row.np)]));
 
-    // Estimate FTP and build regression model
-    const ftp = TrainingStressCalculator.estimateFtp(activityRows);
-    const { tssModel, pairedData } = this.#buildRegressionModel(
-      activityRows,
-      npByActivity,
-      ftp,
-      calculator,
-      globalMaxHr,
-      restingHr,
-    );
+    const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
+    const trainingLoadCalculator = new PmcTrainingLoadCalculator({
+      estimateThresholdPower: TrainingStressCalculator.estimateFtp,
+      computeTrainingImpulse: (durationMin, avgHr, maxHr, restingHr) =>
+        trainingStressCalculator.computeTrimp(durationMin, avgHr, maxHr, restingHr),
+      computePowerTrainingStressScore: TrainingStressCalculator.computePowerTss,
+      computeHeartRateTrainingStressScore: (durationMin, avgHr, maxHr, restingHr) =>
+        trainingStressCalculator.computeHrTss(durationMin, avgHr, maxHr, restingHr),
+      buildTrainingStressModel: TrainingStressCalculator.buildTssModel,
+    });
 
-    // Compute TSS per activity and aggregate by day
-    const dailyLoad = this.#computeDailyLoad(
-      activityRows,
-      npByActivity,
-      ftp,
-      tssModel,
-      calculator,
-      globalMaxHr,
-      restingHr,
-    );
-
-    // Run EWMA and trim leading zeros
-    const result = this.#computeEwma(
-      dailyLoad,
-      queryDays,
-      days,
+    const chartCalculator = new PmcChartCalculator({
       chronicTrainingLoadDays,
       acuteTrainingLoadDays,
-    );
-
-    // Assemble model info
-    const modelInfo: TssModelInfo =
-      tssModel != null
-        ? {
-            type: "learned",
-            pairedActivities: pairedData.length,
-            r2: Math.round(tssModel.r2 * 1000) / 1000,
-            ftp,
-          }
-        : {
-            type: "generic",
-            pairedActivities: pairedData.length,
-            r2: null,
-            ftp,
-          };
-
-    return { data: result, model: modelInfo };
+      trainingLoadCalculator,
+    });
+    return chartCalculator.buildChart({
+      activityRows,
+      normalizedPowerRows,
+      queryDays,
+      displayDays: days,
+    });
   }
-
-  // ── Private helpers ─────────────────────────────────────────────────
 
   async #loadRawActivityCount(days: number): Promise<number> {
     return countRawActivities(this.db, {
       userId: this.userId,
       days,
     });
-  }
-
-  #buildRegressionModel(
-    activities: ActivityRow[],
-    npByActivity: Map<string, number>,
-    ftp: number | null,
-    calculator: TrainingStressCalculator,
-    globalMaxHr: number,
-    restingHr: number,
-  ): {
-    tssModel: { slope: number; intercept: number; r2: number } | null;
-    pairedData: { trimp: number; powerTss: number }[];
-  } {
-    const pairedData: { trimp: number; powerTss: number }[] = [];
-
-    if (ftp != null) {
-      for (const activity of activities) {
-        const durationMin = Number(activity.duration_min);
-        const avgHr = Number(activity.avg_hr);
-        const normalizedPower = npByActivity.get(activity.id);
-
-        if (normalizedPower != null && normalizedPower > 0) {
-          const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
-          const powerTss = TrainingStressCalculator.computePowerTss(
-            normalizedPower,
-            ftp,
-            durationMin,
-          );
-          if (trimp > 0 && powerTss > 0) {
-            pairedData.push({ trimp, powerTss });
-          }
-        }
-      }
-    }
-
-    const tssModel = TrainingStressCalculator.buildTssModel(pairedData);
-    return { tssModel, pairedData };
-  }
-
-  #computeDailyLoad(
-    activities: ActivityRow[],
-    npByActivity: Map<string, number>,
-    ftp: number | null,
-    tssModel: { slope: number; intercept: number; r2: number } | null,
-    calculator: TrainingStressCalculator,
-    globalMaxHr: number,
-    restingHr: number,
-  ): Map<string, number> {
-    const dailyLoad = new Map<string, number>();
-
-    for (const activity of activities) {
-      const durationMin = Number(activity.duration_min);
-      const avgHr = Number(activity.avg_hr);
-      const normalizedPower = npByActivity.get(activity.id);
-
-      let tss: number;
-
-      if (ftp != null && normalizedPower != null && normalizedPower > 0) {
-        tss = TrainingStressCalculator.computePowerTss(normalizedPower, ftp, durationMin);
-      } else if (tssModel != null) {
-        const trimp = calculator.computeTrimp(durationMin, avgHr, globalMaxHr, restingHr);
-        tss = Math.max(0, tssModel.slope * trimp + tssModel.intercept);
-      } else {
-        tss = calculator.computeHrTss(durationMin, avgHr, globalMaxHr, restingHr);
-      }
-
-      const dateStr = String(activity.date);
-      dailyLoad.set(dateStr, (dailyLoad.get(dateStr) ?? 0) + tss);
-    }
-
-    return dailyLoad;
-  }
-
-  #computeEwma(
-    dailyLoad: Map<string, number>,
-    queryDays: number,
-    displayDays: number,
-    chronicTrainingLoadDays: number,
-    acuteTrainingLoadDays: number,
-  ): PmcDataPoint[] {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - queryDays);
-    const endDate = new Date();
-
-    const result: PmcDataPoint[] = [];
-    let ctl = 0;
-    let atl = 0;
-
-    const current = new Date(startDate);
-    const warmUpDays = queryDays - displayDays;
-    let dayIndex = 0;
-
-    while (current <= endDate) {
-      const dateStr = current.toISOString().split("T")[0] ?? "";
-      const load = dailyLoad.get(dateStr) ?? 0;
-
-      ctl = ctl + (load - ctl) / chronicTrainingLoadDays;
-      atl = atl + (load - atl) / acuteTrainingLoadDays;
-      const tsb = ctl - atl;
-
-      if (dayIndex >= warmUpDays) {
-        result.push({
-          date: dateStr,
-          load: Math.round(load * 10) / 10,
-          ctl: Math.round(ctl * 10) / 10,
-          atl: Math.round(atl * 10) / 10,
-          tsb: Math.round(tsb * 10) / 10,
-        });
-      }
-
-      dayIndex++;
-      current.setDate(current.getDate() + 1);
-    }
-
-    let firstMeaningfulIndex = result.findIndex((dataPoint) => dataPoint.ctl >= 0.1);
-    if (firstMeaningfulIndex < 0) firstMeaningfulIndex = 0;
-    return result.slice(firstMeaningfulIndex);
   }
 }
