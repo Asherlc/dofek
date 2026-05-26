@@ -8732,3 +8732,30 @@ new incremental tables are populated.
   mutation target now clears the threshold with the dedicated unit test file.
 - Follow-Up Work: Prefer adding mutation-killing cases alongside new tRPC
   middleware branches when introducing sanitizer or cache-observability logic.
+
+### Deploy Web stack interpolation failure
+
+- Date: 2026-05-26.
+- Symptoms: GitHub Actions run `26465982212` failed for both staging and
+  production in `Deploy Web Stack`.
+- User Impact: The web deploy stopped before image pulls, migrations, or any
+  stack rollout.
+- Evidence: The failed step was `Validate rendered stack files`; the first
+  fatal line was:
+  ```text
+  invalid interpolation format for services.analytics-worker.environment.ANALYTICS_BUILD_RETRY_DELAY_SECONDS: "required variable ANALYTICS_BUILD_RETRY_DELAY_SECONDS is missing a value: ANALYTICS_BUILD_RETRY_DELAY_SECONDS is required"
+  ```
+- Root Cause: `deploy/stack.yml` required the analytics-worker interval and
+  retry-delay environment variables, but Infisical did not contain those keys
+  for the deploy environments, so the rendered stack could not be interpolated.
+- Fix/Mitigation: Added `ANALYTICS_BUILD_INTERVAL_SECONDS=900` and
+  `ANALYTICS_BUILD_RETRY_DELAY_SECONDS=300` to Infisical for both `prod` and
+  `staging`.
+- Validation: Local `docker stack config` interpolation passed for production
+  with `deploy/stack.yml` and for staging with `deploy/stack.yml` plus
+  `deploy/stack.staging.yml` using Infisical-injected secrets.
+- Remaining Risk: Low. The stack still fails loudly if either required
+  analytics-worker timing key is removed or blank.
+- Follow-Up Work: Add a deploy-secret checklist or preflight that verifies all
+  `${VAR:?}` stack interpolation keys exist in Infisical for both deployment
+  environments before the deploy workflow reaches Docker validation.
