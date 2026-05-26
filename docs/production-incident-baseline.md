@@ -8619,8 +8619,8 @@ new incremental tables are populated.
   registered an hourly TimescaleDB background job to attach future
   `fitness.metric_stream` chunks. Manually copied the small missing body-channel
   rows into ClickHouse so `analytics.body_measurement_sample` and
-  `analytics.v_body_measurement` became current immediately. Commit-in-progress
-  updates `src/db/clickhouse-cdc.ts` so future PeerDB setup runs install the
+  `analytics.v_body_measurement` became current immediately. This PR updates
+  `src/db/clickhouse-cdc.ts` so future PeerDB setup runs install the
   same function and scheduled job.
 - Validation: Public `/healthz` returned 200 and Postgres reported
   `pg_is_in_recovery() = false`. `analytics.v_body_measurement` then showed

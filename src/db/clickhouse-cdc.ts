@@ -494,18 +494,36 @@ async function ensureMetricStreamNoImuPublication(client: SourcePostgresClient):
     SELECT fitness.ensure_metric_stream_peerdb_publication_chunks();
 
     DO $$
+    DECLARE
+      existing_job_id integer;
+      existing_schedule_interval interval;
+      existing_scheduled boolean;
     BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM timescaledb_information.jobs
-        WHERE proc_schema = 'fitness'
-          AND proc_name = 'ensure_metric_stream_peerdb_publication_chunks'
-      ) THEN
+      SELECT job_id, schedule_interval, scheduled
+      INTO existing_job_id, existing_schedule_interval, existing_scheduled
+      FROM timescaledb_information.jobs
+      WHERE proc_schema = 'fitness'
+        AND proc_name = 'ensure_metric_stream_peerdb_publication_chunks'
+      ORDER BY job_id
+      LIMIT 1;
+
+      IF existing_job_id IS NULL THEN
         PERFORM public.add_job(
           'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc,
           INTERVAL '1 hour',
           job_name => 'ensure_metric_stream_peerdb_publication_chunks'
         );
+      ELSE
+        IF existing_schedule_interval IS DISTINCT FROM INTERVAL '1 hour'
+          OR existing_scheduled IS DISTINCT FROM true
+        THEN
+          PERFORM public.alter_job(
+            existing_job_id,
+            schedule_interval => INTERVAL '1 hour',
+            scheduled => true,
+            job_name => 'ensure_metric_stream_peerdb_publication_chunks'
+          );
+        END IF;
       END IF;
     END
     $$;

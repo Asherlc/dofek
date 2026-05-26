@@ -47,6 +47,10 @@ function isPeerDbMirrorReconciliationQuery(queryText: string): boolean {
   );
 }
 
+function normalizeSql(queryText: string): string {
+  return queryText.replace(/\s+/g, " ").trim();
+}
+
 function createTestClickHouseClient(
   commands: string[] = [],
   destinationRowCount = 0,
@@ -219,14 +223,53 @@ describe("PeerDB ClickHouse CDC setup", () => {
     for (const rawAnalyticsTable of rawAnalyticsTables) {
       expect(sourcePostgresQueries[0]).toContain(`('${rawAnalyticsTable}')`);
     }
-    expect(sourcePostgresQueries[1]).toContain("peerdb_metric_stream_no_imu");
-    expect(sourcePostgresQueries[1]).toContain("WHERE (channel <> 'imu')");
-    expect(sourcePostgresQueries[1]).toContain("timescaledb_information.chunks");
-    expect(sourcePostgresQueries[1]).toContain("ALTER PUBLICATION peerdb_metric_stream_no_imu");
-    expect(sourcePostgresQueries[1]).toContain("ADD TABLE %I.%I WHERE (channel <> %L)");
-    expect(sourcePostgresQueries[1]).toContain("public.add_job(");
-    expect(sourcePostgresQueries[1]).toContain(
-      "'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc",
+    const metricStreamPublicationQueryText = sourcePostgresQueries.at(1);
+    expect(metricStreamPublicationQueryText).toBeDefined();
+    if (metricStreamPublicationQueryText === undefined) {
+      throw new Error("Expected metric_stream publication setup query");
+    }
+    const metricStreamPublicationQuery = normalizeSql(metricStreamPublicationQueryText);
+    expect(metricStreamPublicationQuery).toContain(
+      normalizeSql(`
+        SELECT chunks.chunk_schema, chunks.chunk_name
+        FROM timescaledb_information.chunks AS chunks
+        JOIN pg_class chunk_class
+          ON chunk_class.relname = chunks.chunk_name
+        JOIN pg_namespace chunk_namespace
+          ON chunk_namespace.oid = chunk_class.relnamespace
+         AND chunk_namespace.nspname = chunks.chunk_schema
+        CROSS JOIN pg_publication publication
+        LEFT JOIN pg_publication_rel publication_entry
+          ON publication_entry.prpubid = publication.oid
+         AND publication_entry.prrelid = chunk_class.oid
+        WHERE chunks.hypertable_schema = 'fitness'
+          AND chunks.hypertable_name = 'metric_stream'
+          AND publication.pubname = 'peerdb_metric_stream_no_imu'
+          AND publication_entry.prrelid IS NULL
+      `),
+    );
+    expect(metricStreamPublicationQuery).toContain(
+      "ALTER PUBLICATION peerdb_metric_stream_no_imu ADD TABLE %I.%I WHERE (channel <> %L)",
+    );
+    expect(metricStreamPublicationQuery).toContain(
+      "SELECT fitness.ensure_metric_stream_peerdb_publication_chunks();",
+    );
+    expect(metricStreamPublicationQuery).toContain(
+      normalizeSql(`
+        SELECT job_id, schedule_interval, scheduled
+        INTO existing_job_id, existing_schedule_interval, existing_scheduled
+        FROM timescaledb_information.jobs
+        WHERE proc_schema = 'fitness'
+          AND proc_name = 'ensure_metric_stream_peerdb_publication_chunks'
+        ORDER BY job_id
+        LIMIT 1;
+      `),
+    );
+    expect(metricStreamPublicationQuery).toContain(
+      "PERFORM public.add_job( 'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc, INTERVAL '1 hour', job_name => 'ensure_metric_stream_peerdb_publication_chunks' );",
+    );
+    expect(metricStreamPublicationQuery).toContain(
+      "PERFORM public.alter_job( existing_job_id, schedule_interval => INTERVAL '1 hour', scheduled => true, job_name => 'ensure_metric_stream_peerdb_publication_chunks' );",
     );
     expect(peerDbQueries).toEqual(["host = 'db', password = 'pa''ss\\word'"]);
   });
