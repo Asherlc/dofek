@@ -574,7 +574,7 @@ describe("weeklyReportRouter", () => {
       expect(result.current?.weekStart).toBe("2026-03-22");
       expect(result.history[0]?.weekStart).toBe("2026-03-15");
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
-      expect(queryText).toContain("toStartOfWeek(d.date)");
+      expect(queryText).toContain("toStartOfWeek(d.date, 1)");
       expect(queryText).not.toContain("toMonday(d.date)");
     });
 
