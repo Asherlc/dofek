@@ -68,11 +68,20 @@ new exit-137 restarts in the first nine minutes after the previous crash, and
 recent web logs had no fresh ClickHouse DNS/socket errors for
 `recovery.workloadRatio` or `healthspan.score`.
 
+### Follow-up
+
+Follow-up commit `cdf60615` kept production stable with only
+`sensor_scalar_sample` selected. The next experiment converts
+`sensor_scalar_sample` and `deduped_sensor` to dbt's `microbatch` incremental
+strategy and adds `deduped_sensor` back to `DBT_SAFE_MODELS`; this keeps each
+run bounded to daily `recorded_at` batches with a short lookback instead of one
+large dirty-key query.
+
 ### Remaining Risk
 
 Activity summary and resting-heart-rate values may be missing or stale until
-the excluded dbt models are redesigned and enabled as smaller chained
-incremental models.
+the excluded dbt models are redesigned and enabled with bounded dbt-native
+incremental strategies.
 
 ## 2026-05-25: Deploy Web Failed On Netdata OOM And Stale PeerDB Mirror Slot
 

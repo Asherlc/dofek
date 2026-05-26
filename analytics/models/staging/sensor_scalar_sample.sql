@@ -1,48 +1,24 @@
 {{ config(
     materialized='incremental',
-    incremental_strategy='append',
+    incremental_strategy='microbatch',
+    unique_key='id',
+    event_time='recorded_at',
+    begin='2026-01-01',
+    batch_size='day',
+    lookback=3,
+    full_refresh=false,
+    concurrent_batches=false,
     engine='ReplacingMergeTree(_peerdb_version)',
-    order_by='(user_id, channel, recorded_date, recorded_at, provider_id, id)'
+    order_by='(user_id, channel, recorded_date, recorded_at, provider_id, id)',
+    query_settings={
+        'max_threads': 1
+    }
 ) }}
 
-{% set initial_lookback_days = var('initial_lookback_days', 120) %}
-
-WITH
-{% if is_incremental() %}
-target_state AS (
-    SELECT
-        coalesce(
-            max(_peerdb_synced_at),
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) AS last_synced_at,
-        count() = 0 AS is_empty
-    FROM {{ this }}
-),
-
-changed_priority_keys AS (
-    SELECT DISTINCT
-        provider_id,
-        channel
-    FROM (
-        SELECT
-            provider_id,
-            channel
-        FROM {{ source('postgres_fitness', 'sensor_provider_priority') }} FINAL
-        WHERE _peerdb_synced_at > (SELECT last_synced_at FROM target_state)
-        UNION ALL
-        SELECT
-            provider_id,
-            channel
-        FROM {{ source('postgres_fitness', 'sensor_device_priority') }} FINAL
-        WHERE _peerdb_synced_at > (SELECT last_synced_at FROM target_state)
-    )
-),
-{% endif %}
-
-metric_stream_rows AS (
+WITH metric_stream_versions AS (
     SELECT *
-    FROM {{ source('postgres_fitness', 'metric_stream') }} FINAL
-    WHERE scalar IS NOT null
+    FROM {{ source('postgres_fitness', 'metric_stream') }}
+    WHERE (scalar IS NOT null OR _peerdb_is_deleted = 1)
         AND channel IN (
             'heart_rate',
             'power',
@@ -60,29 +36,22 @@ metric_stream_rows AS (
             'ground_contact_time',
             'stride_length'
         )
-        {% if is_incremental() %}
-            AND (
-                (
-                    (SELECT is_empty FROM target_state)
-                    AND recorded_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
-                )
-                OR (
-                    NOT (SELECT is_empty FROM target_state)
-                    AND _peerdb_synced_at > (SELECT last_synced_at FROM target_state)
-                )
-                OR (
-                    NOT (SELECT is_empty FROM target_state)
-                    AND (provider_id, channel) IN (
-                        SELECT
-                            provider_id,
-                            channel
-                        FROM changed_priority_keys
-                    )
-                )
-            )
-        {% else %}
-            AND recorded_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
-        {% endif %}
+),
+
+metric_stream_rows AS (
+    SELECT
+        id,
+        argMax(user_id, _peerdb_version) AS user_id,
+        argMax(recorded_at, _peerdb_version) AS recorded_at,
+        argMax(channel, _peerdb_version) AS channel,
+        argMax(provider_id, _peerdb_version) AS provider_id,
+        argMax(device_id, _peerdb_version) AS device_id,
+        coalesce(argMax(scalar, _peerdb_version), 0) AS scalar,
+        argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
+        argMax(_peerdb_is_deleted, _peerdb_version) AS _peerdb_is_deleted,
+        max(_peerdb_version) AS _peerdb_version
+    FROM metric_stream_versions
+    GROUP BY id
 ),
 
 active_sensor_provider_priority AS (

@@ -1,8 +1,8 @@
 # ClickHouse Metric Stream Projection
 
 `fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
-keeps a native `MergeTree` copy of the raw stream and backfills it from
-Postgres by real Timescale chunk ranges. We do not use ClickHouse
+keeps a native `ReplacingMergeTree` copy of the raw stream and backfills it
+from Postgres by real Timescale chunk ranges. We do not use ClickHouse
 `MaterializedPostgreSQL` for this hypertable because the hypertable root does
 not contain the physical rows; the data live in Timescale chunk tables.
 PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication.
@@ -17,11 +17,11 @@ Postgres/Timescale fitness.metric_stream
         v                         v
 ClickHouse postgres_fitness.metric_stream
         |
-        | native incremental projection
+        | dbt microbatch projection by recorded_at
         v
 ClickHouse analytics.sensor_scalar_sample
         |
-        | dirty-key bounded recompute
+        | dbt microbatch dedupe by recorded_at
         v
 ClickHouse analytics.deduped_sensor
         |
@@ -154,16 +154,17 @@ ClickHouse migrations create and update the databases and read models:
   projection of body-related `metric_stream` channels. It is backfilled once by
   migration and kept current by `analytics.body_measurement_sample_ingest`, so
   `analytics.v_body_measurement` does not scan the full metric stream mirror.
-- `analytics.sensor_scalar_sample`: a narrow `ReplacingMergeTree` projection of
-  activity sensor scalar channels. It is backfilled once by migration and kept
-  current by `analytics.sensor_scalar_sample_ingest`.
-- `analytics.sensor_dirty_key`: a bounded queue of changed
-  `(user_id, channel, recorded_at)` keys. The post-sync worker recomputes only
-  those keys into `analytics.deduped_sensor`.
-- `analytics.deduped_sensor`: an activity-agnostic `ReplacingMergeTree` table
-  containing the best live scalar sample per `(user_id, channel, recorded_at)`
-  according to mirrored sensor provider/device priority tables. It has no
-  `activity_id`; activity reads join samples to activities by time window.
+- `analytics.sensor_scalar_sample`: a narrow dbt `microbatch` incremental
+  `ReplacingMergeTree` projection of activity sensor scalar channels. It uses
+  `recorded_at` as its dbt event time, writes one current row per raw
+  `metric_stream.id`, and collapses PeerDB row versions with `_peerdb_version`
+  inside the bounded batch query.
+- `analytics.deduped_sensor`: an activity-agnostic dbt `microbatch`
+  incremental `ReplacingMergeTree` table containing the best live scalar sample
+  per `(user_id, channel, recorded_at)` according to mirrored sensor
+  provider/device priority tables. It uses `recorded_at` as its dbt event time
+  and has no `activity_id`; activity reads join samples to activities by time
+  window.
 - `analytics.deduped_location`: a normal view over
   `postgres_fitness.metric_stream` location rows. While the PeerDB mirror
   excludes `point`, new rows have `point = NULL` and this view does not advance

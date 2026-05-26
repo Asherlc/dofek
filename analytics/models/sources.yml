@@ -6,6 +6,8 @@ sources:
     tables:
       - name: activity
       - name: metric_stream
+        config:
+          event_time: recorded_at
       - name: sensor_device_priority
       - name: sensor_provider_priority
       - name: sleep_session

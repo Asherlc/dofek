@@ -1,6 +1,6 @@
 ---
 name: diagnose-cdc
-description: "Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, refreshable materialized view freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration."
+description: "Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, and dbt read-model freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration."
 ---
 
 # Diagnose CDC
@@ -80,8 +80,8 @@ The relevant read models:
 
 - `analytics.v_activity` — reads `postgres_fitness.activity`, `provider_priority`, `device_priority`.
 - `analytics.v_activity_members` — reads `analytics.v_activity`.
-- `analytics.sensor_scalar_sample` — dbt staging table over scalar `postgres_fitness.metric_stream`.
-- `analytics.deduped_sensor` — dbt incremental table over `analytics.sensor_scalar_sample`.
+- `analytics.sensor_scalar_sample` — dbt microbatch staging table over scalar `postgres_fitness.metric_stream`, event-timed by `recorded_at`.
+- `analytics.deduped_sensor` — dbt microbatch table over `analytics.sensor_scalar_sample`, event-timed by `recorded_at`.
 - `analytics.deduped_location` — same, location channel only.
 - `analytics.activity_summary` — aggregates the above per `activity_id`.
 - `analytics.resting_heart_rate_sleep_window` — dbt incremental table for resting heart rate.
