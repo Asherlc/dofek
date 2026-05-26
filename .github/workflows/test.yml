@@ -143,10 +143,35 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 8123:8123
+        options: >-
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm lint
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Setup uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - name: Run lint
+        run: pnpm lint
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
 
   stylelint:
     name: Stylelint

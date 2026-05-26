@@ -146,10 +146,10 @@ async function fetchHrZoneTime(
       FROM activity_metadata AS am
       INNER JOIN analytics.deduped_sensor AS ds
         ON ds.user_id = am.user_id
-      WHERE ds.recorded_at >= am.started_at
-        AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-        AND ds.channel IN ('heart_rate', 'power')
-        AND ds.is_deleted = 0
+       AND ds.recorded_at >= am.started_at
+       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
+       AND ds.channel IN ('heart_rate', 'power')
+       AND ds.is_deleted = 0
       GROUP BY am.activity_id, am.duration_minutes, am.max_hr, am.ftp, am.resting_hr
     )
     SELECT

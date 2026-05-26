@@ -10,6 +10,7 @@ services:
       PUBLIC_URL: https://${REVIEW_HOST:?REVIEW_HOST is required}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:?CLICKHOUSE_URL is required}
+      CLICKHOUSE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       REDIS_URL: redis://redis:6379
       JOB_FILES_DIR: /app/job-files
       SLACK_SIGNING_SECRET: ""

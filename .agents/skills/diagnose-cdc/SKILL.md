@@ -1,6 +1,6 @@
 ---
 name: diagnose-cdc
-description: "Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, refreshable materialized view freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration."
+description: "Diagnose PeerDB Postgres-to-ClickHouse CDC health (replication slot status, mirror row counts vs Postgres source, and dbt read-model freshness) for the three Dofek flows: dofek_metric_stream_analytics, dofek_fitness_raw_analytics, dofek_provider_inventory_raw_analytics. Use when the web shows partial/empty data for recent activities, when read models look stale, or after a large migration."
 ---
 
 # Diagnose CDC
@@ -52,29 +52,39 @@ ssh dofek-server "docker exec \$(docker ps --format '{{.Names}}' | grep -E 'dofe
 
 If `max(_peerdb_synced_at)` is hours/days behind `max(started_at)` from Postgres, CDC is stalled or stopped for that flow. Run the same comparison for `fitness.metric_stream` ↔ `postgres_fitness.metric_stream` and any other affected mirror.
 
-## 4) Check whether refreshable materialized views are catching up
+## 4) Check whether ClickHouse read models are catching up
 
-The read models on top of the mirrors are `REFRESH EVERY 1 MINUTE` MVs:
+Some read models are normal ClickHouse views, while expensive derived tables are
+incremental dbt models populated by the `analytics-worker` service. First check
+the worker logs:
+
+```bash
+ssh dofek-server 'docker service logs --tail 100 dofek_analytics-worker'
+```
+
+Then inspect the dbt-owned target tables directly:
 
 ```sql
 -- ClickHouse
-SELECT view, view_query FROM system.view_refreshes WHERE database = 'analytics';
-
-SELECT view, status, last_refresh_time, last_success_time, exception
-FROM system.view_refreshes
-WHERE database = 'analytics'
-ORDER BY view;
+SELECT max(refreshed_at) FROM analytics.deduped_sensor;
+SELECT max(refreshed_at) FROM analytics.resting_heart_rate_sleep_window;
 ```
 
-If `status` is `Scheduled` and `last_success_time` is recent, the MV layer is fine — the upstream mirror is the problem. If `status` is `Exception`, read `exception` to see the failure.
+If these timestamps are current but rows are missing, the upstream mirror or raw
+source data is the problem. If timestamps are stale, debug `analytics-worker`
+and run `dbt build --project-dir analytics --profiles-dir analytics --select
+sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window` from a
+configured app container.
 
-The relevant MVs:
+The relevant read models:
 
 - `analytics.v_activity` — reads `postgres_fitness.activity`, `provider_priority`, `device_priority`.
 - `analytics.v_activity_members` — reads `analytics.v_activity`.
-- `analytics.deduped_sensor` — reads `postgres_fitness.metric_stream` filtered through `v_activity_members`.
+- `analytics.sensor_scalar_sample` — dbt microbatch staging table over scalar `postgres_fitness.metric_stream`, event-timed by `recorded_at`.
+- `analytics.deduped_sensor` — dbt microbatch table over `analytics.sensor_scalar_sample`, event-timed by `recorded_at`.
 - `analytics.deduped_location` — same, location channel only.
 - `analytics.activity_summary` — aggregates the above per `activity_id`.
+- `analytics.resting_heart_rate_sleep_window` — dbt incremental table for resting heart rate.
 
 Because every read model `INNER JOIN`s `v_activity_members`, a missing row in `postgres_fitness.activity` cascades to empty results in all of them, even if `postgres_fitness.metric_stream` has the samples.
 

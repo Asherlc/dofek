@@ -9,7 +9,11 @@ import {
   createClickHouseClientFromEnv,
   parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
-import { processDedupedSensorDirtyKeys } from "../../../../src/db/clickhouse-deduped-sensor.ts";
+import {
+  buildDedupedSensorBackfillSql,
+  buildSensorScalarSampleBackfillSql,
+} from "../../../../src/db/clickhouse-deduped-sensor.ts";
+import { buildActivitySummaryReadModelStatements } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 
@@ -40,7 +44,6 @@ const clickHouseTestSetupSemaphoreDirectory = join(
 );
 const clickHouseTestSetupSlotCount = 2;
 const clickHouseTestSetupSlotTimeoutMilliseconds = 55_000;
-const clickHouseTestSensorDirtyKeyMaxBatches = 1000;
 const clickHouseTestSetupStaleSlotMilliseconds = 300_000;
 const rawTableSyncs: RawTableSync[] = [
   {
@@ -366,11 +369,14 @@ source_name Nullable(String),
 source_providers Array(String)`,
     resting_heart_rate_sleep_window: `sleep_id UUID,
 user_id UUID,
-started_at DateTime64(6, 'UTC'),
+started_at Nullable(DateTime64(6, 'UTC')),
 ended_at Nullable(DateTime64(6, 'UTC')),
 duration_seconds Nullable(Int64),
 sample_count UInt64,
-resting_hr Int32`,
+resting_hr Nullable(Int32),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
     v_body_measurement: `id UUID,
 provider_id String,
 user_id UUID,
@@ -503,6 +509,120 @@ ENGINE = MergeTree
 ORDER BY tuple()`;
 }
 
+function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH
+active_sleep AS (
+  SELECT
+    id AS sleep_id,
+    user_id,
+    started_at,
+    assumeNotNull(ended_at) AS ended_at,
+    dateDiff('second', started_at, assumeNotNull(ended_at)) AS duration_seconds,
+    multiIf(
+      sleep_type IN ('nap', 'late_nap', 'rest'), true,
+      sleep_type IN ('sleep', 'long_sleep', 'main'), false,
+      sleep_type = 'not_main', coalesce(duration_minutes < 120, true),
+      duration_minutes IS NOT NULL, duration_minutes < 120,
+      false
+    ) AS is_nap
+  FROM ${databases.postgresFitness}.sleep_session FINAL
+  WHERE _peerdb_is_deleted = 0
+    AND ended_at IS NOT NULL
+),
+active_activity AS (
+  SELECT
+    id,
+    user_id,
+    started_at,
+    coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
+  FROM ${databases.postgresFitness}.activity FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+activity_windows AS (
+  SELECT
+    user_id,
+    groupArray(tuple(started_at, ended_at)) AS windows
+  FROM active_activity
+  GROUP BY user_id
+),
+heart_rate_samples AS (
+  SELECT
+    active_sleep.sleep_id AS sleep_id,
+    active_sleep.user_id AS user_id,
+    active_sleep.started_at AS started_at,
+    active_sleep.ended_at AS ended_at,
+    active_sleep.duration_seconds AS duration_seconds,
+    samples.scalar AS heart_rate
+  FROM active_sleep
+  INNER JOIN ${databases.analytics}.deduped_sensor AS samples
+    ON samples.user_id = active_sleep.user_id
+  LEFT JOIN activity_windows
+    ON activity_windows.user_id = samples.user_id
+  WHERE active_sleep.is_nap = false
+    AND samples.recorded_at >= active_sleep.started_at
+    AND samples.recorded_at <= active_sleep.ended_at
+    AND samples.channel = 'heart_rate'
+    AND samples.is_deleted = 0
+    AND samples.scalar IS NOT NULL
+    AND NOT arrayExists(
+      activity_window -> samples.recorded_at >= tupleElement(activity_window, 1)
+        AND samples.recorded_at <= tupleElement(activity_window, 2),
+      activity_windows.windows
+    )
+),
+computed_windows AS (
+  SELECT
+    sleep_id,
+    user_id,
+    any(started_at) AS started_at,
+    any(ended_at) AS ended_at,
+    any(duration_seconds) AS duration_seconds,
+    count() AS sample_count,
+    if(
+      sample_count >= 30,
+      toInt32(round(arrayAvg(arraySlice(
+        arraySort(groupArray(toFloat64(heart_rate))),
+        1,
+        greatest(toInt32(ceil(sample_count * 0.10)), 1)
+      )))),
+      CAST(NULL, 'Nullable(Int32)')
+    ) AS resting_hr
+  FROM heart_rate_samples
+  GROUP BY sleep_id, user_id
+)
+SELECT
+  active_sleep.sleep_id AS sleep_id,
+  active_sleep.user_id AS user_id,
+  CAST(computed_windows.started_at, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
+  CAST(computed_windows.ended_at, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
+  CAST(computed_windows.duration_seconds, 'Nullable(Int64)') AS duration_seconds,
+  coalesce(computed_windows.sample_count, 0) AS sample_count,
+  CAST(computed_windows.resting_hr, 'Nullable(Int32)') AS resting_hr,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  if(computed_windows.resting_hr IS NULL, 1, 0) AS is_deleted,
+  now64(9, 'UTC') AS refreshed_at
+FROM active_sleep
+LEFT JOIN computed_windows
+  ON computed_windows.user_id = active_sleep.user_id
+ AND computed_windows.sleep_id = active_sleep.sleep_id
+WHERE active_sleep.is_nap = false`;
+}
+
+function buildTestActivitySummarySelectSql(databases: IsolatedClickHouseDatabases): string {
+  const statement = rewriteClickHouseDatabaseNames(
+    buildActivitySummaryReadModelStatements()[0] ?? "",
+    databases,
+  );
+  const viewMatch = statement.match(
+    /^CREATE VIEW IF NOT EXISTS [A-Za-z0-9_]+\.[A-Za-z0-9_]+\nAS\n?([\s\S]*)$/,
+  );
+  const selectSql = viewMatch?.[1]?.trim();
+  if (!selectSql) {
+    throw new Error("Could not parse ClickHouse activity summary test SELECT");
+  }
+  return selectSql;
+}
+
 function rewriteClickHouseTestCommand(
   query: string,
   databases: IsolatedClickHouseDatabases,
@@ -520,12 +640,29 @@ function rewriteClickHouseTestCommand(
       throw new Error("Could not parse ClickHouse test view statement");
     }
     const trimmedSelectSql = selectSql.trim();
-    precomputedAnalyticsSelectByName.set(viewName, trimmedSelectSql);
+    precomputedAnalyticsSelectByName.set(
+      viewName,
+      viewName.endsWith(".activity_summary") &&
+        trimmedSelectSql.includes(".activity_summary_rows FINAL")
+        ? buildTestActivitySummarySelectSql(databases)
+        : trimmedSelectSql,
+    );
     const tableStatement = buildTestAnalyticsTableStatement(viewName);
     if (!tableStatement) {
       throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
     }
     return [tableStatement];
+  }
+
+  if (
+    rewrittenQuery.startsWith(
+      `CREATE TABLE IF NOT EXISTS ${databases.analytics}.resting_heart_rate_sleep_window`,
+    )
+  ) {
+    precomputedAnalyticsSelectByName.set(
+      `${databases.analytics}.resting_heart_rate_sleep_window`,
+      buildTestRestingHeartRateSelectSql(databases),
+    );
   }
 
   if (rewrittenQuery.startsWith(`DROP VIEW IF EXISTS ${databases.analytics}.`)) {
@@ -709,15 +846,10 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
     });
   }
 
-  for (let batchIndex = 0; batchIndex < clickHouseTestSensorDirtyKeyMaxBatches; batchIndex += 1) {
-    const processedDirtyKeys = await processDedupedSensorDirtyKeys(client);
-    if (processedDirtyKeys === 0) {
-      break;
-    }
-    if (batchIndex === clickHouseTestSensorDirtyKeyMaxBatches - 1) {
-      throw new Error("ClickHouse test sensor dirty-key backlog did not drain");
-    }
-  }
+  await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
+  await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
+  await client.command({ query: buildSensorScalarSampleBackfillSql() });
+  await client.command({ query: buildDedupedSensorBackfillSql() });
 
   for (const viewName of analyticsBuildOrder) {
     await client.command({ query: `REBUILD TEST ANALYTICS TABLE ${viewName}` });

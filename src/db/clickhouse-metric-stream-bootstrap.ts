@@ -1,3 +1,4 @@
+import { buildIncrementalActivitySummaryStatements } from "./clickhouse-activity-summary.ts";
 import { buildActivityTrendDailyCreateReadModelStatements } from "./clickhouse-activity-trend-read-model.ts";
 import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
@@ -5,7 +6,7 @@ import {
   buildAnalyticsFitnessReadModelStatements,
   buildBodyMeasurementSampleProjectionStatements,
 } from "./clickhouse-read-models.ts";
-import { buildRestingHeartRateSleepWindowMaterializedViewSql } from "./clickhouse-resting-heart-rate-materialized-view.ts";
+import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-heart-rate.ts";
 import {
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
@@ -42,9 +43,9 @@ ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
     ...metricStreamStatements,
     ...buildAnalyticsFitnessReadModelStatements(),
     ...buildIncrementalDedupedSensorStatements(),
-    buildRestingHeartRateSleepWindowMaterializedViewSql(),
+    buildRestingHeartRateSleepWindowTableSql(),
     ...buildDedupedLocationReadModelStatements(),
-    ...buildActivitySummaryReadModelStatements(),
+    ...buildIncrementalActivitySummaryStatements(),
     ...buildActivityTrendDailyCreateReadModelStatements(),
   ];
 }

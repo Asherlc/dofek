@@ -18,6 +18,8 @@ import { createMigration as createMigration0017 } from "./0017_body_measurement_
 import { createMigration as createMigration0018 } from "./0018_sensor_priority_raw_tables.ts";
 import { createMigration as createMigration0019 } from "./0019_non_sensor_read_models_as_views.ts";
 import { createMigration as createMigration0020 } from "./0020_incremental_deduped_sensor.ts";
+import { createMigration as createMigration0021 } from "./0021_incremental_resting_heart_rate.ts";
+import { createMigration as createMigration0022 } from "./0022_incremental_activity_summary.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -41,6 +43,8 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0018,
   createMigration0019,
   createMigration0020,
+  createMigration0021,
+  createMigration0022,
 ];
 
 export const clickHouseMigrationFileNames = [
@@ -64,6 +68,8 @@ export const clickHouseMigrationFileNames = [
   "0018_sensor_priority_raw_tables.ts",
   "0019_non_sensor_read_models_as_views.ts",
   "0020_incremental_deduped_sensor.ts",
+  "0021_incremental_resting_heart_rate.ts",
+  "0022_incremental_activity_summary.ts",
 ] as const;
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

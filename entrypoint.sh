@@ -18,6 +18,7 @@ fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
+DBT_SAFE_MODELS="sensor_scalar_sample deduped_sensor"
 
 case "${1:-sync}" in
   web)
@@ -25,20 +26,39 @@ case "${1:-sync}" in
     ;;
   sync)
     $NODE src/db/run-migrate.ts
+    dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
     exec $NODE src/index.ts sync
     ;;
   worker)
     $NODE src/db/run-migrate.ts
+    dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
     exec $NODE src/jobs/worker.ts
     ;;
   migrate)
-    exec $NODE src/db/run-migrate.ts
+    $NODE src/db/run-migrate.ts
+    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
+    ;;
+  analytics)
+    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
+    ;;
+  analytics-worker)
+    interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
+    retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
+    while true; do
+      if dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS; then
+        sleep "$interval_seconds"
+      else
+        status="$?"
+        echo "analytics-worker: dbt build failed with exit status $status; retrying in ${retry_delay_seconds}s" >&2
+        sleep "$retry_delay_seconds"
+      fi
+    done
     ;;
   seed)
     exec $NODE scripts/seed-dev-db.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', or 'seed')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', or 'seed')" >&2
     exit 1
     ;;
 esac

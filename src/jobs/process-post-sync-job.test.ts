@@ -41,13 +41,11 @@ const fakeSensorStore = {
 };
 const getFakeSensorStore: Parameters<typeof processPostSyncJob>[2] = () => fakeSensorStore;
 const refreshBodyMeasurements = vi.fn();
-const processSensorDirtyKeys = vi.fn();
 
 describe("processPostSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     refreshBodyMeasurements.mockResolvedValue(undefined);
-    processSensorDirtyKeys.mockResolvedValue(0);
     mockInvalidateByPrefix.mockResolvedValue(undefined);
   });
 
@@ -59,10 +57,8 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
-    expect(processSensorDirtyKeys).toHaveBeenCalledOnce();
     expect(mockRefitAllParams).not.toHaveBeenCalled();
     expect(getSensorStore).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -74,10 +70,8 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
-    expect(processSensorDirtyKeys).toHaveBeenCalledOnce();
     expect(mockRefitAllParams).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
@@ -88,7 +82,6 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
     expect(mockRefitAllParams).toHaveBeenCalledWith(fakeDb, "user-1", fakeSensorStore);
@@ -100,55 +93,12 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
-    expect(processSensorDirtyKeys).toHaveBeenCalledOnce();
     expect(refreshBodyMeasurements).toHaveBeenCalledOnce();
-    expect(processSensorDirtyKeys.mock.invocationCallOrder[0]).toBeLessThan(
-      refreshBodyMeasurements.mock.invocationCallOrder[0] ?? 0,
-    );
     expect(refreshBodyMeasurements.mock.invocationCallOrder[0]).toBeLessThan(
       mockRefitAllParams.mock.invocationCallOrder[0] ?? 0,
     );
-  });
-
-  it("drains sensor dirty keys until the backlog is empty", async () => {
-    processSensorDirtyKeys
-      .mockResolvedValueOnce(10_000)
-      .mockResolvedValueOnce(42)
-      .mockResolvedValueOnce(0);
-
-    await processPostSyncJob(
-      makeGlobalMaintenanceJob(),
-      fakeDb,
-      getFakeSensorStore,
-      refreshBodyMeasurements,
-      processSensorDirtyKeys,
-    );
-
-    expect(processSensorDirtyKeys).toHaveBeenCalledTimes(3);
-  });
-
-  it("reports errors to Sentry and aborts when sensor dirty-key processing fails", async () => {
-    const dirtyKeyError = new Error("dirty key failed");
-    processSensorDirtyKeys.mockRejectedValueOnce(dirtyKeyError);
-
-    await expect(
-      processPostSyncJob(
-        makeUserRefitJob("user-14"),
-        fakeDb,
-        getFakeSensorStore,
-        refreshBodyMeasurements,
-        processSensorDirtyKeys,
-      ),
-    ).rejects.toThrow(dirtyKeyError);
-
-    expect(mockCaptureException).toHaveBeenCalledWith(dirtyKeyError, {
-      tags: { postSyncStep: "processSensorDirtyKeys" },
-    });
-    expect(refreshBodyMeasurements).not.toHaveBeenCalled();
-    expect(mockRefitAllParams).not.toHaveBeenCalled();
   });
 
   it("continues when refitAllParams fails", async () => {
@@ -160,7 +110,6 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
     expect(mockCaptureException).toHaveBeenCalled();
@@ -175,7 +124,6 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
     expect(mockCaptureException).toHaveBeenCalledWith(refitError, {
@@ -193,7 +141,6 @@ describe("processPostSyncJob", () => {
         fakeDb,
         getFakeSensorStore,
         refreshBodyMeasurements,
-        processSensorDirtyKeys,
       ),
     ).rejects.toThrow(refreshError);
 
@@ -210,7 +157,6 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-12:");
@@ -228,7 +174,6 @@ describe("processPostSyncJob", () => {
       fakeDb,
       getFakeSensorStore,
       refreshBodyMeasurements,
-      processSensorDirtyKeys,
     );
 
     expect(mockCaptureException).toHaveBeenCalledWith(cacheError, {

@@ -7,6 +7,82 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-26: ClickHouse OOM Restarts From Dashboard Activity Analytics
+
+### Symptoms
+
+Dashboard tRPC routes intermittently returned
+`getaddrinfo ENOTFOUND clickhouse` for ClickHouse-backed routes such as
+`recovery.workloadRatio` and `healthspan.score`. Public `/healthz` could still
+return OK while dashboard analytics failed.
+
+### User Impact
+
+The dashboard intermittently failed to load recovery and healthspan data while
+ClickHouse restarted under load.
+
+### Evidence
+
+Swarm showed `dofek_clickhouse` repeatedly failing with
+`task: non-zero exit (137)`. The first fatal host log line during the observed
+incident was:
+
+```text
+May 26 02:22:21 dofek kernel: ConcurrentJoin invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+```
+
+ClickHouse was killed shortly after at about 3.54 GiB anonymous RSS, then
+restarted repeatedly. Web logs around the restarts showed ClickHouse-backed
+dashboard routes failing with `socket hang up`, `EHOSTUNREACH`, and
+`getaddrinfo ENOTFOUND clickhouse`. ClickHouse query logs showed expensive
+activity/recovery and sleep analytics overlapping with background dbt work.
+
+### Root Cause
+
+Dashboard routes were still reading `analytics.activity_summary` as a live
+ClickHouse view that recomputed joins over deduped sensor and location samples.
+Those request-path joins could overlap with background analytics work and exceed
+the single-node ClickHouse memory budget, causing container OOM kills and
+service-discovery failures while the ClickHouse task restarted.
+
+### Fix or Mitigation
+
+Move `analytics.activity_summary` to a thin compatibility view over
+`analytics.activity_summary_rows` so dashboard routes no longer recompute the
+activity/sample joins on demand. The first offline `activity_summary_rows` dbt
+model still OOM-killed ClickHouse in production, and a follow-up production run
+showed `deduped_sensor` also OOM-killed ClickHouse as a single incremental
+model. Production `DBT_SAFE_MODELS` now selects only `sensor_scalar_sample`;
+`deduped_sensor`, `resting_heart_rate_sleep_window`, and
+`activity_summary_rows` stay excluded until they are split into smaller chained
+incremental models.
+
+### Validation
+
+Production deploy run `26430662909` rolled out app image `sha-1d5e448`.
+Post-deploy checks showed `dofek_web` at `2/2`, `dofek_worker` at `1/1`,
+`dofek_analytics-worker` at `1/1`, all on `sha-1d5e448`; public `/healthz`
+returned HTTP 200. The new analytics worker ran only
+`analytics.sensor_scalar_sample` and completed with `PASS=1`. ClickHouse had no
+new exit-137 restarts in the first nine minutes after the previous crash, and
+recent web logs had no fresh ClickHouse DNS/socket errors for
+`recovery.workloadRatio` or `healthspan.score`.
+
+### Follow-up
+
+Follow-up commit `cdf60615` kept production stable with only
+`sensor_scalar_sample` selected. The next experiment converts
+`sensor_scalar_sample` and `deduped_sensor` to dbt's `microbatch` incremental
+strategy and adds `deduped_sensor` back to `DBT_SAFE_MODELS`; this keeps each
+run bounded to daily `recorded_at` batches with a short lookback instead of one
+large dirty-key query.
+
+### Remaining Risk
+
+Activity summary and resting-heart-rate values may be missing or stale until
+the excluded dbt models are redesigned and enabled with bounded dbt-native
+incremental strategies.
+
 ## 2026-05-25: Deploy Web Failed On Netdata OOM And Stale PeerDB Mirror Slot
 
 ### Symptoms
@@ -8125,3 +8201,394 @@ with a 4,500 MiB cgroup cap and the rotated
 `dofek_clickhouse_memory_limits_4g` Swarm config. Kernel OOM evidence stopped
 before the successful deploy started, with no new OOM kills during or after the
 successful rollout.
+
+## 2026-05-25: Dashboard ClickHouse DNS errors caused by ClickHouse OOM restarts
+
+The dashboard returned `getaddrinfo ENOTFOUND clickhouse` for
+`recovery.workloadRatio` in production. DNS was healthy in the current web
+container when checked, but historical web logs showed DNS/connection errors
+around ClickHouse restarts. Kernel logs showed ClickHouse killed by OOM
+multiple times on May 25, 2026, with `clickhouse-serv` using roughly 4.56 GiB
+RSS immediately before the kills.
+
+ClickHouse query logs around the same window showed heavy dashboard/read-model
+queries, including resting-heart-rate work over
+`analytics.resting_heart_rate_sleep_window` and other analytics scans. The exact
+killed query cannot be proven because a process killed by the kernel may not
+finish writing a query-log row, but the timeline ties the user-visible DNS
+errors to ClickHouse restarts rather than Docker DNS misconfiguration.
+
+Fix prepared in this branch:
+
+- Moved `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, and
+  `analytics.resting_heart_rate_sleep_window` to incremental dbt-clickhouse
+  models under `analytics/models/`.
+- Added a dedicated `analytics-worker` service that runs dbt builds outside web
+  and BullMQ worker request paths.
+- Removed the custom dirty-key worker path for `deduped_sensor` and the naive
+  RHR materialized/read-time recomputation path.
+- Added SQLFluff/dbt source linting plus the custom migration policy that blocks
+  naive ClickHouse materialized views, `REFRESH EVERY`, `SYSTEM REFRESH/WAIT`,
+  and inline deploy backfills.
+
+Remaining risk: this change still needs production rollout and observation of
+`analytics-worker` cadence, ClickHouse memory, and dashboard latency after the
+new incremental tables are populated.
+
+### Follow-up (PR #1180 review app run 26422484061)
+
+- Date: 2026-05-25.
+- Symptoms: PR #1180 review app deploy failed while running migrations after
+  Postgres and ClickHouse migrations completed.
+- User Impact: No production user impact; the failure blocked review app
+  validation and production deployment from this branch.
+- Evidence: The dbt build failed against `http://clickhouse:8123` with
+  ClickHouse `REQUIRED_PASSWORD`.
+- Root Cause: The dbt production profile change made `CLICKHOUSE_PASSWORD`
+  required, but the review app `web` container received `CLICKHOUSE_URL`
+  without `CLICKHOUSE_PASSWORD`.
+- Fix/Mitigation: Pass `CLICKHOUSE_PASSWORD` into the review app `web`
+  container from the same required `POSTGRES_PASSWORD` value used to initialize
+  the local ClickHouse service.
+- Remaining Risk: Low; review app, E2E, and production-style migration
+  environments now share the same explicit ClickHouse password contract.
+- Follow-Up Work: Continue monitoring production rollout for the original
+  ClickHouse memory and dashboard latency risks described above.
+
+### Follow-up (Deploy run 26424057092)
+
+- Date: 2026-05-25.
+- Symptoms: Production deploy from PR #1180 reached the final web stack deploy
+  step, but `dofek_worker` repeatedly exited with status 1 while Swarm waited
+  for rollout convergence.
+- User Impact: The rollout did not complete cleanly; the worker was unhealthy
+  during the attempted production validation.
+- Evidence: Worker logs showed dbt successfully building
+  `analytics.sensor_scalar_sample` and `analytics.deduped_sensor`, then failing
+  `analytics.resting_heart_rate_sleep_window` with ClickHouse
+  `MEMORY_LIMIT_EXCEEDED` while executing `JoiningTransform`.
+- Root Cause: The RHR model joined dirty sleep rows to heart-rate samples by
+  user before bounding the sample time window, and carried all activity windows
+  per user into the sample filter. On production data that join shape exceeded
+  the ClickHouse memory limit.
+- Fix/Mitigation: Narrow the RHR incremental model so the sample join includes
+  the sleep time bounds, and build activity exclusion windows only for the dirty
+  sleep rows being recomputed.
+- Remaining Risk: Medium until a follow-up deploy proves the narrower RHR model
+  can build on production data within the ClickHouse memory limit.
+- Follow-Up Work: Redeploy PR #1180 after CI validates the narrower RHR model,
+  then verify `dofek_worker`, `dofek_analytics-worker`, and ClickHouse health.
+
+### Follow-up (Deploy run 26425142491)
+
+- Date: 2026-05-25.
+- Symptoms: Production deploy from PR #1180 applied the branch image and the
+  narrowed RHR dbt model completed, but the GitHub deploy step stayed in final
+  stack convergence while `dofek_netdata` crash-looped with exit 137.
+- User Impact: The app containers were updated and `/healthz` remained healthy,
+  but deploy automation could not finish cleanly while Netdata was unhealthy.
+- Evidence: Worker logs showed `analytics.resting_heart_rate_sleep_window`
+  completing in 3.62s with `PASS=3`. Kernel logs showed repeated Netdata cgroup
+  OOM kills at roughly 519 MiB RSS and one global OOM kill of ClickHouse while
+  Netdata was also near its 512 MiB container limit. Netdata's own crash report
+  showed a 512 MiB container with about 556 MiB of dbengine cache and 506 MiB of
+  sqlite metadata on disk.
+- Root Cause: The previous Netdata retention fix configured two 256 MiB
+  dbengine tiers inside a 512 MiB container, leaving no startup/runtime headroom
+  for Netdata's sqlite metadata and process overhead.
+- Fix/Mitigation: Increase Netdata's container limit to 768 MiB and reduce
+  dbengine retention to 96 MiB for tier 0 and 128 MiB for tier 1 so the existing
+  cache can start and prune down.
+- Remaining Risk: Medium until the follow-up deploy proves Netdata converges
+  and ClickHouse avoids further OOM kills during deploy-time dbt builds and
+  dashboard reads.
+- Follow-Up Work: Redeploy PR #1180 with the Netdata sizing fix, then verify
+  `dofek_netdata`, ClickHouse memory, worker dbt output, and public health.
+
+### Follow-up (Deploy run 26425794016)
+
+- Date: 2026-05-25.
+- Symptoms: Production deploy from PR #1180 failed before migrations while
+  applying the pre-migration stack config.
+- User Impact: The branch image and Netdata sizing fix were not applied by this
+  deploy attempt; production remained on the previous Netdata 512 MiB limit and
+  Netdata continued to crash-loop.
+- Evidence: The `Apply stack config before migrations` step failed on
+  `docker stack deploy` with
+  `failed to update config dofek_netdata_db_limits_v1: ... only updates to Labels are allowed`.
+- Root Cause: Docker Swarm config objects are immutable. The prior fix changed
+  the contents of the existing `netdata_db_limits_v1` config instead of
+  publishing a new versioned config object.
+- Fix/Mitigation: Version the Netdata config reference to
+  `netdata_db_limits_v2` so Swarm creates a new immutable config and updates
+  the service to mount it.
+- Remaining Risk: Medium until the follow-up deploy converges and confirms
+  Netdata starts with the new 768 MiB memory limit and reduced retention.
+- Follow-Up Work: Redeploy PR #1180, then verify `dofek_netdata` convergence,
+  public `/healthz`, worker dbt output, and kernel logs for new OOM kills.
+
+### Follow-up (Deploy run 26426220118)
+
+- Date: 2026-05-26.
+- Symptoms: Production deploy from PR #1180 completed successfully after the
+  Netdata Swarm config was versioned, but kernel logs still showed OOM kills
+  during the rollout window.
+- User Impact: Public `/healthz` returned healthy after deploy. During rollout,
+  ClickHouse restarted once and dashboard requests could have briefly failed
+  with ClickHouse DNS/connection errors while the service task was being
+  replaced.
+- Evidence: GitHub Actions run `26426220118` passed all web deploy steps. Swarm
+  showed `dofek_web` at `2/2`, `dofek_worker`, `dofek_analytics-worker`,
+  `dofek_clickhouse`, `dofek_db`, `dofek_peerdb`, and `dofek_netdata` at `1/1`,
+  all on app image `sha-a33944a` where applicable. `dofek_netdata` mounted
+  `dofek_netdata_db_limits_v2` and had a 768 MiB memory limit. Worker dbt logs
+  showed `sensor_scalar_sample`, `deduped_sensor`, and
+  `resting_heart_rate_sleep_window` all completing with `PASS=3`.
+- Root Cause: The previous deploy failures were fixed, but the old Netdata task
+  and a ClickHouse task still hit cgroup OOM limits during rollout before the
+  new converged tasks stabilized.
+- Fix/Mitigation: The successful deploy applied the versioned Netdata config,
+  the reduced Netdata dbengine retention, and the 768 MiB Netdata memory limit.
+  After convergence, Netdata and ClickHouse were both running, and no kernel
+  OOM lines appeared in the follow-up 8-minute observation window.
+- Remaining Risk: Medium. Netdata was using roughly 570 MiB of 768 MiB shortly
+  after startup, and ClickHouse query logs still showed two dashboard sleep
+  queries around 545-585 MiB before the ClickHouse restart. Continue watching
+  Netdata pruning and dashboard query memory over a longer production window.
+- Follow-Up Work: Consider optimizing the sleep dashboard queries that still
+  allocate over 500 MiB, and review whether Netdata retention should be reduced
+  further if memory remains close to the 768 MiB limit.
+
+### Follow-up (Production ClickHouse OOM after deploy run 26426220118)
+
+- Date: 2026-05-26.
+- Symptoms: The dashboard again reported service-name resolution errors after
+  the successful production deploy. Public `/healthz` still returned 200, but
+  dashboard/API paths backed by ClickHouse were intermittently unavailable.
+- User Impact: Recovery/dashboard reads could fail while ClickHouse restarted.
+  Web health checks stayed healthy because the web service itself remained up.
+- Evidence: Kernel logs showed a host-level OOM at `01:24:19` killing
+  `clickhouse-serv` at roughly 4.46 GiB RSS, followed by ClickHouse cgroup OOM
+  kills at `01:26:36` and `01:30:48`. Web logs also showed transient
+  `getaddrinfo ENOTFOUND redis`, and worker/analytics-worker logs showed
+  `getaddrinfo ENOTFOUND db` and `getaddrinfo ENOTFOUND clickhouse`, indicating
+  broader Swarm/network instability during memory pressure and task restarts.
+  `dofek_analytics-worker` logs showed the initial `deduped_sensor` dbt model
+  timing out after 480s at `01:24:18`, then subsequent dbt builds rerunning
+  repeatedly around `01:25`, `01:27`, `01:29`, and `01:31`.
+- Root Cause: The production analytics worker cadence was too aggressive for
+  the single-node ClickHouse host, and dbt failures exited the shell loop so
+  Swarm immediately restarted the service into another dbt build. Incremental
+  models reduced per-run query memory, but running the build every minute plus
+  immediate retry-on-failure still drove ClickHouse into OOM/restart cycles.
+- Fix/Mitigation: Lower ClickHouse to a 3500 MiB container limit with a checked
+  in 3 GiB `max_server_memory_usage` cap, version the Swarm config as
+  `clickhouse_memory_limits_3g`, set production analytics builds to run every
+  15 minutes, and make failed analytics-worker dbt builds sleep for five
+  minutes before retrying instead of exiting into a restart loop. Production
+  deploy run `26427324922` completed successfully with app image `sha-9e82289`.
+  Post-deploy checks at `01:50 UTC` showed public `/healthz` returning 200,
+  `dofek_web` at `2/2`, `dofek_worker`, `dofek_analytics-worker`,
+  `dofek_clickhouse`, `dofek_db`, `dofek_traefik`, and `dofek_netdata` at
+  `1/1`. ClickHouse had the new `dofek_clickhouse_memory_limits_3g` config,
+  a 3500 MiB container limit, and was using roughly 1.27 GiB of 3.418 GiB.
+  Analytics-worker had `ANALYTICS_BUILD_INTERVAL_SECONDS=900` and
+  `ANALYTICS_BUILD_RETRY_DELAY_SECONDS=300`, completed one dbt build with
+  `PASS=3`, then slept.
+- Remaining Risk: Medium. No kernel OOM lines appeared after `01:46 UTC` in
+  the post-deploy observation window, but a single analytics build should still
+  be monitored for memory, and heavy dashboard sleep queries still allocate over
+  500 MiB.
+- Follow-Up Work: Optimize the dashboard sleep queries and consider moving
+  management/observability services off the single-node OLAP host if ClickHouse
+  still needs more memory headroom.
+
+### Follow-up (Healthspan dashboard ClickHouse OOM)
+
+- Date: 2026-05-26.
+- Symptoms: After deploy run `26427324922`, the dashboard still returned
+  ClickHouse service resolution errors such as `getaddrinfo ENOTFOUND
+  clickhouse` for `healthspan.score`.
+- User Impact: Public `/healthz` remained healthy, but dashboard routes backed
+  by ClickHouse failed while the ClickHouse task was down or restarting.
+- Evidence: Kernel logs showed `HTTPHandler invoked oom-killer` at `01:54:16
+  UTC`, followed by a cgroup OOM kill of `clickhouse-serv` at roughly 3.54 GiB
+  anonymous RSS. Web logs showed a dashboard tRPC batch containing
+  `healthspan.score`, a `healthspan.score` slow-query warning around 7.6s, then
+  `getaddrinfo ENOTFOUND clickhouse` errors. Analytics-worker logs showed no
+  scheduled dbt build between the successful `01:45 UTC` build and the
+  `01:54 UTC` ClickHouse kill.
+- Root Cause: The remaining outage was not caused by the analytics-worker
+  cadence. An HTTP dashboard query path still pushed ClickHouse over its memory
+  cgroup. The `healthspan.score` heart-rate zone query joined
+  `analytics.deduped_sensor` to activities only by `user_id`, then applied
+  activity time bounds, channel, and deletion filters in `WHERE`, which left
+  ClickHouse room to scan/materialize too many user sensor rows before applying
+  the activity window.
+- Fix/Mitigation: Move the `deduped_sensor` activity-window, channel, and
+  deletion predicates into the ClickHouse `JOIN ON` clause in
+  `packages/server/src/routers/healthspan-query.ts`, matching the bounded join
+  pattern used by other activity sensor analytics repositories. Add a
+  regression test that verifies the healthspan query keeps those predicates in
+  the join.
+- Remaining Risk: Medium until deployed and observed under the same dashboard
+  load. Other dashboard ClickHouse queries still run concurrently, so a broader
+  per-user or per-process ClickHouse concurrency limit may still be needed if
+  another route becomes the next memory peak.
+- Follow-Up Work: Deploy the healthspan query fix, verify `/healthz`, confirm
+  the ClickHouse task remains stable after dashboard access, and review the
+  remaining dashboard ClickHouse routes for unbounded joins or high-memory
+  query plans.
+
+#### Validation
+
+- Deploy run `26428146330` completed successfully on 2026-05-26 with app image
+  `sha-f075758`. Post-deploy checks showed public `/healthz` returning 200,
+  `dofek_web` at `2/2`, `dofek_worker`, `dofek_analytics-worker`,
+  `dofek_clickhouse`, `dofek_db`, `dofek_traefik`, and `dofek_netdata` at
+  `1/1`. The analytics worker completed the next incremental dbt build at
+  `02:11 UTC` with `PASS=3`. At `02:17 UTC`, ClickHouse was still on the same
+  running task, using roughly 1.56 GiB of its 3.418 GiB container limit, kernel
+  logs showed no OOM lines since `02:05 UTC`, and filtered web logs showed no
+  fresh `healthspan.score`, ClickHouse DNS, socket hang-up, or slow-query
+  entries in the prior five minutes.
+
+### Follow-up (dbt microbatch deduped sensor rollout)
+
+- Date: 2026-05-26.
+- Symptoms: A production deploy that enabled `sensor_scalar_sample` and
+  `deduped_sensor` as dbt microbatch models initially left `worker` in a
+  restart loop. Dashboard ClickHouse errors could still appear while the old
+  rollout was unstable.
+- User Impact: Public `/healthz` stayed healthy, but scheduled sync workers
+  were unavailable during the crash loop and ClickHouse-backed dashboard routes
+  could fail during the rollout.
+- Evidence: Deploy run `26431989409` applied app image `sha-c13de1c`, after
+  which `dofek_worker` repeatedly exited with ClickHouse error code 184:
+  `ILLEGAL_AGGREGATION` in `analytics.sensor_scalar_sample`. The failing
+  generated query exposed a ClickHouse alias collision from
+  `max(_peerdb_version) AS _peerdb_version` inside the same grouped SELECT as
+  other `_peerdb_version` aggregate arguments.
+- Root Cause: The dbt microbatch model used the source PeerDB version column
+  name as an aggregate alias. ClickHouse aliases are visible broadly within a
+  SELECT, so the alias could be substituted into other aggregate expressions and
+  interpreted as a nested aggregate.
+- Fix/Mitigation: Commit `18477f11` renamed the grouped aggregate alias to
+  `source_peerdb_version` and only projected it back to `_peerdb_version` in
+  the outer SELECT. The microbatch event-time key remains `recorded_at` for
+  both `analytics.sensor_scalar_sample` and `analytics.deduped_sensor`.
+- Validation: Local focused checks passed before deployment:
+  `pnpm lint:analytics-policy`, `pnpm lint:analytics-sql`, `dbt parse`, and
+  `dbt compile --select sensor_scalar_sample deduped_sensor`. Deploy run
+  `26432372706` completed successfully on app image `sha-18477f1`. Post-deploy
+  checks showed public `/healthz` returning 200, `dofek_web` at `2/2`, and
+  `dofek_worker`, `dofek_analytics-worker`, `dofek_clickhouse`, `dofek_db`, and
+  `dofek_redis` at `1/1`. The analytics worker completed
+  `sensor_scalar_sample` and `deduped_sensor` with `PASS=2 WARN=0 ERROR=0`,
+  and filtered web logs showed no fresh ClickHouse DNS, socket, or
+  `recovery.workloadRatio`/`healthspan.score` errors in the five-minute
+  post-deploy window.
+- Remaining Risk: Medium. The microbatch models are bounded and no longer crash
+  on startup, but ClickHouse has only had a short observation window after this
+  rollout. Longer dashboard usage may still reveal another high-memory query.
+- Follow-Up Work: Continue splitting heavier read models, especially resting
+  heart rate and activity summaries, into chained incremental dbt models before
+  adding them back to the production safe model list.
+
+### Follow-up (dashboard ClickHouse query fan-out)
+
+- Date: 2026-05-26.
+- Symptoms: After the microbatch rollout stabilized, the dashboard felt slow
+  even though public `/healthz` remained available.
+- User Impact: Dashboard tRPC batches returned slowly, and some
+  ClickHouse-backed procedures failed with memory-limit errors.
+- Evidence: Web logs showed one dashboard tRPC batch containing many
+  ClickHouse-backed procedures at once. Several procedures took roughly
+  9-17s, including `bodyAnalytics.smoothedWeight`, `stress.scores`,
+  `healthspan.score`, `recovery.strainTarget`, `recovery.readinessScore`,
+  `sleepNeed.performance`, `sleepNeed.calculate`, `weeklyReport.report`,
+  `sleep.list`, and `bodyAnalytics.recomposition`. ClickHouse reported memory
+  limit exceptions with code 241 and messages such as `would use 2.39 GiB`,
+  while current RSS was near the configured 3 GiB server memory cap. ClickHouse
+  `system.query_log` showed repeated sleep and body measurement query families
+  in the same window, with several `ExceptionWhileProcessing` rows and
+  durations around 8-17s.
+- Root Cause: The web API allowed each tRPC procedure in a large dashboard
+  batch to issue ClickHouse analytics reads concurrently. Even when individual
+  queries used moderate memory, concurrent fan-out pushed ClickHouse to its
+  memory cap, causing overcommit waits and query kills.
+- Fix/Mitigation: Commit `8f705dba` wraps the web analytics sensor store in a
+  `LimitedActivitySensorStore`. Each web replica now runs one ClickHouse
+  analytics read at a time and deduplicates identical in-flight query/parameter
+  pairs, reducing peak concurrent ClickHouse memory pressure without changing
+  query semantics or stored data.
+- Validation: Local focused checks passed before deployment:
+  `cd packages/server && pnpm tsc --noEmit` and `pnpm lint --changed`. Deploy
+  run `26432889065` completed successfully on app image `sha-8f705db`.
+  Post-deploy checks showed public `/healthz` returning 200, `dofek_web` at
+  `2/2`, and `dofek_worker`, `dofek_analytics-worker`, `dofek_clickhouse`,
+  `dofek_db`, and `dofek_redis` at `1/1`. In the first five-minute
+  post-deploy window, filtered web logs showed no fresh slow tRPC,
+  ClickHouse DNS, socket, or memory-limit errors; however, no fresh dashboard
+  batch was observed in that window.
+- Remaining Risk: Medium. The query gate reduces memory fan-out but does not
+  remove the expensive repeated sleep/body/recovery calculations. A real
+  dashboard reload should be observed before treating the user-visible latency
+  as fully remediated.
+- Follow-Up Work: Move repeated dashboard calculations, especially sleep,
+  body, recovery, and report inputs, into smaller chained incremental dbt read
+  models so dashboard procedures read compact precomputed rows instead of
+  recomputing overlapping windows per request.
+
+### Follow-up (dashboard priority and provider stats OOM)
+
+- Date: 2026-05-26.
+- Symptoms: The dashboard became more stable after the first ClickHouse
+  concurrency gate, but the at-a-glance score circles were still slow and
+  production ClickHouse restarted again.
+- User Impact: The dashboard score circles could take tens of seconds before
+  rendering. During the later ClickHouse restart, ClickHouse-backed dashboard
+  and data-source routes could temporarily fail with DNS or socket errors.
+- Evidence: After deploy `26432889065`, a dashboard reload showed no immediate
+  ClickHouse memory-limit errors, but the large dashboard batch queued behind
+  serialized ClickHouse reads: `recovery.readinessScore` completed around
+  32s, `sleepNeed.performance` around 26s, and several secondary sections
+  completed between roughly 14-29s. After deploy `26433436277`, the first
+  score-circle batch improved to about 6.2s, with `recovery.readinessScore`
+  and `recovery.strainTarget` around 3.2-3.4s and `sleepNeed.performance`
+  around 6.2s. However, web logs then showed `sync.providerStats` hitting a
+  ClickHouse memory-limit error (`would use 2.58 GiB`, current RSS near
+  3.34 GiB, maximum 3.00 GiB), followed by ClickHouse task exit 137 and
+  transient `getaddrinfo ENOTFOUND clickhouse` / `socket hang up` errors.
+- Root Cause: The one-at-a-time ClickHouse web gate prevented broad dashboard
+  fan-out but introduced head-of-line blocking for the score circles. A
+  separate all-user `analytics.provider_stats` view still computed provider
+  counts across large mirrored tables before the route filtered to one user,
+  and that view could exceed ClickHouse's 3 GiB server cap.
+- Fix/Mitigation: Commit `4d9353be` prioritizes the dashboard score-circle
+  queries, defers secondary dashboard sections briefly, and raises the bounded
+  web ClickHouse read gate from one to two concurrent reads per web replica.
+  Commit `5a071e6` removes `sync.providerStats` from the all-user
+  `analytics.provider_stats` view path and computes per-user provider counts
+  directly with `user_id` pushed into each ClickHouse subquery.
+- Validation: Deploy run `26433436277` completed successfully on app image
+  `sha-4d9353b`, and score-circle logs showed the first batch returning in
+  roughly 6.2s instead of 26-32s. Deploy run `26433847816` completed
+  successfully on app image `sha-5a071e6`. Public `/healthz` returned 200 in
+  three post-deploy probes. Swarm services showed `dofek_web` at `2/2` and
+  `dofek_worker`, `dofek_analytics-worker`, `dofek_clickhouse`, `dofek_db`,
+  and `dofek_redis` at `1/1`. The replacement provider-stats query completed
+  directly on production ClickHouse under a 1 GiB per-query cap and returned
+  the expected per-provider rows. Filtered web logs for the final 10-minute
+  window showed no fresh `sync.providerStats`, ClickHouse DNS, socket,
+  memory-limit, or score-query slow/error lines. ClickHouse had no restart
+  after the pre-fix OOM restart and stayed under the configured cap.
+- Remaining Risk: Medium. The immediate OOM trigger is removed and the score
+  circles are no longer trapped behind every secondary dashboard section, but
+  several secondary dashboard calculations remain expensive and should still
+  move into incremental read models.
+- Follow-Up Work: Convert `healthspan.score`, sleep need, stress, weekly
+  report, body analytics, and remaining repeated dashboard inputs into smaller
+  chained incremental dbt models. Keep the all-user `analytics.provider_stats`
+  view out of request paths unless it is replaced by a bounded incremental
+  table.

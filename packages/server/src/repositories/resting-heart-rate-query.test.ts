@@ -9,7 +9,7 @@ import {
 } from "./resting-heart-rate-query.ts";
 
 describe("fetchRestingHeartRateRows", () => {
-  it("queries precomputed ClickHouse resting heart rate windows", async () => {
+  it("queries the incremental ClickHouse resting heart rate read model", async () => {
     const query = vi.fn().mockResolvedValue([{ date: "2026-05-01", resting_hr: 52 }]);
     const sensorStore = { query };
 
@@ -25,11 +25,14 @@ describe("fetchRestingHeartRateRows", () => {
     expect(query).toHaveBeenCalledTimes(1);
 
     const queryText = String(query.mock.calls[0]?.[1]);
-    expect(queryText).toContain("analytics.resting_heart_rate_sleep_window");
+    expect(queryText).toContain("FROM analytics.resting_heart_rate_sleep_window FINAL");
+    expect(queryText).toContain("WHERE user_id = {userId:UUID}");
+    expect(queryText).toContain("is_deleted = 0");
     expect(queryText).toContain("toDate(toTimeZone(ended_at, {timezone:String}))");
     expect(queryText).toContain("LIMIT 1 BY user_id, date");
-    expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("channel = 'heart_rate'");
+    expect(queryText).not.toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("derived_resting_heart_rate");
   });
 });

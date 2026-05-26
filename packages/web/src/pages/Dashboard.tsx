@@ -6,7 +6,7 @@ import {
   formatSpO2Measurement,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
 import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
@@ -105,6 +105,8 @@ export function healthMonitorSubtitle(): string {
 }
 
 type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
+
+const SECONDARY_DASHBOARD_QUERY_DELAY_MS = 2500;
 
 export function spo2TempSectionConfig(
   hasSpO2: boolean,
@@ -214,39 +216,88 @@ export function Dashboard() {
   const units = useUnitConverter();
   const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const days = 30;
-  const providerGuide = useProviderGuide();
   const endDate = useTodayQueryDate();
+  const [loadSecondarySections, setLoadSecondarySections] = useState(false);
 
-  const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
-  const sleepData = trpc.sleep.list.useQuery({ days, endDate });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
-  const nutritionData = trpc.nutrition.daily.useQuery({ days, endDate });
-  const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery({ endDate });
-  const stressData = trpc.stress.scores.useQuery({ days, endDate });
-  const weeklyReport = trpc.weeklyReport.report.useQuery({ weeks: Math.ceil(days / 7), endDate });
-  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
-  const healthspan = trpc.healthspan.score.useQuery({
-    weeks: Math.max(Math.ceil(days / 7), 4),
-    endDate,
-  });
+  useEffect(() => {
+    setLoadSecondarySections(false);
+    const timeout = window.setTimeout(
+      () => setLoadSecondarySections(true),
+      SECONDARY_DASHBOARD_QUERY_DELAY_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, []);
+
   const readinessData = trpc.recovery.readinessScore.useQuery({ days, endDate });
+  const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
-  const anomalyCheck = trpc.anomalyDetection.check.useQuery({ endDate });
-  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
-  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
-  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
-    days: Math.max(days, 180),
-    endDate,
-  });
+  const providerGuide = useProviderGuide();
+  const trends = trpc.dailyMetrics.trends.useQuery(
+    { days, endDate },
+    { enabled: loadSecondarySections },
+  );
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery(
+    { days, endDate },
+    { enabled: loadSecondarySections },
+  );
+  const sleepData = trpc.sleep.list.useQuery({ days, endDate }, { enabled: loadSecondarySections });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery(
+    { days, endDate },
+    { enabled: loadSecondarySections },
+  );
+  const nutritionData = trpc.nutrition.daily.useQuery(
+    { days, endDate },
+    { enabled: loadSecondarySections },
+  );
+  const insightsQuery = trpc.insights.compute.useQuery(
+    { days, endDate },
+    { enabled: loadSecondarySections },
+  );
+  const sleepNeed = trpc.sleepNeed.calculate.useQuery(
+    { endDate },
+    { enabled: loadSecondarySections },
+  );
+  const stressData = trpc.stress.scores.useQuery(
+    { days, endDate },
+    { enabled: loadSecondarySections },
+  );
+  const weeklyReport = trpc.weeklyReport.report.useQuery(
+    { weeks: Math.ceil(days / 7), endDate },
+    { enabled: loadSecondarySections },
+  );
+  const healthspan = trpc.healthspan.score.useQuery(
+    {
+      weeks: Math.max(Math.ceil(days / 7), 4),
+      endDate,
+    },
+    { enabled: loadSecondarySections },
+  );
+  const anomalyCheck = trpc.anomalyDetection.check.useQuery(
+    { endDate },
+    { enabled: loadSecondarySections },
+  );
+  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery(
+    {
+      days: Math.max(days, 90),
+      endDate,
+    },
+    { enabled: loadSecondarySections },
+  );
+  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery(
+    {
+      days: Math.max(days, 90),
+      endDate,
+    },
+    { enabled: loadSecondarySections },
+  );
+  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery(
+    {
+      days: Math.max(days, 180),
+      endDate,
+    },
+    { enabled: loadSecondarySections },
+  );
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -309,38 +360,48 @@ export function Dashboard() {
     healthMonitor: {
       title: "Health Monitor",
       subtitle: healthMonitorSubtitle(),
-      content: trends.error ? (
-        renderQueryError(trends.error, 160)
-      ) : (
-        <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
-      ),
+      content:
+        loadSecondarySections && trends.error ? (
+          renderQueryError(trends.error, 160)
+        ) : (
+          <HealthStatusBar
+            metrics={healthMetrics}
+            loading={!loadSecondarySections || trends.isLoading}
+          />
+        ),
     },
     topInsights: {
       title: "Top Insights",
       subtitle: "Strongest correlations in your data",
-      content: insightsQuery.isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="h-48 rounded-lg shimmer" />
-          <div className="h-48 rounded-lg shimmer" />
-        </div>
-      ) : insightsQuery.error ? (
-        renderQueryError(insightsQuery.error, 192)
-      ) : topInsights.length > 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {topInsights.map((insight) => (
-            <CorrelationCard key={insight.id} insight={insight} />
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-subtle">
-          Not enough data to surface insights yet. Check back after a few more days of tracking.
-        </p>
-      ),
+      content:
+        !loadSecondarySections || insightsQuery.isLoading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="h-48 rounded-lg shimmer" />
+            <div className="h-48 rounded-lg shimmer" />
+          </div>
+        ) : insightsQuery.error ? (
+          renderQueryError(insightsQuery.error, 192)
+        ) : topInsights.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {topInsights.map((insight) => (
+              <CorrelationCard key={insight.id} insight={insight} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-subtle">
+            Not enough data to surface insights yet. Check back after a few more days of tracking.
+          </p>
+        ),
     },
     weeklyReport: {
       title: "Weekly Performance",
       subtitle: "Strain balance, sleep vs average, key vitals",
-      content: <WeeklyReportCard data={weeklyReport.data} loading={weeklyReport.isLoading} />,
+      content: (
+        <WeeklyReportCard
+          data={weeklyReport.data}
+          loading={!loadSecondarySections || weeklyReport.isLoading}
+        />
+      ),
     },
     strain: {
       title: "Strain",
@@ -356,66 +417,92 @@ export function Dashboard() {
     sleepNeed: {
       title: "Sleep Coach",
       subtitle: "Personalized sleep need based on strain and debt",
-      content: <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />,
+      content: (
+        <SleepNeedCard
+          data={sleepNeed.data}
+          loading={!loadSecondarySections || sleepNeed.isLoading}
+        />
+      ),
     },
     stress: {
       title: "Stress Monitor",
       subtitle: "Daily stress from HR/HRV deviation vs personal baseline",
       content: (
         <div className="card p-2 sm:p-4">
-          <StressChart data={stressData.data} loading={stressData.isLoading} />
+          <StressChart
+            data={stressData.data}
+            loading={!loadSecondarySections || stressData.isLoading}
+          />
         </div>
       ),
     },
     healthspan: {
       title: "Healthspan",
       subtitle: "Composite longevity score from 9 health metrics",
-      content: <HealthspanScoreCard data={healthspan.data} loading={healthspan.isLoading} />,
+      content: (
+        <HealthspanScoreCard
+          data={healthspan.data}
+          loading={!loadSecondarySections || healthspan.isLoading}
+        />
+      ),
     },
     hrvRhr: {
       title: "Heart Rate Variability & Resting HR",
       subtitle: "60-day baseline band with 7-day rolling average",
       content: renderChartCard(
-        hrvBaseline.error ? (
+        loadSecondarySections && hrvBaseline.error ? (
           renderChartQueryError(hrvBaseline.error)
         ) : (
-          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+          <HrvBaselineChart
+            data={hrvBaseline.data ?? []}
+            loading={!loadSecondarySections || hrvBaseline.isLoading}
+          />
         ),
       ),
     },
     spo2Temp: {
       title: spo2TempConfig.title,
       subtitle: spo2TempConfig.subtitle,
-      content: dailyMetrics.error
-        ? renderChartCard(renderChartQueryError(dailyMetrics.error))
-        : hasSpO2 || hasSkinTemp
-          ? renderChartCard(
-              <TimeSeriesChart
-                series={[
-                  ...(hasSpO2 ? [spo2Series] : []),
-                  ...(hasSkinTemp
-                    ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                    : []),
-                ]}
-                height={200}
-                yAxis={spo2TempConfig.yAxis}
-                loading={dailyMetrics.isLoading}
-              />,
-            )
-          : null,
+      content:
+        loadSecondarySections && dailyMetrics.error
+          ? renderChartCard(renderChartQueryError(dailyMetrics.error))
+          : hasSpO2 || hasSkinTemp
+            ? renderChartCard(
+                <TimeSeriesChart
+                  series={[
+                    ...(hasSpO2 ? [spo2Series] : []),
+                    ...(hasSkinTemp
+                      ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                      : []),
+                  ]}
+                  height={200}
+                  yAxis={spo2TempConfig.yAxis}
+                  loading={!loadSecondarySections || dailyMetrics.isLoading}
+                />,
+              )
+            : loadSecondarySections
+              ? null
+              : renderChartCard(
+                  <TimeSeriesChart
+                    series={[]}
+                    height={200}
+                    yAxis={spo2TempConfig.yAxis}
+                    loading={true}
+                  />,
+                ),
     },
     steps: {
       title: "Daily Steps",
       subtitle: "Total daily step count over time",
       content: renderChartCard(
-        dailyMetrics.error ? (
+        loadSecondarySections && dailyMetrics.error ? (
           renderChartQueryError(dailyMetrics.error)
         ) : (
           <TimeSeriesChart
             series={[stepsSeries]}
             height={200}
             yAxis={[{ name: "steps" }]}
-            loading={dailyMetrics.isLoading}
+            loading={!loadSecondarySections || dailyMetrics.isLoading}
           />
         ),
       ),
@@ -424,10 +511,10 @@ export function Dashboard() {
       title: "Sleep",
       subtitle: `Stage breakdown (${days} days)`,
       content: renderChartCard(
-        sleepData.error ? (
+        loadSecondarySections && sleepData.error ? (
           renderChartQueryError(sleepData.error)
         ) : (
-          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
+          <SleepChart data={sleepRows} loading={!loadSecondarySections || sleepData.isLoading} />
         ),
       ),
     },
@@ -435,10 +522,13 @@ export function Dashboard() {
       title: "Nutrition",
       subtitle: `Calories & macros (${days} days)`,
       content: renderChartCard(
-        nutritionData.error ? (
+        loadSecondarySections && nutritionData.error ? (
           renderChartQueryError(nutritionData.error)
         ) : (
-          <NutritionChart data={nutritionRows} loading={nutritionData.isLoading} />
+          <NutritionChart
+            data={nutritionRows}
+            loading={!loadSecondarySections || nutritionData.isLoading}
+          />
         ),
       ),
     },
@@ -452,13 +542,13 @@ export function Dashboard() {
               <h3 className="text-xs font-medium text-subtle uppercase">Weight Trend</h3>
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
             </div>
-            {smoothedWeight.error ? (
+            {loadSecondarySections && smoothedWeight.error ? (
               renderQueryError(smoothedWeight.error, 220)
             ) : (
               <SmoothedWeightChart
                 data={smoothedWeight.data ?? []}
                 prediction={weightPrediction.data}
-                loading={smoothedWeight.isLoading}
+                loading={!loadSecondarySections || smoothedWeight.isLoading}
               />
             )}
           </div>
@@ -467,10 +557,13 @@ export function Dashboard() {
               <h3 className="text-xs font-medium text-subtle uppercase">Recomposition</h3>
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
-            {bodyRecomp.error ? (
+            {loadSecondarySections && bodyRecomp.error ? (
               renderQueryError(bodyRecomp.error, 220)
             ) : (
-              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+              <BodyRecompositionChart
+                data={bodyRecomp.data ?? []}
+                loading={!loadSecondarySections || bodyRecomp.isLoading}
+              />
             )}
           </div>
         </div>
@@ -574,7 +667,7 @@ export function Dashboard() {
       {/* Anomaly Alert — always at the top, not reorderable */}
       <AnomalyAlertBanner
         anomalies={anomalyCheck.data?.anomalies ?? []}
-        loading={anomalyCheck.isLoading}
+        loading={!loadSecondarySections || anomalyCheck.isLoading}
       />
 
       {/* Daily Overview — prominent at-a-glance scores */}

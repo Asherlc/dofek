@@ -1,0 +1,10 @@
+[sqlfluff]
+dialect = clickhouse
+templater = dbt
+exclude_rules = AL09,AL10,CP03,LT02,LT05,RF02,RF04,ST06,ST09
+
+[sqlfluff:templater:dbt]
+project_dir = .
+profiles_dir = .
+profile = dofek
+target = lint

@@ -1,5 +1,6 @@
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import { buildRestingHeartRateCteSql } from "./clickhouse-resting-heart-rate.ts";
 
 export const restingHeartRateRowSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -47,17 +48,7 @@ export async function fetchRestingHeartRateRowsFromClickHouse({
 }
 
 export function restingHeartRateClickHouseCte(): string {
-  return `resting_heart_rate AS (
-      SELECT
-        toString(toDate(toTimeZone(ended_at, {timezone:String}))) AS date,
-        resting_hr
-      FROM analytics.resting_heart_rate_sleep_window
-      WHERE user_id = {userId:UUID}
-        AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({rhrWindowStart:String})
-        AND toDate(toTimeZone(ended_at, {timezone:String})) <= toDate({rhrEndDate:String})
-      ORDER BY user_id, date, duration_seconds DESC, ended_at DESC
-      LIMIT 1 BY user_id, date
-    )`;
+  return buildRestingHeartRateCteSql();
 }
 
 export function restingHeartRateValuesCte(rows: RestingHeartRateRow[]): SQL {

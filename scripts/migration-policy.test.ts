@@ -71,6 +71,107 @@ OPTIMIZE TABLE analytics.deduped_sensor FINAL;
     ]);
   });
 
+  it("blocks naive ClickHouse materialized read models", () => {
+    const violations = lintMigrationPolicyFile(
+      "src/db/clickhouse-sql/bad-read-model.sql",
+      `
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
+AS SELECT * FROM analytics.deduped_sensor;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad-read-model.sql",
+        lineNumber: 2,
+        ruleName: "clickhouse-naive-materialized-view",
+      }),
+    ]);
+  });
+
+  it("blocks dbt analytics models that are not explicit incremental models", () => {
+    const violations = lintMigrationPolicyFile(
+      "analytics/models/read_models/bad_model.sql",
+      `
+{{ config(materialized='view') }}
+
+SELECT 1 AS value
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "analytics/models/read_models/bad_model.sql",
+        lineNumber: 1,
+        ruleName: "analytics-dbt-incremental-model",
+      }),
+    ]);
+  });
+
+  it("allows explicit incremental dbt analytics models", () => {
+    const violations = lintMigrationPolicyFile(
+      "analytics/models/read_models/good_model.sql",
+      `
+{{ config(
+    materialized='incremental',
+    incremental_strategy='append'
+) }}
+
+SELECT 1 AS value
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it("does not treat TO inside a query literal as a materialized view target", () => {
+    const violations = lintMigrationPolicyFile(
+      "src/db/clickhouse-sql/bad-read-model.sql",
+      `
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_window
+AS SELECT 'TO' AS token FROM analytics.deduped_sensor;
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad-read-model.sql",
+        lineNumber: 2,
+        ruleName: "clickhouse-naive-materialized-view",
+      }),
+    ]);
+  });
+
+  it("allows ClickHouse insert-triggered materialized views that target incremental tables", () => {
+    const violations = lintMigrationPolicyFile(
+      "src/db/clickhouse-sql/incremental-ingest.sql",
+      `
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_dirty_key_ingest
+TO analytics.resting_heart_rate_dirty_key
+AS SELECT id FROM postgres_fitness.sleep_session;
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it("allows ClickHouse insert-triggered materialized views with quoted target identifiers", () => {
+    const violations = lintMigrationPolicyFile(
+      "src/db/clickhouse-sql/incremental-ingest.sql",
+      `
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.resting_heart_rate_sleep_dirty_key_ingest
+TO "analytics"."resting_heart_rate_dirty_key"
+AS SELECT id FROM postgres_fitness.sleep_session;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor_dirty_key_ingest
+TO \`analytics\`.\`deduped_sensor_dirty_key\`
+AS SELECT id FROM postgres_fitness.metric_stream;
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
   it("blocks unbounded update and delete statements", () => {
     const violations = lintMigrationPolicyFile(
       "drizzle/0027_bad_dml.sql",

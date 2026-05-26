@@ -23,10 +23,6 @@ vi.mock("../db/clickhouse-read-model-refresh.ts", () => ({
   refreshBodyMeasurementReadModel: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock("../db/clickhouse-deduped-sensor.ts", () => ({
-  processDedupedSensorDirtyKeys: vi.fn(() => Promise.resolve(0)),
-}));
-
 vi.mock("../db/refit-sensor-store.ts", () => ({
   createRefitSensorStore: vi.fn(() => ({})),
 }));
@@ -369,39 +365,29 @@ describe("worker module", () => {
     const { refreshBodyMeasurementReadModel } = await import(
       "../db/clickhouse-read-model-refresh.ts"
     );
-    const { processDedupedSensorDirtyKeys } = await import("../db/clickhouse-deduped-sensor.ts");
     const { processPostSyncJob } = await import("./process-post-sync-job.ts");
     vi.mocked(createClickHouseClientFromEnv).mockClear();
     vi.mocked(createRefitSensorStore).mockClear();
     vi.mocked(refreshBodyMeasurementReadModel).mockClear();
-    vi.mocked(processDedupedSensorDirtyKeys).mockClear();
     vi.mocked(processPostSyncJob).mockClear();
 
     await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "u" });
     const processCall = vi.mocked(processPostSyncJob).mock.calls[0];
     const getSensorStore = processCall?.[2];
     const refreshBodyMeasurements = processCall?.[3];
-    const processSensorDirtyKeys = processCall?.[4];
     expect(getSensorStore).toBeDefined();
     expect(refreshBodyMeasurements).toBeDefined();
-    expect(processSensorDirtyKeys).toBeDefined();
 
-    if (
-      typeof getSensorStore !== "function" ||
-      typeof refreshBodyMeasurements !== "function" ||
-      typeof processSensorDirtyKeys !== "function"
-    ) {
+    if (typeof getSensorStore !== "function" || typeof refreshBodyMeasurements !== "function") {
       throw new Error("post-sync helpers were not passed to processPostSyncJob");
     }
 
     getSensorStore();
     getSensorStore();
     await refreshBodyMeasurements();
-    await processSensorDirtyKeys();
 
     expect(createClickHouseClientFromEnv).toHaveBeenCalledOnce();
     expect(createRefitSensorStore).toHaveBeenCalledOnce();
     expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
-    expect(processDedupedSensorDirtyKeys).toHaveBeenCalledOnce();
   });
 });
