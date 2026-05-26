@@ -322,6 +322,26 @@ function buildViolation(
   };
 }
 
+function buildFileViolation(
+  filePath: string,
+  ruleName: string,
+  message: string,
+  content: string,
+): MigrationPolicyViolation {
+  const lineText =
+    content
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "";
+  return {
+    filePath,
+    lineNumber: 1,
+    ruleName,
+    message,
+    lineText,
+  };
+}
+
 function isUnboundedUpdate(statement: string): boolean {
   return /^\s*UPDATE\b/i.test(statement) && !/\bWHERE\b/i.test(statement);
 }
@@ -359,6 +379,20 @@ export function lintMigrationPolicyFile(
   const uncommentedContent = stripSqlComments(content);
   const statements = splitSqlStatements(uncommentedContent);
   const violations: MigrationPolicyViolation[] = [];
+
+  if (
+    filePath.startsWith("analytics/models/") &&
+    !/\{\{\s*config\s*\([\s\S]*\bmaterialized\s*=\s*['"]incremental['"]/i.test(uncommentedContent)
+  ) {
+    violations.push(
+      buildFileViolation(
+        filePath,
+        "analytics-dbt-incremental-model",
+        "Analytics dbt models must be explicit incremental models; do not add view/table models that require full refreshes or live recomputation.",
+        content,
+      ),
+    );
+  }
 
   for (const statement of statements) {
     for (const rule of riskyStatementRules) {

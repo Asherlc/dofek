@@ -89,6 +89,41 @@ AS SELECT * FROM analytics.deduped_sensor;
     ]);
   });
 
+  it("blocks dbt analytics models that are not explicit incremental models", () => {
+    const violations = lintMigrationPolicyFile(
+      "analytics/models/read_models/bad_model.sql",
+      `
+{{ config(materialized='view') }}
+
+SELECT 1 AS value
+`,
+    );
+
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "analytics/models/read_models/bad_model.sql",
+        lineNumber: 1,
+        ruleName: "analytics-dbt-incremental-model",
+      }),
+    ]);
+  });
+
+  it("allows explicit incremental dbt analytics models", () => {
+    const violations = lintMigrationPolicyFile(
+      "analytics/models/read_models/good_model.sql",
+      `
+{{ config(
+    materialized='incremental',
+    incremental_strategy='append'
+) }}
+
+SELECT 1 AS value
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
   it("does not treat TO inside a query literal as a materialized view target", () => {
     const violations = lintMigrationPolicyFile(
       "src/db/clickhouse-sql/bad-read-model.sql",

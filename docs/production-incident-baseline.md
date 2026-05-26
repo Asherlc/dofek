@@ -7,6 +7,60 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-26: ClickHouse OOM Restarts From Dashboard Activity Analytics
+
+### Symptoms
+
+Dashboard tRPC routes intermittently returned
+`getaddrinfo ENOTFOUND clickhouse` for ClickHouse-backed routes such as
+`recovery.workloadRatio` and `healthspan.score`. Public `/healthz` could still
+return OK while dashboard analytics failed.
+
+### User Impact
+
+The dashboard intermittently failed to load recovery and healthspan data while
+ClickHouse restarted under load.
+
+### Evidence
+
+Swarm showed `dofek_clickhouse` repeatedly failing with
+`task: non-zero exit (137)`. The first fatal host log line during the observed
+incident was:
+
+```text
+May 26 02:22:21 dofek kernel: ConcurrentJoin invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=0, oom_score_adj=0
+```
+
+ClickHouse was killed shortly after at about 3.54 GiB anonymous RSS, then
+restarted repeatedly. Web logs around the restarts showed ClickHouse-backed
+dashboard routes failing with `socket hang up`, `EHOSTUNREACH`, and
+`getaddrinfo ENOTFOUND clickhouse`. ClickHouse query logs showed expensive
+activity/recovery and sleep analytics overlapping with background dbt work.
+
+### Root Cause
+
+Dashboard routes were still reading `analytics.activity_summary` as a live
+ClickHouse view that recomputed joins over deduped sensor and location samples.
+Those request-path joins could overlap with background analytics work and exceed
+the single-node ClickHouse memory budget, causing container OOM kills and
+service-discovery failures while the ClickHouse task restarted.
+
+### Fix or Mitigation
+
+Move activity summary into the incremental `analytics.activity_summary_rows`
+dbt model backed by `ReplacingMergeTree(refresh_version)`, and keep
+`analytics.activity_summary` as a thin compatibility view over those stored
+rows. All production entrypoint dbt builds now use `--threads 1`, and
+`analytics-worker` builds the incremental activity summary alongside deduped
+sensor and resting-heart-rate read models.
+
+### Remaining Risk
+
+The fix must be validated after deploy by confirming ClickHouse stops producing
+new exit-137 restarts, `activity_summary_rows` is populated, and recent web logs
+no longer show fresh `clickhouse` resolution/socket failures for dashboard
+routes.
+
 ## 2026-05-25: Deploy Web Failed On Netdata OOM And Stale PeerDB Mirror Slot
 
 ### Symptoms

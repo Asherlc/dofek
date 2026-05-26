@@ -19,6 +19,7 @@ import * as repairMetricStreamBackfillMigration from "./clickhouse-migrations/00
 import * as restingHeartRateSleepWindowMigration from "./clickhouse-migrations/0014_resting_heart_rate_sleep_window_materialized_view.ts";
 import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/0019_non_sensor_read_models_as_views.ts";
 import * as incrementalRestingHeartRateMigration from "./clickhouse-migrations/0021_incremental_resting_heart_rate.ts";
+import * as incrementalActivitySummaryMigration from "./clickhouse-migrations/0022_incremental_activity_summary.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -51,6 +52,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0019_non_sensor_read_models_as_views.ts",
       "0020_incremental_deduped_sensor.ts",
       "0021_incremental_resting_heart_rate.ts",
+      "0022_incremental_activity_summary.ts",
     ]);
   });
 
@@ -109,6 +111,21 @@ describe("buildClickHouseMigrationStatements", () => {
     );
   });
 
+  it("keeps incremental activity summary cleanup and table/view creation in its migration file", () => {
+    const statements = incrementalActivitySummaryMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements.slice(0, 3)).toEqual([
+      "DROP VIEW IF EXISTS analytics.activity_summary",
+      "DROP TABLE IF EXISTS analytics.activity_summary",
+      "DROP TABLE IF EXISTS analytics.activity_summary_rows",
+    ]);
+    expect(statementSql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(statementSql).toContain("FROM analytics.activity_summary_rows FINAL");
+    expect(statementSql).not.toContain("CREATE MATERIALIZED VIEW");
+  });
+
   it("renders the shared ReplacingMergeTree table engine helper", () => {
     expect(
       replacingMergeTreeTable("(user_id, recorded_at)"),
@@ -139,12 +156,13 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).not.toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_dirty_key");
     expect(sql).toContain("analytics.sensor_scalar_sample");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next");
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
-    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(5);
+    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(6);
     expect(
       sql.match(/CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g),
     ).toHaveLength(1);
@@ -305,7 +323,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(21);
+    expect(count).toBe(22);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

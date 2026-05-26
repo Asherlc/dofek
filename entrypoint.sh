@@ -25,26 +25,26 @@ case "${1:-sync}" in
     ;;
   sync)
     $NODE src/db/run-migrate.ts
-    dbt build --project-dir analytics --profiles-dir analytics
+    dbt build --project-dir analytics --profiles-dir analytics --threads 1
     exec $NODE src/index.ts sync
     ;;
   worker)
     $NODE src/db/run-migrate.ts
-    dbt build --project-dir analytics --profiles-dir analytics
+    dbt build --project-dir analytics --profiles-dir analytics --threads 1
     exec $NODE src/jobs/worker.ts
     ;;
   migrate)
     $NODE src/db/run-migrate.ts
-    exec dbt build --project-dir analytics --profiles-dir analytics
+    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1
     ;;
   analytics)
-    exec dbt build --project-dir analytics --profiles-dir analytics
+    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1
     ;;
   analytics-worker)
     interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
     retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
     while true; do
-      if dbt build --project-dir analytics --profiles-dir analytics --select sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window; then
+      if dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select sensor_scalar_sample deduped_sensor activity_summary_rows resting_heart_rate_sleep_window; then
         sleep "$interval_seconds"
       else
         status="$?"

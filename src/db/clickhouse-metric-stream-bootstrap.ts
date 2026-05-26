@@ -1,3 +1,4 @@
+import { buildIncrementalActivitySummaryStatements } from "./clickhouse-activity-summary.ts";
 import { buildActivityTrendDailyCreateReadModelStatements } from "./clickhouse-activity-trend-read-model.ts";
 import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
 import { buildPostgresFitnessRawTableStatements } from "./clickhouse-raw-tables.ts";
@@ -44,7 +45,7 @@ ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
     ...buildIncrementalDedupedSensorStatements(),
     buildRestingHeartRateSleepWindowTableSql(),
     ...buildDedupedLocationReadModelStatements(),
-    ...buildActivitySummaryReadModelStatements(),
+    ...buildIncrementalActivitySummaryStatements(),
     ...buildActivityTrendDailyCreateReadModelStatements(),
   ];
 }

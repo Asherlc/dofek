@@ -13,6 +13,7 @@ import {
   buildDedupedSensorBackfillSql,
   buildSensorScalarSampleBackfillSql,
 } from "../../../../src/db/clickhouse-deduped-sensor.ts";
+import { buildActivitySummaryReadModelStatements } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 
@@ -607,6 +608,21 @@ LEFT JOIN computed_windows
 WHERE active_sleep.is_nap = false`;
 }
 
+function buildTestActivitySummarySelectSql(databases: IsolatedClickHouseDatabases): string {
+  const statement = rewriteClickHouseDatabaseNames(
+    buildActivitySummaryReadModelStatements()[0] ?? "",
+    databases,
+  );
+  const viewMatch = statement.match(
+    /^CREATE VIEW IF NOT EXISTS [A-Za-z0-9_]+\.[A-Za-z0-9_]+\nAS\n?([\s\S]*)$/,
+  );
+  const selectSql = viewMatch?.[1]?.trim();
+  if (!selectSql) {
+    throw new Error("Could not parse ClickHouse activity summary test SELECT");
+  }
+  return selectSql;
+}
+
 function rewriteClickHouseTestCommand(
   query: string,
   databases: IsolatedClickHouseDatabases,
@@ -624,7 +640,13 @@ function rewriteClickHouseTestCommand(
       throw new Error("Could not parse ClickHouse test view statement");
     }
     const trimmedSelectSql = selectSql.trim();
-    precomputedAnalyticsSelectByName.set(viewName, trimmedSelectSql);
+    precomputedAnalyticsSelectByName.set(
+      viewName,
+      viewName.endsWith(".activity_summary") &&
+        trimmedSelectSql.includes(".activity_summary_rows FINAL")
+        ? buildTestActivitySummarySelectSql(databases)
+        : trimmedSelectSql,
+    );
     const tableStatement = buildTestAnalyticsTableStatement(viewName);
     if (!tableStatement) {
       throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
