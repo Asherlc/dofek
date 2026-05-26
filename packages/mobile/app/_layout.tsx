@@ -132,12 +132,14 @@ function AuthGate() {
       },
     };
 
+    const batchLink = httpBatchLink(commonOptions);
+
     return trpc.createClient({
       links: [
         splitLink({
           condition: (operation) => operation.type === "mutation",
-          true: httpBatchLink(commonOptions),
-          false: httpBatchLink(commonOptions),
+          true: batchLink,
+          false: batchLink,
         }),
       ],
     });

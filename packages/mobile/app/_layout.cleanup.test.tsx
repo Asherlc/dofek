@@ -200,7 +200,7 @@ describe("RootLayout background cleanup", () => {
       expect(mockCreateClient).toHaveBeenCalledOnce();
     });
 
-    expect(mockHttpBatchLink).toHaveBeenCalledTimes(2);
+    expect(mockHttpBatchLink).toHaveBeenCalledOnce();
     expect(mockHttpLink).not.toHaveBeenCalled();
     expect(mockSplitLink).toHaveBeenCalledOnce();
 
@@ -215,11 +215,11 @@ describe("RootLayout background cleanup", () => {
 
     expect(condition({ type: "mutation" })).toBe(true);
     expect(condition({ type: "query" })).toBe(false);
-    expect(Reflect.get(splitOptions, "true")).toEqual({
-      type: "batch",
-      options: expect.anything(),
-    });
-    expect(Reflect.get(splitOptions, "false")).toEqual({
+    const mutationLink = Reflect.get(splitOptions, "true");
+    const queryLink = Reflect.get(splitOptions, "false");
+
+    expect(mutationLink).toBe(queryLink);
+    expect(mutationLink).toEqual({
       type: "batch",
       options: expect.anything(),
     });
