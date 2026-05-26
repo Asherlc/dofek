@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
@@ -37,8 +38,90 @@ export interface AuthenticatedContext extends Context {
 const fullAccessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
 
 const trpc = initTRPC.context<Context>().create();
+const ANALYTICS_UNAVAILABLE_MESSAGE =
+  "Analytics data is temporarily unavailable. Please retry in a minute.";
 
 export const router = trpc.router;
+
+function errorMessages(error: unknown): string[] {
+  if (typeof error === "string") return [error];
+  if (!(error instanceof Error)) return [];
+  return [error.message, ...errorMessages(error.cause)];
+}
+
+function errorCodes(error: unknown): string[] {
+  if (!(error instanceof Error)) return [];
+  const currentCode = "code" in error && typeof error.code === "string" ? [error.code] : [];
+  return [...currentCode, ...errorCodes(error.cause)];
+}
+
+function isClickHouseInfrastructureError(error: unknown): boolean {
+  const messages = errorMessages(error).map((message) => message.toLowerCase());
+  const codes = new Set(errorCodes(error));
+
+  if (
+    (codes.has("ENOTFOUND") || codes.has("ECONNREFUSED") || codes.has("ETIMEDOUT")) &&
+    messages.some((message) => message.includes("clickhouse"))
+  ) {
+    return true;
+  }
+
+  return messages.some(
+    (message) =>
+      message.includes("getaddrinfo enotfound clickhouse") ||
+      (message.includes("connect econnrefused") && message.includes("clickhouse")) ||
+      message.includes("overcommittracker") ||
+      (message.includes("clickhouse") && message.includes("memory limit exceeded")),
+  );
+}
+
+function reportableInfrastructureError(error: unknown): unknown {
+  if (error instanceof Error && isClickHouseInfrastructureError(error.cause)) {
+    return reportableInfrastructureError(error.cause);
+  }
+  return error;
+}
+
+function reportClickHouseInfrastructureError(error: unknown, path: string): void {
+  Sentry.captureException(reportableInfrastructureError(error), {
+    tags: { dependency: "clickhouse", trpcPath: path },
+  });
+}
+
+const sanitizeInfrastructureErrors = trpc.middleware(async ({ path, next }) => {
+  try {
+    const result = await next();
+    if (!result.ok && isClickHouseInfrastructureError(result.error)) {
+      reportClickHouseInfrastructureError(result.error, path);
+      throw new TRPCError({
+        code: "SERVICE_UNAVAILABLE",
+        message: ANALYTICS_UNAVAILABLE_MESSAGE,
+        cause: result.error,
+      });
+    }
+    return result;
+  } catch (error) {
+    if (
+      error instanceof TRPCError &&
+      error.code === "SERVICE_UNAVAILABLE" &&
+      error.message === ANALYTICS_UNAVAILABLE_MESSAGE
+    ) {
+      throw error;
+    }
+    if (isClickHouseInfrastructureError(error)) {
+      reportClickHouseInfrastructureError(error, path);
+      throw new TRPCError({
+        code: "SERVICE_UNAVAILABLE",
+        message: ANALYTICS_UNAVAILABLE_MESSAGE,
+        cause: error,
+      });
+    }
+    throw error;
+  }
+});
+
+const procedure = trpc.procedure.use(sanitizeInfrastructureErrors);
+
 // Auth middleware — rejects unauthenticated requests
 const isAuthenticated = trpc.middleware(({ ctx, next }) => {
   if (!ctx.userId) {
@@ -52,8 +135,8 @@ const isAuthenticated = trpc.middleware(({ ctx, next }) => {
   return next({ ctx: authenticatedCtx });
 });
 
-export const publicProcedure = trpc.procedure;
-export const protectedProcedure = trpc.procedure.use(isAuthenticated);
+export const publicProcedure = procedure;
+export const protectedProcedure = procedure.use(isAuthenticated);
 
 // Admin middleware — requires authenticated user with is_admin flag
 const isAdminUser = trpc.middleware(async ({ ctx, next }) => {
@@ -73,7 +156,7 @@ const isAdminUser = trpc.middleware(async ({ ctx, next }) => {
   return next({ ctx: authenticatedCtx });
 });
 
-export const adminProcedure = trpc.procedure.use(isAdminUser);
+export const adminProcedure = procedure.use(isAdminUser);
 
 export const CacheTTL = {
   SHORT: 2 * 60 * 1000, // 2 min

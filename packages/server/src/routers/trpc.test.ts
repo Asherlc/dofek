@@ -23,6 +23,11 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: vi.fn() },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
+import * as Sentry from "@sentry/node";
 import { queryCache } from "dofek/lib/cache";
 import {
   cacheHitsTotal,
@@ -253,6 +258,34 @@ describe("trpc", () => {
       await expect(caller.test()).resolves.toEqual({
         userId: "admin-123",
         accessWindow,
+      });
+    });
+  });
+
+  describe("infrastructure error sanitizer", () => {
+    it("hides ClickHouse DNS failures from tRPC callers and reports the original error", async () => {
+      const internalError = Object.assign(new Error("getaddrinfo ENOTFOUND clickhouse"), {
+        code: "ENOTFOUND",
+      });
+      const testRouter = router({
+        test: protectedProcedure.query(() => {
+          throw internalError;
+        }),
+      });
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: {},
+        userId: "user-123",
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message: "Analytics data is temporarily unavailable. Please retry in a minute.",
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(internalError, {
+        tags: { dependency: "clickhouse", trpcPath: "test" },
       });
     });
   });

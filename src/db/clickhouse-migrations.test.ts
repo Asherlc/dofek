@@ -20,6 +20,7 @@ import * as restingHeartRateSleepWindowMigration from "./clickhouse-migrations/0
 import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/0019_non_sensor_read_models_as_views.ts";
 import * as incrementalRestingHeartRateMigration from "./clickhouse-migrations/0021_incremental_resting_heart_rate.ts";
 import * as incrementalActivitySummaryMigration from "./clickhouse-migrations/0022_incremental_activity_summary.ts";
+import * as incrementalActivityVo2MaxEstimateMigration from "./clickhouse-migrations/0023_incremental_activity_vo2max_estimate.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -53,6 +54,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0020_incremental_deduped_sensor.ts",
       "0021_incremental_resting_heart_rate.ts",
       "0022_incremental_activity_summary.ts",
+      "0023_incremental_activity_vo2max_estimate.ts",
     ]);
   });
 
@@ -126,6 +128,23 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statementSql).not.toContain("CREATE MATERIALIZED VIEW");
   });
 
+  it("keeps incremental activity VO2 max estimate cleanup and table creation in its migration file", () => {
+    const statements = incrementalActivityVo2MaxEstimateMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements).toHaveLength(2);
+    expect(statements[0]).toBe("DROP TABLE IF EXISTS analytics.activity_vo2max_estimate");
+    expect(statements[1]).toContain(
+      "CREATE TABLE IF NOT EXISTS analytics.activity_vo2max_estimate",
+    );
+    expect(statementSql).toContain("activity_id UUID");
+    expect(statementSql).toContain("method LowCardinality(String)");
+    expect(statementSql).toContain("vo2max Float64");
+    expect(statementSql).toContain("ENGINE = ReplacingMergeTree(refresh_version)");
+    expect(statementSql).toContain("ORDER BY (user_id, started_at, activity_id, method)");
+    expect(statementSql).not.toContain("CREATE MATERIALIZED VIEW");
+  });
+
   it("renders the shared ReplacingMergeTree table engine helper", () => {
     expect(
       replacingMergeTreeTable("(user_id, recorded_at)"),
@@ -158,6 +177,7 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_vo2max_estimate");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next");
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
@@ -323,7 +343,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(22);
+    expect(count).toBe(23);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

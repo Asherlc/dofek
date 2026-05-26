@@ -8592,3 +8592,44 @@ new incremental tables are populated.
   chained incremental dbt models. Keep the all-user `analytics.provider_stats`
   view out of request paths unless it is replaced by a bounded incremental
   table.
+
+### Follow-up (healthspan VO2 max request-path OOM)
+
+- Date: 2026-05-26.
+- Symptoms: ClickHouse restarted again after the dashboard secondary batch ran
+  behind the bounded web query gate.
+- User Impact: The dashboard's `healthspan.score` route failed with
+  `socket hang up` and follow-up `getaddrinfo ENOTFOUND clickhouse` errors
+  while the ClickHouse task restarted.
+- Evidence: Web logs for the dashboard batch showed slow secondary routes:
+  `weeklyReport.report` around 6.7s, body analytics routes around 7.9-9.2s,
+  `stress.scores` and `sleepNeed.calculate` around 10.5s, and
+  `healthspan.score` around 21.1s immediately followed by
+  `healthspan.score: socket hang up`. Kernel logs at `14:23:21 UTC` showed
+  `ConcurrentJoin invoked oom-killer`, then the memory cgroup killed
+  `clickhouse-serv` at roughly 3.54 GiB anonymous RSS. ClickHouse query log
+  entries before the kill showed the sleep, body, resting-heart-rate, and
+  healthspan heart-rate-zone subqueries finishing; the remaining healthspan
+  request-path calculation is the VO2 max estimate query that joins
+  `analytics.deduped_sensor` to activities and body measurement data.
+- Root Cause: `healthspan.score` was still running a sensor-heavy VO2 max
+  estimate in the web request path after the earlier healthspan heart-rate-zone
+  join fix. That query can overlap with the dashboard's other ClickHouse reads
+  and push the single-node ClickHouse task over its 3 GiB server cap / 3.5 GiB
+  cgroup limit.
+- Fix/Mitigation: Added `analytics.activity_vo2max_estimate` as a bounded dbt
+  read model for per-activity VO2 max estimates, created the ClickHouse table in
+  migration `0023_incremental_activity_vo2max_estimate`, and updated
+  `healthspan.score`'s ClickHouse repository path to read compact estimate rows
+  instead of recomputing the sensor-heavy joins in the request path. Added a
+  tRPC infrastructure-error sanitizer so ClickHouse DNS/connect/memory-limit
+  failures are reported to Sentry with the original error but exposed to callers
+  as a generic temporary analytics-unavailable message.
+- Remaining Risk: Moderate until deployed and observed under dashboard reload
+  traffic. The VO2 max read-model build still performs the expensive
+  activity/sample work offline, but with dirty keys and `max_threads=1` rather
+  than inside the API request path.
+- Follow-Up Work: Watch the first production `analytics-worker` runs and
+  dashboard reloads after deploy. If `activity_vo2max_estimate` still pressures
+  ClickHouse, split the model into smaller dbt-native batches before adding more
+  dashboard read models.

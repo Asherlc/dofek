@@ -11,3 +11,4 @@ sources:
       - name: sensor_device_priority
       - name: sensor_provider_priority
       - name: sleep_session
+      - name: user_profile

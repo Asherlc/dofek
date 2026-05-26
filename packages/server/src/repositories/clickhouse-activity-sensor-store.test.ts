@@ -110,7 +110,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("analytics.deduped_sensor");
   });
 
-  it("derives VO2 max estimates from ClickHouse deduped samples", async () => {
+  it("loads VO2 max estimates from the compact activity read model", async () => {
     const { store, query } = makeStore([
       {
         activity_id: window.activityId,
@@ -142,13 +142,12 @@ describe("ClickHouseActivitySensorStore", () => {
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.deduped_sensor");
-    expect(queryText).toContain("analytics.v_activity");
-    expect(queryText).toContain("analytics.v_body_measurement");
-    expect(queryText).toContain("resting_heart_rate AS");
-    expect(queryText).toContain("analytics.resting_heart_rate_sleep_window");
-    expect(queryText).toContain("FROM activities");
-    expect(queryText).toContain("resting.date <= activities.activity_date");
+    expect(queryText).toContain("FROM analytics.activity_vo2max_estimate FINAL");
+    expect(queryText).not.toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("analytics.v_activity");
+    expect(queryText).not.toContain("analytics.v_body_measurement");
+    expect(queryText).not.toContain("resting_heart_rate AS");
+    expect(queryText).not.toContain("analytics.resting_heart_rate_sleep_window");
     expect(queryText).not.toContain("fitness.derived_vo2max_estimates");
     expect(queryText).not.toContain("fitness.metric_stream");
   });

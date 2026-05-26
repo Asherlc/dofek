@@ -24,7 +24,7 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 
 - **Metric Channels**: The `metric_stream` table uses a `channel` column to differentiate between data types (e.g., `heart_rate`, `power`).
 - **Deduplication**: Activity sensor analytics read from deduplicated ClickHouse read models.
-- **ClickHouse Analytics Models**: Expensive derived ClickHouse tables are maintained by dbt models in `analytics/models/`. `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, and `analytics.resting_heart_rate_sleep_window` are incremental dbt models populated outside the web/API request path.
+- **ClickHouse Analytics Models**: Expensive derived ClickHouse tables are maintained by dbt models in `analytics/models/`. `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, `analytics.resting_heart_rate_sleep_window`, and `analytics.activity_vo2max_estimate` are incremental dbt models populated outside the web/API request path.
 - **Nutrient Columns**: Shared nutrient columns are generated via `nutrient-columns.ts`.
 
 ## Migrations
