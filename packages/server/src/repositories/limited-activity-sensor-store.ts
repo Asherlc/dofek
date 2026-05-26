@@ -5,7 +5,7 @@ import type {
   StreamPointRow,
 } from "./activity-repository.ts";
 
-const WEB_CLICKHOUSE_CONCURRENCY = 1;
+const WEB_CLICKHOUSE_CONCURRENCY = 2;
 
 type LimitedOperation<T> = () => Promise<T>;
 
