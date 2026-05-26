@@ -18,7 +18,11 @@ const sharedTestEnv = {
   CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
 };
 
-const testClickHouseUrl = process.env.CLICKHOUSE_URL ?? "http://localhost:8123";
+const configuredClickHouseUrl = process.env.CLICKHOUSE_URL?.trim();
+const testClickHouseUrl =
+  configuredClickHouseUrl && configuredClickHouseUrl.length > 0
+    ? configuredClickHouseUrl
+    : "http://localhost:8123";
 
 export default defineConfig({
   test: {
