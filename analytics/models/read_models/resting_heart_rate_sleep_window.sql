@@ -81,14 +81,6 @@ active_activity AS (
     WHERE _peerdb_is_deleted = 0
 ),
 
-activity_windows AS (
-    SELECT
-        user_id,
-        groupArray(tuple(started_at, ended_at)) AS windows
-    FROM active_activity
-    GROUP BY user_id
-),
-
 sleep_dirty_keys AS (
     SELECT
         user_id,
@@ -181,6 +173,19 @@ current_sleep AS (
     WHERE active_sleep.is_nap = false
 ),
 
+activity_windows AS (
+    SELECT
+        current_sleep.sleep_id AS sleep_id,
+        current_sleep.user_id AS user_id,
+        groupArray(tuple(active_activity.started_at, active_activity.ended_at)) AS windows
+    FROM current_sleep
+    INNER JOIN active_activity
+        ON active_activity.user_id = current_sleep.user_id
+        AND active_activity.started_at <= current_sleep.ended_at
+        AND active_activity.ended_at >= current_sleep.started_at
+    GROUP BY current_sleep.sleep_id, current_sleep.user_id
+),
+
 heart_rate_samples AS (
     SELECT
         current_sleep.sleep_id AS sleep_id,
@@ -192,11 +197,12 @@ heart_rate_samples AS (
     FROM current_sleep
     INNER JOIN {{ ref('deduped_sensor') }} AS samples FINAL
         ON samples.user_id = current_sleep.user_id
-    LEFT JOIN activity_windows
-        ON activity_windows.user_id = samples.user_id
-    WHERE samples.recorded_at >= current_sleep.started_at
+        AND samples.recorded_at >= current_sleep.started_at
         AND samples.recorded_at <= current_sleep.ended_at
-        AND samples.channel = 'heart_rate'
+    LEFT JOIN activity_windows
+        ON activity_windows.user_id = current_sleep.user_id
+        AND activity_windows.sleep_id = current_sleep.sleep_id
+    WHERE samples.channel = 'heart_rate'
         AND samples.is_deleted = 0
         AND samples.scalar IS NOT NULL
         AND NOT arrayExists(

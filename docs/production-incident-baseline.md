@@ -8178,3 +8178,27 @@ new incremental tables are populated.
   environments now share the same explicit ClickHouse password contract.
 - Follow-Up Work: Continue monitoring production rollout for the original
   ClickHouse memory and dashboard latency risks described above.
+
+### Follow-up (Deploy run 26424057092)
+
+- Date: 2026-05-25.
+- Symptoms: Production deploy from PR #1180 reached the final web stack deploy
+  step, but `dofek_worker` repeatedly exited with status 1 while Swarm waited
+  for rollout convergence.
+- User Impact: The rollout did not complete cleanly; the worker was unhealthy
+  during the attempted production validation.
+- Evidence: Worker logs showed dbt successfully building
+  `analytics.sensor_scalar_sample` and `analytics.deduped_sensor`, then failing
+  `analytics.resting_heart_rate_sleep_window` with ClickHouse
+  `MEMORY_LIMIT_EXCEEDED` while executing `JoiningTransform`.
+- Root Cause: The RHR model joined dirty sleep rows to heart-rate samples by
+  user before bounding the sample time window, and carried all activity windows
+  per user into the sample filter. On production data that join shape exceeded
+  the ClickHouse memory limit.
+- Fix/Mitigation: Narrow the RHR incremental model so the sample join includes
+  the sleep time bounds, and build activity exclusion windows only for the dirty
+  sleep rows being recomputed.
+- Remaining Risk: Medium until a follow-up deploy proves the narrower RHR model
+  can build on production data within the ClickHouse memory limit.
+- Follow-Up Work: Redeploy PR #1180 after CI validates the narrower RHR model,
+  then verify `dofek_worker`, `dofek_analytics-worker`, and ClickHouse health.
