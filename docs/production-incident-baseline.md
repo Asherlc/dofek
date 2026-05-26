@@ -57,13 +57,22 @@ model. Production `DBT_SAFE_MODELS` now selects only `sensor_scalar_sample`;
 `activity_summary_rows` stay excluded until they are split into smaller chained
 incremental models.
 
+### Validation
+
+Production deploy run `26430662909` rolled out app image `sha-1d5e448`.
+Post-deploy checks showed `dofek_web` at `2/2`, `dofek_worker` at `1/1`,
+`dofek_analytics-worker` at `1/1`, all on `sha-1d5e448`; public `/healthz`
+returned HTTP 200. The new analytics worker ran only
+`analytics.sensor_scalar_sample` and completed with `PASS=1`. ClickHouse had no
+new exit-137 restarts in the first nine minutes after the previous crash, and
+recent web logs had no fresh ClickHouse DNS/socket errors for
+`recovery.workloadRatio` or `healthspan.score`.
+
 ### Remaining Risk
 
-The fix must be validated after deploy by confirming ClickHouse stops producing
-new exit-137 restarts and recent web logs no longer show fresh `clickhouse`
-resolution/socket failures for dashboard routes. Activity summary and
-resting-heart-rate values may be missing or stale until the excluded dbt models
-are redesigned and enabled.
+Activity summary and resting-heart-rate values may be missing or stale until
+the excluded dbt models are redesigned and enabled as smaller chained
+incremental models.
 
 ## 2026-05-25: Deploy Web Failed On Netdata OOM And Stale PeerDB Mirror Slot
 
