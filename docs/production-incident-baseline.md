@@ -8309,10 +8309,20 @@ new incremental tables are populated.
   in 3 GiB `max_server_memory_usage` cap, version the Swarm config as
   `clickhouse_memory_limits_3g`, set production analytics builds to run every
   15 minutes, and make failed analytics-worker dbt builds sleep for five
-  minutes before retrying instead of exiting into a restart loop.
-- Remaining Risk: Medium until this deploy is observed in production. A single
-  analytics build should still be monitored for memory, and heavy dashboard
-  sleep queries still allocate over 500 MiB.
+  minutes before retrying instead of exiting into a restart loop. Production
+  deploy run `26427324922` completed successfully with app image `sha-9e82289`.
+  Post-deploy checks at `01:50 UTC` showed public `/healthz` returning 200,
+  `dofek_web` at `2/2`, `dofek_worker`, `dofek_analytics-worker`,
+  `dofek_clickhouse`, `dofek_db`, `dofek_traefik`, and `dofek_netdata` at
+  `1/1`. ClickHouse had the new `dofek_clickhouse_memory_limits_3g` config,
+  a 3500 MiB container limit, and was using roughly 1.27 GiB of 3.418 GiB.
+  Analytics-worker had `ANALYTICS_BUILD_INTERVAL_SECONDS=900` and
+  `ANALYTICS_BUILD_RETRY_DELAY_SECONDS=300`, completed one dbt build with
+  `PASS=3`, then slept.
+- Remaining Risk: Medium. No kernel OOM lines appeared after `01:46 UTC` in
+  the post-deploy observation window, but a single analytics build should still
+  be monitored for memory, and heavy dashboard sleep queries still allocate over
+  500 MiB.
 - Follow-Up Work: Optimize the dashboard sleep queries and consider moving
   management/observability services off the single-node OLAP host if ClickHouse
   still needs more memory headroom.
