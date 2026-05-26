@@ -11,7 +11,8 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, sleep_id, recorded_date, recorded_at)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
