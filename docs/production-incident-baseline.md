@@ -8250,3 +8250,69 @@ new incremental tables are populated.
   Netdata starts with the new 768 MiB memory limit and reduced retention.
 - Follow-Up Work: Redeploy PR #1180, then verify `dofek_netdata` convergence,
   public `/healthz`, worker dbt output, and kernel logs for new OOM kills.
+
+### Follow-up (Deploy run 26426220118)
+
+- Date: 2026-05-26.
+- Symptoms: Production deploy from PR #1180 completed successfully after the
+  Netdata Swarm config was versioned, but kernel logs still showed OOM kills
+  during the rollout window.
+- User Impact: Public `/healthz` returned healthy after deploy. During rollout,
+  ClickHouse restarted once and dashboard requests could have briefly failed
+  with ClickHouse DNS/connection errors while the service task was being
+  replaced.
+- Evidence: GitHub Actions run `26426220118` passed all web deploy steps. Swarm
+  showed `dofek_web` at `2/2`, `dofek_worker`, `dofek_analytics-worker`,
+  `dofek_clickhouse`, `dofek_db`, `dofek_peerdb`, and `dofek_netdata` at `1/1`,
+  all on app image `sha-a33944a` where applicable. `dofek_netdata` mounted
+  `dofek_netdata_db_limits_v2` and had a 768 MiB memory limit. Worker dbt logs
+  showed `sensor_scalar_sample`, `deduped_sensor`, and
+  `resting_heart_rate_sleep_window` all completing with `PASS=3`.
+- Root Cause: The previous deploy failures were fixed, but the old Netdata task
+  and a ClickHouse task still hit cgroup OOM limits during rollout before the
+  new converged tasks stabilized.
+- Fix/Mitigation: The successful deploy applied the versioned Netdata config,
+  the reduced Netdata dbengine retention, and the 768 MiB Netdata memory limit.
+  After convergence, Netdata and ClickHouse were both running, and no kernel
+  OOM lines appeared in the follow-up 8-minute observation window.
+- Remaining Risk: Medium. Netdata was using roughly 570 MiB of 768 MiB shortly
+  after startup, and ClickHouse query logs still showed two dashboard sleep
+  queries around 545-585 MiB before the ClickHouse restart. Continue watching
+  Netdata pruning and dashboard query memory over a longer production window.
+- Follow-Up Work: Consider optimizing the sleep dashboard queries that still
+  allocate over 500 MiB, and review whether Netdata retention should be reduced
+  further if memory remains close to the 768 MiB limit.
+
+### Follow-up (Production ClickHouse OOM after deploy run 26426220118)
+
+- Date: 2026-05-26.
+- Symptoms: The dashboard again reported service-name resolution errors after
+  the successful production deploy. Public `/healthz` still returned 200, but
+  dashboard/API paths backed by ClickHouse were intermittently unavailable.
+- User Impact: Recovery/dashboard reads could fail while ClickHouse restarted.
+  Web health checks stayed healthy because the web service itself remained up.
+- Evidence: Kernel logs showed a host-level OOM at `01:24:19` killing
+  `clickhouse-serv` at roughly 4.46 GiB RSS, followed by ClickHouse cgroup OOM
+  kills at `01:26:36` and `01:30:48`. Web logs also showed transient
+  `getaddrinfo ENOTFOUND redis`, and worker/analytics-worker logs showed
+  `getaddrinfo ENOTFOUND db` and `getaddrinfo ENOTFOUND clickhouse`, indicating
+  broader Swarm/network instability during memory pressure and task restarts.
+  `dofek_analytics-worker` logs showed the initial `deduped_sensor` dbt model
+  timing out after 480s at `01:24:18`, then subsequent dbt builds rerunning
+  repeatedly around `01:25`, `01:27`, `01:29`, and `01:31`.
+- Root Cause: The production analytics worker cadence was too aggressive for
+  the single-node ClickHouse host, and dbt failures exited the shell loop so
+  Swarm immediately restarted the service into another dbt build. Incremental
+  models reduced per-run query memory, but running the build every minute plus
+  immediate retry-on-failure still drove ClickHouse into OOM/restart cycles.
+- Fix/Mitigation: Lower ClickHouse to a 3500 MiB container limit with a checked
+  in 3 GiB `max_server_memory_usage` cap, version the Swarm config as
+  `clickhouse_memory_limits_3g`, set production analytics builds to run every
+  15 minutes, and make failed analytics-worker dbt builds sleep for five
+  minutes before retrying instead of exiting into a restart loop.
+- Remaining Risk: Medium until this deploy is observed in production. A single
+  analytics build should still be monitored for memory, and heavy dashboard
+  sleep queries still allocate over 500 MiB.
+- Follow-Up Work: Optimize the dashboard sleep queries and consider moving
+  management/observability services off the single-node OLAP host if ClickHouse
+  still needs more memory headroom.

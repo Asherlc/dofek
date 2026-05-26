@@ -127,6 +127,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      ANALYTICS_BUILD_INTERVAL_SECONDS: "900"
+      ANALYTICS_BUILD_RETRY_DELAY_SECONDS: "300"
       OTEL_SERVICE_NAME: dofek-analytics-worker
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
@@ -222,7 +224,7 @@ services:
       - source: clickhouse_system_log_ttl
         target: /etc/clickhouse-server/config.d/system-log-ttl.xml
         mode: 0444
-      - source: clickhouse_memory_limits_4g
+      - source: clickhouse_memory_limits_3g
         target: /etc/clickhouse-server/config.d/memory-limits.xml
         mode: 0444
     healthcheck:
@@ -238,7 +240,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4500M
+          memory: 3500M
 
   peerdb-catalog:
     image: postgres:18-alpine
@@ -602,7 +604,7 @@ configs:
     file: ./clickhouse/users.d/allow-experimental-nullable-tuple-type.xml
   clickhouse_system_log_ttl:
     file: ./clickhouse/config.d/system-log-ttl.xml
-  clickhouse_memory_limits_4g:
+  clickhouse_memory_limits_3g:
     file: ./clickhouse/config.d/memory-limits.xml
   netdata_db_limits_v2:
     file: ./netdata/netdata.conf

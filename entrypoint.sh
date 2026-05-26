@@ -41,9 +41,16 @@ case "${1:-sync}" in
     exec dbt build --project-dir analytics --profiles-dir analytics
     ;;
   analytics-worker)
+    interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
+    retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
     while true; do
-      dbt build --project-dir analytics --profiles-dir analytics --select sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window
-      sleep "${ANALYTICS_BUILD_INTERVAL_SECONDS:-60}"
+      if dbt build --project-dir analytics --profiles-dir analytics --select sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window; then
+        sleep "$interval_seconds"
+      else
+        status="$?"
+        echo "analytics-worker: dbt build failed with exit status $status; retrying in ${retry_delay_seconds}s" >&2
+        sleep "$retry_delay_seconds"
+      fi
     done
     ;;
   seed)
