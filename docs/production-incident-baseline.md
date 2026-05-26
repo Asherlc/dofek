@@ -8363,3 +8363,16 @@ new incremental tables are populated.
   the ClickHouse task remains stable after dashboard access, and review the
   remaining dashboard ClickHouse routes for unbounded joins or high-memory
   query plans.
+
+#### Validation
+
+- Deploy run `26428146330` completed successfully on 2026-05-26 with app image
+  `sha-f075758`. Post-deploy checks showed public `/healthz` returning 200,
+  `dofek_web` at `2/2`, `dofek_worker`, `dofek_analytics-worker`,
+  `dofek_clickhouse`, `dofek_db`, `dofek_traefik`, and `dofek_netdata` at
+  `1/1`. The analytics worker completed the next incremental dbt build at
+  `02:11 UTC` with `PASS=3`. At `02:17 UTC`, ClickHouse was still on the same
+  running task, using roughly 1.56 GiB of its 3.418 GiB container limit, kernel
+  logs showed no OOM lines since `02:05 UTC`, and filtered web logs showed no
+  fresh `healthspan.score`, ClickHouse DNS, socket hang-up, or slow-query
+  entries in the prior five minutes.
