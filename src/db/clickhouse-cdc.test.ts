@@ -221,6 +221,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
     }
     expect(sourcePostgresQueries[1]).toContain("peerdb_metric_stream_no_imu");
     expect(sourcePostgresQueries[1]).toContain("WHERE (channel <> 'imu')");
+    expect(sourcePostgresQueries[1]).toContain("timescaledb_information.chunks");
+    expect(sourcePostgresQueries[1]).toContain("ALTER PUBLICATION peerdb_metric_stream_no_imu");
+    expect(sourcePostgresQueries[1]).toContain("ADD TABLE %I.%I WHERE (channel <> %L)");
+    expect(sourcePostgresQueries[1]).toContain("public.add_job(");
+    expect(sourcePostgresQueries[1]).toContain(
+      "'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc",
+    );
     expect(peerDbQueries).toEqual(["host = 'db', password = 'pa''ss\\word'"]);
   });
 
