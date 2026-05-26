@@ -87,6 +87,13 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_vo2max_estimate"),
+      ),
+    ).toBe(true);
 
     clickHouseMocks.command.mockClear();
 

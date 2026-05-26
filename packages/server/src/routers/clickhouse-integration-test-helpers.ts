@@ -9,6 +9,7 @@ import {
   createClickHouseClientFromEnv,
   parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
+import { buildActivityVo2MaxEstimateTableSql } from "../../../../src/db/clickhouse-activity-vo2max-estimate.ts";
 import {
   buildDedupedSensorBackfillSql,
   buildSensorScalarSampleBackfillSql,
@@ -806,6 +807,7 @@ async function bootstrapClickHouseTestSchema(
   for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
     await client.command({ query: statement });
   }
+  await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 }
 
 export async function syncClickHouseTestActivitySensorStore(
