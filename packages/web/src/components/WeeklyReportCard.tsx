@@ -25,6 +25,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
   const currentZone = new StrainZone(current.strainZone);
   const zoneColor = currentZone.color;
   const sleepWasTracked = current.avgSleepMinutes > 0;
+  const hasTraining = current.activityCount > 0 || current.trainingHours > 0;
   const prevWeek = history.length > 0 ? history[history.length - 1] : null;
 
   return (
@@ -34,16 +35,20 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           <h3 className="text-muted text-sm font-medium mb-1">Weekly Performance</h3>
           <p className="text-dim text-xs">Week of {formatDateShort(current.weekStart)}</p>
         </div>
-        {sleepWasTracked ? (
+        {!sleepWasTracked ? (
+          <div className="px-3 py-1 rounded-full text-xs font-semibold bg-surface-hover text-subtle">
+            Sleep not tracked
+          </div>
+        ) : !hasTraining ? (
+          <div className="px-3 py-1 rounded-full text-xs font-semibold bg-surface-hover text-subtle">
+            No training
+          </div>
+        ) : (
           <div
             className="px-3 py-1 rounded-full text-xs font-semibold"
             style={{ backgroundColor: `${zoneColor}20`, color: zoneColor }}
           >
             {currentZone.label}
-          </div>
-        ) : (
-          <div className="px-3 py-1 rounded-full text-xs font-semibold bg-surface-hover text-subtle">
-            Sleep not tracked
           </div>
         )}
       </div>
@@ -93,16 +98,18 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
             {history.slice(-8).map((w) => {
               const zone = new StrainZone(w.strainZone);
               const weekHasSleepData = w.avgSleepMinutes > 0;
+              const weekHasTraining = w.activityCount > 0 || w.trainingHours > 0;
+              const showZone = weekHasSleepData && weekHasTraining;
               return (
                 <div
                   key={w.weekStart}
-                  className={`flex-1 h-2 rounded-full ${weekHasSleepData ? "" : "bg-surface-hover"}`}
-                  style={weekHasSleepData ? { backgroundColor: zone.color } : undefined}
-                  title={`${w.weekStart}: ${weekHasSleepData ? zone.label : "Sleep not tracked"}`}
+                  className={`flex-1 h-2 rounded-full ${showZone ? "" : "bg-surface-hover"}`}
+                  style={showZone ? { backgroundColor: zone.color } : undefined}
+                  title={`${w.weekStart}: ${showZone ? zone.label : weekHasSleepData ? "No training" : "Sleep not tracked"}`}
                 />
               );
             })}
-            {sleepWasTracked ? (
+            {sleepWasTracked && hasTraining ? (
               <div
                 className="flex-1 h-2 rounded-full ring-2 ring-border-strong"
                 style={{ backgroundColor: zoneColor }}
@@ -111,7 +118,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
             ) : (
               <div
                 className="flex-1 h-2 rounded-full ring-2 ring-border-strong bg-surface-hover"
-                title="This week: Sleep not tracked"
+                title={`This week: ${sleepWasTracked ? "No training" : "Sleep not tracked"}`}
               />
             )}
           </div>

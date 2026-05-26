@@ -23,7 +23,7 @@ function requireSensorStore(
 export type StrainZone = "restoring" | "optimal" | "overreaching";
 
 export interface WeekSummary {
-  /** ISO week start date (Monday) */
+  /** Week start date (Sunday) */
   weekStart: string;
   /** Total training hours */
   trainingHours: number;
@@ -67,7 +67,7 @@ export function classifyStrainZone(weekAvgLoad: number, chronicAvgLoad: number):
 export const weeklyReportRouter = router({
   /**
    * Weekly Performance Report — mirrors Whoop's Weekly Performance Assessment.
-   * Aggregates strain balance, sleep performance, readiness, and key vitals per ISO week.
+   * Aggregates strain balance, sleep performance, readiness, and key vitals per Sunday-start week.
    */
   report: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ weeks: z.number().min(1).max(52).default(12), endDate: endDateSchema }))
@@ -101,10 +101,13 @@ export const weeklyReportRouter = router({
           WHERE user_id = {userId:UUID}
             AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
             AND ended_at IS NOT NULL
-            AND avg_hr IS NOT NULL
         ),
         daily_training AS (
-          SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
+          SELECT
+            date,
+            sum(hours) AS hours,
+            toInt32(count()) AS count,
+            sumIf(load, load IS NOT NULL) AS load
           FROM per_activity
           GROUP BY date
         ),
@@ -148,17 +151,17 @@ export const weeklyReportRouter = router({
         ),
         weekly AS (
           SELECT
-            toMonday(d.date) AS week_start,
+            toStartOfWeek(d.date, 0) AS week_start,
             sum(d.hours) AS total_hours,
             toInt32(sum(d.count)) AS activity_count,
             avg(d.load) AS avg_daily_load,
             avg(sl.duration_minutes) AS avg_sleep_min,
-            avg(m.resting_hr) AS avg_resting_hr,
-            avg(m.hrv) AS avg_hrv
+            avg(nullIf(m.resting_hr, 0)) AS avg_resting_hr,
+            avg(nullIf(m.hrv, 0)) AS avg_hrv
           FROM daily d
           LEFT JOIN sleep_daily sl ON sl.date = d.date
           LEFT JOIN metrics_daily m ON m.date = d.date
-          GROUP BY toMonday(d.date)
+          GROUP BY toStartOfWeek(d.date, 0)
           ORDER BY week_start ASC
         )
         SELECT
@@ -204,27 +207,12 @@ export const weeklyReportRouter = router({
         } satisfies WeekSummary;
       });
 
-      // Only return the requested number of weeks.
-      // If the most recent week just started (today is its first day), it has
-      // no meaningful data yet — treat the previous full week as "current".
+      // Only return the requested number of Sunday-start weeks.
       const cutoffWeeks = parsed.slice(-input.weeks);
       const lastWeek = cutoffWeeks[cutoffWeeks.length - 1];
-      const isPartialWeek = lastWeek && lastWeek.weekStart === getMondayOfWeek(input.endDate);
-      const current =
-        isPartialWeek && cutoffWeeks.length >= 2
-          ? (cutoffWeeks[cutoffWeeks.length - 2] ?? null)
-          : (lastWeek ?? null);
-      const history = isPartialWeek ? cutoffWeeks.slice(0, -2) : cutoffWeeks.slice(0, -1);
+      const current = lastWeek ?? null;
+      const history = cutoffWeeks.slice(0, -1);
 
       return { current, history };
     }),
 });
-
-/** Return the ISO Monday (YYYY-MM-DD) for the week containing `dateStr`. */
-function getMondayOfWeek(dateStr: string): string {
-  const date = new Date(`${dateStr}T12:00:00Z`);
-  const day = date.getUTCDay(); // 0=Sun, 1=Mon, ...
-  const diff = day === 0 ? 6 : day - 1; // days since Monday
-  date.setUTCDate(date.getUTCDate() - diff);
-  return date.toISOString().slice(0, 10);
-}

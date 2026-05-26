@@ -496,10 +496,10 @@ describe("weeklyReportRouter", () => {
       expect(result.current?.weekStart).toBe("2026-03-17");
     });
 
-    it("uses the previous full week as current when the latest requested week is partial", async () => {
+    it("uses the current Sunday-start week on Tuesday instead of falling back to last week", async () => {
       const rows = [
         {
-          week_start: "2026-03-09",
+          week_start: "2026-05-17",
           total_hours: 4,
           activity_count: 2,
           avg_daily_load: 1,
@@ -510,9 +510,9 @@ describe("weeklyReportRouter", () => {
           prev_3wk_avg_sleep: 420,
         },
         {
-          week_start: "2026-03-16",
-          total_hours: 1,
-          activity_count: 1,
+          week_start: "2026-05-24",
+          total_hours: 2,
+          activity_count: 3,
           avg_daily_load: 0.5,
           avg_sleep_min: 390,
           avg_resting_hr: 62,
@@ -528,16 +528,18 @@ describe("weeklyReportRouter", () => {
         sensorStore: makeMockSensorStore(rows),
       });
 
-      const result = await caller.report({ weeks: 2, endDate: "2026-03-17" });
+      const result = await caller.report({ weeks: 2, endDate: "2026-05-26" });
 
-      expect(result.current?.weekStart).toBe("2026-03-09");
-      expect(result.history).toEqual([]);
+      expect(result.current?.weekStart).toBe("2026-05-24");
+      expect(result.current?.activityCount).toBe(3);
+      expect(result.history).toHaveLength(1);
+      expect(result.history[0]?.weekStart).toBe("2026-05-17");
     });
 
-    it("treats Sunday as part of the week that started six days earlier", async () => {
+    it("groups weekly rows by Sunday-start weeks", async () => {
       const rows = [
         {
-          week_start: "2026-03-09",
+          week_start: "2026-03-15",
           total_hours: 4,
           activity_count: 2,
           avg_daily_load: 1,
@@ -548,7 +550,7 @@ describe("weeklyReportRouter", () => {
           prev_3wk_avg_sleep: 420,
         },
         {
-          week_start: "2026-03-16",
+          week_start: "2026-03-22",
           total_hours: 1,
           activity_count: 1,
           avg_daily_load: 0.5,
@@ -559,17 +561,55 @@ describe("weeklyReportRouter", () => {
           prev_3wk_avg_sleep: 420,
         },
       ];
+      const sensorStore = makeMockSensorStore(rows);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue(rows) },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
+        sensorStore,
       });
 
       const result = await caller.report({ weeks: 2, endDate: "2026-03-22" });
 
-      expect(result.current?.weekStart).toBe("2026-03-09");
-      expect(result.history).toEqual([]);
+      expect(result.current?.weekStart).toBe("2026-03-22");
+      expect(result.history[0]?.weekStart).toBe("2026-03-15");
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
+      expect(queryText).toContain("toStartOfWeek(d.date, 0)");
+      expect(queryText).not.toContain("toMonday(d.date)");
+    });
+
+    it("counts all ended activities while training load only uses rows with average heart rate", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.report({ weeks: 1, endDate: "2026-05-26" });
+
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
+      expect(queryText).not.toContain("AND avg_hr IS NOT NULL");
+      expect(queryText).toContain("* avg_hr / nullIf(toFloat64(max_hr), 0)");
+      expect(queryText).toContain("toInt32(count()) AS count");
+      expect(queryText).toContain("sumIf(load, load IS NOT NULL) AS load");
+    });
+
+    it("ignores ClickHouse join-default zeros when averaging weekly vitals", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.report({ weeks: 1, endDate: "2026-05-26" });
+
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
+      expect(queryText).toContain("avg(nullIf(m.resting_hr, 0)) AS avg_resting_hr");
+      expect(queryText).toContain("avg(nullIf(m.hrv, 0)) AS avg_hrv");
     });
 
     it("verifies full computed values for a single week (kills || 0, rounding, null-check mutants)", async () => {
