@@ -30,6 +30,7 @@ import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
 import { createMcpRouter } from "./mcp/route.ts";
 import { ClickHouseActivitySensorStore } from "./repositories/clickhouse-activity-sensor-store.ts";
+import { LimitedActivitySensorStore } from "./repositories/limited-activity-sensor-store.ts";
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
@@ -59,13 +60,14 @@ export function createApp(
 ): express.Express {
   initSentry();
   const app = express();
+  const limitedSensorStore = sensorStore ? new LimitedActivitySensorStore(sensorStore) : undefined;
 
   // ── Health check (before ALL middleware and other routes) ──
   app.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
   });
 
-  setupRoutes(app, db, sensorStore);
+  setupRoutes(app, db, limitedSensorStore);
   // Sentry error handler must be after all routes
   app.use(sentryErrorHandler());
   return app;
