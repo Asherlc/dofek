@@ -543,6 +543,32 @@ describe("fetchHealthspanRawData", () => {
     expectSqlParamsToContainNumber(sqlValues, 21);
   });
 
+  it("keeps activity sensor bounds in the ClickHouse join", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const ctx = makeFetchContext({
+      sensorStore: makeSensorStore({
+        query,
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      }),
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const zoneQuery = query.mock.calls.find(
+      ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
+    )?.[1];
+    expect(zoneQuery).toEqual(expect.any(String));
+    expect(zoneQuery).toContain("INNER JOIN analytics.deduped_sensor AS ds");
+    expect(zoneQuery).toMatch(/ON\s+ds\.user_id\s*=\s*am\.user_id/);
+    expect(zoneQuery).toMatch(/AND\s+ds\.recorded_at\s*>=\s*am\.started_at/);
+    expect(zoneQuery).toMatch(
+      /AND\s+ds\.recorded_at\s*<=\s*coalesce\(am\.ended_at,\s*am\.started_at\s*\+\s*INTERVAL\s+12\s+HOUR\)/,
+    );
+    expect(zoneQuery).toMatch(/AND\s+ds\.channel\s+IN\s+\('heart_rate',\s*'power'\)/);
+    expect(zoneQuery).toMatch(/AND\s+ds\.is_deleted\s*=\s*0/);
+    expect(zoneQuery).not.toContain(`WHERE ds.recorded_at >= am.started_at`);
+  });
+
   it("merges VO2 max estimates into sorted weekly history", async () => {
     const execute = vi.fn().mockResolvedValue([
       makeRawHealthspanRow({

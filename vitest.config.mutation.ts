@@ -19,6 +19,7 @@ export default defineConfig({
       CREDENTIAL_ENCRYPTION_KEY_NAME: "provider-credentials-test",
     },
     include: [
+      "analytics/models/**/*.test.ts",
       "src/**/*.test.ts",
       "packages/format/src/**/*.test.ts",
       "packages/scoring/src/**/*.test.ts",

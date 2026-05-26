@@ -8593,6 +8593,74 @@ new incremental tables are populated.
   view out of request paths unless it is replaced by a bounded incremental
   table.
 
+### Follow-up (healthspan VO2 max request-path OOM)
+
+- Date: 2026-05-26.
+- Symptoms: ClickHouse restarted again after the dashboard secondary batch ran
+  behind the bounded web query gate.
+- User Impact: The dashboard's `healthspan.score` route failed with
+  `socket hang up` and follow-up `getaddrinfo ENOTFOUND clickhouse` errors
+  while the ClickHouse task restarted.
+- Evidence: Web logs for the dashboard batch showed slow secondary routes:
+  `weeklyReport.report` around 6.7s, body analytics routes around 7.9-9.2s,
+  `stress.scores` and `sleepNeed.calculate` around 10.5s, and
+  `healthspan.score` around 21.1s immediately followed by
+  `healthspan.score: socket hang up`. Kernel logs at `14:23:21 UTC` showed
+  `ConcurrentJoin invoked oom-killer`, then the memory cgroup killed
+  `clickhouse-serv` at roughly 3.54 GiB anonymous RSS. ClickHouse query log
+  entries before the kill showed the sleep, body, resting-heart-rate, and
+  healthspan heart-rate-zone subqueries finishing; the remaining healthspan
+  request-path calculation is the VO2 max estimate query that joins
+  `analytics.deduped_sensor` to activities and body measurement data.
+- Root Cause: `healthspan.score` was still running a sensor-heavy VO2 max
+  estimate in the web request path after the earlier healthspan heart-rate-zone
+  join fix. That query can overlap with the dashboard's other ClickHouse reads
+  and push the single-node ClickHouse task over its 3 GiB server cap / 3.5 GiB
+  cgroup limit.
+- Fix/Mitigation: Added `analytics.activity_vo2max_estimate` as a bounded dbt
+  read model for per-activity VO2 max estimates, created the ClickHouse table in
+  migration `0023_incremental_activity_vo2max_estimate`, and updated
+  `healthspan.score`'s ClickHouse repository path to read compact estimate rows
+  instead of recomputing the sensor-heavy joins in the request path. Added a
+  tRPC infrastructure-error sanitizer so ClickHouse DNS/connect/memory-limit
+  failures are reported to Sentry with the original error but exposed to callers
+  as a generic temporary analytics-unavailable message.
+- Remaining Risk: Moderate until deployed and observed under dashboard reload
+  traffic. The VO2 max read-model build still performs the expensive
+  activity/sample work offline, but with dirty keys and `max_threads=1` rather
+  than inside the API request path.
+- Follow-Up Work: Watch the first production `analytics-worker` runs and
+  dashboard reloads after deploy. If `activity_vo2max_estimate` still pressures
+  ClickHouse, split the model into smaller dbt-native batches before adding more
+  dashboard read models.
+
+### Follow-up (E2E migration ClickHouse OOM)
+
+- Date: 2026-05-26.
+- Symptoms: The GitHub Actions `Test / E2E Tests (Web)` job failed before
+  Cypress ran, during the `Run e2e migrations` step.
+- User Impact: PR validation was blocked.
+- Evidence: Job `77916604408` failed while running
+  `docker compose -f docker-compose.e2e.yml run --rm migrate`. dbt reported a
+  failure in `activity_vo2max_estimate`, and ClickHouse raised
+  `MEMORY_LIMIT_EXCEEDED` while evaluating the overlap `dateDiff` expression
+  inside `analytics.v_activity`.
+- Root Cause: `activity_vo2max_estimate` read from the full recursive deduping
+  `analytics.v_activity` view before applying its supported-activity and
+  dirty-key bounds, so the CI dbt build expanded the expensive all-activity
+  self-join graph.
+- Fix/Mitigation: Changed the model's `current_activity` CTE to read bounded,
+  non-deleted mirrored `postgres_fitness.activity` rows directly while keeping
+  sensor samples sourced from deduped ClickHouse data.
+- Validation: `dbt compile --select activity_vo2max_estimate`,
+  `pnpm lint:analytics-sql`, the exact local E2E migration path, and
+  `pnpm test:changed` all passed.
+- Remaining Risk: Low for the observed CI failure. The model still depends on
+  ClickHouse for deduped sensor joins, but it no longer forces the full
+  activity-dedupe view into the migration build.
+- Follow-Up Work: Keep future dbt read models from depending on broad request
+  views when a bounded mirrored source table plus explicit filters is enough.
+
 ### Follow-up (body composition stale from unpublished Timescale chunks)
 
 - Date: 2026-05-26.
@@ -8637,3 +8705,30 @@ new incremental tables are populated.
 - Follow-Up Work: Add an alert comparing recent Timescale chunks against the
   PeerDB metric-stream publication and add a bounded runbook for repairing
   non-body metric-stream gaps without scanning the full hypertable.
+
+### Follow-up (Stryker trpc.ts mutation threshold)
+
+- Date: 2026-05-26.
+- Symptoms: GitHub Actions `Test / Stryker (0)` failed, which caused
+  `Test / Mutation Testing`, `Test / Test Gate`, and `CI Gate` to fail.
+- User Impact: PR validation was blocked.
+- Evidence: Job `77927893257` completed mutation testing for
+  `packages/server/src/trpc.ts` with `Final mutation score 68.09 under breaking
+  threshold 75`.
+- Root Cause: The new ClickHouse infrastructure-error sanitizer tests covered
+  the happy-path DNS/refused/overcommit cases but did not exercise enough
+  negative and boundary cases for error-code extraction, nested causes, string
+  errors, or cache metric labels/durations, leaving Stryker mutants alive.
+- Fix/Mitigation: Added targeted `trpc.test.ts` cases for ClickHouse vs
+  non-ClickHouse timeout/refused/memory-limit detection, non-string codes,
+  nested causes, string thrown errors, and cache hit/miss metric labels and
+  durations.
+- Validation: `pnpm vitest packages/server/src/routers/trpc.test.ts --run`
+  passed, unit-only Stryker for `packages/server/src/trpc.ts` reached 79.43
+  against the 75 break threshold, `pnpm lint` passed, all TypeScript checks
+  passed, and `pnpm test:changed` passed.
+- Remaining Risk: Low. A full local Stryker run can pressure local ClickHouse
+  during unrelated integration dry-run tests, but the failing shard's direct
+  mutation target now clears the threshold with the dedicated unit test file.
+- Follow-Up Work: Prefer adding mutation-killing cases alongside new tRPC
+  middleware branches when introducing sanitizer or cache-observability logic.
