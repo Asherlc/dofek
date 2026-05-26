@@ -8228,3 +8228,25 @@ new incremental tables are populated.
   dashboard reads.
 - Follow-Up Work: Redeploy PR #1180 with the Netdata sizing fix, then verify
   `dofek_netdata`, ClickHouse memory, worker dbt output, and public health.
+
+### Follow-up (Deploy run 26425794016)
+
+- Date: 2026-05-25.
+- Symptoms: Production deploy from PR #1180 failed before migrations while
+  applying the pre-migration stack config.
+- User Impact: The branch image and Netdata sizing fix were not applied by this
+  deploy attempt; production remained on the previous Netdata 512 MiB limit and
+  Netdata continued to crash-loop.
+- Evidence: The `Apply stack config before migrations` step failed on
+  `docker stack deploy` with
+  `failed to update config dofek_netdata_db_limits_v1: ... only updates to Labels are allowed`.
+- Root Cause: Docker Swarm config objects are immutable. The prior fix changed
+  the contents of the existing `netdata_db_limits_v1` config instead of
+  publishing a new versioned config object.
+- Fix/Mitigation: Version the Netdata config reference to
+  `netdata_db_limits_v2` so Swarm creates a new immutable config and updates
+  the service to mount it.
+- Remaining Risk: Medium until the follow-up deploy converges and confirms
+  Netdata starts with the new 768 MiB memory limit and reduced retention.
+- Follow-Up Work: Redeploy PR #1180, then verify `dofek_netdata` convergence,
+  public `/healthz`, worker dbt output, and kernel logs for new OOM kills.

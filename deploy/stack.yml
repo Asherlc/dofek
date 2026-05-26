@@ -567,7 +567,7 @@ services:
       - /etc/os-release:/host/etc/os-release:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     configs:
-      - source: netdata_db_limits_v1
+      - source: netdata_db_limits_v2
         target: /etc/netdata/netdata.conf
     deploy:
       resources:
@@ -604,5 +604,5 @@ configs:
     file: ./clickhouse/config.d/system-log-ttl.xml
   clickhouse_memory_limits_4g:
     file: ./clickhouse/config.d/memory-limits.xml
-  netdata_db_limits_v1:
+  netdata_db_limits_v2:
     file: ./netdata/netdata.conf
