@@ -8796,3 +8796,41 @@ new incremental tables are populated.
 - Follow-Up Work: Deploy the prepared bounded RHR and activity summary model
   update; add freshness monitoring comparing latest sleep/heart-rate inputs to
   latest active RHR output date.
+
+### Resting heart rate sleep-sample join null handling
+
+- Date: 2026-05-26.
+- Symptoms: After deploying the bounded RHR dbt models, the Heart Rate
+  Variability & Resting HR chart still did not show recent resting heart rate
+  values.
+- User Impact: The dashboard continued to omit recent resting heart rate points
+  and the recent 7-day resting heart rate trend.
+- Evidence: Production `analytics.resting_heart_rate_sleep_window FINAL` was
+  refreshed at `2026-05-26 22:41:52 UTC`, but its newest active sleep window
+  was still `2026-05-18`. `analytics.sleep_heart_rate_sample FINAL` had zero
+  rows. A read-only ClickHouse query showed 33 recent sleep windows; before the
+  activity-overlap exclusion, 11 had at least 30 heart-rate samples and the
+  newest sleep had 4,356 samples. After the model's `LEFT JOIN active_activity`
+  plus `active_activity.id IS NULL` filter, all sleep heart-rate samples were
+  removed. Running the same query with `join_use_nulls=1` preserved 11 recent
+  sleep windows, with up to 5,478 samples.
+- Root Cause: ClickHouse `LEFT JOIN` returns default values for unmatched
+  right-side columns unless `join_use_nulls` is enabled. The
+  `sleep_heart_rate_sample` model expected SQL-null semantics for
+  `active_activity.id IS NULL`, so unmatched activity rows looked non-null and
+  the model filtered out every sleep heart-rate sample.
+- Fix/Mitigation: Added `join_use_nulls=1` to the
+  `sleep_heart_rate_sample` dbt model query settings and a regression assertion
+  in `read_model_microbatch.sql.test.ts`.
+- Validation: The new test failed before the model change and passed after it.
+  `pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts`,
+  `pnpm test:changed`, `pnpm lint`, and the required TypeScript checks passed.
+  Full `pnpm test` did not complete cleanly because Testcontainers-created
+  integration Postgres containers stopped during unrelated integration suites
+  with Docker HTTP 409 errors.
+- Remaining Risk: Medium until the fix is merged and deployed. The production
+  analytics worker also still logs ClickHouse memory-limit errors in unrelated
+  activity sample models, although the RHR model itself ran after those errors.
+- Follow-Up Work: Add read-model freshness monitoring for
+  `sleep_heart_rate_sample` and `resting_heart_rate_sleep_window`; investigate
+  the unrelated activity sample ClickHouse memory-limit errors separately.

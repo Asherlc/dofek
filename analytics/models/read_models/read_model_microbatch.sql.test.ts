@@ -41,6 +41,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("source('postgres_fitness', 'sleep_session')");
     expect(sql).toContain("channel = 'heart_rate'");
+    expect(sql).toContain("'join_use_nulls': 1");
   });
 
   it("aggregates resting heart rate from the bounded sleep intermediary", () => {
