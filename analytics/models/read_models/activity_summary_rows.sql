@@ -31,7 +31,7 @@ current_activity AS (
         name,
         started_at,
         ended_at
-    FROM analytics.v_activity
+    FROM {{ source('analytics', 'v_activity') }}
 ),
 
 existing_activity_summary AS (
@@ -180,11 +180,13 @@ activity_bounds AS (
 sensor_summary AS (
     SELECT *
     FROM {{ ref('activity_sensor_summary_rows') }} FINAL
+    WHERE is_deleted = 0
 ),
 
 location_summary AS (
     SELECT *
     FROM {{ ref('activity_location_summary_rows') }} FINAL
+    WHERE is_deleted = 0
 )
 
 SELECT

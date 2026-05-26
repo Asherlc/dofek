@@ -21,7 +21,7 @@ WITH current_activity AS (
         user_id,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
-    FROM analytics.v_activity
+    FROM {{ source('analytics', 'v_activity') }}
 ),
 
 activity_samples AS (

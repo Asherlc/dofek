@@ -84,7 +84,7 @@ sleep_dirty_keys AS (
 ),
 
 sample_dirty_keys AS (
-    SELECT
+    SELECT DISTINCT
         user_id,
         sleep_id
     FROM {{ ref('sleep_heart_rate_sample') }}

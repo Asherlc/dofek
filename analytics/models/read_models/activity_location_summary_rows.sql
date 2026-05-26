@@ -28,7 +28,7 @@ current_activity AS (
         id AS activity_id,
         user_id,
         started_at
-    FROM analytics.v_activity
+    FROM {{ source('analytics', 'v_activity') }}
 ),
 
 existing_summary AS (
@@ -37,6 +37,7 @@ existing_summary AS (
             activity_id,
             user_id
         FROM {{ this }} FINAL
+        WHERE is_deleted = 0
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,

@@ -20,7 +20,7 @@ WITH activity_members AS (
         activity_id,
         user_id,
         member_activity_id
-    FROM analytics.v_activity_members
+    FROM {{ source('analytics', 'v_activity_members') }}
 ),
 
 location_versions AS (
@@ -47,16 +47,14 @@ provider_counts AS (
     SELECT
         activity_members.activity_id AS activity_id,
         location_rows.provider_id AS provider_id,
-        count() AS sample_count,
+        countIf(location_rows.is_deleted = 0 AND location_rows.point IS NOT NULL) AS sample_count,
         row_number() OVER (
             PARTITION BY activity_members.activity_id
-            ORDER BY count() DESC, location_rows.provider_id ASC
+            ORDER BY sample_count DESC, location_rows.provider_id ASC
         ) AS row_number
     FROM location_rows
     INNER JOIN activity_members
         ON activity_members.member_activity_id = location_rows.member_activity_id
-    WHERE location_rows.is_deleted = 0
-        AND location_rows.point IS NOT NULL
     GROUP BY activity_members.activity_id, location_rows.provider_id
 ),
 
