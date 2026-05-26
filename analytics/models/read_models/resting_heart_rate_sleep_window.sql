@@ -2,7 +2,10 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, sleep_id)'
+    order_by='(user_id, sleep_id)',
+    query_settings={
+        'max_threads': 1
+    }
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
@@ -45,40 +48,17 @@ sleep_source AS (
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
 ),
 
-activity_source AS (
-    SELECT
-        id,
-        user_id,
-        started_at,
-        coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at,
-        _peerdb_synced_at,
-        _peerdb_is_deleted
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-),
-
 active_sleep AS (
     SELECT
         sleep_id,
         user_id,
         started_at,
         assumeNotNull(ended_at) AS ended_at,
-        _peerdb_synced_at,
         assumeNotNull(duration_seconds) AS duration_seconds,
         is_nap
     FROM sleep_source
     WHERE _peerdb_is_deleted = 0
         AND ended_at IS NOT NULL
-),
-
-active_activity AS (
-    SELECT
-        id,
-        user_id,
-        started_at,
-        ended_at,
-        _peerdb_synced_at
-    FROM activity_source
-    WHERE _peerdb_is_deleted = 0
 ),
 
 sleep_dirty_keys AS (
@@ -103,47 +83,20 @@ sleep_dirty_keys AS (
         {% endif %}
 ),
 
-activity_dirty_keys AS (
-    SELECT
-        active_sleep.user_id AS user_id,
-        active_sleep.sleep_id AS sleep_id
-    FROM activity_source
-    INNER JOIN active_sleep
-        ON active_sleep.user_id = activity_source.user_id
-        AND activity_source.started_at <= active_sleep.ended_at
-        AND activity_source.ended_at >= active_sleep.started_at
+sample_dirty_keys AS (
+    SELECT DISTINCT
+        user_id,
+        sleep_id
+    FROM {{ ref('sleep_heart_rate_sample') }}
     WHERE
         {% if is_incremental() %}
             (
                 NOT (SELECT is_empty FROM target_state)
-                AND activity_source._peerdb_synced_at > (
-                    SELECT last_refreshed_at FROM target_state
-                )
+                AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
             )
         {% else %}
             1 = 0
         {% endif %}
-),
-
-sensor_dirty_keys AS (
-    SELECT
-        active_sleep.user_id AS user_id,
-        active_sleep.sleep_id AS sleep_id
-    FROM {{ ref('deduped_sensor') }} AS samples FINAL
-    INNER JOIN active_sleep
-        ON active_sleep.user_id = samples.user_id
-        AND samples.recorded_at >= active_sleep.started_at
-        AND samples.recorded_at <= active_sleep.ended_at
-    WHERE
-        {% if is_incremental() %}
-            (
-                NOT (SELECT is_empty FROM target_state)
-                AND samples.refreshed_at > (SELECT last_refreshed_at FROM target_state)
-            )
-        {% else %}
-            1 = 0
-        {% endif %}
-        AND samples.channel = 'heart_rate'
 ),
 
 dirty_keys AS (
@@ -153,13 +106,11 @@ dirty_keys AS (
     FROM (
         SELECT user_id, sleep_id FROM sleep_dirty_keys
         UNION ALL
-        SELECT user_id, sleep_id FROM activity_dirty_keys
-        UNION ALL
-        SELECT user_id, sleep_id FROM sensor_dirty_keys
+        SELECT user_id, sleep_id FROM sample_dirty_keys
     )
 ),
 
-current_sleep AS (
+sleep_windows AS (
     SELECT
         active_sleep.sleep_id AS sleep_id,
         active_sleep.user_id AS user_id,
@@ -173,78 +124,56 @@ current_sleep AS (
     WHERE active_sleep.is_nap = false
 ),
 
-activity_windows AS (
-    SELECT
-        current_sleep.sleep_id AS sleep_id,
-        current_sleep.user_id AS user_id,
-        groupArray(tuple(active_activity.started_at, active_activity.ended_at)) AS windows
-    FROM current_sleep
-    INNER JOIN active_activity
-        ON active_activity.user_id = current_sleep.user_id
-        AND active_activity.started_at <= current_sleep.ended_at
-        AND active_activity.ended_at >= current_sleep.started_at
-    GROUP BY current_sleep.sleep_id, current_sleep.user_id
-),
-
-heart_rate_samples AS (
-    SELECT
-        current_sleep.sleep_id AS sleep_id,
-        current_sleep.user_id AS user_id,
-        current_sleep.started_at AS started_at,
-        current_sleep.ended_at AS ended_at,
-        current_sleep.duration_seconds AS duration_seconds,
-        samples.scalar AS heart_rate
-    FROM current_sleep
-    INNER JOIN {{ ref('deduped_sensor') }} AS samples FINAL
-        ON samples.user_id = current_sleep.user_id
-        AND samples.recorded_at >= current_sleep.started_at
-        AND samples.recorded_at <= current_sleep.ended_at
-    LEFT JOIN activity_windows
-        ON activity_windows.user_id = current_sleep.user_id
-        AND activity_windows.sleep_id = current_sleep.sleep_id
-    WHERE samples.channel = 'heart_rate'
-        AND samples.is_deleted = 0
-        AND samples.scalar IS NOT NULL
-        AND NOT arrayExists(
-            activity_window -> samples.recorded_at >= tupleElement(activity_window, 1)
-            AND samples.recorded_at <= tupleElement(activity_window, 2),
-            ifNull(activity_windows.windows, [])
-        )
-),
-
 computed_windows AS (
     SELECT
-        sleep_id,
-        user_id,
-        any(started_at) AS started_at,
-        any(ended_at) AS ended_at,
-        any(duration_seconds) AS duration_seconds,
+        sleep_samples.sleep_id AS sleep_id,
+        sleep_samples.user_id AS user_id,
+        any(sleep_samples.started_at) AS started_at,
+        any(sleep_samples.ended_at) AS ended_at,
+        any(sleep_samples.duration_seconds) AS duration_seconds,
         count() AS sample_count,
         if(
             sample_count >= 30,
             toInt32(round(arrayAvg(arraySlice(
-                arraySort(groupArray(toFloat64(heart_rate))),
+                arraySort(groupArray(toFloat64(sleep_samples.heart_rate))),
                 1,
                 greatest(toInt32(ceil(sample_count * 0.10)), 1)
             )))),
             CAST(NULL, 'Nullable(Int32)')
         ) AS resting_hr
-    FROM heart_rate_samples
-    GROUP BY sleep_id, user_id
+    FROM {{ ref('sleep_heart_rate_sample') }} AS sleep_samples
+    INNER JOIN dirty_keys
+        ON dirty_keys.user_id = sleep_samples.user_id
+        AND dirty_keys.sleep_id = sleep_samples.sleep_id
+    WHERE sleep_samples.is_deleted = 0
+        AND sleep_samples.heart_rate IS NOT NULL
+    GROUP BY sleep_samples.sleep_id, sleep_samples.user_id
 )
 
 SELECT
     dirty_keys.sleep_id AS sleep_id,
     dirty_keys.user_id AS user_id,
-    CAST(computed_windows.started_at, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-    CAST(computed_windows.ended_at, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
-    CAST(computed_windows.duration_seconds, 'Nullable(Int64)') AS duration_seconds,
+    CAST(
+        coalesce(computed_windows.started_at, sleep_windows.started_at),
+        'Nullable(DateTime64(6, ''UTC''))'
+    ) AS started_at,
+    CAST(
+        coalesce(computed_windows.ended_at, sleep_windows.ended_at),
+        'Nullable(DateTime64(6, ''UTC''))'
+    ) AS ended_at,
+    CAST(
+        coalesce(computed_windows.duration_seconds, sleep_windows.duration_seconds),
+        'Nullable(Int64)'
+    ) AS duration_seconds,
     coalesce(computed_windows.sample_count, 0) AS sample_count,
     CAST(computed_windows.resting_hr, 'Nullable(Int32)') AS resting_hr,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    if(computed_windows.resting_hr IS NULL, 1, 0) AS is_deleted,
+    if(sleep_windows.sleep_id IS NULL OR computed_windows.resting_hr IS NULL, 1, 0) AS is_deleted,
     now64(9, 'UTC') AS refreshed_at
 FROM dirty_keys
+LEFT JOIN sleep_windows
+    ON sleep_windows.user_id = dirty_keys.user_id
+    AND sleep_windows.sleep_id = dirty_keys.sleep_id
 LEFT JOIN computed_windows
     ON computed_windows.user_id = dirty_keys.user_id
     AND computed_windows.sleep_id = dirty_keys.sleep_id

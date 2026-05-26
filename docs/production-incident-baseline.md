@@ -8789,3 +8789,40 @@ new incremental tables are populated.
   fails loudly and includes the one-shot container logs.
 - Follow-Up Work: Keep long-running review-app Docker operations detached and
   state-polled so CI does not depend on one multi-minute Docker SSH stream.
+
+### Resting heart rate chart tail stale
+
+- Date: 2026-05-26.
+- Symptoms: The Heart Rate Variability & Resting HR chart showed resting heart
+  rate ending before the latest visible dates while HRV continued.
+- User Impact: The dashboard did not display recent resting heart rate values
+  or the recent resting heart rate rolling trend.
+- Evidence: `dailyMetrics.hrvBaseline` returned 200 in production, but
+  `analytics.resting_heart_rate_sleep_window FINAL` for user
+  `f923fed7-d934-4cd9-8cb9-8e83020d0e69` had active rows only through
+  `2026-05-18`. The upstream data was current: `postgres_fitness.sleep_session`
+  had 17 rows ending on or after `2026-05-19` with max sleep date
+  `2026-05-26`, and `analytics.deduped_sensor FINAL` had 16,045 recent
+  heart-rate samples with max recorded date `2026-05-26`. PeerDB replication
+  slots were active and `reserved`.
+- Root Cause: The production analytics-worker safe dbt selection excludes
+  `resting_heart_rate_sleep_window`; it runs `sensor_scalar_sample`,
+  `deduped_sensor`, and `activity_vo2max_estimate` only. Recent sleep and
+  heart-rate data reached ClickHouse, but the resting heart rate read model was
+  not rebuilt on the 15-minute schedule.
+- Fix/Mitigation: No production change was made during investigation. A
+  follow-up code change prepared `sleep_heart_rate_sample`,
+  `activity_sensor_sample`, and `activity_location_sample` as bounded
+  microbatch intermediaries, added compact activity aggregate intermediates,
+  and re-added `resting_heart_rate_sleep_window` and `activity_summary_rows` to
+  the scheduled safe-model set; it still requires deploy before production data
+  refreshes.
+- Validation: Read-only production checks confirmed the upstream data path is
+  current and narrowed the stale output to the excluded RHR dbt model.
+- Remaining Risk: Medium. RHR and activity summaries stay dependent on their
+  previous production refresh state until the prepared dbt safe-model change is
+  deployed, or until a controlled manual refresh is run with explicit operator
+  approval.
+- Follow-Up Work: Deploy the prepared bounded RHR and activity summary model
+  update; add freshness monitoring comparing latest sleep/heart-rate inputs to
+  latest active RHR output date.
