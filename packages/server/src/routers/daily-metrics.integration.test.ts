@@ -138,13 +138,14 @@ describe("dailyMetrics data correctness", () => {
   }
 
   describe("trends", () => {
-    it("returns latest non-null metric values across the window", async () => {
+    it("does not return stale daily activity values from older days", async () => {
       // endDate (today) only has garmin rows with no health metrics, so latest
-      // metric values should come from the most recent day where each metric exists.
+      // daily activity values should not come from an older day.
       const result = await query<{
         latest_date: string | null;
         latest_hrv: number | null;
         latest_steps: number | null;
+        latest_active_energy: number | null;
       }>("dailyMetrics.trends", { days: 30, endDate });
 
       expect(result).not.toBeNull();
@@ -152,9 +153,13 @@ describe("dailyMetrics data correctness", () => {
       // latest_date still reflects the most recent row in the window.
       expect(result.latest_date).toBe(endDate);
 
-      // Metrics should use latest available non-null values in the window.
+      // Recovery metrics may use the latest available non-null values in the window.
       expect(result.latest_hrv).not.toBeNull();
-      expect(result.latest_steps).not.toBeNull();
+
+      // Day-to-date activity metrics must be from endDate, otherwise the Health
+      // Monitor bar shows yesterday's totals as today's progress.
+      expect(result.latest_steps).toBeNull();
+      expect(result.latest_active_energy).toBeNull();
     });
 
     it("returns today's values when endDate has health data", async () => {
