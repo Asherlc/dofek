@@ -405,8 +405,52 @@ jobs:
             sleep 5
           done
 
-          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --rm web migrate
-          docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --rm web seed
+          run_review_one_shot() {
+            command_name="$1"
+            timeout_seconds="$2"
+            container_name="${COMPOSE_PROJECT_NAME}-${command_name}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            deadline_seconds=$((SECONDS + timeout_seconds))
+
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml run --name "$container_name" --detach web "$command_name" >/dev/null
+
+            while true; do
+              state="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$container_name")"
+              status="${state% *}"
+              exit_code="${state#* }"
+
+              if [ "$status" = "exited" ]; then
+                if [ "$exit_code" = "0" ]; then
+                  docker rm "$container_name" >/dev/null
+                  return 0
+                fi
+
+                echo "::error::Review app ${command_name} container exited with code ${exit_code}"
+                docker logs "$container_name" || true
+                docker rm "$container_name" >/dev/null || true
+                return "$exit_code"
+              fi
+
+              if [ "$status" = "dead" ]; then
+                echo "::error::Review app ${command_name} container entered dead state"
+                docker logs "$container_name" || true
+                docker rm -f "$container_name" >/dev/null || true
+                return 1
+              fi
+
+              if [ "$SECONDS" -ge "$deadline_seconds" ]; then
+                echo "::error::Review app ${command_name} container did not finish within ${timeout_seconds}s"
+                docker logs --tail 200 "$container_name" || true
+                docker rm -f "$container_name" >/dev/null || true
+                return 1
+              fi
+
+              sleep 5
+            done
+          }
+
+          run_review_one_shot migrate 1200
+          run_review_one_shot seed 600
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d web
 
       - name: Wait for public review app healthcheck

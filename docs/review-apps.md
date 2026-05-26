@@ -138,6 +138,20 @@ the new host. The bootstrap gate verifies normal SSH, Docker, Docker Compose,
 and Docker's SSH transport before running `docker compose` so this fails during
 readiness instead of after the deploy begins.
 
+If the same step fails after a long migration or seed run with:
+
+```text
+error waiting for container: command [ssh ... docker system dial-stdio] has exited with exit status 255
+client_loop: send disconnect: Broken pipe
+Process completed with exit code 125
+```
+
+the one-shot container may have finished successfully while the CI-side Docker
+SSH transport lost its long-lived attached wait. The review-app workflow should
+start migration and seed containers detached, poll container state with short
+Docker API calls, and print container logs only when the one-shot exits
+non-zero.
+
 ### Review Server Disk Exhaustion
 
 If `Deploy Review App` reaches `Deploy review stack` and fails while pulling or

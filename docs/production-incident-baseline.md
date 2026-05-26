@@ -8760,6 +8760,36 @@ new incremental tables are populated.
   `${VAR:?}` stack interpolation keys exist in Infisical for both deployment
   environments before the deploy workflow reaches Docker validation.
 
+### Review App Docker SSH attached wait failure
+
+- Date: 2026-05-26.
+- Symptoms: PR #1186 failed `Deploy Review App` in GitHub Actions run
+  `26479519411`, job `77973698519`.
+- User Impact: The PR review app did not deploy, blocking live preview
+  validation for the branch.
+- Evidence: The failed step was `Deploy review stack`. The first fatal line was:
+  ```text
+  error waiting for container: command [ssh -o ConnectTimeout=30 -T -l root -- 88.99.171.167 docker system dial-stdio] has exited with exit status 255, make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=client_loop: send disconnect: Broken pipe
+  ```
+  The migration container continued printing dbt output and later reported
+  `Completed successfully`, but the parent Docker command ended with
+  `Process completed with exit code 125`.
+- Root Cause: The review-app workflow used an attached
+  `docker compose run --rm web migrate` over Docker's SSH transport for the
+  multi-minute dbt migration run, so a broken CI-to-review-host SSH transport
+  caused the Docker client command to fail even though the one-shot container
+  completed successfully.
+- Fix/Mitigation: The review-app workflow now starts migration and seed
+  one-shot containers detached, polls container state with short Docker API
+  calls, removes successful containers, and prints logs only when a one-shot
+  container exits non-zero or times out.
+- Validation: Workflow syntax and local checks were run on the branch, and the
+  review-app workflow was rerun on PR #1186.
+- Remaining Risk: Low for this failure mode. A real container failure still
+  fails loudly and includes the one-shot container logs.
+- Follow-Up Work: Keep long-running review-app Docker operations detached and
+  state-polled so CI does not depend on one multi-minute Docker SSH stream.
+
 ### Resting heart rate chart tail stale
 
 - Date: 2026-05-26.
@@ -8833,3 +8863,41 @@ new incremental tables are populated.
   the iOS app to repair historical daily step and exercise-minute rows. Consider
   adding a server-side diagnostic for suspicious step drops after partial
   HealthKit sync windows.
+
+### Resting heart rate sleep-sample join null handling
+
+- Date: 2026-05-26.
+- Symptoms: After deploying the bounded RHR dbt models, the Heart Rate
+  Variability & Resting HR chart still did not show recent resting heart rate
+  values.
+- User Impact: The dashboard continued to omit recent resting heart rate points
+  and the recent 7-day resting heart rate trend.
+- Evidence: Production `analytics.resting_heart_rate_sleep_window FINAL` was
+  refreshed at `2026-05-26 22:41:52 UTC`, but its newest active sleep window
+  was still `2026-05-18`. `analytics.sleep_heart_rate_sample FINAL` had zero
+  rows. A read-only ClickHouse query showed 33 recent sleep windows; before the
+  activity-overlap exclusion, 11 had at least 30 heart-rate samples and the
+  newest sleep had 4,356 samples. After the model's `LEFT JOIN active_activity`
+  plus `active_activity.id IS NULL` filter, all sleep heart-rate samples were
+  removed. Running the same query with `join_use_nulls=1` preserved 11 recent
+  sleep windows, with up to 5,478 samples.
+- Root Cause: ClickHouse `LEFT JOIN` returns default values for unmatched
+  right-side columns unless `join_use_nulls` is enabled. The
+  `sleep_heart_rate_sample` model expected SQL-null semantics for
+  `active_activity.id IS NULL`, so unmatched activity rows looked non-null and
+  the model filtered out every sleep heart-rate sample.
+- Fix/Mitigation: Added `join_use_nulls=1` to the
+  `sleep_heart_rate_sample` dbt model query settings and a regression assertion
+  in `read_model_microbatch.sql.test.ts`.
+- Validation: The new test failed before the model change and passed after it.
+  `pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts`,
+  `pnpm test:changed`, `pnpm lint`, and the required TypeScript checks passed.
+  Full `pnpm test` did not complete cleanly because Testcontainers-created
+  integration Postgres containers stopped during unrelated integration suites
+  with Docker HTTP 409 errors.
+- Remaining Risk: Medium until the fix is merged and deployed. The production
+  analytics worker also still logs ClickHouse memory-limit errors in unrelated
+  activity sample models, although the RHR model itself ran after those errors.
+- Follow-Up Work: Add read-model freshness monitoring for
+  `sleep_heart_rate_sample` and `resting_heart_rate_sleep_window`; investigate
+  the unrelated activity sample ClickHouse memory-limit errors separately.
