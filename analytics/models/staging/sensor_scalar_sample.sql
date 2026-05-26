@@ -49,7 +49,7 @@ metric_stream_rows AS (
         coalesce(argMax(scalar, _peerdb_version), 0) AS scalar,
         argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
         argMax(_peerdb_is_deleted, _peerdb_version) AS _peerdb_is_deleted,
-        max(_peerdb_version) AS _peerdb_version
+        max(_peerdb_version) AS source_peerdb_version
     FROM metric_stream_versions
     GROUP BY id
 ),
@@ -115,7 +115,7 @@ SELECT
     ) AS provider_priority,
     metric_stream_rows._peerdb_synced_at AS _peerdb_synced_at,
     metric_stream_rows._peerdb_is_deleted AS _peerdb_is_deleted,
-    toInt64(toUnixTimestamp64Nano(now64(9))) AS _peerdb_version
+    metric_stream_rows.source_peerdb_version AS _peerdb_version
 FROM metric_stream_rows
 LEFT JOIN active_sensor_provider_priority
     ON active_sensor_provider_priority.provider_id = metric_stream_rows.provider_id
