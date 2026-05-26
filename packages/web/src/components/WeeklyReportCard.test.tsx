@@ -29,4 +29,29 @@ describe("WeeklyReportCard", () => {
     expect(screen.queryByText("Overreaching")).toBeNull();
     expect(screen.getByText("Not tracked")).toBeTruthy();
   });
+
+  it("shows no-training status instead of optimal when the week has no activities", () => {
+    render(
+      <WeeklyReportCard
+        data={{
+          current: {
+            weekStart: "2026-05-24",
+            trainingHours: 0,
+            activityCount: 0,
+            strainZone: "optimal",
+            avgDailyLoad: 0,
+            avgSleepMinutes: 475,
+            sleepPerformancePct: 112,
+            avgReadiness: 0,
+            avgRestingHr: 58,
+            avgHrv: 52,
+          },
+          history: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("No training")).toBeTruthy();
+    expect(screen.queryByText("Optimal")).toBeNull();
+  });
 });

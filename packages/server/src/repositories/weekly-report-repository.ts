@@ -12,7 +12,7 @@ import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 export type StrainZone = "restoring" | "optimal" | "overreaching";
 
 export interface WeekSummary {
-  /** ISO week start date (Monday) */
+  /** Week start date (Sunday) */
   weekStart: string;
   /** Total training hours */
   trainingHours: number;
@@ -167,10 +167,13 @@ export class WeeklyReportRepository {
         WHERE user_id = {userId:UUID}
           AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
           AND ended_at IS NOT NULL
-          AND avg_hr IS NOT NULL
       ),
       daily_training AS (
-        SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
+        SELECT
+          date,
+          sum(hours) AS hours,
+          toInt32(count()) AS count,
+          sumIf(load, load IS NOT NULL) AS load
         FROM per_activity
         GROUP BY date
       ),
@@ -216,17 +219,17 @@ export class WeeklyReportRepository {
       ),
       weekly AS (
         SELECT
-          toMonday(d.date) AS week_start,
+          toStartOfWeek(d.date) AS week_start,
           sum(d.hours) AS total_hours,
           toInt32(sum(d.count)) AS activity_count,
           avg(d.load) AS avg_daily_load,
           avg(sl.duration_minutes) AS avg_sleep_min,
-          avg(m.resting_hr) AS avg_resting_hr,
-          avg(m.hrv) AS avg_hrv
+          avg(nullIf(m.resting_hr, 0)) AS avg_resting_hr,
+          avg(nullIf(m.hrv, 0)) AS avg_hrv
         FROM daily d
         LEFT JOIN sleep_daily sl ON sl.date = d.date
         LEFT JOIN metrics_daily m ON m.date = d.date
-        GROUP BY toMonday(d.date)
+        GROUP BY toStartOfWeek(d.date)
         ORDER BY week_start ASC
       )
       SELECT
