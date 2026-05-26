@@ -14,4 +14,8 @@ metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
 `activity_summary_rows` and `resting_heart_rate_sleep_window` read `deduped_sensor`.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
-joins belong in the incremental dbt model, not in web/API requests.
+joins belong in the incremental dbt model, not in web/API requests. Complex
+offline ClickHouse models can set dbt `query_settings` locally;
+`activity_summary_rows` raises `query_plan_max_optimizations_to_apply` for its
+large insert plan and uses `max_threads=1` so the offline build does not compete
+with request traffic.

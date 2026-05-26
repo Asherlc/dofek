@@ -2,7 +2,11 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, activity_id)'
+    order_by='(user_id, activity_id)',
+    query_settings={
+        'query_plan_max_optimizations_to_apply': 100000,
+        'max_threads': 1
+    }
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
