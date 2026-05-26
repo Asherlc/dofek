@@ -8452,3 +8452,45 @@ new incremental tables are populated.
   logs showed no OOM lines since `02:05 UTC`, and filtered web logs showed no
   fresh `healthspan.score`, ClickHouse DNS, socket hang-up, or slow-query
   entries in the prior five minutes.
+
+### Follow-up (dbt microbatch deduped sensor rollout)
+
+- Date: 2026-05-26.
+- Symptoms: A production deploy that enabled `sensor_scalar_sample` and
+  `deduped_sensor` as dbt microbatch models initially left `worker` in a
+  restart loop. Dashboard ClickHouse errors could still appear while the old
+  rollout was unstable.
+- User Impact: Public `/healthz` stayed healthy, but scheduled sync workers
+  were unavailable during the crash loop and ClickHouse-backed dashboard routes
+  could fail during the rollout.
+- Evidence: Deploy run `26431989409` applied app image `sha-c13de1c`, after
+  which `dofek_worker` repeatedly exited with ClickHouse error code 184:
+  `ILLEGAL_AGGREGATION` in `analytics.sensor_scalar_sample`. The failing
+  generated query exposed a ClickHouse alias collision from
+  `max(_peerdb_version) AS _peerdb_version` inside the same grouped SELECT as
+  other `_peerdb_version` aggregate arguments.
+- Root Cause: The dbt microbatch model used the source PeerDB version column
+  name as an aggregate alias. ClickHouse aliases are visible broadly within a
+  SELECT, so the alias could be substituted into other aggregate expressions and
+  interpreted as a nested aggregate.
+- Fix/Mitigation: Commit `18477f11` renamed the grouped aggregate alias to
+  `source_peerdb_version` and only projected it back to `_peerdb_version` in
+  the outer SELECT. The microbatch event-time key remains `recorded_at` for
+  both `analytics.sensor_scalar_sample` and `analytics.deduped_sensor`.
+- Validation: Local focused checks passed before deployment:
+  `pnpm lint:analytics-policy`, `pnpm lint:analytics-sql`, `dbt parse`, and
+  `dbt compile --select sensor_scalar_sample deduped_sensor`. Deploy run
+  `26432372706` completed successfully on app image `sha-18477f1`. Post-deploy
+  checks showed public `/healthz` returning 200, `dofek_web` at `2/2`, and
+  `dofek_worker`, `dofek_analytics-worker`, `dofek_clickhouse`, `dofek_db`, and
+  `dofek_redis` at `1/1`. The analytics worker completed
+  `sensor_scalar_sample` and `deduped_sensor` with `PASS=2 WARN=0 ERROR=0`,
+  and filtered web logs showed no fresh ClickHouse DNS, socket, or
+  `recovery.workloadRatio`/`healthspan.score` errors in the five-minute
+  post-deploy window.
+- Remaining Risk: Medium. The microbatch models are bounded and no longer crash
+  on startup, but ClickHouse has only had a short observation window after this
+  rollout. Longer dashboard usage may still reveal another high-memory query.
+- Follow-Up Work: Continue splitting heavier read models, especially resting
+  heart rate and activity summaries, into chained incremental dbt models before
+  adding them back to the production safe model list.
