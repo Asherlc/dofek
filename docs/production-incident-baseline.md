@@ -8494,3 +8494,48 @@ new incremental tables are populated.
 - Follow-Up Work: Continue splitting heavier read models, especially resting
   heart rate and activity summaries, into chained incremental dbt models before
   adding them back to the production safe model list.
+
+### Follow-up (dashboard ClickHouse query fan-out)
+
+- Date: 2026-05-26.
+- Symptoms: After the microbatch rollout stabilized, the dashboard felt slow
+  even though public `/healthz` remained available.
+- User Impact: Dashboard tRPC batches returned slowly, and some
+  ClickHouse-backed procedures failed with memory-limit errors.
+- Evidence: Web logs showed one dashboard tRPC batch containing many
+  ClickHouse-backed procedures at once. Several procedures took roughly
+  9-17s, including `bodyAnalytics.smoothedWeight`, `stress.scores`,
+  `healthspan.score`, `recovery.strainTarget`, `recovery.readinessScore`,
+  `sleepNeed.performance`, `sleepNeed.calculate`, `weeklyReport.report`,
+  `sleep.list`, and `bodyAnalytics.recomposition`. ClickHouse reported memory
+  limit exceptions with code 241 and messages such as `would use 2.39 GiB`,
+  while current RSS was near the configured 3 GiB server memory cap. ClickHouse
+  `system.query_log` showed repeated sleep and body measurement query families
+  in the same window, with several `ExceptionWhileProcessing` rows and
+  durations around 8-17s.
+- Root Cause: The web API allowed each tRPC procedure in a large dashboard
+  batch to issue ClickHouse analytics reads concurrently. Even when individual
+  queries used moderate memory, concurrent fan-out pushed ClickHouse to its
+  memory cap, causing overcommit waits and query kills.
+- Fix/Mitigation: Commit `8f705dba` wraps the web analytics sensor store in a
+  `LimitedActivitySensorStore`. Each web replica now runs one ClickHouse
+  analytics read at a time and deduplicates identical in-flight query/parameter
+  pairs, reducing peak concurrent ClickHouse memory pressure without changing
+  query semantics or stored data.
+- Validation: Local focused checks passed before deployment:
+  `cd packages/server && pnpm tsc --noEmit` and `pnpm lint --changed`. Deploy
+  run `26432889065` completed successfully on app image `sha-8f705db`.
+  Post-deploy checks showed public `/healthz` returning 200, `dofek_web` at
+  `2/2`, and `dofek_worker`, `dofek_analytics-worker`, `dofek_clickhouse`,
+  `dofek_db`, and `dofek_redis` at `1/1`. In the first five-minute
+  post-deploy window, filtered web logs showed no fresh slow tRPC,
+  ClickHouse DNS, socket, or memory-limit errors; however, no fresh dashboard
+  batch was observed in that window.
+- Remaining Risk: Medium. The query gate reduces memory fan-out but does not
+  remove the expensive repeated sleep/body/recovery calculations. A real
+  dashboard reload should be observed before treating the user-visible latency
+  as fully remediated.
+- Follow-Up Work: Move repeated dashboard calculations, especially sleep,
+  body, recovery, and report inputs, into smaller chained incremental dbt read
+  models so dashboard procedures read compact precomputed rows instead of
+  recomputing overlapping windows per request.
