@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
+import { httpBatchLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
@@ -137,7 +137,7 @@ function AuthGate() {
         splitLink({
           condition: (operation) => operation.type === "mutation",
           true: httpBatchLink(commonOptions),
-          false: httpLink(commonOptions),
+          false: httpBatchLink(commonOptions),
         }),
       ],
     });

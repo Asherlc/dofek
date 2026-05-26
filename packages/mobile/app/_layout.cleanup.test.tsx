@@ -2,6 +2,9 @@ import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockHttpBatchLink = vi.fn((options: unknown) => ({ type: "batch", options }));
+const mockHttpLink = vi.fn((options: unknown) => ({ type: "single", options }));
+const mockSplitLink = vi.fn((options: unknown) => ({ type: "split", options }));
 const mockCreateClient = vi.fn();
 const mockInitBackgroundHealthKitSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundHealthKitSync = vi.fn();
@@ -20,6 +23,16 @@ vi.mock("@sentry/react-native", () => ({
   captureException: vi.fn(),
   wrap: vi.fn((component: unknown) => component),
 }));
+
+vi.mock("@trpc/client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@trpc/client")>();
+  return {
+    ...original,
+    httpBatchLink: (...args: unknown[]) => mockHttpBatchLink(...args),
+    httpLink: (...args: unknown[]) => mockHttpLink(...args),
+    splitLink: (...args: unknown[]) => mockSplitLink(...args),
+  };
+});
 
 vi.mock("expo-router", async () => {
   const React = await import("react");
@@ -176,5 +189,39 @@ describe("RootLayout background cleanup", () => {
     expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
     expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
     expect(mockRefreshRemove).toHaveBeenCalled();
+  });
+
+  it("uses batch links for mobile tRPC queries and mutations", async () => {
+    const RootLayout = await importRootLayout();
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(mockCreateClient).toHaveBeenCalledOnce();
+    });
+
+    expect(mockHttpBatchLink).toHaveBeenCalledTimes(2);
+    expect(mockHttpLink).not.toHaveBeenCalled();
+    expect(mockSplitLink).toHaveBeenCalledOnce();
+
+    const splitOptions = mockSplitLink.mock.calls[0]?.[0];
+    if (typeof splitOptions !== "object" || splitOptions == null) {
+      throw new Error("Expected split link options");
+    }
+    const condition = Reflect.get(splitOptions, "condition");
+    if (typeof condition !== "function") {
+      throw new Error("Expected split link condition");
+    }
+
+    expect(condition({ type: "mutation" })).toBe(true);
+    expect(condition({ type: "query" })).toBe(false);
+    expect(Reflect.get(splitOptions, "true")).toEqual({
+      type: "batch",
+      options: expect.anything(),
+    });
+    expect(Reflect.get(splitOptions, "false")).toEqual({
+      type: "batch",
+      options: expect.anything(),
+    });
   });
 });
