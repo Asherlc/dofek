@@ -26,6 +26,14 @@ describe("activity_vo2max_estimate model", () => {
     expect(cteSql("current_activity")).toContain("'trail_running'");
   });
 
+  it("reads bounded raw activity rows instead of the full deduping activity view", () => {
+    const currentActivitySql = cteSql("current_activity");
+
+    expect(currentActivitySql).toContain("source('postgres_fitness', 'activity')");
+    expect(currentActivitySql).toContain("_peerdb_is_deleted = 0");
+    expect(currentActivitySql).not.toContain("analytics.v_activity");
+  });
+
   it("emits one deterministic ACSM estimate per activity", () => {
     const acsmEstimateSql = cteSql("acsm_estimates");
 

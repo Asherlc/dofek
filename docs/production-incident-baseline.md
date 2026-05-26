@@ -8633,3 +8633,30 @@ new incremental tables are populated.
   dashboard reloads after deploy. If `activity_vo2max_estimate` still pressures
   ClickHouse, split the model into smaller dbt-native batches before adding more
   dashboard read models.
+
+### Follow-up (E2E migration ClickHouse OOM)
+
+- Date: 2026-05-26.
+- Symptoms: The GitHub Actions `Test / E2E Tests (Web)` job failed before
+  Cypress ran, during the `Run e2e migrations` step.
+- User Impact: PR validation was blocked.
+- Evidence: Job `77916604408` failed while running
+  `docker compose -f docker-compose.e2e.yml run --rm migrate`. dbt reported a
+  failure in `activity_vo2max_estimate`, and ClickHouse raised
+  `MEMORY_LIMIT_EXCEEDED` while evaluating the overlap `dateDiff` expression
+  inside `analytics.v_activity`.
+- Root Cause: `activity_vo2max_estimate` read from the full recursive deduping
+  `analytics.v_activity` view before applying its supported-activity and
+  dirty-key bounds, so the CI dbt build expanded the expensive all-activity
+  self-join graph.
+- Fix/Mitigation: Changed the model's `current_activity` CTE to read bounded,
+  non-deleted mirrored `postgres_fitness.activity` rows directly while keeping
+  sensor samples sourced from deduped ClickHouse data.
+- Validation: `dbt compile --select activity_vo2max_estimate`,
+  `pnpm lint:analytics-sql`, the exact local E2E migration path, and
+  `pnpm test:changed` all passed.
+- Remaining Risk: Low for the observed CI failure. The model still depends on
+  ClickHouse for deduped sensor joins, but it no longer forces the full
+  activity-dedupe view into the migration build.
+- Follow-Up Work: Keep future dbt read models from depending on broad request
+  views when a bounded mirrored source table plus explicit filters is enough.

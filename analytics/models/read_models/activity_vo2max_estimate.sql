@@ -33,24 +33,25 @@ current_activity AS (
         activity_type,
         started_at,
         ended_at
-    FROM analytics.v_activity
-    WHERE activity_type IN (
-        'cycling',
-        'road_cycling',
-        'mountain_biking',
-        'gravel_cycling',
-        'indoor_cycling',
-        'virtual_cycling',
-        'e_bike_cycling',
-        'cyclocross',
-        'track_cycling',
-        'bmx',
-        'running',
-        'trail_running',
-        'swimming',
-        'walking',
-        'hiking'
-    )
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    WHERE _peerdb_is_deleted = 0
+        AND activity_type IN (
+            'cycling',
+            'road_cycling',
+            'mountain_biking',
+            'gravel_cycling',
+            'indoor_cycling',
+            'virtual_cycling',
+            'e_bike_cycling',
+            'cyclocross',
+            'track_cycling',
+            'bmx',
+            'running',
+            'trail_running',
+            'swimming',
+            'walking',
+            'hiking'
+        )
 ),
 
 recent_current_activity AS (
