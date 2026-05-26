@@ -46,6 +46,7 @@ current_activity AS (
         'track_cycling',
         'bmx',
         'running',
+        'trail_running',
         'swimming',
         'walking',
         'hiking'
@@ -417,7 +418,7 @@ acsm_estimates AS (
         acsm_segments.user_id AS user_id,
         acsm_segments.started_at AS started_at,
         'submaximal_acsm' AS method,
-        (
+        max((
             CASE
                 WHEN acsm_segments.speed_meters_per_minute >= 134
                     THEN 0.2 * acsm_segments.speed_meters_per_minute
@@ -435,7 +436,7 @@ acsm_estimates AS (
             (acsm_segments.average_heart_rate - resting.resting_hr)
             / (user_profile.max_hr - resting.resting_hr),
             0
-        ) AS vo2max
+        )) AS vo2max
     FROM acsm_segments
     INNER JOIN postgres_fitness.user_profile_current AS user_profile
         ON user_profile.id = acsm_segments.user_id
@@ -454,6 +455,10 @@ acsm_estimates AS (
             (acsm_segments.average_heart_rate - resting.resting_hr)
             / (user_profile.max_hr - resting.resting_hr)
         ) < 1
+    GROUP BY
+        acsm_segments.activity_id,
+        acsm_segments.user_id,
+        acsm_segments.started_at
 ),
 
 active_estimates AS (
