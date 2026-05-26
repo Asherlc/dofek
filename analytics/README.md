@@ -20,7 +20,9 @@ offline ClickHouse models can set dbt `query_settings` locally;
 large insert plan and uses `max_threads=1` so the offline build does not compete
 with request traffic.
 
-`activity_summary_rows` is intentionally excluded from `DBT_SAFE_MODELS` until
-the activity summary pipeline is split into smaller chained incremental models.
-The previous single-query model OOM-killed production ClickHouse even when run
-offline.
+Production `DBT_SAFE_MODELS` intentionally selects only `sensor_scalar_sample`
+right now. `deduped_sensor` and `activity_summary_rows` both OOM-killed
+production ClickHouse when run as single-model incremental builds, and
+`resting_heart_rate_sleep_window` depends on `deduped_sensor`. Split those
+pipelines into smaller chained incremental models before adding them back to
+the production schedule.

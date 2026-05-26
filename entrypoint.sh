@@ -18,7 +18,7 @@ fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
-DBT_SAFE_MODELS="sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window"
+DBT_SAFE_MODELS="sensor_scalar_sample"
 
 case "${1:-sync}" in
   web)
