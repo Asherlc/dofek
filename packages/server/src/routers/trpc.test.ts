@@ -263,22 +263,64 @@ describe("trpc", () => {
   });
 
   describe("infrastructure error sanitizer", () => {
-    it("hides ClickHouse DNS failures from tRPC callers and reports the original error", async () => {
-      const internalError = Object.assign(new Error("getaddrinfo ENOTFOUND clickhouse"), {
-        code: "ENOTFOUND",
-      });
+    function createSanitizerCaller(error: unknown) {
       const testRouter = router({
         test: protectedProcedure.query(() => {
-          throw internalError;
+          throw error;
         }),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);
-      const caller = createCaller({
+      return createCaller({
         db: {},
         userId: "user-123",
         timezone: "UTC",
       });
+    }
+
+    it("hides ClickHouse DNS failures from tRPC callers and reports the original error", async () => {
+      const internalError = Object.assign(new Error("getaddrinfo ENOTFOUND clickhouse"), {
+        code: "ENOTFOUND",
+      });
+      const caller = createSanitizerCaller(internalError);
+
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message: "Analytics data is temporarily unavailable. Please retry in a minute.",
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(internalError, {
+        tags: { dependency: "clickhouse", trpcPath: "test" },
+      });
+    });
+
+    it("does not sanitize non-ClickHouse errors", async () => {
+      const databaseError = new Error("database connection timeout");
+      const caller = createSanitizerCaller(databaseError);
+
+      await expect(caller.test()).rejects.toMatchObject({
+        message: "database connection timeout",
+      });
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it("hides ClickHouse connection refused errors from tRPC callers", async () => {
+      const internalError = Object.assign(new Error("connect ECONNREFUSED clickhouse:8123"), {
+        code: "ECONNREFUSED",
+      });
+      const caller = createSanitizerCaller(internalError);
+
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message: "Analytics data is temporarily unavailable. Please retry in a minute.",
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(internalError, {
+        tags: { dependency: "clickhouse", trpcPath: "test" },
+      });
+    });
+
+    it("hides ClickHouse overcommit tracker errors from tRPC callers", async () => {
+      const internalError = new Error("OvercommitTracker decision: memory limit exceeded");
+      const caller = createSanitizerCaller(internalError);
 
       await expect(caller.test()).rejects.toMatchObject({
         code: "SERVICE_UNAVAILABLE",

@@ -198,6 +198,13 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("TRUNCATE TABLE analytics_test_") &&
+          command.endsWith(".activity_vo2max_estimate"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".resting_heart_rate_sleep_window"),
       ),

@@ -36,6 +36,7 @@ export default defineConfig({
           ...sharedTestConfig,
           name: "unit",
           include: [
+            "analytics/models/**/*.test.ts",
             "src/**/*.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
             "scripts/**/*.test.ts",

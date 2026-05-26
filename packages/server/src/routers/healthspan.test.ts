@@ -558,12 +558,14 @@ describe("fetchHealthspanRawData", () => {
       ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
     )?.[1];
     expect(zoneQuery).toEqual(expect.any(String));
-    expect(zoneQuery).toContain(`INNER JOIN analytics.deduped_sensor AS ds
-        ON ds.user_id = am.user_id
-       AND ds.recorded_at >= am.started_at
-       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-       AND ds.channel IN ('heart_rate', 'power')
-       AND ds.is_deleted = 0`);
+    expect(zoneQuery).toContain("INNER JOIN analytics.deduped_sensor AS ds");
+    expect(zoneQuery).toMatch(/ON\s+ds\.user_id\s*=\s*am\.user_id/);
+    expect(zoneQuery).toMatch(/AND\s+ds\.recorded_at\s*>=\s*am\.started_at/);
+    expect(zoneQuery).toMatch(
+      /AND\s+ds\.recorded_at\s*<=\s*coalesce\(am\.ended_at,\s*am\.started_at\s*\+\s*INTERVAL\s+12\s+HOUR\)/,
+    );
+    expect(zoneQuery).toMatch(/AND\s+ds\.channel\s+IN\s+\('heart_rate',\s*'power'\)/);
+    expect(zoneQuery).toMatch(/AND\s+ds\.is_deleted\s*=\s*0/);
     expect(zoneQuery).not.toContain(`WHERE ds.recorded_at >= am.started_at`);
   });
 

@@ -1,11 +1,7 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const modelSql = readFileSync(
-  join(process.cwd(), "analytics/models/read_models/activity_vo2max_estimate.sql"),
-  "utf8",
-);
+const modelSql = readFileSync(new URL("./activity_vo2max_estimate.sql", import.meta.url), "utf8");
 
 function cteSql(name: string): string {
   const startMarker = `${name} AS (`;
@@ -14,11 +10,18 @@ function cteSql(name: string): string {
     throw new Error(`Could not find ${name} CTE`);
   }
   const bodyStartIndex = startIndex + startMarker.length;
-  const endIndex = modelSql.indexOf("\n),\n\n", bodyStartIndex);
-  if (endIndex === -1) {
+  let parenthesisDepth = 1;
+  let cursorIndex = bodyStartIndex;
+  while (cursorIndex < modelSql.length && parenthesisDepth > 0) {
+    const currentChar = modelSql[cursorIndex];
+    if (currentChar === "(") parenthesisDepth += 1;
+    if (currentChar === ")") parenthesisDepth -= 1;
+    cursorIndex += 1;
+  }
+  if (parenthesisDepth !== 0) {
     throw new Error(`Could not find ${name} CTE end`);
   }
-  return modelSql.slice(bodyStartIndex, endIndex);
+  return modelSql.slice(bodyStartIndex, cursorIndex - 1);
 }
 
 describe("activity_vo2max_estimate model", () => {
