@@ -1,3 +1,4 @@
+// cspell:ignore overcommittracker
 import * as Sentry from "@sentry/node";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
