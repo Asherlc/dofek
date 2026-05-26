@@ -151,7 +151,7 @@ export const weeklyReportRouter = router({
         ),
         weekly AS (
           SELECT
-            toStartOfWeek(d.date, 1) AS week_start,
+            toStartOfWeek(d.date, 0) AS week_start,
             sum(d.hours) AS total_hours,
             toInt32(sum(d.count)) AS activity_count,
             avg(d.load) AS avg_daily_load,
@@ -161,7 +161,7 @@ export const weeklyReportRouter = router({
           FROM daily d
           LEFT JOIN sleep_daily sl ON sl.date = d.date
           LEFT JOIN metrics_daily m ON m.date = d.date
-          GROUP BY toStartOfWeek(d.date, 1)
+          GROUP BY toStartOfWeek(d.date, 0)
           ORDER BY week_start ASC
         )
         SELECT
