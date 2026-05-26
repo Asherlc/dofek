@@ -8326,3 +8326,40 @@ new incremental tables are populated.
 - Follow-Up Work: Optimize the dashboard sleep queries and consider moving
   management/observability services off the single-node OLAP host if ClickHouse
   still needs more memory headroom.
+
+### Follow-up (Healthspan dashboard ClickHouse OOM)
+
+- Date: 2026-05-26.
+- Symptoms: After deploy run `26427324922`, the dashboard still returned
+  ClickHouse service resolution errors such as `getaddrinfo ENOTFOUND
+  clickhouse` for `healthspan.score`.
+- User Impact: Public `/healthz` remained healthy, but dashboard routes backed
+  by ClickHouse failed while the ClickHouse task was down or restarting.
+- Evidence: Kernel logs showed `HTTPHandler invoked oom-killer` at `01:54:16
+  UTC`, followed by a cgroup OOM kill of `clickhouse-serv` at roughly 3.54 GiB
+  anonymous RSS. Web logs showed a dashboard tRPC batch containing
+  `healthspan.score`, a `healthspan.score` slow-query warning around 7.6s, then
+  `getaddrinfo ENOTFOUND clickhouse` errors. Analytics-worker logs showed no
+  scheduled dbt build between the successful `01:45 UTC` build and the
+  `01:54 UTC` ClickHouse kill.
+- Root Cause: The remaining outage was not caused by the analytics-worker
+  cadence. An HTTP dashboard query path still pushed ClickHouse over its memory
+  cgroup. The `healthspan.score` heart-rate zone query joined
+  `analytics.deduped_sensor` to activities only by `user_id`, then applied
+  activity time bounds, channel, and deletion filters in `WHERE`, which left
+  ClickHouse room to scan/materialize too many user sensor rows before applying
+  the activity window.
+- Fix/Mitigation: Move the `deduped_sensor` activity-window, channel, and
+  deletion predicates into the ClickHouse `JOIN ON` clause in
+  `packages/server/src/routers/healthspan-query.ts`, matching the bounded join
+  pattern used by other activity sensor analytics repositories. Add a
+  regression test that verifies the healthspan query keeps those predicates in
+  the join.
+- Remaining Risk: Medium until deployed and observed under the same dashboard
+  load. Other dashboard ClickHouse queries still run concurrently, so a broader
+  per-user or per-process ClickHouse concurrency limit may still be needed if
+  another route becomes the next memory peak.
+- Follow-Up Work: Deploy the healthspan query fix, verify `/healthz`, confirm
+  the ClickHouse task remains stable after dashboard access, and review the
+  remaining dashboard ClickHouse routes for unbounded joins or high-memory
+  query plans.
