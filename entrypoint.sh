@@ -18,6 +18,7 @@ fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
+DBT_SAFE_MODELS="sensor_scalar_sample deduped_sensor resting_heart_rate_sleep_window"
 
 case "${1:-sync}" in
   web)
@@ -25,26 +26,26 @@ case "${1:-sync}" in
     ;;
   sync)
     $NODE src/db/run-migrate.ts
-    dbt build --project-dir analytics --profiles-dir analytics --threads 1
+    dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
     exec $NODE src/index.ts sync
     ;;
   worker)
     $NODE src/db/run-migrate.ts
-    dbt build --project-dir analytics --profiles-dir analytics --threads 1
+    dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
     exec $NODE src/jobs/worker.ts
     ;;
   migrate)
     $NODE src/db/run-migrate.ts
-    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1
+    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
     ;;
   analytics)
-    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1
+    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
     ;;
   analytics-worker)
     interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
     retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
     while true; do
-      if dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select sensor_scalar_sample deduped_sensor activity_summary_rows resting_heart_rate_sleep_window; then
+      if dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS; then
         sleep "$interval_seconds"
       else
         status="$?"

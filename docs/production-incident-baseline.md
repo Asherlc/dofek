@@ -47,19 +47,20 @@ service-discovery failures while the ClickHouse task restarted.
 
 ### Fix or Mitigation
 
-Move activity summary into the incremental `analytics.activity_summary_rows`
-dbt model backed by `ReplacingMergeTree(refresh_version)`, and keep
-`analytics.activity_summary` as a thin compatibility view over those stored
-rows. All production entrypoint dbt builds now use `--threads 1`, and
-`analytics-worker` builds the incremental activity summary alongside deduped
-sensor and resting-heart-rate read models.
+Move `analytics.activity_summary` to a thin compatibility view over
+`analytics.activity_summary_rows` so dashboard routes no longer recompute the
+activity/sample joins on demand. The first offline `activity_summary_rows` dbt
+model still OOM-killed ClickHouse in production, so it is excluded from
+`DBT_SAFE_MODELS` until the activity summary pipeline is split into smaller
+chained incremental models. Production entrypoint dbt builds now use
+`--threads 1 --select $DBT_SAFE_MODELS`.
 
 ### Remaining Risk
 
 The fix must be validated after deploy by confirming ClickHouse stops producing
-new exit-137 restarts, `activity_summary_rows` is populated, and recent web logs
-no longer show fresh `clickhouse` resolution/socket failures for dashboard
-routes.
+new exit-137 restarts and recent web logs no longer show fresh `clickhouse`
+resolution/socket failures for dashboard routes. Activity summary values may be
+missing or zero until `activity_summary_rows` is redesigned and enabled.
 
 ## 2026-05-25: Deploy Web Failed On Netdata OOM And Stale PeerDB Mirror Slot
 
