@@ -425,6 +425,37 @@ function collectSqlParameterValues(value: unknown): unknown[] {
   return [];
 }
 
+function collectSqlText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(collectSqlText).join("");
+  }
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  if ("value" in value) {
+    const chunkValue = value.value;
+    if (typeof chunkValue === "string") {
+      return chunkValue;
+    }
+    if (Array.isArray(chunkValue)) {
+      return chunkValue.filter((item): item is string => typeof item === "string").join("");
+    }
+    return "";
+  }
+
+  const queryChunks = value.queryChunks;
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map(collectSqlText).join("");
+  }
+
+  return "";
+}
+
+function findSqlCall(calls: unknown[][], text: string): unknown {
+  return calls.map(([query]) => query).find((query) => collectSqlText(query).includes(text));
+}
+
 function expectSqlParamsToContainNumber(values: unknown[], expected: number): void {
   expect(
     values.some(
@@ -533,11 +564,13 @@ describe("fetchHealthspanRawData", () => {
       expect.stringContaining("activity_metadata"),
       expect.objectContaining({
         windowStart: "2026-03-01 00:00:00",
+        windowEndExclusive: "2026-03-16 00:00:00",
         restingHeartRateDates: ["2026-03-02"],
         restingHeartRates: [48],
       }),
     );
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
+    const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
+    const sqlValues = collectSqlParameterValues(aggregateSql);
     expectSqlParamsToContainNumber(sqlValues, 500);
     expectSqlParamsToContainNumber(sqlValues, Math.sqrt(115_800));
     expectSqlParamsToContainNumber(sqlValues, 70);
@@ -567,8 +600,41 @@ describe("fetchHealthspanRawData", () => {
 
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
+    const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
+    const sqlValues = collectSqlParameterValues(aggregateSql);
     expectSqlParamsToContainNumber(sqlValues, 112);
+  });
+
+  it("bounds Healthspan SQL reads by end date and access window", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ weekly_exercise_min: null }])
+      .mockResolvedValueOnce([makeRawHealthspanRow()]);
+    const ctx = makeFetchContext({
+      db: { execute },
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-05",
+        endDateExclusive: "2026-03-12",
+      },
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const weeklyExerciseSql = findSqlCall(execute.mock.calls, "weekly_exercise_min");
+    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date <= ");
+    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date >= ");
+    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date < ");
+
+    const aggregateSqlText = collectSqlText(findSqlCall(execute.mock.calls, "metrics_agg"));
+    expect(aggregateSqlText).toContain("AND date <= ");
+    expect(aggregateSqlText).toContain("AND date >= ");
+    expect(aggregateSqlText).toContain("AND date < ");
+    expect(aggregateSqlText).toContain("AND started_at < ");
+    expect(aggregateSqlText).toContain("AND started_at::date >= ");
+    expect(aggregateSqlText).toContain("AND started_at::date < ");
   });
 
   it("keeps activity sensor bounds in the ClickHouse join", async () => {
@@ -586,6 +652,17 @@ describe("fetchHealthspanRawData", () => {
       ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
     )?.[1];
     expect(zoneQuery).toEqual(expect.any(String));
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("activity_metadata"),
+      expect.objectContaining({
+        windowStart: "2026-03-01 00:00:00",
+        windowEndExclusive: "2026-03-16 00:00:00",
+      }),
+    );
+    expect(zoneQuery).toMatch(
+      /AND\s+asum\.started_at\s*<\s*toDateTime\(\{windowEndExclusive:String\}\)/,
+    );
     expect(zoneQuery).toContain("INNER JOIN analytics.deduped_sensor AS ds");
     expect(zoneQuery).toMatch(/ON\s+ds\.user_id\s*=\s*am\.user_id/);
     expect(zoneQuery).toMatch(/AND\s+ds\.recorded_at\s*>=\s*am\.started_at/);

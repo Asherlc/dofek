@@ -70,6 +70,15 @@ describe("fetchHealthspanRawData", () => {
       ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
     )?.[1];
     expect(zoneQuery).toEqual(expect.any(String));
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("activity_metadata"),
+      expect.objectContaining({
+        windowStart: "2026-03-01 00:00:00",
+        windowEndExclusive: "2026-03-16 00:00:00",
+      }),
+    );
+    expect(zoneQuery).toContain("AND asum.started_at < toDateTime({windowEndExclusive:String})");
     expect(zoneQuery).toContain(`INNER JOIN analytics.deduped_sensor AS ds
         ON ds.user_id = am.user_id
        AND ds.recorded_at >= am.started_at
