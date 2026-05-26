@@ -8759,3 +8759,33 @@ new incremental tables are populated.
 - Follow-Up Work: Add a deploy-secret checklist or preflight that verifies all
   `${VAR:?}` stack interpolation keys exist in Infisical for both deployment
   environments before the deploy workflow reaches Docker validation.
+
+### Review App Docker SSH attached wait failure
+
+- Date: 2026-05-26.
+- Symptoms: PR #1186 failed `Deploy Review App` in GitHub Actions run
+  `26479519411`, job `77973698519`.
+- User Impact: The PR review app did not deploy, blocking live preview
+  validation for the branch.
+- Evidence: The failed step was `Deploy review stack`. The first fatal line was:
+  ```text
+  error waiting for container: command [ssh -o ConnectTimeout=30 -T -l root -- 88.99.171.167 docker system dial-stdio] has exited with exit status 255, make sure the URL is valid, and Docker 18.09 or later is installed on the remote host: stderr=client_loop: send disconnect: Broken pipe
+  ```
+  The migration container continued printing dbt output and later reported
+  `Completed successfully`, but the parent Docker command ended with
+  `Process completed with exit code 125`.
+- Root Cause: The review-app workflow used an attached
+  `docker compose run --rm web migrate` over Docker's SSH transport for the
+  multi-minute dbt migration run, so a broken CI-to-review-host SSH transport
+  caused the Docker client command to fail even though the one-shot container
+  completed successfully.
+- Fix/Mitigation: The review-app workflow now starts migration and seed
+  one-shot containers detached, polls container state with short Docker API
+  calls, removes successful containers, and prints logs only when a one-shot
+  container exits non-zero or times out.
+- Validation: Workflow syntax and local checks were run on the branch, and the
+  review-app workflow was rerun on PR #1186.
+- Remaining Risk: Low for this failure mode. A real container failure still
+  fails loudly and includes the one-shot container logs.
+- Follow-Up Work: Keep long-running review-app Docker operations detached and
+  state-polled so CI does not depend on one multi-minute Docker SSH stream.
