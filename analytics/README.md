@@ -12,23 +12,31 @@ The call sites are:
 Model dependencies are declared with dbt `ref()` calls. `sensor_scalar_sample` stages scalar
 metric samples, `deduped_sensor` reads `sensor_scalar_sample`, and
 `activity_vo2max_estimate` reads `deduped_sensor` to keep the expensive VO2
-max activity/sample joins out of web/API requests. `resting_heart_rate_sleep_window`
-also reads `deduped_sensor`.
+max activity/sample joins out of web/API requests. `sleep_heart_rate_sample`,
+`activity_sensor_sample`, and `activity_location_sample` are bounded
+microbatch intermediates over sample time. `resting_heart_rate_sleep_window`
+aggregates the sleep sample intermediary, while `activity_sensor_summary_rows`
+and `activity_location_summary_rows` aggregate the activity sample
+intermediaries before `activity_summary_rows` joins those compact per-activity
+summaries.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
-joins belong in the incremental dbt model, not in web/API requests. Complex
-offline ClickHouse models can set dbt `query_settings` locally;
-`activity_summary_rows` raises `query_plan_max_optimizations_to_apply` for its
-large insert plan and uses `max_threads=1` so the offline build does not compete
-with request traffic.
+joins belong in incremental dbt models, not in web/API requests. Complex
+offline ClickHouse models can set dbt `query_settings` locally and use
+`max_threads=1` so offline builds do not compete with request traffic.
 
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
-`deduped_sensor`, and `activity_vo2max_estimate`. The first two use dbt's
-`microbatch` incremental strategy with `recorded_at` as the event time, daily
-batches, and a short lookback so ClickHouse processes bounded sample-time
-windows instead of one large dirty-key query. `activity_vo2max_estimate` uses
-dirty activity/user keys and `max_threads=1`; it materializes reusable
-per-activity VO2 max estimates, not final API responses. `activity_summary_rows`
-is still excluded because the first single-query offline version OOM-killed
-production ClickHouse. `resting_heart_rate_sleep_window` is also excluded until
-it is converted to a bounded dbt-native strategy over sleep windows.
+`deduped_sensor`, `sleep_heart_rate_sample`,
+`resting_heart_rate_sleep_window`, `activity_sensor_sample`,
+`activity_location_sample`, `activity_sensor_summary_rows`,
+`activity_location_summary_rows`, `activity_summary_rows`, and
+`activity_vo2max_estimate`. The sample-stage and sample-intermediate models use
+dbt's `microbatch` incremental strategy with `recorded_at` as the event time,
+daily batches, and short lookbacks so ClickHouse processes bounded sample-time
+windows instead of one large activity/window query. The final resting heart
+rate, activity aggregate, and activity summary models use dirty keys from those
+intermediates and `max_threads=1` to keep the offline aggregate work out of
+web/API requests.
+`activity_vo2max_estimate` also uses dirty activity/user keys and
+`max_threads=1`; it materializes reusable per-activity VO2 max estimates, not
+final API responses.

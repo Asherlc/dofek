@@ -1,6 +1,11 @@
 version: 2
 
 sources:
+  - name: analytics
+    schema: analytics
+    tables:
+      - name: v_activity
+      - name: v_activity_members
   - name: postgres_fitness
     schema: postgres_fitness
     tables:
