@@ -453,7 +453,10 @@ function makeFetchContext(
 
 describe("fetchHealthspanRawData", () => {
   it("passes derived sleep, body, and zone metrics into the aggregate query", async () => {
-    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow()]);
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ weekly_exercise_min: null }])
+      .mockResolvedValueOnce([makeRawHealthspanRow()]);
     const query = vi.fn(async (_schema: unknown, queryText: string) => {
       if (queryText.includes("analytics.resting_heart_rate_sleep_window")) {
         return [{ date: "2026-03-02", resting_hr: 48 }];
@@ -534,13 +537,38 @@ describe("fetchHealthspanRawData", () => {
         restingHeartRates: [48],
       }),
     );
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[0]?.[0]);
+    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
     expectSqlParamsToContainNumber(sqlValues, 500);
     expectSqlParamsToContainNumber(sqlValues, Math.sqrt(115_800));
     expectSqlParamsToContainNumber(sqlValues, 70);
     expectSqlParamsToContainNumber(sqlValues, 35);
     expectSqlParamsToContainNumber(sqlValues, 77);
     expectSqlParamsToContainNumber(sqlValues, 21);
+  });
+
+  it("uses device-reported exercise minutes as the aerobic activity floor", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ weekly_exercise_min: 112 }])
+      .mockResolvedValueOnce([makeRawHealthspanRow()]);
+    const query = vi.fn(async (_schema: unknown, queryText: string) => {
+      if (queryText.includes("activity_metadata")) {
+        return [{ aerobic_minutes: 0, high_intensity_minutes: 0 }];
+      }
+      return [];
+    });
+    const ctx = makeFetchContext({
+      db: { execute },
+      sensorStore: makeSensorStore({
+        query,
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      }),
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
+    expectSqlParamsToContainNumber(sqlValues, 112);
   });
 
   it("keeps activity sensor bounds in the ClickHouse join", async () => {
@@ -631,7 +659,7 @@ describe("fetchHealthspanRawData", () => {
 
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[0]?.[0]);
+    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
     expect(sqlValues).not.toContain(undefined);
     expect(countSqlNumberParams(sqlValues, 0)).toBeGreaterThanOrEqual(2);
   });

@@ -2,7 +2,7 @@ import { averageVo2MaxEstimates } from "@dofek/training/derived-cardio";
 import { ZONE_BOUNDARIES_FTP } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { fetchBodyCompRows } from "../repositories/body-clickhouse.ts";
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
@@ -35,6 +35,10 @@ const rawRowSchema = z.object({
 });
 
 export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
+
+const weeklyExerciseMinutesRowSchema = z.object({
+  weekly_exercise_min: z.coerce.number().nullable(),
+});
 
 type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
 type HealthspanRawDataContext = Pick<
@@ -178,6 +182,25 @@ async function fetchHrZoneTime(
   return rows[0] ?? { aerobic_minutes: 0, high_intensity_minutes: 0 };
 }
 
+async function fetchWeeklyExerciseMinutes(
+  ctx: HealthspanRawDataContext,
+  endDate: string,
+  totalDays: number,
+): Promise<number | null> {
+  const rows = await executeWithSchema(
+    ctx.db,
+    weeklyExerciseMinutesRowSchema,
+    sql`SELECT
+          (SUM(exercise_minutes)::real / GREATEST(${totalDays}::real / 7, 1)) AS weekly_exercise_min
+        FROM fitness.v_daily_metrics
+        WHERE user_id = ${ctx.userId}
+          AND date > ${dateWindowStart(endDate, totalDays)}
+          AND date <= ${dateWindowEnd(endDate)}`,
+  );
+
+  return rows[0]?.weekly_exercise_min ?? null;
+}
+
 /**
  * Fetch the raw aggregates and weekly history needed to compute a Healthspan score.
  *
@@ -202,8 +225,12 @@ export async function fetchHealthspanRawData(
     : [];
   const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
   const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays, restingHeartRateRows);
+  const weeklyExerciseMin = await fetchWeeklyExerciseMinutes(ctx, endDate, totalDays);
   const weeklyDivisor = Math.max(totalDays / 7, 1);
-  const weeklyAerobicMin = hrZoneTime.aerobic_minutes / weeklyDivisor;
+  const weeklyAerobicMin = Math.max(
+    hrZoneTime.aerobic_minutes / weeklyDivisor,
+    weeklyExerciseMin ?? 0,
+  );
   const weeklyHighIntensityMin = hrZoneTime.high_intensity_minutes / weeklyDivisor;
   const bodyMeasurements = ctx.sensorStore
     ? await fetchBodyCompRows(ctx.sensorStore, ctx.userId, endDate, totalDays)

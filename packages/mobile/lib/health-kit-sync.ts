@@ -36,10 +36,15 @@ const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY
 
 const BATCH_SIZE = 500;
 
-function daysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString();
+function syncWindowStart(syncRangeDays: number | null): string {
+  if (syncRangeDays === null) {
+    return new Date(0).toISOString();
+  }
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - syncRangeDays);
+  startDate.setHours(0, 0, 0, 0);
+  return startDate.toISOString();
 }
 
 function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
@@ -114,7 +119,7 @@ export interface SyncResult {
 export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncResult> {
   const { trpcClient, healthKit, syncRangeDays, onProgress } = options;
 
-  const startDate = syncRangeDays === null ? new Date(0).toISOString() : daysAgo(syncRangeDays);
+  const startDate = syncWindowStart(syncRangeDays);
   const endDate = new Date().toISOString();
 
   const allSamples: HealthKitSample[] = [];

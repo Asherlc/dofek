@@ -41,7 +41,12 @@ function makeFetchContext(
   overrides: Partial<Parameters<typeof fetchHealthspanRawData>[0]>,
 ): Parameters<typeof fetchHealthspanRawData>[0] {
   return {
-    db: { execute: vi.fn().mockResolvedValue([makeRawHealthspanRow()]) },
+    db: {
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce([{ weekly_exercise_min: null }])
+        .mockResolvedValueOnce([makeRawHealthspanRow()]),
+    },
     userId: "user-1",
     timezone: "UTC",
     accessWindow: fullAccessWindow,
