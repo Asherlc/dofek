@@ -299,28 +299,22 @@ describe("DailyMetricsRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("returns older latest metric dates without probing the base table", async () => {
-      const row = makeTrendsRow({
-        latest_date: "2025-03-15",
-        latest_steps: "9100",
-        latest_steps_date: "2025-03-13",
-        latest_active_energy: "430",
-        latest_active_energy_date: "2025-03-13",
-      });
-      const { repo, execute } = makeRepository([row]);
+    it("requires daily activity values to come from the requested end date", async () => {
+      const { repo, execute } = makeRepository([makeTrendsRow()]);
 
-      const result = await repo.getTrends(30, "2025-03-15");
+      await repo.getTrends(30, "2025-03-15");
 
-      expect(result?.latest_steps).toBe(9100);
-      expect(result?.latest_steps_date).toBe("2025-03-13");
-      expect(result?.latest_active_energy).toBe(430);
+      const sqlArg = execute.mock.calls[0]?.[0];
+      const sqlText = JSON.stringify(sqlArg);
+      expect(sqlText).toContain("CASE WHEN latest.steps_date");
+      expect(sqlText).toContain("CASE WHEN latest.active_energy_kcal_date");
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("returns latest values from most recent day in window when endDate has no data", async () => {
+    it("returns latest recovery values from most recent day in window when endDate has no data", async () => {
       // Simulates: stats are populated (data in 30-day window) but latest comes
-      // from yesterday, not today — the query should use the most recent row
-      // in the window rather than requiring an exact endDate match.
+      // from yesterday, not today — recovery values should use the most recent
+      // row in the window rather than requiring an exact endDate match.
       const { repo, execute } = makeRepository([makeTrendsRow({ latest_date: "2025-03-14" })]);
       const result = await repo.getTrends(30, "2025-03-15");
       expect(result).not.toBeNull();

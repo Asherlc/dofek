@@ -229,12 +229,12 @@ export class DailyMetricsRepository extends BaseRepository {
             latest.hrv AS latest_hrv,
             latest.resting_hr AS latest_resting_hr,
             latest.spo2_avg AS latest_spo2,
-            latest.steps AS latest_steps,
-            latest.active_energy_kcal AS latest_active_energy,
+            CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps ELSE NULL END AS latest_steps,
+            CASE WHEN latest.active_energy_kcal_date = ${dateWindowEnd(endDate)} THEN latest.active_energy_kcal ELSE NULL END AS latest_active_energy,
             latest.skin_temp_c AS latest_skin_temp,
             latest.date AS latest_date,
-            latest.steps_date AS latest_steps_date,
-            latest.active_energy_kcal_date AS latest_active_energy_date
+            CASE WHEN latest.steps_date = ${dateWindowEnd(endDate)} THEN latest.steps_date ELSE NULL END AS latest_steps_date,
+            CASE WHEN latest.active_energy_kcal_date = ${dateWindowEnd(endDate)} THEN latest.active_energy_kcal_date ELSE NULL END AS latest_active_energy_date
           FROM stats LEFT JOIN latest ON true`,
     );
     return rows[0] ?? null;
