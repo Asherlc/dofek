@@ -8660,3 +8660,48 @@ new incremental tables are populated.
   activity-dedupe view into the migration build.
 - Follow-Up Work: Keep future dbt read models from depending on broad request
   views when a bounded mirrored source table plus explicit filters is enough.
+
+### Follow-up (body composition stale from unpublished Timescale chunks)
+
+- Date: 2026-05-26.
+- Symptoms: The body composition chart had not updated for several days.
+- User Impact: Body recomposition and related body measurement views showed
+  stale weight/body-fat data even though current Withings rows existed in
+  Postgres.
+- Evidence: `bodyAnalytics.recomposition` reads ClickHouse
+  `analytics.v_body_measurement`. Postgres `fitness.metric_stream` had
+  `body_weight`, `body_fat_percentage`, `muscle_mass`, and `bone_mass` rows
+  through `2026-05-26 14:13:26 UTC`, but ClickHouse
+  `postgres_fitness.metric_stream`, `analytics.body_measurement_sample`, and
+  `analytics.v_body_measurement` were stuck at `2026-05-22 14:27:06 UTC`.
+  PeerDB slots were active with `wal_status = reserved`, and PeerDB logs showed
+  the metric-stream mirror repeatedly pulling zero records. Publication
+  inspection showed Timescale chunks for `2026-05-19` through `2026-05-26` were
+  not attached to `peerdb_metric_stream_no_imu`.
+- Root Cause: `peerdb_metric_stream_no_imu` only covered previously attached
+  Timescale physical chunks. New daily chunks were not being added to the
+  publication, so PeerDB saw no changes for recent `fitness.metric_stream`
+  rows despite healthy logical replication slots.
+- Fix/Mitigation: Added missing recent chunks to the production publication,
+  created `fitness.ensure_metric_stream_peerdb_publication_chunks()`, and
+  registered an hourly TimescaleDB background job to attach future
+  `fitness.metric_stream` chunks. Manually copied the small missing body-channel
+  rows into ClickHouse so `analytics.body_measurement_sample` and
+  `analytics.v_body_measurement` became current immediately. This PR updates
+  `src/db/clickhouse-cdc.ts` so future PeerDB setup runs install the
+  same function and scheduled job.
+- Validation: Public `/healthz` returned 200 and Postgres reported
+  `pg_is_in_recovery() = false`. `analytics.v_body_measurement` then showed
+  `latest_weight = 2026-05-26 14:13:26 UTC` and
+  `latest_body_fat = 2026-05-26 14:13:26 UTC`, with latest rows for
+  `2026-05-26`, `2026-05-25`, `2026-05-24`, `2026-05-23`, and `2026-05-22`.
+  Local focused tests passed with
+  `CLICKHOUSE_URL=http://default:test@127.0.0.1:8123 pnpm vitest run src/db/clickhouse-cdc.test.ts`.
+- Remaining Risk: Medium. The body chart is current, but recent non-body
+  metric-stream channels still need a bounded recovery plan. Broad verification
+  queries over `fitness.metric_stream` and `postgres_fitness.metric_stream FINAL`
+  restarted Postgres/ClickHouse under current memory limits, so future checks
+  should use chunk-bounded or channel-specific queries.
+- Follow-Up Work: Add an alert comparing recent Timescale chunks against the
+  PeerDB metric-stream publication and add a bounded runbook for repairing
+  non-body metric-stream gaps without scanning the full hypertable.

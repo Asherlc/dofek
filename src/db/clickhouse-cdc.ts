@@ -439,8 +439,8 @@ async function ensureMetricStreamNoImuPublication(client: SourcePostgresClient):
   // a row filter that drops IMU samples at the source. IMU is ~92% of
   // metric_stream write volume and isn't consumed by analytics; filtering
   // at the publication keeps PeerDB from decoding/staging/discarding events
-  // it doesn't want. `publish_via_partition_root = true` applies the row
-  // filter to every TimescaleDB chunk via a single publication entry.
+  // it doesn't want. TimescaleDB stores rows in physical chunks, so each
+  // chunk also needs to be attached to the publication.
   await client.query(`
     DO $$
     BEGIN
@@ -450,6 +450,80 @@ async function ensureMetricStreamNoImuPublication(client: SourcePostgresClient):
         CREATE PUBLICATION peerdb_metric_stream_no_imu
         FOR TABLE fitness.metric_stream WHERE (channel <> 'imu')
         WITH (publish_via_partition_root = true);
+      END IF;
+    END
+    $$;
+
+    CREATE OR REPLACE FUNCTION fitness.ensure_metric_stream_peerdb_publication_chunks(
+      job_id integer DEFAULT NULL,
+      config jsonb DEFAULT NULL
+    )
+    RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE
+      missing_chunk record;
+    BEGIN
+      FOR missing_chunk IN
+        SELECT chunks.chunk_schema, chunks.chunk_name
+        FROM timescaledb_information.chunks AS chunks
+        JOIN pg_class chunk_class
+          ON chunk_class.relname = chunks.chunk_name
+        JOIN pg_namespace chunk_namespace
+          ON chunk_namespace.oid = chunk_class.relnamespace
+         AND chunk_namespace.nspname = chunks.chunk_schema
+        CROSS JOIN pg_publication publication
+        LEFT JOIN pg_publication_rel publication_entry
+          ON publication_entry.prpubid = publication.oid
+         AND publication_entry.prrelid = chunk_class.oid
+        WHERE chunks.hypertable_schema = 'fitness'
+          AND chunks.hypertable_name = 'metric_stream'
+          AND publication.pubname = 'peerdb_metric_stream_no_imu'
+          AND publication_entry.prrelid IS NULL
+      LOOP
+        EXECUTE format(
+          'ALTER PUBLICATION peerdb_metric_stream_no_imu ADD TABLE %I.%I WHERE (channel <> %L)',
+          missing_chunk.chunk_schema,
+          missing_chunk.chunk_name,
+          'imu'
+        );
+      END LOOP;
+    END
+    $$;
+
+    SELECT fitness.ensure_metric_stream_peerdb_publication_chunks();
+
+    DO $$
+    DECLARE
+      existing_job_id integer;
+      existing_schedule_interval interval;
+      existing_scheduled boolean;
+    BEGIN
+      SELECT job_id, schedule_interval, scheduled
+      INTO existing_job_id, existing_schedule_interval, existing_scheduled
+      FROM timescaledb_information.jobs
+      WHERE proc_schema = 'fitness'
+        AND proc_name = 'ensure_metric_stream_peerdb_publication_chunks'
+      ORDER BY job_id
+      LIMIT 1;
+
+      IF existing_job_id IS NULL THEN
+        PERFORM public.add_job(
+          'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc,
+          INTERVAL '1 hour',
+          job_name => 'ensure_metric_stream_peerdb_publication_chunks'
+        );
+      ELSE
+        IF existing_schedule_interval IS DISTINCT FROM INTERVAL '1 hour'
+          OR existing_scheduled IS DISTINCT FROM true
+        THEN
+          PERFORM public.alter_job(
+            existing_job_id,
+            schedule_interval => INTERVAL '1 hour',
+            scheduled => true,
+            job_name => 'ensure_metric_stream_peerdb_publication_chunks'
+          );
+        END IF;
       END IF;
     END
     $$;
