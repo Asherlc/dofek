@@ -572,7 +572,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M
       labels:
         - traefik.enable=true
         - traefik.http.routers.netdata.rule=${NETDATA_HOST_RULE:-Host(`netdata.dofek.asherlc.com`)}

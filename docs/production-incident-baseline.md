@@ -8202,3 +8202,29 @@ new incremental tables are populated.
   can build on production data within the ClickHouse memory limit.
 - Follow-Up Work: Redeploy PR #1180 after CI validates the narrower RHR model,
   then verify `dofek_worker`, `dofek_analytics-worker`, and ClickHouse health.
+
+### Follow-up (Deploy run 26425142491)
+
+- Date: 2026-05-25.
+- Symptoms: Production deploy from PR #1180 applied the branch image and the
+  narrowed RHR dbt model completed, but the GitHub deploy step stayed in final
+  stack convergence while `dofek_netdata` crash-looped with exit 137.
+- User Impact: The app containers were updated and `/healthz` remained healthy,
+  but deploy automation could not finish cleanly while Netdata was unhealthy.
+- Evidence: Worker logs showed `analytics.resting_heart_rate_sleep_window`
+  completing in 3.62s with `PASS=3`. Kernel logs showed repeated Netdata cgroup
+  OOM kills at roughly 519 MiB RSS and one global OOM kill of ClickHouse while
+  Netdata was also near its 512 MiB container limit. Netdata's own crash report
+  showed a 512 MiB container with about 556 MiB of dbengine cache and 506 MiB of
+  sqlite metadata on disk.
+- Root Cause: The previous Netdata retention fix configured two 256 MiB
+  dbengine tiers inside a 512 MiB container, leaving no startup/runtime headroom
+  for Netdata's sqlite metadata and process overhead.
+- Fix/Mitigation: Increase Netdata's container limit to 768 MiB and reduce
+  dbengine retention to 96 MiB for tier 0 and 128 MiB for tier 1 so the existing
+  cache can start and prune down.
+- Remaining Risk: Medium until the follow-up deploy proves Netdata converges
+  and ClickHouse avoids further OOM kills during deploy-time dbt builds and
+  dashboard reads.
+- Follow-Up Work: Redeploy PR #1180 with the Netdata sizing fix, then verify
+  `dofek_netdata`, ClickHouse memory, worker dbt output, and public health.
