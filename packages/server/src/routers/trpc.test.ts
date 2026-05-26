@@ -32,6 +32,8 @@ import { queryCache } from "dofek/lib/cache";
 import {
   cacheHitsTotal,
   cacheMissesTotal,
+  trpcCacheLookupDuration,
+  trpcDbQueryDuration,
   trpcProcedureDuration,
   trpcSlowQueriesTotal,
 } from "../lib/metrics.ts";
@@ -278,57 +280,126 @@ describe("trpc", () => {
       });
     }
 
+    const analyticsUnavailableMessage =
+      "Analytics data is temporarily unavailable. Please retry in a minute.";
+
+    async function expectSanitizedClickHouseError(error: unknown, reportableError = error) {
+      const caller = createSanitizerCaller(error);
+
+      await expect(caller.test()).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message: analyticsUnavailableMessage,
+      });
+      expect(Sentry.captureException).toHaveBeenCalledWith(reportableError, {
+        tags: { dependency: "clickhouse", trpcPath: "test" },
+      });
+    }
+
+    async function expectUnsanitizedError(error: unknown, message: string) {
+      const caller = createSanitizerCaller(error);
+
+      await expect(caller.test()).rejects.toMatchObject({ message });
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    }
+
     it("hides ClickHouse DNS failures from tRPC callers and reports the original error", async () => {
       const internalError = Object.assign(new Error("getaddrinfo ENOTFOUND clickhouse"), {
         code: "ENOTFOUND",
       });
-      const caller = createSanitizerCaller(internalError);
 
-      await expect(caller.test()).rejects.toMatchObject({
-        code: "SERVICE_UNAVAILABLE",
-        message: "Analytics data is temporarily unavailable. Please retry in a minute.",
-      });
-      expect(Sentry.captureException).toHaveBeenCalledWith(internalError, {
-        tags: { dependency: "clickhouse", trpcPath: "test" },
-      });
+      await expectSanitizedClickHouseError(internalError);
     });
 
     it("does not sanitize non-ClickHouse errors", async () => {
       const databaseError = new Error("database connection timeout");
-      const caller = createSanitizerCaller(databaseError);
 
-      await expect(caller.test()).rejects.toMatchObject({
-        message: "database connection timeout",
-      });
-      expect(Sentry.captureException).not.toHaveBeenCalled();
+      await expectUnsanitizedError(databaseError, "database connection timeout");
     });
 
     it("hides ClickHouse connection refused errors from tRPC callers", async () => {
       const internalError = Object.assign(new Error("connect ECONNREFUSED clickhouse:8123"), {
         code: "ECONNREFUSED",
       });
-      const caller = createSanitizerCaller(internalError);
 
-      await expect(caller.test()).rejects.toMatchObject({
-        code: "SERVICE_UNAVAILABLE",
-        message: "Analytics data is temporarily unavailable. Please retry in a minute.",
+      await expectSanitizedClickHouseError(internalError);
+    });
+
+    it("hides ClickHouse timeout errors detected by error code and message", async () => {
+      const internalError = Object.assign(new Error("query failed against clickhouse backend"), {
+        code: "ETIMEDOUT",
       });
-      expect(Sentry.captureException).toHaveBeenCalledWith(internalError, {
-        tags: { dependency: "clickhouse", trpcPath: "test" },
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
+    it("does not hide timeout errors when the message is not from ClickHouse", async () => {
+      const timeoutError = Object.assign(new Error("postgres request timed out"), {
+        code: "ETIMEDOUT",
       });
+
+      await expectUnsanitizedError(timeoutError, "postgres request timed out");
+    });
+
+    it("does not hide ClickHouse-labeled errors with unrelated error codes", async () => {
+      const unrelatedCodeError = Object.assign(new Error("clickhouse background task failed"), {
+        code: "ECONNRESET",
+      });
+
+      await expectUnsanitizedError(unrelatedCodeError, "clickhouse background task failed");
+    });
+
+    it("does not treat non-string error codes as ClickHouse infrastructure failures", async () => {
+      const numericCodeError = Object.assign(new Error("clickhouse background task failed"), {
+        code: 500,
+      });
+
+      await expectUnsanitizedError(numericCodeError, "clickhouse background task failed");
+    });
+
+    it("hides nested ClickHouse infrastructure causes and reports the root cause", async () => {
+      const internalError = Object.assign(new Error("request failed for clickhouse backend"), {
+        code: "ETIMEDOUT",
+      });
+      const wrappedError = new Error("analytics query failed", { cause: internalError });
+
+      await expectSanitizedClickHouseError(wrappedError, internalError);
+    });
+
+    it("hides string ClickHouse DNS errors", async () => {
+      await expectSanitizedClickHouseError(
+        "getaddrinfo ENOTFOUND clickhouse",
+        expect.objectContaining({ message: "getaddrinfo ENOTFOUND clickhouse" }),
+      );
+    });
+
+    it("hides ClickHouse connection refused messages without relying on error code", async () => {
+      const internalError = new Error("connect ECONNREFUSED 127.0.0.1 clickhouse");
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
+    it("does not hide connection refused messages for other dependencies", async () => {
+      const connectionError = new Error("connect ECONNREFUSED postgres:5432");
+
+      await expectUnsanitizedError(connectionError, "connect ECONNREFUSED postgres:5432");
+    });
+
+    it("hides ClickHouse memory-limit errors", async () => {
+      const internalError = new Error("ClickHouse query failed: memory limit exceeded");
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
+    it("does not hide memory-limit errors for other dependencies", async () => {
+      const memoryError = new Error("postgres query failed: memory limit exceeded");
+
+      await expectUnsanitizedError(memoryError, "postgres query failed: memory limit exceeded");
     });
 
     it("hides ClickHouse overcommit tracker errors from tRPC callers", async () => {
       const internalError = new Error("OvercommitTracker decision: memory limit exceeded");
-      const caller = createSanitizerCaller(internalError);
 
-      await expect(caller.test()).rejects.toMatchObject({
-        code: "SERVICE_UNAVAILABLE",
-        message: "Analytics data is temporarily unavailable. Please retry in a minute.",
-      });
-      expect(Sentry.captureException).toHaveBeenCalledWith(internalError, {
-        tags: { dependency: "clickhouse", trpcPath: "test" },
-      });
+      await expectSanitizedClickHouseError(internalError);
     });
   });
 
@@ -351,6 +422,27 @@ describe("trpc", () => {
       expect(result).toBe("cached-value");
       expect(cacheHitsTotal.inc).toHaveBeenCalledWith({ procedure: "cachedQuery" });
       expect(queryCache.set).not.toHaveBeenCalled();
+    });
+
+    it("records cache lookup metrics with a hit label", async () => {
+      vi.mocked(queryCache.get).mockResolvedValue("cached-value");
+      const nowSpy = vi
+        .spyOn(performance, "now")
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(1010)
+        .mockReturnValueOnce(1040)
+        .mockReturnValueOnce(1050);
+      const createCaller = createCachedRouter();
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.cachedQuery()).resolves.toBe("cached-value");
+
+      expect(trpcCacheLookupDuration.observe).toHaveBeenCalledWith(
+        { procedure: "cachedQuery", hit: "true" },
+        0.03,
+      );
+
+      nowSpy.mockRestore();
     });
 
     it("records cache-hit procedure metrics with expected labels and seconds", async () => {
@@ -388,6 +480,34 @@ describe("trpc", () => {
         "db-result",
         CacheTTL.SHORT,
       );
+    });
+
+    it("records cache miss lookup and database duration metrics with labels", async () => {
+      vi.mocked(queryCache.get).mockResolvedValue(undefined);
+      const nowSpy = vi
+        .spyOn(performance, "now")
+        .mockReturnValueOnce(1000)
+        .mockReturnValueOnce(1010)
+        .mockReturnValueOnce(1040)
+        .mockReturnValueOnce(1050)
+        .mockReturnValueOnce(1090)
+        .mockReturnValueOnce(1110);
+      const createCaller = createCachedRouter();
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.cachedQuery()).resolves.toBe("db-result");
+
+      expect(trpcCacheLookupDuration.observe).toHaveBeenCalledWith(
+        { procedure: "cachedQuery", hit: "false" },
+        0.03,
+      );
+      expect(trpcDbQueryDuration.observe).toHaveBeenCalledWith({ procedure: "cachedQuery" }, 0.04);
+      expect(trpcProcedureDuration.observe).toHaveBeenCalledWith(
+        { procedure: "cachedQuery", type: "query", cache_hit: "false" },
+        0.11,
+      );
+
+      nowSpy.mockRestore();
     });
 
     it("includes userId in cache key for anonymous users", async () => {

@@ -8705,3 +8705,30 @@ new incremental tables are populated.
 - Follow-Up Work: Add an alert comparing recent Timescale chunks against the
   PeerDB metric-stream publication and add a bounded runbook for repairing
   non-body metric-stream gaps without scanning the full hypertable.
+
+### Follow-up (Stryker trpc.ts mutation threshold)
+
+- Date: 2026-05-26.
+- Symptoms: GitHub Actions `Test / Stryker (0)` failed, which caused
+  `Test / Mutation Testing`, `Test / Test Gate`, and `CI Gate` to fail.
+- User Impact: PR validation was blocked.
+- Evidence: Job `77927893257` completed mutation testing for
+  `packages/server/src/trpc.ts` with `Final mutation score 68.09 under breaking
+  threshold 75`.
+- Root Cause: The new ClickHouse infrastructure-error sanitizer tests covered
+  the happy-path DNS/refused/overcommit cases but did not exercise enough
+  negative and boundary cases for error-code extraction, nested causes, string
+  errors, or cache metric labels/durations, leaving Stryker mutants alive.
+- Fix/Mitigation: Added targeted `trpc.test.ts` cases for ClickHouse vs
+  non-ClickHouse timeout/refused/memory-limit detection, non-string codes,
+  nested causes, string thrown errors, and cache hit/miss metric labels and
+  durations.
+- Validation: `pnpm vitest packages/server/src/routers/trpc.test.ts --run`
+  passed, unit-only Stryker for `packages/server/src/trpc.ts` reached 79.43
+  against the 75 break threshold, `pnpm lint` passed, all TypeScript checks
+  passed, and `pnpm test:changed` passed.
+- Remaining Risk: Low. A full local Stryker run can pressure local ClickHouse
+  during unrelated integration dry-run tests, but the failing shard's direct
+  mutation target now clears the threshold with the dedicated unit test file.
+- Follow-Up Work: Prefer adding mutation-killing cases alongside new tRPC
+  middleware branches when introducing sanitizer or cache-observability logic.
