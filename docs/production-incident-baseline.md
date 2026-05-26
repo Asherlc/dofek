@@ -8539,3 +8539,56 @@ new incremental tables are populated.
   body, recovery, and report inputs, into smaller chained incremental dbt read
   models so dashboard procedures read compact precomputed rows instead of
   recomputing overlapping windows per request.
+
+### Follow-up (dashboard priority and provider stats OOM)
+
+- Date: 2026-05-26.
+- Symptoms: The dashboard became more stable after the first ClickHouse
+  concurrency gate, but the at-a-glance score circles were still slow and
+  production ClickHouse restarted again.
+- User Impact: The dashboard score circles could take tens of seconds before
+  rendering. During the later ClickHouse restart, ClickHouse-backed dashboard
+  and data-source routes could temporarily fail with DNS or socket errors.
+- Evidence: After deploy `26432889065`, a dashboard reload showed no immediate
+  ClickHouse memory-limit errors, but the large dashboard batch queued behind
+  serialized ClickHouse reads: `recovery.readinessScore` completed around
+  32s, `sleepNeed.performance` around 26s, and several secondary sections
+  completed between roughly 14-29s. After deploy `26433436277`, the first
+  score-circle batch improved to about 6.2s, with `recovery.readinessScore`
+  and `recovery.strainTarget` around 3.2-3.4s and `sleepNeed.performance`
+  around 6.2s. However, web logs then showed `sync.providerStats` hitting a
+  ClickHouse memory-limit error (`would use 2.58 GiB`, current RSS near
+  3.34 GiB, maximum 3.00 GiB), followed by ClickHouse task exit 137 and
+  transient `getaddrinfo ENOTFOUND clickhouse` / `socket hang up` errors.
+- Root Cause: The one-at-a-time ClickHouse web gate prevented broad dashboard
+  fan-out but introduced head-of-line blocking for the score circles. A
+  separate all-user `analytics.provider_stats` view still computed provider
+  counts across large mirrored tables before the route filtered to one user,
+  and that view could exceed ClickHouse's 3 GiB server cap.
+- Fix/Mitigation: Commit `4d9353be` prioritizes the dashboard score-circle
+  queries, defers secondary dashboard sections briefly, and raises the bounded
+  web ClickHouse read gate from one to two concurrent reads per web replica.
+  Commit `5a071e6` removes `sync.providerStats` from the all-user
+  `analytics.provider_stats` view path and computes per-user provider counts
+  directly with `user_id` pushed into each ClickHouse subquery.
+- Validation: Deploy run `26433436277` completed successfully on app image
+  `sha-4d9353b`, and score-circle logs showed the first batch returning in
+  roughly 6.2s instead of 26-32s. Deploy run `26433847816` completed
+  successfully on app image `sha-5a071e6`. Public `/healthz` returned 200 in
+  three post-deploy probes. Swarm services showed `dofek_web` at `2/2` and
+  `dofek_worker`, `dofek_analytics-worker`, `dofek_clickhouse`, `dofek_db`,
+  and `dofek_redis` at `1/1`. The replacement provider-stats query completed
+  directly on production ClickHouse under a 1 GiB per-query cap and returned
+  the expected per-provider rows. Filtered web logs for the final 10-minute
+  window showed no fresh `sync.providerStats`, ClickHouse DNS, socket,
+  memory-limit, or score-query slow/error lines. ClickHouse had no restart
+  after the pre-fix OOM restart and stayed under the configured cap.
+- Remaining Risk: Medium. The immediate OOM trigger is removed and the score
+  circles are no longer trapped behind every secondary dashboard section, but
+  several secondary dashboard calculations remain expensive and should still
+  move into incremental read models.
+- Follow-Up Work: Convert `healthspan.score`, sleep need, stress, weekly
+  report, body analytics, and remaining repeated dashboard inputs into smaller
+  chained incremental dbt models. Keep the all-user `analytics.provider_stats`
+  view out of request paths unless it is replaced by a bounded incremental
+  table.
