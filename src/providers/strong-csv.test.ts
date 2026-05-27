@@ -515,15 +515,16 @@ describe("parseStrongCsv — field-level assertions", () => {
 // ============================================================
 
 describe("isStrongCsvFormat", () => {
+  const strongCsvHeader =
+    "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE";
+
   it("returns true for standard CSV header", () => {
-    const csv =
-      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,";
+    const csv = `${strongCsvHeader}\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,`;
     expect(isStrongCsvFormat(csv)).toBe(true);
   });
 
   it("returns true for CSV with BOM", () => {
-    const csv =
-      "\uFEFFDate,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,";
+    const csv = `\uFEFF${strongCsvHeader}\n2024-11-02,Day,1h,Bench,1,100,10,,,,,,`;
     expect(isStrongCsvFormat(csv)).toBe(true);
   });
 
@@ -535,6 +536,10 @@ describe("isStrongCsvFormat", () => {
 
   it("returns false for empty input", () => {
     expect(isStrongCsvFormat("")).toBe(false);
+  });
+
+  it("only treats a BOM as removable when it starts the input", () => {
+    expect(isStrongCsvFormat(`x\uFEFF${strongCsvHeader}`)).toBe(false);
   });
 });
 
@@ -610,6 +615,11 @@ describe("parseStrongTextDate", () => {
 
   it("returns Invalid Date for unrecognized format", () => {
     const date = parseStrongTextDate("not a date");
+    expect(Number.isNaN(date.getTime())).toBe(true);
+  });
+
+  it("returns Invalid Date for unknown month names in the expected format", () => {
+    const date = parseStrongTextDate("Monday, Smarch 1, 2026 at 12:00");
     expect(Number.isNaN(date.getTime())).toBe(true);
   });
 });
@@ -794,6 +804,71 @@ Bench Press (Barbell)
 Set 1: 67.5 kg × 8`;
     const result = parseStrongText(text);
     expect(result.groups[0]?.sets[0]?.weight).toBe(67.5);
+  });
+
+  it("trims workout name, date, and exercise lines", () => {
+    const text = `  Workout  
+  Monday, January 5, 2026 at 9:00  
+
+  Bench Press (Barbell)  
+Set 1: 67.5 kg × 8`;
+    const result = parseStrongText(text);
+    expect(result.groups[0]?.workoutName).toBe("Workout");
+    expect(result.groups[0]?.sets[0]?.exerciseName).toBe("Bench Press (Barbell)");
+    expect(result.groups[0]?.date).toBe("2026-01-05 09:00:00");
+  });
+
+  it("keeps the current exercise across blank lines before sets", () => {
+    const text = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+
+Set 1: 67.5 kg × 8`;
+    const result = parseStrongText(text);
+    expect(result.groups[0]?.sets[0]?.exerciseName).toBe("Bench Press (Barbell)");
+  });
+
+  it("ignores share URLs before later sets", () => {
+    const text = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+http://link.strong.app/plain
+Set 1: 67.5 kg × 8
+https://link.strong.app/secure
+Set 2: 70 kg × 6`;
+    const result = parseStrongText(text);
+    expect(result.groups[0]?.sets.map((set) => set.exerciseName)).toEqual([
+      "Bench Press (Barbell)",
+      "Bench Press (Barbell)",
+    ]);
+  });
+
+  it("keeps the first detected weight unit when later sets use a different unit", () => {
+    const poundsFirstText = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+Set 1: 100 lb × 8
+Set 2: 50 kg × 8`;
+    expect(parseStrongText(poundsFirstText).weightUnit).toBe("lbs");
+
+    const kilogramsFirstText = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)
+Set 1: 50 kg × 8
+Set 2: 100 lb × 8`;
+    expect(parseStrongText(kilogramsFirstText).weightUnit).toBe("kg");
+  });
+
+  it("returns empty groups when text contains no set lines", () => {
+    const text = `Workout
+Monday, January 5, 2026 at 9:00
+
+Bench Press (Barbell)`;
+    expect(parseStrongText(text).groups).toEqual([]);
   });
 });
 
