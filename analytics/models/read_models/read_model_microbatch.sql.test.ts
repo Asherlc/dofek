@@ -112,8 +112,30 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("min(ranked.started_at) AS started_at");
     expect(sql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
+    expect(sql).toContain("max(ranked._peerdb_synced_at) AS source_synced_at");
     expect(sql).not.toContain("any(best.started_at) AS started_at");
     expect(sql).not.toContain("any(best.ended_at) AS ended_at");
+  });
+
+  it("carries upstream source freshness through lookback microbatch intermediaries", () => {
+    const dedupedSensorSql = readModel("deduped_sensor");
+    const activitySensorSampleSql = readModel("activity_sensor_sample");
+    const activityLocationSampleSql = readModel("activity_location_sample");
+    const sleepHeartRateSampleSql = readModel("sleep_heart_rate_sample");
+
+    expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS refreshed_at");
+    expect(dedupedSensorSql).not.toContain("now64(9) AS refreshed_at");
+    expect(activitySensorSampleSql).toContain(
+      "greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at",
+    );
+    expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
+    expect(activitySensorSampleSql).not.toContain("now64(9) AS refreshed_at");
+    expect(activityLocationSampleSql).toContain(
+      "greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at",
+    );
+    expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");
+    expect(sleepHeartRateSampleSql).toContain("greatest(samples.refreshed_at, active_sleep._peerdb_synced_at)");
+    expect(sleepHeartRateSampleSql).not.toContain("now64(9) AS refreshed_at");
   });
 
   it("aggregates activity sensor summary from the bounded sensor intermediary", () => {

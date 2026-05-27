@@ -8985,7 +8985,15 @@ new incremental tables are populated.
   `Deploy Web` run from branch `Asherlc/deploy-failed` completed successfully
   with the checked-in overlay change, including migrations, stack deploy,
   readiness checks, and CDC configuration. `https://staging.dofek.asherlc.com`
-  returned HTTP 200 after the deploy.
+  returned HTTP 200 after the deploy. Restoring the worker on image
+  `sha-a2571eb` reproduced the host starvation during the first deploy-time
+  analytics cycle: staging reached about 44 MB available memory, SSH banner
+  probes timed out, and Hetzner CPU metrics returned to about 198-199%. This
+  showed the remaining issue was not just the final summary table scan. The
+  lookback microbatch intermediaries were rewriting recent rows with
+  `refreshed_at = now64(9)`, which made downstream summary models treat the
+  whole lookback window as dirty every cycle even when source data had not
+  changed.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.
