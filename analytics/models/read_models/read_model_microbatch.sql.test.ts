@@ -22,6 +22,15 @@ describe("production analytics read-model build", () => {
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
+  it("delays the first scheduled analytics build after container startup", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("sleep \"$startup_delay_seconds\"");
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("dbt build");
+  });
+
   it("does not run analytics dbt builds in the deploy migration path", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);

@@ -42,6 +42,11 @@ case "${1:-sync}" in
   analytics-worker)
     interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
     retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
+    startup_delay_seconds="${ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120}"
+    if [ "$startup_delay_seconds" -gt 0 ]; then
+      echo "analytics-worker: waiting ${startup_delay_seconds}s before first dbt build"
+      sleep "$startup_delay_seconds"
+    fi
     while true; do
       if dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS; then
         sleep "$interval_seconds"
