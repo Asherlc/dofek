@@ -34,8 +34,7 @@ case "${1:-sync}" in
     exec $NODE src/jobs/worker.ts
     ;;
   migrate)
-    $NODE src/db/run-migrate.ts
-    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
+    exec $NODE src/db/run-migrate.ts
     ;;
   analytics)
     exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS

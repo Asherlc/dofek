@@ -9001,7 +9001,11 @@ new incremental tables are populated.
   saturated the host during the activity microbatch phase, so the activity
   sensor and location microbatch lookbacks were reduced from 7 days to 3 days,
   matching the deduped scalar sensor lookback and cutting the repeated
-  deploy-time activity batch count in half.
+  deploy-time activity batch count in half. The next staging deploy still
+  pinned the host while the analytics service was paused, which identified the
+  deploy `migrate` entrypoint as another full `dbt build` caller. The deploy
+  migration path now runs Postgres migrations only; scheduled analytics refresh
+  is owned by `analytics-worker`.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.

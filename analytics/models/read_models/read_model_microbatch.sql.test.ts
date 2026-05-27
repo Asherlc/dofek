@@ -22,6 +22,14 @@ describe("production analytics read-model build", () => {
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
+  it("does not run analytics dbt builds in the deploy migration path", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(migrateBlockMatch?.groups?.body).toContain("$NODE src/db/run-migrate.ts");
+    expect(migrateBlockMatch?.groups?.body).not.toContain("dbt build");
+  });
+
   it("runs every bounded intermediary and final read model in dependency order", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const safeModelMatch = entrypoint.match(/^DBT_SAFE_MODELS="([^"]+)"$/m);
