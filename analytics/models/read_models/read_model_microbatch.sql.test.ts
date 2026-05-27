@@ -14,6 +14,14 @@ function compactWhitespace(value: string): string {
 }
 
 describe("production analytics read-model build", () => {
+  it("does not block the BullMQ worker on analytics dbt builds", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const workerBlockMatch = entrypoint.match(/  worker\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(workerBlockMatch?.groups?.body).toContain("exec $NODE src/jobs/worker.ts");
+    expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
+  });
+
   it("runs every bounded intermediary and final read model in dependency order", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const safeModelMatch = entrypoint.match(/^DBT_SAFE_MODELS="([^"]+)"$/m);
@@ -61,7 +69,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
     expect(sql).toContain("ref('deduped_sensor')");
-    expect(sql).toContain("source('analytics', 'v_activity')");
+    expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
+    expect(sql).toContain("bounded_activity_graph()");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(sql).toContain("activity_id");
   });
 
@@ -72,8 +82,38 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
     expect(sql).toContain("source('postgres_fitness', 'metric_stream')");
-    expect(sql).toContain("source('analytics', 'v_activity_members')");
+    expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
+    expect(sql).toContain("bounded_activity_graph()");
+    expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
+  });
+
+  it("bounds activity graph construction to the active microbatch window", () => {
+    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
+
+    expect(sql).toContain("__dbt_internal_microbatch_event_time_start");
+    expect(sql).toContain("__dbt_internal_microbatch_event_time_end");
+    expect(sql).toContain("started_at < toDateTime64('{{ batch_end }}', 6, 'UTC')");
+    expect(sql).toContain(
+      "coalesce(ended_at, started_at + INTERVAL 12 HOUR) >= toDateTime64('{{ batch_start }}', 6, 'UTC')",
+    );
+  });
+
+  it("uses the same null-ended activity window for overlap matching", () => {
+    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
+
+    expect(sql).toContain("coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 12 HOUR)");
+    expect(sql).toContain("coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 12 HOUR)");
+    expect(sql).not.toContain("INTERVAL 1 HOUR");
+  });
+
+  it("uses merged group time bounds for current activity sensor membership", () => {
+    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
+
+    expect(sql).toContain("min(ranked.started_at) AS started_at");
+    expect(sql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
+    expect(sql).not.toContain("any(best.started_at) AS started_at");
+    expect(sql).not.toContain("any(best.ended_at) AS ended_at");
   });
 
   it("aggregates activity sensor summary from the bounded sensor intermediary", () => {

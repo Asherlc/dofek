@@ -15,13 +15,7 @@
     }
 ) }}
 
-WITH activity_members AS (
-    SELECT
-        activity_id,
-        user_id,
-        member_activity_id
-    FROM {{ source('analytics', 'v_activity_members') }}
-),
+WITH RECURSIVE {{ bounded_activity_graph() }},
 
 location_versions AS (
     SELECT *
