@@ -31,23 +31,8 @@ current_activity AS (
         name,
         started_at,
         ended_at
-    FROM {{ source('analytics', 'v_activity') }}
-),
-
-existing_activity_summary AS (
-    {% if is_incremental() %}
-        SELECT *
-        FROM {{ this }} FINAL
-    {% else %}
-        SELECT
-            CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(String)') AS activity_type,
-            CAST(null, 'Nullable(String)') AS name,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at
-        WHERE 1 = 0
-    {% endif %}
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    WHERE _peerdb_is_deleted = 0
 ),
 
 initial_activity_dirty_keys AS (
@@ -66,7 +51,7 @@ initial_activity_dirty_keys AS (
 
 changed_raw_activity AS (
     SELECT
-        id,
+        id AS activity_id,
         user_id,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
@@ -78,6 +63,13 @@ changed_raw_activity AS (
         {% else %}
             1 = 0
         {% endif %}
+),
+
+changed_activity_dirty_keys AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM changed_raw_activity
 ),
 
 activity_source_dirty_keys AS (
@@ -98,7 +90,7 @@ sensor_summary_dirty_keys AS (
     SELECT DISTINCT
         activity_id,
         user_id
-    FROM {{ ref('activity_sensor_summary_rows') }} FINAL
+    FROM {{ ref('activity_sensor_summary_rows') }}
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
@@ -112,7 +104,7 @@ location_summary_dirty_keys AS (
     SELECT DISTINCT
         activity_id,
         user_id
-    FROM {{ ref('activity_location_summary_rows') }} FINAL
+    FROM {{ ref('activity_location_summary_rows') }}
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
@@ -120,16 +112,6 @@ location_summary_dirty_keys AS (
         {% else %}
             1 = 0
         {% endif %}
-),
-
-stale_activity_dirty_keys AS (
-    SELECT
-        existing_activity_summary.activity_id AS activity_id,
-        existing_activity_summary.user_id AS user_id
-    FROM existing_activity_summary
-    LEFT JOIN current_activity
-        ON current_activity.activity_id = existing_activity_summary.activity_id
-    WHERE current_activity.activity_id IS null
 ),
 
 dirty_keys AS (
@@ -150,18 +132,60 @@ dirty_keys AS (
         SELECT
             activity_id,
             user_id
+        FROM changed_activity_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
         FROM sensor_summary_dirty_keys
         UNION ALL
         SELECT
             activity_id,
             user_id
         FROM location_summary_dirty_keys
-        UNION ALL
+    )
+),
+
+active_dirty_keys AS (
+    SELECT
+        assumeNotNull(activity_id) AS activity_id,
+        assumeNotNull(user_id) AS user_id
+    FROM dirty_keys
+    WHERE activity_id IS NOT null
+        AND user_id IS NOT null
+),
+
+existing_activity_summary_for_dirty_keys AS (
+    {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
-        FROM stale_activity_dirty_keys
-    )
+            user_id,
+            activity_type,
+            name,
+            started_at,
+            ended_at
+        FROM {{ this }}
+        WHERE (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(String)') AS activity_type,
+            CAST(null, 'Nullable(String)') AS name,
+            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
+            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at
+        WHERE 1 = 0
+    {% endif %}
 ),
 
 activity_bounds AS (
@@ -173,39 +197,68 @@ activity_bounds AS (
         current_activity.started_at AS started_at,
         current_activity.ended_at AS ended_at
     FROM current_activity
-    INNER JOIN dirty_keys
-        ON dirty_keys.activity_id = current_activity.activity_id
+    INNER JOIN active_dirty_keys
+        ON active_dirty_keys.activity_id = current_activity.activity_id
+        AND active_dirty_keys.user_id = current_activity.user_id
 ),
 
 sensor_summary AS (
     SELECT *
-    FROM {{ ref('activity_sensor_summary_rows') }} FINAL
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_sensor_summary_rows') }}
+        WHERE (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id
+    )
     WHERE is_deleted = 0
 ),
 
 location_summary AS (
     SELECT *
-    FROM {{ ref('activity_location_summary_rows') }} FINAL
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_location_summary_rows') }}
+        WHERE (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id
+    )
     WHERE is_deleted = 0
 )
 
 SELECT
-    assumeNotNull(dirty_keys.activity_id) AS activity_id,
-    assumeNotNull(dirty_keys.user_id) AS user_id,
+    active_dirty_keys.activity_id AS activity_id,
+    active_dirty_keys.user_id AS user_id,
     CAST(
-        coalesce(activity_bounds.activity_type, existing_activity_summary.activity_type),
+        coalesce(activity_bounds.activity_type, existing_activity_summary_for_dirty_keys.activity_type),
         'Nullable(String)'
     ) AS activity_type,
     CAST(
-        coalesce(activity_bounds.name, existing_activity_summary.name),
+        coalesce(activity_bounds.name, existing_activity_summary_for_dirty_keys.name),
         'Nullable(String)'
     ) AS name,
     CAST(
-        coalesce(activity_bounds.started_at, existing_activity_summary.started_at),
+        coalesce(activity_bounds.started_at, existing_activity_summary_for_dirty_keys.started_at),
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS started_at,
     CAST(
-        coalesce(activity_bounds.ended_at, existing_activity_summary.ended_at),
+        coalesce(activity_bounds.ended_at, existing_activity_summary_for_dirty_keys.ended_at),
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS ended_at,
     sensor_summary.avg_hr AS avg_hr,
@@ -243,12 +296,16 @@ SELECT
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(activity_bounds.activity_id IS null, 1, 0) AS is_deleted,
     now64(9) AS refreshed_at
-FROM dirty_keys
+FROM active_dirty_keys
 LEFT JOIN activity_bounds
-    ON activity_bounds.activity_id = dirty_keys.activity_id
-LEFT JOIN existing_activity_summary
-    ON existing_activity_summary.activity_id = dirty_keys.activity_id
+    ON activity_bounds.activity_id = active_dirty_keys.activity_id
+    AND activity_bounds.user_id = active_dirty_keys.user_id
+LEFT JOIN existing_activity_summary_for_dirty_keys
+    ON existing_activity_summary_for_dirty_keys.activity_id = active_dirty_keys.activity_id
+    AND existing_activity_summary_for_dirty_keys.user_id = active_dirty_keys.user_id
 LEFT JOIN sensor_summary
-    ON sensor_summary.activity_id = dirty_keys.activity_id
+    ON sensor_summary.activity_id = active_dirty_keys.activity_id
+    AND sensor_summary.user_id = active_dirty_keys.user_id
 LEFT JOIN location_summary
-    ON location_summary.activity_id = dirty_keys.activity_id
+    ON location_summary.activity_id = active_dirty_keys.activity_id
+    AND location_summary.user_id = active_dirty_keys.user_id

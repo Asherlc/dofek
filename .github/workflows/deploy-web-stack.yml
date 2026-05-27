@@ -389,6 +389,9 @@ jobs:
             worker:
               deploy:
                 replicas: 0
+            analytics-worker:
+              deploy:
+                replicas: 0
             training-export-worker:
               deploy:
                 replicas: 0
@@ -526,7 +529,7 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=false "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -536,24 +539,45 @@ jobs:
             exit "$status"
           fi
 
-          for service in web worker training-export-worker; do
+          wait_deadline_seconds=$((SECONDS + 1200))
+          for service in web worker training-export-worker analytics-worker clickhouse; do
             service_name="${STACK_NAME}_${service}"
-            update_state="$(
-              docker service inspect "$service_name" \
-                --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
-            )"
-            image="$(
-              docker service inspect "$service_name" \
-                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
-            )"
-            echo "${service_name} image=${image} update_state=${update_state:-none}"
-            case "$update_state" in
-              rollback_*|paused)
+            while true; do
+              update_state="$(
+                docker service inspect "$service_name" \
+                  --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
+              )"
+              image="$(
+                docker service inspect "$service_name" \
+                  --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+              )"
+              desired_replicas="$(
+                docker service inspect "$service_name" \
+                  --format '{{if .Spec.Mode.Replicated}}{{.Spec.Mode.Replicated.Replicas}}{{end}}'
+              )"
+              replicas="$(
+                docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
+              )"
+              echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              case "$update_state" in
+                rollback_*|paused)
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} did not finish deployment cleanly; update_state=${update_state}"
+                  exit 1
+                  ;;
+              esac
+              if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
+                [ -z "$update_state" ] || [ "$update_state" = "completed" ]
+              }; then
+                break
+              fi
+              if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
                 docker service ps "$service_name" --no-trunc
-                echo "::error::${service_name} did not finish deployment cleanly; update_state=${update_state}"
-                exit 1
-                ;;
-            esac
+                echo "::error::${service_name} did not converge before timeout"
+                exit 124
+              fi
+              sleep 10
+            done
           done
 
       - name: Prune obsolete images post-deploy

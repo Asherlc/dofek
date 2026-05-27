@@ -5,7 +5,7 @@
     event_time='recorded_at',
     begin='2026-01-01',
     batch_size='day',
-    lookback=7,
+    lookback=3,
     full_refresh=false,
     concurrent_batches=false,
     engine='ReplacingMergeTree(refresh_version)',
@@ -25,7 +25,8 @@ activity_samples AS (
         samples.recorded_date AS recorded_date,
         samples.channel AS channel,
         samples.scalar AS scalar,
-        samples.is_deleted AS is_deleted
+        samples.is_deleted AS is_deleted,
+        greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at
     FROM {{ ref('deduped_sensor') }} AS samples
     INNER JOIN current_activity
         ON current_activity.user_id = samples.user_id
@@ -42,5 +43,5 @@ SELECT
     scalar,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     is_deleted,
-    now64(9) AS refreshed_at
+    source_refreshed_at AS refreshed_at
 FROM activity_samples

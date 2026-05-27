@@ -8942,3 +8942,111 @@ new incremental tables are populated.
 - Follow-Up Work: Add read-model freshness monitoring for
   `sleep_heart_rate_sample` and `resting_heart_rate_sleep_window`; investigate
   the unrelated activity sample ClickHouse memory-limit errors separately.
+
+### Staging deploy SSH banner timeout
+
+- Date: 2026-05-27.
+- Symptoms: The `Deploy Web` workflow failed for staging while production
+  deployed successfully.
+- User Impact: Production received the release, but staging did not update and
+  the dispatcher workflow stayed failed.
+- Evidence: GitHub Actions run `26487420045` failed in
+  `Deploy Web Staging / Deploy Web Stack / Deploy Web Stack`, step `Setup SSH`.
+  The first fatal line was `SSH host key for 162.55.186.24 did not become
+  available within 235s`. Every retry showed `tcp/22: reachable (no SSH banner
+  yet)`. A local SSH probe reproduced `Connection timed out during banner
+  exchange`, and HTTPS to `staging.dofek.asherlc.com` timed out. Hetzner showed
+  `dofek-staging` running, public IPv4 unblocked, and firewall applied, but
+  host metrics showed the 2-core staging server pinned near 198% CPU with high
+  disk reads. Rebooting the staging server through Hetzner completed, but SSH
+  still failed to return a banner and CPU/disk saturation resumed. After the
+  staging deploy path was stabilized, production deploy run `26500398493`
+  rolled out `sha-92560da` successfully but the first analytics refresh failed
+  in `activity_location_summary_rows` and `activity_sensor_summary_rows` with
+  ClickHouse `MEMORY_LIMIT_EXCEEDED`; the first fatal lines showed the query
+  would use about `2.7 GiB` of a `3.0 GiB` limit while executing recursive
+  `has(visited_activity_ids, toString(...))` checks.
+- Root Cause: The 4 GB staging host was running the scheduled analytics worker
+  alongside ClickHouse and PeerDB. The first bad query was
+  `activity_sensor_summary_rows`, which filtered `activity_sensor_sample` by
+  joining dirty activity keys only on `activity_id`; on the staging data set
+  that query ran for more than 10 minutes, pegged the 2-core host near 199%
+  CPU, timed out the dbt HTTP client, and destabilized ClickHouse. After that
+  join was narrowed, the next bad query was `activity_summary_rows`, which read
+  the full sensor and location summary tables with `FINAL` before joining dirty
+  activity keys. The remaining production-scale failure came from aggregate
+  summary models still joining through global recursive `analytics.v_activity`;
+  ClickHouse had to build the activity graph before applying the dirty-key
+  filter, so the refresh could still exceed memory even though the deploy
+  itself no longer starved the host.
+- Fix/Mitigation: Rebooted the staging VM via Hetzner to try to restore SSH
+  access; this did not recover the host. Booted staging into Hetzner rescue
+  mode, captured installed-system logs, performed a hard power cycle back into
+  the normal OS, and temporarily scaled `dofek-staging_analytics-worker` to
+  `0` while investigating. The code fix keeps the analytics worker enabled and
+  changes the activity sensor, location, and final activity summary models to
+  filter through `(user_id, activity_id)` dirty-key tuple membership, matching
+  their sort keys instead of scanning full upstream tables before applying
+  dirty keys. The final fix also removes global `analytics.v_activity` from the
+  activity summary aggregate stages; those models read changed raw activities
+  directly and join bounded intermediate rows only after filtering to dirty
+  `(user_id, activity_id)` keys. The deploy workflow now pauses app workers,
+  including the analytics worker, only during migrations and stack update, then
+  restores `dofek_analytics-worker` to `1/1` in the final stack.
+- Validation: Production deploy job in the same dispatcher run passed through
+  migrations, stack deploy, and CDC configuration. After scaling
+  `dofek-staging_analytics-worker` to `0`, staging SSH became responsive,
+  ClickHouse returned to `1/1`, and memory headroom recovered. A staging-only
+  `Deploy Web` run from branch `Asherlc/deploy-failed` completed successfully
+  with the checked-in overlay change, including migrations, stack deploy,
+  readiness checks, and CDC configuration. `https://staging.dofek.asherlc.com`
+  returned HTTP 200 after the deploy. Restoring the worker on image
+  `sha-a2571eb` reproduced the host starvation during the first deploy-time
+  analytics cycle: staging reached about 44 MB available memory, SSH banner
+  probes timed out, and Hetzner CPU metrics returned to about 198-199%. This
+  showed the remaining issue was not just the final summary table scan. The
+  lookback microbatch intermediaries were rewriting recent rows with
+  `refreshed_at = now64(9)`, which made downstream summary models treat the
+  whole lookback window as dirty every cycle even when source data had not
+  changed. A follow-up deploy of the source-freshness patch exposed another
+  deploy-time failure mode: the analytics worker inherited Swarm's
+  `start-first` update policy, briefly running overlapping analytics-worker
+  tasks during rollout. On the staging host this again saturated CPU and memory
+  before the deploy could complete. After preventing overlap, the worker still
+  saturated the host during the activity microbatch phase, so the activity
+  sensor and location microbatch lookbacks were reduced from 7 days to 3 days,
+  matching the deduped scalar sensor lookback and cutting the repeated
+  deploy-time activity batch count in half. The next staging deploy still
+  pinned the host while the analytics service was paused, which identified the
+  deploy `migrate` entrypoint as another full `dbt build` caller. The deploy
+  migration path now runs Postgres migrations only; scheduled analytics refresh
+  is owned by `analytics-worker`. The remaining expensive read-model path was
+  `activity_vo2max_estimate`, which still joined directly to `deduped_sensor`
+  by activity time windows; it now reads the bounded `activity_sensor_sample`
+  intermediary by `(user_id, activity_id)`. ClickHouse query logs then showed
+  the worker hanging after starting `activity_summary_rows`; that model no
+  longer builds an unbounded `existing_activity_summary AS SELECT * FROM this
+  FINAL` stale-row CTE and instead uses changed raw activities plus bounded
+  dirty keys before reading existing summary rows. The remaining summary reads
+  also avoid `FINAL` and choose the latest `refresh_version` after filtering to
+  dirty `(user_id, activity_id)` keys. Because the staging deploy post-checks
+  still compete with the first analytics cycle on the same 4 GB host, the
+  analytics worker now waits 120 seconds after container startup before the
+  first dbt build. Staging deploy run `26499975777` then completed and its
+  first analytics-worker refresh finished all 10 dbt models in `95.64s` with
+  `PASS=10 WARN=0 ERROR=0`; `activity_summary_rows` finished in `0.82s`.
+  Production deploy run `26501175713` rolled out `sha-630f081`, and the first
+  production analytics-worker refresh finished all 10 dbt models in `45.57s`
+  with `PASS=10 WARN=0 ERROR=0`; `activity_location_summary_rows`,
+  `activity_sensor_summary_rows`, and `activity_summary_rows` completed in
+  `0.18s`, `0.24s`, and `0.31s` respectively. Production services were
+  restored on `sha-630f081` with `dofek_analytics-worker` at `1/1`,
+  `dofek_clickhouse` at `1/1`, `dofek_web` at `2/2`, `dofek_worker` at `1/1`,
+  and `dofek_training-export-worker` at `1/1`.
+- Remaining Risk: Low. The analytics worker is enabled and production has
+  completed a full scheduled dbt refresh under the box's CPU and memory
+  constraints. The remaining risk is regression: a future read-model change
+  could reintroduce an unbounded global activity graph or dirty-key scan.
+- Follow-Up Work: Add analytics read-model freshness and dbt duration alerts so
+  a model that regresses into multi-minute runtime is caught before it starves
+  the staging host.

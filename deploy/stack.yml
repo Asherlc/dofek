@@ -142,9 +142,10 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "0.50"
           memory: 400M
       update_config:
-        order: start-first
+        order: stop-first
         failure_action: rollback
 
   training-export-worker:
@@ -240,6 +241,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.00"
           memory: 3500M
 
   peerdb-catalog:

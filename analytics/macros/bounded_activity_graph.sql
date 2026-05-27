@@ -61,6 +61,7 @@ ranked AS (
         active_activity.notes AS notes,
         active_activity.timezone AS timezone,
         active_activity.raw AS raw,
+        active_activity._peerdb_synced_at AS _peerdb_synced_at,
         coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
     FROM active_activity
     LEFT JOIN active_provider_priority
@@ -169,6 +170,7 @@ merged AS (
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
         argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
         argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
+        max(ranked._peerdb_synced_at) AS source_synced_at,
         arraySort(groupUniqArray(ranked.provider_id)) AS source_providers,
         groupArrayIf(
             map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
@@ -190,7 +192,8 @@ current_activity AS (
         activity_type,
         name,
         started_at,
-        ended_at
+        ended_at,
+        source_synced_at
     FROM merged
 ),
 
@@ -200,6 +203,7 @@ activity_members AS (
         user_id,
         started_at,
         ended_at,
+        source_synced_at,
         arrayJoin(member_activity_ids) AS member_activity_id
     FROM merged
 )

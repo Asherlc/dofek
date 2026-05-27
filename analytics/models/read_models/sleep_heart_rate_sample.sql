@@ -22,6 +22,7 @@ WITH active_sleep AS (
         user_id,
         started_at,
         assumeNotNull(ended_at) AS ended_at,
+        _peerdb_synced_at,
         assumeNotNull(dateDiff('second', started_at, ended_at)) AS duration_seconds,
         multiIf(
             sleep_type IN ('nap', 'late_nap', 'rest'), true,
@@ -55,7 +56,8 @@ sleep_samples AS (
         samples.recorded_at AS recorded_at,
         samples.recorded_date AS recorded_date,
         samples.scalar AS heart_rate,
-        samples.is_deleted AS is_deleted
+        samples.is_deleted AS is_deleted,
+        greatest(samples.refreshed_at, active_sleep._peerdb_synced_at) AS source_refreshed_at
     FROM {{ ref('deduped_sensor') }} AS samples
     INNER JOIN active_sleep
         ON active_sleep.user_id = samples.user_id
@@ -81,5 +83,5 @@ SELECT
     heart_rate,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     is_deleted,
-    now64(9) AS refreshed_at
+    source_refreshed_at AS refreshed_at
 FROM sleep_samples

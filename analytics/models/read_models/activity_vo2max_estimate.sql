@@ -110,24 +110,17 @@ activity_source_dirty_keys AS (
 
 sensor_dirty_keys AS (
     SELECT DISTINCT
-        current_activity.activity_id AS activity_id,
-        current_activity.user_id AS user_id
-    FROM {{ ref('deduped_sensor') }} AS samples FINAL
-    INNER JOIN current_activity
-        ON current_activity.user_id = samples.user_id
-        AND samples.recorded_at >= current_activity.started_at
-        AND samples.recorded_at <= coalesce(
-            current_activity.ended_at,
-            current_activity.started_at + INTERVAL 12 HOUR
-        )
+        activity_id,
+        user_id
+    FROM {{ ref('activity_sensor_sample') }}
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
-            AND samples.refreshed_at > (SELECT last_refreshed_at FROM target_state)
+            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
         {% else %}
             1 = 0
         {% endif %}
-        AND samples.channel IN ('power', 'speed', 'heart_rate', 'altitude')
+        AND channel IN ('power', 'speed', 'heart_rate', 'altitude')
 ),
 
 body_measurement_dirty_users AS (
@@ -256,6 +249,7 @@ activity_bounds AS (
     FROM current_activity
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = current_activity.activity_id
+        AND dirty_keys.user_id = current_activity.user_id
 ),
 
 dirty_users AS (
@@ -290,13 +284,9 @@ power_samples AS (
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS cumulative_sum
     FROM activity_bounds
-    INNER JOIN {{ ref('deduped_sensor') }} AS samples FINAL
-        ON samples.user_id = activity_bounds.user_id
-        AND samples.recorded_at >= activity_bounds.started_at
-        AND samples.recorded_at <= coalesce(
-            activity_bounds.ended_at,
-            activity_bounds.started_at + INTERVAL 12 HOUR
-        )
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS samples
+        ON samples.activity_id = activity_bounds.activity_id
+        AND samples.user_id = activity_bounds.user_id
     WHERE samples.channel = 'power'
         AND samples.scalar > 0
         AND samples.is_deleted = 0
@@ -378,13 +368,9 @@ acsm_segments AS (
             - minIf(samples.scalar, samples.channel = 'altitude')
         ) / nullIf(avgIf(samples.scalar, samples.channel = 'speed') * 300, 0) AS grade_fraction
     FROM activity_bounds
-    INNER JOIN {{ ref('deduped_sensor') }} AS samples FINAL
-        ON samples.user_id = activity_bounds.user_id
-        AND samples.recorded_at >= activity_bounds.started_at
-        AND samples.recorded_at <= coalesce(
-            activity_bounds.ended_at,
-            activity_bounds.started_at + INTERVAL 12 HOUR
-        )
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS samples
+        ON samples.activity_id = activity_bounds.activity_id
+        AND samples.user_id = activity_bounds.user_id
     WHERE activity_bounds.activity_type IN ('running', 'trail_running', 'walking', 'hiking')
         AND samples.channel IN ('speed', 'heart_rate', 'altitude')
         AND samples.scalar IS NOT null
@@ -491,8 +477,10 @@ stale_estimates AS (
     FROM existing_estimate
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = existing_estimate.activity_id
+        AND dirty_keys.user_id = existing_estimate.user_id
     LEFT JOIN active_estimates
         ON active_estimates.activity_id = existing_estimate.activity_id
+        AND active_estimates.user_id = existing_estimate.user_id
         AND active_estimates.method = existing_estimate.method
     WHERE active_estimates.activity_id IS null
 )

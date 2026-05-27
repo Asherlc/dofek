@@ -5,7 +5,7 @@
     event_time='recorded_at',
     begin='2026-01-01',
     batch_size='day',
-    lookback=7,
+    lookback=3,
     full_refresh=false,
     concurrent_batches=false,
     engine='ReplacingMergeTree(refresh_version)',
@@ -32,6 +32,7 @@ location_rows AS (
         argMax(recorded_at, _peerdb_version) AS recorded_at,
         argMax(provider_id, _peerdb_version) AS provider_id,
         argMax(point, _peerdb_version) AS point,
+        argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
         argMax(_peerdb_is_deleted, _peerdb_version) AS is_deleted
     FROM location_versions
     GROUP BY id
@@ -70,7 +71,7 @@ SELECT
     CAST(tupleElement(location_rows.point, 1), 'Nullable(Float32)') AS lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     location_rows.is_deleted AS is_deleted,
-    now64(9) AS refreshed_at
+    greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at
 FROM location_rows
 INNER JOIN activity_members
     ON activity_members.member_activity_id = location_rows.member_activity_id

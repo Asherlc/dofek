@@ -22,6 +22,23 @@ describe("production analytics read-model build", () => {
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
+  it("delays the first scheduled analytics build after container startup", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("sleep \"$startup_delay_seconds\"");
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain("dbt build");
+  });
+
+  it("does not run analytics dbt builds in the deploy migration path", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(migrateBlockMatch?.groups?.body).toContain("$NODE src/db/run-migrate.ts");
+    expect(migrateBlockMatch?.groups?.body).not.toContain("dbt build");
+  });
+
   it("runs every bounded intermediary and final read model in dependency order", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const safeModelMatch = entrypoint.match(/^DBT_SAFE_MODELS="([^"]+)"$/m);
@@ -68,6 +85,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
     expect(sql).toContain("bounded_activity_graph()");
@@ -81,6 +99,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("lookback=3");
     expect(sql).toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
     expect(sql).toContain("bounded_activity_graph()");
@@ -112,8 +131,30 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("min(ranked.started_at) AS started_at");
     expect(sql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
+    expect(sql).toContain("max(ranked._peerdb_synced_at) AS source_synced_at");
     expect(sql).not.toContain("any(best.started_at) AS started_at");
     expect(sql).not.toContain("any(best.ended_at) AS ended_at");
+  });
+
+  it("carries upstream source freshness through lookback microbatch intermediaries", () => {
+    const dedupedSensorSql = readModel("deduped_sensor");
+    const activitySensorSampleSql = readModel("activity_sensor_sample");
+    const activityLocationSampleSql = readModel("activity_location_sample");
+    const sleepHeartRateSampleSql = readModel("sleep_heart_rate_sample");
+
+    expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS refreshed_at");
+    expect(dedupedSensorSql).not.toContain("now64(9) AS refreshed_at");
+    expect(activitySensorSampleSql).toContain(
+      "greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at",
+    );
+    expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
+    expect(activitySensorSampleSql).not.toContain("now64(9) AS refreshed_at");
+    expect(activityLocationSampleSql).toContain(
+      "greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at",
+    );
+    expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");
+    expect(sleepHeartRateSampleSql).toContain("greatest(samples.refreshed_at, active_sleep._peerdb_synced_at)");
+    expect(sleepHeartRateSampleSql).not.toContain("now64(9) AS refreshed_at");
   });
 
   it("aggregates activity sensor summary from the bounded sensor intermediary", () => {
@@ -122,9 +163,13 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
+    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample') }} AS sensor_samples FINAL");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain("INNER JOIN dirty_keys ON dirty_keys.activity_id = sensor_samples.activity_id");
   });
 
   it("aggregates activity location summary from the bounded location intermediary", () => {
@@ -133,9 +178,15 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_location_sample')");
+    expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
+    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample') }} AS location_samples FINAL");
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain(
+      "INNER JOIN dirty_keys ON dirty_keys.activity_id = location_samples.activity_id",
+    );
   });
 
   it("joins activity summary from bounded aggregate intermediaries", () => {
@@ -144,10 +195,46 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('activity_sensor_summary_rows')");
     expect(sql).toContain("ref('activity_location_summary_rows')");
+    expect(sql).toContain("(user_id, activity_id) IN");
+    expect(sql).toContain("changed_activity_dirty_keys");
+    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample')");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain("existing_activity_summary AS (");
+    expect(normalizedSql).not.toContain("stale_activity_dirty_keys AS (");
+    expect(normalizedSql).not.toContain("ref('activity_sensor_summary_rows') }} FINAL");
+    expect(normalizedSql).not.toContain("ref('activity_location_summary_rows') }} FINAL");
+    expect(normalizedSql).not.toContain("FROM dirty_keys LEFT JOIN activity_bounds");
+    expect(normalizedSql).not.toContain("assumeNotNull(dirty_keys.activity_id) AS activity_id");
+    expect(normalizedSql).not.toContain("assumeNotNull(dirty_keys.user_id) AS user_id");
+    expect(normalizedSql).toContain("FROM active_dirty_keys LEFT JOIN activity_bounds");
+    expect(normalizedSql).toContain(
+      "INNER JOIN active_dirty_keys ON active_dirty_keys.activity_id = current_activity.activity_id",
+    );
+    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id");
+    expect(normalizedSql).toContain(
+      "FROM {{ ref('activity_sensor_summary_rows') }} WHERE (user_id, activity_id) IN",
+    );
+    expect(normalizedSql).toContain(
+      "LIMIT 1 BY user_id, activity_id ) WHERE is_deleted = 0 ), location_summary AS",
+    );
+    expect(normalizedSql).toContain(
+      "FROM {{ ref('activity_location_summary_rows') }} WHERE (user_id, activity_id) IN",
+    );
+  });
+
+  it("estimates activity VO2 max from bounded activity sensor membership", () => {
+    const sql = readModel("activity_vo2max_estimate");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+    expect(normalizedSql).not.toContain("INNER JOIN {{ ref('deduped_sensor') }}");
+    expect(normalizedSql).toContain("samples.activity_id = activity_bounds.activity_id");
+    expect(normalizedSql).toContain("samples.user_id = activity_bounds.user_id");
   });
 });
