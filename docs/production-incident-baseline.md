@@ -8961,15 +8961,21 @@ new incremental tables are populated.
   disk reads. Rebooting the staging server through Hetzner completed, but SSH
   still failed to return a banner and CPU/disk saturation resumed.
 - Root Cause: The 4 GB staging host was running the scheduled analytics worker
-  alongside ClickHouse and PeerDB; the dbt analytics run pushed the host into
-  repeated memory pressure, the kernel repeatedly OOM-killed ClickHouse, and
-  SSH became unavailable during the churn.
+  alongside ClickHouse and PeerDB, and the
+  `activity_sensor_summary_rows` dbt model filtered
+  `activity_sensor_sample` by joining dirty activity keys only on
+  `activity_id`. On the staging data set that query ran for more than 10
+  minutes, pegged the 2-core host near 199% CPU, timed out the dbt HTTP client,
+  and destabilized ClickHouse enough for SSH to stop returning banners during
+  the deploy.
 - Fix/Mitigation: Rebooted the staging VM via Hetzner to try to restore SSH
   access; this did not recover the host. Booted staging into Hetzner rescue
   mode, captured installed-system logs, performed a hard power cycle back into
-  the normal OS, manually scaled `dofek-staging_analytics-worker` to `0`, and
-  updated the staging stack overlay so future staging deploys keep
-  `analytics-worker` at zero replicas.
+  the normal OS, and temporarily scaled `dofek-staging_analytics-worker` to
+  `0` while investigating. The code fix keeps the analytics worker enabled and
+  changes the activity sensor and location summary models to filter sample
+  tables through `(user_id, activity_id)` dirty-key tuple membership, matching
+  the sample tables' sort keys instead of scanning via an activity-only join.
 - Validation: Production deploy job in the same dispatcher run passed through
   migrations, stack deploy, and CDC configuration. After scaling
   `dofek-staging_analytics-worker` to `0`, staging SSH became responsive,
@@ -8978,8 +8984,9 @@ new incremental tables are populated.
   with the checked-in overlay change, including migrations, stack deploy,
   readiness checks, and CDC configuration. `https://staging.dofek.asherlc.com`
   returned HTTP 200 after the deploy.
-- Remaining Risk: Low for the original SSH/deploy failure. Staging still has
-  limited memory headroom because it runs ClickHouse and PeerDB on a 4 GB host.
-- Follow-Up Work: Consider moving staging analytics-worker validation to an
-  explicit manual job or a larger staging instance if scheduled staging dbt
-  coverage is required.
+- Remaining Risk: Medium until the optimized query shape is deployed and the
+  scheduled staging analytics worker completes repeated full cycles without
+  SSH banner delays or ClickHouse restarts.
+- Follow-Up Work: Add analytics read-model freshness and dbt duration alerts so
+  a model that regresses into multi-minute runtime is caught before it starves
+  the staging host.

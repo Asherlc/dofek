@@ -106,6 +106,15 @@ dirty_keys AS (
     )
 ),
 
+active_dirty_keys AS (
+    SELECT
+        assumeNotNull(activity_id) AS activity_id,
+        assumeNotNull(user_id) AS user_id
+    FROM dirty_keys
+    WHERE activity_id IS NOT null
+        AND user_id IS NOT null
+),
+
 gps_points AS (
     SELECT
         location_samples.activity_id AS activity_id,
@@ -114,11 +123,15 @@ gps_points AS (
         location_samples.lat AS lat,
         location_samples.lng AS lng
     FROM {{ ref('activity_location_sample') }} AS location_samples
-    INNER JOIN dirty_keys
-        ON dirty_keys.activity_id = location_samples.activity_id
     WHERE location_samples.is_deleted = 0
         AND location_samples.lat IS NOT null
         AND location_samples.lng IS NOT null
+        AND (location_samples.user_id, location_samples.activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
 ),
 
 gps_deltas AS (
@@ -178,3 +191,4 @@ LEFT JOIN distance_per_activity
     ON distance_per_activity.activity_id = dirty_keys.activity_id
 LEFT JOIN location_centroids
     ON location_centroids.activity_id = dirty_keys.activity_id
+    AND location_centroids.user_id = dirty_keys.user_id

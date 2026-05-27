@@ -106,6 +106,15 @@ dirty_keys AS (
     )
 ),
 
+active_dirty_keys AS (
+    SELECT
+        assumeNotNull(activity_id) AS activity_id,
+        assumeNotNull(user_id) AS user_id
+    FROM dirty_keys
+    WHERE activity_id IS NOT null
+        AND user_id IS NOT null
+),
+
 deduped_samples AS (
     SELECT
         sensor_samples.activity_id AS activity_id,
@@ -114,10 +123,14 @@ deduped_samples AS (
         sensor_samples.channel AS channel,
         sensor_samples.scalar AS scalar
     FROM {{ ref('activity_sensor_sample') }} AS sensor_samples
-    INNER JOIN dirty_keys
-        ON dirty_keys.activity_id = sensor_samples.activity_id
     WHERE sensor_samples.is_deleted = 0
         AND sensor_samples.scalar IS NOT null
+        AND (sensor_samples.user_id, sensor_samples.activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
 ),
 
 altitude_deltas AS (
@@ -237,5 +250,6 @@ SELECT
 FROM dirty_keys
 LEFT JOIN channel_aggs
     ON channel_aggs.activity_id = dirty_keys.activity_id
+    AND channel_aggs.user_id = dirty_keys.user_id
 LEFT JOIN elevation_per_activity
     ON elevation_per_activity.activity_id = dirty_keys.activity_id

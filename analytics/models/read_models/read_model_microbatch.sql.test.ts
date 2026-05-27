@@ -122,9 +122,11 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(sql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample') }} AS sensor_samples FINAL");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain("INNER JOIN dirty_keys ON dirty_keys.activity_id = sensor_samples.activity_id");
   });
 
   it("aggregates activity location summary from the bounded location intermediary", () => {
@@ -133,9 +135,13 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_location_sample')");
+    expect(sql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
     expect(normalizedSql).not.toContain("ref('activity_location_sample') }} AS location_samples FINAL");
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain(
+      "INNER JOIN dirty_keys ON dirty_keys.activity_id = location_samples.activity_id",
+    );
   });
 
   it("joins activity summary from bounded aggregate intermediaries", () => {
