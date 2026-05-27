@@ -43,6 +43,14 @@ export interface CalendarDayActivities {
   activities: CalendarActivityEntry[];
 }
 
+export interface ActivityOverview {
+  activityCount: number;
+  totalMinutes: number;
+  totalDistanceMeters: number;
+  totalElevationGainM: number;
+  activityTypes: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Internal schemas
 // ---------------------------------------------------------------------------
@@ -75,6 +83,17 @@ const baselineRowSchema = z.object({
   ftp: z.coerce.number().nullable(),
 });
 
+const overviewRowSchema = z.object({
+  activity_count: z.coerce.number(),
+  total_minutes: z.coerce.number(),
+  total_distance_meters: z.coerce.number(),
+  total_elevation_gain_m: z.coerce.number(),
+});
+
+const activityTypeRowSchema = z.object({
+  activity_type: z.string(),
+});
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -103,6 +122,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
+    const activityTypeFilter = activityTypeFilterSql(input);
+    const queryParams = activitySummaryQueryParams(this.userId, this.timezone, windowStart, input);
 
     const [activityRows, baselineRows] = await Promise.all([
       this.#sensorStore.query(
@@ -126,12 +147,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           WHERE asum.user_id = {userId:UUID}
             AND asum.ended_at IS NOT NULL
             AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+            ${activityTypeFilter}
           ORDER BY asum.started_at DESC`,
-        {
-          userId: this.userId,
-          timezone: this.timezone,
-          windowStart,
-        },
+        queryParams,
       ),
       this.#sensorStore.query(
         baselineRowSchema,
@@ -145,7 +163,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       ),
     ]);
 
-    const activityIds = activityRows.map((row) => row.id);
+    const filteredActivityRows = filterActivityRowsByType(activityRows, input.activityType);
+    const activityIds = filteredActivityRows.map((row) => row.id);
     const caloriesRows = await this.#fetchCaloriesByActivityId(activityIds);
 
     const caloriesByActivityId = new Map(
@@ -156,11 +175,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
-    for (const row of activityRows) {
-      if (input.activityType && row.activity_type !== input.activityType) {
-        continue;
-      }
-
+    for (const row of filteredActivityRows) {
       const calories = caloriesByActivityId.get(row.id) ?? null;
       const tss = computeActivityTss({
         durationMin: row.duration_min,
@@ -205,6 +220,57 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   }
 
+  async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
+    const days = input.weeks * 7;
+    const windowStart = dateWindowStartString(input.endDate, days);
+    const activityTypeFilter = activityTypeFilterSql(input);
+    const queryParams = activitySummaryQueryParams(this.userId, this.timezone, windowStart, input);
+    const typeQueryParams = activitySummaryQueryParams(this.userId, this.timezone, windowStart, {});
+
+    const [overviewRows, activityTypeRows] = await Promise.all([
+      this.#sensorStore.query(
+        overviewRowSchema,
+        `SELECT
+            count() AS activity_count,
+            coalesce(sum(dateDiff('second', asum.started_at, asum.ended_at) / 60.0), 0) AS total_minutes,
+            coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
+            coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
+          FROM analytics.activity_summary asum
+          WHERE asum.user_id = {userId:UUID}
+            AND asum.ended_at IS NOT NULL
+            AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+            ${activityTypeFilter}`,
+        queryParams,
+      ),
+      this.#sensorStore.query(
+        activityTypeRowSchema,
+        `SELECT DISTINCT
+            asum.activity_type AS activity_type
+          FROM analytics.activity_summary asum
+          WHERE asum.user_id = {userId:UUID}
+            AND asum.ended_at IS NOT NULL
+            AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+          ORDER BY activity_type ASC`,
+        typeQueryParams,
+      ),
+    ]);
+
+    const overview = overviewRows[0] ?? {
+      activity_count: 0,
+      total_minutes: 0,
+      total_distance_meters: 0,
+      total_elevation_gain_m: 0,
+    };
+
+    return {
+      activityCount: Math.round(overview.activity_count),
+      totalMinutes: Math.round(overview.total_minutes * 10) / 10,
+      totalDistanceMeters: Math.round(overview.total_distance_meters * 10) / 10,
+      totalElevationGainM: Math.round(overview.total_elevation_gain_m * 10) / 10,
+      activityTypes: activityTypeRows.map((row) => row.activity_type),
+    };
+  }
+
   async #fetchCaloriesByActivityId(activityIds: string[]) {
     if (activityIds.length === 0) return [];
     const activityIdFilter = sql.join(
@@ -222,6 +288,33 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND a.raw ? 'calories'`,
     );
   }
+}
+
+function activityTypeFilterSql(input: Pick<WeekListInput, "activityType">): string {
+  return input.activityType ? "AND asum.activity_type = {activityType:String}" : "";
+}
+
+function activitySummaryQueryParams(
+  userId: string,
+  timezone: string,
+  windowStart: string,
+  input: Pick<WeekListInput, "activityType">,
+) {
+  return {
+    userId,
+    timezone,
+    windowStart,
+    ...(input.activityType ? { activityType: input.activityType } : {}),
+  };
+}
+
+function filterActivityRowsByType(
+  activityRows: z.infer<typeof activityRowSchema>[],
+  activityType: string | undefined,
+) {
+  return activityType
+    ? activityRows.filter((activityRow) => activityRow.activity_type === activityType)
+    : activityRows;
 }
 
 // ---------------------------------------------------------------------------

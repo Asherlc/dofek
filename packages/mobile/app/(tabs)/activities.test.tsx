@@ -26,6 +26,8 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
+let overviewInput: unknown;
+let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -41,7 +43,14 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
       activityOverview: {
-        useQuery: () => mockOverviewQuery,
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
+          overviewInput = input;
+          overviewOptions = options;
+          return mockOverviewQuery;
+        },
       },
     },
   },
@@ -97,6 +106,16 @@ describe("ActivitiesScreen", () => {
       error: null,
     };
     weekListInput = undefined;
+    overviewInput = undefined;
+    overviewOptions = undefined;
+  });
+
+  it("uses QueryStatePanel for overview loading state", () => {
+    mockOverviewQuery = { data: undefined, isLoading: true, isError: false, error: null };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeDefined();
   });
 
   it("renders server-provided stat labels and values", () => {
@@ -158,6 +177,13 @@ describe("ActivitiesScreen", () => {
       endDate: expect.any(String),
       activityType: "running",
     });
+    expect(overviewInput).toEqual({
+      weeks: 4,
+      endDate: expect.any(String),
+      activityType: "running",
+    });
+    const previousOverview = { activityTypes: ["running"] };
+    expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
   });
 
   it("replaces failed map tiles with a fallback", () => {

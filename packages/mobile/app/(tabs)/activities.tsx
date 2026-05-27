@@ -48,7 +48,9 @@ export default function ActivitiesScreen() {
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
   };
   const query = trpc.calendar.weekList.useQuery(queryInput);
-  const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput);
+  const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
+    placeholderData: (previousData) => previousData,
+  });
   const { refreshing, onRefresh } = useRefresh();
 
   const dayGroups = query.data;
@@ -81,7 +83,9 @@ export default function ActivitiesScreen() {
         onWeeksChange={setWeeks}
       />
 
-      {overviewQuery.isError ? (
+      {overviewQuery.isLoading ? (
+        <QueryStatePanel variant="loading" minHeight={100} />
+      ) : overviewQuery.isError ? (
         <QueryStatePanel variant="error" message={overviewQuery.error.message} />
       ) : (
         <ActivityOverview overview={overviewQuery.data} units={units} />

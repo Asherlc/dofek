@@ -34,7 +34,8 @@ does the following:
 6. Export review env vars from Infisical.
 7. Reset Docker Compose services and volumes, start `db`, `clickhouse`, and
    `redis`, run migrations, seed the preview DB with the deterministic reviewer
-   dataset, then start `web`.
+   dataset, copy the seeded activity dependencies into ClickHouse, build the
+   analytics read models, then start `web`.
 8. Wait for `https://pr-<number>.dofek.asherlc.com/healthz`.
 9. Post the preview URL and `/auth/dev-login` helper link back onto the PR.
 
@@ -56,6 +57,9 @@ use the preview without wiring provider OAuth callbacks to the PR domain.
 The seed creates the `Review User` account with connected providers, recovery,
 training, nutrition, body, labs, cycle, journal, breathwork, and provider sync
 history so the main web and mobile screens are populated immediately.
+The deploy also snapshots the seeded activity/profile/provider-priority rows
+into ClickHouse and runs the analytics build so activity pages have recent
+deduped activity summaries instead of waiting for PeerDB CDC.
 
 Use:
 

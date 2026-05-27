@@ -27,6 +27,8 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
+let overviewInput: unknown;
+let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
@@ -42,7 +44,14 @@ vi.mock("../lib/trpc.ts", () => ({
         },
       },
       activityOverview: {
-        useQuery: () => mockOverviewQuery,
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
+          overviewInput = input;
+          overviewOptions = options;
+          return mockOverviewQuery;
+        },
       },
     },
   },
@@ -94,6 +103,8 @@ describe("ActivitiesPage", () => {
       error: null,
     };
     weekListInput = undefined;
+    overviewInput = undefined;
+    overviewOptions = undefined;
   });
 
   it("uses QueryStatePanel for loading state", () => {
@@ -171,6 +182,13 @@ describe("ActivitiesPage", () => {
       endDate: expect.any(String),
       activityType: "running",
     });
+    expect(overviewInput).toEqual({
+      weeks: 8,
+      endDate: expect.any(String),
+      activityType: "running",
+    });
+    const previousOverview = { activityTypes: ["running"] };
+    expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
   });
 
   it("replaces failed map tiles with a fallback", () => {

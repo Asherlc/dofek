@@ -30,6 +30,11 @@ vi.mock("../repositories/activities-calendar-repository.ts", () => ({
       repositoryInputMock(input);
       return repositoryResultMock();
     }
+
+    getActivityOverview(input: unknown) {
+      repositoryInputMock(input);
+      return repositoryResultMock();
+    }
   },
 }));
 
@@ -129,55 +134,13 @@ describe("calendarRouter", () => {
   });
 
   it("returns server-computed activity overview totals", async () => {
-    repositoryResultMock.mockResolvedValueOnce([
-      {
-        date: "2026-03-18",
-        activities: [
-          {
-            id: "activity-1",
-            name: "Run",
-            activityType: "running",
-            startedAt: "2026-03-18T07:00:00.000Z",
-            endedAt: "2026-03-18T08:00:00.000Z",
-            durationMin: 60,
-            location: {
-              centroidLat: 37.7749,
-              centroidLng: -122.4194,
-              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-              distanceMeters: 5000,
-              elevationGainM: 120,
-            },
-            calories: 420,
-            tss: 50,
-            stats: [
-              { label: "Training Stress Score", value: "50" },
-              { label: "Calories", value: "420 kcal" },
-            ],
-          },
-          {
-            id: "activity-2",
-            name: "Ride",
-            activityType: "cycling",
-            startedAt: "2026-03-17T07:00:00.000Z",
-            endedAt: "2026-03-17T08:30:00.000Z",
-            durationMin: 90,
-            location: {
-              centroidLat: 37.7749,
-              centroidLng: -122.4194,
-              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-              distanceMeters: 25000,
-              elevationGainM: 300,
-            },
-            calories: 800,
-            tss: 70,
-            stats: [
-              { label: "Training Stress Score", value: "70" },
-              { label: "Calories", value: "800 kcal" },
-            ],
-          },
-        ],
-      },
-    ]);
+    repositoryResultMock.mockResolvedValueOnce({
+      activityCount: 2,
+      totalMinutes: 150,
+      totalDistanceMeters: 30000,
+      totalElevationGainM: 420,
+      activityTypes: ["cycling", "running"],
+    });
     const caller = createCaller({
       db: {},
       userId: "user-1",
@@ -191,6 +154,30 @@ describe("calendarRouter", () => {
       totalDistanceMeters: 30000,
       totalElevationGainM: 420,
       activityTypes: ["cycling", "running"],
+    });
+  });
+
+  it("passes the selected activity type through to activityOverview", async () => {
+    repositoryResultMock.mockResolvedValueOnce({
+      activityCount: 1,
+      totalMinutes: 60,
+      totalDistanceMeters: 5000,
+      totalElevationGainM: 120,
+      activityTypes: ["cycling", "running"],
+    });
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await caller.activityOverview({ weeks: 4, endDate: "2026-03-20", activityType: "running" });
+
+    expect(repositoryInputMock).toHaveBeenCalledWith({
+      weeks: 4,
+      endDate: "2026-03-20",
+      activityType: "running",
     });
   });
 });

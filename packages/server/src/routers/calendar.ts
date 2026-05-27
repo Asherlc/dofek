@@ -2,7 +2,6 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import type { CalendarDayActivities } from "../repositories/activities-calendar-repository.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -107,36 +106,6 @@ export const calendarRouter = router({
         ctx.sensorStore,
         ctx.accessWindow,
       );
-      const dayGroups = await repo.getWeekList({ weeks: input.weeks, endDate: input.endDate });
-      return buildActivityOverview(dayGroups, input.activityType);
+      return repo.getActivityOverview(input);
     }),
 });
-
-function buildActivityOverview(dayGroups: CalendarDayActivities[], activityType?: string) {
-  const activityTypes = new Set<string>();
-  let activityCount = 0;
-  let totalMinutes = 0;
-  let totalDistanceMeters = 0;
-  let totalElevationGainM = 0;
-
-  for (const dayGroup of dayGroups) {
-    for (const activity of dayGroup.activities) {
-      activityTypes.add(activity.activityType);
-      if (activityType && activity.activityType !== activityType) {
-        continue;
-      }
-      activityCount += 1;
-      totalMinutes += activity.durationMin;
-      totalDistanceMeters += activity.location?.distanceMeters ?? 0;
-      totalElevationGainM += activity.location?.elevationGainM ?? 0;
-    }
-  }
-
-  return {
-    activityCount,
-    totalMinutes: Math.round(totalMinutes * 10) / 10,
-    totalDistanceMeters: Math.round(totalDistanceMeters * 10) / 10,
-    totalElevationGainM: Math.round(totalElevationGainM * 10) / 10,
-    activityTypes: Array.from(activityTypes).sort(),
-  };
-}

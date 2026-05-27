@@ -66,8 +66,11 @@ case "${1:-sync}" in
   seed)
     exec $NODE scripts/seed-dev-db.ts
     ;;
+  review-seed-clickhouse)
+    exec $NODE scripts/seed-review-clickhouse.ts
+    ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', or 'seed')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac

@@ -30,6 +30,8 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   - resets Docker Compose services and volumes so each deploy starts from a
     clean seeded database
   - runs migrations and the deterministic comprehensive seed script
+  - copies seeded activity dependencies into ClickHouse and builds analytics
+    read models so activity pages show recent review data
   - starts the review stack
 - The destroy workflow tears down the PR workspace, which removes the server and
   the front door route file, then deletes the HCP Terraform workspace itself.
@@ -41,6 +43,9 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
   dataset so reviewers can inspect dashboard, recovery, training, nutrition,
   body, provider, report, cycle, journal, and breathwork surfaces without
   provider OAuth setup.
+- Review deploys also snapshot seeded activity/profile/provider-priority rows
+  into ClickHouse and run the analytics build, so activity summary screens are
+  populated without PeerDB CDC.
 
 ## Guardrails
 
