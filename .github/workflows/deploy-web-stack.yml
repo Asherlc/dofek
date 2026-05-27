@@ -389,6 +389,9 @@ jobs:
             worker:
               deploy:
                 replicas: 0
+            analytics-worker:
+              deploy:
+                replicas: 0
             training-export-worker:
               deploy:
                 replicas: 0

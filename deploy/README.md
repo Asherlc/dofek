@@ -156,8 +156,9 @@ CI (main) -> build dofek + dofek-ml (same tag)
       on the production host, because newly pulled deploy images are not
       referenced by a service until after migrations complete.
    5. Apply the stack configuration before migrations with a non-prune,
-      detached `docker stack deploy` and a temporary overlay that sets app
-      worker/web replicas to zero. On existing stacks this uses the currently
+      detached `docker stack deploy` and a temporary overlay that sets web,
+      worker, analytics-worker, and training-export-worker replicas to zero.
+      On existing stacks this uses the currently
       deployed app image tag, so database, ClickHouse, network, config, and
       resource-limit changes are applied before migrations without rolling new
       app code ahead of schema changes or letting old app tasks issue expensive
