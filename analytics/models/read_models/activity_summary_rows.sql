@@ -34,22 +34,6 @@ current_activity AS (
     FROM {{ source('analytics', 'v_activity') }}
 ),
 
-existing_activity_summary AS (
-    {% if is_incremental() %}
-        SELECT *
-        FROM {{ this }} FINAL
-    {% else %}
-        SELECT
-            CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(String)') AS activity_type,
-            CAST(null, 'Nullable(String)') AS name,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at
-        WHERE 1 = 0
-    {% endif %}
-),
-
 initial_activity_dirty_keys AS (
     SELECT
         activity_id,
@@ -66,7 +50,7 @@ initial_activity_dirty_keys AS (
 
 changed_raw_activity AS (
     SELECT
-        id,
+        id AS activity_id,
         user_id,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
@@ -78,6 +62,13 @@ changed_raw_activity AS (
         {% else %}
             1 = 0
         {% endif %}
+),
+
+changed_activity_dirty_keys AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM changed_raw_activity
 ),
 
 activity_source_dirty_keys AS (
@@ -122,17 +113,6 @@ location_summary_dirty_keys AS (
         {% endif %}
 ),
 
-stale_activity_dirty_keys AS (
-    SELECT
-        existing_activity_summary.activity_id AS activity_id,
-        existing_activity_summary.user_id AS user_id
-    FROM existing_activity_summary
-    LEFT JOIN current_activity
-        ON current_activity.activity_id = existing_activity_summary.activity_id
-        AND current_activity.user_id = existing_activity_summary.user_id
-    WHERE current_activity.activity_id IS null
-),
-
 dirty_keys AS (
     SELECT DISTINCT
         activity_id,
@@ -151,17 +131,17 @@ dirty_keys AS (
         SELECT
             activity_id,
             user_id
+        FROM changed_activity_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
         FROM sensor_summary_dirty_keys
         UNION ALL
         SELECT
             activity_id,
             user_id
         FROM location_summary_dirty_keys
-        UNION ALL
-        SELECT
-            activity_id,
-            user_id
-        FROM stale_activity_dirty_keys
     )
 ),
 
@@ -175,14 +155,31 @@ active_dirty_keys AS (
 ),
 
 existing_activity_summary_for_dirty_keys AS (
-    SELECT existing_activity_summary.*
-    FROM existing_activity_summary
-    WHERE (existing_activity_summary.user_id, existing_activity_summary.activity_id) IN (
+    {% if is_incremental() %}
         SELECT
+            activity_id,
             user_id,
-            activity_id
-        FROM active_dirty_keys
-    )
+            activity_type,
+            name,
+            started_at,
+            ended_at
+        FROM {{ this }} FINAL
+        WHERE (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(String)') AS activity_type,
+            CAST(null, 'Nullable(String)') AS name,
+            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
+            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at
+        WHERE 1 = 0
+    {% endif %}
 ),
 
 activity_bounds AS (

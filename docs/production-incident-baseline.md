@@ -9008,7 +9008,11 @@ new incremental tables are populated.
   is owned by `analytics-worker`. The remaining expensive read-model path was
   `activity_vo2max_estimate`, which still joined directly to `deduped_sensor`
   by activity time windows; it now reads the bounded `activity_sensor_sample`
-  intermediary by `(user_id, activity_id)`.
+  intermediary by `(user_id, activity_id)`. ClickHouse query logs then showed
+  the worker hanging after starting `activity_summary_rows`; that model no
+  longer builds an unbounded `existing_activity_summary AS SELECT * FROM this
+  FINAL` stale-row CTE and instead uses changed raw activities plus bounded
+  dirty keys before reading existing summary rows.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.

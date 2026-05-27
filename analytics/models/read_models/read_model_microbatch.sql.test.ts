@@ -183,11 +183,14 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_sensor_summary_rows')");
     expect(sql).toContain("ref('activity_location_summary_rows')");
     expect(sql).toContain("(user_id, activity_id) IN");
+    expect(sql).toContain("changed_activity_dirty_keys");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample')");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain("existing_activity_summary AS (");
+    expect(normalizedSql).not.toContain("stale_activity_dirty_keys AS (");
     expect(normalizedSql).not.toContain(
       "SELECT * FROM {{ ref('activity_sensor_summary_rows') }} FINAL WHERE is_deleted = 0 )",
     );
