@@ -237,7 +237,7 @@ describe("ActivityDetailScreen", () => {
     expect(enabled).toBe(true);
   });
 
-  it("labels the heart rate zone chart with zone numbers", async () => {
+  it("labels the heart rate zone chart with zone names", async () => {
     mockHrZonesQuery.mockReturnValue({
       data: [
         { zone: 0, label: "Below Zone 1", minPct: 0, maxPct: 50, seconds: 150, percent: 14.3 },
@@ -250,10 +250,9 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("Zone 0")).toBeTruthy();
-    expect(screen.getByText("Zone 1")).toBeTruthy();
-    expect(screen.getByText("Zone 2")).toBeTruthy();
-    expect(screen.queryByText("Z1 Recovery")).toBeNull();
+    expect(screen.getByText("Below Zone 1")).toBeTruthy();
+    expect(screen.getByText("Zone 1 Recovery")).toBeTruthy();
+    expect(screen.getByText("Zone 2 Endurance")).toBeTruthy();
   });
 
   it("keeps zero-percent heart rate zone bars at zero width", async () => {
@@ -318,7 +317,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
 
-  it("labels the power zone chart with zone numbers", async () => {
+  it("labels the power zone chart with zone names", async () => {
     mockPowerZonesQuery.mockReturnValue({
       data: {
         ftp: 250,
@@ -333,9 +332,8 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("Zone 1")).toBeTruthy();
-    expect(screen.getByText("Zone 2")).toBeTruthy();
-    expect(screen.queryByText("Z1 Recovery")).toBeNull();
+    expect(screen.getByText("Zone 1 Recovery")).toBeTruthy();
+    expect(screen.getByText("Zone 2 Endurance")).toBeTruthy();
   });
 
   it("renders without crashing for non-cycling workouts with heart rate data but no power", async () => {

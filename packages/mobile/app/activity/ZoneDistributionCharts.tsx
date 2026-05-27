@@ -8,8 +8,14 @@ import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 
 interface ZoneDistributionDatum {
   zone: number;
+  label: string;
   seconds: number;
   percent: number;
+}
+
+function formatZoneAxisLabel(zoneItem: ZoneDistributionDatum) {
+  if (zoneItem.zone === 0) return zoneItem.label;
+  return `Zone ${zoneItem.zone} ${zoneItem.label}`;
 }
 
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
@@ -76,7 +82,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
 
   const barHeight = 22;
   const gap = 6;
-  const labelWidth = 64;
+  const labelWidth = 124;
   const pctWidth = 44;
   const barAreaWidth = ACTIVITY_CHART_WIDTH - labelWidth - pctWidth - 16;
   const chartTotalHeight = zones.length * (barHeight + gap) - gap;
@@ -98,7 +104,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
           return (
             <G key={zoneItem.zone}>
               <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
-                {`Zone ${zoneItem.zone}`}
+                {formatZoneAxisLabel(zoneItem)}
               </SvgText>
               <Rect
                 x={labelWidth}

@@ -46,6 +46,10 @@ describe("expandMuscleGroup", () => {
     expect(expandMuscleGroup("SHOULDERS")).toEqual(["deltoids"]);
   });
 
+  it("maps MIDDLE_BACK to upper-back body highlight slug", () => {
+    expect(expandMuscleGroup("MIDDLE_BACK")).toEqual(["upper-back"]);
+  });
+
   it("passes through fine-grained groups as lowercase slugs", () => {
     expect(expandMuscleGroup("CHEST")).toEqual(["chest"]);
     expect(expandMuscleGroup("BICEPS")).toEqual(["biceps"]);

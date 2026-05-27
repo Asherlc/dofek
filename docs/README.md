@@ -12,6 +12,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 - [schema.md](schema.md): canonical database model and storage philosophy.
 - [altitude-provenance.md](altitude-provenance.md): what current providers reveal about altitude source, correction, and confidence.
 - [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
+- [exercise-metadata.md](exercise-metadata.md): Free Exercise DB source file, Dofek exercise metadata overrides, and update workflow.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 
 ## Architecture And Product Flows
@@ -22,6 +23,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |
 | [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
+| [exercise-metadata.md](exercise-metadata.md) | Strength exercise metadata source, override format, and upstream refresh workflow. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
 | [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |

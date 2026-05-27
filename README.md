@@ -19,6 +19,7 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 - [deploy/README.md](deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
 - [docs/schema.md](docs/schema.md): canonical database model and storage rules.
 - [docs/adding-a-provider.md](docs/adding-a-provider.md): how to add or extend a provider.
+- [docs/exercise-metadata.md](docs/exercise-metadata.md): strength exercise muscle metadata source, overrides, and update workflow.
 - [docs/testing.md](docs/testing.md): testing patterns used across the repo.
 
 ## Architecture
@@ -165,6 +166,20 @@ cd packages/mobile && pnpm start
 pnpm storybook:web
 pnpm storybook:mobile
 ```
+
+### Exercise Metadata
+
+Strength exercise muscle metadata uses a minified copy of Free Exercise DB in `src/free-exercise-db.json`, plus local aliases/corrections from `src/exercise-metadata-overrides.json`.
+
+To pull upstream Free Exercise DB changes, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json \
+  | node -e 'let input = ""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => process.stdout.write(JSON.stringify(JSON.parse(input)) + "\n"));' \
+  > src/free-exercise-db.json
+```
+
+Keep `src/free-exercise-db.json` minified so upstream catalog refreshes do not blow past PR size limits. Add Dofek-specific name aliases or corrections to `src/exercise-metadata-overrides.json`, not the upstream copy. See [docs/exercise-metadata.md](docs/exercise-metadata.md) for the full workflow.
 
 Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/pr-<PR number>/index.html`. Closed PR previews are deleted by workflow, with R2 lifecycle rules as a fallback safety net. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
 

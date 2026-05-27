@@ -73,6 +73,7 @@
     "./personalization/storage": "./src/personalization/storage.ts",
     "./personalization/refit": "./src/personalization/refit.ts",
     "./sync-metrics": "./src/sync-metrics.ts",
+    "./exercise-metadata": "./src/exercise-metadata.ts",
     "./lib/cache": "./src/lib/cache.ts"
   },
   "scripts": {
