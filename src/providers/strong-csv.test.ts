@@ -619,7 +619,7 @@ describe("parseStrongTextDate", () => {
   });
 
   it("returns Invalid Date for unknown month names in the expected format", () => {
-    const date = parseStrongTextDate("Monday, Smarch 1, 2026 at 12:00");
+    const date = parseStrongTextDate("Monday, Summer 1, 2026 at 12:00");
     expect(Number.isNaN(date.getTime())).toBe(true);
   });
 });
