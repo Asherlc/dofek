@@ -142,8 +142,9 @@ describe("importStrongCsv", () => {
     ]);
 
     expect(sqlText(execute.mock.calls[0]?.[0])).toContain(
-      "SET muscle_groups = COALESCE(muscle_groups, ",
+      "SET muscle_groups = COALESCE(muscle_groups, ARRAY[",
     );
+    expect(sqlText(execute.mock.calls[0]?.[0])).toContain("]::text[]");
   });
 });
 
@@ -542,6 +543,7 @@ function sqlText(query: unknown): string {
   return query.queryChunks
     .map((chunk) => {
       if (typeof chunk === "string") return chunk;
+      if (hasQueryChunks(chunk)) return sqlText(chunk);
       if (!hasValue(chunk)) return "";
       return Array.isArray(chunk.value) ? chunk.value.join("") : "";
     })

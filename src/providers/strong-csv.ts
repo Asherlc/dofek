@@ -178,6 +178,13 @@ export function parseStrongCsv(csvText: string): StrongWorkoutGroup[] {
   return Array.from(groupMap.values());
 }
 
+function textArrayExpression(values: readonly string[]) {
+  return sql`ARRAY[${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )}]::text[]`;
+}
+
 // ============================================================
 // Single-workout text format parsing
 // ============================================================
@@ -437,9 +444,10 @@ export async function importStrongCsv(
           exerciseId = exerciseRows[0]?.id;
           if (exerciseId) {
             if (inferredMuscleGroups) {
+              const inferredMuscleGroupsExpression = textArrayExpression(inferredMuscleGroups);
               await db.execute(
                 sql`UPDATE fitness.exercise
-                    SET muscle_groups = COALESCE(muscle_groups, ${inferredMuscleGroups}),
+                    SET muscle_groups = COALESCE(muscle_groups, ${inferredMuscleGroupsExpression}),
                         exercise_type = COALESCE(exercise_type, 'STRENGTH')
                     WHERE id = ${exerciseId}`,
               );

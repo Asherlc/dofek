@@ -74,4 +74,8 @@ describe("lookupExerciseMuscleGroups", () => {
   it("returns null for unknown exercise names", () => {
     expect(lookupExerciseMuscleGroups("Custom Movement")).toBeNull();
   });
+
+  it("returns only primary muscles when the upstream exercise has no secondary muscles", () => {
+    expect(lookupExerciseMuscleGroups("3/4 Sit-Up")).toEqual(["ABDOMINALS"]);
+  });
 });

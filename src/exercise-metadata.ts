@@ -8,11 +8,11 @@ export interface ExerciseMuscleMapping {
 
 interface FreeExerciseDbExercise {
   name: string;
-  primaryMuscles?: string[];
-  secondaryMuscles?: string[];
+  primaryMuscles: string[];
+  secondaryMuscles: string[];
 }
 
-const MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE: Record<string, string> = {
+const MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE = {
   abdominals: "ABDOMINALS",
   abductors: "ABDUCTORS",
   adductors: "ADDUCTORS",
@@ -30,7 +30,9 @@ const MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE: Record<string, string> = {
   shoulders: "SHOULDERS",
   traps: "TRAPS",
   triceps: "TRICEPS",
-};
+} as const satisfies Record<string, string>;
+
+type FreeExerciseDbMuscle = keyof typeof MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE;
 
 export const EXERCISE_MUSCLE_GROUPS: Record<string, ExerciseMuscleMapping> =
   buildExerciseMuscleGroups(
@@ -67,12 +69,10 @@ function buildExerciseMuscleGroups(
 }
 
 function toExerciseMuscleMapping(exercise: FreeExerciseDbExercise): ExerciseMuscleMapping {
-  const primaryMuscleGroups = unique(
-    (exercise.primaryMuscles ?? []).map(normalizeFreeExerciseDbMuscle),
-  );
+  const primaryMuscleGroups = unique(exercise.primaryMuscles.map(normalizeFreeExerciseDbMuscle));
   const primaryMuscleGroupSet = new Set(primaryMuscleGroups);
   const secondaryMuscleGroups = unique(
-    (exercise.secondaryMuscles ?? []).map(normalizeFreeExerciseDbMuscle),
+    exercise.secondaryMuscles.map(normalizeFreeExerciseDbMuscle),
   ).filter((muscleGroup) => !primaryMuscleGroupSet.has(muscleGroup));
 
   return {
@@ -82,10 +82,14 @@ function toExerciseMuscleMapping(exercise: FreeExerciseDbExercise): ExerciseMusc
 }
 
 function normalizeFreeExerciseDbMuscle(muscleName: string): string {
-  return (
-    MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE[muscleName] ??
-    muscleName.toUpperCase().replace(/\s+/g, "_")
-  );
+  if (!isFreeExerciseDbMuscle(muscleName)) {
+    throw new Error(`Unsupported Free Exercise DB muscle: ${muscleName}`);
+  }
+  return MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE[muscleName];
+}
+
+function isFreeExerciseDbMuscle(muscleName: string): muscleName is FreeExerciseDbMuscle {
+  return muscleName in MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE;
 }
 
 function unique(values: string[]): string[] {
