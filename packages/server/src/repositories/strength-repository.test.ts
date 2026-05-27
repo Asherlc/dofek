@@ -445,6 +445,54 @@ describe("StrengthRepository", () => {
 
       expect(result[0]?.toDetail().muscleGroups).toEqual(["LATS", "UPPER_BACK", "BICEPS"]);
     });
+
+    it("treats empty stored muscle groups as missing metadata", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Bulgarian Split Squat",
+          equipment: null,
+          muscle_groups: [],
+          exercise_type: null,
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 24,
+          reps: 8,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+
+      const result = await repo.getExercisesForActivity("activity-1");
+
+      expect(result[0]?.toDetail().muscleGroups).toEqual(["QUADRICEPS", "GLUTES", "HAMSTRINGS"]);
+      expect(result[0]?.toDetail().exerciseType).toBe("STRENGTH");
+    });
+
+    it("does not infer strength type from empty stored muscle groups for unknown exercises", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Custom Movement",
+          equipment: null,
+          muscle_groups: [],
+          exercise_type: null,
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 24,
+          reps: 8,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+
+      const result = await repo.getExercisesForActivity("activity-1");
+
+      expect(result[0]?.toDetail().muscleGroups).toEqual([]);
+      expect(result[0]?.toDetail().exerciseType).toBeNull();
+    });
   });
 
   describe("getWorkoutSummaries", () => {

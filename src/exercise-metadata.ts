@@ -1,3 +1,4 @@
+import { z } from "zod";
 import exerciseMetadataOverrides from "./exercise-metadata-overrides.json" with { type: "json" };
 import freeExerciseDbExercises from "./free-exercise-db.json" with { type: "json" };
 
@@ -6,11 +7,27 @@ export interface ExerciseMuscleMapping {
   secondaryMuscleGroups?: string[];
 }
 
-interface FreeExerciseDbExercise {
-  name: string;
-  primaryMuscles: string[];
-  secondaryMuscles: string[];
-}
+const FREE_EXERCISE_DB_MUSCLES = [
+  "abdominals",
+  "abductors",
+  "adductors",
+  "biceps",
+  "calves",
+  "chest",
+  "forearms",
+  "glutes",
+  "hamstrings",
+  "lats",
+  "lower back",
+  "middle back",
+  "neck",
+  "quadriceps",
+  "shoulders",
+  "traps",
+  "triceps",
+] as const;
+
+type FreeExerciseDbMuscle = (typeof FREE_EXERCISE_DB_MUSCLES)[number];
 
 const MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE = {
   abdominals: "ABDOMINALS",
@@ -30,14 +47,27 @@ const MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE = {
   shoulders: "SHOULDERS",
   traps: "TRAPS",
   triceps: "TRICEPS",
-} as const satisfies Record<string, string>;
+} as const satisfies Record<FreeExerciseDbMuscle, string>;
 
-type FreeExerciseDbMuscle = keyof typeof MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE;
+const freeExerciseDbMuscleSchema = z.enum(FREE_EXERCISE_DB_MUSCLES);
+const freeExerciseDbExerciseSchema = z.object({
+  name: z.string(),
+  primaryMuscles: z.array(freeExerciseDbMuscleSchema),
+  secondaryMuscles: z.array(freeExerciseDbMuscleSchema),
+});
+const exerciseMuscleMappingSchema = z.object({
+  primaryMuscleGroups: z.array(z.string()),
+  secondaryMuscleGroups: z.array(z.string()).optional(),
+});
+const freeExerciseDbExercisesSchema = z.array(freeExerciseDbExerciseSchema);
+const exerciseMetadataOverridesSchema = z.record(z.string(), exerciseMuscleMappingSchema);
+
+type FreeExerciseDbExercise = z.infer<typeof freeExerciseDbExerciseSchema>;
 
 export const EXERCISE_MUSCLE_GROUPS: Record<string, ExerciseMuscleMapping> =
   buildExerciseMuscleGroups(
-    freeExerciseDbExercises satisfies FreeExerciseDbExercise[],
-    exerciseMetadataOverrides,
+    freeExerciseDbExercisesSchema.parse(freeExerciseDbExercises),
+    exerciseMetadataOverridesSchema.parse(exerciseMetadataOverrides),
   );
 
 export function lookupExerciseMuscleGroups(exerciseName: string): string[] | null {
@@ -81,15 +111,8 @@ function toExerciseMuscleMapping(exercise: FreeExerciseDbExercise): ExerciseMusc
   };
 }
 
-function normalizeFreeExerciseDbMuscle(muscleName: string): string {
-  if (!isFreeExerciseDbMuscle(muscleName)) {
-    throw new Error(`Unsupported Free Exercise DB muscle: ${muscleName}`);
-  }
+function normalizeFreeExerciseDbMuscle(muscleName: FreeExerciseDbMuscle): string {
   return MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE[muscleName];
-}
-
-function isFreeExerciseDbMuscle(muscleName: string): muscleName is FreeExerciseDbMuscle {
-  return muscleName in MUSCLE_GROUPS_BY_FREE_EXERCISE_DB_MUSCLE;
 }
 
 function unique(values: string[]): string[] {

@@ -530,7 +530,7 @@ function resolveExerciseMuscleGroups(
   exerciseName: string,
   storedMuscleGroups: string[] | null,
 ): string[] | null {
-  if (storedMuscleGroups && !isBroadBackOnly(storedMuscleGroups)) {
+  if (storedMuscleGroups && storedMuscleGroups.length > 0 && !isBroadBackOnly(storedMuscleGroups)) {
     return storedMuscleGroups;
   }
 
@@ -543,7 +543,8 @@ function resolveExerciseType(
   storedExerciseType: string | null,
 ): string | null {
   if (storedExerciseType) return storedExerciseType;
-  return resolveExerciseMuscleGroups(exerciseName, storedMuscleGroups) ? "STRENGTH" : null;
+  const resolvedMuscleGroups = resolveExerciseMuscleGroups(exerciseName, storedMuscleGroups);
+  return resolvedMuscleGroups && resolvedMuscleGroups.length > 0 ? "STRENGTH" : null;
 }
 
 function isBroadBackOnly(muscleGroups: string[]): boolean {
