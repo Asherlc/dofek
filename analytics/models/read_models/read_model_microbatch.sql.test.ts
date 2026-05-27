@@ -191,6 +191,9 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(normalizedSql).not.toContain("existing_activity_summary AS (");
     expect(normalizedSql).not.toContain("stale_activity_dirty_keys AS (");
+    expect(normalizedSql).not.toContain("ref('activity_sensor_summary_rows') }} FINAL");
+    expect(normalizedSql).not.toContain("ref('activity_location_summary_rows') }} FINAL");
+    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id");
     expect(normalizedSql).not.toContain(
       "SELECT * FROM {{ ref('activity_sensor_summary_rows') }} FINAL WHERE is_deleted = 0 )",
     );

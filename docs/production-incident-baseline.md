@@ -9012,7 +9012,9 @@ new incremental tables are populated.
   the worker hanging after starting `activity_summary_rows`; that model no
   longer builds an unbounded `existing_activity_summary AS SELECT * FROM this
   FINAL` stale-row CTE and instead uses changed raw activities plus bounded
-  dirty keys before reading existing summary rows.
+  dirty keys before reading existing summary rows. The remaining summary reads
+  also avoid `FINAL` and choose the latest `refresh_version` after filtering to
+  dirty `(user_id, activity_id)` keys.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.

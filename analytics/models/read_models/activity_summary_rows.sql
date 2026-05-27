@@ -89,7 +89,7 @@ sensor_summary_dirty_keys AS (
     SELECT DISTINCT
         activity_id,
         user_id
-    FROM {{ ref('activity_sensor_summary_rows') }} FINAL
+    FROM {{ ref('activity_sensor_summary_rows') }}
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
@@ -103,7 +103,7 @@ location_summary_dirty_keys AS (
     SELECT DISTINCT
         activity_id,
         user_id
-    FROM {{ ref('activity_location_summary_rows') }} FINAL
+    FROM {{ ref('activity_location_summary_rows') }}
     WHERE
         {% if is_incremental() %}
             NOT (SELECT is_empty FROM target_state)
@@ -163,13 +163,18 @@ existing_activity_summary_for_dirty_keys AS (
             name,
             started_at,
             ended_at
-        FROM {{ this }} FINAL
+        FROM {{ this }}
         WHERE (user_id, activity_id) IN (
             SELECT
                 user_id,
                 activity_id
             FROM active_dirty_keys
         )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
@@ -198,7 +203,7 @@ activity_bounds AS (
 
 sensor_summary AS (
     SELECT *
-    FROM {{ ref('activity_sensor_summary_rows') }} FINAL
+    FROM {{ ref('activity_sensor_summary_rows') }}
     WHERE is_deleted = 0
         AND (user_id, activity_id) IN (
             SELECT
@@ -206,11 +211,16 @@ sensor_summary AS (
                 activity_id
             FROM active_dirty_keys
         )
+    ORDER BY
+        user_id ASC,
+        activity_id ASC,
+        refresh_version DESC
+    LIMIT 1 BY user_id, activity_id
 ),
 
 location_summary AS (
     SELECT *
-    FROM {{ ref('activity_location_summary_rows') }} FINAL
+    FROM {{ ref('activity_location_summary_rows') }}
     WHERE is_deleted = 0
         AND (user_id, activity_id) IN (
             SELECT
@@ -218,6 +228,11 @@ location_summary AS (
                 activity_id
             FROM active_dirty_keys
         )
+    ORDER BY
+        user_id ASC,
+        activity_id ASC,
+        refresh_version DESC
+    LIMIT 1 BY user_id, activity_id
 )
 
 SELECT
