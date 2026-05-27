@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -124,6 +124,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       "Ultrahuman",
       "https://partner.ultrahuman.com/api/v1",
     );
+    vi.useFakeTimers({ now: new Date("2026-03-15T12:00:00Z"), toFake: ["Date"] });
   }, 60_000);
 
   afterEach(() => {
@@ -132,6 +133,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
   afterAll(async () => {
     server.close();
+    vi.useRealTimers();
     if (ctx) await ctx.cleanup();
   });
 
