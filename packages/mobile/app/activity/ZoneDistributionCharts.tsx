@@ -1,22 +1,15 @@
-import type { ActivityHrZone, ActivityPowerZone } from "@dofek/zones/zones";
-import { HEART_RATE_ZONE_COLORS, POWER_ZONE_COLORS } from "@dofek/zones/zones";
+import type { ActivityHrZone, ActivityPowerZone, ZoneDistributionDatum } from "@dofek/zones/zones";
+import {
+  createZoneDistributionRows,
+  HEART_RATE_ZONE_COLORS,
+  hasZoneDistributionData,
+  POWER_ZONE_COLORS,
+} from "@dofek/zones/zones";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { colors } from "../../theme";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
-
-interface ZoneDistributionDatum {
-  zone: number;
-  label: string;
-  seconds: number;
-  percent: number;
-}
-
-function formatZoneAxisLabel(zoneItem: ZoneDistributionDatum) {
-  if (zoneItem.zone === 0) return zoneItem.label;
-  return `Zone ${zoneItem.zone} ${zoneItem.label}`;
-}
 
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   zones,
@@ -65,7 +58,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
     );
   }
 
-  if (!zones.some((zoneItem) => zoneItem.percent > 0)) {
+  if (!hasZoneDistributionData(zones)) {
     return (
       <View style={zoneChartStyles.container}>
         <ChartTitleWithTooltip
@@ -82,10 +75,12 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
 
   const barHeight = 22;
   const gap = 6;
-  const labelWidth = 124;
+  const labelWidth = 148;
   const pctWidth = 44;
   const barAreaWidth = ACTIVITY_CHART_WIDTH - labelWidth - pctWidth - 16;
   const chartTotalHeight = zones.length * (barHeight + gap) - gap;
+  const rows = createZoneDistributionRows(zones, zoneColors, colors.textTertiary);
+  const labelX = labelWidth - 8;
 
   return (
     <View style={zoneChartStyles.container}>
@@ -95,17 +90,48 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
         textStyle={zoneChartStyles.title}
       />
       <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
-        {zones.map((zoneItem, zoneIndex) => {
+        {rows.map((row, rowIndex) => {
+          const zoneItem = row.zone;
           const rawBarWidth = (zoneItem.percent / 100) * barAreaWidth;
           const barWidth = zoneItem.percent > 0 ? Math.max(rawBarWidth, 2) : 0;
-          const rowY = zoneIndex * (barHeight + gap);
-          const zoneColor = zoneColors[zoneIndex] ?? "#71717a";
+          const rowY = rowIndex * (barHeight + gap);
 
           return (
-            <G key={zoneItem.zone}>
-              <SvgText x={0} y={rowY + barHeight / 2 + 4} fill={colors.textSecondary} fontSize={11}>
-                {formatZoneAxisLabel(zoneItem)}
-              </SvgText>
+            <G key={row.key}>
+              {row.subordinateLabel == null ? (
+                <SvgText
+                  x={labelX}
+                  y={rowY + barHeight / 2 + 4}
+                  fill={colors.textSecondary}
+                  fontSize={11}
+                  fontWeight="600"
+                  textAnchor="end"
+                >
+                  {row.primaryLabel}
+                </SvgText>
+              ) : (
+                <>
+                  <SvgText
+                    x={labelX}
+                    y={rowY + 9}
+                    fill={colors.textSecondary}
+                    fontSize={11}
+                    fontWeight="600"
+                    textAnchor="end"
+                  >
+                    {row.primaryLabel}
+                  </SvgText>
+                  <SvgText
+                    x={labelX}
+                    y={rowY + 20}
+                    fill={colors.textTertiary}
+                    fontSize={10}
+                    textAnchor="end"
+                  >
+                    {row.subordinateLabel}
+                  </SvgText>
+                </>
+              )}
               <Rect
                 x={labelWidth}
                 y={rowY}
@@ -120,7 +146,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
                 width={barWidth}
                 height={barHeight}
                 rx={4}
-                fill={zoneColor}
+                fill={row.color}
               />
               <SvgText
                 x={labelWidth + barAreaWidth + 8}
@@ -129,7 +155,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
                 fontSize={12}
                 fontWeight="600"
               >
-                {`${Math.round(zoneItem.percent)}%`}
+                {row.percentLabel}
               </SvgText>
             </G>
           );

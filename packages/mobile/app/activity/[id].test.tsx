@@ -129,7 +129,15 @@ vi.mock("@dofek/providers/providers", () => ({
 
 vi.mock("@dofek/scoring/colors", () => ({
   activityMetricColors: { heartRate: "red", power: "orange" },
-  statusColors: {},
+  chartColors: { teal: "#0ea5e9", purple: "#5E35B1" },
+  statusColors: {
+    positive: "#16a34a",
+    warning: "#ca8a04",
+    danger: "#dc2626",
+    info: "#2563eb",
+    elevated: "#ea580c",
+  },
+  textColors: { neutral: "#8aaa8a" },
 }));
 
 vi.mock("@dofek/training/muscle-groups", () => ({}));
@@ -139,10 +147,22 @@ vi.mock("@dofek/training/training", () => ({
   isCyclingActivity: (type: string) => type === "cycling",
 }));
 
-vi.mock("@dofek/zones/zones", () => ({
-  HEART_RATE_ZONE_COLORS: ["green", "lime", "yellow", "orange", "red"],
-  POWER_ZONE_COLORS: ["#0ea5e9", "#2563eb", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#5E35B1"],
-}));
+vi.mock("@dofek/zones/zones", async () => {
+  const actual = await vi.importActual<typeof import("@dofek/zones/zones")>("@dofek/zones/zones");
+  return {
+    ...actual,
+    HEART_RATE_ZONE_COLORS: ["green", "lime", "yellow", "orange", "red"],
+    POWER_ZONE_COLORS: [
+      "#0ea5e9",
+      "#2563eb",
+      "#16a34a",
+      "#ca8a04",
+      "#ea580c",
+      "#dc2626",
+      "#5E35B1",
+    ],
+  };
+});
 
 const mockByIdQuery = vi.fn();
 const mockStreamQuery = vi.fn();
@@ -251,8 +271,10 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByText("Below Zone 1")).toBeTruthy();
-    expect(screen.getByText("Zone 1 Recovery")).toBeTruthy();
-    expect(screen.getByText("Zone 2 Endurance")).toBeTruthy();
+    expect(screen.getByText("Zone 1")).toBeTruthy();
+    expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(screen.getByText("Zone 2")).toBeTruthy();
+    expect(screen.getByText("Endurance")).toBeTruthy();
   });
 
   it("keeps zero-percent heart rate zone bars at zero width", async () => {
@@ -332,8 +354,10 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("Zone 1 Recovery")).toBeTruthy();
-    expect(screen.getByText("Zone 2 Endurance")).toBeTruthy();
+    expect(screen.getByText("Zone 1")).toBeTruthy();
+    expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(screen.getByText("Zone 2")).toBeTruthy();
+    expect(screen.getByText("Endurance")).toBeTruthy();
   });
 
   it("renders without crashing for non-cycling workouts with heart rate data but no power", async () => {

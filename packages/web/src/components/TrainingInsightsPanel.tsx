@@ -10,7 +10,6 @@ import {
   formatActivityTypeLabel,
   OTHER_ACTIVITY_TYPE,
 } from "@dofek/training/training";
-import { HEART_RATE_ZONES } from "@dofek/zones/zones";
 import { z } from "zod";
 import {
   chartColors,
@@ -23,14 +22,7 @@ import {
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
-
-const ZONE_COLORS: Record<string, string> = Object.fromEntries(
-  HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, z.color]),
-);
-
-const ZONE_LABELS: Record<string, string> = Object.fromEntries(
-  HEART_RATE_ZONES.map((z) => [`zone${z.zone}`, `Z${z.zone} ${z.label}`]),
-);
+import { WeeklyHrZonesChart } from "./HeartRateZonesChart.tsx";
 
 // Activity type colors
 const ACTIVITY_COLORS: Record<string, string> = {
@@ -68,25 +60,6 @@ const hrZoneWeekSchema = z.object({
   zone5: z.number(),
 });
 type HrZoneWeek = z.infer<typeof hrZoneWeekSchema>;
-
-function hrZoneSeconds(week: HrZoneWeek, zone: number): number {
-  switch (zone) {
-    case 0:
-      return week.zone0;
-    case 1:
-      return week.zone1;
-    case 2:
-      return week.zone2;
-    case 3:
-      return week.zone3;
-    case 4:
-      return week.zone4;
-    case 5:
-      return week.zone5;
-    default:
-      return 0;
-  }
-}
 
 interface TrainingInsightsPanelProps {
   days: number;
@@ -130,7 +103,7 @@ export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
       {hasVolume && <WeeklyVolumeChart data={volumeRows} />}
       {hasZones && (
         <>
-          <HrZoneChart weeks={zoneWeeks} maxHr={zoneData?.maxHr ?? 0} />
+          <WeeklyHrZonesChart weeks={zoneWeeks} maxHr={zoneData?.maxHr ?? null} />
           <IntensityDonut weeks={zoneWeeks} />
         </>
       )}
@@ -201,81 +174,6 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium text-subtle">Weekly Training Volume</h3>
         <ChartDescriptionTooltip description="This chart shows how many training hours you completed each week, broken down by activity type." />
-      </div>
-      <DofekChart option={option} height={220} />
-    </div>
-  );
-}
-
-/** Stacked bar chart: HR zone distribution per week (percentage view) */
-function HrZoneChart({ weeks, maxHr }: { weeks: HrZoneWeek[]; maxHr: number }) {
-  // Convert seconds to percentages per week
-  const zoneKeys = HEART_RATE_ZONES.map((zone) => `zone${zone.zone}`);
-  const emptyZonePercentages = Object.fromEntries(zoneKeys.map((zoneKey) => [zoneKey, 0]));
-  const zonePcts = weeks.map((w) => {
-    const total = HEART_RATE_ZONES.reduce((sum, zone) => sum + hrZoneSeconds(w, zone.zone), 0);
-    if (total === 0) return emptyZonePercentages;
-    return Object.fromEntries(
-      HEART_RATE_ZONES.map((zone) => {
-        const zoneKey = `zone${zone.zone}`;
-        return [zoneKey, (hrZoneSeconds(w, zone.zone) / total) * 100];
-      }),
-    );
-  });
-
-  const series = HEART_RATE_ZONES.map((zoneDefinition) => ({
-    name: ZONE_LABELS[`zone${zoneDefinition.zone}`],
-    type: "bar" as const,
-    stack: "zones",
-    data: weeks.map((w, i) => [
-      w.week,
-      Math.round((zonePcts[i]?.[`zone${zoneDefinition.zone}`] ?? 0) * 10) / 10,
-    ]),
-    itemStyle: { color: ZONE_COLORS[`zone${zoneDefinition.zone}`] },
-    emphasis: { focus: "series" as const },
-  }));
-
-  const option = {
-    grid: dofekGrid("single", { top: 30, bottom: 40 }),
-    tooltip: dofekTooltip({
-      formatter: (
-        params: Array<{
-          seriesName: string;
-          value: [string, number];
-          color: string;
-          dataIndex: number;
-        }>,
-      ) => {
-        if (!params.length) return "";
-        const firstParam = params[0];
-        if (!firstParam) return "";
-        const idx = firstParam.dataIndex;
-        const raw = weeks[idx];
-        if (!raw) return "";
-        const dateLabel = formatDateMedium(raw.week);
-        const lines = params
-          .filter((p) => p.value[1] > 0)
-          .map((p) => {
-            const zoneDefinition = HEART_RATE_ZONES[params.indexOf(p)];
-            const secs = zoneDefinition ? hrZoneSeconds(raw, zoneDefinition.zone) : 0;
-            return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${formatIntensity(p.value[1])} (${formatDurationSeconds(secs)})`;
-          });
-        return `<strong>${dateLabel}</strong><br/>${lines.join("<br/>")}`;
-      },
-    }),
-    xAxis: dofekAxis.time(),
-    yAxis: dofekAxis.value({ name: "%", max: 100 }),
-    legend: dofekLegend(true),
-    series,
-  };
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-xs font-medium text-subtle">
-          HR Zone Distribution <span className="text-dim">(max HR: {maxHr} bpm)</span>
-        </h3>
-        <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
       </div>
       <DofekChart option={option} height={220} />
     </div>
