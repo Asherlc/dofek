@@ -82,6 +82,7 @@ const baselineRowSchema = z.object({
 export interface WeekListInput {
   weeks: number;
   endDate: string;
+  activityType?: string;
 }
 
 /** Per-activity calendar data (location for outdoor, calories + TSS otherwise). */
@@ -156,6 +157,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of activityRows) {
+      if (input.activityType && row.activity_type !== input.activityType) {
+        continue;
+      }
+
       const calories = caloriesByActivityId.get(row.id) ?? null;
       const tss = computeActivityTss({
         durationMin: row.duration_min,

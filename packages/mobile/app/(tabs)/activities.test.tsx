@@ -11,6 +11,21 @@ interface MockQuery {
 }
 
 let mockQuery: MockQuery;
+let mockOverviewQuery: {
+  data:
+    | {
+        activityCount: number;
+        totalMinutes: number;
+        totalDistanceMeters: number;
+        totalElevationGainM: number;
+        activityTypes: string[];
+      }
+    | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+};
+let weekListInput: unknown;
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -20,7 +35,13 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: () => mockQuery,
+        useQuery: (input: unknown) => {
+          weekListInput = input;
+          return mockQuery;
+        },
+      },
+      activityOverview: {
+        useQuery: () => mockOverviewQuery,
       },
     },
   },
@@ -28,8 +49,10 @@ vi.mock("../../lib/trpc", () => ({
 
 vi.mock("../../lib/units", () => ({
   useUnitConverter: () => ({
-    formatDistance: (km: number) => `${km.toFixed(1)} km`,
-    formatElevation: (meters: number) => `${meters} m`,
+    formatDistance: (km: number) => ({ text: `${km.toFixed(1)} km`, parts: [] }),
+    formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
+    convertDistance: (km: number) => km,
+    distanceLabel: "km",
   }),
 }));
 
@@ -61,6 +84,19 @@ function activity(overrides: Record<string, unknown> = {}) {
 describe("ActivitiesScreen", () => {
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
+    mockOverviewQuery = {
+      data: {
+        activityCount: 0,
+        totalMinutes: 0,
+        totalDistanceMeters: 0,
+        totalElevationGainM: 0,
+        activityTypes: [],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    weekListInput = undefined;
   });
 
   it("renders server-provided stat labels and values", () => {
@@ -76,6 +112,52 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
+  });
+
+  it("renders server-provided overview totals", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 12,
+        totalMinutes: 615,
+        totalDistanceMeters: 42300,
+        totalElevationGainM: 520,
+        activityTypes: ["running", "cycling"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("12")).toBeDefined();
+    expect(screen.getByText("10h 15m")).toBeDefined();
+    expect(screen.getByText("42.3 km")).toBeDefined();
+    expect(screen.getByText("520 m")).toBeDefined();
+  });
+
+  it("passes selected activity type to the activity list query", () => {
+    mockOverviewQuery = {
+      data: {
+        activityCount: 1,
+        totalMinutes: 60,
+        totalDistanceMeters: 5000,
+        totalElevationGainM: 120,
+        activityTypes: ["running"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByText("Running"));
+
+    expect(weekListInput).toEqual({
+      weeks: 4,
+      endDate: expect.any(String),
+      activityType: "running",
+    });
   });
 
   it("replaces failed map tiles with a fallback", () => {
