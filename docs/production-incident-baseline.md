@@ -9005,7 +9005,10 @@ new incremental tables are populated.
   pinned the host while the analytics service was paused, which identified the
   deploy `migrate` entrypoint as another full `dbt build` caller. The deploy
   migration path now runs Postgres migrations only; scheduled analytics refresh
-  is owned by `analytics-worker`.
+  is owned by `analytics-worker`. The remaining expensive read-model path was
+  `activity_vo2max_estimate`, which still joined directly to `deduped_sensor`
+  by activity time windows; it now reads the bounded `activity_sensor_sample`
+  intermediary by `(user_id, activity_id)`.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.

@@ -192,4 +192,15 @@ describe("production analytics read-model build", () => {
       "SELECT * FROM {{ ref('activity_sensor_summary_rows') }} FINAL WHERE is_deleted = 0 )",
     );
   });
+
+  it("estimates activity VO2 max from bounded activity sensor membership", () => {
+    const sql = readModel("activity_vo2max_estimate");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+    expect(normalizedSql).not.toContain("INNER JOIN {{ ref('deduped_sensor') }}");
+    expect(normalizedSql).toContain("samples.activity_id = activity_bounds.activity_id");
+    expect(normalizedSql).toContain("samples.user_id = activity_bounds.user_id");
+  });
 });
