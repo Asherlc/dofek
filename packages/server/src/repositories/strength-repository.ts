@@ -1,7 +1,7 @@
-import type { Database } from "dofek/db";
-import { lookupExerciseMuscleGroups } from "dofek/exercise-metadata";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Database } from "../../../../src/db/index.ts";
+import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
