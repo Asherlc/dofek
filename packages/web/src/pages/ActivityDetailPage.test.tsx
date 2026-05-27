@@ -444,7 +444,7 @@ describe("ActivityDetailPage", () => {
       mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
     });
 
-    it("labels the heart rate zone axis with zone numbers", async () => {
+    it("labels the heart rate zone axis with zone names", async () => {
       mockHrZonesUseQuery.mockReturnValue({
         data: [
           { zone: 0, label: "Below Zone 1", minPct: 0, maxPct: 50, seconds: 150, percent: 14.3 },
@@ -459,12 +459,15 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const heartRateZoneOption =
-        findOptionByYAxisDataLabel("Z1 Recovery") ?? findOptionByYAxisDataLabel("Zone 1");
+      const heartRateZoneOption = findOptionByYAxisDataLabel("Zone 1 Recovery");
       if (!heartRateZoneOption) {
         throw new Error("Heart rate zone chart option was not captured");
       }
-      expect(getCategoryAxisData(heartRateZoneOption)).toEqual(["Zone 0", "Zone 1", "Zone 2"]);
+      expect(getCategoryAxisData(heartRateZoneOption)).toEqual([
+        "Below Zone 1",
+        "Zone 1 Recovery",
+        "Zone 2 Endurance",
+      ]);
 
       mockHrZonesUseQuery.mockReturnValue({
         data: [],
@@ -519,7 +522,7 @@ describe("ActivityDetailPage", () => {
       mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
     });
 
-    it("labels the power zone axis with zone numbers", async () => {
+    it("labels the power zone axis with zone names", async () => {
       const originalActivity = { ...mockActivity };
       const originalStream = [...mockStreamPoints];
 
@@ -543,12 +546,11 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const powerZoneOption =
-        findOptionByYAxisDataLabel("Z1 Recovery") ?? findOptionByYAxisDataLabel("Zone 1");
+      const powerZoneOption = findOptionByYAxisDataLabel("Zone 1 Recovery");
       if (!powerZoneOption) {
         throw new Error("Power zone chart option was not captured");
       }
-      expect(getCategoryAxisData(powerZoneOption)).toEqual(["Zone 1", "Zone 2"]);
+      expect(getCategoryAxisData(powerZoneOption)).toEqual(["Zone 1 Recovery", "Zone 2 Endurance"]);
 
       Object.assign(mockActivity, originalActivity);
       mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);

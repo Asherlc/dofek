@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  importStrongCsv,
   isStrongCsvFormat,
   parseDurationString,
   parseOptionalFloat,
@@ -9,6 +10,10 @@ import {
   parseStrongText,
   parseStrongTextDate,
 } from "./strong-csv.ts";
+
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("parseStrongExerciseName", () => {
   it("splits name and equipment from parens", () => {
@@ -83,6 +88,62 @@ describe("parseDurationString", () => {
   it("parses HH:MM:SS format", () => {
     expect(parseDurationString("01:03:00")).toBe(3780);
     expect(parseDurationString("00:45:00")).toBe(2700);
+  });
+});
+
+describe("importStrongCsv", () => {
+  it("fills inferred muscle groups without overwriting existing exercise metadata", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const insert = vi
+      .fn()
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        }),
+      })
+      .mockReturnValueOnce({
+        values: vi.fn().mockResolvedValue(undefined),
+      });
+    const db = {
+      execute,
+      insert,
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+          }),
+        }),
+      }),
+    };
+
+    await Reflect.apply(importStrongCsv, undefined, [
+      db,
+      [
+        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE",
+        '2024-11-02 10:00:00,"Leg Day","30m","Bulgarian Split Squat",1,24,8,,,,',
+      ].join("\n"),
+      "user-1",
+      "kg",
+    ]);
+
+    expect(sqlText(execute.mock.calls[0]?.[0])).toContain(
+      "SET muscle_groups = COALESCE(muscle_groups, ",
+    );
   });
 });
 
@@ -475,6 +536,30 @@ describe("isStrongCsvFormat", () => {
     expect(isStrongCsvFormat("")).toBe(false);
   });
 });
+
+function sqlText(query: unknown): string {
+  if (!hasQueryChunks(query)) return "";
+  return query.queryChunks
+    .map((chunk) => {
+      if (typeof chunk === "string") return chunk;
+      if (!hasValue(chunk)) return "";
+      return Array.isArray(chunk.value) ? chunk.value.join("") : "";
+    })
+    .join("");
+}
+
+function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
+  return (
+    query !== null &&
+    typeof query === "object" &&
+    "queryChunks" in query &&
+    Array.isArray(query.queryChunks)
+  );
+}
+
+function hasValue(chunk: unknown): chunk is { value: unknown } {
+  return chunk !== null && typeof chunk === "object" && "value" in chunk;
+}
 
 // ============================================================
 // parseStrongTextDate

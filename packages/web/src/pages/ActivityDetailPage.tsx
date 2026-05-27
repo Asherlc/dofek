@@ -735,6 +735,11 @@ function formatZoneChartTime(secondsValue: number) {
   return formatDurationSeconds(secondsValue);
 }
 
+function formatZoneAxisLabel(zoneItem: ZoneDistributionDatum) {
+  if (zoneItem.zone === 0) return zoneItem.label;
+  return `Zone ${zoneItem.zone} ${zoneItem.label}`;
+}
+
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   zones,
   loading,
@@ -771,7 +776,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   }
 
   const option = {
-    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 70 }),
+    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 130 }),
     tooltip: dofekTooltip({
       axisPointer: { type: "shadow" },
       formatter: (params: Array<{ value: number; dataIndex: number }>) => {
@@ -787,7 +792,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
       axisLabel: { formatter: (value: number) => formatZoneChartTime(value) },
     }),
     yAxis: dofekAxis.category({
-      data: zones.map((zoneItem) => `Zone ${zoneItem.zone}`),
+      data: zones.map(formatZoneAxisLabel),
     }),
     series: [
       {

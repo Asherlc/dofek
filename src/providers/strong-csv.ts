@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { activity, exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -409,11 +410,19 @@ export async function importStrongCsv(
       for (const csvRow of group.sets) {
         const { exerciseName, equipment } = parseStrongExerciseName(csvRow.exerciseName);
         const cacheKey = `${exerciseName}|${equipment ?? ""}`;
+        const inferredMuscleGroups = lookupExerciseMuscleGroups(exerciseName);
+        const exerciseValues: typeof exercise.$inferInsert = {
+          name: exerciseName,
+          equipment,
+          ...(inferredMuscleGroups
+            ? { muscleGroups: inferredMuscleGroups, exerciseType: "STRENGTH" }
+            : {}),
+        };
 
         let exerciseId = exerciseCache.get(cacheKey);
         if (!exerciseId) {
           // Upsert exercise
-          await db.insert(exercise).values({ name: exerciseName, equipment }).onConflictDoNothing();
+          await db.insert(exercise).values(exerciseValues).onConflictDoNothing();
 
           const whereClause = equipment
             ? and(eq(exercise.name, exerciseName), eq(exercise.equipment, equipment))
@@ -427,6 +436,15 @@ export async function importStrongCsv(
 
           exerciseId = exerciseRows[0]?.id;
           if (exerciseId) {
+            if (inferredMuscleGroups) {
+              await db.execute(
+                sql`UPDATE fitness.exercise
+                    SET muscle_groups = COALESCE(muscle_groups, ${inferredMuscleGroups}),
+                        exercise_type = COALESCE(exercise_type, 'STRENGTH')
+                    WHERE id = ${exerciseId}`,
+              );
+            }
+
             exerciseCache.set(cacheKey, exerciseId);
 
             // Upsert alias

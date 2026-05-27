@@ -398,6 +398,53 @@ describe("StrengthRepository", () => {
       expect(result[1]?.toDetail().sets).toHaveLength(1);
       expect(result[1]?.toDetail().sets[0]?.durationSeconds).toBe(60);
     });
+
+    it("uses exercise metadata when stored muscle groups are missing", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Bulgarian Split Squat",
+          equipment: null,
+          muscle_groups: null,
+          exercise_type: null,
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: 24,
+          reps: 8,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+
+      const result = await repo.getExercisesForActivity("activity-1");
+
+      expect(result[0]?.toDetail().muscleGroups).toEqual(["QUADRICEPS", "GLUTES", "HAMSTRINGS"]);
+      expect(result[0]?.toDetail().exerciseType).toBe("STRENGTH");
+    });
+
+    it("uses exercise metadata when stored muscle groups are only broad back", async () => {
+      const { repo } = makeRepository([
+        {
+          exercise_name: "Pull Up",
+          equipment: null,
+          muscle_groups: ["BACK"],
+          exercise_type: "STRENGTH",
+          exercise_index: 0,
+          set_index: 0,
+          set_type: "working",
+          weight_kg: null,
+          reps: 8,
+          duration_seconds: null,
+          rpe: null,
+          notes: null,
+        },
+      ]);
+
+      const result = await repo.getExercisesForActivity("activity-1");
+
+      expect(result[0]?.toDetail().muscleGroups).toEqual(["LATS", "UPPER_BACK", "BICEPS"]);
+    });
   });
 
   describe("getWorkoutSummaries", () => {

@@ -1,4 +1,5 @@
 import type { Database } from "dofek/db";
+import { lookupExerciseMuscleGroups } from "dofek/exercise-metadata";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
@@ -455,8 +456,12 @@ export class StrengthRepository {
         exercise = {
           name: row.exercise_name,
           equipment: row.equipment,
-          muscleGroups: row.muscle_groups,
-          exerciseType: row.exercise_type,
+          muscleGroups: resolveExerciseMuscleGroups(row.exercise_name, row.muscle_groups),
+          exerciseType: resolveExerciseType(
+            row.exercise_name,
+            row.muscle_groups,
+            row.exercise_type,
+          ),
           sets: [],
         };
         exerciseMap.set(row.exercise_index, exercise);
@@ -519,6 +524,30 @@ export class StrengthRepository {
         }),
     );
   }
+}
+
+function resolveExerciseMuscleGroups(
+  exerciseName: string,
+  storedMuscleGroups: string[] | null,
+): string[] | null {
+  if (storedMuscleGroups && !isBroadBackOnly(storedMuscleGroups)) {
+    return storedMuscleGroups;
+  }
+
+  return lookupExerciseMuscleGroups(exerciseName) ?? storedMuscleGroups;
+}
+
+function resolveExerciseType(
+  exerciseName: string,
+  storedMuscleGroups: string[] | null,
+  storedExerciseType: string | null,
+): string | null {
+  if (storedExerciseType) return storedExerciseType;
+  return resolveExerciseMuscleGroups(exerciseName, storedMuscleGroups) ? "STRENGTH" : null;
+}
+
+function isBroadBackOnly(muscleGroups: string[]): boolean {
+  return muscleGroups.length === 1 && muscleGroups[0] === "BACK";
 }
 
 // ---------------------------------------------------------------------------

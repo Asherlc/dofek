@@ -63,6 +63,12 @@
       "assist": { "enabled": false }
     },
     {
+      "includes": ["src/free-exercise-db.json"],
+      "linter": { "enabled": false },
+      "formatter": { "enabled": false },
+      "assist": { "enabled": false }
+    },
+    {
       "includes": [
         "scripts/**",
         "packages/mobile/lib/telemetry.ts",
