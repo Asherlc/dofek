@@ -31,7 +31,8 @@ current_activity AS (
         name,
         started_at,
         ended_at
-    FROM {{ source('analytics', 'v_activity') }}
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    WHERE _peerdb_is_deleted = 0
 ),
 
 initial_activity_dirty_keys AS (

@@ -193,6 +193,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_summary_rows')");
     expect(sql).toContain("(user_id, activity_id) IN");
     expect(sql).toContain("changed_activity_dirty_keys");
+    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample')");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
