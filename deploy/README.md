@@ -174,7 +174,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=false <stack>` — swarm performs a single stack-wide update, including `training-export-worker`, and CI waits for the rollout to converge before continuing. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update, including `training-export-worker`, and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
 
