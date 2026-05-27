@@ -91,6 +91,13 @@ export const Loading: Story = {
   },
 };
 
+export const StrainTargetLoading: Story = {
+  args: {
+    strainTarget: undefined,
+    strainTargetLoading: true,
+  },
+};
+
 export const NoData: Story = {
   args: {
     readiness: [],
