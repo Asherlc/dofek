@@ -164,6 +164,8 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
+    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample') }} AS sensor_samples FINAL");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
@@ -177,6 +179,8 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('activity_location_sample')");
     expect(sql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
+    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample') }} AS location_samples FINAL");
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");

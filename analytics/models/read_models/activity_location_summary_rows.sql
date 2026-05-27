@@ -28,7 +28,8 @@ current_activity AS (
         id AS activity_id,
         user_id,
         started_at
-    FROM {{ source('analytics', 'v_activity') }}
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    WHERE _peerdb_is_deleted = 0
 ),
 
 existing_summary AS (
