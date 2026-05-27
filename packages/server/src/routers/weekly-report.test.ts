@@ -596,7 +596,7 @@ describe("weeklyReportRouter", () => {
       expect(queryText).toContain("sumIf(load, load IS NOT NULL) AS load");
     });
 
-    it("ignores ClickHouse join-default zeros when averaging weekly vitals", async () => {
+    it("ignores ClickHouse join-default zeros when averaging weekly sleep and vitals", async () => {
       const sensorStore = makeMockSensorStore([]);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -608,6 +608,7 @@ describe("weeklyReportRouter", () => {
       await caller.report({ weeks: 1, endDate: "2026-05-26" });
 
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
+      expect(queryText).toContain("avg(nullIf(sl.duration_minutes, 0)) AS avg_sleep_min");
       expect(queryText).toContain("avg(nullIf(m.resting_hr, 0)) AS avg_resting_hr");
       expect(queryText).toContain("avg(nullIf(m.hrv, 0)) AS avg_hrv");
     });

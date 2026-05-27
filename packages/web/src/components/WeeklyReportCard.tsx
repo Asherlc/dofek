@@ -61,7 +61,7 @@ export function WeeklyReportCard({ data, loading }: WeeklyReportCardProps) {
           prevValue={prevWeek ? formatDurationMinutes(prevWeek.trainingHours * 60) : undefined}
         />
         <StatBlock
-          label="Sleep"
+          label="Avg nightly sleep"
           value={sleepWasTracked ? formatDurationMinutes(current.avgSleepMinutes) : "Not tracked"}
           sub={
             sleepWasTracked ? (

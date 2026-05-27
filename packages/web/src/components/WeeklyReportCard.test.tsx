@@ -54,4 +54,28 @@ describe("WeeklyReportCard", () => {
     expect(screen.getByText("No training")).toBeTruthy();
     expect(screen.queryByText("Optimal")).toBeNull();
   });
+
+  it("labels weekly sleep as an average nightly value", () => {
+    render(
+      <WeeklyReportCard
+        data={{
+          current: {
+            weekStart: "2026-05-24",
+            trainingHours: 4,
+            activityCount: 2,
+            strainZone: "optimal",
+            avgDailyLoad: 3,
+            avgSleepMinutes: 459,
+            sleepPerformancePct: 105,
+            avgReadiness: 0,
+            avgRestingHr: 58,
+            avgHrv: 52,
+          },
+          history: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Avg nightly sleep")).toBeTruthy();
+  });
 });
