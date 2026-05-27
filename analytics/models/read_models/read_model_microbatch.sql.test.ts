@@ -68,6 +68,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
     expect(sql).toContain("bounded_activity_graph()");
@@ -81,6 +82,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("lookback=3");
     expect(sql).toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
     expect(sql).toContain("bounded_activity_graph()");

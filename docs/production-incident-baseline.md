@@ -8997,7 +8997,11 @@ new incremental tables are populated.
   deploy-time failure mode: the analytics worker inherited Swarm's
   `start-first` update policy, briefly running overlapping analytics-worker
   tasks during rollout. On the staging host this again saturated CPU and memory
-  before the deploy could complete.
+  before the deploy could complete. After preventing overlap, the worker still
+  saturated the host during the activity microbatch phase, so the activity
+  sensor and location microbatch lookbacks were reduced from 7 days to 3 days,
+  matching the deduped scalar sensor lookback and cutting the repeated
+  deploy-time activity batch count in half.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.

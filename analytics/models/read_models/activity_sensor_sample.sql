@@ -5,7 +5,7 @@
     event_time='recorded_at',
     begin='2026-01-01',
     batch_size='day',
-    lookback=7,
+    lookback=3,
     full_refresh=false,
     concurrent_batches=false,
     engine='ReplacingMergeTree(refresh_version)',
