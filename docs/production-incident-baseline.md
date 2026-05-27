@@ -8993,7 +8993,11 @@ new incremental tables are populated.
   lookback microbatch intermediaries were rewriting recent rows with
   `refreshed_at = now64(9)`, which made downstream summary models treat the
   whole lookback window as dirty every cycle even when source data had not
-  changed.
+  changed. A follow-up deploy of the source-freshness patch exposed another
+  deploy-time failure mode: the analytics worker inherited Swarm's
+  `start-first` update policy, briefly running overlapping analytics-worker
+  tasks during rollout. On the staging host this again saturated CPU and memory
+  before the deploy could complete.
 - Remaining Risk: Medium until the optimized query shape is deployed and the
   scheduled staging analytics worker completes repeated full cycles without
   SSH banner delays or ClickHouse restarts.
