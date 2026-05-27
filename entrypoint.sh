@@ -43,6 +43,12 @@ case "${1:-sync}" in
     interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
     retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
     startup_delay_seconds="${ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120}"
+    case "$startup_delay_seconds" in
+      '' | *[!0-9]*)
+        echo "analytics-worker: ANALYTICS_BUILD_STARTUP_DELAY_SECONDS must be a non-negative integer, got '$startup_delay_seconds'" >&2
+        exit 1
+        ;;
+    esac
     if [ "$startup_delay_seconds" -gt 0 ]; then
       echo "analytics-worker: waiting ${startup_delay_seconds}s before first dbt build"
       sleep "$startup_delay_seconds"

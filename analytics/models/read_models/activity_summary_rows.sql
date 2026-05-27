@@ -204,36 +204,42 @@ activity_bounds AS (
 
 sensor_summary AS (
     SELECT *
-    FROM {{ ref('activity_sensor_summary_rows') }}
-    WHERE is_deleted = 0
-        AND (user_id, activity_id) IN (
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_sensor_summary_rows') }}
+        WHERE (user_id, activity_id) IN (
             SELECT
                 user_id,
                 activity_id
             FROM active_dirty_keys
         )
-    ORDER BY
-        user_id ASC,
-        activity_id ASC,
-        refresh_version DESC
-    LIMIT 1 BY user_id, activity_id
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id
+    )
+    WHERE is_deleted = 0
 ),
 
 location_summary AS (
     SELECT *
-    FROM {{ ref('activity_location_summary_rows') }}
-    WHERE is_deleted = 0
-        AND (user_id, activity_id) IN (
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_location_summary_rows') }}
+        WHERE (user_id, activity_id) IN (
             SELECT
                 user_id,
                 activity_id
             FROM active_dirty_keys
         )
-    ORDER BY
-        user_id ASC,
-        activity_id ASC,
-        refresh_version DESC
-    LIMIT 1 BY user_id, activity_id
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id
+    )
+    WHERE is_deleted = 0
 )
 
 SELECT
