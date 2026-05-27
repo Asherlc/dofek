@@ -4,6 +4,7 @@ import {
   formatIntensity,
   formatNumber,
 } from "@dofek/format/format";
+import { formatMeasurementText } from "@dofek/format/units";
 import type { ActivityHrZone, ActivityPowerZone, ZoneDistributionDatum } from "@dofek/zones/zones";
 import {
   createZoneDistributionRows,
@@ -21,6 +22,7 @@ import {
   dofekLegend,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -223,6 +225,9 @@ export function WeeklyHrZonesChart({
   weeks: HeartRateZoneWeek[];
   maxHr: number | null;
 }) {
+  const units = useUnitConverter();
+  const maxHeartRateLabel =
+    maxHr == null ? null : formatMeasurementText(units.formatHeartRate(maxHr));
   const zoneKeys = HEART_RATE_ZONES.map((zoneDefinition) => `zone${zoneDefinition.zone}`);
   const emptyZonePercentages = Object.fromEntries(zoneKeys.map((zoneKey) => [zoneKey, 0]));
   const zonePercentages = weeks.map((week) => {
@@ -309,7 +314,9 @@ export function WeeklyHrZonesChart({
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium text-subtle">
           Heart Rate Zone Distribution{" "}
-          {maxHr == null ? null : <span className="text-dim">(max heart rate: {maxHr} bpm)</span>}
+          {maxHeartRateLabel == null ? null : (
+            <span className="text-dim">(max heart rate: {maxHeartRateLabel})</span>
+          )}
         </h3>
         <ChartDescriptionTooltip description="This chart shows the percentage of weekly training time spent in each heart rate zone." />
       </div>

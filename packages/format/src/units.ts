@@ -189,6 +189,10 @@ export class UnitConverter {
     );
   }
 
+  formatHeartRate(beatsPerMinute: NullableNumber): FormattedMeasurement {
+    return formatUnitMeasurement(beatsPerMinute, 0, "beat-per-minute", "bpm");
+  }
+
   formatHeight(cm: NullableNumber): FormattedMeasurement {
     return formatUnitMeasurement(
       cm == null || !Number.isFinite(cm) ? cm : this.convertHeight(cm),

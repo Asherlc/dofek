@@ -170,6 +170,11 @@ describe("format functions", () => {
     expect(formatMeasurementText(imperial.formatSpeed(5.5))).toBe("3.4 mph");
   });
 
+  it("formats heart rate with beats per minute", () => {
+    expect(formatMeasurementText(metric.formatHeartRate(172))).toBe("172 bpm");
+    expect(formatMeasurementText(imperial.formatHeartRate(172))).toBe("172 bpm");
+  });
+
   it("formats height with 1 decimal", () => {
     expect(formatMeasurementText(metric.formatHeight(170))).toBe("170.0 cm");
     expect(formatMeasurementText(imperial.formatHeight(170))).toBe("66.9 in");

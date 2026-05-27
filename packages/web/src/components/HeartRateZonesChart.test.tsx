@@ -87,6 +87,7 @@ describe("HeartRateZonesChart", () => {
     );
 
     expect(screen.getByText(/Heart Rate Zone Distribution/)).toBeDefined();
+    expect(screen.getByText("(max heart rate: 190 bpm)")).toBeDefined();
     const option = capturedOptions[0];
     expect(option).toBeDefined();
     if (!option) throw new Error("Expected chart option");
