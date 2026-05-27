@@ -129,6 +129,7 @@ stale_activity_dirty_keys AS (
     FROM existing_activity_summary
     LEFT JOIN current_activity
         ON current_activity.activity_id = existing_activity_summary.activity_id
+        AND current_activity.user_id = existing_activity_summary.user_id
     WHERE current_activity.activity_id IS null
 ),
 
@@ -164,6 +165,26 @@ dirty_keys AS (
     )
 ),
 
+active_dirty_keys AS (
+    SELECT
+        assumeNotNull(activity_id) AS activity_id,
+        assumeNotNull(user_id) AS user_id
+    FROM dirty_keys
+    WHERE activity_id IS NOT null
+        AND user_id IS NOT null
+),
+
+existing_activity_summary_for_dirty_keys AS (
+    SELECT existing_activity_summary.*
+    FROM existing_activity_summary
+    WHERE (existing_activity_summary.user_id, existing_activity_summary.activity_id) IN (
+        SELECT
+            user_id,
+            activity_id
+        FROM active_dirty_keys
+    )
+),
+
 activity_bounds AS (
     SELECT
         current_activity.activity_id AS activity_id,
@@ -175,37 +196,50 @@ activity_bounds AS (
     FROM current_activity
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = current_activity.activity_id
+        AND dirty_keys.user_id = current_activity.user_id
 ),
 
 sensor_summary AS (
     SELECT *
     FROM {{ ref('activity_sensor_summary_rows') }} FINAL
     WHERE is_deleted = 0
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
 ),
 
 location_summary AS (
     SELECT *
     FROM {{ ref('activity_location_summary_rows') }} FINAL
     WHERE is_deleted = 0
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
 )
 
 SELECT
     assumeNotNull(dirty_keys.activity_id) AS activity_id,
     assumeNotNull(dirty_keys.user_id) AS user_id,
     CAST(
-        coalesce(activity_bounds.activity_type, existing_activity_summary.activity_type),
+        coalesce(activity_bounds.activity_type, existing_activity_summary_for_dirty_keys.activity_type),
         'Nullable(String)'
     ) AS activity_type,
     CAST(
-        coalesce(activity_bounds.name, existing_activity_summary.name),
+        coalesce(activity_bounds.name, existing_activity_summary_for_dirty_keys.name),
         'Nullable(String)'
     ) AS name,
     CAST(
-        coalesce(activity_bounds.started_at, existing_activity_summary.started_at),
+        coalesce(activity_bounds.started_at, existing_activity_summary_for_dirty_keys.started_at),
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS started_at,
     CAST(
-        coalesce(activity_bounds.ended_at, existing_activity_summary.ended_at),
+        coalesce(activity_bounds.ended_at, existing_activity_summary_for_dirty_keys.ended_at),
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS ended_at,
     sensor_summary.avg_hr AS avg_hr,
@@ -246,9 +280,13 @@ SELECT
 FROM dirty_keys
 LEFT JOIN activity_bounds
     ON activity_bounds.activity_id = dirty_keys.activity_id
-LEFT JOIN existing_activity_summary
-    ON existing_activity_summary.activity_id = dirty_keys.activity_id
+    AND activity_bounds.user_id = dirty_keys.user_id
+LEFT JOIN existing_activity_summary_for_dirty_keys
+    ON existing_activity_summary_for_dirty_keys.activity_id = dirty_keys.activity_id
+    AND existing_activity_summary_for_dirty_keys.user_id = dirty_keys.user_id
 LEFT JOIN sensor_summary
     ON sensor_summary.activity_id = dirty_keys.activity_id
+    AND sensor_summary.user_id = dirty_keys.user_id
 LEFT JOIN location_summary
     ON location_summary.activity_id = dirty_keys.activity_id
+    AND location_summary.user_id = dirty_keys.user_id

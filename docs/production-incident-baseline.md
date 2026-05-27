@@ -8961,21 +8961,23 @@ new incremental tables are populated.
   disk reads. Rebooting the staging server through Hetzner completed, but SSH
   still failed to return a banner and CPU/disk saturation resumed.
 - Root Cause: The 4 GB staging host was running the scheduled analytics worker
-  alongside ClickHouse and PeerDB, and the
-  `activity_sensor_summary_rows` dbt model filtered
-  `activity_sensor_sample` by joining dirty activity keys only on
-  `activity_id`. On the staging data set that query ran for more than 10
-  minutes, pegged the 2-core host near 199% CPU, timed out the dbt HTTP client,
-  and destabilized ClickHouse enough for SSH to stop returning banners during
-  the deploy.
+  alongside ClickHouse and PeerDB. The first bad query was
+  `activity_sensor_summary_rows`, which filtered `activity_sensor_sample` by
+  joining dirty activity keys only on `activity_id`; on the staging data set
+  that query ran for more than 10 minutes, pegged the 2-core host near 199%
+  CPU, timed out the dbt HTTP client, and destabilized ClickHouse. After that
+  join was narrowed, the next bad query was `activity_summary_rows`, which read
+  the full sensor and location summary tables with `FINAL` before joining dirty
+  activity keys.
 - Fix/Mitigation: Rebooted the staging VM via Hetzner to try to restore SSH
   access; this did not recover the host. Booted staging into Hetzner rescue
   mode, captured installed-system logs, performed a hard power cycle back into
   the normal OS, and temporarily scaled `dofek-staging_analytics-worker` to
   `0` while investigating. The code fix keeps the analytics worker enabled and
-  changes the activity sensor and location summary models to filter sample
-  tables through `(user_id, activity_id)` dirty-key tuple membership, matching
-  the sample tables' sort keys instead of scanning via an activity-only join.
+  changes the activity sensor, location, and final activity summary models to
+  filter through `(user_id, activity_id)` dirty-key tuple membership, matching
+  their sort keys instead of scanning full upstream tables before applying
+  dirty keys.
 - Validation: Production deploy job in the same dispatcher run passed through
   migrations, stack deploy, and CDC configuration. After scaling
   `dofek-staging_analytics-worker` to `0`, staging SSH became responsive,
