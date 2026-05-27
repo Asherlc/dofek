@@ -281,4 +281,12 @@ describe("WeeklyReportRepository", () => {
     await repo.getReport(4, "2026-03-28");
     expect(execute).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores ClickHouse join-default zeros when averaging weekly sleep", async () => {
+    const { repo, execute } = makeRepository([]);
+    await repo.getReport(4, "2026-03-28");
+
+    const queryText = execute.mock.calls[0]?.[1] ?? "";
+    expect(queryText).toContain("avg(nullIf(sl.duration_minutes, 0)) AS avg_sleep_min");
+  });
 });

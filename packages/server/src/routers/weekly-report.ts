@@ -155,7 +155,7 @@ export const weeklyReportRouter = router({
             sum(d.hours) AS total_hours,
             toInt32(sum(d.count)) AS activity_count,
             avg(d.load) AS avg_daily_load,
-            avg(sl.duration_minutes) AS avg_sleep_min,
+            avg(nullIf(sl.duration_minutes, 0)) AS avg_sleep_min,
             avg(nullIf(m.resting_hr, 0)) AS avg_resting_hr,
             avg(nullIf(m.hrv, 0)) AS avg_hrv
           FROM daily d
