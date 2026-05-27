@@ -116,6 +116,81 @@ describe("ActivitiesCalendarRepository", () => {
     });
   });
 
+  it("omits locations when only one centroid coordinate is present", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "latitude-only",
+          activity_type: "running",
+          centroid_lat: 37.8,
+          centroid_lng: null,
+        }),
+        makeActivityRow({
+          id: "longitude-only",
+          activity_type: "running",
+          centroid_lat: null,
+          centroid_lng: -122.4,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities).toEqual([
+      expect.objectContaining({ id: "latitude-only", location: null }),
+      expect.objectContaining({ id: "longitude-only", location: null }),
+    ]);
+  });
+
+  it("filters activities by activity type before grouping days", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "ride",
+          activity_type: "indoor_cycling",
+          local_date: "2026-03-18",
+        }),
+        makeActivityRow({
+          id: "run",
+          activity_type: "running",
+          local_date: "2026-03-19",
+          avg_power: null,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      activityType: "running",
+    });
+
+    expect(result).toEqual([
+      {
+        date: "2026-03-19",
+        activities: [expect.objectContaining({ id: "run", activityType: "running" })],
+      },
+    ]);
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.stringContaining("asum.activity_type = {activityType:String}"),
+      expect.objectContaining({ activityType: "running" }),
+    );
+    const sqlObject = database.execute.mock.calls[0]?.[0];
+    const compiledQuery = dialect.sqlToQuery(sqlObject);
+    expect(compiledQuery.params).toContain("run");
+    expect(compiledQuery.params).not.toContain("ride");
+  });
+
   it("passes the requested user, timezone, activity ids, and date window to backing stores", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -152,6 +227,49 @@ describe("ActivitiesCalendarRepository", () => {
       { userId: "00000000-0000-0000-0000-000000000001" },
     );
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns activity overview totals directly from ClickHouse", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: "2",
+          total_minutes: "150.45",
+          total_distance_meters: "30000.25",
+          total_elevation_gain_m: "420.25",
+        },
+      ],
+      [{ activity_type: "cycling" }, { activity_type: "running" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getActivityOverview({
+      weeks: 4,
+      endDate: "2026-03-20",
+      activityType: "running",
+    });
+
+    expect(result).toEqual({
+      activityCount: 2,
+      totalMinutes: 150.5,
+      totalDistanceMeters: 30000.3,
+      totalElevationGainM: 420.3,
+      activityTypes: ["cycling", "running"],
+    });
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.stringContaining("asum.activity_type = {activityType:String}"),
+      expect.objectContaining({ activityType: "running" }),
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.not.stringContaining("asum.activity_type = {activityType:String}"),
+      expect.not.objectContaining({ activityType: "running" }),
+    );
+    expect(database.execute).not.toHaveBeenCalled();
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {
@@ -237,8 +355,9 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
-        makeActivityRow({ id: "older", local_date: "2026-03-18" }),
-        makeActivityRow({ id: "newer", local_date: "2026-03-20" }),
+        makeActivityRow({ id: "middle", local_date: "2026-03-19" }),
+        makeActivityRow({ id: "newest", local_date: "2026-03-20" }),
+        makeActivityRow({ id: "oldest", local_date: "2026-03-18" }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
@@ -247,7 +366,7 @@ describe("ActivitiesCalendarRepository", () => {
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result.map((day) => day.date)).toEqual(["2026-03-20", "2026-03-18"]);
+    expect(result.map((day) => day.date)).toEqual(["2026-03-20", "2026-03-19", "2026-03-18"]);
   });
 
   it("skips enrichment queries when no activities are in the requested window", async () => {
@@ -305,6 +424,34 @@ describe("ActivitiesCalendarRepository", () => {
     );
   });
 
+  it("does not compute power stress from zero power", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ avg_power: 0, avg_hr: null })],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.tss).toBeNull();
+  });
+
+  it("does not compute power stress from zero functional threshold power", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ avg_power: 250, avg_hr: null })],
+      [{ max_hr: null, resting_hr: null, ftp: 0 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.tss).toBeNull();
+  });
+
   it("falls back to heart-rate stress when power stress cannot be computed", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -353,5 +500,65 @@ describe("ActivitiesCalendarRepository", () => {
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
     expect(result[0]?.activities[0]?.tss).toBe(41.4);
+  });
+
+  it("does not compute heart-rate stress from zero average heart rate", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          avg_power: null,
+          avg_hr: 0,
+          max_hr: 190,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.tss).toBeNull();
+  });
+
+  it("does not compute heart-rate stress without a max heart-rate baseline", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          avg_power: null,
+          avg_hr: 150,
+          max_hr: null,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.tss).toBeNull();
+  });
+
+  it("does not compute heart-rate stress when max heart rate equals resting heart rate", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          avg_power: null,
+          avg_hr: 150,
+          max_hr: 60,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.tss).toBeNull();
   });
 });

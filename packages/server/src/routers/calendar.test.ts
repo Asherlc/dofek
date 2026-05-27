@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const repositoryResultMock = vi.hoisted(() => vi.fn());
+const repositoryInputMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -25,7 +26,13 @@ vi.mock("../trpc.ts", async () => {
 
 vi.mock("../repositories/activities-calendar-repository.ts", () => ({
   ActivitiesCalendarRepository: class {
-    getWeekList() {
+    getWeekList(input: unknown) {
+      repositoryInputMock(input);
+      return repositoryResultMock();
+    }
+
+    getActivityOverview(input: unknown) {
+      repositoryInputMock(input);
       return repositoryResultMock();
     }
   },
@@ -38,6 +45,7 @@ const createCaller = createTestCallerFactory(calendarRouter);
 describe("calendarRouter", () => {
   beforeEach(() => {
     repositoryResultMock.mockReset();
+    repositoryInputMock.mockReset();
   });
 
   it("surfaces missing ClickHouse analytics store as a precondition error", async () => {
@@ -105,5 +113,71 @@ describe("calendarRouter", () => {
         ],
       },
     ]);
+  });
+
+  it("passes the selected activity type through to weekList", async () => {
+    repositoryResultMock.mockResolvedValueOnce([]);
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await caller.weekList({ weeks: 8, endDate: "2026-03-20", activityType: "running" });
+
+    expect(repositoryInputMock).toHaveBeenCalledWith({
+      weeks: 8,
+      endDate: "2026-03-20",
+      activityType: "running",
+    });
+  });
+
+  it("returns server-computed activity overview totals", async () => {
+    repositoryResultMock.mockResolvedValueOnce({
+      activityCount: 2,
+      totalMinutes: 150,
+      totalDistanceMeters: 30000,
+      totalElevationGainM: 420,
+      activityTypes: ["cycling", "running"],
+    });
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await expect(caller.activityOverview({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual({
+      activityCount: 2,
+      totalMinutes: 150,
+      totalDistanceMeters: 30000,
+      totalElevationGainM: 420,
+      activityTypes: ["cycling", "running"],
+    });
+  });
+
+  it("passes the selected activity type through to activityOverview", async () => {
+    repositoryResultMock.mockResolvedValueOnce({
+      activityCount: 1,
+      totalMinutes: 60,
+      totalDistanceMeters: 5000,
+      totalElevationGainM: 120,
+      activityTypes: ["cycling", "running"],
+    });
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await caller.activityOverview({ weeks: 4, endDate: "2026-03-20", activityType: "running" });
+
+    expect(repositoryInputMock).toHaveBeenCalledWith({
+      weeks: 4,
+      endDate: "2026-03-20",
+      activityType: "running",
+    });
   });
 });

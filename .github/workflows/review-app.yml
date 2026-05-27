@@ -451,6 +451,8 @@ jobs:
 
           run_review_one_shot migrate 1200
           run_review_one_shot seed 600
+          run_review_one_shot review-seed-clickhouse 600
+          run_review_one_shot analytics 1200
           docker compose --env-file "$REVIEW_ENV_FILE" -p "$COMPOSE_PROJECT_NAME" -f deploy/review-apps/review-compose.yml up -d web
 
       - name: Wait for public review app healthcheck

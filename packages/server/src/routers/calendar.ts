@@ -44,6 +44,20 @@ const calendarDayActivitiesSchema = z.object({
   activities: z.array(calendarActivityEntrySchema),
 });
 
+const activityListInputSchema = z.object({
+  weeks: z.number().int().min(1).max(52).default(4),
+  endDate: endDateSchema,
+  activityType: z.string().min(1).optional(),
+});
+
+const activityOverviewSchema = z.object({
+  activityCount: z.number().int().nonnegative(),
+  totalMinutes: z.number().nonnegative(),
+  totalDistanceMeters: z.number().nonnegative(),
+  totalElevationGainM: z.number().nonnegative(),
+  activityTypes: z.array(z.string()),
+});
+
 export const calendarRouter = router({
   calendarData: cachedProtectedQuery(CacheTTL.LONG)
     .input(z.object({ days: z.number().default(365) }))
@@ -54,12 +68,7 @@ export const calendarRouter = router({
     }),
 
   weekList: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        weeks: z.number().int().min(1).max(52).default(4),
-        endDate: endDateSchema,
-      }),
-    )
+    .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
@@ -77,5 +86,26 @@ export const calendarRouter = router({
         ctx.accessWindow,
       );
       return repo.getWeekList(input);
+    }),
+
+  activityOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(activityListInputSchema)
+    .output(activityOverviewSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivitiesCalendarRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+        ctx.accessWindow,
+      );
+      return repo.getActivityOverview(input);
     }),
 });
