@@ -81,15 +81,15 @@ pairs AS (
             'second',
             greatest(left_activity.started_at, right_activity.started_at),
             least(
-                coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 1 HOUR),
-                coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 1 HOUR)
+                coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 12 HOUR),
+                coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 12 HOUR)
             )
         ) / nullIf(dateDiff(
             'second',
             least(left_activity.started_at, right_activity.started_at),
             greatest(
-                coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 1 HOUR),
-                coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 1 HOUR)
+                coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 12 HOUR),
+                coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 12 HOUR)
             )
         ), 0) > 0.8
 ),
@@ -162,8 +162,8 @@ merged AS (
         any(best.provider_id) AS provider_id,
         any(best.user_id) AS user_id,
         any(best.activity_type) AS activity_type,
-        any(best.started_at) AS started_at,
-        any(best.ended_at) AS ended_at,
+        min(ranked.started_at) AS started_at,
+        max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at,
         any(best.source_name) AS source_name,
         argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
         argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,

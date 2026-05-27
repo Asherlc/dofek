@@ -98,6 +98,23 @@ describe("production analytics read-model build", () => {
     );
   });
 
+  it("uses the same null-ended activity window for overlap matching", () => {
+    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
+
+    expect(sql).toContain("coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 12 HOUR)");
+    expect(sql).toContain("coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 12 HOUR)");
+    expect(sql).not.toContain("INTERVAL 1 HOUR");
+  });
+
+  it("uses merged group time bounds for current activity sensor membership", () => {
+    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
+
+    expect(sql).toContain("min(ranked.started_at) AS started_at");
+    expect(sql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
+    expect(sql).not.toContain("any(best.started_at) AS started_at");
+    expect(sql).not.toContain("any(best.ended_at) AS ended_at");
+  });
+
   it("aggregates activity sensor summary from the bounded sensor intermediary", () => {
     expect(existsSync(new URL("./activity_sensor_summary_rows.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_sensor_summary_rows");
