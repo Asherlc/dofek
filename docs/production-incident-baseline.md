@@ -8973,10 +8973,13 @@ new incremental tables are populated.
 - Validation: Production deploy job in the same dispatcher run passed through
   migrations, stack deploy, and CDC configuration. After scaling
   `dofek-staging_analytics-worker` to `0`, staging SSH became responsive,
-  ClickHouse returned to `1/1`, and memory headroom recovered.
-- Remaining Risk: Medium until a staging deploy completes from the checked-in
-  overlay change and proves the stack converges without manually scaled
-  service state.
-- Follow-Up Work: Re-run the staging-only web deploy and consider moving
-  staging analytics-worker validation to an explicit manual job or a larger
-  staging instance if scheduled staging dbt coverage is required.
+  ClickHouse returned to `1/1`, and memory headroom recovered. A staging-only
+  `Deploy Web` run from branch `Asherlc/deploy-failed` completed successfully
+  with the checked-in overlay change, including migrations, stack deploy,
+  readiness checks, and CDC configuration. `https://staging.dofek.asherlc.com`
+  returned HTTP 200 after the deploy.
+- Remaining Risk: Low for the original SSH/deploy failure. Staging still has
+  limited memory headroom because it runs ClickHouse and PeerDB on a 4 GB host.
+- Follow-Up Work: Consider moving staging analytics-worker validation to an
+  explicit manual job or a larger staging instance if scheduled staging dbt
+  coverage is required.
