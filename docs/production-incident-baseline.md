@@ -8827,6 +8827,43 @@ new incremental tables are populated.
   update; add freshness monitoring comparing latest sleep/heart-rate inputs to
   latest active RHR output date.
 
+### Healthspan activity and steps undercount
+
+- Date: 2026-05-26.
+- Symptoms: The Healthspan Score card showed `Aerobic Activity` as
+  `0 min/week` and `Daily Steps` around `1117 steps/day` despite the user
+  reporting regular activity and more walking than that.
+- User Impact: The Healthspan score penalized activity and steps using inputs
+  that did not match the user's actual recent behavior.
+- Evidence: Production `fitness.v_daily_metrics` averaged `1115` steps and
+  `16` exercise minutes over the 35-day Healthspan window. Recent
+  `fitness.daily_metrics` rows from Apple Health `HealthKit` showed many
+  overwritten low partial-day step totals, while the Healthspan aerobic query
+  used only HR/power-linked `analytics.activity_summary` activity data and
+  ignored device-reported `exercise_minutes`.
+- Root Cause: Incremental mobile HealthKit sync used `now - 24h` as the start
+  time for daily cumulative statistics, then upserted those partial-day
+  statistics over whole-day `fitness.daily_metrics` rows. Separately,
+  Healthspan treated missing HR/power-linked aerobic activity as zero instead
+  of using the device-reported full-day exercise minutes already stored in
+  `fitness.v_daily_metrics`.
+- Fix/Mitigation: Updated mobile HealthKit sync to start incremental sync
+  windows at the local calendar-day boundary, preventing future partial-day
+  overwrites. Updated Healthspan to use weekly device-reported exercise minutes
+  as the aerobic activity floor when HR-zone activity minutes are lower or
+  missing.
+- Validation: Added regression coverage for day-boundary HealthKit sync and
+  Healthspan exercise-minute fallback. Focused Healthspan unit tests, mobile
+  Vitest project, Biome checks, and TypeScript checks passed locally.
+- Remaining Risk: Existing corrupted historical Apple Health daily metric rows
+  remain in production until the iOS app runs a corrected manual/full HealthKit
+  sync from the user's device; the server cannot reconstruct those all-day
+  HealthKit totals without the device.
+- Follow-Up Work: After deploying the fix, run a full Apple Health sync from
+  the iOS app to repair historical daily step and exercise-minute rows. Consider
+  adding a server-side diagnostic for suspicious step drops after partial
+  HealthKit sync windows.
+
 ### Resting heart rate sleep-sample join null handling
 
 - Date: 2026-05-26.

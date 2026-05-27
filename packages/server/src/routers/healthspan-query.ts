@@ -2,7 +2,8 @@ import { averageVo2MaxEstimates } from "@dofek/training/derived-cardio";
 import { ZONE_BOUNDARIES_FTP } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import { dateAccessPredicate } from "../billing/entitlement.ts";
+import { dateWindowEnd, dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { fetchBodyCompRows } from "../repositories/body-clickhouse.ts";
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
@@ -35,6 +36,10 @@ const rawRowSchema = z.object({
 });
 
 export type HealthspanRawRow = z.infer<typeof rawRowSchema>;
+
+const weeklyExerciseMinutesRowSchema = z.object({
+  weekly_exercise_min: z.coerce.number().nullable(),
+});
 
 type WeeklyHistoryRow = z.infer<typeof historyRowSchema>;
 type HealthspanRawDataContext = Pick<
@@ -72,6 +77,12 @@ function bedtimeMinutes(timestamp: string, timezone: string): number | null {
   return minutes < 720 ? minutes + 1440 : minutes;
 }
 
+function nextDateString(dateString: string): string {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * Compute total aerobic and high-intensity minutes from analytics.deduped_sensor.
  * Uses user_profile plus bounded helper-provided resting heart-rate rows.
@@ -91,6 +102,7 @@ async function fetchHrZoneTime(
     .toISOString()
     .replace("T", " ")
     .replace(/\.\d{3}Z$/, "");
+  const windowEndExclusive = `${nextDateString(endDate)} 00:00:00`;
 
   const rows = await sensorStore.query(
     z.object({
@@ -122,6 +134,7 @@ async function fetchHrZoneTime(
         ON up.id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
         AND asum.started_at > toDateTime({windowStart:String})
+        AND asum.started_at < toDateTime({windowEndExclusive:String})
         AND asum.ended_at IS NOT NULL
         AND (up.max_hr IS NOT NULL OR up.ftp IS NOT NULL)
     ),
@@ -169,6 +182,7 @@ async function fetchHrZoneTime(
       userId: ctx.userId,
       timezone: ctx.timezone,
       windowStart: windowStartTimestamp,
+      windowEndExclusive,
       powerThreshold: ZONE_BOUNDARIES_FTP[2],
       restingHeartRateDates: restingHeartRateRows.map((row) => row.date),
       restingHeartRates: restingHeartRateRows.map((row) => row.resting_hr),
@@ -176,6 +190,26 @@ async function fetchHrZoneTime(
   );
 
   return rows[0] ?? { aerobic_minutes: 0, high_intensity_minutes: 0 };
+}
+
+async function fetchWeeklyExerciseMinutes(
+  ctx: HealthspanRawDataContext,
+  endDate: string,
+  totalDays: number,
+): Promise<number | null> {
+  const rows = await executeWithSchema(
+    ctx.db,
+    weeklyExerciseMinutesRowSchema,
+    sql`SELECT
+          (SUM(exercise_minutes)::real / GREATEST(${totalDays}::real / 7, 1)) AS weekly_exercise_min
+        FROM fitness.v_daily_metrics
+        WHERE user_id = ${ctx.userId}
+          AND date > ${dateWindowStart(endDate, totalDays)}
+          AND date <= ${dateWindowEnd(endDate)}
+          ${dateAccessPredicate(ctx.accessWindow, sql`date`)}`,
+  );
+
+  return rows[0]?.weekly_exercise_min ?? null;
 }
 
 /**
@@ -202,8 +236,12 @@ export async function fetchHealthspanRawData(
     : [];
   const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
   const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays, restingHeartRateRows);
+  const weeklyExerciseMin = await fetchWeeklyExerciseMinutes(ctx, endDate, totalDays);
   const weeklyDivisor = Math.max(totalDays / 7, 1);
-  const weeklyAerobicMin = hrZoneTime.aerobic_minutes / weeklyDivisor;
+  const weeklyAerobicMin = Math.max(
+    hrZoneTime.aerobic_minutes / weeklyDivisor,
+    weeklyExerciseMin ?? 0,
+  );
   const weeklyHighIntensityMin = hrZoneTime.high_intensity_minutes / weeklyDivisor;
   const bodyMeasurements = ctx.sensorStore
     ? await fetchBodyCompRows(ctx.sensorStore, ctx.userId, endDate, totalDays)
@@ -238,11 +276,15 @@ export async function fetchHealthspanRawData(
           SELECT
             (SELECT AVG(resting_hr)
              FROM resting_heart_rate
-             WHERE date > ${dateWindowStart(endDate, totalDays)}) AS avg_resting_hr,
+             WHERE date > ${dateWindowStart(endDate, totalDays)}
+               AND date <= ${dateWindowEnd(endDate)}
+               ${dateAccessPredicate(ctx.accessWindow, sql`date`)}) AS avg_resting_hr,
             (SELECT AVG(steps)
              FROM fitness.v_daily_metrics
              WHERE user_id = ${ctx.userId}
-               AND date > ${dateWindowStart(endDate, totalDays)}) AS avg_steps,
+               AND date > ${dateWindowStart(endDate, totalDays)}
+               AND date <= ${dateWindowEnd(endDate)}
+               ${dateAccessPredicate(ctx.accessWindow, sql`date`)}) AS avg_steps,
             NULL::real AS latest_vo2max
         ),
         strength_freq AS (
@@ -251,6 +293,8 @@ export async function fetchHealthspanRawData(
           WHERE user_id = ${ctx.userId}
             AND activity_type = 'strength'
             AND started_at > ${timestampWindowStart(endDate, totalDays)}
+            AND started_at < (${dateWindowEnd(endDate)} + INTERVAL '1 day')::timestamp
+            ${dateAccessPredicate(ctx.accessWindow, sql`started_at::date`)}
         ),
         weekly_rhr AS (
           SELECT
@@ -258,6 +302,8 @@ export async function fetchHealthspanRawData(
             AVG(resting_hr) AS avg_rhr
           FROM resting_heart_rate
           WHERE date > ${dateWindowStart(endDate, totalDays)}
+            AND date <= ${dateWindowEnd(endDate)}
+            ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
           GROUP BY date_trunc('week', date)
         ),
         weekly_steps AS (
@@ -267,6 +313,8 @@ export async function fetchHealthspanRawData(
           FROM fitness.v_daily_metrics
           WHERE user_id = ${ctx.userId}
             AND date > ${dateWindowStart(endDate, totalDays)}
+            AND date <= ${dateWindowEnd(endDate)}
+            ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
           GROUP BY date_trunc('week', date)
         ),
         weekly_dates AS (
