@@ -8942,3 +8942,41 @@ new incremental tables are populated.
 - Follow-Up Work: Add read-model freshness monitoring for
   `sleep_heart_rate_sample` and `resting_heart_rate_sleep_window`; investigate
   the unrelated activity sample ClickHouse memory-limit errors separately.
+
+### Staging deploy SSH banner timeout
+
+- Date: 2026-05-27.
+- Symptoms: The `Deploy Web` workflow failed for staging while production
+  deployed successfully.
+- User Impact: Production received the release, but staging did not update and
+  the dispatcher workflow stayed failed.
+- Evidence: GitHub Actions run `26487420045` failed in
+  `Deploy Web Staging / Deploy Web Stack / Deploy Web Stack`, step `Setup SSH`.
+  The first fatal line was `SSH host key for 162.55.186.24 did not become
+  available within 235s`. Every retry showed `tcp/22: reachable (no SSH banner
+  yet)`. A local SSH probe reproduced `Connection timed out during banner
+  exchange`, and HTTPS to `staging.dofek.asherlc.com` timed out. Hetzner showed
+  `dofek-staging` running, public IPv4 unblocked, and firewall applied, but
+  host metrics showed the 2-core staging server pinned near 198% CPU with high
+  disk reads. Rebooting the staging server through Hetzner completed, but SSH
+  still failed to return a banner and CPU/disk saturation resumed.
+- Root Cause: The 4 GB staging host was running the scheduled analytics worker
+  alongside ClickHouse and PeerDB; the dbt analytics run pushed the host into
+  repeated memory pressure, the kernel repeatedly OOM-killed ClickHouse, and
+  SSH became unavailable during the churn.
+- Fix/Mitigation: Rebooted the staging VM via Hetzner to try to restore SSH
+  access; this did not recover the host. Booted staging into Hetzner rescue
+  mode, captured installed-system logs, performed a hard power cycle back into
+  the normal OS, manually scaled `dofek-staging_analytics-worker` to `0`, and
+  updated the staging stack overlay so future staging deploys keep
+  `analytics-worker` at zero replicas.
+- Validation: Production deploy job in the same dispatcher run passed through
+  migrations, stack deploy, and CDC configuration. After scaling
+  `dofek-staging_analytics-worker` to `0`, staging SSH became responsive,
+  ClickHouse returned to `1/1`, and memory headroom recovered.
+- Remaining Risk: Medium until a staging deploy completes from the checked-in
+  overlay change and proves the stack converges without manually scaled
+  service state.
+- Follow-Up Work: Re-run the staging-only web deploy and consider moving
+  staging analytics-worker validation to an explicit manual job or a larger
+  staging instance if scheduled staging dbt coverage is required.

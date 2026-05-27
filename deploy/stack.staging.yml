@@ -4,6 +4,10 @@
 # disabled here to keep the box from OOM-thrashing. They continue to
 # deploy with their default replica count in production.
 services:
+  analytics-worker:
+    deploy:
+      replicas: 0
+
   cloudbeaver:
     deploy:
       replicas: 0
