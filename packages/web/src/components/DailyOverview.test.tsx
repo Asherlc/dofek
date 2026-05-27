@@ -226,6 +226,38 @@ describe("DailyOverview", () => {
     expect(skeletons.length).toBe(2); // circle + label skeleton
   });
 
+  it("shows the strain skeleton while the strain target is loading", () => {
+    render(
+      <DailyOverview
+        endDate="2026-03-31"
+        readiness={mockReadiness}
+        workloadRatio={{
+          displayedStrain: 10.2,
+          displayedDate: "2026-03-30",
+          timeSeries: [
+            {
+              date: "2026-03-30",
+              dailyLoad: 100,
+              strain: 10.2,
+              acuteLoad: 80,
+              chronicLoad: 70,
+              workloadRatio: 1.14,
+            },
+          ],
+        }}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        strainTargetLoading={true}
+        sleepLoading={false}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Strain score breakdown" })).toBeNull();
+    const skeletons = document.querySelectorAll(".shimmer");
+    expect(skeletons.length).toBe(2);
+  });
+
   it("expands recovery breakdown when recovery ring is clicked", () => {
     render(
       <DailyOverview

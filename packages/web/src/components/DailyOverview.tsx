@@ -32,6 +32,7 @@ interface DailyOverviewProps {
   strainTarget?: StrainTargetResult | undefined;
   readinessLoading?: boolean;
   workloadLoading?: boolean;
+  strainTargetLoading?: boolean;
   sleepLoading?: boolean;
 }
 
@@ -532,9 +533,10 @@ export function DailyOverview({
   workloadRatio,
   sleepPerformance,
   strainTarget,
-  readinessLoading,
-  workloadLoading,
-  sleepLoading,
+  readinessLoading = false,
+  workloadLoading = false,
+  strainTargetLoading = false,
+  sleepLoading = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
 
@@ -556,8 +558,9 @@ export function DailyOverview({
     return isRecentForAnchor(sleepPerformance.sleepDate, endDate);
   })();
   const freshSleepPerformance = sleepIsFresh ? sleepPerformance : null;
+  const strainLoading = workloadLoading || strainTargetLoading;
 
-  const allLoaded = !readinessLoading && !workloadLoading && !sleepLoading;
+  const allLoaded = !readinessLoading && !strainLoading && !sleepLoading;
   const hasAnyData =
     recoveryScore != null ||
     (workloadRatio?.timeSeries?.length ?? 0) > 0 ||
@@ -600,7 +603,7 @@ export function DailyOverview({
           </div>
         )}
 
-        {workloadLoading ? (
+        {strainLoading ? (
           <RingSkeleton />
         ) : (workloadRatio?.timeSeries?.length ?? 0) > 0 ? (
           <StrainRing

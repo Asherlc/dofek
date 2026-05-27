@@ -410,7 +410,7 @@ export function Dashboard() {
         <StrainCard
           data={workloadRatio.data}
           strainTarget={strainTarget.data}
-          loading={workloadRatio.isLoading}
+          loading={workloadRatio.isLoading || strainTarget.isLoading}
         />
       ),
     },
@@ -679,6 +679,7 @@ export function Dashboard() {
         strainTarget={strainTarget.data}
         readinessLoading={readinessData.isLoading}
         workloadLoading={workloadRatio.isLoading}
+        strainTargetLoading={strainTarget.isLoading}
         sleepLoading={sleepPerformance.isLoading}
       />
 
