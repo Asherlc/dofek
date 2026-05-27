@@ -41,6 +41,23 @@ export interface ActivityHrZone {
   percent: number;
 }
 
+export interface ZoneDistributionDatum {
+  zone: number;
+  label: string;
+  seconds: number;
+  percent: number;
+}
+
+export interface ZoneDistributionRow<ZoneItem extends ZoneDistributionDatum> {
+  key: string;
+  primaryLabel: string;
+  subordinateLabel: string | null;
+  axisLabel: string;
+  percentLabel: string;
+  color: string;
+  zone: ZoneItem;
+}
+
 export interface PolarizationZoneDefinition {
   zone: number;
   label: string;
@@ -79,6 +96,52 @@ export const HEART_RATE_ZONE_COLORS: string[] = HEART_RATE_ZONES.map((z) => z.co
  * so zone definitions stay in sync across the codebase.
  */
 export const ZONE_BOUNDARIES_HRR = HEART_RATE_ZONES.slice(0, -1).map((z) => z.maxPctHrr);
+
+export function formatZoneDistributionAxisLabel(zoneItem: ZoneDistributionDatum): string {
+  const primaryLabel = formatZoneDistributionPrimaryLabel(zoneItem);
+  const subordinateLabel = formatZoneDistributionSubordinateLabel(zoneItem);
+  return subordinateLabel == null ? primaryLabel : `${primaryLabel}\n${subordinateLabel}`;
+}
+
+export function formatZoneDistributionPrimaryLabel(zoneItem: ZoneDistributionDatum): string {
+  if (zoneItem.zone === 0) return zoneItem.label;
+  return `Zone ${zoneItem.zone}`;
+}
+
+export function formatZoneDistributionSubordinateLabel(
+  zoneItem: ZoneDistributionDatum,
+): string | null {
+  if (zoneItem.zone === 0) return null;
+  return zoneItem.label;
+}
+
+export function formatZoneDistributionPercentLabel(zoneItem: ZoneDistributionDatum): string {
+  return `${Math.round(zoneItem.percent)}%`;
+}
+
+export function hasZoneDistributionData(zones: ZoneDistributionDatum[]): boolean {
+  return zones.some((zoneItem) => zoneItem.percent > 0);
+}
+
+export function createZoneDistributionRows<ZoneItem extends ZoneDistributionDatum>(
+  zones: ZoneItem[],
+  zoneColors: string[],
+  fallbackColor: string = textColors.neutral,
+): ZoneDistributionRow<ZoneItem>[] {
+  return zones.map((zoneItem, zoneIndex) => ({
+    key: String(zoneItem.zone),
+    primaryLabel: formatZoneDistributionPrimaryLabel(zoneItem),
+    subordinateLabel: formatZoneDistributionSubordinateLabel(zoneItem),
+    axisLabel: formatZoneDistributionAxisLabel(zoneItem),
+    percentLabel: formatZoneDistributionPercentLabel(zoneItem),
+    color: zoneColors[zoneIndex] ?? fallbackColor,
+    zone: zoneItem,
+  }));
+}
+
+export function formatHeartRateZoneRangeLabel(zoneItem: ActivityHrZone): string {
+  return `${zoneItem.minPct}-${zoneItem.maxPct}% Heart Rate Reserve`;
+}
 
 /**
  * Compute absolute BPM boundaries for each zone given a user's max HR and resting HR.
@@ -248,6 +311,17 @@ export const POWER_ZONE_COLORS: string[] = POWER_ZONES.map((z) => z.color);
  * [0.55, 0.75, 0.9, 1.05, 1.2, 1.5].
  */
 export const ZONE_BOUNDARIES_FTP = POWER_ZONES.slice(0, -1).map((z) => z.maxPctFtp);
+
+export function formatPowerZoneRangeLabel(zoneItem: ActivityPowerZone, ftp: number): string {
+  const minWatts = Math.round((zoneItem.minPct / 100) * ftp);
+  const maxWatts = zoneItem.maxPct != null ? Math.round((zoneItem.maxPct / 100) * ftp) : null;
+  const percentLabel =
+    zoneItem.maxPct != null
+      ? `${zoneItem.minPct}-${zoneItem.maxPct}% Threshold Power`
+      : `>${zoneItem.minPct}% Threshold Power`;
+  const wattLabel = maxWatts != null ? `${minWatts}-${maxWatts} W` : `>${minWatts} W`;
+  return `${percentLabel} (${wattLabel})`;
+}
 
 /**
  * Compute absolute wattage boundaries for each zone given an FTP value.

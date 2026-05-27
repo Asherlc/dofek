@@ -5,8 +5,12 @@ import {
   classifyPowerZone,
   computeHrRange,
   computePolarizationIndex,
+  createZoneDistributionRows,
+  formatHeartRateZoneRangeLabel,
+  formatPowerZoneRangeLabel,
   HEART_RATE_ZONE_COLORS,
   HEART_RATE_ZONES,
+  hasZoneDistributionData,
   heartRateZoneBoundaries,
   mapHrZones,
   mapPowerZones,
@@ -17,6 +21,104 @@ import {
   ZONE_BOUNDARIES_FTP,
   ZONE_BOUNDARIES_HRR,
 } from "./zones.ts";
+
+describe("createZoneDistributionRows", () => {
+  it("builds display rows with shared labels, percentages, and colors", () => {
+    const rows = createZoneDistributionRows(
+      [
+        { zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 },
+        { zone: 1, label: "Recovery", seconds: 300, percent: 10.4 },
+      ],
+      ["#111111", "#222222"],
+    );
+
+    expect(rows).toEqual([
+      {
+        key: "0",
+        primaryLabel: "Below Zone 1",
+        subordinateLabel: null,
+        axisLabel: "Below Zone 1",
+        percentLabel: "0%",
+        color: "#111111",
+        zone: { zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 },
+      },
+      {
+        key: "1",
+        primaryLabel: "Zone 1",
+        subordinateLabel: "Recovery",
+        axisLabel: "Zone 1\nRecovery",
+        percentLabel: "10%",
+        color: "#222222",
+        zone: { zone: 1, label: "Recovery", seconds: 300, percent: 10.4 },
+      },
+    ]);
+  });
+
+  it("uses the fallback color when a zone does not have a matching color", () => {
+    const rows = createZoneDistributionRows(
+      [{ zone: 3, label: "Tempo", seconds: 120, percent: 100 }],
+      [],
+      "#333333",
+    );
+
+    expect(rows[0]?.color).toBe("#333333");
+  });
+});
+
+describe("hasZoneDistributionData", () => {
+  it("returns true when any zone has a positive percentage", () => {
+    expect(
+      hasZoneDistributionData([
+        { zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 },
+        { zone: 1, label: "Recovery", seconds: 60, percent: 100 },
+      ]),
+    ).toBe(true);
+  });
+
+  it("returns false when all zones are empty", () => {
+    expect(
+      hasZoneDistributionData([
+        { zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 },
+        { zone: 1, label: "Recovery", seconds: 0, percent: 0 },
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe("formatHeartRateZoneRangeLabel", () => {
+  it("formats heart rate zone ranges in layman-readable text", () => {
+    expect(
+      formatHeartRateZoneRangeLabel({
+        zone: 2,
+        label: "Aerobic",
+        minPct: 60,
+        maxPct: 70,
+        seconds: 600,
+        percent: 50,
+      }),
+    ).toBe("60-70% Heart Rate Reserve");
+  });
+});
+
+describe("formatPowerZoneRangeLabel", () => {
+  it("formats bounded power zones with threshold power and watt ranges", () => {
+    expect(
+      formatPowerZoneRangeLabel(
+        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 600, percent: 50 },
+        250,
+      ),
+    ).toBe("55-75% Threshold Power (138-188 W)");
+  });
+
+  it("formats open-ended power zones", () => {
+    expect(
+      formatPowerZoneRangeLabel(
+        { zone: 7, label: "Neuromuscular", minPct: 150, maxPct: null, seconds: 60, percent: 10 },
+        250,
+      ),
+    ).toBe(">150% Threshold Power (>375 W)");
+  });
+});
 
 describe("HEART_RATE_ZONES", () => {
   it("defines zone 0 plus the 5 Karvonen training zones", () => {

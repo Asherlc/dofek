@@ -240,6 +240,40 @@ function getCategoryAxisData(opt: Record<string, unknown>): string[] {
   return Array.isArray(data) ? data.map((label) => String(label)) : [];
 }
 
+function getCategoryAxisLabelOptions(opt: Record<string, unknown>): Record<string, unknown> {
+  const yAxis = opt.yAxis;
+  if (!yAxis || typeof yAxis !== "object") {
+    return {};
+  }
+
+  const axisLabel = Reflect.get(yAxis, "axisLabel");
+  return axisLabel && typeof axisLabel === "object" ? axisLabel : {};
+}
+
+function formatCategoryAxisLabel(opt: Record<string, unknown>, value: string): string {
+  const axisLabel = getCategoryAxisLabelOptions(opt);
+  const formatter = Reflect.get(axisLabel, "formatter");
+  return typeof formatter === "function" ? String(formatter(value)) : "";
+}
+
+function getYAxisShowOption(opt: Record<string, unknown>): unknown {
+  const yAxis = opt.yAxis;
+  if (!yAxis || typeof yAxis !== "object") {
+    return undefined;
+  }
+
+  return Reflect.get(yAxis, "show");
+}
+
+function getGridLeftOption(opt: Record<string, unknown>): unknown {
+  const grid = opt.grid;
+  if (!grid || typeof grid !== "object") {
+    return undefined;
+  }
+
+  return Reflect.get(grid, "left");
+}
+
 function findOptionByYAxisDataLabel(label: string): Record<string, unknown> | undefined {
   return capturedOptions.find((option) => getCategoryAxisData(option).includes(label));
 }
@@ -459,15 +493,30 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const heartRateZoneOption = findOptionByYAxisDataLabel("Zone 1 Recovery");
+      const heartRateZoneOption = findOptionByYAxisDataLabel("Zone 1");
       if (!heartRateZoneOption) {
         throw new Error("Heart rate zone chart option was not captured");
       }
       expect(getCategoryAxisData(heartRateZoneOption)).toEqual([
         "Below Zone 1",
-        "Zone 1 Recovery",
-        "Zone 2 Endurance",
+        "Zone 1",
+        "Zone 2",
       ]);
+      expect(getYAxisShowOption(heartRateZoneOption)).toBe(true);
+      expect(getCategoryAxisLabelOptions(heartRateZoneOption)).toMatchObject({
+        align: "right",
+        margin: 10,
+        show: true,
+        interval: 0,
+        rich: {
+          zone: expect.objectContaining({ fontWeight: 600 }),
+          name: expect.objectContaining({ fontSize: 10 }),
+        },
+      });
+      expect(getGridLeftOption(heartRateZoneOption)).toBe(150);
+      expect(formatCategoryAxisLabel(heartRateZoneOption, "Zone 1")).toBe(
+        "{zone|Zone 1}\n{name|Recovery}",
+      );
 
       mockHrZonesUseQuery.mockReturnValue({
         data: [],
@@ -546,11 +595,14 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const powerZoneOption = findOptionByYAxisDataLabel("Zone 1 Recovery");
+      const powerZoneOption = findOptionByYAxisDataLabel("Zone 1");
       if (!powerZoneOption) {
         throw new Error("Power zone chart option was not captured");
       }
-      expect(getCategoryAxisData(powerZoneOption)).toEqual(["Zone 1 Recovery", "Zone 2 Endurance"]);
+      expect(getCategoryAxisData(powerZoneOption)).toEqual(["Zone 1", "Zone 2"]);
+      expect(formatCategoryAxisLabel(powerZoneOption, "Zone 2")).toBe(
+        "{zone|Zone 2}\n{name|Endurance}",
+      );
 
       Object.assign(mockActivity, originalActivity);
       mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
