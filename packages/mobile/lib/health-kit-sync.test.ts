@@ -118,6 +118,29 @@ describe("syncHealthKitToServer", () => {
     expect(startDate.getFullYear()).toBeLessThanOrEqual(1970);
   });
 
+  it("starts incremental daily statistics at the local day boundary", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-26T15:30:00-07:00"));
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const expectedStartDate = new Date();
+    expectedStartDate.setDate(expectedStartDate.getDate() - 1);
+    expectedStartDate.setHours(0, 0, 0, 0);
+
+    try {
+      await syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const firstCall = healthKit.queryDailyStatistics.mock.calls[0];
+    expect(firstCall[1]).toBe(expectedStartDate.toISOString());
+  });
+
   it("batches large sample sets into groups of 500", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

@@ -425,6 +425,37 @@ function collectSqlParameterValues(value: unknown): unknown[] {
   return [];
 }
 
+function collectSqlText(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(collectSqlText).join("");
+  }
+  if (!isRecord(value)) {
+    return "";
+  }
+
+  if ("value" in value) {
+    const chunkValue = value.value;
+    if (typeof chunkValue === "string") {
+      return chunkValue;
+    }
+    if (Array.isArray(chunkValue)) {
+      return chunkValue.filter((item): item is string => typeof item === "string").join("");
+    }
+    return "";
+  }
+
+  const queryChunks = value.queryChunks;
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map(collectSqlText).join("");
+  }
+
+  return "";
+}
+
+function findSqlCall(calls: unknown[][], text: string): unknown {
+  return calls.map(([query]) => query).find((query) => collectSqlText(query).includes(text));
+}
+
 function expectSqlParamsToContainNumber(values: unknown[], expected: number): void {
   expect(
     values.some(
@@ -453,7 +484,10 @@ function makeFetchContext(
 
 describe("fetchHealthspanRawData", () => {
   it("passes derived sleep, body, and zone metrics into the aggregate query", async () => {
-    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow()]);
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ weekly_exercise_min: null }])
+      .mockResolvedValueOnce([makeRawHealthspanRow()]);
     const query = vi.fn(async (_schema: unknown, queryText: string) => {
       if (queryText.includes("analytics.resting_heart_rate_sleep_window")) {
         return [{ date: "2026-03-02", resting_hr: 48 }];
@@ -530,17 +564,77 @@ describe("fetchHealthspanRawData", () => {
       expect.stringContaining("activity_metadata"),
       expect.objectContaining({
         windowStart: "2026-03-01 00:00:00",
+        windowEndExclusive: "2026-03-16 00:00:00",
         restingHeartRateDates: ["2026-03-02"],
         restingHeartRates: [48],
       }),
     );
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[0]?.[0]);
+    const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
+    const sqlValues = collectSqlParameterValues(aggregateSql);
     expectSqlParamsToContainNumber(sqlValues, 500);
     expectSqlParamsToContainNumber(sqlValues, Math.sqrt(115_800));
     expectSqlParamsToContainNumber(sqlValues, 70);
     expectSqlParamsToContainNumber(sqlValues, 35);
     expectSqlParamsToContainNumber(sqlValues, 77);
     expectSqlParamsToContainNumber(sqlValues, 21);
+  });
+
+  it("uses device-reported exercise minutes as the aerobic activity floor", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ weekly_exercise_min: 112 }])
+      .mockResolvedValueOnce([makeRawHealthspanRow()]);
+    const query = vi.fn(async (_schema: unknown, queryText: string) => {
+      if (queryText.includes("activity_metadata")) {
+        return [{ aerobic_minutes: 0, high_intensity_minutes: 0 }];
+      }
+      return [];
+    });
+    const ctx = makeFetchContext({
+      db: { execute },
+      sensorStore: makeSensorStore({
+        query,
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      }),
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
+    const sqlValues = collectSqlParameterValues(aggregateSql);
+    expectSqlParamsToContainNumber(sqlValues, 112);
+  });
+
+  it("bounds Healthspan SQL reads by end date and access window", async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([{ weekly_exercise_min: null }])
+      .mockResolvedValueOnce([makeRawHealthspanRow()]);
+    const ctx = makeFetchContext({
+      db: { execute },
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-05",
+        endDateExclusive: "2026-03-12",
+      },
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const weeklyExerciseSql = findSqlCall(execute.mock.calls, "weekly_exercise_min");
+    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date <= ");
+    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date >= ");
+    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date < ");
+
+    const aggregateSqlText = collectSqlText(findSqlCall(execute.mock.calls, "metrics_agg"));
+    expect(aggregateSqlText).toContain("AND date <= ");
+    expect(aggregateSqlText).toContain("AND date >= ");
+    expect(aggregateSqlText).toContain("AND date < ");
+    expect(aggregateSqlText).toContain("AND started_at < ");
+    expect(aggregateSqlText).toContain("AND started_at::date >= ");
+    expect(aggregateSqlText).toContain("AND started_at::date < ");
   });
 
   it("keeps activity sensor bounds in the ClickHouse join", async () => {
@@ -558,6 +652,17 @@ describe("fetchHealthspanRawData", () => {
       ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
     )?.[1];
     expect(zoneQuery).toEqual(expect.any(String));
+    expect(query).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("activity_metadata"),
+      expect.objectContaining({
+        windowStart: "2026-03-01 00:00:00",
+        windowEndExclusive: "2026-03-16 00:00:00",
+      }),
+    );
+    expect(zoneQuery).toMatch(
+      /AND\s+asum\.started_at\s*<\s*toDateTime\(\{windowEndExclusive:String\}\)/,
+    );
     expect(zoneQuery).toContain("INNER JOIN analytics.deduped_sensor AS ds");
     expect(zoneQuery).toMatch(/ON\s+ds\.user_id\s*=\s*am\.user_id/);
     expect(zoneQuery).toMatch(/AND\s+ds\.recorded_at\s*>=\s*am\.started_at/);
@@ -631,7 +736,7 @@ describe("fetchHealthspanRawData", () => {
 
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[0]?.[0]);
+    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
     expect(sqlValues).not.toContain(undefined);
     expect(countSqlNumberParams(sqlValues, 0)).toBeGreaterThanOrEqual(2);
   });
