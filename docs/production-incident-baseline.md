@@ -8796,3 +8796,44 @@ new incremental tables are populated.
 - Follow-Up Work: Deploy the prepared bounded RHR and activity summary model
   update; add freshness monitoring comparing latest sleep/heart-rate inputs to
   latest active RHR output date.
+
+### Production worker restart loop from analytics dbt OOM
+
+- Date: 2026-05-26 PT / 2026-05-27 UTC.
+- Symptoms: Production was reported down. Public `/healthz` and the SPA shell
+  still returned HTTP 200, but background processing was impaired: the
+  `dofek_worker` service was repeatedly failing with `task: non-zero exit (1)`,
+  and `dofek_analytics-worker` was retrying dbt builds.
+- User Impact: Background sync and import jobs were unavailable while the
+  worker was in a restart loop. ClickHouse-backed dashboard data was at risk of
+  stale or failed reads while ClickHouse was under memory pressure.
+- Evidence: The first fatal analytics-worker log lines were ClickHouse
+  `MEMORY_LIMIT_EXCEEDED` exceptions in dbt models including
+  `activity_location_sample` and `activity_sensor_sample`, with ClickHouse at
+  its configured 3 GiB memory limit while executing recursive activity graph
+  work. The failing batch for `2026-05-20` had only 458 heart-rate sample rows
+  but used `analytics.v_activity`/`analytics.v_activity_members`, which forced
+  ClickHouse to traverse the unbounded 1,029-activity user graph before the
+  microbatch could finish. The worker logs also showed the `worker` entrypoint
+  running Postgres migrations, ClickHouse migrations, and then `dbt build`
+  before the BullMQ worker process could start.
+- Root Cause: The activity sample dbt models used global recursive activity
+  views inside each microbatch. ClickHouse did not push the day filter inside
+  those views, so each batch recomputed the full dedupe graph and OOMed. The
+  blast radius was larger because `entrypoint.sh` also coupled the BullMQ
+  `worker` service startup to the same analytics dbt build.
+- Fix/Mitigation: A short-lived manual mitigation stopped the failing dbt retry
+  loop and temporarily ran the Node BullMQ worker directly so background jobs
+  could resume. The durable code change removes `dbt build` from the `worker`
+  entrypoint and bounds the activity graph inside the affected analytics models
+  to the active microbatch window so `analytics-worker` remains enabled.
+- Validation: After the current production image was redeployed,
+  `dofek_web` was `2/2`, `dofek_worker` was `1/1`, and
+  `dofek_analytics-worker` was `1/1`. `/healthz` returned HTTP 200. The local
+  fix compiles the affected dbt models with batch-local activity graph bounds
+  and passes the changed test suite.
+- Remaining Risk: Medium until the bounded activity graph fix is deployed and
+  the next scheduled analytics-worker run completes cleanly on production-scale
+  data.
+- Follow-Up Work: Add freshness monitoring for analytics read models and keep
+  the BullMQ worker independent from analytics rebuilds.

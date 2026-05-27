@@ -15,14 +15,7 @@
     }
 ) }}
 
-WITH current_activity AS (
-    SELECT
-        id AS activity_id,
-        user_id,
-        started_at,
-        coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
-    FROM {{ source('analytics', 'v_activity') }}
-),
+WITH RECURSIVE {{ bounded_activity_graph() }},
 
 activity_samples AS (
     SELECT
@@ -37,7 +30,7 @@ activity_samples AS (
     INNER JOIN current_activity
         ON current_activity.user_id = samples.user_id
         AND samples.recorded_at >= current_activity.started_at
-        AND samples.recorded_at <= current_activity.ended_at
+        AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)
 )
 
 SELECT
