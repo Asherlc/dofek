@@ -197,9 +197,9 @@ activity_bounds AS (
         current_activity.started_at AS started_at,
         current_activity.ended_at AS ended_at
     FROM current_activity
-    INNER JOIN dirty_keys
-        ON dirty_keys.activity_id = current_activity.activity_id
-        AND dirty_keys.user_id = current_activity.user_id
+    INNER JOIN active_dirty_keys
+        ON active_dirty_keys.activity_id = current_activity.activity_id
+        AND active_dirty_keys.user_id = current_activity.user_id
 ),
 
 sensor_summary AS (
@@ -243,8 +243,8 @@ location_summary AS (
 )
 
 SELECT
-    assumeNotNull(dirty_keys.activity_id) AS activity_id,
-    assumeNotNull(dirty_keys.user_id) AS user_id,
+    active_dirty_keys.activity_id AS activity_id,
+    active_dirty_keys.user_id AS user_id,
     CAST(
         coalesce(activity_bounds.activity_type, existing_activity_summary_for_dirty_keys.activity_type),
         'Nullable(String)'
@@ -296,16 +296,16 @@ SELECT
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(activity_bounds.activity_id IS null, 1, 0) AS is_deleted,
     now64(9) AS refreshed_at
-FROM dirty_keys
+FROM active_dirty_keys
 LEFT JOIN activity_bounds
-    ON activity_bounds.activity_id = dirty_keys.activity_id
-    AND activity_bounds.user_id = dirty_keys.user_id
+    ON activity_bounds.activity_id = active_dirty_keys.activity_id
+    AND activity_bounds.user_id = active_dirty_keys.user_id
 LEFT JOIN existing_activity_summary_for_dirty_keys
-    ON existing_activity_summary_for_dirty_keys.activity_id = dirty_keys.activity_id
-    AND existing_activity_summary_for_dirty_keys.user_id = dirty_keys.user_id
+    ON existing_activity_summary_for_dirty_keys.activity_id = active_dirty_keys.activity_id
+    AND existing_activity_summary_for_dirty_keys.user_id = active_dirty_keys.user_id
 LEFT JOIN sensor_summary
-    ON sensor_summary.activity_id = dirty_keys.activity_id
-    AND sensor_summary.user_id = dirty_keys.user_id
+    ON sensor_summary.activity_id = active_dirty_keys.activity_id
+    AND sensor_summary.user_id = active_dirty_keys.user_id
 LEFT JOIN location_summary
-    ON location_summary.activity_id = dirty_keys.activity_id
-    AND location_summary.user_id = dirty_keys.user_id
+    ON location_summary.activity_id = active_dirty_keys.activity_id
+    AND location_summary.user_id = active_dirty_keys.user_id

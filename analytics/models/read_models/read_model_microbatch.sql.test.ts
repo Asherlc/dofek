@@ -208,6 +208,13 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain("stale_activity_dirty_keys AS (");
     expect(normalizedSql).not.toContain("ref('activity_sensor_summary_rows') }} FINAL");
     expect(normalizedSql).not.toContain("ref('activity_location_summary_rows') }} FINAL");
+    expect(normalizedSql).not.toContain("FROM dirty_keys LEFT JOIN activity_bounds");
+    expect(normalizedSql).not.toContain("assumeNotNull(dirty_keys.activity_id) AS activity_id");
+    expect(normalizedSql).not.toContain("assumeNotNull(dirty_keys.user_id) AS user_id");
+    expect(normalizedSql).toContain("FROM active_dirty_keys LEFT JOIN activity_bounds");
+    expect(normalizedSql).toContain(
+      "INNER JOIN active_dirty_keys ON active_dirty_keys.activity_id = current_activity.activity_id",
+    );
     expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id");
     expect(normalizedSql).toContain(
       "FROM {{ ref('activity_sensor_summary_rows') }} WHERE (user_id, activity_id) IN",
