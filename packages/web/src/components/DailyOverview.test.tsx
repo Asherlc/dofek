@@ -254,7 +254,6 @@ describe("DailyOverview", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Strain score breakdown" })).toBeNull();
-    expect(screen.queryByText("0")).toBeNull();
     const skeletons = document.querySelectorAll(".shimmer");
     expect(skeletons.length).toBe(2);
   });

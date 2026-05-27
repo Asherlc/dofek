@@ -533,10 +533,10 @@ export function DailyOverview({
   workloadRatio,
   sleepPerformance,
   strainTarget,
-  readinessLoading,
-  workloadLoading,
-  strainTargetLoading,
-  sleepLoading,
+  readinessLoading = false,
+  workloadLoading = false,
+  strainTargetLoading = false,
+  sleepLoading = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
 
