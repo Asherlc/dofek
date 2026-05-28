@@ -30,7 +30,7 @@ describe("Dashboard", () => {
   });
 });
 
-describe("Dashboard – Daily Steps chart", () => {
+describe("Dashboard – Steps health monitor metric", () => {
   beforeEach(() => {
     cy.login();
 
@@ -53,7 +53,7 @@ describe("Dashboard – Daily Steps chart", () => {
     cy.cleanTestData();
   });
 
-  it("renders the Daily Steps chart when step data is present", () => {
+  it("renders the Steps metric when step data is present", () => {
     const startDateValue = new Date();
     startDateValue.setDate(startDateValue.getDate() - 6);
     const startDate = formatLocalDate(startDateValue);
@@ -74,12 +74,10 @@ describe("Dashboard – Daily Steps chart", () => {
 
     cy.visit("/dashboard");
 
-    // The "Daily Steps" section heading must be present
-    cy.contains("h2", "Daily Steps").should("exist");
-
-    // The seeded data should prevent the section from falling back to its empty state.
-    cy.contains("h2", "Daily Steps")
-      .closest("section")
-      .should("not.contain.text", "No data available");
+    cy.contains("Health monitor").should("be.visible");
+    cy.contains("span", "Steps")
+      .closest(".card")
+      .should("be.visible")
+      .and("contain.text", "9,200");
   });
 });
