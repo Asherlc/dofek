@@ -132,7 +132,7 @@ export interface ReadinessRow {
 export interface StrainTargetResult {
   targetStrain: number;
   currentStrain: number;
-  currentStrainSource?: "heart_rate" | "activity" | "none";
+  currentStrainSource?: "activity" | "none";
   currentPhysiologyLoad?: number | null;
   progressPercent: number;
   zone: "Push" | "Maintain" | "Recovery";
@@ -750,13 +750,7 @@ export const recoveryRouter = router({
 
       const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
       const todayLoad = loads.find((row) => row.date === today)?.daily_load ?? 0;
-      const currentStrain = await computeCurrentStrain({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        endDate: today,
-        fallbackActivityLoad: todayLoad,
-      });
+      const currentStrain = computeCurrentStrain({ fallbackActivityLoad: todayLoad });
       const roundedCurrentStrain = Math.round(currentStrain.currentStrain * 10) / 10;
       const roundedAcuteLoad = Math.round(acuteLoad * 10) / 10;
       const roundedChronicLoad = Math.round(chronicLoad * 10) / 10;

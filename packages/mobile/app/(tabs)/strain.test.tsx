@@ -158,6 +158,30 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getAllByText("4.00").length).toBeGreaterThan(0);
   });
 
+  it("does not use a prior displayed strain as today's strain fallback", async () => {
+    mockStrainTargetData = undefined;
+    mockWorkloadRatioData = {
+      displayedStrain: 13,
+      displayedDate: "2026-03-27",
+      timeSeries: [
+        {
+          date: "2026-03-28",
+          dailyLoad: 0,
+          acuteLoad: 133,
+          chronicLoad: 33,
+          workloadRatio: 4,
+          strain: 0,
+        },
+      ],
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.queryByText("13.0")).toBeNull();
+    expect(screen.getAllByText("0.0").length).toBeGreaterThan(0);
+  });
+
   it("does not render strain target card when no target data", async () => {
     mockStrainTargetData = undefined;
 

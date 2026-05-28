@@ -385,13 +385,7 @@ export const mobileDashboardRouter = router({
         4;
       const workloadRatio = chronicLoad > 0 ? acuteLoad / chronicLoad : null;
       const todayActivityLoad = dailyLoadByDate.get(endDate) ?? 0;
-      const currentStrain = await computeCurrentStrain({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: tz,
-        endDate,
-        fallbackActivityLoad: todayActivityLoad,
-      });
+      const currentStrain = computeCurrentStrain({ fallbackActivityLoad: todayActivityLoad });
 
       const strainResult: MobileDashboardResult["strain"] = {
         dailyStrain: Math.round(currentStrain.currentStrain * 10) / 10,

@@ -63,7 +63,6 @@ function hrvRowsAfterSleep(rows: SleepTestRow[]) {
 function makeSensorStore(
   dailyLoads: Array<{ metric_date: string; daily_load: number }> = [],
   yesterdayLoad = 0,
-  currentPhysiologyRows: Array<{ physiological_load: number | null }> = [],
   baselineSleepRows: SleepTestRow[] = [],
   lastNightSleepRows: SleepTestRow[] = baselineSleepRows,
 ): SensorStore {
@@ -74,7 +73,6 @@ function makeSensorStore(
   query.mockResolvedValueOnce(sleepRowsForClickHouse(baselineSleepRows));
   query.mockResolvedValueOnce(sleepRowsForClickHouse(lastNightSleepRows));
   query.mockResolvedValueOnce(sleepRowsForClickHouse(baselineSleepRows));
-  query.mockResolvedValueOnce(currentPhysiologyRows);
   query.mockResolvedValue([]);
   return {
     query,
@@ -236,7 +234,7 @@ describe("mobileDashboard.dashboard", () => {
     expect(result.strain.acuteLoad).toBe(350);
   });
 
-  it("computes daily strain from today's heart-rate physiology load", async () => {
+  it("returns zero daily strain when today has no activity load", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
     execute.mockResolvedValueOnce([]);
@@ -246,16 +244,14 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore([{ metric_date: "2026-03-28", daily_load: 0 }], 0, [
-        { physiological_load: 2.2107535185185188 },
-      ]),
+      sensorStore: makeSensorStore([{ metric_date: "2026-03-28", daily_load: 0 }]),
     });
     const result = await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(result.strain.dailyStrain).toBe(4.1);
+    expect(result.strain.dailyStrain).toBe(0);
   });
 
-  it("falls back to today's raw activity load when heart-rate physiology is unavailable", async () => {
+  it("computes daily strain from today's raw activity load", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
     execute.mockResolvedValueOnce([]);
@@ -331,7 +327,7 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore([], 50, [], baselineSleepRows, lastNightSleepRows),
+      sensorStore: makeSensorStore([], 50, baselineSleepRows, lastNightSleepRows),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
@@ -390,7 +386,7 @@ describe("mobileDashboard.dashboard", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore([], 0, [], baselineSleepRows),
+      sensorStore: makeSensorStore([], 0, baselineSleepRows),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
