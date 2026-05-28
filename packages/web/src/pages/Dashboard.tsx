@@ -188,6 +188,13 @@ export function Dashboard() {
   ) : (
     <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
   );
+  const insightStatePanel = insightsQuery.isLoading ? (
+    <QueryStatePanel variant="loading" height={160} />
+  ) : insightsQuery.error ? (
+    <QueryStatePanel error={insightsQuery.error} height={160} />
+  ) : !topInsight ? (
+    <QueryStatePanel variant="empty" message="No insights yet." height={160} />
+  ) : null;
 
   return (
     <PageLayout headerChildren={undefined}>
@@ -195,9 +202,7 @@ export function Dashboard() {
         days={days}
         endDate={endDate}
         topInsight={topInsight}
-        insightError={
-          insightsQuery.error ? <QueryStatePanel error={insightsQuery.error} height={160} /> : null
-        }
+        insightError={insightStatePanel}
         trend={{
           latestRestingHeartRate: trendData?.latest_resting_hr,
           averageRestingHeartRate: trendData?.avg_resting_hr,

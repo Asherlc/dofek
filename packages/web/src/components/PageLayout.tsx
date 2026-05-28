@@ -27,8 +27,8 @@ export function PageLayout({
       <div className="lg:min-w-0 lg:flex-1">
         {tabs && (
           <nav
+            aria-label="Section navigation"
             className="border-b border-border px-3 sm:px-6 bg-surface/45 backdrop-blur-xl"
-            aria-label="Section tabs"
           >
             <div className="mx-auto max-w-6xl flex gap-1 overflow-x-auto scrollbar-hide">
               {tabs.map((tab) => (

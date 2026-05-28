@@ -41,6 +41,13 @@ describe("ActivityList", () => {
       source_providers: ["strava"],
       distance_meters: 5000,
       calories: 450,
+      location: {
+        centroidLat: 37.7749,
+        centroidLng: -122.4194,
+        tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+        distanceMeters: 5000,
+        elevationGainM: 120,
+      },
     },
   ];
 
@@ -55,6 +62,12 @@ describe("ActivityList", () => {
   it("renders distances in imperial units", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />, "imperial");
     expect(screen.getByText("3.1 mi")).toBeDefined();
+  });
+
+  it("renders a compact map tile when an activity has a location summary", () => {
+    renderWithUnits(<ActivityList activities={mockActivities} />);
+    const image = screen.getByAltText("Activity route map summary");
+    expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/13/1310/3166.png");
   });
 
   it("navigates to activity detail on row click", () => {

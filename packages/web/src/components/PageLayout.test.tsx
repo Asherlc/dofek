@@ -93,10 +93,20 @@ describe("PageLayout", () => {
     expect(tabNav).toBeTruthy();
     expect(tabNav instanceof HTMLElement).toBe(true);
     if (tabNav instanceof HTMLElement) {
-      expect(tabNav.getAttribute("aria-label")).toBe("Section tabs");
+      expect(tabNav.getAttribute("aria-label")).toBe("Section navigation");
       const main = screen.getByRole("main");
       expect(tabNav.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
+  });
+
+  it("labels the tab navigation so tests and assistive tech can target visible tabs", () => {
+    const tabs = [{ to: "/foo", label: "Foo", exact: true }];
+    render(
+      <PageLayout tabs={tabs}>
+        <p>Content</p>
+      </PageLayout>,
+    );
+    expect(screen.getByRole("navigation", { name: "Section navigation" })).toBeTruthy();
   });
 
   it("renders page intro when title is provided", () => {

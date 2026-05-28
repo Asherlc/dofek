@@ -45,6 +45,8 @@ export interface ActivitySummaryReadModelRow {
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
   sample_count: number | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
 }
 
 function maxActivityWindowEndedAt(startedAt: string): string {
@@ -131,7 +133,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           total_distance,
           elevation_gain_m,
           elevation_loss_m,
-          sample_count
+          sample_count,
+          centroid_lat,
+          centroid_lng
         FROM analytics.activity_summary
         WHERE activity_id IN (
           SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))

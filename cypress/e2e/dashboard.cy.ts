@@ -30,7 +30,7 @@ describe("Dashboard", () => {
   });
 });
 
-describe("Dashboard – Steps health monitor metric", () => {
+describe("Dashboard – Daily Steps health monitor", () => {
   beforeEach(() => {
     cy.login();
 
@@ -53,7 +53,7 @@ describe("Dashboard – Steps health monitor metric", () => {
     cy.cleanTestData();
   });
 
-  it("renders the Steps metric when step data is present", () => {
+  it("renders the Steps health metric when step data is present", () => {
     const startDateValue = new Date();
     startDateValue.setDate(startDateValue.getDate() - 6);
     const startDate = formatLocalDate(startDateValue);
@@ -74,7 +74,12 @@ describe("Dashboard – Steps health monitor metric", () => {
 
     cy.visit("/dashboard");
 
+    // Steps now surface in the dashboard health monitor rather than a standalone chart.
     cy.contains("Health monitor").should("be.visible");
-    cy.contains("span", "Steps").closest(".card").should("be.visible").and("contain.text", "9,200");
+    cy.contains("span", "Steps")
+      .parents(".card")
+      .first()
+      .should("be.visible")
+      .and("contain.text", "9,200");
   });
 });

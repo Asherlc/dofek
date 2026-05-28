@@ -16,14 +16,13 @@ import {
   muscleGroupLabel,
 } from "@dofek/training/muscle-groups";
 import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
-import type { ActivityHrZone, ActivityPowerZone } from "@dofek/zones/zones";
-import { HEART_RATE_ZONE_COLORS, POWER_ZONE_COLORS } from "@dofek/zones/zones";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
+import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import {
@@ -722,153 +721,6 @@ function ElevationChart({
   };
 
   return <DofekChart option={option} height={200} onEvents={chartEvents} />;
-}
-
-interface ZoneDistributionDatum {
-  zone: number;
-  label: string;
-  seconds: number;
-  percent: number;
-}
-
-function formatZoneChartTime(secondsValue: number) {
-  return formatDurationSeconds(secondsValue);
-}
-
-function formatZoneAxisLabel(zoneItem: ZoneDistributionDatum) {
-  if (zoneItem.zone === 0) return zoneItem.label;
-  return `Zone ${zoneItem.zone} ${zoneItem.label}`;
-}
-
-function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
-  zones,
-  loading,
-  height,
-  emptyMessage,
-  errorMessage,
-  zoneColors,
-  tooltipDetails,
-}: {
-  zones: ZoneItem[];
-  loading: boolean;
-  height: number;
-  emptyMessage: string;
-  errorMessage?: string;
-  zoneColors: string[];
-  tooltipDetails: (zone: ZoneItem) => string;
-}) {
-  if (loading) return <ChartLoadingSkeleton height={height} />;
-
-  if (errorMessage) {
-    return (
-      <div className="flex items-center justify-center text-center px-4" style={{ height }}>
-        <span className="text-red-400 text-sm">{errorMessage}</span>
-      </div>
-    );
-  }
-
-  if (!zones.some((zoneItem) => zoneItem.percent > 0)) {
-    return (
-      <div className="flex items-center justify-center" style={{ height }}>
-        <span className="text-dim text-sm">{emptyMessage}</span>
-      </div>
-    );
-  }
-
-  const option = {
-    grid: dofekGrid("single", { top: 10, right: 80, bottom: 30, left: 130 }),
-    tooltip: dofekTooltip({
-      axisPointer: { type: "shadow" },
-      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
-        const firstParam = params[0];
-        if (!firstParam) return "";
-        const zoneItem = zones[firstParam.dataIndex];
-        if (!zoneItem) return "";
-        return `<b>${zoneItem.label}</b> (${tooltipDetails(zoneItem)})<br/>
-          ${formatZoneChartTime(zoneItem.seconds)} (${formatNumber(zoneItem.percent)}%)`;
-      },
-    }),
-    xAxis: dofekAxis.value({
-      axisLabel: { formatter: (value: number) => formatZoneChartTime(value) },
-    }),
-    yAxis: dofekAxis.category({
-      data: zones.map(formatZoneAxisLabel),
-    }),
-    series: [
-      {
-        type: "bar",
-        data: zones.map((zoneItem, zoneIndex) => ({
-          value: zoneItem.seconds,
-          itemStyle: { color: zoneColors[zoneIndex] ?? chartThemeColors.axisLabel },
-        })),
-        barWidth: "60%",
-        label: {
-          show: true,
-          position: "right",
-          color: chartThemeColors.axisLabel,
-          fontSize: 11,
-          formatter: (params: { dataIndex: number }) => {
-            const zoneItem = zones[params.dataIndex];
-            return `${formatNumber(zoneItem?.percent ?? 0, 0)}%`;
-          },
-        },
-      },
-    ],
-  };
-
-  return <DofekChart option={option} height={height} />;
-}
-
-export function HrZonesChart({
-  zones,
-  loading,
-  errorMessage,
-}: {
-  zones: ActivityHrZone[];
-  loading: boolean;
-  errorMessage?: string;
-}) {
-  return (
-    <ZoneDistributionChart
-      zones={zones}
-      loading={loading}
-      height={200}
-      emptyMessage="No heart rate zone data"
-      errorMessage={errorMessage}
-      zoneColors={HEART_RATE_ZONE_COLORS}
-      tooltipDetails={(zoneItem) => `${zoneItem.minPct}–${zoneItem.maxPct}% HRR`}
-    />
-  );
-}
-
-export function PowerZonesChart({
-  zones,
-  ftp,
-  loading,
-}: {
-  zones: ActivityPowerZone[];
-  ftp: number;
-  loading: boolean;
-}) {
-  const formatRange = (zone: ActivityPowerZone) => {
-    const minWatts = Math.round((zone.minPct / 100) * ftp);
-    const maxWatts = zone.maxPct != null ? Math.round((zone.maxPct / 100) * ftp) : null;
-    const pctLabel =
-      zone.maxPct != null ? `${zone.minPct}–${zone.maxPct}% FTP` : `>${zone.minPct}% FTP`;
-    const wattLabel = maxWatts != null ? `${minWatts}–${maxWatts} W` : `>${minWatts} W`;
-    return `${pctLabel} (${wattLabel})`;
-  };
-
-  return (
-    <ZoneDistributionChart
-      zones={zones}
-      loading={loading}
-      height={240}
-      emptyMessage="No power zone data"
-      zoneColors={POWER_ZONE_COLORS}
-      tooltipDetails={formatRange}
-    />
-  );
 }
 
 function WorkoutMuscleMap({ exercises }: { exercises: StrengthExerciseDetail[] }) {

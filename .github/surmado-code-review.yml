@@ -1,0 +1,6 @@
+auto_review_on_open: true
+auto_review_on_push: true
+review_drafts: false
+language: en
+standards_path: STANDARDS.md
+trigger_label: surmado-code-review

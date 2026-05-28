@@ -5,6 +5,7 @@
 *.db
 *.db-wal
 *.db-shm
+codegraph.lock
 
 # Cache
 cache/
