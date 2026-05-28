@@ -1394,10 +1394,10 @@ describe("recoveryRouter.strainTarget", () => {
     expect(result.progressPercent).toBe(expectedPercent);
   });
 
-  it("uses WHOOP workout strain for current strain when available", async () => {
+  it("computes current strain from activity load instead of provider strain", async () => {
     const today = "2026-03-23";
     const caller = setup({
-      loads: [{ date: today, daily_load: 39.9, whoop_strain: 10.3 }],
+      loads: [{ date: today, daily_load: 39.9, whoop_strain: 2 }],
     });
     const result = await caller.strainTarget({ endDate: today });
 
@@ -1931,10 +1931,10 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         workload_ratio: 1.25,
       },
     ]).workloadRatio({});
-    expect(result.timeSeries[0]?.strain).toBe(13.8);
+    expect(result.timeSeries[0]?.strain).toBe(10.9);
   });
 
-  it("uses combined WHOOP workout strain when available", async () => {
+  it("computes strain from activity load instead of provider strain", async () => {
     const result = await callerWith([
       {
         date: "2026-03-01",
@@ -1942,7 +1942,7 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         acute_load: 500,
         chronic_load: 400,
         workload_ratio: 1.25,
-        whoop_strain: 10.3,
+        whoop_strain: 2,
       },
     ]).workloadRatio({});
 

@@ -657,28 +657,33 @@ describe("StrainScore", () => {
       expect(strain.value).toBeLessThanOrEqual(11);
     });
 
-    it("maps a moderate 60-min workout (~45 raw) to moderate strain (12-14)", () => {
+    it("maps a two-workout daily load to the WHOOP-like strain scale", () => {
+      const strain = StrainScore.fromRawLoad(39.9);
+      expect(strain.value).toBe(10.3);
+    });
+
+    it("maps a moderate 60-min workout (~45 raw) to moderate strain (10-12)", () => {
       const strain = StrainScore.fromRawLoad(45);
+      expect(strain.value).toBeGreaterThanOrEqual(10);
+      expect(strain.value).toBeLessThanOrEqual(12);
+    });
+
+    it("maps a hard 90-min workout (~76 raw) to moderate strain (12-14)", () => {
+      const strain = StrainScore.fromRawLoad(76);
       expect(strain.value).toBeGreaterThanOrEqual(12);
       expect(strain.value).toBeLessThanOrEqual(14);
     });
 
-    it("maps a hard 90-min workout (~76 raw) to high strain (14-16)", () => {
-      const strain = StrainScore.fromRawLoad(76);
-      expect(strain.value).toBeGreaterThanOrEqual(14);
-      expect(strain.value).toBeLessThanOrEqual(16);
-    });
-
-    it("maps a very hard 2-hour workout (~96 raw) to high strain (15-17)", () => {
+    it("maps a very hard 2-hour workout (~96 raw) to moderate strain (12-14)", () => {
       const strain = StrainScore.fromRawLoad(96);
-      expect(strain.value).toBeGreaterThanOrEqual(15);
-      expect(strain.value).toBeLessThanOrEqual(17);
+      expect(strain.value).toBeGreaterThanOrEqual(12);
+      expect(strain.value).toBeLessThanOrEqual(14);
     });
 
-    it("maps an extreme 3-hour endurance effort (~141 raw) to very high strain (17-19)", () => {
+    it("maps an extreme 3-hour endurance effort (~141 raw) to high strain (13-15)", () => {
       const strain = StrainScore.fromRawLoad(141);
-      expect(strain.value).toBeGreaterThanOrEqual(17);
-      expect(strain.value).toBeLessThanOrEqual(19);
+      expect(strain.value).toBeGreaterThanOrEqual(13);
+      expect(strain.value).toBeLessThanOrEqual(15);
     });
 
     it("never exceeds 21 even for extreme values", () => {

@@ -6,7 +6,7 @@ Domain logic for health scores, training metrics, and design tokens. Shared betw
 
 ### Scoring Models
 
-- **Strain Score (`scoring.ts`)**: Implements a Whoop-like 0–21 scale. `StrainScore.fromRawLoad` uses logarithmic scaling (`3.5 * Math.log(1 + rawLoad)`) to represent diminishing returns of high-intensity efforts.
+- **Strain Score (`scoring.ts`)**: Implements a Whoop-like 0–21 scale. `StrainScore.fromRawLoad` uses logarithmic scaling (`2.775 * Math.log(1 + rawLoad)`) to represent diminishing returns of high-intensity efforts.
 - **Recovery & Readiness**:
   - `zScoreToRecoveryScore` converts z-scores to a 0–100 scale using an asymmetric sigmoid centered at 62.
   - `computeStrainTarget` recommends a daily target (Push/Maintain/Recovery) based on readiness and ACWR (Acute:Chronic Workload Ratio). Targets are capped if ACWR > 1.3 to prevent injury.
