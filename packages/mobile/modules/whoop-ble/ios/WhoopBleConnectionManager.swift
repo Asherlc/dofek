@@ -36,6 +36,8 @@ final class WhoopBleConnectionManager {
     let bleQueue: DispatchQueue
     let bleDelegate: WhoopBleDelegate
 
+    private static let bleQueueKey = DispatchSpecificKey<Bool>()
+
     private var centralManager: CBCentralManager?
     private var cmdResponseCharacteristic: CBCharacteristic?
     private var dataCharacteristic: CBCharacteristic?
@@ -53,8 +55,17 @@ final class WhoopBleConnectionManager {
 
     init() {
         bleQueue = DispatchQueue(label: "com.dofek.whoop-ble", qos: .userInitiated)
+        bleQueue.setSpecific(key: Self.bleQueueKey, value: true)
         bleDelegate = WhoopBleDelegate()
         bleDelegate.connectionManager = self
+    }
+
+    func syncOnBleQueue<T>(_ work: () -> T) -> T {
+        if DispatchQueue.getSpecific(key: Self.bleQueueKey) == true {
+            return work()
+        }
+
+        return bleQueue.sync(execute: work)
     }
 
     // MARK: - Public API
@@ -475,6 +486,18 @@ final class WhoopBleConnectionManager {
     }
 
     private func cleanup() {
+        if let peripheral = connectedPeripheral {
+            if peripheral.state == .connected {
+                if let dataCharacteristic, dataCharacteristic.isNotifying {
+                    peripheral.setNotifyValue(false, for: dataCharacteristic)
+                }
+                if let cmdResponseCharacteristic, cmdResponseCharacteristic.isNotifying {
+                    peripheral.setNotifyValue(false, for: cmdResponseCharacteristic)
+                }
+            }
+            peripheral.delegate = nil
+        }
+
         state = .idle
         connectedPeripheral = nil
         cmdCharacteristic = nil

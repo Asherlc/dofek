@@ -5,6 +5,8 @@ import { captureException, logger } from "./telemetry";
 
 const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
 const LOG_CATEGORY = "whoop-ble";
+const IMU_UPLOAD_BATCH_SIZE = 500;
+const REALTIME_UPLOAD_BATCH_SIZE = 500;
 
 /** Dependencies injected for testability (wraps the whoop-ble native module) */
 export interface WhoopBleSyncDeps {
@@ -13,7 +15,7 @@ export interface WhoopBleSyncDeps {
   connect(peripheralId: string): Promise<boolean>;
   startImuStreaming(): Promise<boolean>;
   stopImuStreaming(): Promise<boolean>;
-  peekBufferedSamples(): Promise<
+  peekBufferedSamples(maxCount?: number): Promise<
     Array<{
       timestamp: string;
       accelerometerX: number;
@@ -25,7 +27,7 @@ export interface WhoopBleSyncDeps {
     }>
   >;
   confirmSamplesDrain(count: number): void;
-  peekBufferedRealtimeData(): Promise<
+  peekBufferedRealtimeData(maxCount?: number): Promise<
     Array<{
       timestamp: string;
       rrIntervalMs: number;
@@ -286,7 +288,7 @@ async function drainBuffer(
   // network failures.
   let totalImuUploaded = 0;
   while (true) {
-    const samples = await whoopDeps.peekBufferedSamples();
+    const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
     const uploadSamples = samples.map((sample) => ({
@@ -327,7 +329,7 @@ async function drainBuffer(
   if (effectiveRealtimeClient) {
     let totalRealtimeUploaded = 0;
     while (true) {
-      const realtimeSamples = await whoopDeps.peekBufferedRealtimeData();
+      const realtimeSamples = await whoopDeps.peekBufferedRealtimeData(REALTIME_UPLOAD_BATCH_SIZE);
       logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
       if (realtimeSamples.length === 0) break;
 

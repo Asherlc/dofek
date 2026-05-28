@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const clickHouseSqlTemplateCache = new Map<string, string>();
 
@@ -8,7 +9,8 @@ export function loadClickHouseSql(
 ): string {
   let template = clickHouseSqlTemplateCache.get(fileName);
   if (!template) {
-    template = readFileSync(new URL(`./clickhouse-sql/${fileName}`, import.meta.url), "utf8");
+    const templatePath = fileURLToPath(new URL(`./clickhouse-sql/${fileName}`, import.meta.url));
+    template = readFileSync(templatePath, "utf8");
     clickHouseSqlTemplateCache.set(fileName, template);
   }
 
