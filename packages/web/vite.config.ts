@@ -38,8 +38,6 @@ function manualChunks(id: string): string | undefined {
   return undefined;
 }
 
-const apiProxyTarget = process.env.DOFEK_API_PROXY_TARGET ?? "http://localhost:3000";
-
 export default defineConfig({
   define: {
     __COMMIT_HASH__: JSON.stringify(getCommitHash()),
@@ -72,9 +70,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": apiProxyTarget,
-      "/auth": apiProxyTarget,
-      "/callback": apiProxyTarget,
+      "/api": "http://localhost:3000",
+      "/auth": "http://localhost:3000",
+      "/callback": "http://localhost:3000",
     },
   },
 });

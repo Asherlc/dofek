@@ -32,6 +32,7 @@ const mobileActiveLinkClass =
 export function AppHeader({ children }: { children?: ReactNode }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const mobileNavigationId = "app-mobile-navigation";
 
   const items = user?.isAdmin ? adminNavItems : navItems;
 
@@ -45,6 +46,8 @@ export function AppHeader({ children }: { children?: ReactNode }) {
               onClick={() => setMenuOpen((value) => !value)}
               className="p-1.5 text-muted hover:text-foreground transition-colors press"
               aria-label="Toggle navigation menu"
+              aria-controls={mobileNavigationId}
+              aria-expanded={menuOpen}
             >
               <svg
                 width="20"
@@ -78,7 +81,11 @@ export function AppHeader({ children }: { children?: ReactNode }) {
           </div>
         </div>
         {menuOpen && (
-          <nav className="px-3 pb-3 flex flex-wrap gap-1 nav-slide-enter" aria-label="Mobile">
+          <nav
+            id={mobileNavigationId}
+            className="px-3 pb-3 flex flex-wrap gap-1 nav-slide-enter"
+            aria-label="Mobile"
+          >
             {items.map(({ to, label }) => (
               <Link
                 key={to}

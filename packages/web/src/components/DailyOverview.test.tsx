@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { formatDateYmd } from "@dofek/format/format";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DailyOverview } from "./DailyOverview.tsx";
 
@@ -57,6 +57,7 @@ function findButton(element: HTMLElement): HTMLElement {
 
 describe("DailyOverview", () => {
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
   });
 
@@ -143,7 +144,7 @@ describe("DailyOverview", () => {
     expect(panel instanceof HTMLElement).toBe(true);
     if (panel instanceof HTMLElement) {
       expect(panel.className).not.toContain("dashboard-hero");
-      expect(panel.className).not.toContain(" card ");
+      expect(panel.classList.contains("card")).toBe(false);
       expect(panel.className).toContain("bg-white/62");
     }
   });

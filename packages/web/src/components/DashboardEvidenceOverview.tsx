@@ -17,7 +17,11 @@ export function formatDashboardRange(endDate: string, days: number): string {
   const end = new Date(`${endDate}T12:00:00Z`);
   const start = new Date(end);
   start.setUTCDate(end.getUTCDate() - days + 1);
-  const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
   return `${formatter.format(start)} - ${formatter.format(end)}`;
 }
 
@@ -44,6 +48,7 @@ export function DashboardEvidenceOverview({
   days,
   endDate,
   topInsight,
+  insightError,
   trend,
   sources,
   dailySummary,
@@ -52,6 +57,7 @@ export function DashboardEvidenceOverview({
   days: number;
   endDate: string;
   topInsight?: Insight;
+  insightError?: ReactNode;
   trend: DashboardTrendSnapshot;
   sources: DashboardSource[];
   dailySummary?: ReactNode;
@@ -84,31 +90,37 @@ export function DashboardEvidenceOverview({
 
       <div className="grid gap-3 lg:grid-cols-2">
         <EvidenceCard eyebrow="Key correlation">
-          <h3 className="text-base font-medium leading-snug text-foreground">
-            {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
-          </h3>
-          <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
+          {insightError ? (
+            insightError
+          ) : (
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                Correlation
-              </p>
-              <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-[#005c4b]">
-                {correlationValue}
-              </p>
-              <p className="mt-1 text-xs font-semibold text-[#007d68]">
-                {correlationStrengthLabel(effectSize)}
-              </p>
-              <p className="text-xs text-muted">{days}-day signal</p>
+              <h3 className="text-base font-medium leading-snug text-foreground">
+                {topInsight?.message ?? "Sleep consistency + Heart Rate Variability"}
+              </h3>
+              <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+                    Correlation
+                  </p>
+                  <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
+                    {correlationValue}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-accent">
+                    {correlationStrengthLabel(effectSize)}
+                  </p>
+                  <p className="text-xs text-muted">{days}-day signal</p>
+                </div>
+                <MiniScatter direction={effectSize != null && effectSize < 0 ? "down" : "up"} />
+              </div>
             </div>
-            <MiniScatter direction={effectSize != null && effectSize < 0 ? "down" : "up"} />
-          </div>
+          )}
         </EvidenceCard>
 
         <EvidenceCard eyebrow="Recent trend">
           <h3 className="text-base font-medium text-foreground">Resting heart rate</h3>
           <div className="mt-7 grid grid-cols-[0.65fr_1fr] items-end gap-5">
             <div>
-              <p className="font-mono text-4xl font-bold tabular-nums text-[#d7332f]">
+              <p className="font-mono text-4xl font-bold tabular-nums text-danger">
                 {trend.latestRestingHeartRate != null
                   ? Math.round(trend.latestRestingHeartRate)
                   : "--"}
@@ -135,12 +147,11 @@ export function DashboardEvidenceOverview({
           </h3>
           <div className="mt-4 space-y-3">
             {visibleSources.length > 0 ? (
-              visibleSources.map((source, index) => (
+              visibleSources.map((source) => (
                 <SourceRow
                   key={source.id}
                   label={source.name}
                   status={source.authorized ? "Connected" : "Supported"}
-                  strength={source.authorized ? 92 - index * 7 : 58}
                 />
               ))
             ) : (
@@ -169,25 +180,11 @@ function EvidenceCard({ eyebrow, children }: { eyebrow: string; children: ReactN
   );
 }
 
-function SourceRow({
-  label,
-  status,
-  strength,
-}: {
-  label: string;
-  status: string;
-  strength: number;
-}) {
+function SourceRow({ label, status }: { label: string; status: string }) {
   return (
-    <div className="grid grid-cols-[1fr_5.5rem_6rem] items-center gap-3 text-xs">
+    <div className="grid grid-cols-[1fr_5.5rem] items-center gap-3 text-xs">
       <span className="truncate font-semibold text-foreground">{label}</span>
       <span className="text-muted">{status}</span>
-      <span className="h-2 rounded-full bg-[#e6eee9]">
-        <span
-          className="block h-full rounded-full bg-[#005c4b]"
-          style={{ width: `${Math.max(18, Math.min(strength, 100))}%` }}
-        />
-      </span>
     </div>
   );
 }
@@ -224,11 +221,11 @@ function MiniScatter({ direction }: { direction: "up" | "down" }) {
 
   return (
     <svg viewBox="0 0 120 72" className="h-24 w-full" role="img" aria-hidden="true">
-      <path d="M4 64H116" stroke="#dce8df" strokeWidth="1" />
-      <path d="M4 8V64" stroke="#dce8df" strokeWidth="1" />
+      <path d="M4 64H116" stroke="var(--color-border-strong)" strokeWidth="1" />
+      <path d="M4 8V64" stroke="var(--color-border-strong)" strokeWidth="1" />
       <path
         d={direction === "up" ? "M8 60L112 14" : "M8 18L112 60"}
-        stroke="#79bcb0"
+        stroke="var(--color-accent-secondary)"
         strokeWidth="1.5"
       />
       {points.map(([xPosition, yPosition]) => (
@@ -237,7 +234,7 @@ function MiniScatter({ direction }: { direction: "up" | "down" }) {
           cx={xPosition}
           cy={yPosition}
           r="2.4"
-          fill="#31b7aa"
+          fill="var(--color-accent)"
         />
       ))}
     </svg>
@@ -250,12 +247,12 @@ function MiniTrend() {
       <path
         d="M0 18C18 20 28 38 44 34C62 30 72 48 90 44C110 40 122 56 160 52"
         fill="none"
-        stroke="#d7332f"
+        stroke="var(--color-danger)"
         strokeWidth="2"
       />
       <path
         d="M0 18C18 20 28 38 44 34C62 30 72 48 90 44C110 40 122 56 160 52L160 72L0 72Z"
-        fill="#d7332f"
+        fill="var(--color-danger)"
         opacity="0.08"
       />
     </svg>

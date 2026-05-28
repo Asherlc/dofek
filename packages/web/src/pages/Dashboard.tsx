@@ -173,7 +173,7 @@ export function Dashboard() {
   useAutoSync(trendData?.latest_date);
 
   const topInsight = useMemo(() => {
-    const allInsights: Insight[] = insightsQuery.data ?? [];
+    const allInsights: Insight[] = [...(insightsQuery.data ?? [])];
     return allInsights
       .filter((insight) => insight.confidence !== "insufficient")
       .sort((firstInsight, secondInsight) => {
@@ -195,6 +195,9 @@ export function Dashboard() {
         days={days}
         endDate={endDate}
         topInsight={topInsight}
+        insightError={
+          insightsQuery.error ? <QueryStatePanel error={insightsQuery.error} height={160} /> : null
+        }
         trend={{
           latestRestingHeartRate: trendData?.latest_resting_hr,
           averageRestingHeartRate: trendData?.avg_resting_hr,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
 
 vi.mock("../lib/auth-context.tsx", () => ({
@@ -21,6 +21,10 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("AppHeader", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("renders desktop navigation as a sidebar evidence desk", () => {
     render(<AppHeader />);
 
@@ -37,6 +41,19 @@ describe("AppHeader", () => {
     const mobileHeader = screen.getByRole("banner");
     expect(mobileHeader.className).toContain("lg:hidden");
     expect(screen.getByLabelText("Toggle navigation menu")).toBeTruthy();
+  });
+
+  it("exposes mobile navigation state to assistive technology", () => {
+    render(<AppHeader />);
+
+    const menuButton = screen.getByLabelText("Toggle navigation menu");
+    expect(menuButton.getAttribute("aria-expanded")).toBe("false");
+    expect(menuButton.getAttribute("aria-controls")).toBe("app-mobile-navigation");
+
+    fireEvent.click(menuButton);
+
+    expect(menuButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Mobile").getAttribute("id")).toBe("app-mobile-navigation");
   });
 
   it("renders primary app destinations and the signed-in user", () => {

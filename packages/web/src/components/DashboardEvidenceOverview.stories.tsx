@@ -88,3 +88,47 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const Loading: Story = {
+  args: {
+    topInsight: undefined,
+    trend: { latestRestingHeartRate: undefined, averageRestingHeartRate: undefined },
+    dailySummary: (
+      <div className="rounded-lg border border-border bg-white/62 p-5" aria-busy="true">
+        <div className="h-3 w-24 rounded bg-skeleton" />
+        <div className="mt-5 flex flex-wrap justify-center gap-10">
+          {[0, 1, 2].map((placeholder) => (
+            <div
+              key={placeholder}
+              className="size-32 animate-pulse rounded-full border-8 border-accent/10"
+            />
+          ))}
+        </div>
+      </div>
+    ),
+    healthMonitor: (
+      <div className="grid gap-3 sm:grid-cols-3" aria-busy="true">
+        {[0, 1, 2].map((placeholder) => (
+          <div
+            key={placeholder}
+            className="h-20 animate-pulse rounded-lg border border-border bg-white/70"
+          />
+        ))}
+      </div>
+    ),
+  },
+};
+
+export const Empty: Story = {
+  args: {
+    topInsight: undefined,
+    trend: { latestRestingHeartRate: null, averageRestingHeartRate: null },
+    sources: [],
+    dailySummary: (
+      <div className="rounded-lg border border-border bg-white/62 p-5">
+        <p className="text-sm text-muted">No daily summary yet.</p>
+      </div>
+    ),
+    healthMonitor: <p className="text-sm text-muted">No recent health metrics yet.</p>,
+  },
+};

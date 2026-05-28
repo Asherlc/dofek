@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   correlationStrengthLabel,
   DashboardEvidenceOverview,
@@ -30,6 +30,10 @@ describe("DashboardEvidenceOverview helpers", () => {
 });
 
 describe("DashboardEvidenceOverview", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("renders the evidence desk content architecture", () => {
     render(
       <DashboardEvidenceOverview
@@ -76,5 +80,21 @@ describe("DashboardEvidenceOverview", () => {
     expect(
       dailySummary.compareDocumentPosition(keyCorrelation) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("shows insight errors instead of falling back to a fake empty correlation", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        sources={[]}
+        insightError={<div>Could not load insights.</div>}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Could not load insights.")).toBeTruthy();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
   });
 });

@@ -56,7 +56,7 @@ const ANALYSIS_CARDS = [
   {
     title: "Resting heart rate has been elevated for 4 days",
     detail: "The trend stays visible even when it is spread across device-specific daily scores.",
-    value: "+7 bpm",
+    value: "+7 beats/min",
     tone: "Trend surfaced",
   },
 ] as const;
@@ -359,7 +359,7 @@ function TrendPanel() {
           <div className="text-3xl font-bold" style={{ color: activityMetricColors.heartRate }}>
             52
           </div>
-          <div className="text-xs text-[#6b8178]">bpm average</div>
+          <div className="text-xs text-[#6b8178]">beats/min average</div>
         </div>
         <LineChart color={activityMetricColors.heartRate} />
       </div>
@@ -385,8 +385,8 @@ function ComparisonPanel() {
 
 function SourcePanel() {
   const sourceRows = [
-    { name: "Strong", status: "Connected", width: "94%" },
-    { name: "Cronometer", status: "Connected", width: "86%" },
+    { name: "Strong", status: "Connected" },
+    { name: "Cronometer", status: "Connected" },
   ] as const;
 
   return (
@@ -397,12 +397,9 @@ function SourcePanel() {
       <div className="mt-1 text-sm text-[#2d4f45]">Connected source coverage</div>
       <div className="mt-3 space-y-2.5">
         {sourceRows.map((source) => (
-          <div key={source.name} className="grid grid-cols-[80px_64px_1fr] items-center gap-2">
+          <div key={source.name} className="grid grid-cols-[80px_1fr] items-center gap-2">
             <div className="text-xs font-medium text-[#062f29]">{source.name}</div>
             <div className="text-xs text-[#45645b]">{source.status}</div>
-            <div className="h-2 overflow-hidden rounded-full bg-[#edf3ef]">
-              <div className="h-full rounded-full bg-[#005244]" style={{ width: source.width }} />
-            </div>
           </div>
         ))}
       </div>
@@ -414,10 +411,10 @@ function HealthMonitorPreview() {
   const metrics = [
     { label: "Heart Rate Variability", value: "68 ms" },
     { label: "Resting Heart Rate", value: "-" },
-    { label: "SpO2", value: "98%" },
+    { label: "Blood Oxygen", value: "98%" },
     { label: "Steps", value: "7,640" },
-    { label: "Active Energy", value: "407 kcal" },
-    { label: "Skin Temp", value: "36.2 C" },
+    { label: "Active Energy", value: "407 calories" },
+    { label: "Skin Temperature", value: "36.2 Celsius" },
   ] as const;
 
   return (

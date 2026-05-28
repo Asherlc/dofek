@@ -48,6 +48,20 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const EmptyNoUser: Story = {
+  name: "No user",
+};
+
+export const LoadingShell: Story = {
+  args: {
+    children: (
+      <output className="inline-block h-7 w-20 animate-pulse rounded-md bg-skeleton">
+        <span className="sr-only">Loading header action</span>
+      </output>
+    ),
+  },
+};
+
 export const WithHeaderAction: Story = {
   args: {
     children: (
