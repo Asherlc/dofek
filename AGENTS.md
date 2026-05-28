@@ -102,7 +102,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Ask about trade-offs**: When there are design decisions with multiple valid approaches (e.g., completeness vs simplicity, stability vs features), always ask the user rather than making assumptions. Don't cut corners without asking first.
 - **Commit regularly**: Commit at regular intervals — after each meaningful chunk of work (new feature, passing tests, refactor). Don't let changes accumulate.
 - **Always push after commit**: Push to remote after every commit so CI runs and changes are backed up.
-- **Pre-push checks**: Before every push, run `pnpm lint`, `pnpm test:changed`, and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). CI runs the full test suite, but never push code that fails lint, changed-test coverage, or type checking.
+- **Pre-push checks**: Before every push, run `pnpm lint`, relevant local unit tests (`pnpm test:unit`, `pnpm test:mobile` when mobile code changed, or explicit `*.test.ts[x]` files for the changed units), and typecheck all packages (`pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc --noEmit`). Do not run local E2E/Cypress suites unless the PR adds or changes E2E tests; CI runs E2E coverage. Never push code that fails lint, relevant unit tests, or type checking.
 - **Test Docker changes locally end-to-end**: Before pushing Dockerfile or entrypoint changes, do a full local test — not just image builds. Run the server container against a real database and verify it starts, runs migrations, serves API responses, and serves the SPA:
   ```bash
   # Build the server image
@@ -136,7 +136,9 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## Commands
 - `pnpm test` — run tests
-- `pnpm test:changed` — run tests affected by files changed from `origin/main`
+- `pnpm test:unit` — run local unit tests
+- `pnpm test:mobile` — run local mobile unit tests
+- `pnpm test:changed` — run tests affected by files changed from `origin/main` when broader local coverage is intentionally needed
 - `pnpm test:watch` — run tests in watch mode
 - `pnpm dev` — run sync in dev mode
 - `pnpm generate` — generate Drizzle migrations from schema changes
