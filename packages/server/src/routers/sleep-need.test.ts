@@ -569,7 +569,7 @@ describe("sleepNeedRouter", () => {
           efficiency_pct: 72,
           provider_id: "provider-a",
         },
-        { date: "2026-03-01", duration_minutes: 480 },
+        { date: "2026-03-01", duration_minutes: 480, provider_id: "provider-a" },
       ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 

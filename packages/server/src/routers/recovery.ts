@@ -275,7 +275,7 @@ export const recoveryRouter = router({
         workloadRowSchema,
         `WITH per_activity AS (
           SELECT
-            toDate(toTimeZone(started_at, {timezone:String})) AS date,
+            toDate(toTimeZone(activity_summary.started_at, {timezone:String})) AS date,
             dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
               * activity_summary.avg_hr
               / nullIf(toFloat64(activity_summary.max_hr), 0) AS load
