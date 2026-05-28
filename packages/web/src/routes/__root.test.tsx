@@ -11,7 +11,9 @@ const mockUseLocation = vi.hoisted(() => vi.fn());
 const captured = vi.hoisted(() => {
   const ref: {
     component: (() => React.ReactElement) | null;
-    validateSearch: ((search: Record<string, unknown>) => { providerGuide?: boolean }) | null;
+    validateSearch:
+      | ((search: Record<string, unknown>) => { providerGuide?: boolean; returnTo?: string })
+      | null;
   } = { component: null, validateSearch: null };
   return ref;
 });
@@ -19,7 +21,10 @@ const captured = vi.hoisted(() => {
 vi.mock("@tanstack/react-router", () => ({
   createRootRoute: (options: {
     component: () => React.ReactElement;
-    validateSearch?: (search: Record<string, unknown>) => { providerGuide?: boolean };
+    validateSearch?: (search: Record<string, unknown>) => {
+      providerGuide?: boolean;
+      returnTo?: string;
+    };
   }) => {
     captured.component = options.component;
     captured.validateSearch = options.validateSearch ?? null;
@@ -67,15 +72,35 @@ describe("validateSearch", () => {
   });
 
   it("returns undefined for missing param", () => {
-    expect(validate({})).toEqual({ providerGuide: undefined });
+    expect(validate({})).toEqual({ providerGuide: undefined, returnTo: undefined });
   });
 
   it("returns undefined for false", () => {
-    expect(validate({ providerGuide: false })).toEqual({ providerGuide: undefined });
+    expect(validate({ providerGuide: false })).toEqual({
+      providerGuide: undefined,
+      returnTo: undefined,
+    });
   });
 
   it("returns undefined for string 'false'", () => {
-    expect(validate({ providerGuide: "false" })).toEqual({ providerGuide: undefined });
+    expect(validate({ providerGuide: "false" })).toEqual({
+      providerGuide: undefined,
+      returnTo: undefined,
+    });
+  });
+
+  it("keeps safe returnTo paths", () => {
+    expect(validate({ returnTo: "/onboarding" })).toEqual({
+      providerGuide: undefined,
+      returnTo: "/onboarding",
+    });
+  });
+
+  it("drops external returnTo URLs", () => {
+    expect(validate({ returnTo: "https://evil.test/path" })).toEqual({
+      providerGuide: undefined,
+      returnTo: undefined,
+    });
   });
 });
 
@@ -96,6 +121,18 @@ describe("AuthGate", () => {
     renderAuthGate();
 
     expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: "/login" }));
+  });
+
+  it("preserves protected route path as login returnTo", () => {
+    mockUseAuth.mockReturnValue({ user: null, isLoading: false, logout: vi.fn() });
+    mockUseLocation.mockReturnValue({ pathname: "/onboarding" });
+
+    renderAuthGate();
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/login",
+      search: { returnTo: "/onboarding" },
+    });
   });
 
   it("does not redirect authenticated user on non-login route", () => {

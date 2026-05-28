@@ -1,4 +1,4 @@
-import { formatCaloriesMeasurement } from "@dofek/format/format";
+import { formatCaloriesMeasurement, formatDateYmd } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import { trpc } from "../lib/trpc.ts";
@@ -37,6 +37,7 @@ const FEATURED_PROVIDERS = [
 type FeaturedProvider = (typeof FEATURED_PROVIDERS)[number];
 
 const HERO_PROOF_POINTS = ["Connect sources", "Compare trends", "Keep history"] as const;
+const GET_STARTED_SEARCH = { returnTo: "/onboarding" };
 
 const ANALYSIS_CARDS = [
   {
@@ -177,6 +178,7 @@ function LandingNav() {
           </Link>
           <Link
             to="/login"
+            search={GET_STARTED_SEARCH}
             className="rounded-lg bg-[#005244] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#005244]/15 transition-colors hover:bg-[#013f35]"
           >
             Get started
@@ -209,6 +211,7 @@ function HeroSection() {
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link
               to="/login"
+              search={GET_STARTED_SEARCH}
               className="inline-flex items-center justify-center rounded-lg bg-[#005244] px-8 py-4 text-base font-semibold text-white shadow-lg shadow-[#005244]/15 transition-colors hover:bg-[#013f35]"
             >
               Get started
@@ -278,6 +281,7 @@ function DashboardPreview() {
 }
 
 function DailySummaryPreview() {
+  const previewDate = formatDateYmd();
   const rings = [
     { label: "Recovery", value: "--", caption: "No data", tone: "#6b8a72" },
     { label: "Strain", value: "0.0", caption: "Light", tone: "#55725c" },
@@ -295,7 +299,7 @@ function DailySummaryPreview() {
             Today&apos;s recovery picture
           </div>
         </div>
-        <div className="text-xs text-[#6b8178]">2026-05-27</div>
+        <div className="text-xs text-[#6b8178]">{previewDate}</div>
       </div>
       <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
         {rings.map((ring) => (
@@ -815,6 +819,7 @@ function FinalCta() {
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             to="/login"
+            search={GET_STARTED_SEARCH}
             className="inline-flex w-full items-center justify-center rounded-lg bg-[#005244] px-8 py-4 text-base font-semibold text-white transition-colors hover:bg-[#013f35] sm:w-auto"
           >
             Get started

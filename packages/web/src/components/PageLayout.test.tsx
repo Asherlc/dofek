@@ -93,6 +93,7 @@ describe("PageLayout", () => {
     expect(tabNav).toBeTruthy();
     expect(tabNav instanceof HTMLElement).toBe(true);
     if (tabNav instanceof HTMLElement) {
+      expect(tabNav.getAttribute("aria-label")).toBe("Section navigation");
       const main = screen.getByRole("main");
       expect(tabNav.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }

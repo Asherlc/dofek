@@ -33,12 +33,13 @@ function AuthGate() {
 
   useEffect(() => {
     if (!isLoading && !user && !isPublic) {
-      navigate({ to: "/login", search: (prev) => prev });
+      const returnTo = typeof location.href === "string" ? location.href : location.pathname;
+      navigate({ to: "/login", search: { returnTo } });
     }
     if (!isLoading && user && location.pathname === "/login") {
       navigate({ to: "/dashboard" });
     }
-  }, [isLoading, user, isPublic, location.pathname, navigate]);
+  }, [isLoading, user, isPublic, location.href, location.pathname, navigate]);
 
   if (isLoading) {
     return (
@@ -61,13 +62,22 @@ function AuthGate() {
   );
 }
 
+function parseReturnTo(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!value.startsWith("/") || value.startsWith("//")) return undefined;
+  return value;
+}
+
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     const dest = LEGACY_REDIRECTS[location.pathname];
     if (dest) throw redirect({ to: dest });
   },
-  validateSearch: (search: Record<string, unknown>): { providerGuide?: boolean } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { providerGuide?: boolean; returnTo?: string } => ({
     providerGuide: search.providerGuide === true || search.providerGuide === "true" || undefined,
+    returnTo: parseReturnTo(search.returnTo),
   }),
   component: () => (
     <AuthProvider>

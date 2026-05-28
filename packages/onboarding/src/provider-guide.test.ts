@@ -3,7 +3,7 @@ import {
   PROVIDER_GUIDE_CATEGORIES,
   PROVIDER_GUIDE_SETTINGS_KEY,
   shouldShowProviderGuide,
-} from "./provider-guide.ts";
+} from "./provider-guide";
 
 describe("shouldShowProviderGuide", () => {
   it("returns true when no providers connected and not dismissed", () => {

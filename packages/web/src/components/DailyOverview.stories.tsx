@@ -71,6 +71,12 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const Embedded: Story = {
+  args: {
+    embedded: true,
+  },
+};
+
 export const WithLoadStats: Story = {
   args: {
     strainTarget: mockStrainTarget,

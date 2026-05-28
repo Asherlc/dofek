@@ -18,8 +18,20 @@ const mockUsableProvidersQuery = vi.hoisted(() =>
 );
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
-    <a href={to} {...props}>
+  Link: ({
+    children,
+    search,
+    to,
+    ...props
+  }: {
+    children: ReactNode;
+    search?: Record<string, string>;
+    to: string;
+  }) => (
+    <a
+      href={search ? `${to}?${new URLSearchParams(Object.entries(search)).toString()}` : to}
+      {...props}
+    >
       {children}
     </a>
   ),
@@ -85,6 +97,19 @@ describe("LandingPage", () => {
     expect(screen.getByText(/connect the apps and devices you use/i)).toBeTruthy();
     expect(screen.queryByRole("link", { name: /view demo/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /view on github/i })).toBeNull();
+  });
+
+  it("sends get started links to login with the onboarding return path", () => {
+    render(<LandingPage />);
+
+    const getStartedLinks = screen.getAllByRole("link", { name: /get started/i });
+
+    expect(getStartedLinks.length).toBeGreaterThan(0);
+    expect(
+      getStartedLinks.every(
+        (link) => link.getAttribute("href") === "/login?returnTo=%2Fonboarding",
+      ),
+    ).toBe(true);
   });
 
   it("shows concrete analysis examples in the product preview", () => {

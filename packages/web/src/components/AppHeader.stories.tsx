@@ -10,16 +10,31 @@ import {
 import type { ComponentType } from "react";
 import { AppHeader } from "./AppHeader";
 
+const storyPaths = [
+  "/dashboard",
+  "/training",
+  "/activities",
+  "/sleep",
+  "/nutrition",
+  "/body",
+  "/correlation",
+  "/tracking",
+  "/settings",
+  "/admin",
+] as const;
+
 function withRouter(Story: ComponentType) {
   const rootRoute = createRootRoute({
     component: Outlet,
   });
-  const dashboardRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: "/dashboard",
-    component: () => <Story />,
-  });
-  const routeTree = rootRoute.addChildren([dashboardRoute]);
+  const routes = storyPaths.map((path) =>
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path,
+      component: path === "/dashboard" ? () => <Story /> : () => null,
+    }),
+  );
+  const routeTree = rootRoute.addChildren(routes);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: ["/dashboard"] }),
