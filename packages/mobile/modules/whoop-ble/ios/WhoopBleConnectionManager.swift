@@ -64,7 +64,6 @@ final class WhoopBleConnectionManager {
         if DispatchQueue.getSpecific(key: Self.bleQueueKey) == true {
             return work()
         }
-
         return bleQueue.sync(execute: work)
     }
 
@@ -488,20 +487,14 @@ final class WhoopBleConnectionManager {
     private func cleanup() {
         if let peripheral = connectedPeripheral {
             if peripheral.state == .connected {
-                if let dataCharacteristic, dataCharacteristic.isNotifying {
-                    peripheral.setNotifyValue(false, for: dataCharacteristic)
-                }
-                if let cmdResponseCharacteristic, cmdResponseCharacteristic.isNotifying {
-                    peripheral.setNotifyValue(false, for: cmdResponseCharacteristic)
-                }
+                [dataCharacteristic, cmdResponseCharacteristic]
+                    .compactMap { $0 }
+                    .filter(\.isNotifying)
+                    .forEach { peripheral.setNotifyValue(false, for: $0) }
             }
             peripheral.delegate = nil
         }
-
-        state = .idle
-        connectedPeripheral = nil
-        cmdCharacteristic = nil
-        cmdResponseCharacteristic = nil
-        dataCharacteristic = nil
+        (state, connectedPeripheral, cmdCharacteristic, cmdResponseCharacteristic, dataCharacteristic) =
+            (.idle, nil, nil, nil, nil)
     }
 }
