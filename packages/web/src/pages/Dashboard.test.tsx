@@ -1,11 +1,116 @@
+// @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type MockInsightsQueryResult = {
+  data: unknown[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
+
+const mockReadinessQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
+const mockWorkloadQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
+const mockStrainTargetQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: undefined, isLoading: false })),
+);
+const mockSleepPerformanceQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: undefined, isLoading: false })),
+);
+const mockTrendsQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: undefined, isLoading: false, error: null })),
+);
+const mockInsightsQuery = vi.hoisted(() =>
+  vi.fn<() => MockInsightsQueryResult>(() => ({ data: [], isLoading: false, error: null })),
+);
+
+vi.mock("../components/DailyOverview.tsx", () => ({
+  DailyOverview: () => <div>Daily overview</div>,
+}));
+
+vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
+  DashboardEvidenceOverview: ({ insightError }: { insightError?: ReactNode }) => (
+    <section>{insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}</section>
+  ),
+}));
+
+vi.mock("../components/HealthStatusBar.tsx", () => ({
+  HealthStatusBar: () => <div>Health status bar</div>,
+}));
+
+vi.mock("../components/PageLayout.tsx", () => ({
+  PageLayout: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock("../hooks/useAutoSync.ts", () => ({
+  useAutoSync: () => {},
+}));
+
+vi.mock("../hooks/useTodayQueryDate.ts", () => ({
+  useTodayQueryDate: () => "2026-05-27",
+}));
+
+vi.mock("../lib/trpc.ts", () => ({
+  trpc: {
+    recovery: {
+      readinessScore: { useQuery: mockReadinessQuery },
+      workloadRatio: { useQuery: mockWorkloadQuery },
+      strainTarget: { useQuery: mockStrainTargetQuery },
+    },
+    sleepNeed: {
+      performance: { useQuery: mockSleepPerformanceQuery },
+    },
+    dailyMetrics: {
+      trends: { useQuery: mockTrendsQuery },
+    },
+    insights: {
+      compute: { useQuery: mockInsightsQuery },
+    },
+  },
+}));
+
+vi.mock("../lib/unitContext.ts", () => ({
+  useUnitConverter: () => new UnitConverter("metric"),
+}));
+
+vi.mock("../lib/useProviderGuide.ts", () => ({
+  useProviderGuide: () => ({ providers: [] }),
+}));
+
 import {
   buildHealthMetrics,
   buildSkinTempSeries,
+  Dashboard,
   healthMonitorSubtitle,
   spo2TempSectionConfig,
 } from "./Dashboard";
+
+afterEach(cleanup);
+
+describe("Dashboard", () => {
+  beforeEach(() => {
+    mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+  });
+
+  it("uses a loading panel while insights are loading", () => {
+    mockInsightsQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+  });
+
+  it("uses an empty panel when no insights are available", () => {
+    render(<Dashboard />);
+
+    expect(screen.getByTestId("query-state-empty")).toBeTruthy();
+    expect(screen.getByText("No insights yet.")).toBeTruthy();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+  });
+});
 
 describe("buildSkinTempSeries", () => {
   const metrics = [

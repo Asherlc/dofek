@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 import { LandingPage, LandingPageView } from "./LandingPage.tsx";
 
 const mockUsableProvidersQuery = vi.hoisted(() =>
@@ -100,6 +101,28 @@ describe("LandingPage", () => {
     expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
+  });
+
+  it("formats preview units through the unit system", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("bpm average")).toBeTruthy();
+    expect(screen.getByText("407 kcal")).toBeTruthy();
+    expect(screen.getByText("36.2°C")).toBeTruthy();
+    expect(screen.queryByText("beats/min average")).toBeNull();
+    expect(screen.queryByText("407 calories")).toBeNull();
+    expect(screen.queryByText("36.2 Celsius")).toBeNull();
+  });
+
+  it("uses imperial preview temperature when the unit context is imperial", () => {
+    render(
+      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
+        <LandingPageView usableProviders={[]} />
+      </UnitContext.Provider>,
+    );
+
+    expect(screen.getByText("97.2°F")).toBeTruthy();
+    expect(screen.queryByText("36.2°C")).toBeNull();
   });
 
   it("shows the iPhone app with direct WHOOP strap capture", () => {

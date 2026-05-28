@@ -1,6 +1,8 @@
+import { formatCaloriesMeasurement } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import { trpc } from "../lib/trpc.ts";
+import { useUnitConverter } from "../lib/unitContext.ts";
 
 const FEATURED_PROVIDERS = [
   { id: "apple_health", label: "Apple Health", ext: "png" },
@@ -351,7 +353,7 @@ function TrendPanel() {
           <div className="text-3xl font-bold" style={{ color: activityMetricColors.heartRate }}>
             52
           </div>
-          <div className="text-xs text-[#6b8178]">beats/min average</div>
+          <div className="text-xs text-[#6b8178]">bpm average</div>
         </div>
         <LineChart color={activityMetricColors.heartRate} />
       </div>
@@ -398,13 +400,14 @@ function SourcePanel() {
 }
 
 function HealthMonitorPreview() {
+  const units = useUnitConverter();
   const metrics = [
     { label: "Heart Rate Variability", value: "68 ms" },
     { label: "Resting Heart Rate", value: "-" },
     { label: "Blood Oxygen", value: "98%" },
     { label: "Steps", value: "7,640" },
-    { label: "Active Energy", value: "407 calories" },
-    { label: "Skin Temperature", value: "36.2 Celsius" },
+    { label: "Active Energy", value: formatCaloriesMeasurement(407).text },
+    { label: "Skin Temperature", value: units.formatTemperature(36.2).text },
   ] as const;
 
   return (
