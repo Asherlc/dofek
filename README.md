@@ -131,6 +131,12 @@ The server imports shared code from the root package via `dofek` workspace depen
 
 Use `@dofek/format` for display formatting instead of local rounding, string-built units, or ad hoc date/time formatting. Nutrition displays should use the nutrition helpers, body composition should use the body composition helpers, recovery metrics should use `formatHRV`/`formatSpO2`, intensity and training load should use their domain helpers, dates/times should use the shared date/time helpers, and durations should use the shared human-readable duration helpers.
 
+### Strain semantics
+
+Current strain is a same-day, activity-derived value. It starts at 0 each day and is computed from today's activity load (`duration_minutes * average_heart_rate / max_heart_rate`) converted to the 0-21 strain scale. Passive all-day heart-rate samples do not contribute to current strain.
+
+Target strain is separate from current strain. It uses readiness and recent training-load balance to recommend how much strain to aim for, while current strain only reports what the user has actually accumulated today from activities.
+
 ## Development
 
 ```bash

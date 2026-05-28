@@ -40,7 +40,7 @@ export default function StrainScreen() {
   const [days, setDays] = useState(30);
   const units = useUnitConverter();
   const endDate = useMemo(() => formatDateYmd(), []);
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days });
+  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const workloadResult = workloadQuery.data;
   const workloadData = workloadResult?.timeSeries ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
@@ -77,7 +77,11 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain = strainTarget?.currentStrain ?? workloadResult?.displayedStrain ?? 0;
+  const dailyStrain =
+    strainTarget?.currentStrain ??
+    (workloadResult?.displayedDate != null && workloadResult.displayedDate === endDate
+      ? workloadResult.displayedStrain
+      : 0);
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;

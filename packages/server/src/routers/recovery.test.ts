@@ -1292,19 +1292,17 @@ describe("recoveryRouter.strainTarget", () => {
     readinessRows = [],
     sleepRows,
     loads = [],
-    currentPhysiologyRows = [],
   }: {
     readinessRows?: unknown[];
     sleepRows?: Partial<SleepNightTestRow>[];
     loads?: unknown[];
-    currentPhysiologyRows?: unknown[];
   }) {
     const executeMock = vi.fn();
     executeMock.mockResolvedValueOnce(readinessRows);
     const sensorRows =
       readinessRows.length > 0
-        ? [[], loads, (sleepRows ?? []).map((row) => sleepNightRow(row)), currentPhysiologyRows]
-        : [[], loads, currentPhysiologyRows];
+        ? [[], loads, (sleepRows ?? []).map((row) => sleepNightRow(row))]
+        : [[], loads];
     return createCaller({
       db: { execute: executeMock },
       userId: "user-1",
@@ -1345,20 +1343,19 @@ describe("recoveryRouter.strainTarget", () => {
     expect(["Push", "Maintain", "Recovery"]).toContain(result.zone);
   });
 
-  it("computes current strain from today's heart-rate physiology load", async () => {
+  it("returns zero current strain when today has no activity load", async () => {
     const today = "2026-03-23";
     const caller = setup({
       loads: [
         { date: "2026-03-22", daily_load: 100 },
         { date: today, daily_load: 0 },
       ],
-      currentPhysiologyRows: [{ physiological_load: 2.2107535185185188 }],
     });
     const result = await caller.strainTarget({ endDate: today });
 
-    expect(result.currentStrain).toBe(4.1);
-    expect(result.currentStrainSource).toBe("heart_rate");
-    expect(result.currentPhysiologyLoad).toBe(2.21);
+    expect(result.currentStrain).toBe(0);
+    expect(result.currentStrainSource).toBe("none");
+    expect(result.currentPhysiologyLoad).toBeNull();
   });
 
   it("does not count earlier acute-window load as today's current strain", async () => {
@@ -1389,7 +1386,6 @@ describe("recoveryRouter.strainTarget", () => {
     const today = "2026-03-23";
     const caller = setup({
       loads: [{ date: today, daily_load: 50 }],
-      currentPhysiologyRows: [{ physiological_load: 2.2107535185185188 }],
     });
     const result = await caller.strainTarget({ endDate: today });
 
