@@ -22,9 +22,11 @@ describe("Training Page", () => {
 
   it("renders sub-tab navigation", () => {
     cy.visit("/training");
-    for (const tab of ["Overview", "Endurance", "Strength", "Hiking", "Recovery"]) {
-      cy.contains(tab).should("be.visible");
-    }
+    cy.get('nav[aria-label="Section navigation"]').within(() => {
+      for (const tab of ["Overview", "Endurance", "Strength", "Hiking", "Recovery"]) {
+        cy.contains("a", tab).should("be.visible");
+      }
+    });
   });
 
   it("navigates to sub-tabs without errors", () => {

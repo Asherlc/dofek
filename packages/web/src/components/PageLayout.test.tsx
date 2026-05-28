@@ -98,6 +98,16 @@ describe("PageLayout", () => {
     }
   });
 
+  it("labels the tab navigation so tests and assistive tech can target visible tabs", () => {
+    const tabs = [{ to: "/foo", label: "Foo", exact: true }];
+    render(
+      <PageLayout tabs={tabs}>
+        <p>Content</p>
+      </PageLayout>,
+    );
+    expect(screen.getByRole("navigation", { name: "Section navigation" })).toBeTruthy();
+  });
+
   it("renders page intro when title is provided", () => {
     render(
       <PageLayout title="Page Title Here" subtitle="Page description here">

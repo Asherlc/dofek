@@ -26,7 +26,10 @@ export function PageLayout({
       <AppHeader />
       <div className="lg:min-w-0 lg:flex-1">
         {tabs && (
-          <nav className="border-b border-border px-3 sm:px-6 bg-surface/45 backdrop-blur-xl">
+          <nav
+            aria-label="Section navigation"
+            className="border-b border-border px-3 sm:px-6 bg-surface/45 backdrop-blur-xl"
+          >
             <div className="mx-auto max-w-6xl flex gap-1 overflow-x-auto scrollbar-hide">
               {tabs.map((tab) => (
                 <Link
