@@ -570,7 +570,8 @@ function PillarsSection() {
             Built for people with valuable, fragmented health data.
           </h2>
           <p className="mt-4 text-lg leading-8 text-[#45645b]">
-            Dofek is not a coach. It is the place where your sources become inspectable together.
+            Dofek is not a coach. It is the place where your sources become easy to inspect
+            together.
           </p>
         </div>
         <div className="mt-12 grid gap-0 border-y border-[#dce8df] lg:grid-cols-3">
