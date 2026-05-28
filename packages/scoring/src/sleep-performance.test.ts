@@ -42,6 +42,21 @@ describe("computeSleepPerformance", () => {
     expect(highSuffLowEff.score).toBeGreaterThan(lowSuffHighEff.score);
   });
 
+  it("averages hours, consistency, efficiency, and low stress when all components exist", () => {
+    const result = computeSleepPerformance(465, 480, 72, {
+      consistency: 56,
+      lowStress: 15,
+    });
+
+    expect(result.score).toBe(60);
+    expect(result.components).toEqual({
+      hours: 97,
+      efficiency: 72,
+      consistency: 56,
+      lowStress: 15,
+    });
+  });
+
   it("handles zero needed minutes", () => {
     const result = computeSleepPerformance(420, 0, 90);
     expect(result.score).toBeGreaterThanOrEqual(0);

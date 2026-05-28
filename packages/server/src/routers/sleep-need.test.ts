@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+
+const stressRepositoryMock = vi.hoisted(() => ({
+  getStressScores: vi.fn(),
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -18,6 +22,14 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+vi.mock("../repositories/stress-repository.ts", () => ({
+  StressRepository: class {
+    getStressScores(days: number, endDate: string) {
+      return stressRepositoryMock.getStressScores(days, endDate);
+    }
+  },
+}));
+
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
   return {
@@ -35,6 +47,16 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 import { sleepNeedRouter } from "./sleep-need.ts";
 
 const createCaller = createTestCallerFactory(sleepNeedRouter);
+
+beforeEach(() => {
+  stressRepositoryMock.getStressScores.mockReset();
+  stressRepositoryMock.getStressScores.mockResolvedValue({
+    daily: [],
+    weekly: [],
+    latestScore: null,
+    trend: "stable",
+  });
+});
 
 interface SleepNeedFixtureRow {
   date: string;
@@ -527,6 +549,39 @@ describe("sleepNeedRouter", () => {
 
       expect(result?.neededMinutes).toBe(480);
       expect(result?.score).toBe(89);
+    });
+
+    it("averages provider-agnostic duration, efficiency, consistency, and stress components", async () => {
+      stressRepositoryMock.getStressScores.mockResolvedValueOnce({
+        daily: [
+          {
+            date: "2026-03-14",
+            stressScore: 2.55,
+            hrvDeviation: null,
+            restingHrDeviation: null,
+            sleepEfficiency: 72,
+          },
+        ],
+        weekly: [],
+        latestScore: 2.55,
+        trend: "stable",
+      });
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 465, efficiency_pct: 72 },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          date: `2026-03-${String(index + 8).padStart(2, "0")}`,
+          duration_minutes: 480,
+          efficiency_pct: 90,
+        })),
+      ];
+      const caller = createPerformanceCaller(rows);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.components?.hours).toBe(97);
+      expect(result?.components?.efficiency).toBe(72);
+      expect(result?.components?.consistency).toBe(100);
+      expect(result?.components?.lowStress).toBe(15);
+      expect(result?.score).toBe(71);
     });
 
     it("uses default efficiency of 85 when null", async () => {
