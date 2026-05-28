@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Shared Onboarding Flow
+## Task 1: Shared Onboarding Flow
 
 **Files:**
 - Create: `packages/onboarding/src/get-started-flow.ts`
@@ -24,7 +24,7 @@ Assert that goal options and checklist steps are non-empty, have stable IDs, and
 
 Export goal options and checklist steps as readonly arrays with descriptive IDs and layman-readable labels.
 
-### Task 2: Web Get Started Route
+## Task 2: Web Get Started Route
 
 **Files:**
 - Modify: `packages/web/src/routes/__root.tsx`
@@ -43,7 +43,7 @@ Assert landing CTAs link to login with `returnTo=/onboarding`, login OAuth links
 
 Add `/onboarding`, validate `returnTo`, render goal selection and checklist, and keep provider setup linked to `/settings`.
 
-### Task 3: Mobile Parity
+## Task 3: Mobile Parity
 
 **Files:**
 - Create: `packages/mobile/app/onboarding.tsx`
@@ -57,7 +57,7 @@ Assert the mobile screen renders the same shared goals and navigates provider se
 
 Use local selected-goal state and existing app colors/components.
 
-### Task 4: Docs and Verification
+## Task 4: Docs and Verification
 
 **Files:**
 - Modify: `docs/roadmap.md`

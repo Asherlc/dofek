@@ -1,3 +1,4 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import { trpc } from "../lib/trpc.ts";
@@ -292,6 +293,7 @@ function DashboardPreview() {
 }
 
 function DailySummaryPreview() {
+  const previewDate = formatDateYmd();
   const rings = [
     { label: "Recovery", value: "--", caption: "No data", tone: "#6b8a72" },
     { label: "Strain", value: "0.0", caption: "Light", tone: "#55725c" },
@@ -309,7 +311,7 @@ function DailySummaryPreview() {
             Today&apos;s recovery picture
           </div>
         </div>
-        <div className="text-xs text-[#6b8178]">2026-05-27</div>
+        <div className="text-xs text-[#6b8178]">{previewDate}</div>
       </div>
       <div className="mt-5 flex flex-wrap items-start justify-center gap-6">
         {rings.map((ring) => (

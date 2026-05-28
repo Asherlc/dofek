@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 
@@ -10,6 +10,10 @@ vi.mock("expo-router", () => ({
 const { default: OnboardingScreen } = await import("./onboarding");
 
 describe("OnboardingScreen", () => {
+  beforeEach(() => {
+    mockRouterPush.mockClear();
+  });
+
   it("renders shared goals and setup steps", () => {
     render(<OnboardingScreen />);
 

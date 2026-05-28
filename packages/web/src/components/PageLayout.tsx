@@ -64,7 +64,7 @@ export function PageLayout({
               )}
             </div>
           )}
-          <div className="page-enter space-y-6 sm:space-y-7">{children}</div>
+          <div className="space-y-6 sm:space-y-7">{children}</div>
         </main>
       </div>
     </div>
