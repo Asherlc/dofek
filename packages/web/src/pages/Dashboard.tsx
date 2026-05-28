@@ -18,7 +18,6 @@ import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { useProviderGuide } from "../lib/useProviderGuide.ts";
 
 type MetricEntry = {
   label: string;
@@ -162,7 +161,6 @@ export function Dashboard() {
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
-  const providerGuide = useProviderGuide();
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
   const trendData: TrendRow | undefined = trends.data
@@ -198,6 +196,17 @@ export function Dashboard() {
 
   return (
     <PageLayout headerChildren={undefined}>
+      <DailyOverview
+        endDate={endDate}
+        readiness={readinessData.data}
+        workloadRatio={workloadRatio.data}
+        strainTarget={strainTarget.data}
+        sleepPerformance={sleepPerformance.data}
+        readinessLoading={readinessData.isLoading}
+        workloadLoading={workloadRatio.isLoading}
+        strainTargetLoading={strainTarget.isLoading}
+        sleepLoading={sleepPerformance.isLoading}
+      />
       <DashboardEvidenceOverview
         days={days}
         endDate={endDate}
@@ -207,21 +216,6 @@ export function Dashboard() {
           latestRestingHeartRate: trendData?.latest_resting_hr,
           averageRestingHeartRate: trendData?.avg_resting_hr,
         }}
-        sources={providerGuide.providers}
-        dailySummary={
-          <DailyOverview
-            embedded
-            endDate={endDate}
-            readiness={readinessData.data}
-            workloadRatio={workloadRatio.data}
-            strainTarget={strainTarget.data}
-            sleepPerformance={sleepPerformance.data}
-            readinessLoading={readinessData.isLoading}
-            workloadLoading={workloadRatio.isLoading}
-            strainTargetLoading={strainTarget.isLoading}
-            sleepLoading={sleepPerformance.isLoading}
-          />
-        }
         healthMonitor={healthMonitor}
       />
     </PageLayout>
