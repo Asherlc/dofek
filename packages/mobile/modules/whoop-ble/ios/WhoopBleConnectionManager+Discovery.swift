@@ -39,7 +39,7 @@ extension WhoopBleConnectionManager {
 
         NSLog("[WhoopBLE] performFind: no connected peripheral found, scanning for 5s")
         findCompletion = completion
-        state = .scanning
+        setState(.scanning)
         manager.scanForPeripherals(
             withServices: WhoopBleConstants.allServiceUUIDs,
             options: nil
@@ -49,7 +49,7 @@ extension WhoopBleConnectionManager {
             if self.state == .scanning {
                 NSLog("[WhoopBLE] performFind: scan timed out, no WHOOP found")
                 manager.stopScan()
-                self.state = .idle
+                self.setState(.idle)
                 self.findCompletion?(nil)
                 self.findCompletion = nil
             }

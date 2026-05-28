@@ -8,9 +8,9 @@ import CoreBluetooth
 final class WhoopBleConnectionManager {
     weak var delegate: WhoopBleConnectionManagerDelegate?
 
-    var state: ConnectionState = .idle
-    var connectedPeripheral: CBPeripheral?
-    var cmdCharacteristic: CBCharacteristic?
+    private(set) var state: ConnectionState = .idle
+    private(set) var connectedPeripheral: CBPeripheral?
+    private(set) var cmdCharacteristic: CBCharacteristic?
 
     let bleQueue: DispatchQueue
     let bleDelegate: WhoopBleDelegate
@@ -221,5 +221,33 @@ final class WhoopBleConnectionManager {
         if state == .streaming {
             state = .ready
         }
+    }
+
+    // MARK: - Internal state mutation
+
+    func setState(_ newState: ConnectionState) {
+        state = newState
+    }
+
+    func setConnectedPeripheral(_ peripheral: CBPeripheral?) {
+        connectedPeripheral = peripheral
+    }
+
+    func setDiscoveredCharacteristics(
+        cmdCharacteristic: CBCharacteristic?,
+        cmdResponseCharacteristic: CBCharacteristic?,
+        dataCharacteristic: CBCharacteristic?
+    ) {
+        self.cmdCharacteristic = cmdCharacteristic
+        self.cmdResponseCharacteristic = cmdResponseCharacteristic
+        self.dataCharacteristic = dataCharacteristic
+    }
+
+    func resetConnectionReferences() {
+        state = .idle
+        connectedPeripheral = nil
+        cmdCharacteristic = nil
+        cmdResponseCharacteristic = nil
+        dataCharacteristic = nil
     }
 }

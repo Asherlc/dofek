@@ -22,23 +22,23 @@ extension WhoopBleConnectionManager {
 
         if let peripheral = connectedPeripheral, state == .idle {
             if peripheral.state == .connected {
-                state = .discoveringServices
+                setState(.discoveringServices)
                 peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
             } else {
-                state = .connecting
+                setState(.connecting)
                 centralManager?.connect(peripheral, options: nil)
             }
         }
     }
 
     func handleRestoredPeripheral(_ peripheral: CBPeripheral) {
-        connectedPeripheral = peripheral
+        setConnectedPeripheral(peripheral)
         peripheral.delegate = bleDelegate
         autoReconnect = true
         wasStreaming = true
 
         if peripheral.state == .connected {
-            state = .discoveringServices
+            setState(.discoveringServices)
             peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
         }
     }
@@ -46,7 +46,7 @@ extension WhoopBleConnectionManager {
     func handlePeripheralDiscovered(_ peripheral: CBPeripheral) {
         if state == .scanning {
             centralManager?.stopScan()
-            state = .idle
+            setState(.idle)
 
             let result: [String: Any?] = [
                 "id": peripheral.identifier.uuidString,
@@ -61,9 +61,9 @@ extension WhoopBleConnectionManager {
             NSLog("[WhoopBLE] background scan found WHOOP strap %@ (%@), auto-connecting",
                   peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
             centralManager?.stopScan()
-            connectedPeripheral = peripheral
+            setConnectedPeripheral(peripheral)
             peripheral.delegate = bleDelegate
-            state = .connecting
+            setState(.connecting)
             centralManager?.connect(peripheral, options: nil)
 
             bleQueue.asyncAfter(deadline: .now() + 10) { [weak self] in
@@ -80,7 +80,7 @@ extension WhoopBleConnectionManager {
               peripheral.identifier.uuidString, state.rawValue)
         guard state == .connecting else { return }
 
-        state = .discoveringServices
+        setState(.discoveringServices)
         peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
     }
 
@@ -102,8 +102,8 @@ extension WhoopBleConnectionManager {
 
         if shouldReconnect {
             autoReconnect = true
-            state = .connecting
-            connectedPeripheral = peripheral
+            setState(.connecting)
+            setConnectedPeripheral(peripheral)
             peripheral.delegate = bleDelegate
             centralManager?.connect(peripheral, options: nil)
         }
@@ -120,7 +120,7 @@ extension WhoopBleConnectionManager {
             NSLog("[WhoopBLE] NO WHOOP service found among discovered services")
             connectCompletion?(.failure(.serviceNotFound))
             connectCompletion = nil
-            state = .idle
+            setState(.idle)
             return
         }
 
@@ -140,9 +140,11 @@ extension WhoopBleConnectionManager {
         let cmdRespUUID = WhoopBleConstants.cmdFromStrapUUID(forService: service.uuid)
         let dataUUID = WhoopBleConstants.dataFromStrapUUID(forService: service.uuid)
 
-        cmdCharacteristic = service.characteristics?.first { $0.uuid == cmdUUID }
-        cmdResponseCharacteristic = service.characteristics?.first { $0.uuid == cmdRespUUID }
-        dataCharacteristic = service.characteristics?.first { $0.uuid == dataUUID }
+        setDiscoveredCharacteristics(
+            cmdCharacteristic: service.characteristics?.first { $0.uuid == cmdUUID },
+            cmdResponseCharacteristic: service.characteristics?.first { $0.uuid == cmdRespUUID },
+            dataCharacteristic: service.characteristics?.first { $0.uuid == dataUUID }
+        )
 
         guard let cmdChar = cmdCharacteristic, let dataChar = dataCharacteristic else {
             NSLog("[WhoopBLE] missing characteristics: cmd=%@, data=%@",
@@ -150,7 +152,7 @@ extension WhoopBleConnectionManager {
                   dataCharacteristic == nil ? "MISSING" : "found")
             connectCompletion?(.failure(.characteristicsNotFound))
             connectCompletion = nil
-            state = .idle
+            setState(.idle)
             return
         }
 
@@ -160,7 +162,7 @@ extension WhoopBleConnectionManager {
             peripheral.setNotifyValue(true, for: cmdRespChar)
         }
 
-        state = .ready
+        setState(.ready)
         let previouslyStreaming = wasStreaming
         wasStreaming = false
 

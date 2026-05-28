@@ -11,7 +11,6 @@ extension WhoopBleConnectionManager {
             }
             peripheral.delegate = nil
         }
-        (state, connectedPeripheral, cmdCharacteristic, cmdResponseCharacteristic, dataCharacteristic) =
-            (.idle, nil, nil, nil, nil)
+        resetConnectionReferences()
     }
 }
