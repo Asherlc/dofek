@@ -14,6 +14,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 - [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
 - [exercise-metadata.md](exercise-metadata.md): Free Exercise DB source file, Dofek exercise metadata overrides, and update workflow.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
+- [roadmap.md](roadmap.md): product-level roadmap notes and planned user-facing improvements.
 
 ## Architecture And Product Flows
 
@@ -26,6 +27,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | [exercise-metadata.md](exercise-metadata.md) | Strength exercise metadata source, override format, and upstream refresh workflow. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
 | [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |
+| [roadmap.md](roadmap.md) | Product-level roadmap notes, including first-run and onboarding opportunities. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 

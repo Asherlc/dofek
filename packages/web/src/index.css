@@ -10,6 +10,7 @@
   --color-border-strong: rgba(74, 158, 122, 0.3);
   --color-accent: #2d7a56;
   --color-accent-secondary: #4a9e7a;
+  --color-danger: #d7332f;
   --color-foreground: #1a2e1a;
   --color-muted: #4a6a4a;
   --color-subtle: #6b8a6b;
@@ -34,8 +35,16 @@ body {
 @utility card {
   background: rgba(255, 255, 255, 0.65);
   border: 1px solid rgba(74, 158, 122, 0.18);
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   backdrop-filter: blur(12px);
+}
+
+.dashboard-hero {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(245, 249, 245, 0.72)),
+    radial-gradient(ellipse at 20% 0%, rgba(74, 158, 122, 0.08), transparent 48%);
+  border-color: rgba(74, 158, 122, 0.28);
+  box-shadow: 0 18px 50px rgba(26, 46, 26, 0.06);
 }
 
 /* ── Scroll reveal animation ── */

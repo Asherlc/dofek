@@ -1,17 +1,116 @@
+// @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
-import { describe, expect, it } from "vitest";
-import {
-  DASHBOARD_GRID_PAIR_SECONDARIES,
-  DASHBOARD_GRID_PAIRS,
-} from "../lib/dashboardGridPairs.ts";
-import { DEFAULT_LAYOUT } from "../lib/dashboardLayoutContext.ts";
+import { cleanup, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type MockInsightsQueryResult = {
+  data: unknown[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
+
+const mockReadinessQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
+const mockWorkloadQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
+const mockStrainTargetQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: undefined, isLoading: false })),
+);
+const mockSleepPerformanceQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: undefined, isLoading: false })),
+);
+const mockTrendsQuery = vi.hoisted(() =>
+  vi.fn(() => ({ data: undefined, isLoading: false, error: null })),
+);
+const mockInsightsQuery = vi.hoisted(() =>
+  vi.fn<() => MockInsightsQueryResult>(() => ({ data: [], isLoading: false, error: null })),
+);
+
+vi.mock("../components/DailyOverview.tsx", () => ({
+  DailyOverview: () => <div>Daily overview</div>,
+}));
+
+vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
+  DashboardEvidenceOverview: ({ insightError }: { insightError?: ReactNode }) => (
+    <section>{insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}</section>
+  ),
+}));
+
+vi.mock("../components/HealthStatusBar.tsx", () => ({
+  HealthStatusBar: () => <div>Health status bar</div>,
+}));
+
+vi.mock("../components/PageLayout.tsx", () => ({
+  PageLayout: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock("../hooks/useAutoSync.ts", () => ({
+  useAutoSync: () => {},
+}));
+
+vi.mock("../hooks/useTodayQueryDate.ts", () => ({
+  useTodayQueryDate: () => "2026-05-27",
+}));
+
+vi.mock("../lib/trpc.ts", () => ({
+  trpc: {
+    recovery: {
+      readinessScore: { useQuery: mockReadinessQuery },
+      workloadRatio: { useQuery: mockWorkloadQuery },
+      strainTarget: { useQuery: mockStrainTargetQuery },
+    },
+    sleepNeed: {
+      performance: { useQuery: mockSleepPerformanceQuery },
+    },
+    dailyMetrics: {
+      trends: { useQuery: mockTrendsQuery },
+    },
+    insights: {
+      compute: { useQuery: mockInsightsQuery },
+    },
+  },
+}));
+
+vi.mock("../lib/unitContext.ts", () => ({
+  useUnitConverter: () => new UnitConverter("metric"),
+}));
+
+vi.mock("../lib/useProviderGuide.ts", () => ({
+  useProviderGuide: () => ({ providers: [] }),
+}));
+
 import {
   buildHealthMetrics,
   buildSkinTempSeries,
-  DASHBOARD_SECTION_IDS,
+  Dashboard,
   healthMonitorSubtitle,
   spo2TempSectionConfig,
 } from "./Dashboard";
+
+afterEach(cleanup);
+
+describe("Dashboard", () => {
+  beforeEach(() => {
+    mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+  });
+
+  it("uses a loading panel while insights are loading", () => {
+    mockInsightsQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+
+    render(<Dashboard />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+  });
+
+  it("uses an empty panel when no insights are available", () => {
+    render(<Dashboard />);
+
+    expect(screen.getByTestId("query-state-empty")).toBeTruthy();
+    expect(screen.getByText("No insights yet.")).toBeTruthy();
+    expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+  });
+});
 
 describe("buildSkinTempSeries", () => {
   const metrics = [
@@ -139,75 +238,5 @@ describe("buildHealthMetrics", () => {
       unit: "bpm",
       lowerBetter: true,
     });
-  });
-});
-
-describe("DASHBOARD_SECTION_IDS", () => {
-  it("includes spo2Temp section", () => {
-    expect(DASHBOARD_SECTION_IDS.has("spo2Temp")).toBe(true);
-  });
-
-  it("includes steps section", () => {
-    expect(DASHBOARD_SECTION_IDS.has("steps")).toBe(true);
-  });
-
-  it("includes sleep section", () => {
-    expect(DASHBOARD_SECTION_IDS.has("sleep")).toBe(true);
-  });
-
-  it("includes weeklyReport section", () => {
-    expect(DASHBOARD_SECTION_IDS.has("weeklyReport")).toBe(true);
-  });
-
-  it("includes sleepNeed section (paired with weeklyReport)", () => {
-    expect(DASHBOARD_SECTION_IDS.has("sleepNeed")).toBe(true);
-  });
-
-  it("includes strain section", () => {
-    expect(DASHBOARD_SECTION_IDS.has("strain")).toBe(true);
-  });
-
-  it("includes every section from DEFAULT_LAYOUT.order", () => {
-    for (const sectionId of DEFAULT_LAYOUT.order) {
-      expect(
-        DASHBOARD_SECTION_IDS.has(sectionId),
-        `"${sectionId}" is in DEFAULT_LAYOUT.order but missing from DASHBOARD_SECTION_IDS — section will never render`,
-      ).toBe(true);
-    }
-  });
-});
-
-describe("grid pair consistency", () => {
-  it("every grid pair primary is in DASHBOARD_SECTION_IDS", () => {
-    for (const primary of Object.keys(DASHBOARD_GRID_PAIRS)) {
-      expect(
-        DASHBOARD_SECTION_IDS.has(primary),
-        `primary "${primary}" missing from DASHBOARD_SECTION_IDS`,
-      ).toBe(true);
-    }
-  });
-
-  it("every grid pair secondary is in DASHBOARD_SECTION_IDS", () => {
-    for (const secondary of Object.values(DASHBOARD_GRID_PAIRS)) {
-      expect(
-        DASHBOARD_SECTION_IDS.has(secondary),
-        `secondary "${secondary}" missing from DASHBOARD_SECTION_IDS`,
-      ).toBe(true);
-    }
-  });
-
-  it("every grid pair primary is in DEFAULT_ORDER", () => {
-    for (const primary of Object.keys(DASHBOARD_GRID_PAIRS)) {
-      expect(
-        DEFAULT_LAYOUT.order.includes(primary),
-        `primary "${primary}" missing from DEFAULT_LAYOUT.order`,
-      ).toBe(true);
-    }
-  });
-
-  it("GRID_PAIR_SECONDARY is the inverse of GRID_PAIRS", () => {
-    for (const [primary, secondary] of Object.entries(DASHBOARD_GRID_PAIRS)) {
-      expect(DASHBOARD_GRID_PAIR_SECONDARIES[secondary]).toBe(primary);
-    }
   });
 });

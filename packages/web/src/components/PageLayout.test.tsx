@@ -43,13 +43,35 @@ describe("PageLayout", () => {
     }
   });
 
-  it("renders header children inside the header", () => {
+  it("uses the desktop evidence-desk shell layout", () => {
+    const { container } = render(
+      <PageLayout>
+        <p>Content</p>
+      </PageLayout>,
+    );
+    const wrapper = container.firstElementChild;
+    expect(wrapper).toBeTruthy();
+    expect(wrapper instanceof HTMLElement).toBe(true);
+    if (wrapper instanceof HTMLElement) {
+      expect(wrapper.className).toContain("lg:flex");
+    }
+
+    const contentShell = screen.getByRole("main").parentElement;
+    expect(contentShell).toBeTruthy();
+    expect(contentShell instanceof HTMLElement).toBe(true);
+    if (contentShell instanceof HTMLElement) {
+      expect(contentShell.className).toContain("lg:min-w-0");
+      expect(contentShell.className).toContain("lg:flex-1");
+    }
+  });
+
+  it("renders header controls once in the content toolbar", () => {
     render(
       <PageLayout headerChildren={<button type="button">Filter</button>}>
         <p>Content</p>
       </PageLayout>,
     );
-    expect(screen.getByText("Filter")).toBeTruthy();
+    expect(screen.getAllByText("Filter")).toHaveLength(1);
   });
 
   it("renders tabs between header and main when provided", () => {
@@ -74,6 +96,16 @@ describe("PageLayout", () => {
       const main = screen.getByRole("main");
       expect(tabNav.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
+  });
+
+  it("labels the tab navigation so tests and assistive tech can target visible tabs", () => {
+    const tabs = [{ to: "/foo", label: "Foo", exact: true }];
+    render(
+      <PageLayout tabs={tabs}>
+        <p>Content</p>
+      </PageLayout>,
+    );
+    expect(screen.getByRole("navigation", { name: "Section navigation" })).toBeTruthy();
   });
 
   it("renders page intro when title is provided", () => {

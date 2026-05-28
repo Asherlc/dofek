@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { formatDateYmd } from "@dofek/format/format";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DailyOverview } from "./DailyOverview.tsx";
 
@@ -57,6 +57,7 @@ function findButton(element: HTMLElement): HTMLElement {
 
 describe("DailyOverview", () => {
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
   });
 
@@ -103,6 +104,49 @@ describe("DailyOverview", () => {
     expect(screen.getByText("75")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
     expect(screen.getByText("Recovered")).toBeTruthy();
+  });
+
+  it("uses the evidence desk summary panel styling", () => {
+    const { container } = render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+    const panel = container.firstElementChild;
+    expect(panel).toBeTruthy();
+    expect(panel instanceof HTMLElement).toBe(true);
+    if (panel instanceof HTMLElement) {
+      expect(panel.getAttribute("aria-label")).toBe("Daily health summary");
+      expect(panel.className).toContain("dashboard-hero");
+      expect(panel.className).toContain("card");
+    }
+  });
+
+  it("can render as an embedded panel without a nested card", () => {
+    const { container } = render(
+      <DailyOverview
+        embedded
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+    const panel = container.firstElementChild;
+    expect(panel).toBeTruthy();
+    expect(panel instanceof HTMLElement).toBe(true);
+    if (panel instanceof HTMLElement) {
+      expect(panel.className).not.toContain("dashboard-hero");
+      expect(panel.classList.contains("card")).toBe(false);
+      expect(panel.className).toContain("bg-white/62");
+    }
   });
 
   it("renders strain ring", () => {

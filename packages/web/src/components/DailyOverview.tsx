@@ -34,6 +34,7 @@ interface DailyOverviewProps {
   workloadLoading?: boolean;
   strainTargetLoading?: boolean;
   sleepLoading?: boolean;
+  embedded?: boolean;
 }
 
 function ScoreRing({
@@ -537,6 +538,7 @@ export function DailyOverview({
   workloadLoading = false,
   strainTargetLoading = false,
   sleepLoading = false,
+  embedded = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
 
@@ -574,7 +576,26 @@ export function DailyOverview({
   const targetFraction = strainTarget ? Math.min(strainTarget.targetStrain / 21, 1) : undefined;
 
   return (
-    <div className="card p-6">
+    <section
+      aria-label="Daily health summary"
+      className={
+        embedded
+          ? "rounded-lg border border-border bg-white/62 p-4 sm:p-5"
+          : "dashboard-hero card p-5 sm:p-6"
+      }
+    >
+      <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+            Daily summary
+          </p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+            Today&apos;s recovery picture
+          </h2>
+        </div>
+        <p className="text-xs text-subtle">{endDate}</p>
+      </div>
+
       <div className="flex items-center justify-center gap-6 sm:gap-10 lg:gap-14 flex-wrap">
         {readinessLoading ? (
           <RingSkeleton />
@@ -683,6 +704,6 @@ export function DailyOverview({
           <EmptyBreakdown message="Sleep score combines how long you slept vs. how much you need (70%) and sleep efficiency (30%). Connect a sleep tracker to see your breakdown." />
         )}
       </ExpandableBreakdown>
-    </div>
+    </section>
   );
 }

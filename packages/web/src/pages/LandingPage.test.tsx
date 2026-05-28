@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { UnitContext } from "../lib/unitContext.ts";
 import { LandingPage, LandingPageView } from "./LandingPage.tsx";
 
 const mockUsableProvidersQuery = vi.hoisted(() =>
@@ -46,13 +47,18 @@ describe("LandingPage", () => {
     expect(screen.queryByText(/self-hosted/i)).toBeNull();
     expect(screen.queryByText(/open source health data platform/i)).toBeNull();
     expect(screen.queryByText(/free and open source/i)).toBeNull();
+    expect(screen.queryByText(/\bhosted\b/i)).toBeNull();
   });
 
-  it("does not make broad integration or availability claims", () => {
+  it("does not make broad or technical integration claims", () => {
     render(<LandingPage />);
 
     expect(screen.queryAllByText(/30\+/i)).toHaveLength(0);
     expect(screen.queryAllByText(/7 reverse-engineered/i)).toHaveLength(0);
+    expect(screen.queryAllByText(/file import/i)).toHaveLength(0);
+    expect(screen.queryAllByText(/oauth/i)).toHaveLength(0);
+    expect(screen.queryAllByText(/credential sync/i)).toHaveLength(0);
+    expect(screen.queryAllByText(/guided auth/i)).toHaveLength(0);
     expect(screen.queryAllByText(/every metric/i)).toHaveLength(0);
     expect(screen.queryAllByText(/every device/i)).toHaveLength(0);
     expect(screen.queryAllByText(/all your health data/i)).toHaveLength(0);
@@ -69,52 +75,91 @@ describe("LandingPage", () => {
     expect(screen.getByAltText("Apple Health")).toBeTruthy();
     expect(screen.queryByAltText("WHOOP")).toBeNull();
     expect(screen.getByAltText("Peloton")).toBeTruthy();
-    expect(screen.getAllByText("4").length).toBeGreaterThan(0);
-    expect(screen.getByText("Usable integrations")).toBeTruthy();
+    expect(screen.getAllByText("Supported sources").length).toBeGreaterThan(0);
   });
 
-  it("leads with the scattered app problem and a demo call to action", () => {
+  it("leads with plain product copy and no demo call to action", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText(/health apps don't talk to each other/i)).toBeTruthy();
-    const demoLinks = screen.getAllByRole("link", { name: /view demo/i });
-    expect(demoLinks.length).toBeGreaterThan(0);
-    expect(demoLinks.every((link) => link.getAttribute("href") === "#demo")).toBe(true);
+    expect(screen.getByRole("heading", { name: /your health data, in one place/i })).toBeTruthy();
+    expect(screen.getByText(/connect the apps and devices you use/i)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /view demo/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /view on github/i })).toBeNull();
   });
 
-  it("shows concrete insight examples in the demo preview", () => {
+  it("shows concrete analysis examples in the product preview", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText(/late meals correlate with lower sleep consistency/i)).toBeTruthy();
-    expect(screen.getByText(/training load is rising faster than recovery/i)).toBeTruthy();
-    expect(screen.getByText(/resting heart rate has been elevated for 4 days/i)).toBeTruthy();
+    expect(screen.getByText("Daily summary")).toBeTruthy();
+    expect(screen.getByText("Today's recovery picture")).toBeTruthy();
+    expect(screen.getByText("Health monitor")).toBeTruthy();
+    expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(screen.getByText(/late dinners show up next to less consistent sleep/i)).toBeTruthy();
+    expect(screen.getAllByText(/training load vs sleep/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/resting heart rate is up/i)).toBeTruthy();
+    expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
+    expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/export confidence/i)).toBeNull();
   });
 
-  it("shows live provider connection method badges", () => {
+  it("formats preview units through the unit system", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("OAuth")).toBeTruthy();
-    expect(screen.getAllByText("File import").length).toBeGreaterThan(0);
-    expect(screen.getByText("Credential sync")).toBeTruthy();
+    expect(screen.getByText("bpm average")).toBeTruthy();
+    expect(screen.getByText("407 kcal")).toBeTruthy();
+    expect(screen.getByText("36.2°C")).toBeTruthy();
+    expect(screen.queryByText("beats/min average")).toBeNull();
+    expect(screen.queryByText("407 calories")).toBeNull();
+    expect(screen.queryByText("36.2 Celsius")).toBeNull();
   });
 
-  it("includes before-after, week one, trust, and pricing sections", () => {
+  it("uses imperial preview temperature when the unit context is imperial", () => {
+    render(
+      <UnitContext.Provider value={{ unitSystem: "imperial", setUnitSystem: () => {} }}>
+        <LandingPageView usableProviders={[]} />
+      </UnitContext.Provider>,
+    );
+
+    expect(screen.getByText("97.2°F")).toBeTruthy();
+    expect(screen.queryByText("36.2°C")).toBeNull();
+  });
+
+  it("shows the iPhone app with direct WHOOP strap capture", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("Before Dofek")).toBeTruthy();
-    expect(screen.getByText("After Dofek")).toBeTruthy();
-    expect(screen.getByText("What you get in week one")).toBeTruthy();
-    expect(screen.getByText("Hosted without the creepy parts")).toBeTruthy();
-    expect(screen.getByText("Simple hosted plan")).toBeTruthy();
+    expect(screen.getByText("iPhone app included")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: /capture WHOOP strap data from iPhone/i }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Pair a WHOOP strap over Bluetooth/i)).toBeTruthy();
+    expect(screen.getByText(/does not require routing through a WHOOP membership/i)).toBeTruthy();
+    expect(screen.getByText("WHOOP direct")).toBeTruthy();
+    expect(screen.getByText("Motion")).toBeTruthy();
+    expect(screen.getByText("Background")).toBeTruthy();
+  });
+
+  it("shows supported providers without connection method badges", () => {
+    render(<LandingPage />);
+
+    expect(screen.getAllByText("Supported").length).toBeGreaterThan(0);
+    expect(screen.queryByText("OAuth")).toBeNull();
+    expect(screen.queryByText("File import")).toBeNull();
+    expect(screen.queryByText("Credential sync")).toBeNull();
+  });
+
+  it("includes inspection, mobile, trust, and pricing sections", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("What you can check")).toBeTruthy();
+    expect(screen.getByText("iPhone app included")).toBeTruthy();
+    expect(screen.getByText("Your data stays yours")).toBeTruthy();
+    expect(screen.getByText("One managed plan")).toBeTruthy();
   });
 
   it("renders the empty usable provider state without claiming integrations are available", () => {
     render(<LandingPageView usableProviders={[]} />);
 
-    expect(screen.getAllByText("0").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/No integrations are currently configured on this server/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/No supported sources are currently available/i)).toBeTruthy();
   });
 });
