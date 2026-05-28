@@ -39,6 +39,7 @@ const HERO_PROOF_POINTS = [
   "Inspect patterns",
   "Keep your history",
 ] as const;
+const GET_STARTED_SEARCH = { returnTo: "/onboarding" };
 
 const ANALYSIS_CARDS = [
   {
@@ -179,6 +180,7 @@ function LandingNav() {
           </Link>
           <Link
             to="/login"
+            search={GET_STARTED_SEARCH}
             className="rounded-lg bg-[#005244] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#005244]/15 transition-colors hover:bg-[#013f35]"
           >
             Get started
@@ -211,6 +213,7 @@ function HeroSection() {
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link
               to="/login"
+              search={GET_STARTED_SEARCH}
               className="inline-flex items-center justify-center rounded-lg bg-[#005244] px-8 py-4 text-base font-semibold text-white shadow-lg shadow-[#005244]/15 transition-colors hover:bg-[#013f35]"
             >
               Get started
@@ -825,6 +828,7 @@ function FinalCta() {
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             to="/login"
+            search={GET_STARTED_SEARCH}
             className="inline-flex w-full items-center justify-center rounded-lg bg-[#005244] px-8 py-4 text-base font-semibold text-white transition-colors hover:bg-[#013f35] sm:w-auto"
           >
             Get started

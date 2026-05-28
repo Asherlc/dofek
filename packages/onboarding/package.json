@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./get-started-flow": "./src/get-started-flow.ts",
     "./provider-guide": "./src/provider-guide.ts"
   }
 }
