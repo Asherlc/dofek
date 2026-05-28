@@ -267,6 +267,7 @@ export const recoveryRouter = router({
       const workloadRowSchema = z.object({
         date: z.string(),
         daily_load: z.coerce.number(),
+        whoop_strain: z.coerce.number().nullable().optional(),
         acute_load: z.coerce.number(),
         chronic_load: z.coerce.number(),
         workload_ratio: z.coerce.number().nullable(),
@@ -276,17 +277,32 @@ export const recoveryRouter = router({
         `WITH per_activity AS (
           SELECT
             toDate(toTimeZone(started_at, {timezone:String})) AS date,
-            dateDiff('second', started_at, ended_at) / 60.0
-              * avg_hr
-              / nullIf(toFloat64(max_hr), 0) AS load
-          FROM analytics.activity_summary
-          WHERE user_id = {userId:UUID}
-            AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-            AND ended_at IS NOT NULL
-            AND avg_hr IS NOT NULL
+            dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
+              * activity_summary.avg_hr
+              / nullIf(toFloat64(activity_summary.max_hr), 0) AS load,
+            if(activity.provider_id = 'whoop' AND JSONHas(activity.raw, 'strain'), JSONExtractFloat(activity.raw, 'strain'), NULL) AS whoop_strain
+          FROM analytics.activity_summary AS activity_summary
+          LEFT JOIN (
+            SELECT id, provider_id, raw
+            FROM postgres_fitness.activity FINAL
+            WHERE _peerdb_is_deleted = 0
+              AND user_id = {userId:UUID}
+          ) AS activity
+            ON activity.id = activity_summary.activity_id
+          WHERE activity_summary.user_id = {userId:UUID}
+            AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND activity_summary.ended_at IS NOT NULL
+            AND activity_summary.avg_hr IS NOT NULL
         ),
         activity_load AS (
-          SELECT date, sum(load) AS daily_load
+          SELECT
+            date,
+            sum(load) AS daily_load,
+            if(
+              countIf(whoop_strain IS NOT NULL) > 0,
+              6.0 * log(1 + sumIf(exp(whoop_strain / 6.0) - 1, whoop_strain IS NOT NULL)),
+              NULL
+            ) AS whoop_strain
           FROM per_activity
           GROUP BY date
         ),
@@ -295,7 +311,10 @@ export const recoveryRouter = router({
           FROM numbers(toUInt64({totalDays:Int32}) + 1)
         ),
         daily AS (
-          SELECT ds.date AS date, coalesce(al.daily_load, 0) AS daily_load
+          SELECT
+            ds.date AS date,
+            coalesce(al.daily_load, 0) AS daily_load,
+            al.whoop_strain AS whoop_strain
           FROM date_series ds
           LEFT JOIN activity_load al ON al.date = ds.date
         ),
@@ -303,6 +322,7 @@ export const recoveryRouter = router({
           SELECT
             date,
             daily_load,
+            whoop_strain,
             sum(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load,
             avg(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_load_avg,
             count() OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
@@ -311,6 +331,7 @@ export const recoveryRouter = router({
         SELECT
           toString(with_windows.date) AS date,
           with_windows.daily_load AS daily_load,
+          with_windows.whoop_strain AS whoop_strain,
           with_windows.acute_load AS acute_load,
           with_windows.chronic_load_avg * 7 AS chronic_load,
           if(with_windows.chronic_load_avg > 0 AND with_windows.chronic_count = 28,
@@ -331,10 +352,12 @@ export const recoveryRouter = router({
       const timeSeries = rows.map((row) => {
         const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
         const acuteLoad = Math.round(Number(row.acute_load) * 10) / 10;
+        const providerStrain =
+          row.whoop_strain != null ? Math.round(Number(row.whoop_strain) * 10) / 10 : null;
         return {
           date: row.date,
           dailyLoad,
-          strain: StrainScore.fromRawLoad(dailyLoad).value,
+          strain: providerStrain ?? StrainScore.fromRawLoad(dailyLoad).value,
           acuteLoad,
           chronicLoad: Math.round(Number(row.chronic_load) * 10) / 10,
           workloadRatio:
@@ -679,17 +702,30 @@ export const recoveryRouter = router({
         z.object({
           date: z.string(),
           daily_load: z.coerce.number(),
+          whoop_strain: z.coerce.number().nullable().optional(),
         }),
         `SELECT
-          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-          sum(dateDiff('second', started_at, ended_at) / 60.0
-              * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
-        FROM analytics.activity_summary
-        WHERE user_id = {userId:UUID}
-          AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-          AND ended_at IS NOT NULL
-          AND avg_hr IS NOT NULL
-        GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
+          toString(toDate(toTimeZone(activity_summary.started_at, {timezone:String}))) AS date,
+          sum(dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
+              * activity_summary.avg_hr / nullIf(toFloat64(activity_summary.max_hr), 0)) AS daily_load,
+          if(
+            countIf(activity.provider_id = 'whoop' AND JSONHas(activity.raw, 'strain')) > 0,
+            6.0 * log(1 + sumIf(exp(JSONExtractFloat(activity.raw, 'strain') / 6.0) - 1, activity.provider_id = 'whoop' AND JSONHas(activity.raw, 'strain'))),
+            NULL
+          ) AS whoop_strain
+        FROM analytics.activity_summary AS activity_summary
+        LEFT JOIN (
+          SELECT id, provider_id, raw
+          FROM postgres_fitness.activity FINAL
+          WHERE _peerdb_is_deleted = 0
+            AND user_id = {userId:UUID}
+        ) AS activity
+          ON activity.id = activity_summary.activity_id
+        WHERE activity_summary.user_id = {userId:UUID}
+          AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
+          AND activity_summary.ended_at IS NOT NULL
+          AND activity_summary.avg_hr IS NOT NULL
+        GROUP BY toDate(toTimeZone(activity_summary.started_at, {timezone:String}))
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
@@ -749,8 +785,15 @@ export const recoveryRouter = router({
       chronicLoad /= chronicWindow;
 
       const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
-      const todayLoad = loads.find((row) => row.date === today)?.daily_load ?? 0;
-      const currentStrain = computeCurrentStrain({ fallbackActivityLoad: todayLoad });
+      const todayLoadRow = loads.find((row) => row.date === today);
+      const todayLoad = todayLoadRow?.daily_load ?? 0;
+      const currentStrain = computeCurrentStrain({
+        fallbackActivityLoad: todayLoad,
+        providerStrain:
+          todayLoadRow?.whoop_strain != null
+            ? Math.round(Number(todayLoadRow.whoop_strain) * 10) / 10
+            : null,
+      });
       const roundedCurrentStrain = Math.round(currentStrain.currentStrain * 10) / 10;
       const roundedAcuteLoad = Math.round(acuteLoad * 10) / 10;
       const roundedChronicLoad = Math.round(chronicLoad * 10) / 10;

@@ -345,6 +345,7 @@ ranked AS (
     active_sleep.awake_minutes AS awake_minutes,
     active_sleep.efficiency_pct AS efficiency_pct,
     active_sleep.sleep_type AS sleep_type,
+    active_sleep.sleep_need_total_minutes AS sleep_need_total_minutes,
     active_sleep.source_name AS source_name,
     coalesce(device_priority_match.sleep_priority, active_provider_priority.sleep_priority, device_priority_match.priority, active_provider_priority.priority, 100) AS priority,
     multiIf(
@@ -430,6 +431,7 @@ best AS (
       ranked.awake_minutes AS awake_minutes,
       ranked.efficiency_pct AS efficiency_pct,
       ranked.sleep_type AS sleep_type,
+      ranked.sleep_need_total_minutes AS sleep_need_total_minutes,
       ranked.source_name AS source_name,
       ranked.priority AS priority,
       ranked.is_nap AS is_nap,
@@ -467,6 +469,7 @@ SELECT
     )
   ) AS efficiency_pct,
   best.sleep_type AS sleep_type,
+  best.sleep_need_total_minutes AS sleep_need_total_minutes,
   best.is_nap AS is_nap,
   best.source_name AS source_name,
   arraySort(groupUniqArray(ranked.provider_id)) AS source_providers
@@ -488,6 +491,7 @@ GROUP BY
   best.awake_minutes,
   best.efficiency_pct,
   best.sleep_type,
+  best.sleep_need_total_minutes,
   best.is_nap,
   best.source_name`;
 }
@@ -968,6 +972,10 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildDailyMetricsReadModelSql(),
     ...buildProviderStatsCreateReadModelStatements(),
   ];
+}
+
+export function buildSleepReadModelStatements(): string[] {
+  return ["DROP VIEW IF EXISTS analytics.v_sleep", buildSleepReadModelSql()];
 }
 
 export function buildBodyMeasurementReadModelStatements(): string[] {

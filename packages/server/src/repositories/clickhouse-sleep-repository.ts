@@ -19,6 +19,7 @@ const clickHouseSleepNightSchema = z
     light_minutes: nullableNumberSchema,
     awake_minutes: nullableNumberSchema,
     efficiency_pct: nullableNumberSchema,
+    sleep_need_total_minutes: nullableNumberSchema,
   })
   .transform((row) => ({
     ...row,
@@ -72,7 +73,8 @@ export async function fetchSleepNights(
       rem_minutes,
       light_minutes,
       awake_minutes,
-      efficiency_pct
+      efficiency_pct,
+      sleep_need_total_minutes
     FROM (
       SELECT
         toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
@@ -85,6 +87,7 @@ export async function fetchSleepNights(
         light_minutes,
         awake_minutes,
         efficiency_pct,
+        sleep_need_total_minutes,
         row_number() OVER (
           PARTITION BY toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)
           ORDER BY duration_minutes DESC NULLS LAST
@@ -133,7 +136,8 @@ export async function fetchLatestSleepNight(input: {
       rem_minutes,
       light_minutes,
       awake_minutes,
-      efficiency_pct
+      efficiency_pct,
+      sleep_need_total_minutes
     FROM (
       SELECT
         toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
@@ -145,7 +149,8 @@ export async function fetchLatestSleepNight(input: {
         rem_minutes,
         light_minutes,
         awake_minutes,
-        efficiency_pct
+        efficiency_pct,
+        sleep_need_total_minutes
       FROM analytics.v_sleep
       WHERE user_id = {userId:UUID}
         AND is_nap = false

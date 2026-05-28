@@ -88,6 +88,7 @@ export interface ParsedSleep {
   efficiencyPct?: number;
   sleepType: "sleep" | "nap";
   isNap: boolean;
+  sleepNeedTotalMinutes?: number;
   sleepNeedBaselineMinutes?: number;
   sleepNeedFromDebtMinutes?: number;
   sleepNeedFromStrainMinutes?: number;
@@ -181,6 +182,8 @@ export function parseInlineSleep(
     efficiencyPct: normalizeEfficiencyPct(record.in_sleep_efficiency),
     sleepType: record.significant === false ? "nap" : "sleep",
     isNap: record.significant === false,
+    sleepNeedTotalMinutes:
+      record.sleep_need != null ? milliToMinutes(record.sleep_need) : undefined,
     sleepNeedBaselineMinutes:
       record.habitual_sleep_need != null ? milliToMinutes(record.habitual_sleep_need) : undefined,
     sleepNeedFromDebtMinutes:
@@ -227,6 +230,14 @@ export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
     efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
     sleepType: record.nap ? "nap" : "sleep",
     isNap: record.nap,
+    sleepNeedTotalMinutes: sleepNeeded
+      ? milliToMinutes(
+          sleepNeeded.baseline_milli +
+            sleepNeeded.need_from_sleep_debt_milli +
+            sleepNeeded.need_from_recent_strain_milli -
+            sleepNeeded.need_from_recent_nap_milli,
+        )
+      : undefined,
     sleepNeedBaselineMinutes: sleepNeeded ? milliToMinutes(sleepNeeded.baseline_milli) : undefined,
     sleepNeedFromDebtMinutes: sleepNeeded
       ? milliToMinutes(sleepNeeded.need_from_sleep_debt_milli)
