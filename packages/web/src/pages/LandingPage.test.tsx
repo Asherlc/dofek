@@ -77,20 +77,16 @@ describe("LandingPage", () => {
     expect(screen.getAllByText("Supported sources").length).toBeGreaterThan(0);
   });
 
-  it("leads with patterns and a demo call to action", () => {
+  it("leads with plain product copy and no demo call to action", () => {
     render(<LandingPage />);
 
-    expect(
-      screen.getByRole("heading", { name: /see the patterns your health apps miss/i }),
-    ).toBeTruthy();
-    expect(screen.getByText(/correlations, trends, and source comparisons/i)).toBeTruthy();
-    const demoLinks = screen.getAllByRole("link", { name: /view demo/i });
-    expect(demoLinks.length).toBeGreaterThan(0);
-    expect(demoLinks.every((link) => link.getAttribute("href") === "#demo")).toBe(true);
+    expect(screen.getByRole("heading", { name: /your health data, in one place/i })).toBeTruthy();
+    expect(screen.getByText(/connect the apps and devices you use/i)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /view demo/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /view on github/i })).toBeNull();
   });
 
-  it("shows concrete analysis examples in the demo preview", () => {
+  it("shows concrete analysis examples in the product preview", () => {
     render(<LandingPage />);
 
     expect(screen.getByText("Daily summary")).toBeTruthy();
@@ -98,11 +94,9 @@ describe("LandingPage", () => {
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
     expect(screen.getByText("Recent trend")).toBeTruthy();
-    expect(screen.getByText(/late meals correlate with lower sleep consistency/i)).toBeTruthy();
-    expect(
-      screen.getAllByText(/training load compared with sleep consistency/i).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getByText(/resting heart rate has been elevated for 4 days/i)).toBeTruthy();
+    expect(screen.getByText(/late dinners show up next to less consistent sleep/i)).toBeTruthy();
+    expect(screen.getAllByText(/training load vs sleep/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/resting heart rate is up/i)).toBeTruthy();
     expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
@@ -113,12 +107,10 @@ describe("LandingPage", () => {
 
     expect(screen.getByText("iPhone app included")).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: /iPhone app talks to the strap directly/i }),
+      screen.getByRole("heading", { name: /capture WHOOP strap data from iPhone/i }),
     ).toBeTruthy();
     expect(screen.getByText(/Pair a WHOOP strap over Bluetooth/i)).toBeTruthy();
-    expect(
-      screen.getByText(/without routing direct capture through a separate WHOOP membership/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/does not require routing through a WHOOP membership/i)).toBeTruthy();
     expect(screen.getByText("WHOOP direct")).toBeTruthy();
     expect(screen.getByText("Motion")).toBeTruthy();
     expect(screen.getByText("Background")).toBeTruthy();
@@ -136,10 +128,10 @@ describe("LandingPage", () => {
   it("includes inspection, mobile, trust, and pricing sections", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("What Dofek helps you inspect")).toBeTruthy();
+    expect(screen.getByText("What you can check")).toBeTruthy();
     expect(screen.getByText("iPhone app included")).toBeTruthy();
-    expect(screen.getByText("Your data stays under your control")).toBeTruthy();
-    expect(screen.getByText("Simple managed plan")).toBeTruthy();
+    expect(screen.getByText("Your data stays yours")).toBeTruthy();
+    expect(screen.getByText("One managed plan")).toBeTruthy();
   });
 
   it("renders the empty usable provider state without claiming integrations are available", () => {
