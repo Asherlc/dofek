@@ -1394,6 +1394,18 @@ describe("recoveryRouter.strainTarget", () => {
     expect(result.progressPercent).toBe(expectedPercent);
   });
 
+  it("computes current strain from activity load instead of provider strain", async () => {
+    const today = "2026-03-23";
+    const caller = setup({
+      loads: [{ date: today, daily_load: 39.9, whoop_strain: 2 }],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+
+    expect(result.currentStrain).toBe(10.3);
+    expect(result.currentStrainSource).toBe("activity");
+    expect(result.progressPercent).toBe(Math.round((10.3 / result.targetStrain) * 100));
+  });
+
   it("returns 0 progressPercent when targetStrain is 0", async () => {
     const caller = setup({});
     const result = await caller.strainTarget({});
@@ -1919,7 +1931,23 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
         workload_ratio: 1.25,
       },
     ]).workloadRatio({});
-    expect(result.timeSeries[0]?.strain).toBe(13.8);
+    expect(result.timeSeries[0]?.strain).toBe(10.9);
+  });
+
+  it("computes strain from activity load instead of provider strain", async () => {
+    const result = await callerWith([
+      {
+        date: "2026-03-01",
+        daily_load: 39.9,
+        acute_load: 500,
+        chronic_load: 400,
+        workload_ratio: 1.25,
+        whoop_strain: 2,
+      },
+    ]).workloadRatio({});
+
+    expect(result.timeSeries[0]?.strain).toBe(10.3);
+    expect(result.displayedStrain).toBe(10.3);
   });
 
   it("displayedStrain defaults to 0 when timeSeries is empty", async () => {

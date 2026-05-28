@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+
+const stressRepositoryMock = vi.hoisted(() => ({
+  getStressScores: vi.fn(),
+}));
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -17,6 +21,14 @@ vi.mock("../trpc.ts", async () => {
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
+
+vi.mock("../repositories/stress-repository.ts", () => ({
+  StressRepository: class {
+    getStressScores(days: number, endDate: string) {
+      return stressRepositoryMock.getStressScores(days, endDate);
+    }
+  },
+}));
 
 vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/typed-sql.ts")>();
@@ -36,6 +48,16 @@ import { sleepNeedRouter } from "./sleep-need.ts";
 
 const createCaller = createTestCallerFactory(sleepNeedRouter);
 
+beforeEach(() => {
+  stressRepositoryMock.getStressScores.mockReset();
+  stressRepositoryMock.getStressScores.mockResolvedValue({
+    daily: [],
+    weekly: [],
+    latestScore: null,
+    trend: "stable",
+  });
+});
+
 interface SleepNeedFixtureRow {
   date: string;
   duration_minutes: number | null;
@@ -44,6 +66,7 @@ interface SleepNeedFixtureRow {
   good_recovery?: boolean;
   yesterday_load?: number;
   efficiency_pct?: number | null;
+  provider_id?: string | null;
 }
 
 function addDays(dateString: string, days: number): string {
@@ -63,6 +86,7 @@ function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
     light_minutes: null,
     awake_minutes: null,
     efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
+    provider_id: row.provider_id ?? null,
   }));
 }
 
@@ -100,6 +124,19 @@ describe("sleepNeedRouter", () => {
   // ── calculate ──────────────────────────────────────────
 
   describe("calculate", () => {
+    it("requires a ClickHouse sensor store", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+      });
+
+      await expect(caller.calculate({ endDate: "2026-03-15" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "sleepNeed.calculate requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+      });
+    });
+
     it("returns default baseline (480 min) when no data", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -478,6 +515,19 @@ describe("sleepNeedRouter", () => {
   // ── performance ──────────────────────────────────────────
 
   describe("performance", () => {
+    it("requires a ClickHouse sensor store", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+      });
+
+      await expect(caller.performance({ endDate: "2026-03-15" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "sleepNeed.performance requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+      });
+    });
+
     it("returns null when no sleep data", async () => {
       const caller = createPerformanceCaller([]);
       const result = await caller.performance({ endDate: "2026-03-15" });
@@ -509,6 +559,139 @@ describe("sleepNeedRouter", () => {
       expect(result?.score).toBeLessThanOrEqual(100);
       expect(["Excellent", "Good", "Fair", "Poor"]).toContain(result?.tier);
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
+    });
+
+    it("uses the historical sleep average for provider-backed rows", async () => {
+      const caller = createPerformanceCaller([
+        {
+          date: "2026-03-14",
+          duration_minutes: 465,
+          efficiency_pct: 72,
+          provider_id: "provider-a",
+        },
+        { date: "2026-03-01", duration_minutes: 480, provider_id: "provider-a" },
+      ]);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.neededMinutes).toBe(480);
+      expect(result?.score).toBe(89);
+    });
+
+    it("averages provider-agnostic duration, efficiency, consistency, and stress components", async () => {
+      stressRepositoryMock.getStressScores.mockResolvedValueOnce({
+        daily: [
+          {
+            date: "2026-03-14",
+            stressScore: 2.55,
+            hrvDeviation: null,
+            restingHrDeviation: null,
+            sleepEfficiency: 72,
+          },
+        ],
+        weekly: [],
+        latestScore: 2.55,
+        trend: "stable",
+      });
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 465, efficiency_pct: 72 },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          date: `2026-03-${String(index + 8).padStart(2, "0")}`,
+          duration_minutes: 480,
+          efficiency_pct: 90,
+        })),
+      ];
+      const caller = createPerformanceCaller(rows);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.components?.hours).toBe(97);
+      expect(result?.components?.efficiency).toBe(72);
+      expect(result?.components?.consistency).toBe(100);
+      expect(result?.components?.lowStress).toBe(15);
+      expect(result?.score).toBe(71);
+    });
+
+    it("uses component scoring when consistency is available without stress", async () => {
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 465, efficiency_pct: 72 },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          date: `2026-03-${String(index + 8).padStart(2, "0")}`,
+          duration_minutes: 480,
+          efficiency_pct: 90,
+        })),
+      ];
+      const caller = createPerformanceCaller(rows);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.components?.hours).toBe(97);
+      expect(result?.components?.efficiency).toBe(72);
+      expect(result?.components?.consistency).toBe(100);
+      expect(result?.components?.lowStress).toBeNull();
+      expect(result?.score).toBe(90);
+    });
+
+    it("uses component scoring when stress is available without consistency", async () => {
+      stressRepositoryMock.getStressScores.mockResolvedValueOnce({
+        daily: [
+          {
+            date: "2026-03-14",
+            stressScore: 2.55,
+            hrvDeviation: null,
+            restingHrDeviation: null,
+            sleepEfficiency: 72,
+          },
+        ],
+        weekly: [],
+        latestScore: 2.55,
+        trend: "stable",
+      });
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 465, efficiency_pct: 72 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ]);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.components?.hours).toBe(97);
+      expect(result?.components?.efficiency).toBe(72);
+      expect(result?.components?.consistency).toBeNull();
+      expect(result?.components?.lowStress).toBe(15);
+      expect(result?.score).toBe(61);
+    });
+
+    it("matches stress to the latest sleep date before scoring low stress", async () => {
+      stressRepositoryMock.getStressScores.mockResolvedValueOnce({
+        daily: [
+          {
+            date: "2026-03-13",
+            stressScore: 0,
+            hrvDeviation: null,
+            restingHrDeviation: null,
+            sleepEfficiency: 80,
+          },
+          {
+            date: "2026-03-14",
+            stressScore: 3,
+            hrvDeviation: null,
+            restingHrDeviation: null,
+            sleepEfficiency: 80,
+          },
+        ],
+        weekly: [],
+        latestScore: 3,
+        trend: "stable",
+      });
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 480, efficiency_pct: 80 },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          date: `2026-03-${String(index + 8).padStart(2, "0")}`,
+          duration_minutes: 480,
+          efficiency_pct: 90,
+        })),
+      ];
+      const caller = createPerformanceCaller(rows);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.components?.lowStress).toBe(0);
+      expect(result?.score).toBe(70);
     });
 
     it("uses default efficiency of 85 when null", async () => {

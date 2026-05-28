@@ -20,7 +20,7 @@ describe("computeCurrentStrain", () => {
     });
 
     expect(result).toEqual({
-      currentStrain: 9.1,
+      currentStrain: 7.2,
       currentStrainSource: "activity",
       currentPhysiologyLoad: null,
     });
@@ -32,7 +32,7 @@ describe("computeCurrentStrain", () => {
     });
 
     expect(result).toEqual({
-      currentStrain: 13.8,
+      currentStrain: 10.9,
       currentStrainSource: "activity",
       currentPhysiologyLoad: null,
     });

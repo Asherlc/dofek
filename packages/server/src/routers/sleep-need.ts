@@ -1,3 +1,4 @@
+import { computeSleepConsistencyScore } from "@dofek/recovery/sleep-consistency";
 import {
   computeRecommendedBedtime,
   computeSleepPerformance,
@@ -11,9 +12,11 @@ import { dateWindowEnd, dateWindowStart, endDateSchema } from "../lib/date-windo
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
+  type ClickHouseSleepNight,
   fetchLatestSleepNight,
   fetchSleepNights,
 } from "../repositories/clickhouse-sleep-repository.ts";
+import { StressRepository } from "../repositories/stress-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -44,6 +47,66 @@ function median(values: number[]): number | null {
   const rightValue = sortedValues[middleIndex];
   if (leftValue == null || rightValue == null) return null;
   return (leftValue + rightValue) / 2;
+}
+
+function hourInTimezone(timestamp: string, timezone: string): number | null {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour + minute / 60;
+}
+
+function populationStddev(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+function computeLatestSleepConsistency(
+  sleepRows: ClickHouseSleepNight[],
+  sleepDate: string,
+  timezone: string,
+): number | null {
+  const scheduleRows = sleepRows
+    .flatMap((row) => {
+      const endedAt = row.ended_at;
+      const bedtimeHour = hourInTimezone(row.started_at, timezone);
+      const waketimeHour = endedAt ? hourInTimezone(endedAt, timezone) : null;
+      if (bedtimeHour == null || waketimeHour == null) return [];
+      return [{ date: row.date, bedtimeHour, waketimeHour }];
+    })
+    .sort((leftRow, rightRow) => leftRow.date.localeCompare(rightRow.date));
+
+  let latestIndex = -1;
+  for (let rowIndex = scheduleRows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+    if (scheduleRows[rowIndex]?.date === sleepDate) {
+      latestIndex = rowIndex;
+      break;
+    }
+  }
+  if (latestIndex < 0) return null;
+
+  const windowRows = scheduleRows.slice(Math.max(0, latestIndex - 13), latestIndex + 1);
+  if (windowRows.length < 7) return null;
+
+  return computeSleepConsistencyScore(
+    populationStddev(windowRows.map((row) => row.bedtimeHour)),
+    populationStddev(windowRows.map((row) => row.waketimeHour)),
+  );
+}
+
+function lowStressScore(stressScore: number | null | undefined): number | null {
+  if (stressScore == null) return null;
+  return Math.round(Math.min(Math.max(100 - (stressScore / 3) * 100, 0), 100));
 }
 
 export interface SleepPerformanceInfo extends SleepPerformanceResult {
@@ -245,7 +308,7 @@ export const sleepNeedRouter = router({
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
       // Get last night's sleep
-      const tz = ctx.timezone;
+      const tz = ctx.timezone ?? "UTC";
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.performance");
       const lastSleep = await fetchLatestSleepNight({
         sensorStore,
@@ -278,7 +341,32 @@ export const sleepNeedRouter = router({
           ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length
           : 480;
 
-      const result = computeSleepPerformance(actualMinutes, neededMinutes, efficiency);
+      const sleepRowsByDate = new Map(
+        [...baselineRows, lastSleep].map((sleepRow) => [sleepRow.date, sleepRow]),
+      );
+      const consistency = computeLatestSleepConsistency(
+        [...sleepRowsByDate.values()],
+        lastSleep.date,
+        tz,
+      );
+      const stressResult = await new StressRepository(
+        ctx.db,
+        ctx.userId,
+        tz,
+        sensorStore,
+      ).getStressScores(90, input.endDate);
+      const stressScore =
+        stressResult.daily.find((stressRow) => stressRow.date === lastSleep.date)?.stressScore ??
+        null;
+      const lowStress = lowStressScore(stressScore);
+      const hasAdditionalComponents = consistency != null || lowStress != null;
+
+      const result = computeSleepPerformance(
+        actualMinutes,
+        neededMinutes,
+        efficiency,
+        hasAdditionalComponents ? { consistency, lowStress } : undefined,
+      );
       const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
 
       return {

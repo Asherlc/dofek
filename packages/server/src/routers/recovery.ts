@@ -29,6 +29,15 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+/**
+ * Per-activity training load expression over `analytics.activity_summary`.
+ * Load = duration_minutes * avg_hr / max_hr. Assumes the table is aliased
+ * `activity_summary` in the surrounding query.
+ */
+const ACTIVITY_LOAD_EXPRESSION = `dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
+  * activity_summary.avg_hr
+  / nullIf(toFloat64(activity_summary.max_hr), 0)`;
+
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
   feature: string,
@@ -275,18 +284,18 @@ export const recoveryRouter = router({
         workloadRowSchema,
         `WITH per_activity AS (
           SELECT
-            toDate(toTimeZone(started_at, {timezone:String})) AS date,
-            dateDiff('second', started_at, ended_at) / 60.0
-              * avg_hr
-              / nullIf(toFloat64(max_hr), 0) AS load
-          FROM analytics.activity_summary
-          WHERE user_id = {userId:UUID}
-            AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-            AND ended_at IS NOT NULL
-            AND avg_hr IS NOT NULL
+            toDate(toTimeZone(activity_summary.started_at, {timezone:String})) AS date,
+            ${ACTIVITY_LOAD_EXPRESSION} AS load
+          FROM analytics.activity_summary AS activity_summary
+          WHERE activity_summary.user_id = {userId:UUID}
+            AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
+            AND activity_summary.ended_at IS NOT NULL
+            AND activity_summary.avg_hr IS NOT NULL
         ),
         activity_load AS (
-          SELECT date, sum(load) AS daily_load
+          SELECT
+            date,
+            sum(load) AS daily_load
           FROM per_activity
           GROUP BY date
         ),
@@ -295,7 +304,9 @@ export const recoveryRouter = router({
           FROM numbers(toUInt64({totalDays:Int32}) + 1)
         ),
         daily AS (
-          SELECT ds.date AS date, coalesce(al.daily_load, 0) AS daily_load
+          SELECT
+            ds.date AS date,
+            coalesce(al.daily_load, 0) AS daily_load
           FROM date_series ds
           LEFT JOIN activity_load al ON al.date = ds.date
         ),
@@ -681,15 +692,14 @@ export const recoveryRouter = router({
           daily_load: z.coerce.number(),
         }),
         `SELECT
-          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-          sum(dateDiff('second', started_at, ended_at) / 60.0
-              * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
-        FROM analytics.activity_summary
-        WHERE user_id = {userId:UUID}
-          AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-          AND ended_at IS NOT NULL
-          AND avg_hr IS NOT NULL
-        GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
+          toString(toDate(toTimeZone(activity_summary.started_at, {timezone:String}))) AS date,
+          sum(${ACTIVITY_LOAD_EXPRESSION}) AS daily_load
+        FROM analytics.activity_summary AS activity_summary
+        WHERE activity_summary.user_id = {userId:UUID}
+          AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
+          AND activity_summary.ended_at IS NOT NULL
+          AND activity_summary.avg_hr IS NOT NULL
+        GROUP BY toDate(toTimeZone(activity_summary.started_at, {timezone:String}))
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
@@ -749,8 +759,11 @@ export const recoveryRouter = router({
       chronicLoad /= chronicWindow;
 
       const target = computeStrainTarget(readinessScore, chronicLoad, acuteLoad);
-      const todayLoad = loads.find((row) => row.date === today)?.daily_load ?? 0;
-      const currentStrain = computeCurrentStrain({ fallbackActivityLoad: todayLoad });
+      const todayLoadRow = loads.find((row) => row.date === today);
+      const todayLoad = todayLoadRow?.daily_load ?? 0;
+      const currentStrain = computeCurrentStrain({
+        fallbackActivityLoad: todayLoad,
+      });
       const roundedCurrentStrain = Math.round(currentStrain.currentStrain * 10) / 10;
       const roundedAcuteLoad = Math.round(acuteLoad * 10) / 10;
       const roundedChronicLoad = Math.round(chronicLoad * 10) / 10;

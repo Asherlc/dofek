@@ -8,7 +8,7 @@ import { statusColors, textColors } from "./colors.ts";
  * scaling that produces diminishing returns at higher loads.
  */
 export class StrainScore {
-  static readonly #SCALE_FACTOR = 3.5;
+  static readonly #SCALE_FACTOR = 2.775;
   static readonly #MAX = 21;
   static readonly #ACUTE_LOAD_DAYS = 7;
 
