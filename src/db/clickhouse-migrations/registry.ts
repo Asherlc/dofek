@@ -21,7 +21,6 @@ import { createMigration as createMigration0020 } from "./0020_incremental_dedup
 import { createMigration as createMigration0021 } from "./0021_incremental_resting_heart_rate.ts";
 import { createMigration as createMigration0022 } from "./0022_incremental_activity_summary.ts";
 import { createMigration as createMigration0023 } from "./0023_incremental_activity_vo2max_estimate.ts";
-import { createMigration as createMigration0024 } from "./0024_sleep_need_total_minutes.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -48,7 +47,6 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0021,
   createMigration0022,
   createMigration0023,
-  createMigration0024,
 ];
 
 export const clickHouseMigrationFileNames = [
@@ -75,7 +73,6 @@ export const clickHouseMigrationFileNames = [
   "0021_incremental_resting_heart_rate.ts",
   "0022_incremental_activity_summary.ts",
   "0023_incremental_activity_vo2max_estimate.ts",
-  "0024_sleep_need_total_minutes.ts",
 ] as const;
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

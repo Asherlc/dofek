@@ -45,7 +45,6 @@ interface SleepNeedFixtureRow {
   yesterday_load?: number;
   efficiency_pct?: number | null;
   provider_id?: string | null;
-  sleep_need_total_minutes?: number | null;
 }
 
 function addDays(dateString: string, days: number): string {
@@ -66,7 +65,6 @@ function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
     awake_minutes: null,
     efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
     provider_id: row.provider_id ?? null,
-    sleep_need_total_minutes: row.sleep_need_total_minutes ?? null,
   }));
 }
 
@@ -515,21 +513,20 @@ describe("sleepNeedRouter", () => {
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
     });
 
-    it("uses WHOOP total sleep need as the performance denominator when available", async () => {
+    it("uses the historical sleep average for provider-backed rows", async () => {
       const caller = createPerformanceCaller([
         {
           date: "2026-03-14",
           duration_minutes: 465,
           efficiency_pct: 72,
-          provider_id: "whoop",
-          sleep_need_total_minutes: 775,
+          provider_id: "provider-a",
         },
         { date: "2026-03-01", duration_minutes: 480 },
       ]);
       const result = await caller.performance({ endDate: "2026-03-15" });
 
-      expect(result?.neededMinutes).toBe(775);
-      expect(result?.score).toBe(64);
+      expect(result?.neededMinutes).toBe(480);
+      expect(result?.score).toBe(89);
     });
 
     it("uses default efficiency of 85 when null", async () => {

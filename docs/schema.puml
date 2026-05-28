@@ -554,7 +554,6 @@ entity "sleep_session" {
   awake_minutes : integer
   efficiency_pct : real
   sleep_type : text
-  sleep_need_total_minutes : integer
   sleep_need_baseline_minutes : integer
   sleep_need_from_debt_minutes : integer
   sleep_need_from_strain_minutes : integer

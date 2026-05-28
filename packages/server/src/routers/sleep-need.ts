@@ -273,15 +273,10 @@ export const sleepNeedRouter = router({
       const durations = baselineRows
         .map((row) => row.duration_minutes)
         .filter((duration): duration is number => duration != null);
-      const whoopSleepNeedMinutes =
-        lastSleep.provider_id === "whoop" && lastSleep.sleep_need_total_minutes != null
-          ? lastSleep.sleep_need_total_minutes
-          : null;
       const neededMinutes =
-        whoopSleepNeedMinutes ??
-        (durations.length > 0
+        durations.length > 0
           ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length
-          : 480);
+          : 480;
 
       const result = computeSleepPerformance(actualMinutes, neededMinutes, efficiency);
       const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
