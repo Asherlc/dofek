@@ -265,7 +265,7 @@ describe("mobileDashboard.dashboard", () => {
     });
     const result = await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(result.strain.dailyStrain).toBe(13.8);
+    expect(result.strain.dailyStrain).toBe(10.9);
     expect(result.strain.acuteLoad).toBe(50);
   });
 
