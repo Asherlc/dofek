@@ -20,6 +20,13 @@ export interface Activity {
   source_providers: string[] | null;
   distance_meters?: number | null;
   calories?: number | null;
+  location?: {
+    centroidLat: number;
+    centroidLng: number;
+    tileUrl: string;
+    distanceMeters: number | null;
+    elevationGainM: number | null;
+  } | null;
 }
 
 interface ActivityListProps {
@@ -73,6 +80,24 @@ export function ActivityList({
     totalCount != null && pageSize != null ? Math.ceil(totalCount / pageSize) : undefined;
   const currentPage = page ?? 0;
   const columns: ActivityTableColumn<Activity>[] = [
+    {
+      key: "map",
+      label: "Map",
+      headerClassName: "pb-2 pr-4 whitespace-nowrap",
+      cellClassName: "py-2 pr-4 whitespace-nowrap",
+      renderCell: (activity) =>
+        activity.location ? (
+          <img
+            src={activity.location.tileUrl}
+            alt="Activity route map summary"
+            className="h-12 w-16 rounded object-cover bg-surface-hover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          "—"
+        ),
+    },
     {
       key: "date",
       label: "Date",

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
+import { osmTileUrl } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import {
@@ -111,6 +112,8 @@ const activitySummaryReadModelRowSchema = z.object({
   elevation_gain_m: z.number().nullable(),
   elevation_loss_m: z.number().nullable(),
   sample_count: z.number().nullable(),
+  centroid_lat: z.number().nullable().default(null),
+  centroid_lng: z.number().nullable().default(null),
 });
 
 const powerCurveSampleSchema = z.object({
@@ -390,6 +393,16 @@ export class ActivityRepository extends BaseRepository {
         elevation_gain_m: summary.elevation_gain_m,
         elevation_loss_m: summary.elevation_loss_m,
         sample_count: summary.sample_count,
+        location:
+          summary.centroid_lat != null && summary.centroid_lng != null
+            ? {
+                centroidLat: summary.centroid_lat,
+                centroidLng: summary.centroid_lng,
+                tileUrl: osmTileUrl(summary.centroid_lat, summary.centroid_lng),
+                distanceMeters: summary.total_distance,
+                elevationGainM: summary.elevation_gain_m,
+              }
+            : null,
       };
     });
   }

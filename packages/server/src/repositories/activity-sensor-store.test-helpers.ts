@@ -26,6 +26,8 @@ interface SummaryRow {
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
   sample_count: number | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
 }
 
 interface SampleRow {
@@ -54,6 +56,8 @@ const summaryRowSchema = z.object({
   elevation_gain_m: z.coerce.number().nullable(),
   elevation_loss_m: z.coerce.number().nullable(),
   sample_count: z.coerce.number().nullable(),
+  centroid_lat: z.coerce.number().nullable(),
+  centroid_lng: z.coerce.number().nullable(),
 });
 
 const sampleRowSchema = z.object({
@@ -200,7 +204,9 @@ class PostgresTestActivitySensorStore implements ActivitySensorStore {
             MAX(sensor.scalar) FILTER (WHERE sensor.channel = 'distance')::real AS total_distance,
             NULL::real AS elevation_gain_m,
             NULL::real AS elevation_loss_m,
-            COUNT(sensor.scalar)::int AS sample_count
+            COUNT(sensor.scalar)::int AS sample_count,
+            NULL::real AS centroid_lat,
+            NULL::real AS centroid_lng
           FROM fitness.v_activity activity
           LEFT JOIN fitness.metric_stream sensor
             ON sensor.activity_id = activity.id
