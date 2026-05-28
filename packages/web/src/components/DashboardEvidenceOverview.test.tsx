@@ -40,11 +40,6 @@ describe("DashboardEvidenceOverview", () => {
         days={30}
         endDate="2026-05-27"
         trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
-        sources={[
-          { id: "whoop", name: "WHOOP", authorized: true },
-          { id: "oura", name: "Oura", authorized: true },
-          { id: "apple_health", name: "Apple Health", authorized: false, importOnly: true },
-        ]}
         topInsight={{
           id: "insight-1",
           type: "correlation",
@@ -58,7 +53,6 @@ describe("DashboardEvidenceOverview", () => {
           effectSize: 0.72,
           pValue: 0.01,
         }}
-        dailySummary={<div>Daily rings appear first</div>}
         healthMonitor={<div>Latest values vs. rolling average</div>}
       />,
     );
@@ -69,17 +63,11 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Key correlation")).toBeTruthy();
     expect(screen.getByText("Recent trend")).toBeTruthy();
     expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
-    expect(screen.getByText("Compare sources")).toBeTruthy();
-    expect(screen.getByText("Apple Health")).toBeTruthy();
+    expect(screen.queryByText("Compare sources")).toBeNull();
+    expect(screen.queryByText("Connected source coverage")).toBeNull();
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
     expect(screen.queryByText("Export confidence")).toBeNull();
-
-    const dailySummary = screen.getByText("Daily rings appear first");
-    const keyCorrelation = screen.getByText("Key correlation");
-    expect(
-      dailySummary.compareDocumentPosition(keyCorrelation) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
   });
 
   it("shows insight errors instead of falling back to a fake empty correlation", () => {
@@ -88,7 +76,6 @@ describe("DashboardEvidenceOverview", () => {
         days={30}
         endDate="2026-05-27"
         trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
-        sources={[]}
         insightError={<div>Could not load insights.</div>}
         healthMonitor={<div>Latest values vs. rolling average</div>}
       />,

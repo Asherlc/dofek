@@ -257,24 +257,31 @@ function DashboardPreview() {
           )}
         </aside>
         <div className="p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[#062f29]">Overview</div>
-              <div className="text-xs text-[#6b8178]">Apr 28 - May 27</div>
-            </div>
-            <div className="rounded-md border border-[#dce8df] px-3 py-1 text-xs text-[#2d4f45]">
-              30 days
-            </div>
-          </div>
           <DailySummaryPreview />
-          <div className="grid gap-3 lg:grid-cols-2">
-            <CorrelationPanel />
-            <TrendPanel />
-            <ComparisonPanel />
-            <SourcePanel />
-          </div>
-          <HealthMonitorPreview />
+          <OverviewPreview />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function OverviewPreview() {
+  return (
+    <div className="rounded-xl border border-[#dce8df] bg-[#f8fbf9] p-3.5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-[#062f29]">Overview</div>
+          <div className="text-xs text-[#6b8178]">Apr 28 - May 27</div>
+        </div>
+        <div className="rounded-md border border-[#dce8df] bg-white px-3 py-1 text-xs text-[#2d4f45]">
+          30 days
+        </div>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <CorrelationPanel />
+        <TrendPanel />
+        <ComparisonPanel />
+        <HealthMonitorPreview />
       </div>
     </div>
   );
@@ -379,30 +386,6 @@ function ComparisonPanel() {
   );
 }
 
-function SourcePanel() {
-  const sourceRows = [
-    { name: "Strong", status: "Connected" },
-    { name: "Cronometer", status: "Connected" },
-  ] as const;
-
-  return (
-    <div className="rounded-xl border border-[#dce8df] bg-white p-3.5">
-      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[#45645b]">
-        Compare sources
-      </div>
-      <div className="mt-1 text-sm text-[#2d4f45]">Connected source coverage</div>
-      <div className="mt-3 space-y-2.5">
-        {sourceRows.map((source) => (
-          <div key={source.name} className="grid grid-cols-[80px_1fr] items-center gap-2">
-            <div className="text-xs font-medium text-[#062f29]">{source.name}</div>
-            <div className="text-xs text-[#45645b]">{source.status}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function HealthMonitorPreview() {
   const units = useUnitConverter();
   const metrics = [
@@ -415,17 +398,20 @@ function HealthMonitorPreview() {
   ] as const;
 
   return (
-    <div className="mt-3 rounded-xl border border-[#dce8df] bg-white p-3.5">
+    <div className="rounded-xl border border-[#dce8df] bg-white p-3.5">
       <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[#45645b]">
         Health monitor
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <div className="mt-3">
         {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-lg border border-[#dce8df] bg-[#fbfdfb] p-2.5">
+          <div
+            key={metric.label}
+            className="grid grid-cols-[1fr_auto] items-baseline gap-3 border-t border-[#edf3ef] py-1.5 first:border-t-0"
+          >
             <div className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-[#45645b]">
               {metric.label}
             </div>
-            <div className="mt-1 text-sm font-bold text-[#062f29]">{metric.value}</div>
+            <div className="text-sm font-bold text-[#062f29]">{metric.value}</div>
           </div>
         ))}
       </div>

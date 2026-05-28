@@ -1,13 +1,6 @@
 import type { ReactNode } from "react";
 import type { Insight } from "./CorrelationCard.tsx";
 
-interface DashboardSource {
-  id: string;
-  name: string;
-  authorized: boolean;
-  importOnly?: boolean;
-}
-
 export interface DashboardTrendSnapshot {
   latestRestingHeartRate: number | null | undefined;
   averageRestingHeartRate: number | null | undefined;
@@ -50,8 +43,6 @@ export function DashboardEvidenceOverview({
   topInsight,
   insightError,
   trend,
-  sources,
-  dailySummary,
   healthMonitor,
 }: {
   days: number;
@@ -59,17 +50,11 @@ export function DashboardEvidenceOverview({
   topInsight?: Insight;
   insightError?: ReactNode;
   trend: DashboardTrendSnapshot;
-  sources: DashboardSource[];
-  dailySummary?: ReactNode;
   healthMonitor: ReactNode;
 }) {
-  const visibleSources = sources
-    .filter((source) => source.authorized || source.importOnly)
-    .slice(0, 4);
   const effectSize = topInsight?.effectSize;
   const correlationValue = effectSize == null ? "--" : Math.abs(effectSize).toFixed(2);
   const trendLabel = trendPositionLabel(trend);
-  const sourceCount = visibleSources.length;
 
   return (
     <section
@@ -86,9 +71,7 @@ export function DashboardEvidenceOverview({
         </span>
       </div>
 
-      {dailySummary && <div className="mb-3">{dailySummary}</div>}
-
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-3">
         <EvidenceCard eyebrow="Key correlation">
           {insightError ? (
             insightError
@@ -140,25 +123,6 @@ export function DashboardEvidenceOverview({
             <MiniScatter direction="down" />
           </div>
         </EvidenceCard>
-
-        <EvidenceCard eyebrow="Compare sources">
-          <h3 className="text-base font-medium text-foreground">
-            {sourceCount > 0 ? "Connected source coverage" : "Connect sources to compare coverage"}
-          </h3>
-          <div className="mt-4 space-y-3">
-            {visibleSources.length > 0 ? (
-              visibleSources.map((source) => (
-                <SourceRow
-                  key={source.id}
-                  label={source.name}
-                  status={source.authorized ? "Connected" : "Supported"}
-                />
-              ))
-            ) : (
-              <p className="text-sm text-muted">Add sources to compare trends across them.</p>
-            )}
-          </div>
-        </EvidenceCard>
       </div>
 
       <div className="mt-3 rounded-lg border border-border bg-white/62 p-4">
@@ -176,15 +140,6 @@ function EvidenceCard({ eyebrow, children }: { eyebrow: string; children: ReactN
     <div className="min-h-[15rem] rounded-lg border border-border bg-white/62 p-5">
       <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-muted">{eyebrow}</p>
       {children}
-    </div>
-  );
-}
-
-function SourceRow({ label, status }: { label: string; status: string }) {
-  return (
-    <div className="grid grid-cols-[1fr_5.5rem] items-center gap-3 text-xs">
-      <span className="truncate font-semibold text-foreground">{label}</span>
-      <span className="text-muted">{status}</span>
     </div>
   );
 }

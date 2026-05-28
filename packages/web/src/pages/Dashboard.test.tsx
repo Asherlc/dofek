@@ -26,12 +26,14 @@ const mockInsightsQuery = vi.hoisted(() =>
 );
 
 vi.mock("../components/DailyOverview.tsx", () => ({
-  DailyOverview: () => <div>Daily overview</div>,
+  DailyOverview: () => <section aria-label="Daily health summary">Daily overview</section>,
 }));
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
   DashboardEvidenceOverview: ({ insightError }: { insightError?: ReactNode }) => (
-    <section>{insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}</section>
+    <section aria-label="Dashboard overview">
+      {insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}
+    </section>
   ),
 }));
 
@@ -74,10 +76,6 @@ vi.mock("../lib/unitContext.ts", () => ({
   useUnitConverter: () => new UnitConverter("metric"),
 }));
 
-vi.mock("../lib/useProviderGuide.ts", () => ({
-  useProviderGuide: () => ({ providers: [] }),
-}));
-
 import {
   buildHealthMetrics,
   buildSkinTempSeries,
@@ -109,6 +107,17 @@ describe("Dashboard", () => {
     expect(screen.getByTestId("query-state-empty")).toBeTruthy();
     expect(screen.getByText("No insights yet.")).toBeTruthy();
     expect(screen.queryByText("Sleep consistency + Heart Rate Variability")).toBeNull();
+  });
+
+  it("renders the daily summary outside and before the 30 day overview", () => {
+    render(<Dashboard />);
+
+    const dailySummary = screen.getByRole("region", { name: "Daily health summary" });
+    const overview = screen.getByRole("region", { name: "Dashboard overview" });
+
+    expect(
+      dailySummary.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 

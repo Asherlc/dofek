@@ -120,12 +120,20 @@ describe("LandingPage", () => {
     expect(screen.getByText("Health monitor")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
     expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(screen.queryByText("Compare sources")).toBeNull();
+    expect(screen.queryByText("Connected source coverage")).toBeNull();
     expect(screen.getByText(/late dinners show up next to less consistent sleep/i)).toBeTruthy();
     expect(screen.getAllByText(/training load vs sleep/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/resting heart rate is up/i)).toBeTruthy();
     expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
     expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
+
+    const dailySummary = screen.getByText("Daily summary");
+    const overviewRange = screen.getByText("Apr 28 - May 27");
+    expect(
+      dailySummary.compareDocumentPosition(overviewRange) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("formats preview units through the unit system", () => {
