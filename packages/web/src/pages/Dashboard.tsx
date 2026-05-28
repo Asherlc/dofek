@@ -2,44 +2,23 @@ import {
   type FormattedMeasurement,
   formatCaloriesMeasurement,
   formatHRVMeasurement,
-  formatSpO2,
   formatSpO2Measurement,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { z } from "zod";
-import { AnomalyAlertBanner } from "../components/AnomalyAlertBanner.tsx";
-import { BodyRecompositionChart } from "../components/BodyRecompositionChart.tsx";
-import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
-import { CorrelationCard, type Insight } from "../components/CorrelationCard.tsx";
+import type { Insight } from "../components/CorrelationCard.tsx";
 import { DailyOverview } from "../components/DailyOverview.tsx";
+import { DashboardEvidenceOverview } from "../components/DashboardEvidenceOverview.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
-import { HealthspanScoreCard } from "../components/HealthspanScoreCard.tsx";
-import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
-import { NutritionChart } from "../components/NutritionChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { ProviderGuide } from "../components/ProviderGuide.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { SleepChart } from "../components/SleepChart.tsx";
-import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
-import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
-import { StrainCard } from "../components/StrainCard.tsx";
-import { StressChart } from "../components/StressChart.tsx";
-import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
-import { WeeklyReportCard } from "../components/WeeklyReportCard.tsx";
 import { useAutoSync } from "../hooks/useAutoSync.ts";
-import { useScrollReveal } from "../hooks/useScrollReveal.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { chartColors } from "../lib/chartTheme.ts";
-import {
-  DASHBOARD_GRID_PAIR_SECONDARIES,
-  DASHBOARD_GRID_PAIRS,
-} from "../lib/dashboardGridPairs.ts";
-import { useDashboardLayout } from "../lib/dashboardLayoutContext.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { useProviderGuide } from "../lib/useProviderGuide.ts";
-import { assertRows } from "../lib/utils.ts";
 
 type MetricEntry = {
   label: string;
@@ -81,32 +60,11 @@ const dailyMetricRowSchema = z.object({
   active_energy_kcal: z.number().nullable(),
 });
 
-const sleepRowSchema = z.object({
-  started_at: z.string(),
-  duration_minutes: z.number().nullable(),
-  deep_minutes: z.number().nullable(),
-  rem_minutes: z.number().nullable(),
-  light_minutes: z.number().nullable(),
-  awake_minutes: z.number().nullable(),
-  efficiency_pct: z.number().nullable(),
-});
-
-const nutritionDailyRowSchema = z.object({
-  date: z.string(),
-  calories: z.number().nullable(),
-  protein_g: z.number().nullable(),
-  carbs_g: z.number().nullable(),
-  fat_g: z.number().nullable(),
-  fiber_g: z.number().nullable(),
-});
-
 export function healthMonitorSubtitle(): string {
   return "Latest values vs. rolling average";
 }
 
 type DailyMetricRow = z.infer<typeof dailyMetricRowSchema>;
-
-const SECONDARY_DASHBOARD_QUERY_DELAY_MS = 2500;
 
 export function spo2TempSectionConfig(
   hasSpO2: boolean,
@@ -137,9 +95,9 @@ export function spo2TempSectionConfig(
 export function buildSkinTempSeries(metrics: DailyMetricRow[], units: UnitConverter) {
   return {
     name: "Skin Temp",
-    data: metrics.map((d): [string, number | null] => [
-      d.date,
-      d.skin_temp_c != null ? units.convertTemperature(d.skin_temp_c) : null,
+    data: metrics.map((dailyMetric): [string, number | null] => [
+      dailyMetric.date,
+      dailyMetric.skin_temp_c != null ? units.convertTemperature(dailyMetric.skin_temp_c) : null,
     ]),
     color: chartColors.amber,
     yAxisIndex: 1 as const,
@@ -196,108 +154,17 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
   return entries.filter((entry): entry is MetricEntry => entry !== false);
 }
 
-export const DASHBOARD_SECTION_IDS = new Set([
-  "healthMonitor",
-  "topInsights",
-  "strain",
-  "weeklyReport",
-  "sleepNeed",
-  "stress",
-  "healthspan",
-  "hrvRhr",
-  "spo2Temp",
-  "steps",
-  "sleep",
-  "nutrition",
-  "bodyComp",
-]);
-
 export function Dashboard() {
   const units = useUnitConverter();
-  const { layout, toggleCollapsed, toggleHidden, moveSection } = useDashboardLayout();
   const days = 30;
   const endDate = useTodayQueryDate();
-  const [loadSecondarySections, setLoadSecondarySections] = useState(false);
-
-  useEffect(() => {
-    setLoadSecondarySections(false);
-    const timeout = window.setTimeout(
-      () => setLoadSecondarySections(true),
-      SECONDARY_DASHBOARD_QUERY_DELAY_MS,
-    );
-    return () => window.clearTimeout(timeout);
-  }, []);
-
   const readinessData = trpc.recovery.readinessScore.useQuery({ days, endDate });
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days, endDate });
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const providerGuide = useProviderGuide();
-  const trends = trpc.dailyMetrics.trends.useQuery(
-    { days, endDate },
-    { enabled: loadSecondarySections },
-  );
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery(
-    { days, endDate },
-    { enabled: loadSecondarySections },
-  );
-  const sleepData = trpc.sleep.list.useQuery({ days, endDate }, { enabled: loadSecondarySections });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery(
-    { days, endDate },
-    { enabled: loadSecondarySections },
-  );
-  const nutritionData = trpc.nutrition.daily.useQuery(
-    { days, endDate },
-    { enabled: loadSecondarySections },
-  );
-  const insightsQuery = trpc.insights.compute.useQuery(
-    { days, endDate },
-    { enabled: loadSecondarySections },
-  );
-  const sleepNeed = trpc.sleepNeed.calculate.useQuery(
-    { endDate },
-    { enabled: loadSecondarySections },
-  );
-  const stressData = trpc.stress.scores.useQuery(
-    { days, endDate },
-    { enabled: loadSecondarySections },
-  );
-  const weeklyReport = trpc.weeklyReport.report.useQuery(
-    { weeks: Math.ceil(days / 7), endDate },
-    { enabled: loadSecondarySections },
-  );
-  const healthspan = trpc.healthspan.score.useQuery(
-    {
-      weeks: Math.max(Math.ceil(days / 7), 4),
-      endDate,
-    },
-    { enabled: loadSecondarySections },
-  );
-  const anomalyCheck = trpc.anomalyDetection.check.useQuery(
-    { endDate },
-    { enabled: loadSecondarySections },
-  );
-  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery(
-    {
-      days: Math.max(days, 90),
-      endDate,
-    },
-    { enabled: loadSecondarySections },
-  );
-  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery(
-    {
-      days: Math.max(days, 90),
-      endDate,
-    },
-    { enabled: loadSecondarySections },
-  );
-  const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery(
-    {
-      days: Math.max(days, 180),
-      endDate,
-    },
-    { enabled: loadSecondarySections },
-  );
+  const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
+  const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -305,505 +172,50 @@ export function Dashboard() {
   // Auto-sync when data is stale (API providers only — HealthKit requires iOS)
   useAutoSync(trendData?.latest_date);
 
-  const topInsights = useMemo(() => {
-    const all: Insight[] = insightsQuery.data ?? [];
-    return all
-      .filter((i) => i.confidence !== "insufficient")
-      .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize))
-      .slice(0, 2);
+  const topInsight = useMemo(() => {
+    const allInsights: Insight[] = insightsQuery.data ?? [];
+    return allInsights
+      .filter((insight) => insight.confidence !== "insufficient")
+      .sort((firstInsight, secondInsight) => {
+        return Math.abs(secondInsight.effectSize) - Math.abs(firstInsight.effectSize);
+      })[0];
   }, [insightsQuery.data]);
 
   const healthMetrics = useMemo(() => buildHealthMetrics(trendData, units), [trendData, units]);
 
-  const metrics = dailyMetrics.error ? [] : assertRows(dailyMetrics.data, dailyMetricRowSchema);
-  const sleepRows = sleepData.error ? [] : assertRows(sleepData.data, sleepRowSchema);
-  const nutritionRows = nutritionData.error
-    ? []
-    : assertRows(nutritionData.data, nutritionDailyRowSchema);
-
-  const hasSpO2 = metrics.some((d) => d.spo2_avg != null);
-  const hasSkinTemp = metrics.some((d) => d.skin_temp_c != null);
-
-  const spo2Series = useMemo(
-    () => ({
-      name: "SpO2",
-      data: metrics.map((d): [string, number | null] => [d.date, d.spo2_avg]),
-      color: chartColors.blue,
-      areaStyle: true,
-      formatValue: formatSpO2,
-    }),
-    [metrics],
+  const healthMonitor = trends.error ? (
+    <QueryStatePanel error={trends.error} height={160} />
+  ) : (
+    <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
   );
-
-  const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
-
-  const spo2TempConfig = spo2TempSectionConfig(hasSpO2, hasSkinTemp, units);
-
-  const stepsSeries = useMemo(
-    () => ({
-      name: "Steps",
-      data: metrics.map((d): [string, number | null] => [d.date, d.steps]),
-      color: chartColors.purple,
-      areaStyle: true,
-    }),
-    [metrics],
-  );
-
-  const renderQueryError = (queryError: unknown, height: number) => (
-    <QueryStatePanel error={queryError} height={height} />
-  );
-  const renderChartQueryError = (queryError: unknown) => renderQueryError(queryError, 200);
-  const renderChartCard = (content: ReactNode) => <div className="card p-2 sm:p-4">{content}</div>;
-
-  // Build a map of section ID -> rendered content
-  const sectionContent: Record<string, { title: string; subtitle: string; content: ReactNode }> = {
-    healthMonitor: {
-      title: "Health Monitor",
-      subtitle: healthMonitorSubtitle(),
-      content:
-        loadSecondarySections && trends.error ? (
-          renderQueryError(trends.error, 160)
-        ) : (
-          <HealthStatusBar
-            metrics={healthMetrics}
-            loading={!loadSecondarySections || trends.isLoading}
-          />
-        ),
-    },
-    topInsights: {
-      title: "Top Insights",
-      subtitle: "Strongest correlations in your data",
-      content:
-        !loadSecondarySections || insightsQuery.isLoading ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="h-48 rounded-lg shimmer" />
-            <div className="h-48 rounded-lg shimmer" />
-          </div>
-        ) : insightsQuery.error ? (
-          renderQueryError(insightsQuery.error, 192)
-        ) : topInsights.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {topInsights.map((insight) => (
-              <CorrelationCard key={insight.id} insight={insight} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-subtle">
-            Not enough data to surface insights yet. Check back after a few more days of tracking.
-          </p>
-        ),
-    },
-    weeklyReport: {
-      title: "Weekly Performance",
-      subtitle: "Strain balance, sleep vs average, key vitals",
-      content: (
-        <WeeklyReportCard
-          data={weeklyReport.data}
-          loading={!loadSecondarySections || weeklyReport.isLoading}
-        />
-      ),
-    },
-    strain: {
-      title: "Strain",
-      subtitle: "Current training strain on a 0-21 scale with acute/chronic workload balance",
-      content: (
-        <StrainCard
-          data={workloadRatio.data}
-          strainTarget={strainTarget.data}
-          loading={workloadRatio.isLoading || strainTarget.isLoading}
-        />
-      ),
-    },
-    sleepNeed: {
-      title: "Sleep Coach",
-      subtitle: "Personalized sleep need based on strain and debt",
-      content: (
-        <SleepNeedCard
-          data={sleepNeed.data}
-          loading={!loadSecondarySections || sleepNeed.isLoading}
-        />
-      ),
-    },
-    stress: {
-      title: "Stress Monitor",
-      subtitle: "Daily stress from HR/HRV deviation vs personal baseline",
-      content: (
-        <div className="card p-2 sm:p-4">
-          <StressChart
-            data={stressData.data}
-            loading={!loadSecondarySections || stressData.isLoading}
-          />
-        </div>
-      ),
-    },
-    healthspan: {
-      title: "Healthspan",
-      subtitle: "Composite longevity score from 9 health metrics",
-      content: (
-        <HealthspanScoreCard
-          data={healthspan.data}
-          loading={!loadSecondarySections || healthspan.isLoading}
-        />
-      ),
-    },
-    hrvRhr: {
-      title: "Heart Rate Variability & Resting HR",
-      subtitle: "60-day baseline band with 7-day rolling average",
-      content: renderChartCard(
-        loadSecondarySections && hrvBaseline.error ? (
-          renderChartQueryError(hrvBaseline.error)
-        ) : (
-          <HrvBaselineChart
-            data={hrvBaseline.data ?? []}
-            loading={!loadSecondarySections || hrvBaseline.isLoading}
-          />
-        ),
-      ),
-    },
-    spo2Temp: {
-      title: spo2TempConfig.title,
-      subtitle: spo2TempConfig.subtitle,
-      content:
-        loadSecondarySections && dailyMetrics.error
-          ? renderChartCard(renderChartQueryError(dailyMetrics.error))
-          : hasSpO2 || hasSkinTemp
-            ? renderChartCard(
-                <TimeSeriesChart
-                  series={[
-                    ...(hasSpO2 ? [spo2Series] : []),
-                    ...(hasSkinTemp
-                      ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                      : []),
-                  ]}
-                  height={200}
-                  yAxis={spo2TempConfig.yAxis}
-                  loading={!loadSecondarySections || dailyMetrics.isLoading}
-                />,
-              )
-            : loadSecondarySections
-              ? null
-              : renderChartCard(
-                  <TimeSeriesChart
-                    series={[]}
-                    height={200}
-                    yAxis={spo2TempConfig.yAxis}
-                    loading={true}
-                  />,
-                ),
-    },
-    steps: {
-      title: "Daily Steps",
-      subtitle: "Total daily step count over time",
-      content: renderChartCard(
-        loadSecondarySections && dailyMetrics.error ? (
-          renderChartQueryError(dailyMetrics.error)
-        ) : (
-          <TimeSeriesChart
-            series={[stepsSeries]}
-            height={200}
-            yAxis={[{ name: "steps" }]}
-            loading={!loadSecondarySections || dailyMetrics.isLoading}
-          />
-        ),
-      ),
-    },
-    sleep: {
-      title: "Sleep",
-      subtitle: `Stage breakdown (${days} days)`,
-      content: renderChartCard(
-        loadSecondarySections && sleepData.error ? (
-          renderChartQueryError(sleepData.error)
-        ) : (
-          <SleepChart data={sleepRows} loading={!loadSecondarySections || sleepData.isLoading} />
-        ),
-      ),
-    },
-    nutrition: {
-      title: "Nutrition",
-      subtitle: `Calories & macros (${days} days)`,
-      content: renderChartCard(
-        loadSecondarySections && nutritionData.error ? (
-          renderChartQueryError(nutritionData.error)
-        ) : (
-          <NutritionChart
-            data={nutritionRows}
-            loading={!loadSecondarySections || nutritionData.isLoading}
-          />
-        ),
-      ),
-    },
-    bodyComp: {
-      title: "Body Composition",
-      subtitle: "Smoothed weight trend and fat/lean mass recomposition",
-      content: (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="card p-2 sm:p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-medium text-subtle uppercase">Weight Trend</h3>
-              <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time to highlight your underlying direction." />
-            </div>
-            {loadSecondarySections && smoothedWeight.error ? (
-              renderQueryError(smoothedWeight.error, 220)
-            ) : (
-              <SmoothedWeightChart
-                data={smoothedWeight.data ?? []}
-                prediction={weightPrediction.data}
-                loading={!loadSecondarySections || smoothedWeight.isLoading}
-              />
-            )}
-          </div>
-          <div className="card p-2 sm:p-4">
-            <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-medium text-subtle uppercase">Recomposition</h3>
-              <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
-            </div>
-            {loadSecondarySections && bodyRecomp.error ? (
-              renderQueryError(bodyRecomp.error, 220)
-            ) : (
-              <BodyRecompositionChart
-                data={bodyRecomp.data ?? []}
-                loading={!loadSecondarySections || bodyRecomp.isLoading}
-              />
-            )}
-          </div>
-        </div>
-      ),
-    },
-  };
-
-  // Build the ordered list of sections to render, skipping hidden and already-rendered (pair secondaries)
-  const rendered = new Set<string>();
-  const orderedElements: ReactNode[] = [];
-  let sectionIndex = 0;
-
-  for (const id of layout.order) {
-    if (!DASHBOARD_SECTION_IDS.has(id)) continue;
-    if (rendered.has(id) || layout.hidden.includes(id)) continue;
-
-    const section = sectionContent[id];
-    if (!section) continue;
-
-    // Check if this section is the secondary of a grid pair.
-    // Only skip if the primary will actually render it (is in the section set, in the order, and not hidden).
-    const primaryId = DASHBOARD_GRID_PAIR_SECONDARIES[id];
-    if (primaryId) {
-      const primaryWillRender =
-        DASHBOARD_SECTION_IDS.has(primaryId) &&
-        !layout.hidden.includes(primaryId) &&
-        layout.order.includes(primaryId);
-      if (primaryWillRender) continue;
-    }
-
-    const pairId = DASHBOARD_GRID_PAIRS[id];
-    const pairSection = pairId ? sectionContent[pairId] : undefined;
-    const pairHidden = pairId ? layout.hidden.includes(pairId) : false;
-
-    rendered.add(id);
-    if (pairId) rendered.add(pairId);
-
-    const currentIndex = sectionIndex++;
-
-    if (pairId && pairSection && !pairHidden) {
-      // Render as a grid pair
-      const resolvedPairId = pairId;
-      orderedElements.push(
-        <div key={`pair-${id}`} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <CollapsibleSection
-            id={id}
-            title={section.title}
-            subtitle={section.subtitle}
-            collapsed={layout.collapsed[id]}
-            onToggle={() => toggleCollapsed(id)}
-            onMoveUp={() => moveSection(id, "up")}
-            onMoveDown={() => moveSection(id, "down")}
-            onHide={() => toggleHidden(id)}
-            staggerIndex={currentIndex}
-          >
-            {section.content}
-          </CollapsibleSection>
-          <CollapsibleSection
-            id={resolvedPairId}
-            title={pairSection.title}
-            subtitle={pairSection.subtitle}
-            collapsed={layout.collapsed[resolvedPairId]}
-            onToggle={() => toggleCollapsed(resolvedPairId)}
-            onMoveUp={() => moveSection(resolvedPairId, "up")}
-            onMoveDown={() => moveSection(resolvedPairId, "down")}
-            onHide={() => toggleHidden(resolvedPairId)}
-            staggerIndex={currentIndex + 1}
-          >
-            {pairSection.content}
-          </CollapsibleSection>
-        </div>,
-      );
-    } else {
-      // Render standalone (including when pair is hidden)
-      orderedElements.push(
-        <CollapsibleSection
-          key={id}
-          id={id}
-          title={section.title}
-          subtitle={section.subtitle}
-          collapsed={layout.collapsed[id]}
-          onToggle={() => toggleCollapsed(id)}
-          onMoveUp={() => moveSection(id, "up")}
-          onMoveDown={() => moveSection(id, "down")}
-          onHide={() => toggleHidden(id)}
-          staggerIndex={currentIndex}
-        >
-          {section.content}
-        </CollapsibleSection>,
-      );
-    }
-  }
 
   return (
     <PageLayout headerChildren={undefined}>
-      {/* Provider guide — shown to new users with no connected providers */}
-      {providerGuide.showProviderGuide && (
-        <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
-      )}
-
-      {/* Anomaly Alert — always at the top, not reorderable */}
-      <AnomalyAlertBanner
-        anomalies={anomalyCheck.data?.anomalies ?? []}
-        loading={!loadSecondarySections || anomalyCheck.isLoading}
-      />
-
-      {/* Daily Overview — prominent at-a-glance scores */}
-      <DailyOverview
+      <DashboardEvidenceOverview
+        days={days}
         endDate={endDate}
-        readiness={readinessData.data}
-        workloadRatio={workloadRatio.data}
-        sleepPerformance={sleepPerformance.data}
-        strainTarget={strainTarget.data}
-        readinessLoading={readinessData.isLoading}
-        workloadLoading={workloadRatio.isLoading}
-        strainTargetLoading={strainTarget.isLoading}
-        sleepLoading={sleepPerformance.isLoading}
+        topInsight={topInsight}
+        trend={{
+          latestRestingHeartRate: trendData?.latest_resting_hr,
+          averageRestingHeartRate: trendData?.avg_resting_hr,
+        }}
+        sources={providerGuide.providers}
+        dailySummary={
+          <DailyOverview
+            embedded
+            endDate={endDate}
+            readiness={readinessData.data}
+            workloadRatio={workloadRatio.data}
+            strainTarget={strainTarget.data}
+            sleepPerformance={sleepPerformance.data}
+            readinessLoading={readinessData.isLoading}
+            workloadLoading={workloadRatio.isLoading}
+            strainTargetLoading={strainTarget.isLoading}
+            sleepLoading={sleepPerformance.isLoading}
+          />
+        }
+        healthMonitor={healthMonitor}
       />
-
-      {orderedElements}
     </PageLayout>
-  );
-}
-
-function CollapsibleSection({
-  title,
-  subtitle,
-  collapsed,
-  onToggle,
-  onMoveUp,
-  onMoveDown,
-  onHide,
-  children,
-  staggerIndex = 0,
-}: {
-  id?: string;
-  title: string;
-  subtitle?: string;
-  collapsed?: boolean;
-  onToggle: () => void;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  onHide?: () => void;
-  children: React.ReactNode;
-  staggerIndex?: number;
-}) {
-  const revealRef = useScrollReveal<HTMLElement>(staggerIndex);
-  return (
-    <section ref={revealRef} className="group/section reveal">
-      <div className="mb-3 flex items-center gap-2 min-h-[44px]">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex items-center gap-2 group cursor-pointer text-left flex-1"
-        >
-          <span className={`text-dim text-xs transition-transform ${collapsed ? "" : "rotate-90"}`}>
-            ▶
-          </span>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-medium text-muted uppercase tracking-wider group-hover:text-foreground transition-colors">
-                {title}
-              </h2>
-              {subtitle && <ChartDescriptionTooltip description={subtitle} />}
-            </div>
-            {subtitle && <p className="text-xs text-dim mt-0.5">{subtitle}</p>}
-          </div>
-        </button>
-
-        {/* Layout controls — visible on hover */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover/section:opacity-100 transition-opacity">
-          {onMoveUp && (
-            <button
-              type="button"
-              onClick={onMoveUp}
-              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
-              title="Move up"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                className="w-3.5 h-3.5"
-              >
-                <title>Move up</title>
-                <path
-                  fillRule="evenodd"
-                  d="M8 3.5a.75.75 0 0 1 .75.75v5.19l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V4.25A.75.75 0 0 1 8 3.5Z"
-                  clipRule="evenodd"
-                  transform="rotate(180 8 8)"
-                />
-              </svg>
-            </button>
-          )}
-          {onMoveDown && (
-            <button
-              type="button"
-              onClick={onMoveDown}
-              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
-              title="Move down"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                className="w-3.5 h-3.5"
-              >
-                <title>Move down</title>
-                <path
-                  fillRule="evenodd"
-                  d="M8 3.5a.75.75 0 0 1 .75.75v5.19l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 0 1 1.06-1.06l2.22 2.22V4.25A.75.75 0 0 1 8 3.5Z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
-          )}
-          {onHide && (
-            <button
-              type="button"
-              onClick={onHide}
-              className="p-1 text-dim hover:text-foreground transition-colors cursor-pointer"
-              title="Hide section"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                className="w-3.5 h-3.5"
-              >
-                <title>Hide section</title>
-                <path d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l10.5 10.5a.75.75 0 1 0 1.06-1.06l-1.527-1.527A7.052 7.052 0 0 0 14.5 8c-.972-2.545-3.61-5-6.5-5a6.2 6.2 0 0 0-3.02.79L3.28 2.22Zm3.196 3.195 1.135 1.136A1.502 1.502 0 0 1 9.45 8.389l1.136 1.135a3 3 0 0 0-4.11-4.109Z" />
-                <path d="M5.093 7.124l3.783 3.783a3 3 0 0 1-3.783-3.783ZM1.5 8c.572-1.497 1.712-3.01 3.14-3.935L3.31 2.735C1.618 3.87.346 5.513 0 8c.972 2.545 3.61 5 6.5 5a6.59 6.59 0 0 0 2.91-.67l-1.452-1.453A4.98 4.98 0 0 1 6.5 11.5c-2.1 0-3.87-1.66-5-3.5Z" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="collapsible-content" data-collapsed={collapsed ? "true" : "false"}>
-        <div className="collapsible-inner">{children}</div>
-      </div>
-    </section>
   );
 }

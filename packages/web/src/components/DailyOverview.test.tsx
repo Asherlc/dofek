@@ -105,6 +105,49 @@ describe("DailyOverview", () => {
     expect(screen.getByText("Recovered")).toBeTruthy();
   });
 
+  it("uses the evidence desk summary panel styling", () => {
+    const { container } = render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+    const panel = container.firstElementChild;
+    expect(panel).toBeTruthy();
+    expect(panel instanceof HTMLElement).toBe(true);
+    if (panel instanceof HTMLElement) {
+      expect(panel.getAttribute("aria-label")).toBe("Daily health summary");
+      expect(panel.className).toContain("dashboard-hero");
+      expect(panel.className).toContain("card");
+    }
+  });
+
+  it("can render as an embedded panel without a nested card", () => {
+    const { container } = render(
+      <DailyOverview
+        embedded
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+    const panel = container.firstElementChild;
+    expect(panel).toBeTruthy();
+    expect(panel instanceof HTMLElement).toBe(true);
+    if (panel instanceof HTMLElement) {
+      expect(panel.className).not.toContain("dashboard-hero");
+      expect(panel.className).not.toContain(" card ");
+      expect(panel.className).toContain("bg-white/62");
+    }
+  });
+
   it("renders strain ring", () => {
     render(
       <DailyOverview
