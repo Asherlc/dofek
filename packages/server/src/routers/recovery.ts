@@ -29,6 +29,15 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
+/**
+ * Per-activity training load expression over `analytics.activity_summary`.
+ * Load = duration_minutes * avg_hr / max_hr. Assumes the table is aliased
+ * `activity_summary` in the surrounding query.
+ */
+const ACTIVITY_LOAD_EXPRESSION = `dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
+  * activity_summary.avg_hr
+  / nullIf(toFloat64(activity_summary.max_hr), 0)`;
+
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
   feature: string,
@@ -276,9 +285,7 @@ export const recoveryRouter = router({
         `WITH per_activity AS (
           SELECT
             toDate(toTimeZone(activity_summary.started_at, {timezone:String})) AS date,
-            dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
-              * activity_summary.avg_hr
-              / nullIf(toFloat64(activity_summary.max_hr), 0) AS load
+            ${ACTIVITY_LOAD_EXPRESSION} AS load
           FROM analytics.activity_summary AS activity_summary
           WHERE activity_summary.user_id = {userId:UUID}
             AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
@@ -686,8 +693,7 @@ export const recoveryRouter = router({
         }),
         `SELECT
           toString(toDate(toTimeZone(activity_summary.started_at, {timezone:String}))) AS date,
-          sum(dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
-              * activity_summary.avg_hr / nullIf(toFloat64(activity_summary.max_hr), 0)) AS daily_load
+          sum(${ACTIVITY_LOAD_EXPRESSION}) AS daily_load
         FROM analytics.activity_summary AS activity_summary
         WHERE activity_summary.user_id = {userId:UUID}
           AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})

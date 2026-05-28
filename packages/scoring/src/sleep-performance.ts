@@ -65,10 +65,10 @@ export function computeSleepPerformance(
     (value): value is number => value != null,
   );
 
-  const score =
-    componentInput === undefined
-      ? Math.round(rawSufficiency * 0.7 + normalizedEfficiency * 0.3)
-      : Math.round(componentScores.reduce((sum, value) => sum + value, 0) / componentScores.length);
+  const hasExtraComponents = consistency != null || lowStress != null;
+  const score = !hasExtraComponents
+    ? Math.round(rawSufficiency * 0.7 + normalizedEfficiency * 0.3)
+    : Math.round(componentScores.reduce((sum, value) => sum + value, 0) / componentScores.length);
 
   const clampedScore = Math.min(Math.max(score, 0), 100);
 

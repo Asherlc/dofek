@@ -57,6 +57,16 @@ describe("computeSleepPerformance", () => {
     });
   });
 
+  it("uses the 70/30 blend when no extra components are present", () => {
+    // Empty and all-null component inputs must behave like the no-component path,
+    // not switch to a 50/50 hours+efficiency average.
+    const baseline = computeSleepPerformance(465, 480, 72);
+    expect(computeSleepPerformance(465, 480, 72, {}).score).toBe(baseline.score);
+    expect(
+      computeSleepPerformance(465, 480, 72, { consistency: null, lowStress: null }).score,
+    ).toBe(baseline.score);
+  });
+
   it("handles zero needed minutes", () => {
     const result = computeSleepPerformance(420, 0, 90);
     expect(result.score).toBeGreaterThanOrEqual(0);
