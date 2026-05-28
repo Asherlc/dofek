@@ -75,9 +75,6 @@ describe("Dashboard – Steps health monitor metric", () => {
     cy.visit("/dashboard");
 
     cy.contains("Health monitor").should("be.visible");
-    cy.contains("span", "Steps")
-      .closest(".card")
-      .should("be.visible")
-      .and("contain.text", "9,200");
+    cy.contains("span", "Steps").closest(".card").should("be.visible").and("contain.text", "9,200");
   });
 });
