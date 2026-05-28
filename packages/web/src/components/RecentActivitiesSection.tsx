@@ -16,6 +16,16 @@ const activityRowSchema = z.object({
   source_providers: z.array(z.string()).nullable(),
   distance_meters: z.number().nullable().optional(),
   calories: z.number().nullable().optional(),
+  location: z
+    .object({
+      centroidLat: z.number(),
+      centroidLng: z.number(),
+      tileUrl: z.string(),
+      distanceMeters: z.number().nullable(),
+      elevationGainM: z.number().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const PAGE_SIZE = 20;
