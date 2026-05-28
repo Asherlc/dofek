@@ -43,19 +43,19 @@ const HERO_PROOF_POINTS = [
 const ANALYSIS_CARDS = [
   {
     title: "Late meals correlate with lower sleep consistency",
-    detail: "Dinner after 9pm appears beside shorter deep sleep across recent nights.",
+    detail: "Dinner after 9pm appears beside shorter deep sleep.",
     value: "r = -0.58",
     tone: "Moderate negative",
   },
   {
     title: "Training load compared with sleep consistency",
-    detail: "Higher load weeks can be reviewed against sleep, recovery, and resting heart rate.",
+    detail: "Review higher load weeks beside sleep, recovery, and resting heart rate.",
     value: "30 days",
     tone: "Comparison window",
   },
   {
     title: "Resting heart rate has been elevated for 4 days",
-    detail: "The trend stays visible even when it is spread across device-specific daily scores.",
+    detail: "The trend stays visible across device-specific daily scores.",
     value: "+7 beats/min",
     tone: "Trend surfaced",
   },
@@ -64,41 +64,47 @@ const ANALYSIS_CARDS = [
 const PILLARS = [
   {
     title: "Unify your sources",
-    description: "Bring sleep, training, nutrition, body, and recovery signals into one place.",
+    description: "Bring sleep, training, nutrition, body, and recovery into one place.",
     icon: NetworkIcon,
   },
   {
     title: "Inspect patterns",
-    description: "Explore correlations, trends, anomalies, and cross-source comparisons.",
+    description: "Explore correlations, trends, anomalies, and source comparisons.",
     icon: BarIcon,
   },
   {
     title: "Keep your history",
-    description: "Preserve long-term context as devices, apps, and routines change.",
+    description: "Keep context as devices, apps, and routines change.",
     icon: ArchiveIcon,
   },
 ] as const;
 
 const INSPECTION_POINTS = [
-  "Cross-provider comparisons for overlapping signals",
-  "Trend views for sleep, training, nutrition, body, and recovery",
-  "Correlation cards that keep source context visible",
-  "Slack food tracking for quick nutrition logging",
-  "Web dashboard and iPhone app for reviewing the same record",
+  "Compare overlapping signals across sources",
+  "Track sleep, training, nutrition, body, and recovery trends",
+  "See correlations with source context",
+  "Log food from Slack",
+  "Review the same record on web and iPhone",
+] as const;
+
+const MOBILE_APP_POINTS = [
+  "Pair a WHOOP strap from iPhone",
+  "Capture strap data without a separate WHOOP membership path",
+  "Use one record on mobile and web",
 ] as const;
 
 const TRUST_POINTS = [
-  "Export your health data whenever you want",
-  "Delete your account and stored data without a support ticket",
+  "Export your health data",
+  "Delete your account and stored data",
   "No health data sold to third parties",
-  "Managed by Dofek so you can focus on the dashboard, not maintenance chores",
+  "Managed by Dofek",
 ] as const;
 
 const PLAN_POINTS = [
-  "Supported source access",
+  "Supported sources",
   "Web dashboard and iPhone app",
-  "Correlations, trends, comparisons, and anomaly views",
-  "Data export and account deletion controls",
+  "Correlations, trends, comparisons, and anomalies",
+  "Export and deletion controls",
 ] as const;
 
 export interface LandingPageProvider {
@@ -126,10 +132,9 @@ export function LandingPageView({ usableProviders }: { usableProviders: LandingP
       <main>
         <HeroSection />
         <ProviderStrip providers={featuredProviders} />
-        <EvidenceStats usableProviderCount={usableProviders.length} />
         <PillarsSection />
-        <BeforeAfterSection />
         <InspectionSection />
+        <MobileAppSection />
         <TrustSection />
         <PricingSection />
         <FinalCta />
@@ -200,8 +205,8 @@ function HeroSection() {
             See the patterns your health apps miss.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-[#2d4f45]">
-            Dofek brings sleep, training, nutrition, body, and recovery signals into one serious
-            dashboard so you can inspect correlations, trends, and cross-provider comparisons.
+            Dofek brings sleep, training, nutrition, body, and recovery into one dashboard for
+            correlations, trends, and source comparisons.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link
@@ -373,9 +378,7 @@ function ComparisonPanel() {
       <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[#45645b]">
         Training load compared with sleep consistency
       </div>
-      <div className="mt-1 text-sm text-[#2d4f45]">
-        Higher load weeks can be reviewed beside sleep and recovery.
-      </div>
+      <div className="mt-1 text-sm text-[#2d4f45]">Review load beside sleep and recovery.</div>
       <div className="mt-3">
         <ScatterPlot descending={true} />
       </div>
@@ -536,39 +539,16 @@ function ProviderStrip({ providers }: { providers: FeaturedProvider[] }) {
   );
 }
 
-function EvidenceStats({ usableProviderCount }: { usableProviderCount: number }) {
-  const stats = [
-    { value: String(usableProviderCount), label: "Supported sources" },
-    { value: "5", label: "Signal areas" },
-    { value: "30d", label: "Comparison windows" },
-    { value: "0", label: "Data sold to third parties" },
-  ] as const;
-
-  return (
-    <section className="border-b border-[#dce8df] bg-white py-10">
-      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-6 px-4 sm:grid-cols-4 sm:px-6">
-        {stats.map((stat) => (
-          <div key={stat.label}>
-            <div className="text-3xl font-bold text-[#005244]">{stat.value}</div>
-            <div className="mt-1 text-sm text-[#45645b]">{stat.label}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function PillarsSection() {
   return (
     <section id="features" className="bg-[#fbfdfb] py-16 sm:py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <div className="max-w-2xl">
           <h2 className="font-serif text-4xl font-semibold tracking-normal text-[#062f29]">
-            Built for people with valuable, fragmented health data.
+            Built for fragmented health data.
           </h2>
           <p className="mt-4 text-lg leading-8 text-[#45645b]">
-            Dofek is not a coach. It is the place where your sources become easy to inspect
-            together.
+            Not a coach. A place to inspect your sources together.
           </p>
         </div>
         <div className="mt-12 grid gap-0 border-y border-[#dce8df] lg:grid-cols-3">
@@ -588,72 +568,6 @@ function PillarsSection() {
   );
 }
 
-function BeforeAfterSection() {
-  return (
-    <section className="border-y border-[#dce8df] bg-white py-16 sm:py-20">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <h2 className="font-serif text-4xl font-semibold tracking-normal text-[#062f29]">
-          One platform instead of many.
-        </h2>
-        <div className="mt-10 grid gap-5 lg:grid-cols-2">
-          <ComparisonBlock
-            title="Before Dofek"
-            tone="negative"
-            items={[
-              "Check each app for a separate slice of sleep, training, nutrition, and recovery",
-              "Lose the relationship between signals when data stays siloed",
-              "Struggle to keep history useful when switching devices or apps",
-            ]}
-          />
-          <ComparisonBlock
-            title="After Dofek"
-            tone="positive"
-            items={[
-              "Review key signals together in one dashboard",
-              "Inspect correlations, trends, and source comparisons side by side",
-              "Keep the long-term record useful as your setup changes",
-            ]}
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ComparisonBlock({
-  title,
-  tone,
-  items,
-}: {
-  title: string;
-  tone: "negative" | "positive";
-  items: string[];
-}) {
-  const isPositive = tone === "positive";
-
-  return (
-    <div
-      className={`rounded-xl border p-6 ${isPositive ? "border-[#b9d8c7] bg-[#f2faf5]" : "border-[#ead1cd] bg-[#fff8f7]"}`}
-    >
-      <h3 className={`text-xl font-semibold ${isPositive ? "text-[#062f29]" : "text-[#78352e]"}`}>
-        {title}
-      </h3>
-      <ul className="mt-5 space-y-4">
-        {items.map((item) => (
-          <li key={item} className="flex gap-3 text-sm leading-6 text-[#45645b]">
-            <span
-              className={`mt-0.5 font-semibold ${isPositive ? "text-[#007d68]" : "text-[#b45348]"}`}
-            >
-              {isPositive ? "✓" : "-"}
-            </span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function InspectionSection() {
   return (
     <section className="bg-[#fbfdfb] py-16 sm:py-20">
@@ -663,8 +577,7 @@ function InspectionSection() {
             What Dofek helps you inspect
           </h2>
           <p className="mt-4 text-lg leading-8 text-[#45645b]">
-            The point is evidence: source-aware analysis that makes patterns easier to see without
-            pretending to prescribe your behavior.
+            Source-aware analysis makes patterns easier to see without prescribing behavior.
           </p>
           <div className="mt-8 grid gap-3">
             {INSPECTION_POINTS.map((point) => (
@@ -702,6 +615,136 @@ function InspectionSection() {
   );
 }
 
+function MobileAppSection() {
+  return (
+    <section className="border-y border-[#dce8df] bg-white py-16 sm:py-20">
+      <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-[0.92fr_1.08fr]">
+        <div>
+          <div className="mb-5 inline-flex rounded-full border border-[#c8dcd0] px-4 py-2 text-sm font-semibold text-[#005244]">
+            iPhone app included
+          </div>
+          <h2 className="font-serif text-4xl font-semibold tracking-normal text-[#062f29]">
+            The iPhone app talks to the strap directly.
+          </h2>
+          <p className="mt-5 max-w-xl text-lg leading-8 text-[#45645b]">
+            Pair a WHOOP strap over Bluetooth and send captured data to Dofek. Your strap stays
+            useful without routing direct capture through a separate WHOOP membership.
+          </p>
+          <div className="mt-8 grid gap-3">
+            {MOBILE_APP_POINTS.map((point) => (
+              <div
+                key={point}
+                className="flex items-center gap-3 rounded-lg border border-[#dce8df] bg-[#fbfdfb] p-4 text-sm font-medium text-[#244b38]"
+              >
+                <CheckCircleIcon />
+                {point}
+              </div>
+            ))}
+          </div>
+        </div>
+        <MobileAppMockup />
+      </div>
+    </section>
+  );
+}
+
+function MobileAppMockup() {
+  return (
+    <div className="relative mx-auto w-full max-w-[520px]">
+      <div className="absolute left-4 top-8 h-[78%] w-[56%] rounded-[2rem] bg-[#e7f2ed]" />
+      <div className="relative ml-auto w-full max-w-[330px] rounded-[2.4rem] border border-[#cbded4] bg-[#062f29] p-2 shadow-2xl shadow-[#005244]/20">
+        <div className="overflow-hidden rounded-[1.9rem] bg-[#f7faf7]">
+          <div className="flex items-center justify-between bg-[#062f29] px-5 py-4 text-white">
+            <div className="text-xs font-semibold">9:41</div>
+            <div className="h-5 w-24 rounded-full bg-[#021d19]" />
+            <div className="text-xs font-semibold">100%</div>
+          </div>
+          <div className="space-y-4 p-5">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.14em] text-[#007d68]">
+                Dofek mobile
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-[#062f29]">WHOOP direct</div>
+            </div>
+
+            <div className="rounded-2xl border border-[#cfe2d8] bg-white p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold text-[#45645b]">Strap connection</div>
+                  <div className="mt-1 text-lg font-bold text-[#062f29]">Connected</div>
+                </div>
+                <div className="rounded-full bg-[#e7f6ef] px-3 py-1 text-xs font-bold text-[#007d68]">
+                  Live
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[
+                  ["Bluetooth", "On"],
+                  ["Samples", "Buffered"],
+                  ["Sync", "Dofek"],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg bg-[#f4faf6] p-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b8178]">
+                      {label}
+                    </div>
+                    <div className="mt-1 text-xs font-bold text-[#062f29]">{value}</div>
+                  </div>
+                ))}
+              </div>
+              <MotionStream />
+            </div>
+
+            <div className="grid gap-3">
+              {[
+                ["Motion", "Capturing"],
+                ["Background", "Uploading"],
+                ["Web", "Ready to compare"],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between rounded-xl border border-[#dce8df] bg-white p-3"
+                >
+                  <div className="text-sm font-semibold text-[#062f29]">{label}</div>
+                  <div className="text-xs font-medium text-[#45645b]">{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl bg-[#eaf2ee] p-3 text-sm font-medium leading-6 text-[#244b38]">
+              Direct capture without a separate WHOOP membership path.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MotionStream() {
+  return (
+    <svg viewBox="0 0 260 74" className="mt-5 h-20 w-full" role="img" aria-hidden="true">
+      <path d="M0 60H260" stroke="#dce8df" strokeWidth="1" />
+      <path d="M0 38H260" stroke="#dce8df" strokeWidth="1" />
+      <path d="M0 16H260" stroke="#dce8df" strokeWidth="1" />
+      <path
+        d="M2 48 C18 20 30 20 44 46 S72 72 88 38 118 8 134 36 162 66 178 34 210 10 226 36 246 54 258 24"
+        fill="none"
+        stroke="#007d68"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <path
+        d="M2 36 C22 58 40 58 58 32 S94 6 112 32 148 64 166 40 198 20 216 40 244 60 258 42"
+        fill="none"
+        stroke="#79bcb0"
+        strokeWidth="2"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+    </svg>
+  );
+}
+
 function TrustSection() {
   return (
     <section id="trust" className="border-y border-[#dce8df] bg-white py-16 sm:py-20">
@@ -711,7 +754,7 @@ function TrustSection() {
             Your data stays under your control
           </h2>
           <p className="mt-4 text-lg leading-8 text-[#45645b]">
-            Dofek is built around portability, deletion controls, and a plain privacy posture.
+            Export it, delete it, and keep it out of third-party data sales.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -739,7 +782,7 @@ function PricingSection() {
             Simple managed plan
           </h2>
           <p className="mt-4 text-lg text-[#45645b]">
-            One subscription for the dashboard, mobile app, and data controls.
+            One subscription for the dashboard, app, and data controls.
           </p>
         </div>
         <div className="mt-10 rounded-2xl border border-[#b9d8c7] bg-white p-6 shadow-xl shadow-[#005244]/5 sm:p-8">
@@ -747,7 +790,7 @@ function PricingSection() {
             <div>
               <h3 className="text-2xl font-semibold text-[#062f29]">Dofek Managed</h3>
               <p className="mt-2 text-sm text-[#45645b]">
-                For people who want the analysis surface, not an operations project.
+                For people who want the analysis, not an operations project.
               </p>
             </div>
             <div className="text-left sm:text-right">
@@ -777,7 +820,7 @@ function FinalCta() {
           Ready to inspect the full picture?
         </h2>
         <p className="mt-4 text-lg text-[#45645b]">
-          Stop app-switching. Start reviewing your health data as one connected record.
+          Stop app-switching. Review your data as one connected record.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link

@@ -74,7 +74,6 @@ describe("LandingPage", () => {
     expect(screen.getByAltText("Apple Health")).toBeTruthy();
     expect(screen.queryByAltText("WHOOP")).toBeNull();
     expect(screen.getByAltText("Peloton")).toBeTruthy();
-    expect(screen.getAllByText("4").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Supported sources").length).toBeGreaterThan(0);
   });
 
@@ -84,7 +83,7 @@ describe("LandingPage", () => {
     expect(
       screen.getByRole("heading", { name: /see the patterns your health apps miss/i }),
     ).toBeTruthy();
-    expect(screen.getByText(/correlations, trends, and cross-provider comparisons/i)).toBeTruthy();
+    expect(screen.getByText(/correlations, trends, and source comparisons/i)).toBeTruthy();
     const demoLinks = screen.getAllByRole("link", { name: /view demo/i });
     expect(demoLinks.length).toBeGreaterThan(0);
     expect(demoLinks.every((link) => link.getAttribute("href") === "#demo")).toBe(true);
@@ -104,9 +103,25 @@ describe("LandingPage", () => {
       screen.getAllByText(/training load compared with sleep consistency/i).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText(/resting heart rate has been elevated for 4 days/i)).toBeTruthy();
-    expect(screen.getByText(/slack food tracking/i)).toBeTruthy();
-    expect(screen.getAllByText(/web dashboard and iPhone app/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/log food from Slack/i)).toBeTruthy();
+    expect(screen.getAllByText(/web and iPhone/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/export confidence/i)).toBeNull();
+  });
+
+  it("shows the iPhone app with direct WHOOP strap capture", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText("iPhone app included")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: /iPhone app talks to the strap directly/i }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Pair a WHOOP strap over Bluetooth/i)).toBeTruthy();
+    expect(
+      screen.getByText(/without routing direct capture through a separate WHOOP membership/i),
+    ).toBeTruthy();
+    expect(screen.getByText("WHOOP direct")).toBeTruthy();
+    expect(screen.getByText("Motion")).toBeTruthy();
+    expect(screen.getByText("Background")).toBeTruthy();
   });
 
   it("shows supported providers without connection method badges", () => {
@@ -118,12 +133,11 @@ describe("LandingPage", () => {
     expect(screen.queryByText("Credential sync")).toBeNull();
   });
 
-  it("includes before-after, week one, trust, and pricing sections", () => {
+  it("includes inspection, mobile, trust, and pricing sections", () => {
     render(<LandingPage />);
 
-    expect(screen.getByText("Before Dofek")).toBeTruthy();
-    expect(screen.getByText("After Dofek")).toBeTruthy();
     expect(screen.getByText("What Dofek helps you inspect")).toBeTruthy();
+    expect(screen.getByText("iPhone app included")).toBeTruthy();
     expect(screen.getByText("Your data stays under your control")).toBeTruthy();
     expect(screen.getByText("Simple managed plan")).toBeTruthy();
   });
@@ -131,7 +145,6 @@ describe("LandingPage", () => {
   it("renders the empty usable provider state without claiming integrations are available", () => {
     render(<LandingPageView usableProviders={[]} />);
 
-    expect(screen.getAllByText("0").length).toBeGreaterThan(0);
     expect(screen.getByText(/No supported sources are currently available/i)).toBeTruthy();
   });
 });
