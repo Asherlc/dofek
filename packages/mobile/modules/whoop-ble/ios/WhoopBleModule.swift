@@ -134,11 +134,15 @@ public class WhoopBleModule: Module {
         // MARK: - Diagnostics
 
         Function("getConnectionState") { () -> String in
-            self.connectionManager.state.rawValue
+            self.connectionManager.syncOnBleQueue {
+                self.connectionManager.state.rawValue
+            }
         }
 
         Function("getBluetoothState") { () -> String in
-            self.connectionManager.bluetoothState
+            self.connectionManager.syncOnBleQueue {
+                self.connectionManager.bluetoothState
+            }
         }
 
         Function("getBufferedSampleCount") { () -> Int in
@@ -146,7 +150,7 @@ public class WhoopBleModule: Module {
         }
 
         Function("getDataPathStats") { () -> [String: Any] in
-            self.connectionManager.bleQueue.sync {
+            self.connectionManager.syncOnBleQueue {
                 let packetTypeSummary = self.packetTypeCounts
                     .sorted(by: { $0.key < $1.key })
                     .map { String(format: "0x%02X:%llu", $0.key, $0.value) }

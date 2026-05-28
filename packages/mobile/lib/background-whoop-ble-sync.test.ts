@@ -137,6 +137,12 @@ describe("background-whoop-ble-sync", () => {
     });
   });
 
+  it("requests bounded IMU batches from the native buffer", async () => {
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledWith(500);
+  });
+
   it("connects to WHOOP and starts streaming on first foreground", async () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
     appStateCallback?.("active");
@@ -588,6 +594,12 @@ describe("realtime data (beat interval + quaternion) sync", () => {
         },
       ],
     });
+  });
+
+  it("requests bounded realtime batches from the native buffer", async () => {
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(whoopDeps.peekBufferedRealtimeData).toHaveBeenCalledWith(500);
   });
 
   it("uploads only stored realtime fields and omits device heart rate", async () => {

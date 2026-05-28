@@ -111,8 +111,8 @@ export async function startOpticalMode(): Promise<boolean> {
  * actually remove them. If the upload fails, the samples remain
  * buffered for retry — no data loss.
  */
-export async function peekBufferedSamples(): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.peekBufferedSamples();
+export async function peekBufferedSamples(maxCount?: number): Promise<WhoopImuSample[]> {
+  return WhoopBleModule.peekBufferedSamples(maxCount);
 }
 
 /**
@@ -128,8 +128,10 @@ export function confirmSamplesDrain(count: number): void {
  *
  * Call `confirmRealtimeDataDrain(count)` after a successful upload.
  */
-export async function peekBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
-  return WhoopBleModule.peekBufferedRealtimeData();
+export async function peekBufferedRealtimeData(
+  maxCount?: number,
+): Promise<WhoopRealtimeDataSample[]> {
+  return WhoopBleModule.peekBufferedRealtimeData(maxCount);
 }
 
 /**
