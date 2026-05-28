@@ -92,6 +92,7 @@ export function ActivityList({
             alt="Activity route map summary"
             className="h-12 w-16 rounded object-cover bg-surface-hover"
             loading="lazy"
+            referrerPolicy="no-referrer"
           />
         ) : (
           "—"
