@@ -158,32 +158,16 @@ jobs:
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
-  # Resolve the OCI host from a secret into a job output: the secrets context
-  # is not available in a reusable workflow's `with:` block, so the validation
-  # deploy below reads the address from here instead.
-  oracle-host:
-    name: Resolve OCI Host
-    needs: [terraform, docker, docker_ml]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
-    runs-on: ubuntu-latest
-    outputs:
-      host: ${{ steps.resolve.outputs.host }}
-    steps:
-      - name: Resolve ORACLE_SERVER_HOST
-        id: resolve
-        env:
-          ORACLE_SERVER_HOST: ${{ secrets.ORACLE_SERVER_HOST }}
-        run: |
-          test -n "$ORACLE_SERVER_HOST" || { echo "::error::ORACLE_SERVER_HOST secret is not set"; exit 1; }
-          echo "host=$ORACLE_SERVER_HOST" >> "$GITHUB_OUTPUT"
-
   # Validation deploy onto the Always Free OCI host, alongside Hetzner. Same
   # image + Infisical prod secrets; only the public URL/host rule differ, and
-  # stack.oracle.yml scales the operator UIs to zero.
+  # stack.oracle.yml scales the operator UIs to zero. The host is a repo
+  # variable (not a secret): it is a public address behind dofek-oracle.asherlc.com,
+  # and unlike secrets, vars are usable directly in a reusable-workflow `with:`
+  # (secrets are scrubbed from job outputs, which silently emptied server_host).
   web-stack-oracle:
     name: Deploy Web Stack (OCI)
-    needs: [terraform, docker, docker_ml, oracle-host]
-    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && needs.oracle-host.result == 'success' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    needs: [terraform, docker, docker_ml]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
     permissions:
       actions: read
       contents: read
@@ -192,7 +176,7 @@ jobs:
     uses: ./.github/workflows/deploy-web-stack.yml
     with:
       image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
-      server_host: ${{ needs.oracle-host.outputs.host }}
+      server_host: ${{ vars.ORACLE_SERVER_HOST }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       public_url: https://dofek-oracle.asherlc.com

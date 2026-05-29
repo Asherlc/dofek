@@ -66,7 +66,9 @@ tfvar.
 The instance uses a **reserved public IP** (`oci_core_public_ip`, see
 `reserved-ip.tf`) so the address survives instance recreates. After
 `terraform apply`, copy the `public_ip` output into the `ORACLE_SERVER_HOST`
-GitHub Actions secret. The primary `deploy/` root reads that secret as
+GitHub Actions **variable** (a repo variable, not a secret — it is a public
+address, and secrets are scrubbed from job outputs and can't be used in a
+reusable-workflow `with:`). The primary `deploy/` root reads it as
 `TF_VAR_oracle_server_host` to publish `dofek-oracle.asherlc.com` (in `dns.tf`),
 and `deploy.yml` passes it as `server_host` to a second `Deploy Web Stack (OCI)`
 job that runs alongside the Hetzner deploy with `ssh_user: ubuntu`,
