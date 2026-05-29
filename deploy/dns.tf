@@ -82,7 +82,7 @@ resource "cloudflare_dns_record" "wildcard_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "*.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -91,7 +91,7 @@ resource "cloudflare_dns_record" "ota_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "ota.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -100,7 +100,7 @@ resource "cloudflare_dns_record" "portainer_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "portainer.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -109,7 +109,7 @@ resource "cloudflare_dns_record" "netdata_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "netdata.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -118,7 +118,7 @@ resource "cloudflare_dns_record" "databasus_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "databasus.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -127,7 +127,7 @@ resource "cloudflare_dns_record" "cloudbeaver_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "cloudbeaver.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -136,7 +136,7 @@ resource "cloudflare_dns_record" "pgadmin_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "pgadmin.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -145,7 +145,7 @@ resource "cloudflare_dns_record" "peerdb_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "CNAME"
   name    = "peerdb.dofek.asherlc.com"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.asherlc.com"
   proxied = false
   ttl     = 1
 }
