@@ -56,6 +56,24 @@ adds `ubuntu` to the `docker` group so it can reach the daemon socket without
 sudo. When invoking the `Deploy Web Stack` workflow against this host, pass
 `ssh_user: ubuntu` (the input defaults to `root` for Hetzner).
 
+The instance trusts two SSH keys (mirroring Hetzner): the personal 1Password key
+for manual access and the CI deploy key (pair of the `DEPLOY_SSH_KEY` GitHub
+secret) so GitHub Actions can deploy. Set both via the multiline `ssh_public_key`
+tfvar.
+
+### Stable address + DNS + CI
+
+The instance uses a **reserved public IP** (`oci_core_public_ip`, see
+`reserved-ip.tf`) so the address survives instance recreates. After
+`terraform apply`, copy the `public_ip` output into the `ORACLE_SERVER_HOST`
+GitHub Actions secret. The primary `deploy/` root reads that secret as
+`TF_VAR_oracle_server_host` to publish `dofek-oracle.asherlc.com` (in `dns.tf`),
+and `deploy.yml` passes it as `server_host` to a second `Deploy Web Stack (OCI)`
+job that runs alongside the Hetzner deploy with `ssh_user: ubuntu`,
+`stack_override: deploy/stack.oracle.yml`, and the `dofek-oracle.asherlc.com`
+host rule. This keeps OCI on its own validation domain while sharing the prod
+image and Infisical secrets.
+
 `deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
 CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
 single-user free-tier deployment does not need. The 24 GB node has ample room

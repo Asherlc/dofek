@@ -150,6 +150,18 @@ resource "cloudflare_dns_record" "peerdb_dofek_asherlc" {
   ttl     = 1
 }
 
+# Oracle Cloud validation host — separate domain while we validate the OCI
+# deployment alongside Hetzner. Points at the reserved public IP provisioned in
+# deploy/oracle-free (passed in via the ORACLE_SERVER_HOST GitHub secret).
+resource "cloudflare_dns_record" "dofek_oracle_asherlc" {
+  zone_id = data.cloudflare_zone.asherlc_com.zone_id
+  type    = "A"
+  name    = "dofek-oracle.asherlc.com"
+  content = var.oracle_server_host
+  proxied = true
+  ttl     = 1
+}
+
 resource "cloudflare_dns_record" "staging_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"

@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: root
+      stack_override:
+        description: "Optional extra compose override appended to the stack deploy (e.g. deploy/stack.oracle.yml)"
+        required: false
+        type: string
+        default: ""
       infisical_environment:
         description: "Infisical environment to export for the stack"
         required: false
@@ -105,6 +110,11 @@ on:
         required: false
         type: string
         default: root
+      stack_override:
+        description: "Optional extra compose override appended to the stack deploy (e.g. deploy/stack.oracle.yml)"
+        required: false
+        type: string
+        default: ""
       infisical_environment:
         description: "Infisical environment to export for the stack"
         required: false
@@ -180,6 +190,7 @@ jobs:
           PGADMIN_HOST_RULE_INPUT: ${{ inputs.pgadmin_host_rule }}
           PEERDB_PUBLIC_URL_INPUT: ${{ inputs.peerdb_public_url || 'https://peerdb.dofek.asherlc.com' }}
           PEERDB_HOST_RULE_INPUT: ${{ inputs.peerdb_host_rule }}
+          STACK_OVERRIDE_INPUT: ${{ inputs.stack_override }}
         run: |
           # deploy/stack.staging.yml overlays staging-only adjustments
           # (e.g. scaling heavy dev/ops UIs to zero on the 4 GB box).
@@ -187,6 +198,13 @@ jobs:
             STACK_FILE_FLAGS="-c deploy/stack.yml -c deploy/stack.staging.yml"
           else
             STACK_FILE_FLAGS="-c deploy/stack.yml"
+          fi
+
+          # Optional caller-supplied override (e.g. deploy/stack.oracle.yml for
+          # the Always Free OCI host, which scales operator UIs to zero).
+          if [ -n "$STACK_OVERRIDE_INPUT" ]; then
+            test -f "$STACK_OVERRIDE_INPUT" || { echo "::error::stack_override file not found: $STACK_OVERRIDE_INPUT"; exit 1; }
+            STACK_FILE_FLAGS="$STACK_FILE_FLAGS -c $STACK_OVERRIDE_INPUT"
           fi
 
           {

@@ -28,8 +28,10 @@ resource "oci_core_instance" "dofek" {
   }
 
   create_vnic_details {
-    subnet_id        = oci_core_subnet.dofek.id
-    assign_public_ip = true
+    subnet_id = oci_core_subnet.dofek.id
+    # No ephemeral public IP: a reserved public IP is attached instead
+    # (see reserved-ip.tf) so the address survives instance recreates.
+    assign_public_ip = false
   }
 
   metadata = {

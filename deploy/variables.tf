@@ -54,3 +54,8 @@ variable "cloudflare_account_id" {
   description = "Cloudflare account ID"
   type        = string
 }
+
+variable "oracle_server_host" {
+  description = "Reserved public IP of the Oracle Cloud validation host (dofek-oracle.asherlc.com). Provisioned in deploy/oracle-free; mirrored here as a GitHub secret (ORACLE_SERVER_HOST) so dns.tf can point at it."
+  type        = string
+}
