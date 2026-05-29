@@ -74,7 +74,9 @@ runcmd:
   # the mount survives any device-name reordering across reboots; nofail keeps
   # the host bootable if the volume is ever detached.
   - |
-      set -e
+      # NB: no `set -e` here — cloud-init concatenates all runcmd items into one
+      # script, so `set -e` would leak into later steps (e.g. swarm init) and
+      # abort them. Fail-loud is done with explicit `exit 1` checks below.
       ROOT_SRC=$(findmnt -no SOURCE /)
       # Resolve the whole DISK backing root (never a partition): PKNAME gives the
       # parent disk for a partition; if root is itself a whole disk, PKNAME is
