@@ -50,6 +50,12 @@ as with Hetzner, applying the Oracle override on top of the base stack:
 docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
 ```
 
+Unlike Hetzner (which deploys over `ssh://root@`), OCI's Ubuntu image disables
+root SSH, so the remote Docker context connects as the `ubuntu` user. cloud-init
+adds `ubuntu` to the `docker` group so it can reach the daemon socket without
+sudo. When invoking the `Deploy Web Stack` workflow against this host, pass
+`ssh_user: ubuntu` (the input defaults to `root` for Hetzner).
+
 `deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
 CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
 single-user free-tier deployment does not need. The 24 GB node has ample room

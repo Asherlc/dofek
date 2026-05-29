@@ -56,6 +56,12 @@ runcmd:
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+  # --- Let the ubuntu user drive Docker without sudo ---
+  # OCI Ubuntu disables root SSH, so CI deploys connect as ubuntu over the
+  # remote Docker context. The user must be in the docker group to reach
+  # /var/run/docker.sock.
+  - usermod -aG docker ubuntu
+
   # --- App directory (bind-mounted configs are synced at deploy time) ---
   - mkdir -p /opt/dofek /opt/dofek/traefik-dynamic
 

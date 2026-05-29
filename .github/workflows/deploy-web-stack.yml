@@ -15,6 +15,11 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
+      ssh_user:
+        description: "SSH user for the remote Docker context (root on Hetzner, ubuntu on OCI)"
+        required: false
+        type: string
+        default: root
       infisical_environment:
         description: "Infisical environment to export for the stack"
         required: false
@@ -95,6 +100,11 @@ on:
         description: "Docker SSH host (defaults to SERVER_HOST secret)"
         required: false
         type: string
+      ssh_user:
+        description: "SSH user for the remote Docker context (root on Hetzner, ubuntu on OCI)"
+        required: false
+        type: string
+        default: root
       infisical_environment:
         description: "Infisical environment to export for the stack"
         required: false
@@ -120,7 +130,8 @@ jobs:
       packages: read
       id-token: write
     env:
-      DOCKER_HOST: ssh://root@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+      SSH_USER: ${{ inputs.ssh_user != '' && inputs.ssh_user || 'root' }}
+      DOCKER_HOST: ssh://${{ inputs.ssh_user != '' && inputs.ssh_user || 'root' }}@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
@@ -297,13 +308,13 @@ jobs:
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
 
-          server_host="${DOCKER_HOST#ssh://root@}"
+          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
             echo "::error::Unable to derive SSH host from DOCKER_HOST"
             exit 1
           fi
 
-          ssh -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "root@${server_host}" 'bash -se' <<'REMOTE'
+          ssh -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'bash -se' <<'REMOTE'
           set -euo pipefail
           pull_if_missing() {
             image="$1"
@@ -328,13 +339,13 @@ jobs:
 
       - name: Validate host bind mount paths
         run: |
-          server_host="${DOCKER_HOST#ssh://root@}"
+          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
             echo "::error::Unable to derive SSH host from DOCKER_HOST"
             exit 1
           fi
 
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "root@${server_host}" 'bash -se' <<'REMOTE'
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'bash -se' <<'REMOTE'
           set -euo pipefail
           for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
             if [ ! -d "$path" ]; then
