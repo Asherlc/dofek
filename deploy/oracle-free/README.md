@@ -43,14 +43,12 @@ terraform apply
 ```
 
 The public IP is printed as an output; point Cloudflare DNS / Traefik host
-rules at it, then deploy the stack from CI via a remote Docker context exactly
-as with Hetzner, applying the Oracle override on top of the base stack (run
-from the repository root, where the `deploy/...` paths resolve):
-
-```bash
-cd ../..   # back to the repository root from deploy/oracle-free
-docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
-```
+rules at it, then deploy from CI exactly as with Hetzner — all deploy logic
+lives in CI and talks to the remote Docker API over SSH (never a local
+`docker stack deploy`). The `Build + Deploy` workflow (`build-deploy.yml`,
+target `web`) runs the `Deploy Web Stack (OCI)` job, which applies the Oracle
+override (`-c deploy/stack.yml -c deploy/stack.oracle.yml`) over SSH to this
+host. See the "Stable address + DNS + CI" section below.
 
 Unlike Hetzner (which deploys over `ssh://root@`), OCI's Ubuntu image disables
 root SSH, so the remote Docker context connects as the `ubuntu` user. cloud-init

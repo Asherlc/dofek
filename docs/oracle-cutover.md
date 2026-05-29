@@ -96,7 +96,7 @@ validation).
 
 Once Oracle is serving production:
 
-1. Remove the Hetzner `web-stack` job from `deploy/deploy.yml` (or gate it off),
+1. Remove the Hetzner `web-stack` job from `.github/workflows/deploy.yml` (or gate it off),
    leaving only the Oracle deploy. Rename `web-stack-oracle` → `web-stack` and
    drop the now-redundant OCI-specific naming once it is the only web deploy.
 2. Remove the `dofek-oracle.asherlc.com` record and `var.oracle_server_host`
