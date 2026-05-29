@@ -43,8 +43,21 @@ terraform apply
 ```
 
 The public IP is printed as an output; point Cloudflare DNS / Traefik host
-rules at it, then deploy `deploy/stack.yml` from CI via a remote Docker
-context exactly as with Hetzner.
+rules at it, then deploy the stack from CI via a remote Docker context exactly
+as with Hetzner, applying the Oracle override on top of the base stack:
+
+```bash
+docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
+```
+
+`deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
+CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
+single-user free-tier deployment does not need. The 24 GB node has ample room
+for the core app + PeerDB CDC + ClickHouse + Postgres, so unlike staging it
+does not tighten CPU.
+
+To move an existing Hetzner deployment's data onto this host, follow
+[`docs/oracle-migration.md`](../../docs/oracle-migration.md).
 
 ## "Out of host capacity"
 
