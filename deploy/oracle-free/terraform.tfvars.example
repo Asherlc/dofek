@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Get OCIDs from the OCI
+# Console and the API key from `oci setup keys`.
+
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxxxxxx"
+user_ocid        = "ocid1.user.oc1..xxxxxxxx"
+fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "eu-frankfurt-1"
+compartment_ocid = "ocid1.tenancy.oc1..xxxxxxxx" # root tenancy OCID is fine
+
+ssh_public_key  = "ssh-ed25519 AAAA... you@host"
+ssh_source_cidr = "0.0.0.0/0" # tighten to your IP/CIDR if you can
+
+# Always Free ceiling — leave at the defaults unless you're on Pay As You Go
+# and intend to pay for more.
+# instance_ocpus      = 4
+# instance_memory_gb  = 24
+# boot_volume_size_gb = 50
+# data_volume_size_gb = 150
+
+# Bump to 1 or 2 to retry a different availability domain on capacity errors.
+# availability_domain_index = 0

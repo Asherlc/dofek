@@ -11,6 +11,8 @@ ignore: |
   packages/**/dist/
   packages/**/build/
   docs/whoop-api.openapi.yaml
+  # Terraform template (templatefile) — contains %{ } directives, not valid YAML.
+  deploy/oracle-free/cloud-init.yml
 
 rules:
   line-length:

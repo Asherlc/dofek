@@ -9050,3 +9050,36 @@ new incremental tables are populated.
 - Follow-Up Work: Add analytics read-model freshness and dbt duration alerts so
   a model that regresses into multi-minute runtime is caught before it starves
   the staging host.
+
+## 2026-05-29 — Hetzner data volume 100% full; PeerDB CDC config fails on deploy
+
+- Symptoms: The `Configure ClickHouse CDC` step of the Hetzner production
+  `Deploy Web Stack` job failed with `[clickhouse-cdc] error: unable to check
+  peer validity: status: FailedPrecondition, message: "failed to validate peer
+  dofek_clickhouse_postgres_fitness: failed to validate S3 bucket: failed to
+  write to bucket: ... S3: PutObject, https response error StatusCode: 507"`.
+- User impact: Deploy job marked failed at the final CDC-configuration step.
+  The app stack itself rolled out; the failure is in PeerDB peer validation,
+  which writes to the MinIO (S3) staging bucket.
+- Evidence: HTTP 507 = Insufficient Storage from MinIO. On the box,
+  `df -h /mnt/dofek-data` (the 98 GB Hetzner block volume, `/dev/sda`) shows
+  `93G used, 572M avail, 100%`. `du -sh /mnt/dofek-data/*` shows
+  `/mnt/dofek-data/postgres = 84G` dominating, then `clickhouse = 8.6G`.
+- Root cause: The Hetzner persistent data volume is full, driven by the
+  Postgres data directory growing to 84 GB. With no free space MinIO cannot
+  accept the PeerDB validation write, so CDC setup fails (and Postgres itself
+  is at risk of going read-only).
+- Discovery context: Surfaced while standing up the parallel Oracle Cloud
+  validation deploy (dofek-oracle.asherlc.com). The OCI deploy succeeded; this
+  Hetzner failure is pre-existing disk pressure, unrelated to the OCI/CI
+  changes (which do not touch the Hetzner host).
+- Fix / mitigation: UNRESOLVED. Needs investigation of the 84 GB Postgres
+  footprint (table/index bloat vs. legitimate growth, WAL accumulation,
+  retention) and either reclaiming space (VACUUM FULL on bloated tables,
+  pruning, WAL/retention tuning) or growing the Hetzner block volume. No data
+  was deleted — destructive cleanup requires operator direction.
+- Remaining risk: High. The volume is at 100%; Postgres can stop accepting
+  writes at any time. CDC remains broken until space is reclaimed.
+- Follow-up work: (1) Decide reclaim-vs-grow with the operator; (2) add a disk
+  free-space alert on /mnt/dofek-data well below 100%; (3) consider the
+  `db-incident-response` skill for the Postgres footprint investigation.

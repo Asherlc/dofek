@@ -66,6 +66,8 @@ Cross-provider reverse-engineering references:
 | [staging.md](staging.md) | Production-shaped staging environment and deploy workflow. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and zero-downtime Hetzner volume expansion plan. |
+| [oracle-migration.md](oracle-migration.md) | Migrating the deployment from Hetzner to an Oracle Cloud Always Free A1 host. |
+| [oracle-cutover.md](oracle-cutover.md) | Final production switchover from Hetzner to Oracle (DNS flip, deploy changes, rollback, decommission). |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |
 | [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |

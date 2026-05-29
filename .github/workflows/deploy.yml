@@ -158,6 +158,32 @@ jobs:
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
+  # Validation deploy onto the Always Free OCI host, alongside Hetzner. Same
+  # image + Infisical prod secrets; only the public URL/host rule differ, and
+  # stack.oracle.yml scales the operator UIs to zero. The host is a repo
+  # variable (not a secret): it is a public address behind dofek-oracle.asherlc.com,
+  # and unlike secrets, vars are usable directly in a reusable-workflow `with:`
+  # (secrets are scrubbed from job outputs, which silently emptied server_host).
+  web-stack-oracle:
+    name: Deploy Web Stack (OCI)
+    needs: [terraform, docker, docker_ml]
+    if: always() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'all')
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+    uses: ./.github/workflows/deploy-web-stack.yml
+    with:
+      image_tag: ${{ inputs.image_tag != '' && inputs.image_tag || needs.docker.outputs.image_tag }}
+      server_host: ${{ vars.ORACLE_SERVER_HOST }}
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
+      public_url: https://dofek-oracle.asherlc.com
+      web_host_rule: "Host(`dofek-oracle.asherlc.com`)"
+      dispatching_run_id: ${{ github.run_id }}
+    secrets: inherit
+
   ios:
     name: Deploy iOS
     if: inputs.target == 'ios' || inputs.target == 'all'
