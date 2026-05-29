@@ -56,6 +56,12 @@ variable "cloudflare_account_id" {
 }
 
 variable "oracle_server_host" {
-  description = "Reserved public IP of the Oracle Cloud validation host (dofek-oracle.asherlc.com). Provisioned in deploy/oracle-free; mirrored here as a GitHub secret (ORACLE_SERVER_HOST) so dns.tf can point at it."
+  description = "Reserved public IP of the Oracle Cloud validation host (dofek-oracle.asherlc.com). Provisioned in deploy/oracle-free; mirrored here as a GitHub Actions variable (ORACLE_SERVER_HOST). Empty disables the dofek-oracle DNS record so Hetzner-only and first-bootstrap applies still work."
   type        = string
+  default     = ""
+
+  validation {
+    condition     = var.oracle_server_host == "" || can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", var.oracle_server_host))
+    error_message = "oracle_server_host must be empty or a valid IPv4 address."
+  }
 }

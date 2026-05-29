@@ -44,9 +44,11 @@ terraform apply
 
 The public IP is printed as an output; point Cloudflare DNS / Traefik host
 rules at it, then deploy the stack from CI via a remote Docker context exactly
-as with Hetzner, applying the Oracle override on top of the base stack:
+as with Hetzner, applying the Oracle override on top of the base stack (run
+from the repository root, where the `deploy/...` paths resolve):
 
 ```bash
+cd ../..   # back to the repository root from deploy/oracle-free
 docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
 ```
 

@@ -74,24 +74,35 @@ runcmd:
   # the mount survives any device-name reordering across reboots; nofail keeps
   # the host bootable if the volume is ever detached.
   - |
+      set -e
       ROOT_SRC=$(findmnt -no SOURCE /)
+      # Resolve the whole DISK backing root (never a partition): PKNAME gives the
+      # parent disk for a partition; if root is itself a whole disk, PKNAME is
+      # empty and lsblk NAME returns the disk. Using a partition name here would
+      # let grep -vx fail to exclude the boot disk and format it as data.
       ROOT_DISK=$(lsblk -no PKNAME "$ROOT_SRC" 2>/dev/null | head -1)
-      [ -z "$ROOT_DISK" ] && ROOT_DISK=$(basename "$ROOT_SRC")
+      [ -z "$ROOT_DISK" ] && ROOT_DISK=$(lsblk -ndo NAME "$ROOT_SRC" 2>/dev/null | head -1)
       DATA_NAME=""
       for _ in $(seq 1 60); do
         DATA_NAME=$(lsblk -dn -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -vx "$ROOT_DISK" | head -1)
         [ -n "$DATA_NAME" ] && break
         sleep 5
       done
-      if [ -n "$DATA_NAME" ]; then
-        DEVICE="/dev/$DATA_NAME"
-        blkid "$DEVICE" >/dev/null 2>&1 || mkfs.ext4 -F "$DEVICE"
-        mkdir -p /mnt/dofek-data
-        VOL_UUID=$(blkid -s UUID -o value "$DEVICE")
-        if [ -n "$VOL_UUID" ]; then
-          grep -q "$VOL_UUID" /etc/fstab || echo "UUID=$VOL_UUID /mnt/dofek-data ext4 defaults,_netdev,nofail 0 2" >> /etc/fstab
-          mount /mnt/dofek-data || true
-        fi
+      if [ -z "$DATA_NAME" ]; then
+        echo "ERROR: data volume enabled but no data disk found (root disk: $ROOT_DISK)" >&2
+        exit 1
+      fi
+      DEVICE="/dev/$DATA_NAME"
+      blkid "$DEVICE" >/dev/null 2>&1 || mkfs.ext4 -F "$DEVICE"
+      mkdir -p /mnt/dofek-data
+      VOL_UUID=$(blkid -s UUID -o value "$DEVICE")
+      grep -q "$VOL_UUID" /etc/fstab || echo "UUID=$VOL_UUID /mnt/dofek-data ext4 defaults,_netdev,nofail 0 2" >> /etc/fstab
+      mount /mnt/dofek-data
+      # Fail loudly rather than silently placing Postgres/ClickHouse data on the
+      # boot disk if the data volume did not actually mount.
+      if ! mountpoint -q /mnt/dofek-data; then
+        echo "ERROR: data volume enabled but /mnt/dofek-data is not mounted" >&2
+        exit 1
       fi
 %{ endif ~}
   # Create every bind-mount source the stack expects under /mnt/dofek-data.

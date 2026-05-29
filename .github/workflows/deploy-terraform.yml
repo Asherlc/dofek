@@ -61,7 +61,9 @@ jobs:
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
         run: |
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
-          test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub Actions variable ORACLE_SERVER_HOST" >&2; exit 1; }
+          # ORACLE_SERVER_HOST is optional: when unset, the dofek-oracle DNS
+          # record is simply not managed (see deploy/dns.tf), so Hetzner-only and
+          # first-bootstrap applies still succeed.
           # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes

@@ -21,6 +21,21 @@ resource "oci_core_instance" "dofek" {
     memory_in_gbs = var.instance_memory_gb
   }
 
+  # Fail clearly at plan time if the image filter returns nothing, instead of an
+  # opaque "index 0 out of range" on data.oci_core_images.ubuntu.images[0].
+  lifecycle {
+    precondition {
+      condition     = length(data.oci_core_images.ubuntu.images) > 0
+      error_message = "No Canonical Ubuntu 24.04 image found for shape VM.Standard.A1.Flex in this region."
+    }
+  }
+
+  # Require IMDSv2 (disable the legacy unauthenticated v1 metadata endpoint),
+  # which mitigates SSRF-based credential theft from the instance metadata service.
+  instance_options {
+    are_legacy_imds_endpoints_disabled = true
+  }
+
   source_details {
     source_type             = "image"
     source_id               = data.oci_core_images.ubuntu.images[0].id

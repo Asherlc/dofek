@@ -38,9 +38,13 @@ variable "ssh_public_key" {
 }
 
 variable "ssh_source_cidr" {
-  description = "CIDR allowed to reach SSH (port 22). Lock this down to your IP if possible."
+  description = "CIDR allowed to reach SSH (port 22). Required — set to your admin IP/CIDR. Use 0.0.0.0/0 only as a deliberate, explicit choice."
   type        = string
-  default     = "0.0.0.0/0"
+
+  validation {
+    condition     = can(cidrhost(var.ssh_source_cidr, 0))
+    error_message = "ssh_source_cidr must be a valid CIDR (e.g. 203.0.113.4/32)."
+  }
 }
 
 # --- Instance sizing (Always Free A1 ceiling is 4 OCPU / 24 GB total) ---

@@ -22,6 +22,8 @@ data "oci_core_private_ips" "dofek" {
 resource "oci_core_public_ip" "dofek" {
   compartment_id = var.compartment_ocid
   lifetime       = "RESERVED"
-  private_ip_id  = data.oci_core_private_ips.dofek.private_ips[0].id
-  display_name   = "dofek-reserved"
+  # Bind to the VNIC's primary private IP explicitly — the private_ips list is
+  # not ordered, so [0] could be a secondary IP.
+  private_ip_id = one([for ip in data.oci_core_private_ips.dofek.private_ips : ip.id if ip.is_primary])
+  display_name  = "dofek-reserved"
 }

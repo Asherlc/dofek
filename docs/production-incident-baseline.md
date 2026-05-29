@@ -9052,6 +9052,7 @@ new incremental tables are populated.
   the staging host.
 
 ## 2026-05-29 — Hetzner data volume 100% full; PeerDB CDC config fails on deploy
+
 - Symptoms: The `Configure ClickHouse CDC` step of the Hetzner production
   `Deploy Web Stack` job failed with `[clickhouse-cdc] error: unable to check
   peer validity: status: FailedPrecondition, message: "failed to validate peer

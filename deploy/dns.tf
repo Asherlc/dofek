@@ -154,6 +154,9 @@ resource "cloudflare_dns_record" "peerdb_dofek_asherlc" {
 # deployment alongside Hetzner. Points at the reserved public IP provisioned in
 # deploy/oracle-free (passed in via the ORACLE_SERVER_HOST GitHub secret).
 resource "cloudflare_dns_record" "dofek_oracle_asherlc" {
+  # Only manage this record once the reserved OCI IP is known; keeps Hetzner-only
+  # and first-bootstrap applies working when ORACLE_SERVER_HOST is unset.
+  count   = var.oracle_server_host != "" ? 1 : 0
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
   name    = "dofek-oracle.asherlc.com"

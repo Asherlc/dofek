@@ -45,6 +45,10 @@ or a remote Docker context pointed at the Oracle host:
 
 ```bash
 docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
+# stack.oracle.yml only disables the admin UIs, so scale the app tier to zero
+# until the database is restored — otherwise web/worker/analytics run against an
+# empty or half-restored database.
+docker service scale dofek_web=0 dofek_worker=0 dofek_analytics-worker=0 dofek_training-export-worker=0
 ```
 
 Confirm the `db` service is healthy before restoring:
@@ -173,10 +177,12 @@ Point the public hostnames at the Oracle public IP:
 
 1. Load the dashboard over HTTPS; confirm the cert is valid and data renders.
 2. Hit `/healthz` — expect `{"status":"ok"}`.
-3. Re-enable background work on Oracle:
+3. Re-enable the app tier on Oracle (it was scaled to zero in Step 1):
+
    ```bash
-   docker service scale dofek_worker=1 dofek_analytics-worker=1
+   docker service scale dofek_web=2 dofek_worker=1 dofek_analytics-worker=1 dofek_training-export-worker=1
    ```
+
 4. Trigger a manual sync and confirm new data lands.
 
 ## Step 9 — Decommission Hetzner
