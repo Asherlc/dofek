@@ -11,7 +11,7 @@ resource "cloudflare_dns_record" "dofek_fit_root" {
   zone_id = cloudflare_zone.dofek_fit.id
   type    = "A"
   name    = "dofek.fit"
-  content = hcloud_server.dofek.ipv4_address
+  content = var.oracle_server_host
   proxied = true
   ttl     = 1
 }
@@ -27,9 +27,9 @@ resource "cloudflare_dns_record" "dofek_fit_www" {
 
 resource "cloudflare_dns_record" "dofek_fit_preview_wildcard" {
   zone_id = cloudflare_zone.dofek_fit.id
-  type    = "A"
+  type    = "CNAME"
   name    = "*.preview.dofek.fit"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
@@ -73,94 +73,90 @@ resource "cloudflare_dns_record" "dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
   name    = "dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = var.oracle_server_host
   proxied = true
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "wildcard_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "*.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "ota_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "ota.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "portainer_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "portainer.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "netdata_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "netdata.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "databasus_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "databasus.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "cloudbeaver_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "cloudbeaver.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "pgadmin_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "pgadmin.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
 resource "cloudflare_dns_record" "peerdb_dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
+  type    = "CNAME"
   name    = "peerdb.dofek.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
+  content = "dofek-hetzner.asherlc.com"
   proxied = false
   ttl     = 1
 }
 
-# Oracle Cloud validation host — separate domain while we validate the OCI
-# deployment alongside Hetzner. Points at the reserved public IP provisioned in
-# deploy/oracle-free (passed in via the ORACLE_SERVER_HOST GitHub secret).
-resource "cloudflare_dns_record" "dofek_oracle_asherlc" {
-  # Only manage this record once the reserved OCI IP is known; keeps Hetzner-only
-  # and first-bootstrap applies working when ORACLE_SERVER_HOST is unset.
-  count   = var.oracle_server_host != "" ? 1 : 0
+# --- dofek-hetzner alias (Hetzner server, replaces direct IP references) ---
+
+resource "cloudflare_dns_record" "dofek_hetzner_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
-  name    = "dofek-oracle.asherlc.com"
-  content = var.oracle_server_host
+  name    = "dofek-hetzner.asherlc.com"
+  content = hcloud_server.dofek.ipv4_address
   proxied = true
   ttl     = 1
 }
