@@ -365,7 +365,7 @@ entity "mcp_access_token" {
   user_id : uuid <<FK>>
   name : text
   token_hash : text
-  scopes : text_array
+  scopes : text
   created_at : timestamp
   last_used_at : timestamp
   expires_at : timestamp

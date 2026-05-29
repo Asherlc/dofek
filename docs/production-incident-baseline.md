@@ -9083,3 +9083,19 @@ new incremental tables are populated.
 - Follow-up work: (1) Decide reclaim-vs-grow with the operator; (2) add a disk
   free-space alert on /mnt/dofek-data well below 100%; (3) consider the
   `db-incident-response` skill for the Postgres footprint investigation.
+- Resolution (2026-05-29): Root cause was a **missing TimescaleDB compression
+  policy** on `fitness.metric_stream`. The policy existed in `0000_baseline.sql`
+  (`compress_after => 7 days`) but was absent on prod (no `policy_compression`
+  job), so 2022 daily chunks (~80 GB of raw sensor data at several GB/day) were
+  never compressed and filled the volume; MinIO then returned 507 and CDC peer
+  validation failed. WAL/replication slots were healthy (56 bytes retained) — not
+  the cause. Fix: (a) compressed the backlog of closed chunks in batches
+  (commit-per-chunk, leaving the actively-written current day), reclaiming the
+  data volume from 100% to ~57% (db 83 GB → 46 GB; only today's 621 MB chunk
+  uncompressed); (b) re-added the compression policy live AND as migration
+  `0027_metric_stream_compression_policy.sql` with `compress_after => 2 days`
+  (tightened from 7 days given the higher ingest rate) so it stays compressed
+  and applies to Oracle too. Remaining risk: ingest is several GB/day raw
+  (~0.5 GB/day compressed); the 98 GB volume still needs a capacity decision
+  (retention vs. volume growth) for the long term — compression bought headroom,
+  not unlimited runway.
