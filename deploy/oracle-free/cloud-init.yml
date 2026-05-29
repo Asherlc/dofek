@@ -94,7 +94,12 @@ runcmd:
         fi
       fi
 %{ endif ~}
-  - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redis
+  # Create every bind-mount source the stack expects under /mnt/dofek-data.
+  # The deploy's "Validate host bind mount paths" step fails fast if any are
+  # missing, even for services scaled to zero by stack.oracle.yml (their bind
+  # mounts are still declared in stack.yml). Keep this list in sync with the
+  # /mnt/dofek-data/* paths in deploy/stack.yml.
+  - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redis /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio
 
   # --- Restart Docker to pick up daemon.json log settings ---
   - systemctl restart docker
