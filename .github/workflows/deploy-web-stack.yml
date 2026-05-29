@@ -127,7 +127,9 @@ on:
         type: string
 
 concurrency:
-  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}
+  # Key on the target host so deploys to different hosts (Hetzner vs OCI) run in
+  # parallel, while concurrent deploys to the same host still serialize.
+  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}-${{ inputs.server_host }}
   cancel-in-progress: false
 
 jobs:

@@ -101,6 +101,14 @@ runcmd:
   # /mnt/dofek-data/* paths in deploy/stack.yml.
   - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redis /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio
 
+  # The timescaledb-ha (Postgres) image runs as uid/gid 1000 and cannot chown
+  # its own data directory, so it hangs/fails on a root-owned bind mount with
+  # "initdb: could not change permissions ... Operation not permitted". Pre-own
+  # the data dir to 1000:1000 (matches the Hetzner box). Other services either
+  # run as root and self-chown (clickhouse, redis, peerdb-catalog) or are scaled
+  # to zero by stack.oracle.yml, so only Postgres needs this.
+  - chown 1000:1000 /mnt/dofek-data/postgres
+
   # --- Restart Docker to pick up daemon.json log settings ---
   - systemctl restart docker
 
