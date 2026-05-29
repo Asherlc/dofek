@@ -42,8 +42,9 @@ resource "oci_core_instance" "dofek" {
 
 # Dedicated data volume mounted at /mnt/dofek-data, mirroring the Hetzner
 # layout so the production stack.yml bind mounts (postgres/, clickhouse/, ...)
-# work unchanged. Paravirtualized attachment exposes a stable consistent
-# device path (/dev/oracleoci/oraclevdb), avoiding the iSCSI login dance.
+# work unchanged. Paravirtualized attachment avoids the iSCSI login dance; the
+# device name is discovered in cloud-init (Ubuntu images lack the Oracle-Linux
+# /dev/oracleoci/* consistent-path symlinks).
 resource "oci_core_volume" "data" {
   count               = var.data_volume_size_gb > 0 ? 1 : 0
   compartment_id      = var.compartment_ocid

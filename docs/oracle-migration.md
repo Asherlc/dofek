@@ -113,6 +113,11 @@ Notes:
   other sessions interfere with the restore flag.
 - `--no-owner` avoids role-ownership mismatches; both hosts use the `health`
   role, so ownership maps cleanly anyway.
+- `pg_restore` will print some **non-fatal errors** — typically that
+  `timescaledb`/`postgis` already exist (the dump re-issues `CREATE EXTENSION`
+  against a database where you just created it). These are expected; do not
+  abort. Only a non-zero exit with missing tables/rows afterward is a real
+  failure, which Step 5 catches.
 - After restoring, optionally run `pnpm setup-db` against the Oracle Postgres to
   apply any migrations newer than the dump (idempotent).
 

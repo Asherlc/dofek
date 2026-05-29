@@ -32,9 +32,15 @@ write_files:
 
 runcmd:
   # --- Open the host firewall for HTTP/HTTPS (Oracle-specific) ---
+  # OCI Ubuntu images ship a populated INPUT chain ending in a REJECT, so the
+  # VCN security list alone is not enough. Insert at the TOP of INPUT (not the
+  # Oracle-Linux "position 6" folklore, whose index does not match Ubuntu's
+  # layout) so the ACCEPT is guaranteed to precede the trailing REJECT. This
+  # runs before Docker is installed, so persisting here cannot clobber Docker's
+  # own chains; dockerd rebuilds those on start after the boot-time restore.
   - |
-      iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-      iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+      iptables -I INPUT 1 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+      iptables -I INPUT 1 -m state --state NEW -p tcp --dport 443 -j ACCEPT
       if command -v netfilter-persistent >/dev/null 2>&1; then
         netfilter-persistent save
       elif command -v iptables-save >/dev/null 2>&1; then
@@ -55,16 +61,31 @@ runcmd:
 
 %{ if data_volume_enabled ~}
   # --- Format and mount the attached data volume at /mnt/dofek-data ---
+  # Discover the data disk by excluding the boot disk rather than hardcoding a
+  # path: the /dev/oracleoci/* consistent-path symlinks come from oci-utils,
+  # which ships only on Oracle Linux, so on Ubuntu the volume usually appears
+  # as a plain kernel device (e.g. /dev/sdb). fstab uses the filesystem UUID so
+  # the mount survives any device-name reordering across reboots; nofail keeps
+  # the host bootable if the volume is ever detached.
   - |
-      DEVICE=/dev/oracleoci/oraclevdb
-      for _ in $(seq 1 60); do [ -b "$DEVICE" ] && break; sleep 5; done
-      if [ -b "$DEVICE" ]; then
-        if ! blkid "$DEVICE" >/dev/null 2>&1; then
-          mkfs.ext4 -F "$DEVICE"
-        fi
+      ROOT_SRC=$(findmnt -no SOURCE /)
+      ROOT_DISK=$(lsblk -no PKNAME "$ROOT_SRC" 2>/dev/null | head -1)
+      [ -z "$ROOT_DISK" ] && ROOT_DISK=$(basename "$ROOT_SRC")
+      DATA_NAME=""
+      for _ in $(seq 1 60); do
+        DATA_NAME=$(lsblk -dn -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -vx "$ROOT_DISK" | head -1)
+        [ -n "$DATA_NAME" ] && break
+        sleep 5
+      done
+      if [ -n "$DATA_NAME" ]; then
+        DEVICE="/dev/$DATA_NAME"
+        blkid "$DEVICE" >/dev/null 2>&1 || mkfs.ext4 -F "$DEVICE"
         mkdir -p /mnt/dofek-data
-        grep -q "/mnt/dofek-data" /etc/fstab || echo "$DEVICE /mnt/dofek-data ext4 defaults,_netdev,nofail 0 2" >> /etc/fstab
-        mount /mnt/dofek-data
+        VOL_UUID=$(blkid -s UUID -o value "$DEVICE")
+        if [ -n "$VOL_UUID" ]; then
+          grep -q "$VOL_UUID" /etc/fstab || echo "UUID=$VOL_UUID /mnt/dofek-data ext4 defaults,_netdev,nofail 0 2" >> /etc/fstab
+          mount /mnt/dofek-data || true
+        fi
       fi
 %{ endif ~}
   - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redis
