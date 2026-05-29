@@ -24,7 +24,7 @@ To force a redeploy of the same tag (e.g., `latest` after a rebuild), re-run the
 4. SSH is still allowed for inspection (reading logs, `docker ps`, `docker network inspect`) but not for making changes — fixes belong in `stack.yml` / Terraform.
 
 ### Modifying OTel Config
-Changes to `otel-collector-config.yaml` are synced to the server by `terraform_data.otel_config_sync` and the collector service is updated with `--force` so it re-reads the bind-mounted config.
+`otel-collector-config.yaml` is a Docker Swarm **config object** (`otel_collector_config` in `stack.yml`), uploaded into the swarm by `docker stack deploy` on every deploy — no host file, identical on every host (Hetzner, staging, OCI). Swarm config objects are **immutable**, so after editing the file you MUST bump the config key's version suffix in `stack.yml` (e.g. `otel_collector_config` → `otel_collector_config_v2`), exactly like `netdata_db_limits_v2`. Without the bump, `docker stack deploy` keeps the old config and the collector won't pick up changes.
 
 ## Guardrails
 - **Immutable Server**: `hcloud_server.dofek` has `lifecycle { ignore_changes = [ssh_keys, user_data, image] }` to prevent accidental destruction of the live server during drift. To reprovision, you must explicitly taint the resource.

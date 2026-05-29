@@ -34,7 +34,7 @@ Dofek is deployed as a **single-node Docker Swarm** stack on **Hetzner Cloud** (
 ### Terraform (`*.tf`)
 - `server.tf`: Defines the `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and idempotent `terraform_data` resources handle post-provision state:
   - `app_directories_sync`: ensures bind-mount directories such as `/opt/dofek/traefik-dynamic` exist on the live host even when cloud-init does not rerun.
-  - `otel_config_sync`: bind-mounts `otel-collector-config.yaml` into `/opt/dofek` on the server and forces the collector service to re-read it.
+  - (The OTel collector config is no longer synced via Terraform; it is a Docker Swarm config object in `stack.yml` — see "Collector Config Changes".)
   - `hcloud_volume.dofek_data`: attaches persistent block storage for DB growth headroom; size is controlled by `data_volume_size_gb`.
 - `review-apps/`: Separate Terraform root for PR-scoped Hetzner review servers and the corresponding Traefik dynamic route files on the shared front door. See [docs/review-apps.md](../docs/review-apps.md).
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
@@ -135,7 +135,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
 ```
 
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
-2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare and re-syncs the OTel config.
+2. **Terraform apply** (if infra changed): updates Hetzner/Cloudflare.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
       The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
@@ -226,8 +226,7 @@ ssh dofek-server 'docker logs $(docker ps --format "{{.Names}}" | grep -E "dofek
 
 ### Collector Config Changes
 
-`otel-collector-config.yaml` changes require `deploy-terraform` (which runs `otel_config_sync`), not only `deploy-web-stack`.
-`deploy-web-stack` updates swarm services, but collector reads the bind-mounted host file at `/opt/dofek/otel-collector-config.yaml`.
+`otel-collector-config.yaml` is a Docker Swarm **config object** (`otel_collector_config` in `stack.yml`) that `docker stack deploy` uploads into the swarm — there is no host file and no Terraform sync. Swarm config objects are **immutable**, so after editing the file you must **bump the config key's version suffix** in `stack.yml` (e.g. `otel_collector_config` → `otel_collector_config_v2`), the same convention as `netdata_db_limits_v2`. A normal `deploy-web-stack` run then creates the new config object and rolls the collector onto it; no `deploy-terraform` needed.
 
 ### Mobile CI Secrets (Infisical OIDC)
 

@@ -179,56 +179,13 @@ resource "terraform_data" "staging_data_volume_mount_alias" {
   }
 }
 
-# Sync otel-collector config to the server (bind-mounted into the collector
-# service by stack.yml). Re-runs whenever the config changes.
-resource "terraform_data" "otel_config_sync" {
-  triggers_replace = [
-    filesha256("${path.module}/otel-collector-config.yaml"),
-  ]
-
-  connection {
-    type        = "ssh"
-    host        = hcloud_server.dofek.ipv4_address
-    user        = "root"
-    private_key = var.ssh_private_key
-  }
-
-  provisioner "file" {
-    source      = "${path.module}/otel-collector-config.yaml"
-    destination = "/opt/dofek/otel-collector-config.yaml"
-  }
-
-  # If the stack is already deployed, force the collector to pick up the new config.
-  provisioner "remote-exec" {
-    inline = [
-      "docker service ls --format '{{.Name}}' | grep -qx dofek_collector && docker service update --force dofek_collector || true",
-    ]
-  }
-}
-
-resource "terraform_data" "staging_otel_config_sync" {
-  triggers_replace = [
-    filesha256("${path.module}/otel-collector-config.yaml"),
-  ]
-
-  connection {
-    type        = "ssh"
-    host        = hcloud_server.dofek_staging.ipv4_address
-    user        = "root"
-    private_key = var.ssh_private_key
-  }
-
-  provisioner "file" {
-    source      = "${path.module}/otel-collector-config.yaml"
-    destination = "/opt/dofek/otel-collector-config.yaml"
-  }
-
-  provisioner "remote-exec" {
-    inline = [
-      "docker service ls --format '{{.Name}}' | grep -qx dofek-staging_collector && docker service update --force dofek-staging_collector || true",
-    ]
-  }
-}
+# NOTE: The otel-collector config is no longer synced from Terraform. It is a
+# Docker Swarm config object (`otel_collector_config` in deploy/stack.yml,
+# sourced from deploy/otel-collector-config.yaml) that `docker stack deploy`
+# uploads into the swarm on every deploy — identical on every host (Hetzner,
+# staging, OCI) with no host file. Swarm config objects are immutable, so on a
+# content change bump the config key's version suffix (same as the clickhouse
+# and netdata_db_limits_v2 configs).
 
 # Sync CloudBeaver preconfigured database connections to the persistent
 # workspace used by the CloudBeaver service.

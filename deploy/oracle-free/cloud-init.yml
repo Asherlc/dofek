@@ -30,16 +30,6 @@ write_files:
         }
       }
 
-  # OTel collector config, bind-mounted by the collector service in stack.yml at
-  # /opt/dofek/otel-collector-config.yaml. On Hetzner this is synced by
-  # terraform_data.otel_config_sync; OCI is a separate (local) root, so bake the
-  # canonical deploy/otel-collector-config.yaml in here (base64) at first boot.
-  # Single source of truth: the content is read from that file at terraform apply.
-  - path: /opt/dofek/otel-collector-config.yaml
-    permissions: "0644"
-    encoding: b64
-    content: ${otel_collector_config_b64}
-
 runcmd:
   # --- Open the host firewall for HTTP/HTTPS (Oracle-specific) ---
   # OCI Ubuntu images ship a populated INPUT chain ending in a REJECT, so the
@@ -72,7 +62,7 @@ runcmd:
   # /var/run/docker.sock.
   - usermod -aG docker ubuntu
 
-  # --- App directory (bind-mounted configs are synced at deploy time) ---
+  # --- App directory (Traefik dynamic config lives here) ---
   - mkdir -p /opt/dofek /opt/dofek/traefik-dynamic
 
 %{ if data_volume_enabled ~}

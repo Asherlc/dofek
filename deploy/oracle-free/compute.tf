@@ -38,9 +38,6 @@ resource "oci_core_instance" "dofek" {
     ssh_authorized_keys = var.ssh_public_key
     user_data = base64encode(templatefile("${path.module}/cloud-init.yml", {
       data_volume_enabled = var.data_volume_size_gb > 0
-      # Canonical OTel collector config (shared with the Hetzner root one dir up),
-      # base64-encoded for the cloud-init write_files b64 entry.
-      otel_collector_config_b64 = base64encode(file("${path.module}/../otel-collector-config.yaml"))
     }))
   }
 }

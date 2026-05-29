@@ -484,7 +484,9 @@ services:
     env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /opt/dofek/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    configs:
+      - source: otel_collector_config
+        target: /etc/otelcol-contrib/config.yaml
 
   ota:
     image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
@@ -610,3 +612,8 @@ configs:
     file: ./clickhouse/config.d/memory-limits.xml
   netdata_db_limits_v2:
     file: ./netdata/netdata.conf
+  # Swarm config objects are immutable: when otel-collector-config.yaml changes,
+  # bump this key's version suffix (e.g. _v2) so a new config object is created
+  # and the collector rolls onto it — same convention as netdata_db_limits_v2.
+  otel_collector_config:
+    file: ./otel-collector-config.yaml
