@@ -1,0 +1,66 @@
+# Oracle Cloud Always Free — Terraform root
+
+Provisions a single-node Docker Swarm host for Dofek on Oracle Cloud
+Infrastructure (OCI) using the **Always Free** Ampere A1 shape
+(4 OCPU / 24 GB RAM, $0). This mirrors the Hetzner production topology
+(`deploy/server.tf` + `deploy/server/cloud-init.yml`) so the production
+`deploy/stack.yml` can be deployed onto it with minimal changes.
+
+This root is **isolated** from the primary `deploy/` root: it uses a local
+backend and the `oracle/oci` provider, and does not touch the live Hetzner
+infrastructure.
+
+## What it provisions
+
+- VCN, public subnet, internet gateway, route table, security list (22/80/443)
+- A `VM.Standard.A1.Flex` instance at 4 OCPU / 24 GB on ARM64 Ubuntu 24.04
+- A 50 GB boot volume + a 150 GB data volume mounted at `/mnt/dofek-data`
+  (within the 200 GB Always Free block-storage pool)
+- cloud-init that installs Docker CE, opens the host firewall for 80/443
+  (required on OCI — the image ships restrictive iptables), formats/mounts the
+  data volume, and initializes a single-node swarm
+
+## One-time manual bootstrap
+
+Terraform needs credentials before it can run, so these steps are unavoidable
+and done once:
+
+1. Sign up for Oracle Cloud and **upgrade to Pay As You Go** (stays $0 within
+   Always Free limits, but gives A1 capacity priority — see below).
+2. Generate an API signing key and register it on your user:
+   `oci setup keys`, then add the public key in Console → Profile → API Keys.
+3. Collect the OCIDs: `tenancy_ocid`, `user_ocid`, `compartment_ocid`, your
+   `region`, and the key `fingerprint`.
+
+## Usage
+
+```bash
+cd deploy/oracle-free
+cp terraform.tfvars.example terraform.tfvars   # fill in OCIDs + SSH key
+terraform init
+terraform plan
+terraform apply
+```
+
+The public IP is printed as an output; point Cloudflare DNS / Traefik host
+rules at it, then deploy `deploy/stack.yml` from CI via a remote Docker
+context exactly as with Hetzner.
+
+## "Out of host capacity"
+
+Always Free A1 capacity is scarce. If `apply` fails with
+`Out of host capacity`:
+
+- Re-run `terraform apply` (capacity frees up intermittently).
+- Try another availability domain: set `availability_domain_index` to `1` or
+  `2` and re-apply.
+- Upgrade the account to **Pay As You Go** — it stays free within Always Free
+  limits but moves you into the priority capacity pool, which is the most
+  reliable fix. PAYG accounts are also exempt from idle-instance reclamation.
+
+## Storage layout
+
+The 200 GB Always Free block pool is split as 50 GB boot + 150 GB data by
+default. To keep everything on the boot disk instead, set
+`data_volume_size_gb = 0`; cloud-init then skips the volume mount and
+`/mnt/dofek-data` is just a directory on the boot volume.

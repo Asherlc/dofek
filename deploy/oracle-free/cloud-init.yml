@@ -1,0 +1,87 @@
+#cloud-config
+# Installs Docker CE and initializes a single-node Docker Swarm on a fresh
+# Oracle Cloud Ubuntu 24.04 (aarch64) instance. Deploys happen from CI via a
+# remote Docker context (SSH); there are no deploy scripts or secrets on the
+# instance.
+#
+# Two things differ from the Hetzner cloud-init:
+#   1. Oracle's Ubuntu images ship restrictive instance-level iptables rules
+#      that block everything except SSH, regardless of the VCN security list.
+#      We must explicitly accept 80/443 on the INPUT chain.
+#   2. The attached block volume is formatted and mounted at /mnt/dofek-data
+#      so the production stack bind mounts work unchanged.
+
+package_update: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+
+runcmd:
+  # --- Open the host firewall for HTTP/HTTPS (Oracle-specific) ---
+  - |
+      iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+      iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+      if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save
+      elif command -v iptables-save >/dev/null 2>&1; then
+        mkdir -p /etc/iptables
+        iptables-save > /etc/iptables/rules.v4
+      fi
+
+  # --- Install Docker CE ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # --- App directory (bind-mounted configs are synced at deploy time) ---
+  - mkdir -p /opt/dofek /opt/dofek/traefik-dynamic
+
+%{ if data_volume_enabled ~}
+  # --- Format and mount the attached data volume at /mnt/dofek-data ---
+  - |
+      DEVICE=/dev/oracleoci/oraclevdb
+      for _ in $(seq 1 60); do [ -b "$DEVICE" ] && break; sleep 5; done
+      if [ -b "$DEVICE" ]; then
+        if ! blkid "$DEVICE" >/dev/null 2>&1; then
+          mkfs.ext4 -F "$DEVICE"
+        fi
+        mkdir -p /mnt/dofek-data
+        grep -q "/mnt/dofek-data" /etc/fstab || echo "$DEVICE /mnt/dofek-data ext4 defaults,_netdev,nofail 0 2" >> /etc/fstab
+        mount /mnt/dofek-data
+      fi
+%{ endif ~}
+  - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redis
+
+  # --- Restart Docker to pick up daemon.json log settings ---
+  - systemctl restart docker
+
+  # --- Initialize a single-node swarm (idempotent) ---
+  - |
+      if docker info --format '{{.Swarm.ControlAvailable}}' | grep -q true; then
+        exit 0
+      fi
+      if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active; then
+        docker swarm leave --force
+      fi
+      docker swarm init --advertise-addr "$(hostname -I | awk '{print $1}')"
+
+  # --- Kernel memory tuning for Redis BGSAVE persistence ---
+  - sysctl -w vm.overcommit_memory=1
+  - sh -c 'echo "vm.overcommit_memory=1" > /etc/sysctl.d/99-redis.conf'
