@@ -10,7 +10,8 @@
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 
-WITH
+WITH RECURSIVE {{ bounded_activity_graph() }},
+
 target_state AS (
     SELECT
         coalesce(
@@ -19,18 +20,6 @@ target_state AS (
         ) AS last_refreshed_at,
         {% if is_incremental() %}(count() = 0){% else %}1{% endif %} AS is_empty
     FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
-),
-
-current_activity AS (
-    SELECT
-        id AS activity_id,
-        user_id,
-        activity_type,
-        name,
-        started_at,
-        ended_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
 ),
 
 initial_activity_dirty_keys AS (
@@ -96,6 +85,32 @@ location_summary_dirty_keys AS (
         AND loc.refreshed_at > target_state.last_refreshed_at
 ),
 
+existing_activity_keys AS (
+    {% if is_incremental() %}
+        SELECT
+            activity_id,
+            user_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+stale_activity_dirty_keys AS (
+    SELECT
+        existing_activity_keys.activity_id AS activity_id,
+        existing_activity_keys.user_id AS user_id
+    FROM existing_activity_keys
+    LEFT JOIN current_activity
+        ON current_activity.activity_id = existing_activity_keys.activity_id
+        AND current_activity.user_id = existing_activity_keys.user_id
+    WHERE current_activity.activity_id IS null
+),
+
 dirty_keys AS (
     SELECT DISTINCT
         activity_id,
@@ -125,6 +140,11 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM location_summary_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM stale_activity_dirty_keys
     )
 ),
 
