@@ -89,8 +89,8 @@ describe("replaceNativeMetricStreamAndBackfill", () => {
     expect(dropCalls).toHaveLength(0);
   });
 
-  it("skips dropping postgres_fitness when system.databases has no matching row", async () => {
-    const client = mockQueryClient([]);
+  it("skips dropping postgres_fitness database when its engine is Ordinary", async () => {
+    const client = mockQueryClient([{ engine: "Ordinary" }]);
     const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
     await replaceNativeMetricStreamAndBackfill(client, "conn");
     const mockedRun = vi.mocked(runClickHouseMigrationStatement);

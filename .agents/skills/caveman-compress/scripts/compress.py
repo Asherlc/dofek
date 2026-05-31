@@ -98,10 +98,10 @@ def call_claude(prompt: str) -> str:
             timeout=30,
         )
         return strip_llm_wrapper(result.stdout.strip())
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Claude call failed:\n{e.stderr}")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Claude call timed out after 30 seconds")
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"Claude call failed:\n{error.stderr}") from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("Claude call timed out after 30 seconds") from error
 
 
 def build_compress_prompt(original: str) -> str:
