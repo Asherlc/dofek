@@ -54,6 +54,16 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function normalizeSql(queryText: string | undefined): string {
+  return queryText?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function expectCanonicalActivityJoin(queryText: string | undefined): void {
+  expect(normalizeSql(queryText)).toMatch(
+    /INNER JOIN analytics\.v_activity AS ([a-z_]+) ON \1\.id = asum\.activity_id AND \1\.user_id = asum\.user_id/,
+  );
+}
+
 describe("ActivitiesCalendarRepository", () => {
   const dialect = new PgDialect();
 
@@ -241,9 +251,7 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("INNER JOIN analytics.v_activity AS activity");
-    expect(queryText).toContain("activity.id = asum.activity_id");
-    expect(queryText).toContain("activity.user_id = asum.user_id");
+    expectCanonicalActivityJoin(queryText);
   });
 
   it("returns activity overview totals directly from ClickHouse", async () => {
@@ -308,12 +316,8 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expect(overviewQueryText).toContain("INNER JOIN analytics.v_activity AS activity");
-    expect(overviewQueryText).toContain("activity.id = asum.activity_id");
-    expect(overviewQueryText).toContain("activity.user_id = asum.user_id");
-    expect(typeQueryText).toContain("INNER JOIN analytics.v_activity AS activity");
-    expect(typeQueryText).toContain("activity.id = asum.activity_id");
-    expect(typeQueryText).toContain("activity.user_id = asum.user_id");
+    expectCanonicalActivityJoin(overviewQueryText);
+    expectCanonicalActivityJoin(typeQueryText);
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {
