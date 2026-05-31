@@ -9160,3 +9160,41 @@ new incremental tables are populated.
 - Follow-up work: (1) Decide reclaim-vs-grow with the operator; (2) add a disk
   free-space alert on /mnt/dofek-data well below 100%; (3) consider the
   `db-incident-response` skill for the Postgres footprint investigation.
+
+## 2026-05-31 — Oracle analytics pages empty from lost raw fitness CDC slot
+
+- Symptoms: On the Oracle host (`146.235.223.161`), `/training`, `/activities`,
+  and `/sleep` returned HTTP 200 but the UI was empty. The training page showed
+  no training load data, activities showed no activities in the last four weeks,
+  and sleep had no data.
+- User impact: Oracle validation could not show activity, training, or sleep
+  history even after the web and analytics-worker services rolled out.
+- Evidence: Oracle Postgres source tables had data:
+  `fitness.activity = 1077` rows with latest `2026-05-31 00:17:00.51+00`,
+  `fitness.sleep_session = 123` rows with latest
+  `2026-05-31 07:27:45.11+00`, and `fitness.metric_stream = 372346899` rows.
+  Oracle ClickHouse mirrors had `postgres_fitness.activity = 0` rows and
+  `postgres_fitness.sleep_session = 0` rows, while
+  `postgres_fitness.metric_stream = 4597109` rows. Derived read models
+  `analytics.v_activity`, `analytics.activity_summary`, and `analytics.v_sleep`
+  were all empty. `pg_replication_slots` showed
+  `peerflow_slot_dofek_fitness_raw_analytics` and
+  `peerflow_slot_dofek_provider_inventory_raw_analytics` with
+  `wal_status = lost`. PeerDB logs reported `SQLSTATE 55000`:
+  `can no longer access replication slot`.
+- Root cause: The Oracle raw fitness PeerDB mirror lost its Postgres logical
+  replication slot. Because `analytics.v_activity` and `analytics.v_sleep`
+  depend on raw fitness mirror tables, dbt could run successfully while
+  producing empty activity and sleep read models.
+- Fix / mitigation: UNRESOLVED. The code-side route/read-model failures found
+  during the same investigation were fixed and deployed, and Oracle
+  `analytics-worker` completed all 10 dbt models with `PASS=10 WARN=0 ERROR=0`.
+  The remaining data outage requires a destructive PeerDB resync of at least
+  `dofek_fitness_raw_analytics` after operator approval.
+- Remaining risk: High for Oracle validation. Until the lost raw fitness mirror
+  is resynced, activity, training, and sleep pages will remain empty on Oracle.
+- Follow-up work: Resync the lost Oracle PeerDB raw fitness flow, then rerun dbt
+  and verify `postgres_fitness.activity`, `postgres_fitness.sleep_session`,
+  `analytics.v_activity`, `analytics.activity_summary`, and `analytics.v_sleep`
+  all contain current rows. Add an alert for replication slots with
+  `wal_status IN ('lost', 'unreserved')`.
