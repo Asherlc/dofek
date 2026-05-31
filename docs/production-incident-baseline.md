@@ -9279,3 +9279,31 @@ new incremental tables are populated.
   traffic. Avoid pinning stale image tags during cutover recovery; deploy the
   current main image or a freshly built branch image when schema/read-model code
   has changed.
+
+## 2026-05-31 — Activities page showed duplicate activities
+
+- Symptoms: `https://dofek.asherlc.com/activities` showed duplicate activity
+  cards with overlapping start/end times. Some duplicates had metrics while
+  others were empty or partial.
+- User impact: Activity history and summary counts were inflated by raw
+  provider/device duplicates.
+- Evidence: Production ClickHouse had 348 `analytics.activity_summary` rows in
+  the last 84 days, 328 rows with no samples, and 510 activity-summary pairs
+  with greater than 80% time overlap. A sample overlapping pair existed as one
+  canonical row in Postgres `fitness.v_activity.member_activity_ids`, but both
+  raw IDs still appeared in `analytics.activity_summary`.
+- Root cause: `analytics.activity_summary_rows` built final rows from raw
+  `postgres_fitness.activity` instead of the canonical `bounded_activity_graph()`
+  activity IDs. Upstream sensor/location intermediaries used the deduped graph,
+  but the final summary rollup reintroduced raw activity identity.
+- Fix / mitigation: Updated `activity_summary_rows` to use
+  `bounded_activity_graph()` `current_activity` for final output, while keeping
+  raw activity rows only as dirty-key triggers. Added stale-key tombstones so
+  previously materialized noncanonical summary rows are removed by the next
+  analytics-worker dbt run. Added a ClickHouse activity dedup runbook and SQL
+  policy test coverage for the invariant.
+- Remaining risk: The branch must deploy and `analytics-worker` must run the
+  safe dbt model set before production duplicates disappear.
+- Follow-up work: After deploy, rerun the overlap diagnostic from
+  `docs/clickhouse-activity-dedup-runbook.md` and confirm overlapping pairs
+  drop to expected edge cases only.

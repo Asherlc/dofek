@@ -61,6 +61,7 @@ Cross-provider reverse-engineering references:
 |-----|----------------|
 | [ci-debugging.md](ci-debugging.md) | Debugging GitHub Actions failures with `gh` CLI. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
+| [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |
 | [production-incident-baseline.md](production-incident-baseline.md) | Baseline knowledge from production incidents and recurring failure patterns. |
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
 | [staging.md](staging.md) | Production-shaped staging environment and deploy workflow. |

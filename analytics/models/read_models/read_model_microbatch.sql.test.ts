@@ -196,11 +196,17 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_summary_rows");
     const normalizedSql = compactWhitespace(sql);
 
+    expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
+    expect(sql).toContain("bounded_activity_graph()");
     expect(sql).toContain("ref('activity_sensor_summary_rows')");
     expect(sql).toContain("ref('activity_location_summary_rows')");
     expect(sql).toContain("(user_id, activity_id) IN");
     expect(sql).toContain("changed_activity_dirty_keys");
-    expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).toContain("stale_activity_dirty_keys");
+    expect(normalizedSql).toContain("FROM current_activity CROSS JOIN target_state");
+    expect(normalizedSql).not.toContain(
+      "current_activity AS ( SELECT id AS activity_id, user_id, activity_type, name, started_at, ended_at FROM {{ source('postgres_fitness', 'activity') }} FINAL",
+    );
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample')");
@@ -208,7 +214,6 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(normalizedSql).not.toContain("existing_activity_summary AS (");
-    expect(normalizedSql).not.toContain("stale_activity_dirty_keys AS (");
     expect(normalizedSql).not.toContain("ref('activity_sensor_summary_rows') }} FINAL");
     expect(normalizedSql).not.toContain("ref('activity_location_summary_rows') }} FINAL");
     expect(normalizedSql).not.toContain("FROM dirty_keys LEFT JOIN activity_bounds");
