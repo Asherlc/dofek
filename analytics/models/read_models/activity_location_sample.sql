@@ -31,7 +31,10 @@ location_rows AS (
         argMax(user_id, _peerdb_version) AS user_id,
         argMax(recorded_at, _peerdb_version) AS recorded_at,
         argMax(provider_id, _peerdb_version) AS provider_id,
-        argMax(point, _peerdb_version) AS point,
+        (
+            JSONExtract(argMax(point, _peerdb_version), 'coordinates', 'Array(Float64)')[1],
+            JSONExtract(argMax(point, _peerdb_version), 'coordinates', 'Array(Float64)')[2]
+        )::Point AS point,
         argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
         argMax(_peerdb_is_deleted, _peerdb_version) AS is_deleted
     FROM location_versions
@@ -67,8 +70,8 @@ SELECT
     location_rows.recorded_at AS recorded_at,
     toDate(location_rows.recorded_at) AS recorded_date,
     location_rows.id AS source_metric_stream_id,
-    CAST(tupleElement(location_rows.point, 2), 'Nullable(Float32)') AS lat,
-    CAST(tupleElement(location_rows.point, 1), 'Nullable(Float32)') AS lng,
+    CAST(location_rows.point.2, 'Nullable(Float32)') AS lat,
+    CAST(location_rows.point.1, 'Nullable(Float32)') AS lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     location_rows.is_deleted AS is_deleted,
     greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at

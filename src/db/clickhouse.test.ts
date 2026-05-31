@@ -119,7 +119,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
-    expect(sql).toContain("point Nullable(Point)");
+    expect(sql).toContain("point String");
     expect(sql).not.toContain("latitude Nullable");
     expect(sql).not.toContain("longitude Nullable");
     expect(sql).not.toContain("metadata Nullable");
@@ -151,8 +151,9 @@ describe("buildClickHouseBootstrapStatements", () => {
       sql.indexOf("CREATE VIEW IF NOT EXISTS analytics.deduped_location"),
     );
     expect(dedupedSensorDefinition).not.toContain("activity_id");
-    expect(sql).toContain("tupleElement(metric_stream.point, 2)");
-    expect(sql).toContain("tupleElement(metric_stream.point, 1)");
+    expect(sql).toContain("JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')");
+    expect(sql).toContain("parsed_points.point.2");
+    expect(sql).toContain("parsed_points.point.1");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
     expect(sql).toContain("FROM analytics.activity_summary_rows FINAL");

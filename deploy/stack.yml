@@ -225,7 +225,7 @@ services:
       - source: clickhouse_system_log_ttl
         target: /etc/clickhouse-server/config.d/system-log-ttl.xml
         mode: 0444
-      - source: clickhouse_memory_limits_3g
+      - source: clickhouse_memory_limits_12g
         target: /etc/clickhouse-server/config.d/memory-limits.xml
         mode: 0444
     healthcheck:
@@ -242,7 +242,7 @@ services:
       resources:
         limits:
           cpus: "1.00"
-          memory: 3500M
+          memory: 13G
 
   peerdb-catalog:
     image: postgres:18-alpine
@@ -608,8 +608,8 @@ configs:
     file: ./clickhouse/users.d/allow-experimental-nullable-tuple-type.xml
   clickhouse_system_log_ttl:
     file: ./clickhouse/config.d/system-log-ttl.xml
-  clickhouse_memory_limits_3g:
-    file: ./clickhouse/config.d/memory-limits.xml
+  clickhouse_memory_limits_12g:
+    file: ./clickhouse/config.d/memory-limits-12g.xml
   netdata_db_limits_v2:
     file: ./netdata/netdata.conf
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,

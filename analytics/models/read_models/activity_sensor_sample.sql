@@ -43,5 +43,5 @@ SELECT
     scalar,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     is_deleted,
-    source_refreshed_at AS refreshed_at
+    now64(9) AS refreshed_at
 FROM activity_samples
