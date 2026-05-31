@@ -106,7 +106,7 @@ describe("production analytics read-model build", () => {
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
     expect(sql).toContain("argMax(point, _peerdb_version) AS point");
-    expect(sql).toContain("toString(argMax(point, _peerdb_version)) AS point_text");
+    expect(sql).toContain("toString(point) AS point_text");
     expect(sql).toContain("startsWith(location_rows.point_text, '{')");
     expect(sql).toContain("JSONExtract(location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
     expect(sql).toContain("trim(BOTH '()' FROM location_rows.point_text)");

@@ -32,11 +32,17 @@ location_rows AS (
         argMax(recorded_at, _peerdb_version) AS recorded_at,
         argMax(provider_id, _peerdb_version) AS provider_id,
         argMax(point, _peerdb_version) AS point,
-        toString(argMax(point, _peerdb_version)) AS point_text,
         argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
         argMax(_peerdb_is_deleted, _peerdb_version) AS is_deleted
     FROM location_versions
     GROUP BY id
+),
+
+location_points AS (
+    SELECT
+        *,
+        toString(point) AS point_text
+    FROM location_rows
 ),
 
 provider_counts AS (
@@ -81,7 +87,7 @@ SELECT
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     location_rows.is_deleted AS is_deleted,
     greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at
-FROM location_rows
+FROM location_points AS location_rows
 INNER JOIN activity_members
     ON activity_members.member_activity_id = location_rows.member_activity_id
 INNER JOIN best_source
