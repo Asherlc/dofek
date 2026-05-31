@@ -495,25 +495,29 @@ SELECT
   if(
     isNull(metric_stream.point),
     NULL,
-    (
-      SELECT concat(
-        '{"type":"Point","coordinates":[',
-        toString(p.1), ',', toString(p.2), ']}'
-      )
-      FROM (
-        SELECT readWKBPoint(
-          unhex(
-            if(
-              startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
-              concat(
-                substring(assumeNotNull(metric_stream.point), 1, 2),
-                '01000000',
-                substring(assumeNotNull(metric_stream.point), 19)
-              ),
-              assumeNotNull(metric_stream.point)
+    if(
+      assumeNotNull(metric_stream.point) = '',
+      NULL,
+      (
+        SELECT concat(
+          '{"type":"Point","coordinates":[',
+          toString(p.1), ',', toString(p.2), ']}'
+        )
+        FROM (
+          SELECT readWKBPoint(
+            unhex(
+              if(
+                startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
+                concat(
+                  substring(assumeNotNull(metric_stream.point), 1, 2),
+                  '01000000',
+                  substring(assumeNotNull(metric_stream.point), 19)
+                ),
+                assumeNotNull(metric_stream.point)
+              )
             )
-          )
-        ) AS p
+          ) AS p
+        )
       )
     )
   ) AS point,

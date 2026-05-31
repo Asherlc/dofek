@@ -548,6 +548,9 @@ describe("runClickHouseMigrations", () => {
     );
     expect(backfillStatements[0]).toContain("SELECT CAST(id, 'Nullable(UUID)') AS id");
     expect(backfillStatements[0]).toContain("point,");
+    expect(backfillStatements[0]).toContain(
+      "if(\n      assumeNotNull(metric_stream.point) = '',\n      NULL,",
+    );
     expect(backfillStatements[0]).toContain("readWKBPoint");
     expect(backfillStatements[0]).toContain(
       "startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020')",

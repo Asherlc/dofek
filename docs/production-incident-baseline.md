@@ -9103,7 +9103,10 @@ new incremental tables are populated.
   image exposed the next stale-image failure:
   `First argument for function tupleElement must be Tuple ... Actual String`,
   because its migration treated `metric_stream.point` as a tuple while the
-  Oracle schema stores it as a JSON string.
+  Oracle schema stores it as a JSON string. A fresh branch deploy then reached
+  the native metric stream backfill and failed with
+  `Error while reading WKB format: Incorrect first flag` because
+  `readWKBPoint(unhex(''))` was attempted for an empty source point.
 - Root cause: The Oracle validation stack was left in a pre-migration scaled
   state after a failed deploy. Its ClickHouse `postgres_fitness.metric_stream`
   table was missing the PeerDB `_peerdb_synced_at` metadata column required by
@@ -9115,10 +9118,12 @@ new incremental tables are populated.
   to the live Oracle ClickHouse table. Updated the ClickHouse bootstrap
   statements so future bootstrap/migration runs idempotently add PeerDB metadata
   columns to existing `postgres_fitness.metric_stream` before any read model
-  selects them.
+  selects them. Updated the native metric stream backfill to preserve empty
+  source points as `NULL` instead of parsing them as WKB.
 - Remaining risk: The web service is healthy, but the deploy run that used the
-  old image was cancelled and a fresh image containing the bootstrap repair must
-  be built and deployed before considering the worker/deploy path fully clean.
+  old image was cancelled and a fresh image containing the migration repairs
+  must be built and deployed before considering the worker/deploy path fully
+  clean.
 - Follow-up work: Avoid pinning stale image tags during cutover recovery; deploy
   the current main image or a freshly built branch image when schema/read-model
   code has changed. Add a preflight check to the Oracle cutover runbook for
