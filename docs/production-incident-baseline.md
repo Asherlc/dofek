@@ -9212,13 +9212,16 @@ new incremental tables are populated.
 
 - Symptoms: `https://dofek.asherlc.com/`, `https://dofek.fit/healthz`, and
   `https://dofek.live/healthz` returned plain-text `404 page not found` from
-  Traefik/Cloudflare instead of the Express app.
+  Traefik/Cloudflare instead of the Express app. Later in the same recovery,
+  `https://dofek.asherlc.com/healthz`, `/training`, `/activities`, and `/sleep`
+  returned the same Traefik 404 while both Hetzner and Oracle app containers
+  were otherwise healthy behind their own Traefik instances.
 - User impact: Public web/API traffic for the primary production hostnames was
   unavailable while the app service had no routed backend.
 - Evidence: Public curls returned HTTP 404 with body `404 page not found`.
   Direct curls to the Oracle IP with production Host headers also returned
   Traefik 404. On the Oracle host, `dofek_web` was `0/0` and its Traefik router
-  initially claimed only `Host(`dofek-oracle.asherlc.com`)`. Rerunning the
+  initially claimed only ``Host(`dofek-oracle.asherlc.com`)``. Rerunning the
   deploy with production host-rule defaults failed in the `Run migrations` step
   before the final `docker stack deploy`, leaving app services scaled down.
   The first fatal deploy log line was
@@ -9231,12 +9234,24 @@ new incremental tables are populated.
   the native metric stream backfill and failed with
   `Error while reading WKB format: Incorrect first flag` because
   `readWKBPoint(unhex(''))` was attempted while evaluating rows whose source
-  point was absent.
+  point was absent. After those schema/read-model failures were repaired, direct
+  curl to Hetzner with `Host: dofek.asherlc.com` returned
+  `200 {"status":"ok"}`, direct curl to Oracle with
+  `Host: dofek-oracle.asherlc.com` returned `200 {"status":"ok"}`, and direct
+  curl to Oracle with `Host: dofek.asherlc.com` still returned Traefik 404.
+  Oracle `dofek_web` service labels showed
+  ``traefik.http.routers.web.rule=Host(`dofek-oracle.asherlc.com`)`` while
+  Terraform DNS routes `dofek.asherlc.com` to `local.dofek_primary_host`, which
+  resolves to the Oracle reserved IP when `ORACLE_SERVER_HOST` is set.
 - Root cause: The Oracle validation stack was left in a pre-migration scaled
-  state after a failed deploy. Its ClickHouse `postgres_fitness.metric_stream`
-  table was missing the PeerDB `_peerdb_synced_at` metadata column required by
-  bootstrap migration `0002`, and the manually rerun deploy used an older image
-  whose view SQL did not match the current `point String` schema.
+  state after a failed deploy, and the cutover was only partially complete:
+  DNS could already route production hostnames to Oracle, but the Oracle deploy
+  job still installed a validation-only Traefik Host rule. The failed deploys
+  were then prolonged by schema/read-model drift on Oracle: its ClickHouse
+  `postgres_fitness.metric_stream` table was missing the PeerDB
+  `_peerdb_synced_at` metadata column required by bootstrap migration `0002`,
+  and one manually rerun deploy used an older image whose view SQL did not match
+  the current `point String` schema.
 - Fix / mitigation: Restored routing by scaling `dofek_web=2`, verified the
   production host rule was present, and confirmed all three public health URLs
   returned `200 {"status":"ok"}`. Added the missing `_peerdb_synced_at` column
@@ -9246,46 +9261,21 @@ new incremental tables are populated.
   selects them. Updated the native metric stream backfill to preserve absent
   source points as `NULL` and feed `readWKBPoint` a valid dummy WKB for those
   rows so ClickHouse's columnar branch evaluation cannot parse an empty value.
-- Remaining risk: The web service is healthy, but the deploy run that used the
-  old image was cancelled. A fresh branch deploy with the migration repairs
-  succeeded through migrations and stack deployment, and the Oracle app services
-  are healthy on the repaired image. The workflow still fails at `Configure
-  ClickHouse CDC` because PeerDB's catalog has no `dofek_metric_stream_analytics`
-  flow row while Temporal still has a running
-  `dofek_metric_stream_analytics-peerflow` workflow. `DROP MIRROR
-  dofek_metric_stream_analytics` fails with `flow ... not found`, so CDC cleanup
-  requires explicit operator approval before terminating the orphan Temporal
-  workflow.
-- Follow-up work: Avoid pinning stale image tags during cutover recovery; deploy
-  the current main image or a freshly built branch image when schema/read-model
-  code has changed. Add a preflight check to the Oracle cutover runbook for
-  `dofek_web` replicas, production Host rules, required ClickHouse metadata
-  columns, and orphan PeerDB Temporal workflows before switching traffic.
-
-## 2026-05-31 — Public host returned Traefik 404 after Oracle validation deploy
-
-- Symptoms: `https://dofek.asherlc.com/healthz`, `/training`, `/activities`,
-  and `/sleep` returned plain-text `404 page not found`.
-- User impact: The primary public hostname was down even though both the
-  Hetzner and Oracle app containers were healthy behind their respective
-  Traefik instances.
-- Evidence: Direct curl to Hetzner with `Host: dofek.asherlc.com` returned
-  `200 {"status":"ok"}`. Direct curl to Oracle with
-  `Host: dofek-oracle.asherlc.com` returned `200 {"status":"ok"}`. Direct curl
-  to Oracle with `Host: dofek.asherlc.com` returned Traefik 404. Oracle
-  `dofek_web` service labels showed
-  ``traefik.http.routers.web.rule=Host(`dofek-oracle.asherlc.com`)`` while
-  Terraform DNS routes `dofek.asherlc.com` to `local.dofek_primary_host`, which
-  resolves to the Oracle reserved IP when `ORACLE_SERVER_HOST` is set.
-- Root cause: DNS had already been partially cut over to Oracle by IaC, but the
-  Oracle deploy job still installed a validation-only Traefik Host rule.
-- Fix / mitigation: Updated `.github/workflows/deploy.yml` so the
-  `web-stack-oracle` job deploys `public_url: https://dofek.asherlc.com` and
-  the production Host rule for `dofek.asherlc.com`, `dofek.fit`,
-  `www.dofek.fit`, `dofek.live`, and `www.dofek.live`. Updated the Oracle
-  cutover runbook to treat that host rule as required while
-  `ORACLE_SERVER_HOST` is populated.
-- Remaining risk: Low after the fixed workflow is deployed to Oracle. Hetzner
-  still answers the production Host rule directly, so rollback remains viable.
-- Follow-up work: Add a deploy preflight that curls each production Host header
-  directly against the intended origin IP before and after stack deployment.
+  Updated `.github/workflows/deploy.yml` so the `web-stack-oracle` job deploys
+  `public_url: https://dofek.asherlc.com` and the production Host rule for
+  `dofek.asherlc.com`, `dofek.fit`, `www.dofek.fit`, `dofek.live`, and
+  `www.dofek.live`. Updated the Oracle cutover runbook to treat that host rule
+  as required while `ORACLE_SERVER_HOST` is populated. A follow-up deploy using
+  the fixed workflow completed successfully on both Oracle and Hetzner, including
+  migrations and ClickHouse CDC configuration.
+- Remaining risk: Low. The public app routes returned 200, Oracle app services
+  were healthy on `sha-c92404e`, and the deploy workflow completed successfully.
+  Hetzner still answers the production Host rule directly, so rollback remains
+  viable while cutover is in progress.
+- Follow-up work: Add a preflight check to the Oracle cutover runbook and deploy
+  workflow that verifies `dofek_web` replicas, production Host rules, required
+  ClickHouse metadata columns, orphan PeerDB Temporal workflows, and direct
+  origin curls for each production Host header before switching or deploying
+  traffic. Avoid pinning stale image tags during cutover recovery; deploy the
+  current main image or a freshly built branch image when schema/read-model code
+  has changed.

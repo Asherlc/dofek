@@ -33,13 +33,11 @@ interface ClickHouseRowCount {
   row_count: number | string | null;
 }
 
-const clickHouseRowCountRowsSchema = z
-  .array(
-    z.object({
-      row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
-    }),
-  )
-  .min(1);
+const clickHouseRowCountRowsSchema = z.array(
+  z.object({
+    row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
+  }),
+);
 
 interface SetupClickHouseCdcOptions {
   peerDbClient: PeerDbClient;
@@ -80,6 +78,13 @@ const rawAnalyticsMirrorNames = [
   "dofek_sensor_priority_raw_analytics",
 ] as const;
 const managedMirrorNames = ["dofek_metric_stream_analytics", ...rawAnalyticsMirrorNames] as const;
+const existingManagedMirrorQueryResultSchema = z.object({
+  rows: z.array(
+    z.object({
+      existing_mirror_name: z.enum(managedMirrorNames),
+    }),
+  ),
+});
 const rawAnalyticsMirrorTableMappings: Record<
   (typeof rawAnalyticsMirrorNames)[number],
   readonly string[]
@@ -432,14 +437,12 @@ async function readExistingManagedMirrorNames(peerDbClient: PeerDbClient): Promi
       ON expected_mirrors.name = flows.name
   `);
 
-  const existingMirrorNames = new Set<string>();
-  for (const row of readQueryRows(result)) {
-    const mirrorName = readString(row.existing_mirror_name);
-    if (mirrorName !== null) {
-      existingMirrorNames.add(mirrorName);
-    }
+  const existingMirrorRows = existingManagedMirrorQueryResultSchema.safeParse(result);
+  if (!existingMirrorRows.success) {
+    throw new Error("Unable to read existing PeerDB managed mirrors");
   }
-  return existingMirrorNames;
+
+  return new Set(existingMirrorRows.data.rows.map((row) => row.existing_mirror_name));
 }
 
 async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise<void> {
@@ -664,7 +667,16 @@ async function clickHouseDestinationTablesHaveRows(
     `,
     format: "JSONEachRow",
   });
-  const rows = clickHouseRowCountRowsSchema.parse(await result.json());
+  const parsedRows = clickHouseRowCountRowsSchema.safeParse(await result.json());
+  if (!parsedRows.success) {
+    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  }
+
+  const rows = parsedRows.data;
+  if (rows.length === 0) {
+    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  }
+
   const rowCount = readInteger(rows[0]?.row_count);
   if (rowCount === null) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");

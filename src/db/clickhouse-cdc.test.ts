@@ -105,7 +105,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
     peerDbClientMocks.Client.mockReset().mockImplementation(() => peerDbClientMocks);
     peerDbClientMocks.connect.mockReset().mockResolvedValue(undefined);
     peerDbClientMocks.end.mockReset().mockResolvedValue(undefined);
-    peerDbClientMocks.query.mockReset().mockResolvedValue(undefined);
+    peerDbClientMocks.query.mockReset().mockImplementation(async (queryText) => {
+      if (isPeerDbMirrorReconciliationQuery(String(queryText))) {
+        return { rows: [] };
+      }
+      return undefined;
+    });
     clickHouseClientMocks.command.mockReset().mockResolvedValue(undefined);
     clickHouseClientMocks.query.mockReset().mockResolvedValue({
       json: async () => [{ row_count: 0 }],
@@ -452,6 +457,51 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries.join("\n")).not.toContain("CREATE MIRROR");
   });
 
+  it("fails when PeerDB managed mirror rows are malformed", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: {
+          async query(queryText) {
+            const query = String(queryText);
+            if (query.includes("metric_stream_analytics_point_exclude_position")) {
+              return {
+                rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
+              };
+            }
+            if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+              return { rows: [] };
+            }
+            if (query.includes("raw_analytics_mirror_config")) {
+              return { rows: [] };
+            }
+            if (query.includes("existing_mirror_name")) {
+              return { rows: [{ existing_mirror_name: "unexpected_mirror" }] };
+            }
+            return {};
+          },
+        },
+        sourcePostgresClient: {
+          async query() {},
+        },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("Unable to read existing PeerDB managed mirrors");
+  });
+
   it("continues when PeerDB reports an existing managed mirror workflow", async () => {
     const peerDbQueries: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
@@ -647,6 +697,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (query.includes("raw_analytics_mirror_config")) {
             return { rows: [] };
           }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
+          }
           peerDbQueries.push(query);
           return {};
         },
@@ -715,6 +768,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
               ],
             };
           }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
+          }
           peerDbQueries.push(query);
           return {};
         },
@@ -778,6 +834,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
               ],
             };
           }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
+          }
           peerDbQueries.push(query);
           return {};
         },
@@ -831,6 +890,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 },
               ],
             };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
           }
           peerDbQueries.push(query);
           return {};
@@ -899,6 +961,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 },
               ],
             };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
           }
           peerDbQueries.push(query);
           return {};
@@ -977,7 +1042,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
           postgresUser: "health",
         },
       }),
-    ).rejects.toThrow("Array must contain at least 1 element");
+    ).rejects.toThrow("Unable to read ClickHouse raw analytics destination row count");
   });
 
   it("fails when ClickHouse raw analytics row count is null", async () => {
