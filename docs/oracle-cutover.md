@@ -41,8 +41,8 @@ Today, Oracle is already wired into the main IaC path:
 - `.github/workflows/deploy.yml` deploys the same image to both `web-stack`
   (Hetzner) and `web-stack-oracle` (OCI).
 - The OCI job passes `server_host: ${{ vars.ORACLE_SERVER_HOST }}`,
-  `ssh_user: ubuntu`, `stack_override: deploy/stack.oracle.yml`, and a
-  validation-only host rule for `dofek-oracle.asherlc.com`.
+  `ssh_user: ubuntu`, `stack_override: deploy/stack.oracle.yml`, and the
+  production host rule for `dofek.asherlc.com`, `dofek.fit`, and `dofek.live`.
 - `deploy/variables.tf` exposes `var.oracle_server_host`, and `deploy/dns.tf`
   defines `local.dofek_primary_host = var.oracle_server_host != "" ?
   var.oracle_server_host : hcloud_server.dofek.ipv4_address`.
@@ -61,27 +61,20 @@ The current DNS IaC is partially cut over:
 The cutover repoints the production domains at Oracle and makes the Oracle
 deploy serve them, then stops deploying to Hetzner.
 
-## Step 1 — Make Oracle the deploy that serves the production domains
+## Step 1 — Confirm Oracle serves the production domains
 
-In `.github/workflows/deploy.yml`, the `web-stack-oracle` job currently passes
-the validation domain:
-
-```yaml
-public_url: https://dofek-oracle.asherlc.com
-web_host_rule: "Host(`dofek-oracle.asherlc.com`)"
-```
-
-Change it to claim the production hosts (mirror the defaults the Hetzner
-`web-stack` job relies on in `stack.yml`):
+In `.github/workflows/deploy.yml`, the `web-stack-oracle` job claims the
+production hosts (mirroring the defaults the Hetzner `web-stack` job relies on
+in `stack.yml`):
 
 ```yaml
 public_url: https://dofek.asherlc.com
 web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
 ```
 
-Do **not** deploy this yet — it must land together with the DNS flip (Step 3),
-or Cloudflare will route the production hostnames to a host whose Traefik does
-not yet answer for them.
+Do not revert this to the validation-only host rule. With the current DNS IaC,
+Cloudflare can route the production hostnames to Oracle whenever
+`ORACLE_SERVER_HOST` is set, so Oracle Traefik must answer for those hostnames.
 
 ## Step 2 — Repoint DNS in Terraform
 

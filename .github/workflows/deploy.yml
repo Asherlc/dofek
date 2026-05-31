@@ -158,12 +158,12 @@ jobs:
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
-  # Validation deploy onto the Always Free OCI host, alongside Hetzner. Same
-  # image + Infisical prod secrets; only the public URL/host rule differ, and
-  # stack.oracle.yml scales the operator UIs to zero. The host is a repo
-  # variable (not a secret): it is a public address behind dofek-oracle.asherlc.com,
-  # and unlike secrets, vars are usable directly in a reusable-workflow `with:`
-  # (secrets are scrubbed from job outputs, which silently emptied server_host).
+  # Production deploy onto the Always Free OCI host, alongside Hetzner during
+  # cutover. Same image + Infisical prod secrets; stack.oracle.yml scales the
+  # operator UIs to zero. The host is a repo variable (not a secret): it is a
+  # public address behind the Cloudflare-proxied production records, and unlike
+  # secrets, vars are usable directly in a reusable-workflow `with:` (secrets
+  # are scrubbed from job outputs, which silently emptied server_host).
   web-stack-oracle:
     name: Deploy Web Stack (OCI)
     needs: [terraform, docker, docker_ml]
@@ -179,8 +179,8 @@ jobs:
       server_host: ${{ vars.ORACLE_SERVER_HOST }}
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
-      public_url: https://dofek-oracle.asherlc.com
-      web_host_rule: "Host(`dofek-oracle.asherlc.com`)"
+      public_url: https://dofek.asherlc.com
+      web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 

@@ -9261,3 +9261,31 @@ new incremental tables are populated.
   code has changed. Add a preflight check to the Oracle cutover runbook for
   `dofek_web` replicas, production Host rules, required ClickHouse metadata
   columns, and orphan PeerDB Temporal workflows before switching traffic.
+
+## 2026-05-31 — Public host returned Traefik 404 after Oracle validation deploy
+
+- Symptoms: `https://dofek.asherlc.com/healthz`, `/training`, `/activities`,
+  and `/sleep` returned plain-text `404 page not found`.
+- User impact: The primary public hostname was down even though both the
+  Hetzner and Oracle app containers were healthy behind their respective
+  Traefik instances.
+- Evidence: Direct curl to Hetzner with `Host: dofek.asherlc.com` returned
+  `200 {"status":"ok"}`. Direct curl to Oracle with
+  `Host: dofek-oracle.asherlc.com` returned `200 {"status":"ok"}`. Direct curl
+  to Oracle with `Host: dofek.asherlc.com` returned Traefik 404. Oracle
+  `dofek_web` service labels showed
+  ``traefik.http.routers.web.rule=Host(`dofek-oracle.asherlc.com`)`` while
+  Terraform DNS routes `dofek.asherlc.com` to `local.dofek_primary_host`, which
+  resolves to the Oracle reserved IP when `ORACLE_SERVER_HOST` is set.
+- Root cause: DNS had already been partially cut over to Oracle by IaC, but the
+  Oracle deploy job still installed a validation-only Traefik Host rule.
+- Fix / mitigation: Updated `.github/workflows/deploy.yml` so the
+  `web-stack-oracle` job deploys `public_url: https://dofek.asherlc.com` and
+  the production Host rule for `dofek.asherlc.com`, `dofek.fit`,
+  `www.dofek.fit`, `dofek.live`, and `www.dofek.live`. Updated the Oracle
+  cutover runbook to treat that host rule as required while
+  `ORACLE_SERVER_HOST` is populated.
+- Remaining risk: Low after the fixed workflow is deployed to Oracle. Hetzner
+  still answers the production Host rule directly, so rollback remains viable.
+- Follow-up work: Add a deploy preflight that curls each production Host header
+  directly against the intended origin IP before and after stack deployment.
