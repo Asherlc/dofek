@@ -12,7 +12,7 @@ Output only — does not approve, request changes, or run linters.
 
 ## How to invoke
 
-```
+```text
 /caveman-review
 ```
 
@@ -20,7 +20,7 @@ Also triggers on "review this PR", "code review", "review the diff".
 
 ## Example output
 
-```
+```text
 L42: 🔴 bug: user can be null after .find(). Add guard before .email.
 L88-140: 🔵 nit: 50-line fn does 4 things. Extract validate/normalize/persist.
 L23: 🟡 risk: no retry on 429. Wrap in withBackoff(3).

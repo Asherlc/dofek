@@ -95,10 +95,13 @@ def call_claude(prompt: str) -> str:
             text=True,
             capture_output=True,
             check=True,
+            timeout=30,
         )
         return strip_llm_wrapper(result.stdout.strip())
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Claude call failed:\n{e.stderr}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Claude call timed out after 30 seconds")
 
 
 def build_compress_prompt(original: str) -> str:
@@ -179,7 +182,11 @@ def compress_file(filepath: Path) -> bool:
         print("Skipping (not natural language)")
         return False
 
-    original_text = filepath.read_text(errors="ignore")
+    raw_bytes = filepath.read_bytes()
+    try:
+        original_text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(f"File is not valid UTF-8: {filepath}")
     backup_path = filepath.with_name(filepath.stem + ".original.md")
 
     if not original_text.strip():
@@ -212,9 +219,9 @@ def compress_file(filepath: Path) -> bool:
     # touching the input file. If the filesystem dropped bytes (encoding,
     # antivirus, disk full), unlink the bad backup and abort instead of
     # leaving the user with a corrupt backup + compressed primary.
-    backup_path.write_text(original_text)
-    backup_readback = backup_path.read_text(errors="ignore")
-    if backup_readback != original_text:
+    backup_path.write_bytes(raw_bytes)
+    backup_readback = backup_path.read_bytes()
+    if backup_readback != raw_bytes:
         print(f"❌ Backup write verification failed: {backup_path}")
         print("   In-memory original differs from on-disk backup. Aborting before touching the input file.")
         try:

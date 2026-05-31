@@ -111,7 +111,7 @@ def validate_headings(orig, comp, result):
         result.add_error(f"Heading count mismatch: {len(h1)} vs {len(h2)}")
 
     if h1 != h2:
-        result.add_warning("Heading text/order changed")
+        result.add_error("Heading text/order changed")
 
 
 def validate_code_blocks(orig, comp, result):
@@ -135,7 +135,7 @@ def validate_paths(orig, comp, result):
     p2 = extract_paths(comp)
 
     if p1 != p2:
-        result.add_warning(f"Path mismatch: lost={p1 - p2}, added={p2 - p1}")
+        result.add_error(f"Path mismatch: lost={p1 - p2}, added={p2 - p1}")
 
 
 def validate_bullets(orig, comp, result):
