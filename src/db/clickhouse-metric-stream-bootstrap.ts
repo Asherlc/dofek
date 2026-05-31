@@ -103,7 +103,7 @@ parsed_points AS (
       JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')[1],
       JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')[2]
     )::Point AS point
-  FROM postgres_fitness.metric_stream FINAL AS metric_stream
+  FROM (SELECT * FROM postgres_fitness.metric_stream FINAL) AS metric_stream
   WHERE metric_stream._peerdb_is_deleted = 0
     AND metric_stream.channel = 'location'
     AND metric_stream.point != ''

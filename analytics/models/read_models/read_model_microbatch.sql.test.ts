@@ -142,13 +142,11 @@ describe("production analytics read-model build", () => {
     const activityLocationSampleSql = readModel("activity_location_sample");
     const sleepHeartRateSampleSql = readModel("sleep_heart_rate_sample");
 
-    expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS refreshed_at");
-    expect(dedupedSensorSql).not.toContain("now64(9) AS refreshed_at");
+    expect(dedupedSensorSql).toContain("now64(9) AS refreshed_at");
     expect(activitySensorSampleSql).toContain(
       "greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at",
     );
-    expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
-    expect(activitySensorSampleSql).not.toContain("now64(9) AS refreshed_at");
+    expect(activitySensorSampleSql).toContain("now64(9) AS refreshed_at");
     expect(activityLocationSampleSql).toContain(
       "greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at",
     );

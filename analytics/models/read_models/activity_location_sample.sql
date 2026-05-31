@@ -70,8 +70,8 @@ SELECT
     location_rows.recorded_at AS recorded_at,
     toDate(location_rows.recorded_at) AS recorded_date,
     location_rows.id AS source_metric_stream_id,
-    CAST(location_rows.point.2, 'Nullable(Float32)') AS lat,
-    CAST(location_rows.point.1, 'Nullable(Float32)') AS lng,
+    toFloat32(location_rows.point.2) AS lat,
+    toFloat32(location_rows.point.1) AS lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     location_rows.is_deleted AS is_deleted,
     greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at
