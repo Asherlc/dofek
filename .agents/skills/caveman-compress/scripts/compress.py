@@ -185,8 +185,8 @@ def compress_file(filepath: Path) -> bool:
     raw_bytes = filepath.read_bytes()
     try:
         original_text = raw_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        raise ValueError(f"File is not valid UTF-8: {filepath}")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"File is not valid UTF-8: {filepath}") from error
     backup_path = filepath.with_name(filepath.stem + ".original.md")
 
     if not original_text.strip():
@@ -229,7 +229,7 @@ def compress_file(filepath: Path) -> bool:
         except OSError:
             pass
         return False
-    filepath.write_text(compressed)
+    filepath.write_text(compressed, encoding="utf-8")
 
     # Step 2: Validate + Retry
     for attempt in range(MAX_RETRIES):
@@ -247,7 +247,7 @@ def compress_file(filepath: Path) -> bool:
 
         if attempt == MAX_RETRIES - 1:
             # Restore original on failure
-            filepath.write_text(original_text)
+            filepath.write_text(original_text, encoding="utf-8")
             backup_path.unlink(missing_ok=True)
             print("❌ Failed after retries — original restored")
             return False
@@ -256,6 +256,6 @@ def compress_file(filepath: Path) -> bool:
         compressed = call_claude(
             build_fix_prompt(original_text, compressed, result.errors)
         )
-        filepath.write_text(compressed)
+        filepath.write_text(compressed, encoding="utf-8")
 
     return True
