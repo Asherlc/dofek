@@ -30,7 +30,9 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   device_id Nullable(String),
   source_type Nullable(String),
   scalar Nullable(Float32),
+  vector Array(Float32),
   point String,
+  metadata String,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,

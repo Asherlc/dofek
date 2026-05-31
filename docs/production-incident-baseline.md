@@ -9189,16 +9189,20 @@ new incremental tables are populated.
 - Fix / mitigation: Dropped and recreated the lost Oracle
   `dofek_fitness_raw_analytics` mirror with initial copy enabled. Also dropped
   and recreated `dofek_provider_inventory_raw_analytics` because its slot was
-  lost and it was causing the deploy CDC step to fail. Recreated the missing
-  PeerDB raw staging table for the already-populated metric-stream mirror, then
-  ran a one-off `analytics` dbt build. The build completed all 10 models with
-  `PASS=10 WARN=0 ERROR=0`.
+  lost and it was causing the deploy CDC step to fail. Dropped and recreated
+  `dofek_sensor_priority_raw_analytics` after PeerDB later reported its slot was
+  missing. Recreated the missing PeerDB raw staging table for the
+  already-populated metric-stream mirror, added the legacy `vector` and
+  `metadata` payload columns expected by the orphaned metric-stream workflow,
+  then ran a one-off `analytics` dbt build. The build completed all 10 models
+  with `PASS=10 WARN=0 ERROR=0`.
 - Remaining risk: Medium. Oracle activity, sleep, and training read models are
-  populated again, and all three PeerDB slots are active with
+  populated again, and all four PeerDB slots are active with
   `wal_status = reserved`. The deploy CDC script still needed a code fix because
   PeerDB returned `AlreadyExists` for `CREATE MIRROR IF NOT EXISTS` when a flow
   already existed; the fix skips managed mirror creation when the mirror is
-  present in the PeerDB catalog.
+  present in the PeerDB catalog and treats the specific existing-workflow error
+  as idempotent.
 - Follow-up work: Add an alert for replication slots with
   `wal_status IN ('lost', 'unreserved')`, and add a deploy check that fails with
   a clear message if a managed PeerDB mirror is active but its corresponding

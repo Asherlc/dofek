@@ -113,6 +113,7 @@ const peerDbMetadataColumns = [
   "_peerdb_is_deleted Int8 DEFAULT 0",
   "_peerdb_version Int64 DEFAULT 0",
 ] as const;
+const metricStreamLegacyPayloadColumns = ["vector Array(Float32)", "metadata String"] as const;
 const legacyMetricStreamCdcMirrorName = "dofek_metric_stream_cdc";
 
 function readQueryRows(queryResult: unknown): Array<Record<string, unknown>> {
@@ -417,8 +418,7 @@ function readCreateMirrorName(statement: string): string | null {
 function isExistingMirrorWorkflowError(error: unknown, mirrorName: string): boolean {
   const message = readErrorMessage(error);
   return (
-    message !== null &&
-    message.includes("AlreadyExists") &&
+    message?.includes("AlreadyExists") === true &&
     message.includes(`workflow already exists for flow: ${mirrorName}`)
   );
 }
@@ -586,6 +586,11 @@ async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Pr
         query: `ALTER TABLE postgres_fitness.${tableName} ADD COLUMN IF NOT EXISTS ${metadataColumn}`,
       });
     }
+  }
+  for (const legacyPayloadColumn of metricStreamLegacyPayloadColumns) {
+    await client.command({
+      query: `ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS ${legacyPayloadColumn}`,
+    });
   }
 }
 

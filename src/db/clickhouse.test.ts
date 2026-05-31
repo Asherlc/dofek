@@ -119,7 +119,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("vector Array(Float32)");
     expect(sql).toContain("point String");
+    expect(sql).toContain("metadata String");
     expect(sql).not.toContain("latitude Nullable");
     expect(sql).not.toContain("longitude Nullable");
     expect(sql).not.toContain("metadata Nullable");

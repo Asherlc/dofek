@@ -213,6 +213,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(clickHouseCommands).toContain(
       "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
     );
+    expect(clickHouseCommands).toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS vector Array(Float32)",
+    );
+    expect(clickHouseCommands).toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS metadata String",
+    );
     for (const rawAnalyticsTable of rawAnalyticsTables) {
       expect(clickHouseCommands).toContain(
         `ALTER TABLE postgres_fitness.${rawAnalyticsTable} ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()`,
