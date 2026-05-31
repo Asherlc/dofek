@@ -29,32 +29,36 @@ sleep data on `2026-05-31`. ClickHouse had non-empty `analytics.activity_summary
 and `analytics.v_sleep`, but `analytics.activity_location_sample` had zero rows.
 The `analytics-worker` logs showed repeated dbt failures in
 `activity_location_sample`: ClickHouse error code 43,
-`Nested type Array(Float64) cannot be inside Nullable type`. Running the live
-repository methods inside the production web container returned data for the
-same user and date windows, which narrowed the issue to stale/partial analytics
-read-model refresh rather than missing raw data or billing access filtering.
-Earlier in the same investigation, a diagnostic reproduction of a request-path
-heart-rate sample/activity join timed out after 20 seconds.
+`Nested type Array(Float64) cannot be inside Nullable type` on Hetzner and
+`First argument for function tupleElement must be Tuple... Actual String` on
+Oracle. Running the live repository methods inside the production web container
+returned data for the same user and date windows, which narrowed the issue to
+stale/partial analytics read-model refresh rather than missing raw data or
+billing access filtering. Earlier in the same investigation, a diagnostic
+reproduction of a request-path heart-rate sample/activity join timed out after
+20 seconds.
 
 ### Root Cause
 
-The production ClickHouse mirror stores `postgres_fitness.metric_stream.point`
-as `Nullable(Point)`, but the `activity_location_sample` dbt model still treated
-it as GeoJSON and called `JSONExtract(..., 'coordinates', 'Array(Float64)')`.
-ClickHouse 26 rejects extracting an array from a nullable nested value, so the
-location microbatch failed every analytics-worker cycle. Because dbt skipped
-downstream location summary and activity summary models after that failure,
-serving read models stayed stale or partial. Separately, some training
-repositories still recomputed per-activity heart-rate and power sample counts by
-joining `analytics.deduped_sensor` to `analytics.activity_summary` at request
-time, which could make the training page time out or return empty data even when
-the summary model already had sample counts.
+The ClickHouse mirrors disagreed on the reflected type for
+`postgres_fitness.metric_stream.point`: Hetzner exposed it as `Nullable(Point)`,
+while Oracle exposed it as a GeoJSON `String`. A model that directly used
+`JSONExtract` failed on Hetzner, and a model that directly used `point.1` /
+`point.2` failed on Oracle. Because dbt skipped downstream location summary and
+activity summary models after that failure, serving read models stayed stale or
+partial. Separately, some training repositories still recomputed per-activity
+heart-rate and power sample counts by joining `analytics.deduped_sensor` to
+`analytics.activity_summary` at request time, which could make the training page
+time out or return empty data even when the summary model already had sample
+counts.
 
 ### Fix or Mitigation
 
-`activity_location_sample` now reads the native ClickHouse `Point` value
-directly with `argMax(point, _peerdb_version)` and uses `point IS NOT NULL` for
-location-row filtering instead of JSON extraction. `PmcRepository` and
+`activity_location_sample` now stores `argMax(point, _peerdb_version)` plus a
+`toString(...)` representation, then parses either GeoJSON strings or Point
+tuple text from that string representation. It uses `point IS NOT NULL` for
+location-row filtering instead of comparing the point to an empty string.
+`PmcRepository` and
 `TrainingRepository.getActivityStats()` now read `hr_sample_count` and
 `power_sample_count` directly from `analytics.activity_summary`.
 `TrainingRepository.getHrZones()` now moves the sample timestamp bounds into the
@@ -65,8 +69,8 @@ location-row filtering instead of JSON extraction. `PmcRepository` and
 Focused repository tests now assert the safer SQL shapes and pass:
 `pnpm vitest run packages/server/src/repositories/pmc-repository.test.ts packages/server/src/repositories/training-repository.test.ts`.
 The analytics read-model regression test now asserts that
-`activity_location_sample` consumes native `Point` values and does not use
-`JSONExtract`; `pnpm vitest run
+`activity_location_sample` parses both GeoJSON string and Point tuple text
+through a string representation; `pnpm vitest run
 analytics/models/read_models/read_model_microbatch.sql.test.ts` passes.
 Server type checking passes with `cd packages/server && pnpm exec tsc --noEmit`.
 Biome passes on the changed files. Full `pnpm lint` reached the analytics SQL
@@ -75,8 +79,8 @@ lint phase but could not complete because local ClickHouse was not running on
 
 ### Remaining Risk
 
-The fix still needs to be deployed and verified against production tRPC
-responses after rollout. Heart-rate-zone analytics still scans deduped sensor
+The fix still needs to be redeployed and verified on Oracle after the portable
+point parsing change. Heart-rate-zone analytics still scans deduped sensor
 samples for zone distribution; if it remains slow, move weekly zone rollups into
 a dbt-owned incremental read model.
 
