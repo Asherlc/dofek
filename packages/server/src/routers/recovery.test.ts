@@ -1642,6 +1642,70 @@ describe("recoveryRouter.strainTarget", () => {
 
     expect(result.currentStrain).toBeGreaterThan(0);
   });
+
+  it("acuteLoad excludes loads at exactly 7 days ago (kills < vs <= mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({
+      loads: [
+        { date: "2026-03-24", daily_load: 100 },
+        { date: "2026-03-21", daily_load: 500 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.acuteLoad).toBeCloseTo(100 / 7, 1);
+  });
+
+  it("chronicLoad excludes loads at exactly 28 days ago (kills < vs <= mutation)", async () => {
+    const today = "2026-04-15";
+    const caller = setup({
+      loads: [
+        { date: "2026-04-14", daily_load: 100 },
+        { date: "2026-03-18", daily_load: 200 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.chronicLoad).toBeCloseTo(100 / 28, 1);
+  });
+
+  it("acuteLoad excludes loads outside acute window (kills condition->true mutation)", async () => {
+    const today = "2026-04-01";
+    const caller = setup({
+      loads: [
+        { date: "2026-04-01", daily_load: 100 },
+        { date: "2026-03-10", daily_load: 999 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.acuteLoad).toBeCloseTo(100 / 7, 1);
+  });
+
+  it("chronicLoad excludes loads outside chronic window (kills condition->true mutation)", async () => {
+    const today = "2026-05-01";
+    const caller = setup({
+      loads: [
+        { date: "2026-05-01", daily_load: 100 },
+        { date: "2026-03-01", daily_load: 999 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.chronicLoad).toBeCloseTo(100 / 28, 1);
+  });
+
+  it("workloadRatio is null when chronicLoad is 0 (kills >0 -> true mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({ loads: [] });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.workloadRatio).toBeNull();
+  });
+
+  it("dailyLoad rounds correctly (kills *10 -> /10 and /10 -> *10 mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({
+      loads: [{ date: today, daily_load: 123.456 }],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.dailyLoad).toBe(123.5);
+  });
 });
 
 // ── Mutation-killing tests for sleepConsistency ────────────────
