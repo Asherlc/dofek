@@ -493,19 +493,19 @@ SELECT
   metric_stream.activity_id,
   metric_stream.scalar,
   if(
-    isNull(metric_stream.point),
+    isNull(metric_stream.point) OR assumeNotNull(metric_stream.point) = '',
     NULL,
-    if(
-      assumeNotNull(metric_stream.point) = '',
-      NULL,
-      (
-        SELECT concat(
-          '{"type":"Point","coordinates":[',
-          toString(p.1), ',', toString(p.2), ']}'
-        )
-        FROM (
-          SELECT readWKBPoint(
-            unhex(
+    (
+      SELECT concat(
+        '{"type":"Point","coordinates":[',
+        toString(p.1), ',', toString(p.2), ']}'
+      )
+      FROM (
+        SELECT readWKBPoint(
+          unhex(
+            if(
+              isNull(metric_stream.point) OR assumeNotNull(metric_stream.point) = '',
+              '010100000000000000000000000000000000000000',
               if(
                 startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
                 concat(
@@ -516,8 +516,8 @@ SELECT
                 assumeNotNull(metric_stream.point)
               )
             )
-          ) AS p
-        )
+          )
+        ) AS p
       )
     )
   ) AS point,

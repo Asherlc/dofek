@@ -9106,7 +9106,8 @@ new incremental tables are populated.
   Oracle schema stores it as a JSON string. A fresh branch deploy then reached
   the native metric stream backfill and failed with
   `Error while reading WKB format: Incorrect first flag` because
-  `readWKBPoint(unhex(''))` was attempted for an empty source point.
+  `readWKBPoint(unhex(''))` was attempted while evaluating rows whose source
+  point was absent.
 - Root cause: The Oracle validation stack was left in a pre-migration scaled
   state after a failed deploy. Its ClickHouse `postgres_fitness.metric_stream`
   table was missing the PeerDB `_peerdb_synced_at` metadata column required by
@@ -9118,8 +9119,9 @@ new incremental tables are populated.
   to the live Oracle ClickHouse table. Updated the ClickHouse bootstrap
   statements so future bootstrap/migration runs idempotently add PeerDB metadata
   columns to existing `postgres_fitness.metric_stream` before any read model
-  selects them. Updated the native metric stream backfill to preserve empty
-  source points as `NULL` instead of parsing them as WKB.
+  selects them. Updated the native metric stream backfill to preserve absent
+  source points as `NULL` and feed `readWKBPoint` a valid dummy WKB for those
+  rows so ClickHouse's columnar branch evaluation cannot parse an empty value.
 - Remaining risk: The web service is healthy, but the deploy run that used the
   old image was cancelled and a fresh image containing the migration repairs
   must be built and deployed before considering the worker/deploy path fully
