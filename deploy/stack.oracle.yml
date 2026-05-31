@@ -1,9 +1,8 @@
 # Oracle Cloud Always Free overrides applied on top of stack.yml.
 #
-# The Always Free Ampere A1 node has 24 GB RAM and 4 OCPUs — more memory
-# than the 8 GB Hetzner production box — so the core app + PeerDB CDC +
-# ClickHouse + Postgres all fit comfortably and we do NOT need to tighten
-# CPU the way staging does on its 4 GB box.
+# The Always Free Ampere A1 node has 24 GB RAM and 4 OCPUs, so the core app +
+# PeerDB CDC + ClickHouse + Postgres fit comfortably and we do NOT need to
+# tighten CPU the way staging does on its 4 GB box.
 #
 # What we do disable: the operator/admin UIs that aren't needed for a
 # single-user free-tier deployment and that would otherwise demand extra

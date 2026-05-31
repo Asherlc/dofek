@@ -13,7 +13,7 @@ on:
         type: string
     outputs:
       server_host:
-        description: "Terraform-managed server host/IP for Docker SSH deploys"
+        description: "Oracle production server host/IP for Docker SSH deploys"
         value: ${{ jobs.terraform.outputs.server_host }}
       staging_server_host:
         description: "Terraform-managed staging server host/IP for Docker SSH deploys"
@@ -61,9 +61,7 @@ jobs:
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
         run: |
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
-          # ORACLE_SERVER_HOST is optional: when unset, the dofek-oracle DNS
-          # record is simply not managed (see deploy/dns.tf), so Hetzner-only and
-          # first-bootstrap applies still succeed.
+          test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub variable ORACLE_SERVER_HOST" >&2; exit 1; }
           # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
@@ -75,8 +73,10 @@ jobs:
       - name: Terraform Outputs
         id: tf_outputs
         working-directory: deploy
+        env:
+          ORACLE_SERVER_HOST: ${{ vars.ORACLE_SERVER_HOST }}
         run: |
-          echo "server_host=$(terraform output -raw server_ip)" >> "$GITHUB_OUTPUT"
+          echo "server_host=$ORACLE_SERVER_HOST" >> "$GITHUB_OUTPUT"
           echo "staging_server_host=$(terraform output -raw staging_server_ip)" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/append-dispatcher-run-summary

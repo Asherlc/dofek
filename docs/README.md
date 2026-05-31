@@ -66,9 +66,9 @@ Cross-provider reverse-engineering references:
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
 | [staging.md](staging.md) | Production-shaped staging environment and deploy workflow. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
-| [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and zero-downtime Hetzner volume expansion plan. |
-| [oracle-migration.md](oracle-migration.md) | Migrating the deployment from Hetzner to an Oracle Cloud Always Free A1 host. |
-| [oracle-cutover.md](oracle-cutover.md) | Final production switchover from Hetzner to Oracle (DNS flip, deploy changes, rollback, decommission). |
+| [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production and Hetzner staging. |
+| [oracle-migration.md](oracle-migration.md) | Historical production migration notes for the Hetzner-to-Oracle move. |
+| [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Converting `fitness.metric_stream` to a hypertable safely. |
 | [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |

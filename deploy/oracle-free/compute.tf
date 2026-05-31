@@ -57,10 +57,10 @@ resource "oci_core_instance" "dofek" {
   }
 }
 
-# Dedicated data volume mounted at /mnt/dofek-data, mirroring the Hetzner
-# layout so the production stack.yml bind mounts (postgres/, clickhouse/, ...)
-# work unchanged. Paravirtualized attachment avoids the iSCSI login dance; the
-# device name is discovered in cloud-init (Ubuntu images lack the Oracle-Linux
+# Dedicated data volume mounted at /mnt/dofek-data so the production stack.yml
+# bind mounts (postgres/, clickhouse/, ...) work consistently across hosts.
+# Paravirtualized attachment avoids the iSCSI login dance; the device name is
+# discovered in cloud-init (Ubuntu images lack the Oracle-Linux
 # /dev/oracleoci/* consistent-path symlinks).
 resource "oci_core_volume" "data" {
   count               = var.data_volume_size_gb > 0 ? 1 : 0

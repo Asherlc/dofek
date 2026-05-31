@@ -1,9 +1,9 @@
 # Oracle Cloud Infrastructure (OCI) Always Free Terraform root for Dofek.
 #
 # Provisions a single-node Docker Swarm host on the Always Free Ampere A1
-# shape (4 OCPU / 24 GB), mirroring the Hetzner production topology. Deploys
-# happen from CI via a remote Docker context (SSH) just like Hetzner; this
-# root only provisions infrastructure, never secrets or app deploys.
+# shape (4 OCPU / 24 GB). Production deploys happen from CI via a remote
+# Docker context (SSH); this root only provisions infrastructure, never secrets
+# or app deploys.
 #
 # Uses a local backend (no Terraform Cloud workspace) so it stays isolated
 # from the primary deploy/ root.

@@ -16,7 +16,7 @@ Use this during a planned maintenance window. Do not run this as an automatic de
 2. Ensure **free disk headroom** before migration (target at least 20GB free).
 3. Ensure sufficient DB memory headroom for conversion. On current production data volume (~77M rows in `metric_stream`), `create_hypertable(... migrate_data => TRUE)` can be OOM-killed on low-memory hosts.
 4. If host memory is constrained, use a staged-copy conversion (new empty hypertable + batched inserts + table swap) instead of direct `migrate_data`.
-5. Ensure Terraform-managed data volume is provisioned (`data_volume_size_gb`, default `100`) and applied.
+5. Ensure the host data volume is provisioned and mounted at `/mnt/dofek-data` (OCI production volume or Hetzner staging volume).
 6. Plan a write pause for app services that insert into `metric_stream` (`web`, `worker`, `training-export-worker`).
 
 ## 1) Verify current state

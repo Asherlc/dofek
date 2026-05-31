@@ -58,7 +58,8 @@ jobs:
     needs: [build-image]
     runs-on: ubuntu-latest
     env:
-      FRONT_DOOR_HOST: ${{ secrets.SERVER_HOST }}
+      FRONT_DOOR_HOST: ${{ vars.ORACLE_SERVER_HOST }}
+      FRONT_DOOR_SSH_USER: ubuntu
       IMAGE_TAG: pr-${{ github.event.pull_request.number }}
       REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ github.event.pull_request.number }}
       TERRAFORM_ORGANIZATION: dofek
@@ -267,8 +268,10 @@ jobs:
                   servers:
                     - url: http://${REVIEW_SERVER_IP}:3000
           EOF
-          ssh "root@${FRONT_DOOR_HOST}" "mkdir -p /opt/dofek/traefik-dynamic"
-          scp "$route_config" "root@${FRONT_DOOR_HOST}:${REVIEW_ROUTE_FILE}"
+          remote_route_config="/tmp/${TRAEFIK_ROUTER_NAME}.yml"
+          ssh "${FRONT_DOOR_SSH_USER}@${FRONT_DOOR_HOST}" "sudo mkdir -p /opt/dofek/traefik-dynamic"
+          scp "$route_config" "${FRONT_DOOR_SSH_USER}@${FRONT_DOOR_HOST}:${remote_route_config}"
+          ssh "${FRONT_DOOR_SSH_USER}@${FRONT_DOOR_HOST}" "sudo install -m 0644 '$remote_route_config' '$REVIEW_ROUTE_FILE' && rm -f '$remote_route_config'"
 
       - name: Setup review server SSH
         if: steps.terraform.outputs.review_app_skipped != 'true'

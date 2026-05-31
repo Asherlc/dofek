@@ -2,13 +2,13 @@
 
 Provisions a single-node Docker Swarm host for Dofek on Oracle Cloud
 Infrastructure (OCI) using the **Always Free** Ampere A1 shape
-(4 OCPU / 24 GB RAM, $0). This mirrors the Hetzner production topology
-(`deploy/server.tf` + `deploy/server/cloud-init.yml`) so the production
-`deploy/stack.yml` can be deployed onto it with minimal changes.
+(4 OCPU / 24 GB RAM, $0). This is the production host topology for the main
+`deploy/stack.yml` stack.
 
 This root is **isolated** from the primary `deploy/` root: it uses a local
-backend and the `oracle/oci` provider, and does not touch the live Hetzner
-infrastructure.
+backend and the `oracle/oci` provider. The primary `deploy/` root manages
+Cloudflare plus staging Hetzner resources; `deploy/review-apps/` manages
+per-PR Hetzner servers.
 
 ## What it provisions
 
@@ -42,19 +42,20 @@ terraform plan
 terraform apply
 ```
 
-The public IP is printed as an output; point Cloudflare DNS / Traefik host
-rules at it, then deploy from CI exactly as with Hetzner — all deploy logic
-lives in CI and talks to the remote Docker API over SSH (never a local
-`docker stack deploy`). The `Build + Deploy` workflow (`build-deploy.yml`,
-target `web`) runs the `Deploy Web Stack (OCI)` job, which applies the Oracle
-override (`-c deploy/stack.yml -c deploy/stack.oracle.yml`) over SSH to this
-host. See the "Stable address + DNS + CI" section below.
+The public IP is printed as an output; copy it into the `ORACLE_SERVER_HOST`
+GitHub Actions variable so Cloudflare DNS and production deploys target this
+host. All deploy logic lives in CI and talks to the remote Docker API over SSH
+(never a local `docker stack deploy`). The `Build + Deploy` workflow
+(`build-deploy.yml`, target `web`) runs the production `Deploy Web Stack` job,
+which applies the Oracle override (`-c deploy/stack.yml -c deploy/stack.oracle.yml`)
+over SSH to this host. See the "Stable address + DNS + CI" section below.
 
 Unlike Hetzner (which deploys over `ssh://root@`), OCI's Ubuntu image disables
 root SSH, so the remote Docker context connects as the `ubuntu` user. cloud-init
 adds `ubuntu` to the `docker` group so it can reach the daemon socket without
 sudo. When invoking the `Deploy Web Stack` workflow against this host, pass
-`ssh_user: ubuntu` (the input defaults to `root` for Hetzner).
+`ssh_user: ubuntu` (the production deploy default is also `ubuntu`; staging
+callers pass `root` explicitly).
 
 The instance trusts two SSH keys (mirroring Hetzner): the personal 1Password key
 for manual access and the CI deploy key (pair of the `DEPLOY_SSH_KEY` GitHub
@@ -69,12 +70,9 @@ The instance uses a **reserved public IP** (`oci_core_public_ip`, see
 GitHub Actions **variable** (a repo variable, not a secret — it is a public
 address, and secrets are scrubbed from job outputs and can't be used in a
 reusable-workflow `with:`). The primary `deploy/` root reads it as
-`TF_VAR_oracle_server_host` to publish `dofek-oracle.asherlc.com` (in `dns.tf`),
-and `deploy.yml` passes it as `server_host` to a second `Deploy Web Stack (OCI)`
-job that runs alongside the Hetzner deploy with `ssh_user: ubuntu`,
-`stack_override: deploy/stack.oracle.yml`, and the `dofek-oracle.asherlc.com`
-host rule. This keeps OCI on its own validation domain while sharing the prod
-image and Infisical secrets.
+`TF_VAR_oracle_server_host` for production DNS records, and production deploys
+pass it as `server_host` with `ssh_user: ubuntu` and
+`stack_override: deploy/stack.oracle.yml`.
 
 `deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
 CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
@@ -82,7 +80,7 @@ single-user free-tier deployment does not need. The 24 GB node has ample room
 for the core app + PeerDB CDC + ClickHouse + Postgres, so unlike staging it
 does not tighten CPU.
 
-To move an existing Hetzner deployment's data onto this host, follow
+The historical Hetzner-to-Oracle migration notes live in
 [`docs/oracle-migration.md`](../../docs/oracle-migration.md).
 
 ## "Out of host capacity"

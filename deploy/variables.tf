@@ -20,18 +20,6 @@ variable "ssh_allowed_ips" {
   default     = ["0.0.0.0/0", "::/0"]
 }
 
-variable "data_volume_size_gb" {
-  description = "Hetzner block storage size in GB for persistent data (set 0 to disable)"
-  type        = number
-  default     = 100
-}
-
-variable "data_volume_name" {
-  description = "Hetzner block storage volume name"
-  type        = string
-  default     = "dofek-data"
-}
-
 variable "staging_data_volume_size_gb" {
   description = "Hetzner block storage size in GB for staging persistent data (set 0 to disable)"
   type        = number
@@ -56,12 +44,11 @@ variable "cloudflare_account_id" {
 }
 
 variable "oracle_server_host" {
-  description = "Reserved public IP of the Oracle Cloud validation host. Provisioned in deploy/oracle-free; mirrored here as a GitHub Actions variable (ORACLE_SERVER_HOST). Empty falls back to the Hetzner server IP so first-bootstrap applies still work."
+  description = "Reserved public IP of the Oracle Cloud production host. Provisioned in deploy/oracle-free and mirrored here as the ORACLE_SERVER_HOST GitHub Actions variable."
   type        = string
-  default     = ""
 
   validation {
-    condition     = var.oracle_server_host == "" || can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", var.oracle_server_host))
-    error_message = "oracle_server_host must be empty or a valid IPv4 address."
+    condition     = can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}$", var.oracle_server_host))
+    error_message = "oracle_server_host must be a valid IPv4 address."
   }
 }

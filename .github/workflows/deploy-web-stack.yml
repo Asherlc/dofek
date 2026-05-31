@@ -12,14 +12,14 @@ on:
         required: false
         type: string
       server_host:
-        description: "Docker SSH host (defaults to SERVER_HOST secret)"
+        description: "Docker SSH host (defaults to ORACLE_SERVER_HOST variable)"
         required: false
         type: string
       ssh_user:
-        description: "SSH user for the remote Docker context (root on Hetzner, ubuntu on OCI)"
+        description: "SSH user for the remote Docker context"
         required: false
         type: string
-        default: root
+        default: ubuntu
       stack_override:
         description: "Optional extra compose override appended to the stack deploy (e.g. deploy/stack.oracle.yml)"
         required: false
@@ -102,14 +102,14 @@ on:
         default: "latest"
         type: string
       server_host:
-        description: "Docker SSH host (defaults to SERVER_HOST secret)"
+        description: "Docker SSH host (defaults to ORACLE_SERVER_HOST variable)"
         required: false
         type: string
       ssh_user:
-        description: "SSH user for the remote Docker context (root on Hetzner, ubuntu on OCI)"
+        description: "SSH user for the remote Docker context"
         required: false
         type: string
-        default: root
+        default: ubuntu
       stack_override:
         description: "Optional extra compose override appended to the stack deploy (e.g. deploy/stack.oracle.yml)"
         required: false
@@ -127,9 +127,9 @@ on:
         type: string
 
 concurrency:
-  # Key on the target host so deploys to different hosts (Hetzner vs OCI) run in
+  # Key on the target host so deploys to different hosts (production vs staging) run in
   # parallel, while concurrent deploys to the same host still serialize.
-  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}-${{ inputs.server_host }}
+  group: deploy-web-stack-${{ inputs.stack_name || 'dofek' }}-${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
   cancel-in-progress: false
 
 jobs:
@@ -142,8 +142,8 @@ jobs:
       packages: read
       id-token: write
     env:
-      SSH_USER: ${{ inputs.ssh_user != '' && inputs.ssh_user || 'root' }}
-      DOCKER_HOST: ssh://${{ inputs.ssh_user != '' && inputs.ssh_user || 'root' }}@${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+      SSH_USER: ${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}
+      DOCKER_HOST: ssh://${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}@${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
@@ -168,7 +168,7 @@ jobs:
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host
         with:
-          host: ${{ inputs.server_host != '' && inputs.server_host || secrets.SERVER_HOST }}
+          host: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
           private_key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: Export Infisical deploy secrets file via OIDC
