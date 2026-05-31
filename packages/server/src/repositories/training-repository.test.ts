@@ -188,6 +188,20 @@ describe("TrainingRepository", () => {
       expect(query).not.toContain("{restingHr:Float64}");
       expect(query).not.toContain("{maxHr:Float64}");
     });
+
+    it("bounds heart-rate samples in the activity join", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getHrZones(90);
+
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      expect(query).toContain("INNER JOIN activity_meta am");
+      expect(query).toContain("ON ds.user_id = am.user_id");
+      expect(query).toContain("AND ds.recorded_at >= am.started_at");
+      expect(query).toContain(
+        "AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)",
+      );
+    });
   });
 
   describe("getActivityStats", () => {
@@ -205,6 +219,18 @@ describe("TrainingRepository", () => {
       expect(query).toContain("toString(a.activity_id) AS id");
       expect(query).toContain("FROM analytics.activity_summary a");
       expect(query).not.toContain("analytics.v_activity");
+    });
+
+    it("reads sample counts from the activity summary read model", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getActivityStats(90);
+
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      expect(query).toContain("coalesce(a.hr_sample_count, 0) AS hr_samples");
+      expect(query).toContain("coalesce(a.power_sample_count, 0) AS power_samples");
+      expect(query).not.toContain("sample_counts AS");
+      expect(query).not.toContain("INNER JOIN analytics.deduped_sensor AS samples");
     });
 
     it("returns activity stats rows", async () => {

@@ -152,7 +152,7 @@ describe("PmcRepository", () => {
       );
     });
 
-    it("reads sample counts and normalized power from deduped ClickHouse sensors", async () => {
+    it("reads sample counts from the activity summary read model", async () => {
       const { repo, query } = makeRepoHarness(
         [makeActivityRow()],
         [{ activity_id: "activity-1", np: 220 }],
@@ -163,8 +163,12 @@ describe("PmcRepository", () => {
       expect(query).toHaveBeenNthCalledWith(
         1,
         expect.anything(),
-        expect.stringContaining("countIf(samples.channel = 'heart_rate') AS hr_samples"),
+        expect.stringContaining("coalesce(asum.hr_sample_count, 0) AS hr_samples"),
         expect.anything(),
+      );
+      expect(vi.mocked(query).mock.calls[0]?.[1]).not.toContain("sample_counts AS");
+      expect(vi.mocked(query).mock.calls[0]?.[1]).not.toContain(
+        "INNER JOIN analytics.deduped_sensor AS samples",
       );
       expect(query).toHaveBeenNthCalledWith(
         2,

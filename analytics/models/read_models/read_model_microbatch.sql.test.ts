@@ -105,6 +105,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("bounded_activity_graph()");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
+    expect(sql).toContain("argMax(point, _peerdb_version) AS point");
+    expect(sql).not.toContain("JSONExtract");
   });
 
   it("bounds activity graph construction to the active microbatch window", () => {

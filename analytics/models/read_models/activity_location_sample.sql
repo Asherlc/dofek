@@ -21,7 +21,7 @@ location_versions AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'metric_stream') }}
     WHERE channel = 'location'
-        AND (point != '' OR _peerdb_is_deleted = 1)
+        AND (point IS NOT NULL OR _peerdb_is_deleted = 1)
 ),
 
 location_rows AS (
@@ -31,10 +31,7 @@ location_rows AS (
         argMax(user_id, _peerdb_version) AS user_id,
         argMax(recorded_at, _peerdb_version) AS recorded_at,
         argMax(provider_id, _peerdb_version) AS provider_id,
-        (
-            JSONExtract(argMax(point, _peerdb_version), 'coordinates', 'Array(Float64)')[1],
-            JSONExtract(argMax(point, _peerdb_version), 'coordinates', 'Array(Float64)')[2]
-        )::Point AS point,
+        argMax(point, _peerdb_version) AS point,
         argMax(_peerdb_synced_at, _peerdb_version) AS _peerdb_synced_at,
         argMax(_peerdb_is_deleted, _peerdb_version) AS is_deleted
     FROM location_versions

@@ -7,6 +7,79 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-31: Training, Activities, and Sleep Analytics Empty
+
+### Symptoms
+
+The production `/training` page appeared mostly unpopulated for training-load
+and heart-rate-zone analytics even though recent activity data existed. The
+Activities page showed `No activities in the last 4 weeks`, and the Sleep page
+also showed no current data.
+
+### User Impact
+
+ClickHouse-backed web pages could show empty or stale states instead of recent
+training, activity, and sleep data.
+
+### Evidence
+
+Production `fitness.v_activity` had 826 activities with latest activity data on
+`2026-05-31`, and `fitness.sleep_session` had 122 sleep sessions with latest
+sleep data on `2026-05-31`. ClickHouse had non-empty `analytics.activity_summary`
+and `analytics.v_sleep`, but `analytics.activity_location_sample` had zero rows.
+The `analytics-worker` logs showed repeated dbt failures in
+`activity_location_sample`: ClickHouse error code 43,
+`Nested type Array(Float64) cannot be inside Nullable type`. Running the live
+repository methods inside the production web container returned data for the
+same user and date windows, which narrowed the issue to stale/partial analytics
+read-model refresh rather than missing raw data or billing access filtering.
+Earlier in the same investigation, a diagnostic reproduction of a request-path
+heart-rate sample/activity join timed out after 20 seconds.
+
+### Root Cause
+
+The production ClickHouse mirror stores `postgres_fitness.metric_stream.point`
+as `Nullable(Point)`, but the `activity_location_sample` dbt model still treated
+it as GeoJSON and called `JSONExtract(..., 'coordinates', 'Array(Float64)')`.
+ClickHouse 26 rejects extracting an array from a nullable nested value, so the
+location microbatch failed every analytics-worker cycle. Because dbt skipped
+downstream location summary and activity summary models after that failure,
+serving read models stayed stale or partial. Separately, some training
+repositories still recomputed per-activity heart-rate and power sample counts by
+joining `analytics.deduped_sensor` to `analytics.activity_summary` at request
+time, which could make the training page time out or return empty data even when
+the summary model already had sample counts.
+
+### Fix or Mitigation
+
+`activity_location_sample` now reads the native ClickHouse `Point` value
+directly with `argMax(point, _peerdb_version)` and uses `point IS NOT NULL` for
+location-row filtering instead of JSON extraction. `PmcRepository` and
+`TrainingRepository.getActivityStats()` now read `hr_sample_count` and
+`power_sample_count` directly from `analytics.activity_summary`.
+`TrainingRepository.getHrZones()` now moves the sample timestamp bounds into the
+`activity_meta` join and treats zero-valued profile heart-rate fields as absent.
+
+### Validation
+
+Focused repository tests now assert the safer SQL shapes and pass:
+`pnpm vitest run packages/server/src/repositories/pmc-repository.test.ts packages/server/src/repositories/training-repository.test.ts`.
+The analytics read-model regression test now asserts that
+`activity_location_sample` consumes native `Point` values and does not use
+`JSONExtract`; `pnpm vitest run
+analytics/models/read_models/read_model_microbatch.sql.test.ts` passes.
+Server type checking passes with `cd packages/server && pnpm exec tsc --noEmit`.
+Biome passes on the changed files. Full `pnpm lint` reached the analytics SQL
+lint phase but could not complete because local ClickHouse was not running on
+`127.0.0.1:8123`.
+
+### Remaining Risk
+
+The fix still needs to be deployed and verified against production tRPC
+responses after rollout. Heart-rate-zone analytics still scans deduped sensor
+samples for zone distribution; if it remains slow, move weekly zone rollups into
+a dbt-owned incremental read model.
+
 ## 2026-05-26: ClickHouse OOM Restarts From Dashboard Activity Analytics
 
 ### Symptoms

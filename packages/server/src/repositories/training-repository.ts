@@ -149,8 +149,8 @@ export class TrainingRepository extends BaseRepository {
           asum.started_at AS started_at,
           asum.ended_at AS ended_at,
           toDate(toTimeZone(asum.started_at, {timezone:String})) AS activity_date,
-          up.max_hr AS max_hr,
-          coalesce(drhr.resting_hr, up.resting_hr, 60) AS resting_hr
+          nullIf(up.max_hr, 0) AS max_hr,
+          coalesce(drhr.resting_hr, nullIf(up.resting_hr, 0), 60) AS resting_hr
         FROM analytics.activity_summary asum
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
@@ -158,7 +158,7 @@ export class TrainingRepository extends BaseRepository {
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
-          AND up.max_hr IS NOT NULL
+          AND up.max_hr > 0
       ),
       zone_counts AS (
         SELECT
@@ -168,11 +168,11 @@ export class TrainingRepository extends BaseRepository {
         FROM analytics.deduped_sensor ds
         INNER JOIN activity_meta am
           ON ds.user_id = am.user_id
+         AND ds.recorded_at >= am.started_at
+         AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
         WHERE ds.channel = 'heart_rate'
           AND ds.scalar IS NOT NULL
           AND ds.is_deleted = 0
-          AND ds.recorded_at >= am.started_at
-          AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
         GROUP BY am.activity_date, am.max_hr
       )
       SELECT
@@ -207,23 +207,7 @@ export class TrainingRepository extends BaseRepository {
 
     return this.#sensorStore.query(
       activityStatsRowSchema,
-      `WITH sample_counts AS (
-        SELECT
-          a.activity_id AS activity_id,
-          countIf(samples.channel = 'heart_rate') AS hr_samples,
-          countIf(samples.channel = 'power') AS power_samples
-        FROM analytics.deduped_sensor AS samples
-        INNER JOIN analytics.activity_summary AS a
-          ON a.user_id = samples.user_id
-        WHERE samples.user_id = {userId:UUID}
-          AND samples.channel IN ('heart_rate', 'power')
-          AND samples.is_deleted = 0
-          AND samples.recorded_at >= a.started_at
-          AND samples.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-          AND a.started_at > now() - INTERVAL {days:Int32} DAY
-        GROUP BY a.activity_id
-      )
-      SELECT
+      `SELECT
         toString(a.activity_id) AS id,
         a.activity_type AS activity_type,
         a.name AS name,
@@ -234,11 +218,10 @@ export class TrainingRepository extends BaseRepository {
         round(a.avg_power, 1) AS avg_power,
         a.max_power AS max_power,
         round(a.avg_cadence, 1) AS avg_cadence,
-        coalesce(sc.hr_samples, 0) AS hr_samples,
-        coalesce(sc.power_samples, 0) AS power_samples,
+        coalesce(a.hr_sample_count, 0) AS hr_samples,
+        coalesce(a.power_sample_count, 0) AS power_samples,
         a.total_distance AS distance_meters
       FROM analytics.activity_summary a
-      LEFT JOIN sample_counts sc ON sc.activity_id = a.activity_id
       WHERE a.user_id = {userId:UUID}
         AND a.started_at > now() - INTERVAL {days:Int32} DAY
       ORDER BY a.started_at DESC`,

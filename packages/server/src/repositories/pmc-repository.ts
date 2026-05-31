@@ -80,41 +80,24 @@ export class PmcRepository extends BaseRepository {
 
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
     // user_profile is accessed via ClickHouse read models.
-    // Sample counts come from analytics.deduped_sensor since CH activity_summary
-    // doesn't carry per-channel sample counts.
+    // Sample counts come from the activity summary read model; do not recompute
+    // them by joining deduped_sensor on the request path.
     const activityRows = await this.#sensorStore.query(
       combinedActivityRowSchema,
       `WITH ${restingHeartRateClickHouseCte()},
       user_baseline AS (
         SELECT
-          coalesce(up.max_hr, (
-            SELECT max(max_hr) FROM analytics.activity_summary
-            WHERE user_id = {userId:UUID} AND max_hr IS NOT NULL
+          coalesce(nullIf(up.max_hr, 0), (
+            SELECT maxIf(max_hr, max_hr > 0) FROM analytics.activity_summary
+            WHERE user_id = {userId:UUID}
           )) AS global_max_hr,
-          coalesce(up.resting_hr, (
+          coalesce(nullIf(up.resting_hr, 0), (
             SELECT resting_hr FROM resting_heart_rate
-            WHERE resting_hr IS NOT NULL
+            WHERE resting_hr IS NOT NULL AND resting_hr > 0
             ORDER BY date DESC LIMIT 1
           ), 60) AS resting_hr
         FROM postgres_fitness.user_profile_current up
         WHERE up.id = {userId:UUID}
-      ),
-      sample_counts AS (
-        SELECT
-          activity.activity_id AS activity_id,
-          countIf(samples.channel = 'power') AS power_samples,
-          countIf(samples.channel = 'heart_rate') AS hr_samples
-        FROM analytics.deduped_sensor AS samples
-        INNER JOIN analytics.activity_summary AS activity
-          ON activity.user_id = samples.user_id
-         AND samples.recorded_at >= activity.started_at
-         AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
-        WHERE samples.user_id = {userId:UUID}
-          AND samples.channel IN ('heart_rate', 'power')
-          AND samples.is_deleted = 0
-          AND activity.started_at > now() - INTERVAL {queryDays:Int32} DAY
-          AND activity.ended_at IS NOT NULL
-        GROUP BY activity.activity_id
       )
       SELECT
         ub.global_max_hr AS global_max_hr,
@@ -125,15 +108,14 @@ export class PmcRepository extends BaseRepository {
         asum.avg_hr AS avg_hr,
         asum.max_hr AS max_hr,
         asum.avg_power AS avg_power,
-        coalesce(sc.power_samples, 0) AS power_samples,
-        coalesce(sc.hr_samples, 0) AS hr_samples
+        coalesce(asum.power_sample_count, 0) AS power_samples,
+        coalesce(asum.hr_sample_count, 0) AS hr_samples
       FROM analytics.activity_summary asum
       CROSS JOIN user_baseline ub
-      LEFT JOIN sample_counts sc ON sc.activity_id = asum.activity_id
       WHERE asum.user_id = {userId:UUID}
         AND asum.started_at > now() - INTERVAL {queryDays:Int32} DAY
         AND asum.ended_at IS NOT NULL
-        AND coalesce(sc.hr_samples, 0) > 0`,
+        AND coalesce(asum.hr_sample_count, 0) > 0`,
       {
         userId: this.userId,
         timezone: this.timezone,
