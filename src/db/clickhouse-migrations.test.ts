@@ -165,6 +165,18 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(1);
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
     expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(4);
+    expect(sql).toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
+    );
+    expect(sql.indexOf("ADD COLUMN IF NOT EXISTS _peerdb_synced_at")).toBeLessThan(
+      sql.indexOf("FROM postgres_fitness.metric_stream"),
+    );
     expect(sql).toContain("point String");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");

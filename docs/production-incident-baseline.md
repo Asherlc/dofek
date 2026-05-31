@@ -9083,3 +9083,44 @@ new incremental tables are populated.
 - Follow-up work: (1) Decide reclaim-vs-grow with the operator; (2) add a disk
   free-space alert on /mnt/dofek-data well below 100%; (3) consider the
   `db-incident-response` skill for the Postgres footprint investigation.
+
+## 2026-05-31 — Production hosts returned Traefik 404 during Oracle cutover deploy
+
+- Symptoms: `https://dofek.asherlc.com/`, `https://dofek.fit/healthz`, and
+  `https://dofek.live/healthz` returned plain-text `404 page not found` from
+  Traefik/Cloudflare instead of the Express app.
+- User impact: Public web/API traffic for the primary production hostnames was
+  unavailable while the app service had no routed backend.
+- Evidence: Public curls returned HTTP 404 with body `404 page not found`.
+  Direct curls to the Oracle IP with production Host headers also returned
+  Traefik 404. On the Oracle host, `dofek_web` was `0/0` and its Traefik router
+  initially claimed only `Host(`dofek-oracle.asherlc.com`)`. Rerunning the
+  deploy with production host-rule defaults failed in the `Run migrations` step
+  before the final `docker stack deploy`, leaving app services scaled down.
+  The first fatal deploy log line was
+  `Unknown expression identifier _peerdb_synced_at ... FROM postgres_fitness.metric_stream`.
+  After adding that missing column to the live ClickHouse table, the same old
+  image exposed the next stale-image failure:
+  `First argument for function tupleElement must be Tuple ... Actual String`,
+  because its migration treated `metric_stream.point` as a tuple while the
+  Oracle schema stores it as a JSON string.
+- Root cause: The Oracle validation stack was left in a pre-migration scaled
+  state after a failed deploy. Its ClickHouse `postgres_fitness.metric_stream`
+  table was missing the PeerDB `_peerdb_synced_at` metadata column required by
+  bootstrap migration `0002`, and the manually rerun deploy used an older image
+  whose view SQL did not match the current `point String` schema.
+- Fix / mitigation: Restored routing by scaling `dofek_web=2`, verified the
+  production host rule was present, and confirmed all three public health URLs
+  returned `200 {"status":"ok"}`. Added the missing `_peerdb_synced_at` column
+  to the live Oracle ClickHouse table. Updated the ClickHouse bootstrap
+  statements so future bootstrap/migration runs idempotently add PeerDB metadata
+  columns to existing `postgres_fitness.metric_stream` before any read model
+  selects them.
+- Remaining risk: The web service is healthy, but the deploy run that used the
+  old image was cancelled and a fresh image containing the bootstrap repair must
+  be built and deployed before considering the worker/deploy path fully clean.
+- Follow-up work: Avoid pinning stale image tags during cutover recovery; deploy
+  the current main image or a freshly built branch image when schema/read-model
+  code has changed. Add a preflight check to the Oracle cutover runbook for
+  `dofek_web` replicas, production Host rules, and required ClickHouse metadata
+  columns before switching traffic.
