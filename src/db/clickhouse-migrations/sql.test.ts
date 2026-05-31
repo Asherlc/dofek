@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clickHouseStringLiteral, clickHouseDateTimeLiteral, parsePostgresTimestamp } from "./sql.ts";
+import {
+  clickHouseDateTimeLiteral,
+  clickHouseStringLiteral,
+  parsePostgresTimestamp,
+} from "./sql.ts";
 
 describe("clickHouseStringLiteral", () => {
   it("wraps a plain string in single quotes", () => {
@@ -56,10 +60,14 @@ describe("parsePostgresTimestamp", () => {
   });
 
   it("throws on invalid date string", () => {
-    expect(() => parsePostgresTimestamp("not-a-date", "test-label")).toThrow("Invalid test-label: not-a-date");
+    expect(() => parsePostgresTimestamp("not-a-date", "test-label")).toThrow(
+      "Invalid test-label: not-a-date",
+    );
   });
 
   it("throws on NaN date", () => {
-    expect(() => parsePostgresTimestamp("2026-13-01T00:00:00Z", "test-label")).toThrow("Invalid test-label: 2026-13-01T00:00:00Z");
+    expect(() => parsePostgresTimestamp("2026-13-01T00:00:00Z", "test-label")).toThrow(
+      "Invalid test-label: 2026-13-01T00:00:00Z",
+    );
   });
 });

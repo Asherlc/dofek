@@ -83,8 +83,8 @@ describe("replaceNativeMetricStreamAndBackfill", () => {
     const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
     await replaceNativeMetricStreamAndBackfill(client, "conn");
     const mockedRun = vi.mocked(runClickHouseMigrationStatement);
-    const dropCalls = mockedRun.mock.calls.filter(
-      (call: unknown[]) => String(call[1]).includes("DROP DATABASE"),
+    const dropCalls = mockedRun.mock.calls.filter((call: unknown[]) =>
+      String(call[1]).includes("DROP DATABASE"),
     );
     expect(dropCalls).toHaveLength(0);
   });
@@ -94,8 +94,8 @@ describe("replaceNativeMetricStreamAndBackfill", () => {
     const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
     await replaceNativeMetricStreamAndBackfill(client, "conn");
     const mockedRun = vi.mocked(runClickHouseMigrationStatement);
-    const dropCalls = mockedRun.mock.calls.filter(
-      (call: unknown[]) => String(call[1]).includes("DROP DATABASE"),
+    const dropCalls = mockedRun.mock.calls.filter((call: unknown[]) =>
+      String(call[1]).includes("DROP DATABASE"),
     );
     expect(dropCalls).toHaveLength(0);
   });
@@ -105,8 +105,8 @@ describe("replaceNativeMetricStreamAndBackfill", () => {
     const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
     await replaceNativeMetricStreamAndBackfill(client, "conn");
     const mockedRun = vi.mocked(runClickHouseMigrationStatement);
-    const dropCalls = mockedRun.mock.calls.filter(
-      (call: unknown[]) => String(call[1]).includes("DROP DATABASE"),
+    const dropCalls = mockedRun.mock.calls.filter((call: unknown[]) =>
+      String(call[1]).includes("DROP DATABASE"),
     );
     expect(dropCalls).toHaveLength(0);
   });

@@ -13,7 +13,11 @@ import {
   buildIncrementalDedupedSensorResetStatements,
 } from "../clickhouse-deduped-sensor.ts";
 import { buildActivitySummaryReadModelStatements } from "../clickhouse-metric-stream-bootstrap.ts";
-import { clickHouseDateTimeLiteral, clickHouseStringLiteral, parsePostgresTimestamp } from "./sql.ts";
+import {
+  clickHouseDateTimeLiteral,
+  clickHouseStringLiteral,
+  parsePostgresTimestamp,
+} from "./sql.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 
 interface MetricStreamBackfillChunkRow {
@@ -526,5 +530,3 @@ WHERE metric_stream.recorded_at >= ${lowerBound}
   AND metric_stream.recorded_at < ${upperBound}
   AND existing_metric_stream.id IS NULL`;
 }
-
-
