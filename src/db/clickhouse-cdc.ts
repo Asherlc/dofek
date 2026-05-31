@@ -79,6 +79,7 @@ const rawAnalyticsMirrorNames = [
   "dofek_provider_inventory_raw_analytics",
   "dofek_sensor_priority_raw_analytics",
 ] as const;
+const managedMirrorNames = ["dofek_metric_stream_analytics", ...rawAnalyticsMirrorNames] as const;
 const rawAnalyticsMirrorTableMappings: Record<
   (typeof rawAnalyticsMirrorNames)[number],
   readonly string[]
@@ -393,6 +394,32 @@ function splitPeerDbSqlStatements(sql: string): string[] {
   return statements;
 }
 
+function readCreateMirrorName(statement: string): string | null {
+  const createMirrorMatch = statement.match(
+    /\bCREATE\s+MIRROR\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_]+)/i,
+  );
+  return createMirrorMatch?.[1] ?? null;
+}
+
+async function readExistingManagedMirrorNames(peerDbClient: PeerDbClient): Promise<Set<string>> {
+  const mirrorNameRows = managedMirrorNames.map((mirrorName) => `('${mirrorName}')`).join(", ");
+  const result = await peerDbClient.query(`
+    SELECT flows.name AS existing_mirror_name
+    FROM public.flows
+    JOIN (VALUES ${mirrorNameRows}) AS expected_mirrors(name)
+      ON expected_mirrors.name = flows.name
+  `);
+
+  const existingMirrorNames = new Set<string>();
+  for (const row of readQueryRows(result)) {
+    const mirrorName = readString(row.existing_mirror_name);
+    if (mirrorName !== null) {
+      existingMirrorNames.add(mirrorName);
+    }
+  }
+  return existingMirrorNames;
+}
+
 async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise<void> {
   const publicationTables = analyticsSourceTables
     .map((tableName) => `fitness.${tableName}`)
@@ -678,7 +705,12 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     options.templateValues,
     rawAnalyticsInitialCopyValues,
   );
+  const existingMirrorNames = await readExistingManagedMirrorNames(options.peerDbClient);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
+    const mirrorName = readCreateMirrorName(statement);
+    if (mirrorName !== null && existingMirrorNames.has(mirrorName)) {
+      continue;
+    }
     await options.peerDbClient.query(statement);
   }
 }

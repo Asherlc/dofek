@@ -43,7 +43,8 @@ function isPeerDbMirrorReconciliationQuery(queryText: string): boolean {
   return (
     queryText.includes("metric_stream_analytics_point_exclude_position") ||
     queryText.includes("legacy_metric_stream_cdc_mirror_exists") ||
-    queryText.includes("raw_analytics_mirror_config")
+    queryText.includes("raw_analytics_mirror_config") ||
+    queryText.includes("existing_mirror_name")
   );
 }
 
@@ -365,6 +366,82 @@ describe("PeerDB ClickHouse CDC setup", () => {
     }
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
+  });
+
+  it("does not resubmit mirrors that already exist in PeerDB", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("metric_stream_analytics_point_exclude_position")) {
+            return {
+              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
+            };
+          }
+          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            return { rows: [] };
+          }
+          if (query.includes("raw_analytics_mirror_config")) {
+            return {
+              rows: [
+                {
+                  name: "dofek_fitness_raw_analytics",
+                  raw_analytics_mirror_config:
+                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
+                },
+                {
+                  name: "dofek_provider_inventory_raw_analytics",
+                  raw_analytics_mirror_config:
+                    "food_entry health_event lab_panel lab_result journal_entry",
+                },
+                {
+                  name: "dofek_sensor_priority_raw_analytics",
+                  raw_analytics_mirror_config: "sensor_provider_priority sensor_device_priority",
+                },
+              ],
+            };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return {
+              rows: [
+                { existing_mirror_name: "dofek_metric_stream_analytics" },
+                { existing_mirror_name: "dofek_fitness_raw_analytics" },
+                { existing_mirror_name: "dofek_provider_inventory_raw_analytics" },
+                { existing_mirror_name: "dofek_sensor_priority_raw_analytics" },
+              ],
+            };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient(),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries).toHaveLength(2);
+    expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
+    expect(peerDbQueries[1]).toContain(
+      "CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness",
+    );
+    expect(peerDbQueries.join("\n")).not.toContain("CREATE MIRROR");
   });
 
   it("recreates the metric stream analytics mirror when the existing mirror still includes point", async () => {

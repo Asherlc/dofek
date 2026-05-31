@@ -9186,15 +9186,20 @@ new incremental tables are populated.
   replication slot. Because `analytics.v_activity` and `analytics.v_sleep`
   depend on raw fitness mirror tables, dbt could run successfully while
   producing empty activity and sleep read models.
-- Fix / mitigation: UNRESOLVED. The code-side route/read-model failures found
-  during the same investigation were fixed and deployed, and Oracle
-  `analytics-worker` completed all 10 dbt models with `PASS=10 WARN=0 ERROR=0`.
-  The remaining data outage requires a destructive PeerDB resync of at least
-  `dofek_fitness_raw_analytics` after operator approval.
-- Remaining risk: High for Oracle validation. Until the lost raw fitness mirror
-  is resynced, activity, training, and sleep pages will remain empty on Oracle.
-- Follow-up work: Resync the lost Oracle PeerDB raw fitness flow, then rerun dbt
-  and verify `postgres_fitness.activity`, `postgres_fitness.sleep_session`,
-  `analytics.v_activity`, `analytics.activity_summary`, and `analytics.v_sleep`
-  all contain current rows. Add an alert for replication slots with
-  `wal_status IN ('lost', 'unreserved')`.
+- Fix / mitigation: Dropped and recreated the lost Oracle
+  `dofek_fitness_raw_analytics` mirror with initial copy enabled. Also dropped
+  and recreated `dofek_provider_inventory_raw_analytics` because its slot was
+  lost and it was causing the deploy CDC step to fail. Recreated the missing
+  PeerDB raw staging table for the already-populated metric-stream mirror, then
+  ran a one-off `analytics` dbt build. The build completed all 10 models with
+  `PASS=10 WARN=0 ERROR=0`.
+- Remaining risk: Medium. Oracle activity, sleep, and training read models are
+  populated again, and all three PeerDB slots are active with
+  `wal_status = reserved`. The deploy CDC script still needed a code fix because
+  PeerDB returned `AlreadyExists` for `CREATE MIRROR IF NOT EXISTS` when a flow
+  already existed; the fix skips managed mirror creation when the mirror is
+  present in the PeerDB catalog.
+- Follow-up work: Add an alert for replication slots with
+  `wal_status IN ('lost', 'unreserved')`, and add a deploy check that fails with
+  a clear message if a managed PeerDB mirror is active but its corresponding
+  `_peerdb_raw_*` staging table is missing.
