@@ -17,8 +17,8 @@ target_state AS (
             max(refreshed_at),
             toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
         ) AS last_refreshed_at,
-        count() = 0 AS is_empty
-    FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at WHERE 1 = 0){% endif %}
+        {% if is_incremental() %}(count() = 0){% else %}1{% endif %} AS is_empty
+    FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
 ),
 
 current_activity AS (

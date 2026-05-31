@@ -21,7 +21,7 @@ location_versions AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'metric_stream') }}
     WHERE channel = 'location'
-        AND (point IS NOT NULL OR _peerdb_is_deleted = 1)
+        AND (point != '' OR _peerdb_is_deleted = 1)
 ),
 
 location_rows AS (

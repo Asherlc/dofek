@@ -1,3 +1,7 @@
+locals {
+  dofek_primary_host = var.oracle_server_host != "" ? var.oracle_server_host : hcloud_server.dofek.ipv4_address
+}
+
 # --- dofek.fit ---
 
 resource "cloudflare_zone" "dofek_fit" {
@@ -11,7 +15,7 @@ resource "cloudflare_dns_record" "dofek_fit_root" {
   zone_id = cloudflare_zone.dofek_fit.id
   type    = "A"
   name    = "dofek.fit"
-  content = var.oracle_server_host
+  content = local.dofek_primary_host
   proxied = true
   ttl     = 1
 }
@@ -73,7 +77,7 @@ resource "cloudflare_dns_record" "dofek_asherlc" {
   zone_id = data.cloudflare_zone.asherlc_com.zone_id
   type    = "A"
   name    = "dofek.asherlc.com"
-  content = var.oracle_server_host
+  content = local.dofek_primary_host
   proxied = true
   ttl     = 1
 }
