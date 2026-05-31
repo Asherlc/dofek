@@ -444,6 +444,52 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries.join("\n")).not.toContain("CREATE MIRROR");
   });
 
+  it("continues when PeerDB reports an existing managed mirror workflow", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (isPeerDbMirrorReconciliationQuery(query)) {
+            return { rows: [] };
+          }
+          peerDbQueries.push(query);
+          if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics")) {
+            throw new Error(
+              'unable to submit job: "status: AlreadyExists, message: "workflow already exists for flow: dofek_metric_stream_analytics""',
+            );
+          }
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient(),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics"),
+    );
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+  });
+
   it("recreates the metric stream analytics mirror when the existing mirror still includes point", async () => {
     const peerDbQueries: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");

@@ -150,6 +150,19 @@ function readString(value: unknown): string | null {
   return null;
 }
 
+function readErrorMessage(error: unknown): string | null {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error !== "object" || error === null || !("message" in error)) {
+    return null;
+  }
+
+  const message = error.message;
+  return typeof message === "string" ? message : null;
+}
+
 function readMirrorConfigTokens(mirrorConfig: string): Set<string> {
   return new Set(mirrorConfig.split(/[^A-Za-z0-9_]+/).filter((token) => token.length > 0));
 }
@@ -399,6 +412,15 @@ function readCreateMirrorName(statement: string): string | null {
     /\bCREATE\s+MIRROR\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_]+)/i,
   );
   return createMirrorMatch?.[1] ?? null;
+}
+
+function isExistingMirrorWorkflowError(error: unknown, mirrorName: string): boolean {
+  const message = readErrorMessage(error);
+  return (
+    message !== null &&
+    message.includes("AlreadyExists") &&
+    message.includes(`workflow already exists for flow: ${mirrorName}`)
+  );
 }
 
 async function readExistingManagedMirrorNames(peerDbClient: PeerDbClient): Promise<Set<string>> {
@@ -711,7 +733,14 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     if (mirrorName !== null && existingMirrorNames.has(mirrorName)) {
       continue;
     }
-    await options.peerDbClient.query(statement);
+    try {
+      await options.peerDbClient.query(statement);
+    } catch (error) {
+      if (mirrorName !== null && isExistingMirrorWorkflowError(error, mirrorName)) {
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
