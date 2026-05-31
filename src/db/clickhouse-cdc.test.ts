@@ -55,12 +55,14 @@ function normalizeSql(queryText: string): string {
 function createTestClickHouseClient(
   commands: string[] = [],
   destinationRowCount = 0,
+  queries: Array<{ query: string; format?: string }> = [],
 ): ClickHouseCommandClient {
   return {
     async command(options) {
       commands.push(options.query);
     },
-    async query<TRow extends object>() {
+    async query<TRow extends object>(options: { query: string; format?: string }) {
+      queries.push(options);
       return {
         async json(): Promise<TRow[]> {
           return JSON.parse(`[{"row_count":${destinationRowCount}}]`);
@@ -496,6 +498,91 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
   });
 
+  it("propagates PeerDB create mirror errors that are not existing workflow errors", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: {
+          async query(queryText) {
+            const query = String(queryText);
+            if (isPeerDbMirrorReconciliationQuery(query)) {
+              return { rows: [] };
+            }
+            peerDbQueries.push(query);
+            if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics")) {
+              throw new Error("PeerDB connection reset");
+            }
+            return {};
+          },
+        },
+        sourcePostgresClient: {
+          async query() {},
+        },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("PeerDB connection reset");
+
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics"),
+    );
+    expect(peerDbQueries).not.toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+  });
+
+  it("propagates existing workflow errors for a different mirror name", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: {
+          async query(queryText) {
+            const query = String(queryText);
+            if (isPeerDbMirrorReconciliationQuery(query)) {
+              return { rows: [] };
+            }
+            if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics")) {
+              throw new Error(
+                'unable to submit job: "status: AlreadyExists, message: "workflow already exists for flow: dofek_fitness_raw_analytics""',
+              );
+            }
+            return {};
+          },
+        },
+        sourcePostgresClient: {
+          async query() {},
+        },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("workflow already exists for flow: dofek_fitness_raw_analytics");
+  });
+
   it("recreates the metric stream analytics mirror when the existing mirror still includes point", async () => {
     const peerDbQueries: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
@@ -783,6 +870,161 @@ describe("PeerDB ClickHouse CDC setup", () => {
       command.startsWith("TRUNCATE TABLE"),
     );
     expect(truncateCommands).toEqual([]);
+  });
+
+  it("recreates absent raw analytics mirrors with initial copy when destination tables are empty", async () => {
+    const peerDbQueries: string[] = [];
+    const clickHouseQueries: Array<{ query: string; format?: string }> = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("metric_stream_analytics_point_exclude_position")) {
+            return {
+              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
+            };
+          }
+          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            return { rows: [] };
+          }
+          if (query.includes("raw_analytics_mirror_config")) {
+            return {
+              rows: [
+                {
+                  name: "dofek_provider_inventory_raw_analytics",
+                  raw_analytics_mirror_config:
+                    "food_entry health_event lab_panel lab_result journal_entry",
+                },
+              ],
+            };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient([], 0, clickHouseQueries),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    const rawFitnessMirrorQuery = peerDbQueries.find((query) =>
+      query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+    expect(rawFitnessMirrorQuery).toContain("do_initial_copy = true");
+    expect(clickHouseQueries).toHaveLength(2);
+    expect(clickHouseQueries[0]).toEqual({
+      query: expect.stringContaining("table IN ('activity', 'sleep_session'"),
+      format: "JSONEachRow",
+    });
+  });
+
+  it("fails when ClickHouse raw analytics row count returns no rows", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+    const clickHouseClient: ClickHouseCommandClient = {
+      async command() {},
+      async query<TRow extends object>() {
+        return {
+          async json(): Promise<TRow[]> {
+            return [];
+          },
+        };
+      },
+    };
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: {
+          async query(queryText) {
+            const query = String(queryText);
+            if (query.includes("raw_analytics_mirror_config")) {
+              return { rows: [] };
+            }
+            if (isPeerDbMirrorReconciliationQuery(query)) {
+              return { rows: [] };
+            }
+            return {};
+          },
+        },
+        sourcePostgresClient: {
+          async query() {},
+        },
+        clickHouseClient,
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("Array must contain at least 1 element");
+  });
+
+  it("fails when ClickHouse raw analytics row count is null", async () => {
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+    const clickHouseClient: ClickHouseCommandClient = {
+      async command() {},
+      async query<TRow extends object>() {
+        return {
+          async json(): Promise<TRow[]> {
+            return JSON.parse('[{"row_count":null}]');
+          },
+        };
+      },
+    };
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: {
+          async query(queryText) {
+            const query = String(queryText);
+            if (query.includes("raw_analytics_mirror_config")) {
+              return { rows: [] };
+            }
+            if (isPeerDbMirrorReconciliationQuery(query)) {
+              return { rows: [] };
+            }
+            return {};
+          },
+        },
+        sourcePostgresClient: {
+          async query() {},
+        },
+        clickHouseClient,
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("Unable to read ClickHouse raw analytics destination row count");
   });
 
   it("splits statements without splitting semicolons inside string literals", async () => {

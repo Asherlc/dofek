@@ -665,11 +665,7 @@ async function clickHouseDestinationTablesHaveRows(
     format: "JSONEachRow",
   });
   const rows = clickHouseRowCountRowsSchema.parse(await result.json());
-  const row = rows[0];
-  if (!row) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
-  }
-  const rowCount = readInteger(row.row_count);
+  const rowCount = readInteger(rows[0]?.row_count);
   if (rowCount === null) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
