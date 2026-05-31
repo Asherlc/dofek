@@ -170,6 +170,13 @@ const createCaller = createTestCallerFactory(recoveryRouter);
 // ── sleepConsistency ────────────────────────────────────────────
 
 describe("recoveryRouter.sleepConsistency", () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   it("returns empty array when no data", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1640,6 +1647,13 @@ describe("recoveryRouter.strainTarget", () => {
 // ── Mutation-killing tests for sleepConsistency ────────────────
 
 describe("recoveryRouter.sleepConsistency - mutation killers", () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   it("window_count exactly 7 produces non-null consistencyScore", async () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
