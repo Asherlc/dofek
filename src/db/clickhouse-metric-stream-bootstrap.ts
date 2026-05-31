@@ -8,6 +8,7 @@ import {
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-heart-rate.ts";
 import {
+  peerDbMetadataColumnAlterStatements,
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
   standardViewHeader,
@@ -36,6 +37,7 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
+    ...peerDbMetadataColumnAlterStatements("postgres_fitness.metric_stream"),
     ...buildPostgresFitnessRawTableStatements(),
     ...buildBodyMeasurementSampleProjectionStatements(),
   ];
