@@ -170,6 +170,13 @@ const createCaller = createTestCallerFactory(recoveryRouter);
 // ── sleepConsistency ────────────────────────────────────────────
 
 describe("recoveryRouter.sleepConsistency", () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   it("returns empty array when no data", async () => {
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1635,11 +1642,82 @@ describe("recoveryRouter.strainTarget", () => {
 
     expect(result.currentStrain).toBeGreaterThan(0);
   });
+
+  it("acuteLoad excludes loads at exactly 7 days ago (kills < vs <= mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({
+      loads: [
+        { date: "2026-03-24", daily_load: 100 },
+        { date: "2026-03-21", daily_load: 500 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.acuteLoad).toBeCloseTo(100 / 7, 1);
+  });
+
+  it("chronicLoad excludes loads at exactly 28 days ago (kills < vs <= mutation)", async () => {
+    const today = "2026-04-15";
+    const caller = setup({
+      loads: [
+        { date: "2026-04-14", daily_load: 100 },
+        { date: "2026-03-18", daily_load: 200 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.chronicLoad).toBeCloseTo(100 / 28, 1);
+  });
+
+  it("acuteLoad excludes loads outside acute window (kills condition->true mutation)", async () => {
+    const today = "2026-04-01";
+    const caller = setup({
+      loads: [
+        { date: "2026-04-01", daily_load: 100 },
+        { date: "2026-03-10", daily_load: 999 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.acuteLoad).toBeCloseTo(100 / 7, 1);
+  });
+
+  it("chronicLoad excludes loads outside chronic window (kills condition->true mutation)", async () => {
+    const today = "2026-05-01";
+    const caller = setup({
+      loads: [
+        { date: "2026-05-01", daily_load: 100 },
+        { date: "2026-03-01", daily_load: 999 },
+      ],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.chronicLoad).toBeCloseTo(100 / 28, 1);
+  });
+
+  it("workloadRatio is null when chronicLoad is 0 (kills >0 -> true mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({ loads: [] });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.workloadRatio).toBeNull();
+  });
+
+  it("dailyLoad rounds correctly (kills *10 -> /10 and /10 -> *10 mutation)", async () => {
+    const today = "2026-03-28";
+    const caller = setup({
+      loads: [{ date: today, daily_load: 123.456 }],
+    });
+    const result = await caller.strainTarget({ endDate: today });
+    expect(result.dailyLoad).toBe(123.5);
+  });
 });
 
 // ── Mutation-killing tests for sleepConsistency ────────────────
 
 describe("recoveryRouter.sleepConsistency - mutation killers", () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-01"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   it("window_count exactly 7 produces non-null consistencyScore", async () => {
     const rows = Array.from({ length: 7 }, (_, index) =>
       sleepScheduleRow(`2026-03-${String(index + 1).padStart(2, "0")}`, 22, 7),
@@ -1727,6 +1805,19 @@ describe("recoveryRouter.sleepConsistency - mutation killers", () => {
     });
     const result = await caller.sleepConsistency({});
     // 0 is a valid value, not null
+    expect(result[0]?.rollingBedtimeStddev).toBe(0);
+  });
+
+  it("includes row exactly on cutoffDate boundary (kills > vs >= mutation)", async () => {
+    const rows = [sleepScheduleRow("2026-01-31", 22, 7)];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result).toHaveLength(1);
     expect(result[0]?.rollingBedtimeStddev).toBe(0);
   });
 });

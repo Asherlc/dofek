@@ -43,6 +43,7 @@
   ],
   "ignorePatterns": [
     "dist/**",
+    ".antigravitycli/**",
     ".codex/**",
     ".claude/**",
     ".context/**",

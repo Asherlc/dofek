@@ -30,7 +30,7 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   device_id Nullable(String),
   source_type Nullable(String),
   scalar Nullable(Float32),
-  point Nullable(Point),
+  point String,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
@@ -85,30 +85,42 @@ linked_best_source AS (
       ON metric_stream.activity_id = activity_members.member_activity_id
     WHERE metric_stream._peerdb_is_deleted = 0
       AND metric_stream.channel = 'location'
-      AND metric_stream.point IS NOT NULL
+      AND metric_stream.point != ''
     GROUP BY activity_members.activity_id, metric_stream.provider_id
   ) AS best_source
   WHERE best_source.row_number = 1
+),
+parsed_points AS (
+  SELECT
+    metric_stream.id,
+    metric_stream.activity_id,
+    metric_stream.user_id,
+    metric_stream.recorded_at,
+    metric_stream.provider_id,
+    metric_stream.channel,
+    metric_stream._peerdb_is_deleted,
+    (
+      JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')[1],
+      JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')[2]
+    )::Point AS point
+  FROM (SELECT * FROM postgres_fitness.metric_stream FINAL) AS metric_stream
+  WHERE metric_stream._peerdb_is_deleted = 0
+    AND metric_stream.channel = 'location'
+    AND metric_stream.point != ''
 )
 SELECT
   activity_members.activity_id AS activity_id,
   activity_members.user_id AS user_id,
-  metric_stream.recorded_at AS recorded_at,
-  max(tupleElement(metric_stream.point, 2)) AS lat,
-  max(tupleElement(metric_stream.point, 1)) AS lng
-FROM (
-  SELECT *
-  FROM postgres_fitness.metric_stream FINAL
-) AS metric_stream
+  parsed_points.recorded_at AS recorded_at,
+  max(parsed_points.point.2) AS lat,
+  max(parsed_points.point.1) AS lng
+FROM parsed_points
 INNER JOIN activity_members
-  ON metric_stream.activity_id = activity_members.member_activity_id
+  ON parsed_points.activity_id = activity_members.member_activity_id
 INNER JOIN linked_best_source
   ON linked_best_source.activity_id = activity_members.activity_id
- AND linked_best_source.provider_id = metric_stream.provider_id
-WHERE metric_stream._peerdb_is_deleted = 0
-  AND metric_stream.channel = 'location'
-  AND metric_stream.point IS NOT NULL
-GROUP BY activity_members.activity_id, activity_members.user_id, metric_stream.recorded_at`,
+ AND linked_best_source.provider_id = parsed_points.provider_id
+GROUP BY activity_members.activity_id, activity_members.user_id, parsed_points.recorded_at`,
   ];
 }
 

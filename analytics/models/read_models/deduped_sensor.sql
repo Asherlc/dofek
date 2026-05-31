@@ -54,7 +54,7 @@ SELECT
     ) AS provider_priority,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(countIf(samples._peerdb_is_deleted = 0) = 0, 1, 0) AS is_deleted,
-    max(samples._peerdb_synced_at) AS refreshed_at
+    now64(9) AS refreshed_at
 FROM batch_keys
 LEFT JOIN samples
     ON samples.user_id = batch_keys.user_id

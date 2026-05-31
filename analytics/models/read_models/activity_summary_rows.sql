@@ -11,17 +11,15 @@
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 
 WITH
-{% if is_incremental() %}
 target_state AS (
     SELECT
         coalesce(
             max(refreshed_at),
             toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
         ) AS last_refreshed_at,
-        count() = 0 AS is_empty
-    FROM {{ this }}
+        {% if is_incremental() %}(count() = 0){% else %}1{% endif %} AS is_empty
+    FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
 ),
-{% endif %}
 
 current_activity AS (
     SELECT
@@ -37,32 +35,24 @@ current_activity AS (
 
 initial_activity_dirty_keys AS (
     SELECT
-        activity_id,
-        user_id
+        current_activity.activity_id,
+        current_activity.user_id
     FROM current_activity
-    WHERE
-        {% if is_incremental() %}
-            (SELECT is_empty FROM target_state)
-            AND started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
-        {% else %}
-            started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
-        {% endif %}
+    CROSS JOIN target_state
+    WHERE target_state.is_empty
+        AND current_activity.started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
 ),
 
 changed_raw_activity AS (
     SELECT
-        id AS activity_id,
-        user_id,
-        started_at,
-        coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND _peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+        activity.id AS activity_id,
+        activity.user_id,
+        activity.started_at,
+        coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
+    FROM {{ source('postgres_fitness', 'activity') }} AS activity
+    CROSS JOIN target_state
+    WHERE NOT target_state.is_empty
+        AND activity._peerdb_synced_at > target_state.last_refreshed_at
 ),
 
 changed_activity_dirty_keys AS (
@@ -88,30 +78,22 @@ activity_source_dirty_keys AS (
 
 sensor_summary_dirty_keys AS (
     SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_sensor_summary_rows') }}
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+        sensor.activity_id,
+        sensor.user_id
+    FROM {{ ref('activity_sensor_summary_rows') }} AS sensor
+    CROSS JOIN target_state
+    WHERE NOT target_state.is_empty
+        AND sensor.refreshed_at > target_state.last_refreshed_at
 ),
 
 location_summary_dirty_keys AS (
     SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_location_summary_rows') }}
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+        loc.activity_id,
+        loc.user_id
+    FROM {{ ref('activity_location_summary_rows') }} AS loc
+    CROSS JOIN target_state
+    WHERE NOT target_state.is_empty
+        AND loc.refreshed_at > target_state.last_refreshed_at
 ),
 
 dirty_keys AS (

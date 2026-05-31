@@ -204,7 +204,7 @@ export const recoveryRouter = router({
             consistencyScore,
           };
         })
-        .filter((row) => row.date > cutoffDate);
+        .filter((row) => row.date >= cutoffDate);
     }),
 
   /**

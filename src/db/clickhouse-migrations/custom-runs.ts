@@ -13,7 +13,11 @@ import {
   buildIncrementalDedupedSensorResetStatements,
 } from "../clickhouse-deduped-sensor.ts";
 import { buildActivitySummaryReadModelStatements } from "../clickhouse-metric-stream-bootstrap.ts";
-import { clickHouseStringLiteral } from "./sql.ts";
+import {
+  clickHouseDateTimeLiteral,
+  clickHouseStringLiteral,
+  parsePostgresTimestamp,
+} from "./sql.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 
 interface MetricStreamBackfillChunkRow {
@@ -131,9 +135,7 @@ export async function replaceNativeMetricStreamAndBackfill(
     await runClickHouseMigrationStatement(client, "DROP DATABASE IF EXISTS postgres_fitness SYNC");
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
-    shouldRunBeforeMetricStreamBackfill,
-  )) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -184,9 +186,7 @@ export async function rebuildMetricStreamLocationPoint(
     );
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
-    shouldRunBeforeMetricStreamBackfill,
-  )) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -217,9 +217,7 @@ export async function replaceLegacyMetricStreamIfNeeded(
     await runClickHouseMigrationStatement(client, statement);
   }
 
-  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString).filter(
-    shouldRunBeforeMetricStreamBackfill,
-  )) {
+  for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
     await runClickHouseMigrationStatement(client, statement);
   }
 
@@ -245,11 +243,6 @@ WHERE database = 'postgres_fitness'
   const rows = await result.json();
   const parsedRows = z.array(migrationCountRowSchema).parse(rows);
   return Number(parsedRows[0]?.migration_count ?? 0) === columns.length;
-}
-
-function shouldRunBeforeMetricStreamBackfill(statement: string): boolean {
-  void statement;
-  return true;
 }
 
 async function shouldReplacePostgresFitnessDatabase(
@@ -469,16 +462,6 @@ function buildPostgresMetricStreamTableFunction(postgresConnectionString: string
   )}, 'fitness')`;
 }
 
-function parsePostgresTimestamp(value: string, label: string): Date {
-  const hasTimeZone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(value);
-  const normalizedValue = hasTimeZone ? value : `${value.replace(" ", "T")}Z`;
-  const parsed = new Date(normalizedValue);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new Error(`Invalid ${label}: ${value}`);
-  }
-  return parsed;
-}
-
 function buildMetricStreamBackfillStatement(
   postgresMetricStreamSource: string,
   chunkStart: Date,
@@ -512,17 +495,25 @@ SELECT
   if(
     isNull(metric_stream.point),
     NULL,
-    readWKBPoint(
-      unhex(
-        if(
-          startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
-          concat(
-            substring(assumeNotNull(metric_stream.point), 1, 2),
-            '01000000',
-            substring(assumeNotNull(metric_stream.point), 19)
-          ),
-          assumeNotNull(metric_stream.point)
-        )
+    (
+      SELECT concat(
+        '{"type":"Point","coordinates":[',
+        toString(p.1), ',', toString(p.2), ']}'
+      )
+      FROM (
+        SELECT readWKBPoint(
+          unhex(
+            if(
+              startsWith(lower(assumeNotNull(metric_stream.point)), '0101000020'),
+              concat(
+                substring(assumeNotNull(metric_stream.point), 1, 2),
+                '01000000',
+                substring(assumeNotNull(metric_stream.point), 19)
+              ),
+              assumeNotNull(metric_stream.point)
+            )
+          )
+        ) AS p
       )
     )
   ) AS point,
@@ -538,9 +529,4 @@ LEFT JOIN (
 WHERE metric_stream.recorded_at >= ${lowerBound}
   AND metric_stream.recorded_at < ${upperBound}
   AND existing_metric_stream.id IS NULL`;
-}
-
-function clickHouseDateTimeLiteral(value: Date): string {
-  const clickHouseTimestamp = value.toISOString().replace("T", " ").replace("Z", "");
-  return `toDateTime64(${clickHouseStringLiteral(clickHouseTimestamp)}, 6, 'UTC')`;
 }

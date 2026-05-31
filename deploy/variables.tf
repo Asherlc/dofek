@@ -56,7 +56,7 @@ variable "cloudflare_account_id" {
 }
 
 variable "oracle_server_host" {
-  description = "Reserved public IP of the Oracle Cloud validation host (dofek-oracle.asherlc.com). Provisioned in deploy/oracle-free; mirrored here as a GitHub Actions variable (ORACLE_SERVER_HOST). Empty disables the dofek-oracle DNS record so Hetzner-only and first-bootstrap applies still work."
+  description = "Reserved public IP of the Oracle Cloud validation host. Provisioned in deploy/oracle-free; mirrored here as a GitHub Actions variable (ORACLE_SERVER_HOST). Empty falls back to the Hetzner server IP so first-bootstrap applies still work."
   type        = string
   default     = ""
 
