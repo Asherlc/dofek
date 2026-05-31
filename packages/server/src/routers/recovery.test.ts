@@ -1743,6 +1743,19 @@ describe("recoveryRouter.sleepConsistency - mutation killers", () => {
     // 0 is a valid value, not null
     expect(result[0]?.rollingBedtimeStddev).toBe(0);
   });
+
+  it("includes row exactly on cutoffDate boundary (kills > vs >= mutation)", async () => {
+    const rows = [sleepScheduleRow("2026-01-31", 22, 7)];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(rows),
+    });
+    const result = await caller.sleepConsistency({});
+    expect(result).toHaveLength(1);
+    expect(result[0]?.rollingBedtimeStddev).toBe(0);
+  });
 });
 
 // ── Mutation-killing tests for hrvVariability ──────────────────
