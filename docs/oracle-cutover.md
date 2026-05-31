@@ -34,43 +34,67 @@ Do not start until all of these hold:
 
 ## Overview of the switch
 
-Today, production domains (`dofek.asherlc.com`, `dofek.fit`, `dofek.live`) point
-at Hetzner via `deploy/dns.tf`, and the `web` Traefik router claims those hosts.
-Oracle runs on `dofek-oracle.asherlc.com` as a parallel validation deploy.
+Today, Oracle is already wired into the main IaC path:
+
+- `deploy/oracle-free/` provisions the OCI host and reserved public IP.
+- The reserved IP is stored in the `ORACLE_SERVER_HOST` GitHub Actions variable.
+- `.github/workflows/deploy.yml` deploys the same image to both `web-stack`
+  (Hetzner) and `web-stack-oracle` (OCI).
+- The OCI job passes `server_host: ${{ vars.ORACLE_SERVER_HOST }}`,
+  `ssh_user: ubuntu`, `stack_override: deploy/stack.oracle.yml`, and the
+  production host rule for `dofek.asherlc.com`, `dofek.fit`, and `dofek.live`.
+- `deploy/variables.tf` exposes `var.oracle_server_host`, and `deploy/dns.tf`
+  defines `local.dofek_primary_host = var.oracle_server_host != "" ?
+  var.oracle_server_host : hcloud_server.dofek.ipv4_address`.
+
+The current DNS IaC is partially cut over:
+
+- `dofek.asherlc.com` points at `local.dofek_primary_host`.
+- `*.dofek.asherlc.com` is a DNS-only CNAME to `dofek.asherlc.com`, so
+  `dofek-oracle.asherlc.com` resolves through that wildcard rather than through
+  a dedicated Terraform resource.
+- `dofek.fit` points at `local.dofek_primary_host`; `www.dofek.fit` is a CNAME
+  to `dofek.fit`.
+- `dofek.live` still points directly at `hcloud_server.dofek.ipv4_address`;
+  `www.dofek.live` is a CNAME to `dofek.live`.
 
 The cutover repoints the production domains at Oracle and makes the Oracle
 deploy serve them, then stops deploying to Hetzner.
 
-## Step 1 — Make Oracle the deploy that serves the production domains
+## Step 1 — Confirm Oracle serves the production domains
 
-In `.github/workflows/deploy.yml`, the `web-stack-oracle` job currently passes
-the validation domain:
-
-```yaml
-public_url: https://dofek-oracle.asherlc.com
-web_host_rule: "Host(`dofek-oracle.asherlc.com`)"
-```
-
-Change it to claim the production hosts (mirror the defaults the Hetzner
-`web-stack` job relies on in `stack.yml`):
+In `.github/workflows/deploy.yml`, the `web-stack-oracle` job claims the
+production hosts (mirroring the defaults the Hetzner `web-stack` job relies on
+in `stack.yml`):
 
 ```yaml
 public_url: https://dofek.asherlc.com
 web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
 ```
 
-Do **not** deploy this yet — it must land together with the DNS flip (Step 3),
-or Cloudflare will route the production hostnames to a host whose Traefik does
-not yet answer for them.
+Do not revert this to the validation-only host rule. With the current DNS IaC,
+Cloudflare can route the production hostnames to Oracle whenever
+`ORACLE_SERVER_HOST` is set, so Oracle Traefik must answer for those hostnames.
 
 ## Step 2 — Repoint DNS in Terraform
 
-In `deploy/dns.tf`, the production A records currently use
-`hcloud_server.dofek.ipv4_address`. Point them at the Oracle reserved IP
-(`var.oracle_server_host`) instead — `dofek.fit`, `www.dofek.fit`,
-`dofek.live`, `www.dofek.live`, `dofek.asherlc.com`, and the `*.dofek.asherlc.com`
-wildcard. Once the production domains live on Oracle, the separate
-`dofek-oracle.asherlc.com` record can be removed.
+In `deploy/dns.tf`, use `local.dofek_primary_host` for every production root
+record that should follow `ORACLE_SERVER_HOST`:
+
+- `cloudflare_dns_record.dofek_fit_root` already uses `local.dofek_primary_host`.
+- `cloudflare_dns_record.dofek_asherlc` already uses `local.dofek_primary_host`.
+- Change `cloudflare_dns_record.dofek_live_root` from
+  `hcloud_server.dofek.ipv4_address` to `local.dofek_primary_host`.
+
+Keep the CNAME records as CNAMEs:
+
+- `www.dofek.fit` should continue to point at `dofek.fit`.
+- `www.dofek.live` should continue to point at `dofek.live`.
+- `*.dofek.asherlc.com` should continue to point at `dofek.asherlc.com` unless
+  the review-app routing model changes separately.
+
+Do not add a duplicate `dofek-oracle.asherlc.com` Terraform record in this
+cutover. Under the current IaC, that hostname is covered by the wildcard CNAME.
 
 Keep TLS working: the production records are proxied (orange-cloud) exactly as
 today, so no Traefik/cert change is needed — the Oracle Traefik already issues
@@ -88,6 +112,7 @@ validation).
    ```bash
    curl -sS -o /dev/null -w "%{http_code}\n" https://dofek.asherlc.com/healthz
    curl -sS -o /dev/null -w "%{http_code}\n" https://dofek.fit/
+   curl -sS -o /dev/null -w "%{http_code}\n" https://dofek.live/
    ```
 
 4. Confirm the dashboard renders and a manual sync lands new data on Oracle.
@@ -99,18 +124,31 @@ Once Oracle is serving production:
 1. Remove the Hetzner `web-stack` job from `.github/workflows/deploy.yml` (or gate it off),
    leaving only the Oracle deploy. Rename `web-stack-oracle` → `web-stack` and
    drop the now-redundant OCI-specific naming once it is the only web deploy.
-2. Remove the `dofek-oracle.asherlc.com` record and `var.oracle_server_host`
-   indirection if you fold the Oracle IP into the main records directly, or keep
-   `oracle_server_host` as the canonical production IP variable.
+2. Decide whether `var.oracle_server_host` remains the canonical production IP
+   input. If it does, keep `local.dofek_primary_host`; if not, fold the Oracle
+   IP directly into the production DNS records and remove the indirection.
+3. Keep the wildcard `*.dofek.asherlc.com` only if review apps still need the
+   shared front door. Do not remove it as part of the Oracle cleanup unless the
+   review-app routing model has changed.
 
 ## Rollback
 
 Until Hetzner is decommissioned, rollback is a DNS revert:
 
-1. Revert the `deploy/dns.tf` change (production records back to
-   `hcloud_server.dofek.ipv4_address`) and revert the Oracle job's
-   `public_url` / `web_host_rule`.
-2. Re-run the deploy. Hetzner still has its data and stack, so it resumes
+1. Revert `cloudflare_dns_record.dofek_live_root` back to
+   `hcloud_server.dofek.ipv4_address`.
+2. If the rollback also needs `dofek.fit` and `dofek.asherlc.com` to leave
+   Oracle, either unset `ORACLE_SERVER_HOST` for the Terraform apply or change
+   those records back to `hcloud_server.dofek.ipv4_address`.
+3. Revert the Oracle job's production `public_url` / `web_host_rule` back to
+   the validation domain:
+
+   ```yaml
+   public_url: https://dofek-oracle.asherlc.com
+   web_host_rule: "Host(`dofek-oracle.asherlc.com`)"
+   ```
+
+4. Re-run the deploy. Hetzner still has its data and stack, so it resumes
    serving within DNS propagation time.
 
 Because Oracle has been taking live writes since the flip, a rollback to

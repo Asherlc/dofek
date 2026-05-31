@@ -7,6 +7,83 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-05-31: Training, Activities, and Sleep Analytics Empty
+
+### Symptoms
+
+The production `/training` page appeared mostly unpopulated for training-load
+and heart-rate-zone analytics even though recent activity data existed. The
+Activities page showed `No activities in the last 4 weeks`, and the Sleep page
+also showed no current data.
+
+### User Impact
+
+ClickHouse-backed web pages could show empty or stale states instead of recent
+training, activity, and sleep data.
+
+### Evidence
+
+Production `fitness.v_activity` had 826 activities with latest activity data on
+`2026-05-31`, and `fitness.sleep_session` had 122 sleep sessions with latest
+sleep data on `2026-05-31`. ClickHouse had non-empty `analytics.activity_summary`
+and `analytics.v_sleep`, but `analytics.activity_location_sample` had zero rows.
+The `analytics-worker` logs showed repeated dbt failures in
+`activity_location_sample`: ClickHouse error code 43,
+`Nested type Array(Float64) cannot be inside Nullable type` on Hetzner and
+`First argument for function tupleElement must be Tuple... Actual String` on
+Oracle. Running the live repository methods inside the production web container
+returned data for the same user and date windows, which narrowed the issue to
+stale/partial analytics read-model refresh rather than missing raw data or
+billing access filtering. Earlier in the same investigation, a diagnostic
+reproduction of a request-path heart-rate sample/activity join timed out after
+20 seconds.
+
+### Root Cause
+
+The ClickHouse mirrors disagreed on the reflected type for
+`postgres_fitness.metric_stream.point`: Hetzner exposed it as `Nullable(Point)`,
+while Oracle exposed it as a GeoJSON `String`. A model that directly used
+`JSONExtract` failed on Hetzner, and a model that directly used `point.1` /
+`point.2` failed on Oracle. Because dbt skipped downstream location summary and
+activity summary models after that failure, serving read models stayed stale or
+partial. Separately, some training repositories still recomputed per-activity
+heart-rate and power sample counts by joining `analytics.deduped_sensor` to
+`analytics.activity_summary` at request time, which could make the training page
+time out or return empty data even when the summary model already had sample
+counts.
+
+### Fix or Mitigation
+
+`activity_location_sample` now stores `argMax(point, _peerdb_version)` plus a
+`toString(...)` representation, then parses either GeoJSON strings or Point
+tuple text from that string representation. It uses `point IS NOT NULL` for
+location-row filtering instead of comparing the point to an empty string.
+`PmcRepository` and
+`TrainingRepository.getActivityStats()` now read `hr_sample_count` and
+`power_sample_count` directly from `analytics.activity_summary`.
+`TrainingRepository.getHrZones()` now moves the sample timestamp bounds into the
+`activity_meta` join and treats zero-valued profile heart-rate fields as absent.
+
+### Validation
+
+Focused repository tests now assert the safer SQL shapes and pass:
+`pnpm vitest run packages/server/src/repositories/pmc-repository.test.ts packages/server/src/repositories/training-repository.test.ts`.
+The analytics read-model regression test now asserts that
+`activity_location_sample` parses both GeoJSON string and Point tuple text
+through a string representation; `pnpm vitest run
+analytics/models/read_models/read_model_microbatch.sql.test.ts` passes.
+Server type checking passes with `cd packages/server && pnpm exec tsc --noEmit`.
+Biome passes on the changed files. Full `pnpm lint` reached the analytics SQL
+lint phase but could not complete because local ClickHouse was not running on
+`127.0.0.1:8123`.
+
+### Remaining Risk
+
+The fix still needs to be redeployed and verified on Oracle after the portable
+point parsing change. Heart-rate-zone analytics still scans deduped sensor
+samples for zone distribution; if it remains slow, move weekly zone rollups into
+a dbt-owned incremental read model.
+
 ## 2026-05-26: ClickHouse OOM Restarts From Dashboard Activity Analytics
 
 ### Symptoms
@@ -9084,17 +9161,67 @@ new incremental tables are populated.
   free-space alert on /mnt/dofek-data well below 100%; (3) consider the
   `db-incident-response` skill for the Postgres footprint investigation.
 
+## 2026-05-31 — Oracle analytics pages empty from lost raw fitness CDC slot
+
+- Symptoms: On the Oracle host (`146.235.223.161`), `/training`, `/activities`,
+  and `/sleep` returned HTTP 200 but the UI was empty. The training page showed
+  no training load data, activities showed no activities in the last four weeks,
+  and sleep had no data.
+- User impact: Oracle validation could not show activity, training, or sleep
+  history even after the web and analytics-worker services rolled out.
+- Evidence: Oracle Postgres source tables had data:
+  `fitness.activity = 1077` rows with latest `2026-05-31 00:17:00.51+00`,
+  `fitness.sleep_session = 123` rows with latest
+  `2026-05-31 07:27:45.11+00`, and `fitness.metric_stream = 372346899` rows.
+  Oracle ClickHouse mirrors had `postgres_fitness.activity = 0` rows and
+  `postgres_fitness.sleep_session = 0` rows, while
+  `postgres_fitness.metric_stream = 4597109` rows. Derived read models
+  `analytics.v_activity`, `analytics.activity_summary`, and `analytics.v_sleep`
+  were all empty. `pg_replication_slots` showed
+  `peerflow_slot_dofek_fitness_raw_analytics` and
+  `peerflow_slot_dofek_provider_inventory_raw_analytics` with
+  `wal_status = lost`. PeerDB logs reported `SQLSTATE 55000`:
+  `can no longer access replication slot`.
+- Root cause: The Oracle raw fitness PeerDB mirror lost its Postgres logical
+  replication slot. Because `analytics.v_activity` and `analytics.v_sleep`
+  depend on raw fitness mirror tables, dbt could run successfully while
+  producing empty activity and sleep read models.
+- Fix / mitigation: Dropped and recreated the lost Oracle
+  `dofek_fitness_raw_analytics` mirror with initial copy enabled. Also dropped
+  and recreated `dofek_provider_inventory_raw_analytics` because its slot was
+  lost and it was causing the deploy CDC step to fail. Dropped and recreated
+  `dofek_sensor_priority_raw_analytics` after PeerDB later reported its slot was
+  missing. Recreated the missing PeerDB raw staging table for the
+  already-populated metric-stream mirror, added the legacy `vector` and
+  `metadata` payload columns expected by the orphaned metric-stream workflow,
+  then ran a one-off `analytics` dbt build. The build completed all 10 models
+  with `PASS=10 WARN=0 ERROR=0`.
+- Remaining risk: Medium. Oracle activity, sleep, and training read models are
+  populated again, and all four PeerDB slots are active with
+  `wal_status = reserved`. The deploy CDC script still needed a code fix because
+  PeerDB returned `AlreadyExists` for `CREATE MIRROR IF NOT EXISTS` when a flow
+  already existed; the fix skips managed mirror creation when the mirror is
+  present in the PeerDB catalog and treats the specific existing-workflow error
+  as idempotent.
+- Follow-up work: Add an alert for replication slots with
+  `wal_status IN ('lost', 'unreserved')`, and add a deploy check that fails with
+  a clear message if a managed PeerDB mirror is active but its corresponding
+  `_peerdb_raw_*` staging table is missing.
+
 ## 2026-05-31 — Production hosts returned Traefik 404 during Oracle cutover deploy
 
 - Symptoms: `https://dofek.asherlc.com/`, `https://dofek.fit/healthz`, and
   `https://dofek.live/healthz` returned plain-text `404 page not found` from
-  Traefik/Cloudflare instead of the Express app.
+  Traefik/Cloudflare instead of the Express app. Later in the same recovery,
+  `https://dofek.asherlc.com/healthz`, `/training`, `/activities`, and `/sleep`
+  returned the same Traefik 404 while both Hetzner and Oracle app containers
+  were otherwise healthy behind their own Traefik instances.
 - User impact: Public web/API traffic for the primary production hostnames was
   unavailable while the app service had no routed backend.
 - Evidence: Public curls returned HTTP 404 with body `404 page not found`.
   Direct curls to the Oracle IP with production Host headers also returned
   Traefik 404. On the Oracle host, `dofek_web` was `0/0` and its Traefik router
-  initially claimed only `Host(`dofek-oracle.asherlc.com`)`. Rerunning the
+  initially claimed only ``Host(`dofek-oracle.asherlc.com`)``. Rerunning the
   deploy with production host-rule defaults failed in the `Run migrations` step
   before the final `docker stack deploy`, leaving app services scaled down.
   The first fatal deploy log line was
@@ -9107,12 +9234,24 @@ new incremental tables are populated.
   the native metric stream backfill and failed with
   `Error while reading WKB format: Incorrect first flag` because
   `readWKBPoint(unhex(''))` was attempted while evaluating rows whose source
-  point was absent.
+  point was absent. After those schema/read-model failures were repaired, direct
+  curl to Hetzner with `Host: dofek.asherlc.com` returned
+  `200 {"status":"ok"}`, direct curl to Oracle with
+  `Host: dofek-oracle.asherlc.com` returned `200 {"status":"ok"}`, and direct
+  curl to Oracle with `Host: dofek.asherlc.com` still returned Traefik 404.
+  Oracle `dofek_web` service labels showed
+  ``traefik.http.routers.web.rule=Host(`dofek-oracle.asherlc.com`)`` while
+  Terraform DNS routes `dofek.asherlc.com` to `local.dofek_primary_host`, which
+  resolves to the Oracle reserved IP when `ORACLE_SERVER_HOST` is set.
 - Root cause: The Oracle validation stack was left in a pre-migration scaled
-  state after a failed deploy. Its ClickHouse `postgres_fitness.metric_stream`
-  table was missing the PeerDB `_peerdb_synced_at` metadata column required by
-  bootstrap migration `0002`, and the manually rerun deploy used an older image
-  whose view SQL did not match the current `point String` schema.
+  state after a failed deploy, and the cutover was only partially complete:
+  DNS could already route production hostnames to Oracle, but the Oracle deploy
+  job still installed a validation-only Traefik Host rule. The failed deploys
+  were then prolonged by schema/read-model drift on Oracle: its ClickHouse
+  `postgres_fitness.metric_stream` table was missing the PeerDB
+  `_peerdb_synced_at` metadata column required by bootstrap migration `0002`,
+  and one manually rerun deploy used an older image whose view SQL did not match
+  the current `point String` schema.
 - Fix / mitigation: Restored routing by scaling `dofek_web=2`, verified the
   production host rule was present, and confirmed all three public health URLs
   returned `200 {"status":"ok"}`. Added the missing `_peerdb_synced_at` column
@@ -9122,21 +9261,24 @@ new incremental tables are populated.
   selects them. Updated the native metric stream backfill to preserve absent
   source points as `NULL` and feed `readWKBPoint` a valid dummy WKB for those
   rows so ClickHouse's columnar branch evaluation cannot parse an empty value.
-- Remaining risk: The web service is healthy, but the deploy run that used the
-  old image was cancelled. A fresh branch deploy with the migration repairs
-  succeeded through migrations and stack deployment, and the Oracle app services
-  are healthy on the repaired image. The workflow still fails at `Configure
-  ClickHouse CDC` because PeerDB's catalog has no `dofek_metric_stream_analytics`
-  flow row while Temporal still has a running
-  `dofek_metric_stream_analytics-peerflow` workflow. `DROP MIRROR
-  dofek_metric_stream_analytics` fails with `flow ... not found`, so CDC cleanup
-  requires explicit operator approval before terminating the orphan Temporal
-  workflow.
-- Follow-up work: Avoid pinning stale image tags during cutover recovery; deploy
-  the current main image or a freshly built branch image when schema/read-model
-  code has changed. Add a preflight check to the Oracle cutover runbook for
-  `dofek_web` replicas, production Host rules, required ClickHouse metadata
-  columns, and orphan PeerDB Temporal workflows before switching traffic.
+  Updated `.github/workflows/deploy.yml` so the `web-stack-oracle` job deploys
+  `public_url: https://dofek.asherlc.com` and the production Host rule for
+  `dofek.asherlc.com`, `dofek.fit`, `www.dofek.fit`, `dofek.live`, and
+  `www.dofek.live`. Updated the Oracle cutover runbook to treat that host rule
+  as required while `ORACLE_SERVER_HOST` is populated. A follow-up deploy using
+  the fixed workflow completed successfully on both Oracle and Hetzner, including
+  migrations and ClickHouse CDC configuration.
+- Remaining risk: Low. The public app routes returned 200, Oracle app services
+  were healthy on `sha-c92404e`, and the deploy workflow completed successfully.
+  Hetzner still answers the production Host rule directly, so rollback remains
+  viable while cutover is in progress.
+- Follow-up work: Add a preflight check to the Oracle cutover runbook and deploy
+  workflow that verifies `dofek_web` replicas, production Host rules, required
+  ClickHouse metadata columns, orphan PeerDB Temporal workflows, and direct
+  origin curls for each production Host header before switching or deploying
+  traffic. Avoid pinning stale image tags during cutover recovery; deploy the
+  current main image or a freshly built branch image when schema/read-model code
+  has changed.
 
 ## 2026-05-31 — Activities page showed duplicate activities
 

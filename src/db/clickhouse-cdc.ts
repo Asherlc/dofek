@@ -33,13 +33,11 @@ interface ClickHouseRowCount {
   row_count: number | string | null;
 }
 
-const clickHouseRowCountRowsSchema = z
-  .array(
-    z.object({
-      row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
-    }),
-  )
-  .min(1);
+const clickHouseRowCountRowsSchema = z.array(
+  z.object({
+    row_count: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/), z.null()]),
+  }),
+);
 
 interface SetupClickHouseCdcOptions {
   peerDbClient: PeerDbClient;
@@ -79,6 +77,14 @@ const rawAnalyticsMirrorNames = [
   "dofek_provider_inventory_raw_analytics",
   "dofek_sensor_priority_raw_analytics",
 ] as const;
+const managedMirrorNames = ["dofek_metric_stream_analytics", ...rawAnalyticsMirrorNames] as const;
+const existingManagedMirrorQueryResultSchema = z.object({
+  rows: z.array(
+    z.object({
+      existing_mirror_name: z.enum(managedMirrorNames),
+    }),
+  ),
+});
 const rawAnalyticsMirrorTableMappings: Record<
   (typeof rawAnalyticsMirrorNames)[number],
   readonly string[]
@@ -112,6 +118,7 @@ const peerDbMetadataColumns = [
   "_peerdb_is_deleted Int8 DEFAULT 0",
   "_peerdb_version Int64 DEFAULT 0",
 ] as const;
+const metricStreamLegacyPayloadColumns = ["vector Array(Float32)", "metadata String"] as const;
 const legacyMetricStreamCdcMirrorName = "dofek_metric_stream_cdc";
 
 function readQueryRows(queryResult: unknown): Array<Record<string, unknown>> {
@@ -147,6 +154,19 @@ function readString(value: unknown): string | null {
   }
 
   return null;
+}
+
+function readErrorMessage(error: unknown): string | null {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error !== "object" || error === null || !("message" in error)) {
+    return null;
+  }
+
+  const message = error.message;
+  return typeof message === "string" ? message : null;
 }
 
 function readMirrorConfigTokens(mirrorConfig: string): Set<string> {
@@ -393,6 +413,38 @@ function splitPeerDbSqlStatements(sql: string): string[] {
   return statements;
 }
 
+function readCreateMirrorName(statement: string): string | null {
+  const createMirrorMatch = statement.match(
+    /\bCREATE\s+MIRROR\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z0-9_]+)/i,
+  );
+  return createMirrorMatch?.[1] ?? null;
+}
+
+function isExistingMirrorWorkflowError(error: unknown, mirrorName: string): boolean {
+  const message = readErrorMessage(error);
+  return (
+    message?.includes("AlreadyExists") === true &&
+    message.includes(`workflow already exists for flow: ${mirrorName}`)
+  );
+}
+
+async function readExistingManagedMirrorNames(peerDbClient: PeerDbClient): Promise<Set<string>> {
+  const mirrorNameRows = managedMirrorNames.map((mirrorName) => `('${mirrorName}')`).join(", ");
+  const result = await peerDbClient.query(`
+    SELECT flows.name AS existing_mirror_name
+    FROM public.flows
+    JOIN (VALUES ${mirrorNameRows}) AS expected_mirrors(name)
+      ON expected_mirrors.name = flows.name
+  `);
+
+  const existingMirrorRows = existingManagedMirrorQueryResultSchema.safeParse(result);
+  if (!existingMirrorRows.success) {
+    throw new Error("Unable to read existing PeerDB managed mirrors");
+  }
+
+  return new Set(existingMirrorRows.data.rows.map((row) => row.existing_mirror_name));
+}
+
 async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise<void> {
   const publicationTables = analyticsSourceTables
     .map((tableName) => `fitness.${tableName}`)
@@ -538,6 +590,11 @@ async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Pr
       });
     }
   }
+  for (const legacyPayloadColumn of metricStreamLegacyPayloadColumns) {
+    await client.command({
+      query: `ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS ${legacyPayloadColumn}`,
+    });
+  }
 }
 
 async function reconcileMetricStreamAnalyticsMirror(peerDbClient: PeerDbClient): Promise<void> {
@@ -610,12 +667,17 @@ async function clickHouseDestinationTablesHaveRows(
     `,
     format: "JSONEachRow",
   });
-  const rows = clickHouseRowCountRowsSchema.parse(await result.json());
-  const row = rows[0];
-  if (!row) {
+  const parsedRows = clickHouseRowCountRowsSchema.safeParse(await result.json());
+  if (!parsedRows.success) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
-  const rowCount = readInteger(row.row_count);
+
+  const rows = parsedRows.data;
+  if (rows.length === 0) {
+    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  }
+
+  const rowCount = readInteger(rows[0]?.row_count);
   if (rowCount === null) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
@@ -678,8 +740,20 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     options.templateValues,
     rawAnalyticsInitialCopyValues,
   );
+  const existingMirrorNames = await readExistingManagedMirrorNames(options.peerDbClient);
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
-    await options.peerDbClient.query(statement);
+    const mirrorName = readCreateMirrorName(statement);
+    if (mirrorName !== null && existingMirrorNames.has(mirrorName)) {
+      continue;
+    }
+    try {
+      await options.peerDbClient.query(statement);
+    } catch (error) {
+      if (mirrorName !== null && isExistingMirrorWorkflowError(error, mirrorName)) {
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
