@@ -9123,11 +9123,17 @@ new incremental tables are populated.
   source points as `NULL` and feed `readWKBPoint` a valid dummy WKB for those
   rows so ClickHouse's columnar branch evaluation cannot parse an empty value.
 - Remaining risk: The web service is healthy, but the deploy run that used the
-  old image was cancelled and a fresh image containing the migration repairs
-  must be built and deployed before considering the worker/deploy path fully
-  clean.
+  old image was cancelled. A fresh branch deploy with the migration repairs
+  succeeded through migrations and stack deployment, and the Oracle app services
+  are healthy on the repaired image. The workflow still fails at `Configure
+  ClickHouse CDC` because PeerDB's catalog has no `dofek_metric_stream_analytics`
+  flow row while Temporal still has a running
+  `dofek_metric_stream_analytics-peerflow` workflow. `DROP MIRROR
+  dofek_metric_stream_analytics` fails with `flow ... not found`, so CDC cleanup
+  requires explicit operator approval before terminating the orphan Temporal
+  workflow.
 - Follow-up work: Avoid pinning stale image tags during cutover recovery; deploy
   the current main image or a freshly built branch image when schema/read-model
   code has changed. Add a preflight check to the Oracle cutover runbook for
-  `dofek_web` replicas, production Host rules, and required ClickHouse metadata
-  columns before switching traffic.
+  `dofek_web` replicas, production Host rules, required ClickHouse metadata
+  columns, and orphan PeerDB Temporal workflows before switching traffic.
