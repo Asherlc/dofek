@@ -229,6 +229,23 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
+  it("lists only canonical deduped activity summary rows", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ id: "canonical-activity" })],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("INNER JOIN analytics.v_activity AS activity");
+    expect(queryText).toContain("activity.id = asum.activity_id");
+    expect(queryText).toContain("activity.user_id = asum.user_id");
+  });
+
   it("returns activity overview totals directly from ClickHouse", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -270,6 +287,33 @@ describe("ActivitiesCalendarRepository", () => {
       expect.not.objectContaining({ activityType: "running" }),
     );
     expect(database.execute).not.toHaveBeenCalled();
+  });
+
+  it("computes overview totals and type filters from canonical deduped activity summaries", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: "1",
+          total_minutes: "60",
+          total_distance_meters: "0",
+          total_elevation_gain_m: "0",
+        },
+      ],
+      [{ activity_type: "cycling" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await repository.getActivityOverview({ weeks: 1, endDate: "2026-03-20" });
+
+    const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+    expect(overviewQueryText).toContain("INNER JOIN analytics.v_activity AS activity");
+    expect(overviewQueryText).toContain("activity.id = asum.activity_id");
+    expect(overviewQueryText).toContain("activity.user_id = asum.user_id");
+    expect(typeQueryText).toContain("INNER JOIN analytics.v_activity AS activity");
+    expect(typeQueryText).toContain("activity.id = asum.activity_id");
+    expect(typeQueryText).toContain("activity.user_id = asum.user_id");
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {
