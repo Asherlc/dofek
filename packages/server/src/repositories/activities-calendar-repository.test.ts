@@ -60,8 +60,21 @@ function normalizeSql(queryText: string | undefined): string {
 
 function expectCanonicalActivitySummaryOnly(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
-  expect(normalizedQueryText).toContain("FROM analytics.activity_summary asum");
+  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
+  expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
   expect(normalizedQueryText).not.toContain("analytics.v_activity");
+}
+
+function expectDedupedActivitiesOnly(queryText: string | undefined): void {
+  const normalizedQueryText = normalizeSql(queryText);
+  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
+  expect(normalizedQueryText).not.toContain("analytics.v_activity");
+}
+
+function expectDedupedActivitiesDriveActivityIdentity(queryText: string | undefined): void {
+  const normalizedQueryText = normalizeSql(queryText);
+  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
+  expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
 }
 
 describe("ActivitiesCalendarRepository", () => {
@@ -192,7 +205,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("asum.activity_type = {activityType:String}"),
+      expect.stringContaining("activity.activity_type = {activityType:String}"),
       expect.objectContaining({ activityType: "running" }),
     );
     const sqlObject = database.execute.mock.calls[0]?.[0];
@@ -223,7 +236,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("FROM analytics.activity_summary"),
+      expect.stringContaining("FROM analytics.deduped_activities"),
       {
         userId: "00000000-0000-0000-0000-000000000001",
         timezone: "America/Los_Angeles",
@@ -252,6 +265,21 @@ describe("ActivitiesCalendarRepository", () => {
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expectCanonicalActivitySummaryOnly(queryText);
+  });
+
+  it("uses deduped activities as the activity page identity source", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ id: "canonical-activity" })],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expectDedupedActivitiesDriveActivityIdentity(queryText);
   });
 
   it("returns activity overview totals directly from ClickHouse", async () => {
@@ -285,13 +313,13 @@ describe("ActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
-      expect.stringContaining("asum.activity_type = {activityType:String}"),
+      expect.stringContaining("activity.activity_type = {activityType:String}"),
       expect.objectContaining({ activityType: "running" }),
     );
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      expect.not.stringContaining("asum.activity_type = {activityType:String}"),
+      expect.not.stringContaining("activity.activity_type = {activityType:String}"),
       expect.not.objectContaining({ activityType: "running" }),
     );
     expect(database.execute).not.toHaveBeenCalled();
@@ -317,7 +345,32 @@ describe("ActivitiesCalendarRepository", () => {
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
     expectCanonicalActivitySummaryOnly(overviewQueryText);
-    expectCanonicalActivitySummaryOnly(typeQueryText);
+    expectDedupedActivitiesOnly(typeQueryText);
+  });
+
+  it("uses deduped activities as the activity overview identity source", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        {
+          activity_count: "1",
+          total_minutes: "60",
+          total_distance_meters: "0",
+          total_elevation_gain_m: "0",
+        },
+      ],
+      [{ activity_type: "cycling" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await repository.getActivityOverview({ weeks: 1, endDate: "2026-03-20" });
+
+    const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+    expectDedupedActivitiesDriveActivityIdentity(overviewQueryText);
+    expect(normalizeSql(typeQueryText)).toContain(
+      "FROM analytics.deduped_activities FINAL AS activity",
+    );
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {
