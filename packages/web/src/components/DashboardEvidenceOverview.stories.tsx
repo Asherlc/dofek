@@ -8,7 +8,17 @@ const meta = {
   args: {
     days: 30,
     endDate: "2026-05-27",
-    trend: { latestRestingHeartRate: 52, averageRestingHeartRate: 56 },
+    trend: {
+      latestRestingHeartRate: 52,
+      averageRestingHeartRate: 56,
+      restingHeartRatePoints: [
+        { date: "2026-05-23", value: 57 },
+        { date: "2026-05-24", value: 56 },
+        { date: "2026-05-25", value: 55 },
+        { date: "2026-05-26", value: 54 },
+        { date: "2026-05-27", value: 52 },
+      ],
+    },
     healthMonitor: (
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-border bg-white/70 p-3">
@@ -37,7 +47,21 @@ const meta = {
       whenFalse: { mean: 0, n: 30 },
       effectSize: 0.72,
       pValue: 0.01,
+      dataPoints: [
+        { x: 55, y: 65, date: "2026-05-23" },
+        { x: 60, y: 70, date: "2026-05-24" },
+        { x: 68, y: 82, date: "2026-05-25" },
+        { x: 72, y: 85, date: "2026-05-26" },
+        { x: 75, y: 88, date: "2026-05-27" },
+      ],
     },
+    trainingSleepPoints: [
+      { date: "2026-05-23", trainingLoad: 42, sleepConsistency: 86 },
+      { date: "2026-05-24", trainingLoad: 58, sleepConsistency: 78 },
+      { date: "2026-05-25", trainingLoad: 66, sleepConsistency: 72 },
+      { date: "2026-05-26", trainingLoad: 81, sleepConsistency: 67 },
+      { date: "2026-05-27", trainingLoad: 94, sleepConsistency: 61 },
+    ],
   },
   parameters: {
     layout: "fullscreen",
@@ -60,7 +84,12 @@ export const Default: Story = {};
 export const Loading: Story = {
   args: {
     topInsight: undefined,
-    trend: { latestRestingHeartRate: undefined, averageRestingHeartRate: undefined },
+    trend: {
+      latestRestingHeartRate: undefined,
+      averageRestingHeartRate: undefined,
+      restingHeartRatePoints: null,
+    },
+    trainingSleepPoints: null,
     healthMonitor: (
       <div className="grid gap-3 sm:grid-cols-3" aria-busy="true">
         {[0, 1, 2].map((placeholder) => (
@@ -77,7 +106,12 @@ export const Loading: Story = {
 export const Empty: Story = {
   args: {
     topInsight: undefined,
-    trend: { latestRestingHeartRate: null, averageRestingHeartRate: null },
+    trend: {
+      latestRestingHeartRate: null,
+      averageRestingHeartRate: null,
+      restingHeartRatePoints: null,
+    },
+    trainingSleepPoints: null,
     healthMonitor: <p className="text-sm text-muted">No recent health metrics yet.</p>,
   },
 };

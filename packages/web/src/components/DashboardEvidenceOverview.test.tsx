@@ -39,6 +39,99 @@ describe("DashboardEvidenceOverview", () => {
       <DashboardEvidenceOverview
         days={30}
         endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: 52,
+          averageRestingHeartRate: 56,
+          restingHeartRatePoints: [
+            { date: "2026-05-26", value: 56 },
+            { date: "2026-05-27", value: 52 },
+          ],
+        }}
+        topInsight={{
+          id: "insight-1",
+          type: "correlation",
+          confidence: "strong",
+          metric: "Sleep consistency",
+          action: "Heart Rate Variability",
+          message: "Sleep consistency + Heart Rate Variability",
+          detail: "30-day correlation",
+          whenTrue: { mean: 1, n: 30 },
+          whenFalse: { mean: 0, n: 30 },
+          effectSize: 0.72,
+          pValue: 0.01,
+          dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
+    expect(screen.getByText("Overview")).toBeTruthy();
+    expect(screen.getByText("Apr 28 - May 27")).toBeTruthy();
+    expect(screen.getByText("Key correlation")).toBeTruthy();
+    expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
+    expect(screen.queryByText("Compare sources")).toBeNull();
+    expect(screen.queryByText("Connected source coverage")).toBeNull();
+    expect(screen.getByText("Health monitor")).toBeTruthy();
+    expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
+    expect(screen.queryByText("Export confidence")).toBeNull();
+  });
+
+  it("renders axes and hover details from API-backed chart points", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: 52,
+          averageRestingHeartRate: 56,
+          restingHeartRatePoints: [
+            { date: "2026-05-25", value: 57 },
+            { date: "2026-05-26", value: 55 },
+            { date: "2026-05-27", value: 52 },
+          ],
+        }}
+        topInsight={{
+          id: "insight-1",
+          type: "correlation",
+          confidence: "strong",
+          metric: "Sleep consistency",
+          action: "Heart Rate Variability",
+          message: "Sleep consistency + Heart Rate Variability",
+          detail: "30-day correlation",
+          whenTrue: { mean: 1, n: 30 },
+          whenFalse: { mean: 0, n: 30 },
+          effectSize: 0.72,
+          pValue: 0.01,
+          dataPoints: [
+            { x: 62, y: 74, date: "2026-05-25" },
+            { x: 68, y: 82, date: "2026-05-27" },
+          ],
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(screen.getByText("Sleep consistency")).toBeTruthy();
+    expect(
+      screen.getByText("May 27: Heart Rate Variability: 68, Sleep consistency: 82"),
+    ).toBeTruthy();
+
+    expect(screen.getByText("May 25")).toBeTruthy();
+    expect(screen.getByText("May 27")).toBeTruthy();
+    expect(screen.getByText("57 bpm")).toBeTruthy();
+    expect(screen.getByText("52 bpm")).toBeTruthy();
+    expect(screen.getByText("May 25: Resting heart rate: 57 bpm")).toBeTruthy();
+    expect(screen.getByText("May 27: Resting heart rate: 52 bpm")).toBeTruthy();
+  });
+
+  it("does not render fake chart data when API-backed points are missing", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
         trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
         topInsight={{
           id: "insight-1",
@@ -57,17 +150,51 @@ describe("DashboardEvidenceOverview", () => {
       />,
     );
 
-    expect(screen.getByRole("region", { name: "Dashboard overview" })).toBeTruthy();
-    expect(screen.getByText("Overview")).toBeTruthy();
-    expect(screen.getByText("Apr 28 - May 27")).toBeTruthy();
-    expect(screen.getByText("Key correlation")).toBeTruthy();
-    expect(screen.getByText("Recent trend")).toBeTruthy();
-    expect(screen.getByText("Training load compared with sleep consistency")).toBeTruthy();
-    expect(screen.queryByText("Compare sources")).toBeNull();
-    expect(screen.queryByText("Connected source coverage")).toBeNull();
-    expect(screen.getByText("Health monitor")).toBeTruthy();
-    expect(screen.getByText("Latest values vs. rolling average")).toBeTruthy();
-    expect(screen.queryByText("Export confidence")).toBeNull();
+    expect(screen.getAllByText("No chart data yet.")).toHaveLength(3);
+    expect(screen.queryByText("Training load: 10, Sleep consistency: 82")).toBeNull();
+    expect(screen.queryByText("Average resting heart rate: 56 bpm")).toBeNull();
+  });
+
+  it("colors resting heart rate by whether the trend is happy or sad", () => {
+    const lowerResult = render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: 52,
+          averageRestingHeartRate: 56,
+          restingHeartRatePoints: [
+            { date: "2026-05-26", value: 56 },
+            { date: "2026-05-27", value: 52 },
+          ],
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("52").className).toContain("text-accent");
+    expect(lowerResult.container.innerHTML).toContain('stroke="var(--color-accent)"');
+
+    lowerResult.unmount();
+
+    const higherResult = render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: 60,
+          averageRestingHeartRate: 56,
+          restingHeartRatePoints: [
+            { date: "2026-05-26", value: 56 },
+            { date: "2026-05-27", value: 60 },
+          ],
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("60").className).toContain("text-danger");
+    expect(higherResult.container.innerHTML).toContain('stroke="var(--color-danger)"');
   });
 
   it("shows insight errors instead of falling back to a fake empty correlation", () => {

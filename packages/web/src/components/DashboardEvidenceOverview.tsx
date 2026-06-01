@@ -4,6 +4,18 @@ import type { Insight } from "./CorrelationCard.tsx";
 export interface DashboardTrendSnapshot {
   latestRestingHeartRate: number | null | undefined;
   averageRestingHeartRate: number | null | undefined;
+  restingHeartRatePoints?: RestingHeartRatePoint[] | null | undefined;
+}
+
+export interface RestingHeartRatePoint {
+  date: string;
+  value: number;
+}
+
+export interface TrainingSleepComparisonPoint {
+  date: string;
+  trainingLoad: number;
+  sleepConsistency: number;
 }
 
 export function formatDashboardRange(endDate: string, days: number): string {
@@ -37,12 +49,72 @@ export function trendPositionLabel(trend: DashboardTrendSnapshot): string {
   return "at average";
 }
 
+interface ChartLabels {
+  xAxis: string;
+  xMetric: string;
+  yAxis: string;
+  yMetric: string;
+}
+
+interface ScatterPoint {
+  date: string;
+  xValue: number;
+  yValue: number;
+}
+
+interface RestingHeartRateTone {
+  className: string;
+  colorVariable: string;
+  fillOpacity: string;
+}
+
+function formatBpm(value: number): string {
+  return `${Math.round(value)} bpm`;
+}
+
+function formatChartDate(date: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
+
+function formatChartNumber(value: number): string {
+  if (Number.isInteger(value)) return value.toLocaleString();
+  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function restingHeartRateTone(trend: DashboardTrendSnapshot): RestingHeartRateTone {
+  const { latestRestingHeartRate, averageRestingHeartRate } = trend;
+  if (latestRestingHeartRate == null || averageRestingHeartRate == null) {
+    return {
+      className: "text-muted",
+      colorVariable: "var(--color-muted)",
+      fillOpacity: "0.08",
+    };
+  }
+  if (latestRestingHeartRate <= averageRestingHeartRate) {
+    return {
+      className: "text-accent",
+      colorVariable: "var(--color-accent)",
+      fillOpacity: "0.1",
+    };
+  }
+  return {
+    className: "text-danger",
+    colorVariable: "var(--color-danger)",
+    fillOpacity: "0.08",
+  };
+}
+
 export function DashboardEvidenceOverview({
   days,
   endDate,
   topInsight,
   insightError,
   trend,
+  trainingSleepPoints,
   healthMonitor,
 }: {
   days: number;
@@ -50,11 +122,29 @@ export function DashboardEvidenceOverview({
   topInsight?: Insight;
   insightError?: ReactNode;
   trend: DashboardTrendSnapshot;
+  trainingSleepPoints?: TrainingSleepComparisonPoint[] | null | undefined;
   healthMonitor: ReactNode;
 }) {
   const effectSize = topInsight?.effectSize;
   const correlationValue = effectSize == null ? "--" : Math.abs(effectSize).toFixed(2);
   const trendLabel = trendPositionLabel(trend);
+  const restingHeartRateToneValue = restingHeartRateTone(trend);
+  const insightChartPoints =
+    topInsight?.dataPoints
+      ?.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+      .map((point) => ({ date: point.date, xValue: point.x, yValue: point.y })) ?? [];
+  const restingHeartRatePoints =
+    trend.restingHeartRatePoints?.filter((point) => Number.isFinite(point.value)) ?? [];
+  const trainingSleepChartPoints =
+    trainingSleepPoints
+      ?.filter(
+        (point) => Number.isFinite(point.trainingLoad) && Number.isFinite(point.sleepConsistency),
+      )
+      .map((point) => ({
+        date: point.date,
+        xValue: point.trainingLoad,
+        yValue: point.sleepConsistency,
+      })) ?? [];
 
   return (
     <section
@@ -93,7 +183,20 @@ export function DashboardEvidenceOverview({
                   </p>
                   <p className="text-xs text-muted">{days}-day signal</p>
                 </div>
-                <MiniScatter direction={effectSize != null && effectSize < 0 ? "down" : "up"} />
+                {topInsight && insightChartPoints.length > 0 ? (
+                  <MiniScatter
+                    points={insightChartPoints}
+                    labels={{
+                      xAxis: topInsight.action,
+                      xMetric: topInsight.action,
+                      yAxis: topInsight.metric,
+                      yMetric: topInsight.metric,
+                    }}
+                    tone={effectSize != null && effectSize < 0 ? "danger" : "accent"}
+                  />
+                ) : (
+                  <MiniChartEmptyState />
+                )}
               </div>
             </div>
           )}
@@ -103,7 +206,9 @@ export function DashboardEvidenceOverview({
           <h3 className="text-base font-medium text-foreground">Resting heart rate</h3>
           <div className="mt-7 grid grid-cols-[0.65fr_1fr] items-end gap-5">
             <div>
-              <p className="font-mono text-4xl font-bold tabular-nums text-danger">
+              <p
+                className={`font-mono text-4xl font-bold tabular-nums ${restingHeartRateToneValue.className}`}
+              >
                 {trend.latestRestingHeartRate != null
                   ? Math.round(trend.latestRestingHeartRate)
                   : "--"}
@@ -111,7 +216,15 @@ export function DashboardEvidenceOverview({
               <p className="text-xs text-muted">bpm</p>
               <p className="text-xs text-muted">{trendLabel}</p>
             </div>
-            <MiniTrend />
+            {restingHeartRatePoints.length > 1 ? (
+              <MiniTrend
+                points={restingHeartRatePoints}
+                averageRestingHeartRate={trend.averageRestingHeartRate}
+                tone={restingHeartRateToneValue}
+              />
+            ) : (
+              <MiniChartEmptyState />
+            )}
           </div>
         </EvidenceCard>
 
@@ -120,7 +233,20 @@ export function DashboardEvidenceOverview({
             Higher load weeks can be reviewed beside sleep and recovery.
           </h3>
           <div className="mt-5">
-            <MiniScatter direction="down" />
+            {trainingSleepChartPoints.length > 0 ? (
+              <MiniScatter
+                points={trainingSleepChartPoints}
+                labels={{
+                  xAxis: "Load",
+                  xMetric: "Training load",
+                  yAxis: "Sleep",
+                  yMetric: "Sleep consistency",
+                }}
+                tone="danger"
+              />
+            ) : (
+              <MiniChartEmptyState />
+            )}
           </div>
         </EvidenceCard>
       </div>
@@ -144,72 +270,220 @@ function EvidenceCard({ eyebrow, children }: { eyebrow: string; children: ReactN
   );
 }
 
-function MiniScatter({ direction }: { direction: "up" | "down" }) {
-  const points =
-    direction === "up"
-      ? [
-          [10, 58],
-          [18, 50],
-          [28, 48],
-          [38, 42],
-          [50, 35],
-          [62, 29],
-          [76, 23],
-          [88, 18],
-          [22, 33],
-          [44, 28],
-          [68, 38],
-        ]
-      : [
-          [10, 18],
-          [18, 26],
-          [28, 31],
-          [38, 36],
-          [50, 42],
-          [62, 48],
-          [76, 55],
-          [88, 61],
-          [22, 44],
-          [44, 50],
-          [68, 35],
-        ];
+function MiniChartEmptyState() {
+  return (
+    <div className="grid h-24 place-items-center rounded-md border border-dashed border-border bg-surface/45 px-3 text-center text-xs text-muted">
+      No chart data yet.
+    </div>
+  );
+}
+
+function chartDomain(values: number[]): { min: number; max: number } {
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  if (minValue === maxValue) return { min: minValue - 1, max: maxValue + 1 };
+  const padding = (maxValue - minValue) * 0.08;
+  return { min: minValue - padding, max: maxValue + padding };
+}
+
+function trendLine(points: ScatterPoint[]): { start: ScatterPoint; end: ScatterPoint } | null {
+  if (points.length < 2) return null;
+  const xMean = points.reduce((sum, point) => sum + point.xValue, 0) / points.length;
+  const yMean = points.reduce((sum, point) => sum + point.yValue, 0) / points.length;
+  const numerator = points.reduce(
+    (sum, point) => sum + (point.xValue - xMean) * (point.yValue - yMean),
+    0,
+  );
+  const denominator = points.reduce((sum, point) => sum + (point.xValue - xMean) ** 2, 0);
+  if (denominator === 0) return null;
+  const slope = numerator / denominator;
+  const intercept = yMean - slope * xMean;
+  const xValues = points.map((point) => point.xValue);
+  const startX = Math.min(...xValues);
+  const endX = Math.max(...xValues);
+  return {
+    start: { date: points[0]?.date ?? "", xValue: startX, yValue: slope * startX + intercept },
+    end: { date: points.at(-1)?.date ?? "", xValue: endX, yValue: slope * endX + intercept },
+  };
+}
+
+function MiniScatter({
+  points,
+  labels,
+  tone,
+}: {
+  points: ScatterPoint[];
+  labels: ChartLabels;
+  tone: "accent" | "danger";
+}) {
+  const chart = { left: 28, right: 142, top: 12, bottom: 62 };
+  const xDomain = chartDomain(points.map((point) => point.xValue));
+  const yDomain = chartDomain(points.map((point) => point.yValue));
+  const xRange = xDomain.max - xDomain.min;
+  const yRange = yDomain.max - yDomain.min;
+  const toX = (value: number) =>
+    chart.left + ((value - xDomain.min) / xRange) * (chart.right - chart.left);
+  const toY = (value: number) =>
+    chart.bottom - ((value - yDomain.min) / yRange) * (chart.bottom - chart.top);
+  const line = trendLine(points);
+  const color = tone === "danger" ? "var(--color-danger)" : "var(--color-accent)";
 
   return (
-    <svg viewBox="0 0 120 72" className="h-24 w-full" role="img" aria-hidden="true">
-      <path d="M4 64H116" stroke="var(--color-border-strong)" strokeWidth="1" />
-      <path d="M4 8V64" stroke="var(--color-border-strong)" strokeWidth="1" />
+    <svg viewBox="0 0 156 86" className="h-24 w-full" role="img" aria-hidden="true">
       <path
-        d={direction === "up" ? "M8 60L112 14" : "M8 18L112 60"}
-        stroke="var(--color-accent-secondary)"
-        strokeWidth="1.5"
+        d={`M${chart.left} ${chart.bottom}H${chart.right}`}
+        stroke="var(--color-border-strong)"
+        strokeWidth="1"
       />
-      {points.map(([xPosition, yPosition]) => (
-        <circle
-          key={`${xPosition}-${yPosition}`}
-          cx={xPosition}
-          cy={yPosition}
-          r="2.4"
-          fill="var(--color-accent)"
+      <path
+        d={`M${chart.left} ${chart.top}V${chart.bottom}`}
+        stroke="var(--color-border-strong)"
+        strokeWidth="1"
+      />
+      {line && (
+        <path
+          d={`M${toX(line.start.xValue)} ${toY(line.start.yValue)}L${toX(
+            line.end.xValue,
+          )} ${toY(line.end.yValue)}`}
+          stroke={color}
+          strokeWidth="1.5"
+          strokeDasharray="3 2"
         />
+      )}
+      <path
+        d={`M${chart.right} ${chart.bottom}V${chart.bottom + 3}`}
+        stroke="var(--color-border-strong)"
+        strokeWidth="1"
+      />
+      <path
+        d={`M${chart.left - 3} ${chart.top}H${chart.left}`}
+        stroke="var(--color-border-strong)"
+        strokeWidth="1"
+      />
+      <text x={chart.left} y="8" fill="var(--color-muted)" fontSize="8">
+        {labels.yAxis}
+      </text>
+      <text
+        x={(chart.left + chart.right) / 2}
+        y="80"
+        fill="var(--color-muted)"
+        fontSize="8"
+        textAnchor="middle"
+      >
+        {labels.xAxis}
+      </text>
+      {points.map((point) => (
+        <circle
+          key={`${point.date}-${point.xValue}-${point.yValue}`}
+          cx={toX(point.xValue)}
+          cy={toY(point.yValue)}
+          r="3"
+          className="cursor-help"
+          fill={color}
+        >
+          <title>
+            {formatChartDate(point.date)}: {labels.xMetric}: {formatChartNumber(point.xValue)},{" "}
+            {labels.yMetric}: {formatChartNumber(point.yValue)}
+          </title>
+        </circle>
       ))}
     </svg>
   );
 }
 
-function MiniTrend() {
+function MiniTrend({
+  points,
+  averageRestingHeartRate,
+  tone,
+}: {
+  points: RestingHeartRatePoint[];
+  averageRestingHeartRate: number | null | undefined;
+  tone: RestingHeartRateTone;
+}) {
+  const chart = { left: 28, right: 152, top: 10, bottom: 68 };
+  const domain = chartDomain([
+    ...points.map((point) => point.value),
+    ...(averageRestingHeartRate != null ? [averageRestingHeartRate] : []),
+  ]);
+  const valueRange = domain.max - domain.min;
+  const toX = (index: number) =>
+    chart.left + (index / Math.max(points.length - 1, 1)) * (chart.right - chart.left);
+  const toY = (value: number) =>
+    chart.bottom - ((value - domain.min) / valueRange) * (chart.bottom - chart.top);
+  const pathData = points
+    .map((point, index) => `${index === 0 ? "M" : "L"}${toX(index)} ${toY(point.value)}`)
+    .join("");
+  const areaData = `${pathData}L${toX(points.length - 1)} ${chart.bottom}L${toX(
+    0,
+  )} ${chart.bottom}Z`;
+  const averageY = averageRestingHeartRate != null ? toY(averageRestingHeartRate) : undefined;
+  const firstPoint = points[0];
+  const lastPoint = points.at(-1);
+
   return (
-    <svg viewBox="0 0 160 72" className="h-24 w-full" role="img" aria-hidden="true">
+    <svg viewBox="0 0 168 92" className="h-28 w-full" role="img" aria-hidden="true">
       <path
-        d="M0 18C18 20 28 38 44 34C62 30 72 48 90 44C110 40 122 56 160 52"
-        fill="none"
-        stroke="var(--color-danger)"
-        strokeWidth="2"
+        d={`M${chart.left} ${chart.bottom}H${chart.right}`}
+        stroke="var(--color-border-strong)"
+        strokeWidth="1"
       />
       <path
-        d="M0 18C18 20 28 38 44 34C62 30 72 48 90 44C110 40 122 56 160 52L160 72L0 72Z"
-        fill="var(--color-danger)"
-        opacity="0.08"
+        d={`M${chart.left} ${chart.top}V${chart.bottom}`}
+        stroke="var(--color-border-strong)"
+        strokeWidth="1"
       />
+      {averageY != null && (
+        <path
+          d={`M${chart.left} ${averageY}H${chart.right}`}
+          stroke="var(--color-border-strong)"
+          strokeWidth="0.75"
+          opacity="0.5"
+        />
+      )}
+      <path d={pathData} fill="none" stroke={tone.colorVariable} strokeWidth="2" />
+      <path d={areaData} fill={tone.colorVariable} opacity={tone.fillOpacity} />
+      {points.map((point, index) => (
+        <circle
+          key={`${point.date}-${point.value}`}
+          cx={toX(index)}
+          cy={toY(point.value)}
+          r="3"
+          className="cursor-help"
+          fill={tone.colorVariable}
+        >
+          <title>
+            {formatChartDate(point.date)}: Resting heart rate: {formatBpm(point.value)}
+          </title>
+        </circle>
+      ))}
+      <text
+        x={chart.left - 3}
+        y={toY(domain.max) + 2}
+        fill="var(--color-muted)"
+        fontSize="7"
+        textAnchor="end"
+      >
+        {formatBpm(domain.max)}
+      </text>
+      <text
+        x={chart.left - 3}
+        y={toY(domain.min) + 2}
+        fill="var(--color-muted)"
+        fontSize="7"
+        textAnchor="end"
+      >
+        {formatBpm(domain.min)}
+      </text>
+      {firstPoint && (
+        <text x={chart.left} y="86" fill="var(--color-muted)" fontSize="8" textAnchor="middle">
+          {formatChartDate(firstPoint.date)}
+        </text>
+      )}
+      {lastPoint && (
+        <text x={chart.right} y="86" fill="var(--color-muted)" fontSize="8" textAnchor="middle">
+          {formatChartDate(lastPoint.date)}
+        </text>
+      )}
     </svg>
   );
 }
