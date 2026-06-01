@@ -831,7 +831,7 @@ function Footer() {
             rel="noopener noreferrer"
             className="text-xs font-medium text-[#6b8178] transition-colors hover:text-foreground"
           >
-            Powered by fatsecret
+            Powered by FatSecret
           </a>
         </div>
         <div className="flex items-center gap-4 text-xs text-[#6b8178]">

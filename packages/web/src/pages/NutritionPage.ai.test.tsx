@@ -121,6 +121,6 @@ describe("NutritionPage AI meal confirmation", () => {
 
     render(<NutritionPage />);
 
-    expect(screen.getByText("Powered by fatsecret")).toBeTruthy();
+    expect(screen.getByText("Powered by FatSecret")).toBeTruthy();
   });
 });

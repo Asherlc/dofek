@@ -3,6 +3,8 @@ import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
+  Linking,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -28,6 +30,8 @@ const MEALS = [
   { key: "snack", label: "Snack" },
   { key: "other", label: "Other" },
 ] as const;
+
+const FATSECRET_URL = "https://www.fatsecret.com/";
 
 function formatDateForQuery(date: Date): string {
   return formatDateYmd(date);
@@ -120,6 +124,10 @@ export default function FoodScreen() {
 
   function handleDeleteFood(id: string) {
     deleteMutation.mutate({ id });
+  }
+
+  function handleOpenFatSecret() {
+    void Linking.openURL(FATSECRET_URL);
   }
 
   async function handleLogAiMeal() {
@@ -328,7 +336,14 @@ export default function FoodScreen() {
             />
           ))
         )}
-        <Text style={styles.fatsecretAttribution}>Powered by fatsecret</Text>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Powered by FatSecret"
+          onPress={handleOpenFatSecret}
+          style={styles.fatsecretAttributionLink}
+        >
+          <Text style={styles.fatsecretAttribution}>Powered by FatSecret</Text>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -563,7 +578,10 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 12,
     fontWeight: "600",
-    marginTop: 10,
     textAlign: "center",
+  },
+  fatsecretAttributionLink: {
+    alignSelf: "center",
+    marginTop: 10,
   },
 });

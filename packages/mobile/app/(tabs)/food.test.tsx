@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -50,6 +51,7 @@ describe("FoodScreen AI meal confirmation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRouterPush.mockClear();
+    vi.mocked(Linking.openURL).mockClear();
     analyzeItemsMutateAsyncMock.mockResolvedValue({
       items: [
         {
@@ -133,11 +135,13 @@ describe("FoodScreen AI meal confirmation", () => {
     );
   });
 
-  it("shows FatSecret attribution on the food screen", async () => {
+  it("opens FatSecret when pressing the food screen attribution", async () => {
     const { default: FoodScreen } = await import("./food");
 
     render(<FoodScreen />);
 
-    expect(screen.getByText("Powered by fatsecret")).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Powered by FatSecret" }));
+
+    expect(Linking.openURL).toHaveBeenCalledWith("https://www.fatsecret.com/");
   });
 });

@@ -495,7 +495,7 @@ export function NutritionPage() {
             rel="noopener noreferrer"
             className="transition-colors hover:text-foreground"
           >
-            Powered by fatsecret
+            Powered by FatSecret
           </a>
         </div>
       </div>
