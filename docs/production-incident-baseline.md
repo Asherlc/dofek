@@ -9359,8 +9359,8 @@ new incremental tables are populated.
   `Unknown table expression identifier 'analytics.deduped_activities'`.
 - User impact: The activities calendar route could fail instead of returning
   recent activity cards, overview totals, or activity type filters.
-- Evidence: The failing SQL read `analytics.deduped_activities AS activity
-  FINAL`; the dbt model exists and is selected by `DBT_SAFE_MODELS`, but
+- Evidence: The failing SQL read `analytics.deduped_activities AS activity FINAL`;
+  the dbt model exists and is selected by `DBT_SAFE_MODELS`, but
   `bootstrapClickHouseFromEnv` only waited for `analytics.deduped_sensor`,
   `analytics.activity_summary`, and `analytics.activity_trend_daily`.
 - Root cause: The web startup ClickHouse prerequisite check was not updated
