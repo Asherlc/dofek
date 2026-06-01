@@ -197,6 +197,9 @@ describe("Router SQL validity", () => {
   // ── Calendar ──
   describe("calendar", () => {
     it("calendarData", () => expectValidSql("calendar.calendarData", { days: 30 }));
+    it("weekList", () => expectValidSql("calendar.weekList", { weeks: 4, endDate: "2026-03-20" }));
+    it("activityOverview", () =>
+      expectValidSql("calendar.activityOverview", { weeks: 4, endDate: "2026-03-20" }));
   });
 
   // ── Weekly Report ──
