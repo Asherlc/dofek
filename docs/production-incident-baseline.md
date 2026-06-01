@@ -9307,3 +9307,22 @@ new incremental tables are populated.
 - Follow-up work: After deploy, rerun the overlap diagnostic from
   `docs/clickhouse-activity-dedup-runbook.md` and confirm overlapping pairs
   drop to expected edge cases only.
+
+### 2026-05-31 update
+
+- Symptoms: The activities page could still show duplicate cards when stale or
+  noncanonical rows remained visible in `analytics.activity_summary`.
+- User impact: `/activities` list cards, overview counts, and activity type
+  filters could be inflated until analytics cleanup removed those rows.
+- Evidence: The `calendar.weekList` and `calendar.activityOverview` routes read
+  `analytics.activity_summary` directly without constraining rows to the
+  canonical ClickHouse activity graph.
+- Root cause: The API trusted `analytics.activity_summary` to contain only
+  canonical activity IDs. That left the page vulnerable to stale noncanonical
+  summary rows during and after dedup read-model repairs.
+- Fix / mitigation: The activities list, overview totals, and overview type
+  filter queries now join `analytics.v_activity` on `(user_id, activity_id)` so
+  only canonical deduped activity rows can be returned.
+- Remaining risk: Production needs this branch deployed before the route-level
+  guard is live. Full local lint was blocked by Docker network exhaustion while
+  starting the ClickHouse dependency.

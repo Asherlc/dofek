@@ -144,6 +144,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.centroid_lng AS centroid_lng,
             toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS local_date
           FROM analytics.activity_summary asum
+          INNER JOIN analytics.v_activity AS activity
+            ON activity.id = asum.activity_id
+           AND activity.user_id = asum.user_id
           WHERE asum.user_id = {userId:UUID}
             AND asum.ended_at IS NOT NULL
             AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
@@ -236,6 +239,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
             coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
           FROM analytics.activity_summary asum
+          INNER JOIN analytics.v_activity AS activity
+            ON activity.id = asum.activity_id
+           AND activity.user_id = asum.user_id
           WHERE asum.user_id = {userId:UUID}
             AND asum.ended_at IS NOT NULL
             AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
@@ -247,6 +253,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT DISTINCT
             asum.activity_type AS activity_type
           FROM analytics.activity_summary asum
+          INNER JOIN analytics.v_activity AS activity
+            ON activity.id = asum.activity_id
+           AND activity.user_id = asum.user_id
           WHERE asum.user_id = {userId:UUID}
             AND asum.ended_at IS NOT NULL
             AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
