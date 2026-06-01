@@ -1,5 +1,9 @@
+import { formatMeasurementText } from "@dofek/format/units";
 import type { ReactNode } from "react";
+import { useUnitConverter } from "../lib/unitContext.ts";
+import { ChartContainer } from "./ChartContainer.tsx";
 import type { Insight } from "./CorrelationCard.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export interface DashboardTrendSnapshot {
   latestRestingHeartRate: number | null | undefined;
@@ -18,16 +22,17 @@ export interface TrainingSleepComparisonPoint {
   sleepConsistency: number;
 }
 
+const dashboardDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+
 export function formatDashboardRange(endDate: string, days: number): string {
   const end = new Date(`${endDate}T12:00:00Z`);
   const start = new Date(end);
   start.setUTCDate(end.getUTCDate() - days + 1);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-  return `${formatter.format(start)} - ${formatter.format(end)}`;
+  return `${dashboardDateFormatter.format(start)} - ${dashboardDateFormatter.format(end)}`;
 }
 
 export function correlationStrengthLabel(effectSize: number | null | undefined): string {
@@ -68,16 +73,8 @@ interface RestingHeartRateTone {
   fillOpacity: string;
 }
 
-function formatBpm(value: number): string {
-  return `${Math.round(value)} bpm`;
-}
-
 function formatChartDate(date: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T12:00:00Z`));
+  return dashboardDateFormatter.format(new Date(`${date}T12:00:00Z`));
 }
 
 function formatChartNumber(value: number): string {
@@ -114,6 +111,8 @@ export function DashboardEvidenceOverview({
   topInsight,
   insightError,
   trend,
+  restingHeartRateLoading = false,
+  restingHeartRateError = null,
   trainingSleepPoints,
   healthMonitor,
 }: {
@@ -122,13 +121,18 @@ export function DashboardEvidenceOverview({
   topInsight?: Insight;
   insightError?: ReactNode;
   trend: DashboardTrendSnapshot;
+  restingHeartRateLoading?: boolean;
+  restingHeartRateError?: unknown;
   trainingSleepPoints?: TrainingSleepComparisonPoint[] | null | undefined;
   healthMonitor: ReactNode;
 }) {
+  const units = useUnitConverter();
   const effectSize = topInsight?.effectSize;
   const correlationValue = effectSize == null ? "--" : Math.abs(effectSize).toFixed(2);
   const trendLabel = trendPositionLabel(trend);
   const restingHeartRateToneValue = restingHeartRateTone(trend);
+  const formatRestingHeartRate = (value: number) =>
+    formatMeasurementText(units.formatHeartRate(value));
   const insightChartPoints =
     topInsight?.dataPoints
       ?.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
@@ -183,20 +187,20 @@ export function DashboardEvidenceOverview({
                   </p>
                   <p className="text-xs text-muted">{days}-day signal</p>
                 </div>
-                {topInsight && insightChartPoints.length > 0 ? (
-                  <MiniScatter
-                    points={insightChartPoints}
-                    labels={{
-                      xAxis: topInsight.action,
-                      xMetric: topInsight.action,
-                      yAxis: topInsight.metric,
-                      yMetric: topInsight.metric,
-                    }}
-                    tone={effectSize != null && effectSize < 0 ? "danger" : "accent"}
-                  />
-                ) : (
-                  <MiniChartEmptyState />
-                )}
+                <MiniChartFrame data={topInsight ? insightChartPoints : []}>
+                  {topInsight ? (
+                    <MiniScatter
+                      points={insightChartPoints}
+                      labels={{
+                        xAxis: topInsight.action,
+                        xMetric: topInsight.action,
+                        yAxis: topInsight.metric,
+                        yMetric: topInsight.metric,
+                      }}
+                      tone={effectSize != null && effectSize < 0 ? "danger" : "accent"}
+                    />
+                  ) : null}
+                </MiniChartFrame>
               </div>
             </div>
           )}
@@ -216,15 +220,19 @@ export function DashboardEvidenceOverview({
               <p className="text-xs text-muted">bpm</p>
               <p className="text-xs text-muted">{trendLabel}</p>
             </div>
-            {restingHeartRatePoints.length > 1 ? (
+            <MiniChartFrame
+              data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
+              loading={restingHeartRateLoading}
+              error={restingHeartRateError}
+              height={112}
+            >
               <MiniTrend
                 points={restingHeartRatePoints}
                 averageRestingHeartRate={trend.averageRestingHeartRate}
+                formatRestingHeartRate={formatRestingHeartRate}
                 tone={restingHeartRateToneValue}
               />
-            ) : (
-              <MiniChartEmptyState />
-            )}
+            </MiniChartFrame>
           </div>
         </EvidenceCard>
 
@@ -233,7 +241,7 @@ export function DashboardEvidenceOverview({
             Higher load weeks can be reviewed beside sleep and recovery.
           </h3>
           <div className="mt-5">
-            {trainingSleepChartPoints.length > 0 ? (
+            <MiniChartFrame data={trainingSleepChartPoints}>
               <MiniScatter
                 points={trainingSleepChartPoints}
                 labels={{
@@ -244,9 +252,7 @@ export function DashboardEvidenceOverview({
                 }}
                 tone="danger"
               />
-            ) : (
-              <MiniChartEmptyState />
-            )}
+            </MiniChartFrame>
           </div>
         </EvidenceCard>
       </div>
@@ -270,11 +276,24 @@ function EvidenceCard({ eyebrow, children }: { eyebrow: string; children: ReactN
   );
 }
 
-function MiniChartEmptyState() {
+function MiniChartFrame({
+  data,
+  loading = false,
+  error,
+  height = 96,
+  children,
+}: {
+  data: unknown[];
+  loading?: boolean;
+  error?: unknown;
+  height?: number;
+  children: ReactNode;
+}) {
+  if (error) return <QueryStatePanel error={error} height={height} />;
   return (
-    <div className="grid h-24 place-items-center rounded-md border border-dashed border-border bg-surface/45 px-3 text-center text-xs text-muted">
-      No chart data yet.
-    </div>
+    <ChartContainer loading={loading} data={data} height={height} emptyMessage="No chart data yet.">
+      {children}
+    </ChartContainer>
   );
 }
 
@@ -394,17 +413,22 @@ function MiniScatter({
 function MiniTrend({
   points,
   averageRestingHeartRate,
+  formatRestingHeartRate,
   tone,
 }: {
   points: RestingHeartRatePoint[];
   averageRestingHeartRate: number | null | undefined;
+  formatRestingHeartRate: (value: number) => string;
   tone: RestingHeartRateTone;
 }) {
   const chart = { left: 28, right: 152, top: 10, bottom: 68 };
-  const domain = chartDomain([
+  const labelValues = [
     ...points.map((point) => point.value),
     ...(averageRestingHeartRate != null ? [averageRestingHeartRate] : []),
-  ]);
+  ];
+  const labelMin = Math.min(...labelValues);
+  const labelMax = Math.max(...labelValues);
+  const domain = chartDomain(labelValues);
   const valueRange = domain.max - domain.min;
   const toX = (index: number) =>
     chart.left + (index / Math.max(points.length - 1, 1)) * (chart.right - chart.left);
@@ -452,28 +476,30 @@ function MiniTrend({
           fill={tone.colorVariable}
         >
           <title>
-            {formatChartDate(point.date)}: Resting heart rate: {formatBpm(point.value)}
+            {formatChartDate(point.date)}: Resting heart rate: {formatRestingHeartRate(point.value)}
           </title>
         </circle>
       ))}
       <text
         x={chart.left - 3}
-        y={toY(domain.max) + 2}
+        y={toY(labelMax) + 2}
         fill="var(--color-muted)"
         fontSize="7"
         textAnchor="end"
       >
-        {formatBpm(domain.max)}
+        {formatRestingHeartRate(labelMax)}
       </text>
-      <text
-        x={chart.left - 3}
-        y={toY(domain.min) + 2}
-        fill="var(--color-muted)"
-        fontSize="7"
-        textAnchor="end"
-      >
-        {formatBpm(domain.min)}
-      </text>
+      {labelMin !== labelMax && (
+        <text
+          x={chart.left - 3}
+          y={toY(labelMin) + 2}
+          fill="var(--color-muted)"
+          fontSize="7"
+          textAnchor="end"
+        >
+          {formatRestingHeartRate(labelMin)}
+        </text>
+      )}
       {firstPoint && (
         <text x={chart.left} y="86" fill="var(--color-muted)" fontSize="8" textAnchor="middle">
           {formatChartDate(firstPoint.date)}

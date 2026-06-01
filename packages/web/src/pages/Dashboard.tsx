@@ -59,10 +59,15 @@ const dailyMetricRowSchema = z.object({
   active_energy_kcal: z.number().nullable(),
 });
 
-const restingHeartRateChartRowSchema = z.object({
-  date: z.string(),
-  resting_hr: z.number().nullable(),
-});
+const restingHeartRateChartRowSchema = z
+  .object({
+    date: z.string(),
+    resting_hr: z.number().nullable(),
+  })
+  .transform((row) => ({
+    date: row.date,
+    restingHeartRate: row.resting_hr,
+  }));
 
 export function healthMonitorSubtitle(): string {
   return "Latest values vs. rolling average";
@@ -167,13 +172,13 @@ export function Dashboard() {
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
+  const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
-  const restingHeartRateRows = hrvBaseline.data
-    ? z.array(restingHeartRateChartRowSchema).parse(hrvBaseline.data)
+  const restingHeartRateRows = heartRateBaseline.data
+    ? z.array(restingHeartRateChartRowSchema).parse(heartRateBaseline.data)
     : [];
 
   // Auto-sync when data is stale (API providers only — HealthKit requires iOS)
@@ -192,7 +197,7 @@ export function Dashboard() {
   const restingHeartRatePoints = useMemo(
     () =>
       restingHeartRateRows.flatMap((row) =>
-        row.resting_hr == null ? [] : [{ date: row.date, value: row.resting_hr }],
+        row.restingHeartRate == null ? [] : [{ date: row.date, value: row.restingHeartRate }],
       ),
     [restingHeartRateRows],
   );
@@ -233,6 +238,8 @@ export function Dashboard() {
           averageRestingHeartRate: trendData?.avg_resting_hr,
           restingHeartRatePoints,
         }}
+        restingHeartRateLoading={heartRateBaseline.isLoading}
+        restingHeartRateError={heartRateBaseline.error}
         healthMonitor={healthMonitor}
       />
     </PageLayout>

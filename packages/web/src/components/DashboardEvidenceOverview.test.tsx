@@ -155,6 +155,58 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.queryByText("Average resting heart rate: 56 bpm")).toBeNull();
   });
 
+  it("uses chart loading and error states for resting heart rate points", () => {
+    const loadingResult = render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        restingHeartRateLoading={true}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(loadingResult.container.querySelector(".animate-spin")).not.toBeNull();
+    expect(screen.getAllByText("No chart data yet.")).toHaveLength(2);
+
+    loadingResult.unmount();
+
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{ latestRestingHeartRate: 52, averageRestingHeartRate: 56 }}
+        restingHeartRateError={new Error("Resting heart rate chart failed.")}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getByText("Resting heart rate chart failed.")).toBeTruthy();
+    expect(screen.getAllByText("No chart data yet.")).toHaveLength(2);
+  });
+
+  it("labels resting heart rate axes with observed values instead of padded domains", () => {
+    render(
+      <DashboardEvidenceOverview
+        days={30}
+        endDate="2026-05-27"
+        trend={{
+          latestRestingHeartRate: 55,
+          averageRestingHeartRate: 55,
+          restingHeartRatePoints: [
+            { date: "2026-05-26", value: 55 },
+            { date: "2026-05-27", value: 55 },
+          ],
+        }}
+        healthMonitor={<div>Latest values vs. rolling average</div>}
+      />,
+    );
+
+    expect(screen.getAllByText("55 bpm").length).toBeGreaterThan(0);
+    expect(screen.queryByText("54 bpm")).toBeNull();
+    expect(screen.queryByText("56 bpm")).toBeNull();
+  });
+
   it("colors resting heart rate by whether the trend is happy or sad", () => {
     const lowerResult = render(
       <DashboardEvidenceOverview

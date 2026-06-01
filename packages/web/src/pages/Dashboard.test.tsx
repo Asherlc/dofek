@@ -27,7 +27,7 @@ const mockSleepPerformanceQuery = vi.hoisted(() =>
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
-const mockHrvBaselineQuery = vi.hoisted(() =>
+const mockHeartRateBaselineQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockInsightsQuery = vi.hoisted(() =>
@@ -78,7 +78,7 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     dailyMetrics: {
       trends: { useQuery: mockTrendsQuery },
-      hrvBaseline: { useQuery: mockHrvBaselineQuery },
+      hrvBaseline: { useQuery: mockHeartRateBaselineQuery },
     },
     insights: {
       compute: { useQuery: mockInsightsQuery },
@@ -103,7 +103,7 @@ afterEach(cleanup);
 describe("Dashboard", () => {
   beforeEach(() => {
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
-    mockHrvBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
   });
@@ -160,7 +160,7 @@ describe("Dashboard", () => {
       isLoading: false,
       error: null,
     });
-    mockHrvBaselineQuery.mockReturnValue({
+    mockHeartRateBaselineQuery.mockReturnValue({
       data: [
         { date: "2026-05-25", resting_hr: 57 },
         { date: "2026-05-26", resting_hr: null },
@@ -182,6 +182,26 @@ describe("Dashboard", () => {
             { date: "2026-05-27", value: 55 },
           ],
         }),
+        restingHeartRateLoading: false,
+        restingHeartRateError: null,
+      }),
+    );
+  });
+
+  it("passes resting heart rate baseline loading and error states into the overview", () => {
+    const chartError = new Error("Baseline unavailable.");
+    mockHeartRateBaselineQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: chartError,
+    });
+
+    render(<Dashboard />);
+
+    expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restingHeartRateLoading: true,
+        restingHeartRateError: chartError,
       }),
     );
   });
