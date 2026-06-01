@@ -108,10 +108,12 @@ export function createClickHouseClientFromEnv(
 export async function bootstrapClickHouseFromEnv(client: ClickHouseCommandClient): Promise<void> {
   await waitForClickHouseTable(client, "postgres_fitness", "metric_stream");
   await waitForClickHouseTable(client, "analytics", "deduped_sensor");
+  await waitForClickHouseTable(client, "analytics", "deduped_activities");
   await waitForClickHouseTable(client, "analytics", "activity_summary");
   await waitForClickHouseTable(client, "analytics", "activity_trend_daily");
   await smokeTestClickHouseTable(client, "postgres_fitness.metric_stream");
   await smokeTestClickHouseTable(client, "analytics.deduped_sensor");
+  await smokeTestClickHouseTable(client, "analytics.deduped_activities");
   await smokeTestClickHouseTable(client, "analytics.activity_summary");
   await smokeTestClickHouseTable(client, "analytics.activity_trend_daily");
 }

@@ -9352,3 +9352,22 @@ new incremental tables are populated.
 - Remaining risk: Production needs the analytics worker to build the new
   `deduped_activities`, `deduped_activity_members`, and downstream summary
   models before stale duplicates disappear.
+
+### 2026-06-01 update
+
+- Symptoms: Calendar activity list and overview ClickHouse queries failed with
+  `Unknown table expression identifier 'analytics.deduped_activities'`.
+- User impact: The activities calendar route could fail instead of returning
+  recent activity cards, overview totals, or activity type filters.
+- Evidence: The failing SQL read `analytics.deduped_activities AS activity
+  FINAL`; the dbt model exists and is selected by `DBT_SAFE_MODELS`, but
+  `bootstrapClickHouseFromEnv` only waited for `analytics.deduped_sensor`,
+  `analytics.activity_summary`, and `analytics.activity_trend_daily`.
+- Root cause: The web startup ClickHouse prerequisite check was not updated
+  when the runtime activity calendar queries started depending on
+  `analytics.deduped_activities`.
+- Fix / mitigation: Added `analytics.deduped_activities` to startup table
+  existence and column smoke verification so the web process fails loudly until
+  the required dbt read model exists.
+- Remaining risk: Production still needs the analytics worker to build the dbt
+  model before web startup can pass this stricter readiness gate.

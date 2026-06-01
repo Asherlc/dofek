@@ -273,6 +273,11 @@ describe("bootstrapClickHouseFromEnv", () => {
     });
     expect(query).toHaveBeenCalledWith({
       query:
+        "SELECT count() AS table_count FROM system.tables WHERE database = 'analytics' AND name = 'deduped_activities'",
+      format: "JSONEachRow",
+    });
+    expect(query).toHaveBeenCalledWith({
+      query:
         "SELECT count() AS table_count FROM system.tables WHERE database = 'analytics' AND name = 'activity_summary'",
       format: "JSONEachRow",
     });
@@ -289,6 +294,11 @@ describe("bootstrapClickHouseFromEnv", () => {
     expect(query).toHaveBeenCalledWith({
       query:
         "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'deduped_sensor'",
+      format: "JSONEachRow",
+    });
+    expect(query).toHaveBeenCalledWith({
+      query:
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'analytics' AND table = 'deduped_activities'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
