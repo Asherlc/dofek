@@ -9326,3 +9326,29 @@ new incremental tables are populated.
 - Remaining risk: Production needs this branch deployed before the route-level
   guard is live. Full local lint was blocked by Docker network exhaustion while
   starting the ClickHouse dependency.
+
+### 2026-05-31 second update
+
+- Symptoms: The activities page still showed duplicate cards after the route
+  joined `analytics.v_activity`.
+- User impact: Stale noncanonical rows in `analytics.activity_summary` could
+  still inflate activity cards, overview counts, and type filters.
+- Evidence: The failing case had a canonical Strava mountain-bike activity and
+  a WHOOP member activity with the same time bounds; the raw member summary row
+  stayed visible instead of being tombstoned.
+- Root cause: Activity deduplication was reconstructed in several ClickHouse
+  read models instead of being materialized once. `activity_summary_rows` also
+  relied on ClickHouse left joins without `join_use_nulls`, so stale-key
+  detection could treat missing right-side rows as default values.
+- Fix / mitigation: Added dbt-owned `deduped_activities` and
+  `deduped_activity_members` read models, changed activity sensor/location and
+  final summary models to consume them, enabled `join_use_nulls` where stale
+  detection depends on NULL joins, and removed the calendar route's runtime
+  `analytics.v_activity` join. The dedupe models now use dirty activity windows
+  for normal incremental runs and rebuild globally only when provider/device
+  priority changes can affect canonical selection. Added ClickHouse integration
+  tests proving raw member summary changes and dedupe-only mapping refreshes
+  rekey to the canonical activity and tombstone stale member summaries.
+- Remaining risk: Production needs the analytics worker to build the new
+  `deduped_activities`, `deduped_activity_members`, and downstream summary
+  models before stale duplicates disappear.
