@@ -195,7 +195,18 @@ export const activityRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      await repo.delete(input.id);
+      try {
+        await repo.delete(input.id);
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
       return { success: true };
     }),
 });
