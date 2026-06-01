@@ -35,9 +35,13 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 sample-intermediate models use dbt's `microbatch` incremental strategy with
 `recorded_at` as the event time, daily batches, and short lookbacks so
 ClickHouse processes bounded sample-time windows instead of one large
-activity/window query. The final resting heart rate, activity aggregate, and
-activity summary models use dirty keys from those intermediates and
-`max_threads=1` to keep the offline aggregate work out of web/API requests.
+activity/window query. `deduped_activities` and `deduped_activity_members`
+materialize canonical activity identity once, but incremental runs only rebuild
+activity windows affected by new raw activity changes; provider/device priority
+changes intentionally rebuild the full activity dedupe graph because they can
+change canonical selection globally. The final resting heart rate, activity
+aggregate, and activity summary models use dirty keys from those intermediates
+and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and
 `max_threads=1`; it materializes reusable per-activity VO2 max estimates, not
 final API responses.

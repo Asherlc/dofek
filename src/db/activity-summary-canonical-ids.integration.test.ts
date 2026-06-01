@@ -95,6 +95,42 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
       { activityId: memberActivityId, deleted: 1 },
     ]);
   }, 180_000);
+
+  it("refreshes the canonical summary when only the dedupe mapping changed", async () => {
+    const activeClient = requireClient(client);
+    await seedDedupeMappingRefreshFixture(activeClient, targetSchema);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows
+${renderActivitySummaryRowsSelectSql(targetSchema)}`,
+    });
+
+    const visibleRowsResult = await activeClient.query({
+      query: `SELECT
+          toString(activity_id) AS activity_id,
+          coalesce(activity_type, '') AS activity_type,
+          name,
+          avg_hr,
+          total_distance,
+          is_deleted
+        FROM ${targetSchema}.activity_summary_rows FINAL
+        WHERE is_deleted = 0
+        ORDER BY activity_id`,
+      format: "JSONEachRow",
+    });
+    const visibleRows = await visibleRowsResult.json<ActivitySummaryRow>();
+
+    expect(visibleRows).toEqual([
+      {
+        activity_id: canonicalActivityId,
+        activity_type: "mountain_biking",
+        avg_hr: 150,
+        is_deleted: 0,
+        name: "Lunch Mountain Bike Ride",
+        total_distance: 25000,
+      },
+    ]);
+  }, 180_000);
 });
 
 function requireClickHouseUrl(): string {
@@ -188,6 +224,28 @@ async function seedDuplicateActivitySummaryFixture(
   ]);
 }
 
+async function seedDedupeMappingRefreshFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await runStatements(client, [
+    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
+    `CREATE DATABASE ${targetSchema}`,
+    createActivityTableSql(targetSchema),
+    createDedupedActivitiesTableSql(targetSchema),
+    createDedupedActivityMembersTableSql(targetSchema),
+    createActivitySensorSummaryRowsTableSql(targetSchema),
+    createActivityLocationSummaryRowsTableSql(targetSchema),
+    buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
+    insertUnchangedRawMemberActivitySql(targetSchema),
+    insertDedupedActivitiesSql(targetSchema),
+    insertDedupedActivityMembersSql(targetSchema),
+    insertCanonicalSensorSummarySql(targetSchema),
+    insertCanonicalLocationSummarySql(targetSchema),
+    insertStaleRawActivitySummarySql(targetSchema),
+  ]);
+}
+
 function createActivityTableSql(targetSchema: string): string {
   return `CREATE TABLE ${targetSchema}.source_activity (
   id UUID,
@@ -203,14 +261,26 @@ ORDER BY id`;
 function createDedupedActivitiesTableSql(targetSchema: string): string {
   return `CREATE TABLE ${targetSchema}.deduped_activities (
   activity_id UUID,
+  provider_id String,
   user_id UUID,
+  primary_activity_id UUID,
   activity_type String,
   name Nullable(String),
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
-  is_deleted UInt8
+  source_name Nullable(String),
+  notes Nullable(String),
+  timezone Nullable(String),
+  raw Nullable(String),
+  source_synced_at DateTime64(9, 'UTC'),
+  source_providers Array(String),
+  source_external_ids Array(Map(String, String)),
+  member_activity_ids Array(UUID),
+  refresh_version UInt64,
+  is_deleted UInt8,
+  refreshed_at DateTime64(9, 'UTC')
 )
-ENGINE = ReplacingMergeTree()
+ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`;
 }
 
@@ -218,10 +288,15 @@ function createDedupedActivityMembersTableSql(targetSchema: string): string {
   return `CREATE TABLE ${targetSchema}.deduped_activity_members (
   activity_id UUID,
   user_id UUID,
+  started_at DateTime64(6, 'UTC'),
+  ended_at Nullable(DateTime64(6, 'UTC')),
+  source_synced_at DateTime64(9, 'UTC'),
   member_activity_id UUID,
-  is_deleted UInt8
+  refresh_version UInt64,
+  is_deleted UInt8,
+  refreshed_at DateTime64(9, 'UTC')
 )
-ENGINE = ReplacingMergeTree()
+ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, member_activity_id)`;
 }
 
@@ -282,15 +357,20 @@ function insertChangedRawMemberActivitySql(targetSchema: string): string {
   ('${memberActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
+function insertUnchangedRawMemberActivitySql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.source_activity VALUES
+  ('${memberActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
+}
+
 function insertDedupedActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.deduped_activities VALUES
-  ('${canonicalActivityId}', '${testUserId}', 'mountain_biking', 'Lunch Mountain Bike Ride', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 0)`;
+  ('${canonicalActivityId}', 'garmin', '${testUserId}', '${canonicalActivityId}', 'mountain_biking', 'Lunch Mountain Bike Ride', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 'Garmin Edge', NULL, 'America/Los_Angeles', NULL, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), ['garmin', 'wahoo'], [], ['${canonicalActivityId}', '${memberActivityId}'], 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertDedupedActivityMembersSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.deduped_activity_members VALUES
-  ('${canonicalActivityId}', '${testUserId}', '${canonicalActivityId}', 0),
-  ('${canonicalActivityId}', '${testUserId}', '${memberActivityId}', 0)`;
+  ('${canonicalActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), '${canonicalActivityId}', 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC')),
+  ('${canonicalActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), '${memberActivityId}', 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertCanonicalSensorSummarySql(targetSchema: string): string {

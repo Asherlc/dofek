@@ -15,6 +15,10 @@ active_activity AS (
         {% endif %}
 ),
 
+{{ activity_dedup_graph() }}
+{% endmacro %}
+
+{% macro activity_dedup_graph() %}
 active_provider_priority AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'provider_priority') }} FINAL

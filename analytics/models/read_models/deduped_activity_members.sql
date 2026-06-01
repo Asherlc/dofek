@@ -9,7 +9,31 @@
     }
 ) }}
 
-WITH current_activity_members AS (
+WITH target_state AS (
+    SELECT
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at,
+        {% if is_incremental() %}(count() = 0){% else %}1{% endif %} AS is_empty
+    FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
+),
+
+changed_deduped_activities AS (
+    SELECT deduped_activities.*
+    FROM {{ ref('deduped_activities') }} FINAL AS deduped_activities
+    WHERE (SELECT is_empty FROM target_state)
+        OR deduped_activities.refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+
+changed_activity_member_keys AS (
+    SELECT DISTINCT
+        user_id,
+        arrayJoin(member_activity_ids) AS member_activity_id
+    FROM changed_deduped_activities
+),
+
+current_activity_members AS (
     SELECT
         deduped_activities.activity_id AS activity_id,
         deduped_activities.user_id AS user_id,
@@ -17,24 +41,27 @@ WITH current_activity_members AS (
         deduped_activities.ended_at AS ended_at,
         deduped_activities.source_synced_at AS source_synced_at,
         arrayJoin(deduped_activities.member_activity_ids) AS member_activity_id
-    FROM (
-        SELECT *
-        FROM {{ ref('deduped_activities') }} FINAL
-        WHERE is_deleted = 0
-    ) AS deduped_activities
+    FROM changed_deduped_activities AS deduped_activities
+    WHERE deduped_activities.is_deleted = 0
 ),
 
 existing_activity_members AS (
     {% if is_incremental() %}
         SELECT
-            activity_id,
-            user_id,
-            started_at,
-            ended_at,
-            source_synced_at,
-            member_activity_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            existing_members.activity_id,
+            existing_members.user_id,
+            existing_members.started_at,
+            existing_members.ended_at,
+            existing_members.source_synced_at,
+            existing_members.member_activity_id
+        FROM {{ this }} FINAL AS existing_members
+        WHERE existing_members.is_deleted = 0
+            AND (existing_members.user_id, existing_members.member_activity_id) IN (
+                SELECT
+                    user_id,
+                    member_activity_id
+                FROM changed_activity_member_keys
+            )
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
@@ -56,10 +83,17 @@ stale_activity_members AS (
     WHERE current_activity_members.member_activity_id IS null
 ),
 
+changed_activity_member_count AS (
+    SELECT count() AS changed_member_count
+    FROM changed_activity_member_keys
+),
+
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
         now64(9) AS refreshed_at
+    FROM target_state
+    CROSS JOIN changed_activity_member_count
 )
 
 SELECT

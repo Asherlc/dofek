@@ -18,7 +18,8 @@ WITH current_activity AS (
         activity_type,
         name,
         started_at,
-        ended_at
+        ended_at,
+        refreshed_at
     FROM {{ ref('deduped_activities') }} FINAL
     WHERE is_deleted = 0
 ),
@@ -98,6 +99,16 @@ location_summary_dirty_keys AS (
         AND loc.refreshed_at > target_state.last_refreshed_at
 ),
 
+dedupe_mapping_dirty_keys AS (
+    SELECT DISTINCT
+        current_activity.activity_id,
+        current_activity.user_id
+    FROM current_activity
+    CROSS JOIN target_state
+    WHERE NOT target_state.is_empty
+        AND current_activity.refreshed_at > target_state.last_refreshed_at
+),
+
 existing_activity_keys AS (
     {% if is_incremental() %}
         SELECT
@@ -148,6 +159,11 @@ dirty_key_candidates AS (
             activity_id,
             user_id
         FROM sensor_summary_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM dedupe_mapping_dirty_keys
         UNION ALL
         SELECT
             activity_id,

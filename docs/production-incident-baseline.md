@@ -9344,9 +9344,11 @@ new incremental tables are populated.
   `deduped_activity_members` read models, changed activity sensor/location and
   final summary models to consume them, enabled `join_use_nulls` where stale
   detection depends on NULL joins, and removed the calendar route's runtime
-  `analytics.v_activity` join. Added a ClickHouse integration test proving raw
-  member summary changes rekey to the canonical activity and tombstone stale
-  member summaries.
+  `analytics.v_activity` join. The dedupe models now use dirty activity windows
+  for normal incremental runs and rebuild globally only when provider/device
+  priority changes can affect canonical selection. Added ClickHouse integration
+  tests proving raw member summary changes and dedupe-only mapping refreshes
+  rekey to the canonical activity and tombstone stale member summaries.
 - Remaining risk: Production needs the analytics worker to build the new
   `deduped_activities`, `deduped_activity_members`, and downstream summary
   models before stale duplicates disappear.

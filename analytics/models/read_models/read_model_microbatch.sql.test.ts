@@ -88,13 +88,19 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("WITH RECURSIVE {{ bounded_activity_graph() }}");
+    expect(sql).toContain("WITH RECURSIVE target_state AS");
+    expect(sql).toContain("{{ activity_dedup_graph() }}");
+    expect(sql).toContain("priority_changes AS");
+    expect(sql).toContain("changed_user_windows AS");
+    expect(sql).toContain("activity._peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)");
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
     expect(sql).toContain("stale_deduped_activities AS");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain("LEFT JOIN current_deduped_activities");
-    expect(normalizedSql).toContain("FROM {{ this }} FINAL WHERE is_deleted = 0");
+    expect(normalizedSql).toContain("LEFT JOIN changed_user_windows");
+    expect(normalizedSql).toContain("FROM {{ this }} FINAL AS deduped");
+    expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");
   });
 
   it("materializes deduped activity member aliases from deduped activities", () => {
@@ -105,12 +111,21 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('deduped_activities')");
+    expect(sql).toContain("target_state AS");
+    expect(sql).toContain("changed_deduped_activities AS");
+    expect(sql).toContain("changed_activity_member_keys AS");
+    expect(sql).toContain(
+      "deduped_activities.refreshed_at > (SELECT last_refreshed_at FROM target_state)",
+    );
     expect(sql).toContain("arrayJoin(deduped_activities.member_activity_ids) AS member_activity_id");
     expect(sql).toContain("stale_activity_members AS");
     expect(sql).not.toContain("bounded_activity_graph()");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain("LEFT JOIN current_activity_members");
-    expect(normalizedSql).toContain("FROM {{ this }} FINAL WHERE is_deleted = 0");
+    expect(normalizedSql).toContain(
+      "(existing_members.user_id, existing_members.member_activity_id) IN",
+    );
+    expect(normalizedSql).toContain("WHERE existing_members.is_deleted = 0");
   });
 
   it("materializes activity sensor membership as a microbatch intermediary", () => {
@@ -238,6 +253,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("(user_id, activity_id) IN");
     expect(sql).toContain("changed_raw_activity");
     expect(sql).toContain("dirty_key_candidates");
+    expect(sql).toContain("dedupe_mapping_dirty_keys");
     expect(sql).toContain("canonical_dirty_keys");
     expect(sql).toContain("stale_activity_dirty_keys");
     expect(normalizedSql).toContain("FROM current_activity CROSS JOIN target_state");
@@ -280,7 +296,11 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('deduped_activity_members')");
     expect(sql).toContain("dirty_key_candidates AS");
+    expect(sql).toContain("dedupe_mapping_dirty_keys AS");
     expect(sql).toContain("canonical_dirty_keys AS");
+    expect(normalizedSql).toContain(
+      "current_activity.refreshed_at > target_state.last_refreshed_at",
+    );
     expect(normalizedSql).toContain(
       "coalesce(activity_members.activity_id, dirty_key_candidates.activity_id) AS activity_id",
     );
