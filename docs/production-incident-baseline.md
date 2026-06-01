@@ -9371,3 +9371,22 @@ new incremental tables are populated.
   the required dbt read model exists.
 - Remaining risk: Production still needs the analytics worker to build the dbt
   model before web startup can pass this stricter readiness gate.
+
+### 2026-06-01 CI update
+
+- Symptoms: The `E2E Tests (Web)` workflow failed while starting the e2e
+  server container.
+- User impact: Pull request CI was blocked before Cypress could run.
+- Evidence: The failing command was
+  `docker compose -f docker-compose.e2e.yml up -d --wait --no-build server`;
+  the first fatal line was `container dofek-server-1 is unhealthy`. The logs
+  showed ClickHouse migrations completed, but the e2e job did not run the dbt
+  analytics build before starting the server.
+- Root cause: The web startup readiness check now requires the dbt-owned
+  `analytics.deduped_activities` model, while the e2e workflow only ran
+  migrations and then started the server.
+- Fix / mitigation: Added an e2e `analytics` one-shot service and workflow step
+  to build dbt analytics models between migrations and server startup. The
+  server now depends on that service completing successfully.
+- Remaining risk: Local full-stack e2e validation was blocked by Docker network
+  address-pool exhaustion; GitHub Actions must confirm the full container run.
