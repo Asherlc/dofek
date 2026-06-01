@@ -143,7 +143,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.centroid_lat AS centroid_lat,
             asum.centroid_lng AS centroid_lng,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
-          FROM analytics.deduped_activities FINAL AS activity
+          FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
@@ -239,7 +239,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
             coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
             coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
-          FROM analytics.deduped_activities FINAL AS activity
+          FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
@@ -254,7 +254,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         activityTypeRowSchema,
         `SELECT DISTINCT
             activity.activity_type AS activity_type
-          FROM analytics.deduped_activities FINAL AS activity
+          FROM analytics.deduped_activities AS activity FINAL
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
