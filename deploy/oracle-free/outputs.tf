@@ -4,7 +4,7 @@ output "instance_id" {
 }
 
 output "public_ip" {
-  description = "Reserved (static) public IP of the instance. Point Cloudflare DNS / Traefik host rules here and set the ORACLE_SERVER_HOST secret to it."
+  description = "Reserved (static) public IP of the instance. Store this in the ORACLE_SERVER_HOST GitHub Actions variable."
   value       = oci_core_public_ip.dofek.ip_address
 }
 

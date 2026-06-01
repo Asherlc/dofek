@@ -45,6 +45,8 @@ jobs:
     with:
       environment_name: production
       server_host_source: production
+      ssh_user: ubuntu
+      stack_override: deploy/stack.oracle.yml
       image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
       automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
       ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}

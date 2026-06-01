@@ -393,7 +393,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] GitHub Actions deploys the Docker Swarm stack with shared app/ML image tags
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
-- [x] Ephemeral preview environments per PR (Hetzner server + Cloudflare DNS + seeded DB)
+- [x] Ephemeral preview environments per PR (Hetzner PR server + OCI front door + seeded DB)
 
 ### Resilience
 - [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.

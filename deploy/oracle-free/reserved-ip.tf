@@ -4,8 +4,8 @@
 # (the deploy job needs a stable SSH host) and DNS. A reserved public IP keeps
 # the same address even when the instance is replaced: on recreate Terraform
 # reassigns this reserved IP to the new VNIC's private IP, so the address —
-# and therefore dofek-oracle.asherlc.com and the ORACLE_SERVER_HOST secret —
-# never changes. Reserved public IPs are free within the Always Free tier.
+# and therefore production DNS and the ORACLE_SERVER_HOST variable — never
+# changes. Reserved public IPs are free within the Always Free tier.
 #
 # create_vnic_details.assign_public_ip is set to false in compute.tf so the
 # private IP has no ephemeral public IP to conflict with this assignment.

@@ -1,5 +1,5 @@
 locals {
-  dofek_primary_host = var.oracle_server_host != "" ? var.oracle_server_host : hcloud_server.dofek.ipv4_address
+  dofek_primary_host = var.oracle_server_host
 }
 
 # --- dofek.fit ---
@@ -33,7 +33,7 @@ resource "cloudflare_dns_record" "dofek_fit_preview_wildcard" {
   zone_id = cloudflare_zone.dofek_fit.id
   type    = "CNAME"
   name    = "*.preview.dofek.fit"
-  content = "dofek-hetzner.asherlc.com"
+  content = "dofek.fit"
   proxied = false
   ttl     = 1
 }
@@ -51,7 +51,7 @@ resource "cloudflare_dns_record" "dofek_live_root" {
   zone_id = cloudflare_zone.dofek_live.id
   type    = "A"
   name    = "dofek.live"
-  content = hcloud_server.dofek.ipv4_address
+  content = local.dofek_primary_host
   proxied = true
   ttl     = 1
 }
@@ -151,17 +151,6 @@ resource "cloudflare_dns_record" "peerdb_dofek_asherlc" {
   name    = "peerdb.dofek.asherlc.com"
   content = "dofek.asherlc.com"
   proxied = false
-  ttl     = 1
-}
-
-# --- dofek-hetzner alias (Hetzner server, replaces direct IP references) ---
-
-resource "cloudflare_dns_record" "dofek_hetzner_asherlc" {
-  zone_id = data.cloudflare_zone.asherlc_com.zone_id
-  type    = "A"
-  name    = "dofek-hetzner.asherlc.com"
-  content = hcloud_server.dofek.ipv4_address
-  proxied = true
   ttl     = 1
 }
 

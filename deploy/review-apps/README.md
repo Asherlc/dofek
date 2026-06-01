@@ -1,7 +1,7 @@
 # Review Apps
 
 PR review apps run on dedicated Hetzner servers and are reached through the
-shared production front door at `pr-<number>.dofek.asherlc.com`.
+shared OCI production front door at `pr-<number>.dofek.asherlc.com`.
 
 ## How It Works
 
@@ -10,7 +10,7 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
 - Review app server: one Hetzner `cax11` server per PR.
 - App stack: `web`, `db`, and `redis` via Docker Compose on the review server.
 - Routing: the deploy workflow writes a Traefik dynamic-config file onto the
-  shared front door host so only that PR hostname is forwarded to the PR server.
+  OCI front door host so only that PR hostname is forwarded to the PR server.
 - DNS: the wildcard `*.dofek.asherlc.com` points at the shared front door as a
   DNS-only Cloudflare record so Traefik can serve TLS directly. Exact records
   like `portainer.dofek.asherlc.com` still take precedence.
@@ -25,7 +25,7 @@ shared production front door at `pr-<number>.dofek.asherlc.com`.
 - The deploy workflow:
   - builds `ghcr.io/asherlc/dofek:pr-<number>`
   - applies the PR Terraform workspace
-  - writes the exact PR host route on the shared front door
+  - writes the exact PR host route on the OCI front door
   - exports review env vars from Infisical
   - resets Docker Compose services and volumes so each deploy starts from a
     clean seeded database

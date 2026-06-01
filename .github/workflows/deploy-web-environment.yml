@@ -11,6 +11,16 @@ on:
         description: "Terraform output to use for the Docker SSH host: production or staging"
         required: true
         type: string
+      ssh_user:
+        description: "SSH user for the remote Docker context"
+        required: false
+        type: string
+        default: root
+      stack_override:
+        description: "Optional extra compose override appended to the stack deploy"
+        required: false
+        type: string
+        default: ""
       image_tag:
         description: "Docker image tag to deploy directly"
         required: false
@@ -163,6 +173,8 @@ jobs:
     with:
       image_tag: ${{ needs.check.outputs.image_tag }}
       server_host: ${{ inputs.server_host_source == 'staging' && needs.terraform.outputs.staging_server_host || needs.terraform.outputs.server_host }}
+      ssh_user: ${{ inputs.ssh_user }}
+      stack_override: ${{ inputs.stack_override }}
       infisical_environment: ${{ inputs.infisical_environment }}
       stack_name: ${{ inputs.stack_name }}
       public_url: ${{ inputs.public_url }}

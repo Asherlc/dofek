@@ -5,8 +5,8 @@ it at `pr-<number>.dofek.asherlc.com`.
 
 ## Architecture
 
-- Shared front door: the existing production Traefik instance on
-  `dofek.asherlc.com`.
+- Shared front door: the production Traefik instance on the OCI host addressed
+  by `ORACLE_SERVER_HOST`, serving `dofek.asherlc.com`.
 - DNS: `*.dofek.asherlc.com` points at the shared front door as a DNS-only
   Cloudflare record so Traefik can serve the wildcard TLS certificate directly.
 - Routing: the review-app deploy workflow writes one Traefik dynamic-config
@@ -29,7 +29,7 @@ does the following:
 2. Create the tagged HCP Terraform workspace `dofek-review-pr-<number>` if it
    does not exist yet.
 3. Apply the Terraform workspace `dofek-review-pr-<number>`.
-4. Write the exact PR host route on the shared front door.
+4. Write the exact PR host route on the OCI shared front door.
 5. Wait for Docker on the new Hetzner server.
 6. Export review env vars from Infisical.
 7. Reset Docker Compose services and volumes, start `db`, `clickhouse`, and
@@ -75,8 +75,9 @@ Use:
   starts the workflow.
 - Review app port `3000` only accepts traffic from the shared front door IP.
 - The shared front door must already have the wildcard DNS record and Traefik
-  file provider enabled. Those changes live in the main `deploy/` Terraform and
-  swarm stack, not in the PR workspace itself.
+  file provider enabled. DNS lives in the main `deploy/` Terraform root; the
+  Traefik file provider is part of the production OCI swarm stack, not the PR
+  workspace itself.
 - The review database uses the TimescaleDB HA image's default PostgreSQL data
   parent (`/home/postgres/pgdata`). Do not mount the disposable Docker volume
   directly on `PGDATA`; the image must be able to create and own the nested

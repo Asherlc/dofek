@@ -1,12 +1,7 @@
 # One-time imports for existing resources into the unified workspace.
 # Remove this file after the first successful `terraform apply`.
 
-# ── Hetzner ──────────────────────────────────────────────────────────────
-
-import {
-  to = hcloud_server.dofek
-  id = "125992620"
-}
+# ── Hetzner staging ─────────────────────────────────────────────────────
 
 import {
   to = hcloud_firewall.dofek

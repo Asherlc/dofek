@@ -3,7 +3,7 @@
 > **Read the [README.md](./README.md) first** for architecture and implementation details.
 
 ## High-Level Mandates
-- **Always use Terraform**: Never manually modify infrastructure on Hetzner or Cloudflare.
+- **Always use Terraform**: Never manually modify infrastructure on OCI, Hetzner, or Cloudflare.
 - **Secrets via Infisical**: Never hardcode secrets in `.tf` files or `stack.yml`. CI fetches deploy-tagged single-line secrets into an `env_file` for stack deploy; multiline secrets must be injected as Docker Swarm secrets.
 - **Zero-Downtime via Swarm**: `deploy.update_config` on `web`/`worker` uses `order: start-first` + healthcheck-gated `monitor` + `failure_action: rollback`. Never bypass this (e.g., no `docker service rm` + recreate — always `docker stack deploy` or `docker service update`).
 - **Deterministic Migrations**: Migrations run in CI **before** `stack deploy` as a one-shot container against the remote swarm (`docker --context prod run --rm --network dofek_default ... migrate`). Do not run migrations inside `web` startup in production.
@@ -24,9 +24,10 @@ To force a redeploy of the same tag (e.g., `latest` after a rebuild), re-run the
 4. SSH is still allowed for inspection (reading logs, `docker ps`, `docker network inspect`) but not for making changes — fixes belong in `stack.yml` / Terraform.
 
 ### Modifying OTel Config
-`otel-collector-config.yaml` is a Docker Swarm **config object** (`otel_collector_config` in `stack.yml`), uploaded into the swarm by `docker stack deploy` on every deploy — no host file, identical on every host (Hetzner, staging, OCI). Swarm config objects are **immutable**, so after editing the file you MUST bump the config key's version suffix in `stack.yml` (e.g. `otel_collector_config` → `otel_collector_config_v2`), exactly like `netdata_db_limits_v2`. Without the bump, `docker stack deploy` keeps the old config and the collector won't pick up changes.
+`otel-collector-config.yaml` is a Docker Swarm **config object** (`otel_collector_config` in `stack.yml`), uploaded into the swarm by `docker stack deploy` on every deploy — no host file, identical on every host (production OCI and staging Hetzner). Swarm config objects are **immutable**, so after editing the file you MUST bump the config key's version suffix in `stack.yml` (e.g. `otel_collector_config` → `otel_collector_config_v2`), exactly like `netdata_db_limits_v2`. Without the bump, `docker stack deploy` keeps the old config and the collector won't pick up changes.
 
 ## Guardrails
-- **Immutable Server**: `hcloud_server.dofek` has `lifecycle { ignore_changes = [ssh_keys, user_data, image] }` to prevent accidental destruction of the live server during drift. To reprovision, you must explicitly taint the resource.
+- **Production host**: Production deploys to the OCI host in `ORACLE_SERVER_HOST` with `ssh_user: ubuntu` and `deploy/stack.oracle.yml`. Hetzner production resources should not be reintroduced; Hetzner is reserved for staging and review apps.
+- **Immutable Staging Server**: `hcloud_server.dofek_staging` has `lifecycle { ignore_changes = [ssh_keys, user_data, image] }` to prevent accidental destruction of staging during drift. To reprovision, you must explicitly taint the resource.
 - **Port 5432**: Database port is bound to `127.0.0.1:5432` only. Access it via SSH tunnel or pgAdmin.
 - **Overlay network is attachable**: the `default` network in `stack.yml` is declared `attachable: true` specifically so CI can attach one-shot containers (migrations). Do not remove — it breaks the migration step.
