@@ -54,6 +54,12 @@ stale_activity_members AS (
         ON current_activity_members.member_activity_id = existing_activity_members.member_activity_id
         AND current_activity_members.user_id = existing_activity_members.user_id
     WHERE current_activity_members.member_activity_id IS null
+),
+
+refresh_clock AS (
+    SELECT
+        toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+        now64(9) AS refreshed_at
 )
 
 SELECT
@@ -63,10 +69,11 @@ SELECT
     ended_at,
     source_synced_at,
     member_activity_id,
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
-    now64(9) AS refreshed_at
+    refresh_clock.refreshed_at AS refreshed_at
 FROM current_activity_members
+CROSS JOIN refresh_clock
 
 UNION ALL
 
@@ -77,7 +84,8 @@ SELECT
     ended_at,
     source_synced_at,
     member_activity_id,
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,
-    now64(9) AS refreshed_at
+    refresh_clock.refreshed_at AS refreshed_at
 FROM stale_activity_members
+CROSS JOIN refresh_clock

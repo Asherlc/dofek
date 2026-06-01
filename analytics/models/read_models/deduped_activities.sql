@@ -79,6 +79,12 @@ stale_deduped_activities AS (
         ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
         AND current_deduped_activities.user_id = existing_deduped_activities.user_id
     WHERE current_deduped_activities.activity_id IS null
+),
+
+refresh_clock AS (
+    SELECT
+        toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+        now64(9) AS refreshed_at
 )
 
 SELECT
@@ -98,10 +104,11 @@ SELECT
     source_providers,
     source_external_ids,
     member_activity_ids,
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
-    now64(9) AS refreshed_at
+    refresh_clock.refreshed_at AS refreshed_at
 FROM current_deduped_activities
+CROSS JOIN refresh_clock
 
 UNION ALL
 
@@ -122,7 +129,8 @@ SELECT
     source_providers,
     source_external_ids,
     member_activity_ids,
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,
-    now64(9) AS refreshed_at
+    refresh_clock.refreshed_at AS refreshed_at
 FROM stale_deduped_activities
+CROSS JOIN refresh_clock
