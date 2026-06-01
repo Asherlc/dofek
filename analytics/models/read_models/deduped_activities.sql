@@ -87,66 +87,46 @@ current_deduped_activities AS (
         source_external_ids,
         member_activity_ids
     FROM merged
-),
+)
 
+{% if is_incremental() %}
+,
 existing_deduped_activities AS (
-    {% if is_incremental() %}
-        SELECT
-            deduped.activity_id,
-            deduped.provider_id,
-            deduped.user_id,
-            deduped.activity_type,
-            deduped.started_at,
-            deduped.ended_at,
-            deduped.source_name,
-            deduped.name,
-            deduped.notes,
-            deduped.timezone,
-            deduped.raw,
-            deduped.source_synced_at,
-            deduped.source_providers,
-            deduped.source_external_ids,
-            deduped.member_activity_ids
-        FROM {{ this }} AS deduped FINAL
-        LEFT JOIN changed_user_windows
-            ON changed_user_windows.user_id = deduped.user_id
-            AND deduped.started_at < changed_user_windows.ended_at
-            AND coalesce(deduped.ended_at, deduped.started_at + INTERVAL 12 HOUR) >= changed_user_windows.started_at
-        WHERE deduped.is_deleted = 0
-            AND (
-                (SELECT has_changes FROM priority_changes)
-                OR changed_user_windows.user_id IS NOT null
-            )
-    {% else %}
-        SELECT
-            CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(String)') AS provider_id,
-            CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(String)') AS activity_type,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
-            CAST(null, 'Nullable(String)') AS source_name,
-            CAST(null, 'Nullable(String)') AS name,
-            CAST(null, 'Nullable(String)') AS notes,
-            CAST(null, 'Nullable(String)') AS timezone,
-            CAST(null, 'Nullable(String)') AS raw,
-            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS source_synced_at,
-            CAST([], 'Array(String)') AS source_providers,
-            CAST([], 'Array(Map(String, String))') AS source_external_ids,
-            CAST([], 'Array(UUID)') AS member_activity_ids
-        WHERE 1 = 0
-    {% endif %}
+    SELECT
+        deduped.activity_id,
+        deduped.provider_id,
+        deduped.user_id,
+        deduped.activity_type,
+        deduped.started_at,
+        deduped.ended_at,
+        deduped.source_name,
+        deduped.name,
+        deduped.notes,
+        deduped.timezone,
+        deduped.raw,
+        deduped.source_synced_at,
+        deduped.source_providers,
+        deduped.source_external_ids,
+        deduped.member_activity_ids
+    FROM {{ this }} AS deduped FINAL
+    LEFT JOIN changed_user_windows
+        ON changed_user_windows.user_id = deduped.user_id
+        AND deduped.started_at < changed_user_windows.ended_at
+        AND coalesce(deduped.ended_at, deduped.started_at + INTERVAL 12 HOUR) >= changed_user_windows.started_at
+    WHERE deduped.is_deleted = 0
+        AND (
+            (SELECT has_changes FROM priority_changes)
+            OR changed_user_windows.user_id IS NOT null
+        )
 ),
 
 stale_deduped_activities AS (
-    SELECT existing_deduped_activities.*
+    SELECT *
     FROM existing_deduped_activities
-    LEFT JOIN current_deduped_activities
-        ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
-        AND current_deduped_activities.user_id = existing_deduped_activities.user_id
-    WHERE current_deduped_activities.activity_id IS null
-),
+)
+{% endif %}
 
+,
 changed_user_window_count AS (
     SELECT count() AS changed_window_count
     FROM changed_user_windows
@@ -183,6 +163,7 @@ SELECT
 FROM current_deduped_activities
 CROSS JOIN refresh_clock
 
+{% if is_incremental() %}
 UNION ALL
 
 SELECT
@@ -202,8 +183,9 @@ SELECT
     source_providers,
     source_external_ids,
     member_activity_ids,
-    refresh_clock.refresh_version AS refresh_version,
+    refresh_clock.refresh_version - 1 AS refresh_version,
     1 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
 FROM stale_deduped_activities
 CROSS JOIN refresh_clock
+{% endif %}

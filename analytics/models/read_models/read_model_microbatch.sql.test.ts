@@ -96,8 +96,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
     expect(sql).toContain("stale_deduped_activities AS");
+    expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("'join_use_nulls': 1");
-    expect(normalizedSql).toContain("LEFT JOIN current_deduped_activities");
+    expect(normalizedSql).toContain("FROM existing_deduped_activities");
+    expect(sql).toContain("refresh_clock.refresh_version - 1 AS refresh_version");
     expect(normalizedSql).toContain("LEFT JOIN changed_user_windows");
     expect(normalizedSql).toContain("FROM {{ this }} AS deduped FINAL");
     expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");

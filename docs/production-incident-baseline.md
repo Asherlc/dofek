@@ -9352,3 +9352,56 @@ new incremental tables are populated.
 - Remaining risk: Production needs the analytics worker to build the new
   `deduped_activities`, `deduped_activity_members`, and downstream summary
   models before stale duplicates disappear.
+
+### 2026-06-01 update
+
+- Symptoms: Calendar activity list and overview ClickHouse queries failed with
+  `Unknown table expression identifier 'analytics.deduped_activities'`.
+- User impact: The activities calendar route could fail instead of returning
+  recent activity cards, overview totals, or activity type filters.
+- Evidence: The failing SQL read `analytics.deduped_activities AS activity FINAL`;
+  the dbt model exists and is selected by `DBT_SAFE_MODELS`, but
+  `bootstrapClickHouseFromEnv` only waited for `analytics.deduped_sensor`,
+  `analytics.activity_summary`, and `analytics.activity_trend_daily`.
+- Root cause: The web startup ClickHouse prerequisite check was not updated
+  when the runtime activity calendar queries started depending on
+  `analytics.deduped_activities`.
+- Fix / mitigation: Added `analytics.deduped_activities` to startup table
+  existence and column smoke verification so the web process fails loudly until
+  the required dbt read model exists.
+- Remaining risk: Production still needs the analytics worker to build the dbt
+  model before web startup can pass this stricter readiness gate.
+
+### 2026-06-01 CI update
+
+- Symptoms: The `E2E Tests (Web)` workflow failed while starting the e2e
+  server container.
+- User impact: Pull request CI was blocked before Cypress could run.
+- Evidence: The failing command was
+  `docker compose -f docker-compose.e2e.yml up -d --wait --no-build server`;
+  the first fatal line was `container dofek-server-1 is unhealthy`. The logs
+  showed ClickHouse migrations completed, but the e2e job did not run the dbt
+  analytics build before starting the server.
+- Root cause: The web startup readiness check now requires the dbt-owned
+  `analytics.deduped_activities` model, while the e2e workflow only ran
+  migrations and then started the server.
+- Fix / mitigation: Added an e2e `analytics` one-shot service and workflow step
+  to build dbt analytics models between migrations and server startup. The
+  server now depends on that service completing successfully. Review feedback
+  identified that `docker compose run --rm analytics` did not satisfy later
+  `service_completed_successfully` dependencies or preserve logs, so the e2e
+  workflow now starts `migrate` and `analytics` as tracked compose services and
+  waits on their container exit codes.
+  The first CI rerun then exposed a ClickHouse analyzer failure in
+  `deduped_activities`: the stale tombstone branch anti-joined against the
+  recursive graph output, causing
+  `Unknown table expression identifier 'connected_components'`. The model now
+  tombstones existing affected rows at `refresh_version - 1` and inserts current
+  rows at `refresh_version`, so unchanged current rows win without
+  re-referencing the recursive CTE in the stale branch. A later CI rerun exposed
+  `deduped_activity_members` first-build schema inference using nullable dummy
+  stale rows in the sort key; that model now keeps existing/stale member CTEs
+  incremental-only so first-build sort keys come from current rows.
+- Remaining risk: Local full-stack e2e validation was blocked by Docker network
+  address-pool exhaustion; local single-model dbt first-build and incremental
+  runs reproduced and validated the failing model path.

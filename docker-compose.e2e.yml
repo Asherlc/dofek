@@ -66,6 +66,26 @@ services:
     command: ["migrate"]
     restart: "no"
 
+  analytics:
+    image: e2e-server
+    build:
+      context: .
+      target: server
+    environment:
+      DATABASE_URL: postgres://health:health@db:5432/health
+      CLICKHOUSE_URL: http://default:health@clickhouse:8123
+      CLICKHOUSE_PASSWORD: health
+      NODE_ENV: test
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    command: ["analytics"]
+    restart: "no"
+
   server:
     image: e2e-server
     build:
@@ -84,6 +104,8 @@ services:
       MATERIALIZED_VIEW_REFRESH_TOKEN: e2e-refresh-token
     depends_on:
       migrate:
+        condition: service_completed_successfully
+      analytics:
         condition: service_completed_successfully
       db:
         condition: service_healthy
