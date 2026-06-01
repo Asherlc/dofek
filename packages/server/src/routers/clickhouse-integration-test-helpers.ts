@@ -331,6 +331,8 @@ function rewriteClickHouseDatabaseNames(
     .replace(/\banalytics\b/g, databases.analytics);
 }
 
+function buildTestAnalyticsTableStatement(viewName: "analytics.deduped_activities"): string;
+function buildTestAnalyticsTableStatement(viewName: string): string | null;
 function buildTestAnalyticsTableStatement(viewName: string): string | null {
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
@@ -831,11 +833,6 @@ async function bootstrapClickHouseTestSchema(
   const dedupedActivitiesTableStatement = buildTestAnalyticsTableStatement(
     "analytics.deduped_activities",
   );
-  if (!dedupedActivitiesTableStatement) {
-    throw new Error(
-      "Missing ClickHouse test analytics table schema for analytics.deduped_activities",
-    );
-  }
   await client.command({ query: dedupedActivitiesTableStatement });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 }
