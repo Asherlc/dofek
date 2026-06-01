@@ -9387,6 +9387,13 @@ new incremental tables are populated.
   migrations and then started the server.
 - Fix / mitigation: Added an e2e `analytics` one-shot service and workflow step
   to build dbt analytics models between migrations and server startup. The
-  server now depends on that service completing successfully.
+  server now depends on that service completing successfully. The first CI rerun
+  then exposed a ClickHouse analyzer failure in `deduped_activities`: the stale
+  tombstone branch anti-joined against the recursive graph output, causing
+  `Unknown table expression identifier 'connected_components'`. The model now
+  tombstones existing affected rows at `refresh_version - 1` and inserts current
+  rows at `refresh_version`, so unchanged current rows win without re-referencing
+  the recursive CTE in the stale branch.
 - Remaining risk: Local full-stack e2e validation was blocked by Docker network
-  address-pool exhaustion; GitHub Actions must confirm the full container run.
+  address-pool exhaustion; local single-model dbt first-build and incremental
+  runs reproduced and validated the failing model path.

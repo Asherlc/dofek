@@ -136,17 +136,17 @@ existing_deduped_activities AS (
             CAST([], 'Array(UUID)') AS member_activity_ids
         WHERE 1 = 0
     {% endif %}
-),
+)
 
+{% if is_incremental() %}
+,
 stale_deduped_activities AS (
-    SELECT existing_deduped_activities.*
+    SELECT *
     FROM existing_deduped_activities
-    LEFT JOIN current_deduped_activities
-        ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
-        AND current_deduped_activities.user_id = existing_deduped_activities.user_id
-    WHERE current_deduped_activities.activity_id IS null
-),
+)
+{% endif %}
 
+,
 changed_user_window_count AS (
     SELECT count() AS changed_window_count
     FROM changed_user_windows
@@ -183,6 +183,7 @@ SELECT
 FROM current_deduped_activities
 CROSS JOIN refresh_clock
 
+{% if is_incremental() %}
 UNION ALL
 
 SELECT
@@ -202,8 +203,9 @@ SELECT
     source_providers,
     source_external_ids,
     member_activity_ids,
-    refresh_clock.refresh_version AS refresh_version,
+    refresh_clock.refresh_version - 1 AS refresh_version,
     1 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
 FROM stale_deduped_activities
 CROSS JOIN refresh_clock
+{% endif %}
