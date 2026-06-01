@@ -21,7 +21,7 @@ WITH target_state AS (
 
 changed_deduped_activities AS (
     SELECT deduped_activities.*
-    FROM {{ ref('deduped_activities') }} FINAL AS deduped_activities
+    FROM {{ ref('deduped_activities') }} AS deduped_activities FINAL
     WHERE (SELECT is_empty FROM target_state)
         OR deduped_activities.refreshed_at > (SELECT last_refreshed_at FROM target_state)
 ),
@@ -54,7 +54,7 @@ existing_activity_members AS (
             existing_members.ended_at,
             existing_members.source_synced_at,
             existing_members.member_activity_id
-        FROM {{ this }} FINAL AS existing_members
+        FROM {{ this }} AS existing_members FINAL
         WHERE existing_members.is_deleted = 0
             AND (existing_members.user_id, existing_members.member_activity_id) IN (
                 SELECT

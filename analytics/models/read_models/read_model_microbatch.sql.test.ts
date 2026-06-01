@@ -99,7 +99,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain("LEFT JOIN current_deduped_activities");
     expect(normalizedSql).toContain("LEFT JOIN changed_user_windows");
-    expect(normalizedSql).toContain("FROM {{ this }} FINAL AS deduped");
+    expect(normalizedSql).toContain("FROM {{ this }} AS deduped FINAL");
     expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");
   });
 
@@ -125,6 +125,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "(existing_members.user_id, existing_members.member_activity_id) IN",
     );
+    expect(normalizedSql).toContain("FROM {{ this }} AS existing_members FINAL");
     expect(normalizedSql).toContain("WHERE existing_members.is_deleted = 0");
   });
 

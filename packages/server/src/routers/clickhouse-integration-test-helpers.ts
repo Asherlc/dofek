@@ -331,6 +331,8 @@ function rewriteClickHouseDatabaseNames(
     .replace(/\banalytics\b/g, databases.analytics);
 }
 
+function buildTestAnalyticsTableStatement(viewName: "analytics.deduped_activities"): string;
+function buildTestAnalyticsTableStatement(viewName: string): string | null;
 function buildTestAnalyticsTableStatement(viewName: string): string | null {
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
@@ -446,6 +448,24 @@ user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
 lat Nullable(Float32),
 lng Nullable(Float32)`,
+    deduped_activities: `activity_id UUID,
+provider_id String,
+user_id UUID,
+activity_type String,
+started_at DateTime64(6, 'UTC'),
+ended_at Nullable(DateTime64(6, 'UTC')),
+source_name Nullable(String),
+name Nullable(String),
+notes Nullable(String),
+timezone Nullable(String),
+raw Nullable(String),
+source_synced_at DateTime64(9, 'UTC'),
+source_providers Array(String),
+source_external_ids Array(Map(String, Nullable(String))),
+member_activity_ids Array(UUID),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_summary: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -503,11 +523,14 @@ activity_count UInt64`,
   if (!columnDefinitions) {
     return null;
   }
+  const engine =
+    shortViewName === "deduped_activities" ? "ReplacingMergeTree(refresh_version)" : "MergeTree";
+  const orderBy = shortViewName === "deduped_activities" ? "(user_id, activity_id)" : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
-ENGINE = MergeTree
-ORDER BY tuple()`;
+ENGINE = ${engine}
+ORDER BY ${orderBy}`;
 }
 
 function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -807,6 +830,10 @@ async function bootstrapClickHouseTestSchema(
   for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
     await client.command({ query: statement });
   }
+  const dedupedActivitiesTableStatement = buildTestAnalyticsTableStatement(
+    "analytics.deduped_activities",
+  );
+  await client.command({ query: dedupedActivitiesTableStatement });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 }
 
@@ -850,6 +877,7 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
 
   await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
+  await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });
   await client.command({ query: "TRUNCATE TABLE analytics.activity_vo2max_estimate" });
   await client.command({ query: buildSensorScalarSampleBackfillSql() });
   await client.command({ query: buildDedupedSensorBackfillSql() });

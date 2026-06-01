@@ -38,7 +38,7 @@ changed_activity_windows AS (
         activity.user_id AS user_id,
         activity.started_at AS started_at,
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL AS activity
+    FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
     WHERE NOT (SELECT is_empty FROM target_state)
         AND activity._peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
 ),
@@ -54,7 +54,7 @@ changed_user_windows AS (
 
 active_activity AS (
     SELECT activity.*
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL AS activity
+    FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
     LEFT JOIN changed_user_windows
         ON changed_user_windows.user_id = activity.user_id
         AND activity.started_at < changed_user_windows.ended_at
@@ -107,7 +107,7 @@ existing_deduped_activities AS (
             deduped.source_providers,
             deduped.source_external_ids,
             deduped.member_activity_ids
-        FROM {{ this }} FINAL AS deduped
+        FROM {{ this }} AS deduped FINAL
         LEFT JOIN changed_user_windows
             ON changed_user_windows.user_id = deduped.user_id
             AND deduped.started_at < changed_user_windows.ended_at

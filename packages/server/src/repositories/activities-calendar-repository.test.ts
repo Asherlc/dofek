@@ -60,20 +60,20 @@ function normalizeSql(queryText: string | undefined): string {
 
 function expectDedupedActivitiesWithSummaryMetrics(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
-  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
+  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
   expect(normalizedQueryText).not.toContain("analytics.v_activity");
 }
 
 function expectDedupedActivitiesOnly(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
-  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
+  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
   expect(normalizedQueryText).not.toContain("analytics.v_activity");
 }
 
 function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
-  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
+  expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
   expect(normalizedQueryText).toContain("toString(activity.activity_id) AS id");
   expect(normalizedQueryText).toContain("activity.name AS name");
@@ -380,7 +380,7 @@ describe("ActivitiesCalendarRepository", () => {
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
     expect(normalizeSql(typeQueryText)).toContain(
-      "FROM analytics.deduped_activities FINAL AS activity",
+      "FROM analytics.deduped_activities AS activity FINAL",
     );
   });
 
