@@ -129,12 +129,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.#sensorStore.query(
         activityRowSchema,
         `SELECT
-            toString(asum.activity_id) AS id,
-            asum.name AS name,
-            asum.activity_type AS activity_type,
-            toString(asum.started_at) AS started_at,
-            toString(asum.ended_at) AS ended_at,
-            dateDiff('second', asum.started_at, asum.ended_at) / 60.0 AS duration_min,
+            toString(activity.activity_id) AS id,
+            activity.name AS name,
+            activity.activity_type AS activity_type,
+            toString(activity.started_at) AS started_at,
+            toString(activity.ended_at) AS ended_at,
+            dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
             asum.avg_power AS avg_power,
@@ -142,13 +142,17 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.elevation_gain_m AS elevation_gain_m,
             asum.centroid_lat AS centroid_lat,
             asum.centroid_lng AS centroid_lng,
-            toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS local_date
-          FROM analytics.activity_summary asum
-          WHERE asum.user_id = {userId:UUID}
-            AND asum.ended_at IS NOT NULL
-            AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+            toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
+          FROM analytics.deduped_activities FINAL AS activity
+          LEFT JOIN analytics.activity_summary asum
+            ON asum.user_id = activity.user_id
+           AND asum.activity_id = activity.activity_id
+          WHERE activity.user_id = {userId:UUID}
+            AND activity.is_deleted = 0
+            AND activity.ended_at IS NOT NULL
+            AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
             ${activityTypeFilter}
-          ORDER BY asum.started_at DESC`,
+          ORDER BY activity.started_at DESC`,
         queryParams,
       ),
       this.#sensorStore.query(
@@ -232,24 +236,29 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         overviewRowSchema,
         `SELECT
             count() AS activity_count,
-            coalesce(sum(dateDiff('second', asum.started_at, asum.ended_at) / 60.0), 0) AS total_minutes,
+            coalesce(sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0), 0) AS total_minutes,
             coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
             coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
-          FROM analytics.activity_summary asum
-          WHERE asum.user_id = {userId:UUID}
-            AND asum.ended_at IS NOT NULL
-            AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+          FROM analytics.deduped_activities FINAL AS activity
+          LEFT JOIN analytics.activity_summary asum
+            ON asum.user_id = activity.user_id
+           AND asum.activity_id = activity.activity_id
+          WHERE activity.user_id = {userId:UUID}
+            AND activity.is_deleted = 0
+            AND activity.ended_at IS NOT NULL
+            AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
             ${activityTypeFilter}`,
         queryParams,
       ),
       this.#sensorStore.query(
         activityTypeRowSchema,
         `SELECT DISTINCT
-            asum.activity_type AS activity_type
-          FROM analytics.activity_summary asum
-          WHERE asum.user_id = {userId:UUID}
-            AND asum.ended_at IS NOT NULL
-            AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+            activity.activity_type AS activity_type
+          FROM analytics.deduped_activities FINAL AS activity
+          WHERE activity.user_id = {userId:UUID}
+            AND activity.is_deleted = 0
+            AND activity.ended_at IS NOT NULL
+            AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
           ORDER BY activity_type ASC`,
         typeQueryParams,
       ),
@@ -291,7 +300,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 }
 
 function activityTypeFilterSql(input: Pick<WeekListInput, "activityType">): string {
-  return input.activityType ? "AND asum.activity_type = {activityType:String}" : "";
+  return input.activityType ? "AND activity.activity_type = {activityType:String}" : "";
 }
 
 function activitySummaryQueryParams(
