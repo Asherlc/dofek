@@ -15,7 +15,17 @@
     }
 ) }}
 
-WITH RECURSIVE {{ bounded_activity_graph() }},
+WITH activity_members AS (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        ended_at,
+        source_synced_at,
+        member_activity_id
+    FROM {{ ref('deduped_activity_members') }} FINAL
+    WHERE is_deleted = 0
+),
 
 location_versions AS (
     SELECT *

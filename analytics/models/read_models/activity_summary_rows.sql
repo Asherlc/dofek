@@ -4,13 +4,33 @@
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 
-WITH RECURSIVE {{ bounded_activity_graph() }},
+WITH current_activity AS (
+    SELECT
+        activity_id,
+        user_id,
+        activity_type,
+        name,
+        started_at,
+        ended_at
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
+),
+
+activity_members AS (
+    SELECT
+        activity_id,
+        user_id,
+        member_activity_id
+    FROM {{ ref('deduped_activity_members') }} FINAL
+    WHERE is_deleted = 0
+),
 
 target_state AS (
     SELECT
@@ -42,13 +62,6 @@ changed_raw_activity AS (
     CROSS JOIN target_state
     WHERE NOT target_state.is_empty
         AND activity._peerdb_synced_at > target_state.last_refreshed_at
-),
-
-changed_activity_dirty_keys AS (
-    SELECT
-        activity_id,
-        user_id
-    FROM changed_raw_activity
 ),
 
 activity_source_dirty_keys AS (
@@ -111,7 +124,7 @@ stale_activity_dirty_keys AS (
     WHERE current_activity.activity_id IS null
 ),
 
-dirty_keys AS (
+dirty_key_candidates AS (
     SELECT DISTINCT
         activity_id,
         user_id
@@ -129,7 +142,7 @@ dirty_keys AS (
         SELECT
             activity_id,
             user_id
-        FROM changed_activity_dirty_keys
+        FROM changed_raw_activity
         UNION ALL
         SELECT
             activity_id,
@@ -140,6 +153,28 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM location_summary_dirty_keys
+    )
+),
+
+canonical_dirty_keys AS (
+    SELECT DISTINCT
+        coalesce(activity_members.activity_id, dirty_key_candidates.activity_id) AS activity_id,
+        dirty_key_candidates.user_id AS user_id
+    FROM dirty_key_candidates AS dirty_key_candidates
+    LEFT JOIN activity_members
+        ON activity_members.member_activity_id = dirty_key_candidates.activity_id
+        AND activity_members.user_id = dirty_key_candidates.user_id
+),
+
+dirty_keys AS (
+    SELECT DISTINCT
+        activity_id,
+        user_id
+    FROM (
+        SELECT
+            activity_id,
+            user_id
+        FROM canonical_dirty_keys
         UNION ALL
         SELECT
             activity_id,

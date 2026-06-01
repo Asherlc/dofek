@@ -58,10 +58,10 @@ function normalizeSql(queryText: string | undefined): string {
   return queryText?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-function expectCanonicalActivityJoin(queryText: string | undefined): void {
-  expect(normalizeSql(queryText)).toMatch(
-    /INNER JOIN analytics\.v_activity AS ([a-z_]+) ON \1\.id = asum\.activity_id AND \1\.user_id = asum\.user_id/,
-  );
+function expectCanonicalActivitySummaryOnly(queryText: string | undefined): void {
+  const normalizedQueryText = normalizeSql(queryText);
+  expect(normalizedQueryText).toContain("FROM analytics.activity_summary asum");
+  expect(normalizedQueryText).not.toContain("analytics.v_activity");
 }
 
 describe("ActivitiesCalendarRepository", () => {
@@ -251,7 +251,7 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expectCanonicalActivityJoin(queryText);
+    expectCanonicalActivitySummaryOnly(queryText);
   });
 
   it("returns activity overview totals directly from ClickHouse", async () => {
@@ -316,8 +316,8 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectCanonicalActivityJoin(overviewQueryText);
-    expectCanonicalActivityJoin(typeQueryText);
+    expectCanonicalActivitySummaryOnly(overviewQueryText);
+    expectCanonicalActivitySummaryOnly(typeQueryText);
   });
 
   it("reads precomputed centroids from activity summary without a runtime location query", async () => {

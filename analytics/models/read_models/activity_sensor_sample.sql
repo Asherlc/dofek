@@ -15,7 +15,16 @@
     }
 ) }}
 
-WITH RECURSIVE {{ bounded_activity_graph() }},
+WITH current_activity AS (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        ended_at,
+        source_synced_at
+    FROM {{ ref('deduped_activities') }} FINAL
+    WHERE is_deleted = 0
+),
 
 activity_samples AS (
     SELECT
