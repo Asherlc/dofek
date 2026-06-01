@@ -605,9 +605,19 @@ jobs:
       - name: Start e2e dependencies
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse
       - name: Run e2e migrations
-        run: docker compose -f docker-compose.e2e.yml run --rm migrate
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --no-build migrate
+          exit_code=$(docker wait "$(docker compose -f docker-compose.e2e.yml ps -q migrate)")
+          if [ "$exit_code" != "0" ]; then
+            exit "$exit_code"
+          fi
       - name: Build e2e analytics models
-        run: docker compose -f docker-compose.e2e.yml run --rm analytics
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --no-build analytics
+          exit_code=$(docker wait "$(docker compose -f docker-compose.e2e.yml ps -q analytics)")
+          if [ "$exit_code" != "0" ]; then
+            exit "$exit_code"
+          fi
       - name: Start e2e server
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build server
       - run: pnpm e2e:web:run

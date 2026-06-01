@@ -43,35 +43,26 @@ current_activity_members AS (
         arrayJoin(deduped_activities.member_activity_ids) AS member_activity_id
     FROM changed_deduped_activities AS deduped_activities
     WHERE deduped_activities.is_deleted = 0
-),
+)
 
+{% if is_incremental() %}
+,
 existing_activity_members AS (
-    {% if is_incremental() %}
-        SELECT
-            existing_members.activity_id,
-            existing_members.user_id,
-            existing_members.started_at,
-            existing_members.ended_at,
-            existing_members.source_synced_at,
-            existing_members.member_activity_id
-        FROM {{ this }} AS existing_members FINAL
-        WHERE existing_members.is_deleted = 0
-            AND (existing_members.user_id, existing_members.member_activity_id) IN (
-                SELECT
-                    user_id,
-                    member_activity_id
-                FROM changed_activity_member_keys
-            )
-    {% else %}
-        SELECT
-            CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-            CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
-            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS source_synced_at,
-            CAST(null, 'Nullable(UUID)') AS member_activity_id
-        WHERE 1 = 0
-    {% endif %}
+    SELECT
+        existing_members.activity_id,
+        existing_members.user_id,
+        existing_members.started_at,
+        existing_members.ended_at,
+        existing_members.source_synced_at,
+        existing_members.member_activity_id
+    FROM {{ this }} AS existing_members FINAL
+    WHERE existing_members.is_deleted = 0
+        AND (existing_members.user_id, existing_members.member_activity_id) IN (
+            SELECT
+                user_id,
+                member_activity_id
+            FROM changed_activity_member_keys
+        )
 ),
 
 stale_activity_members AS (
@@ -81,8 +72,10 @@ stale_activity_members AS (
         ON current_activity_members.member_activity_id = existing_activity_members.member_activity_id
         AND current_activity_members.user_id = existing_activity_members.user_id
     WHERE current_activity_members.member_activity_id IS null
-),
+)
+{% endif %}
 
+,
 changed_activity_member_count AS (
     SELECT count() AS changed_member_count
     FROM changed_activity_member_keys
@@ -109,6 +102,7 @@ SELECT
 FROM current_activity_members
 CROSS JOIN refresh_clock
 
+{% if is_incremental() %}
 UNION ALL
 
 SELECT
@@ -123,3 +117,4 @@ SELECT
     refresh_clock.refreshed_at AS refreshed_at
 FROM stale_activity_members
 CROSS JOIN refresh_clock
+{% endif %}
