@@ -162,6 +162,13 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("TRUNCATE TABLE analytics_test_") &&
+          command.endsWith(".deduped_activities"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("TRUNCATE TABLE analytics_test_") &&
           command.endsWith(".v_daily_metrics"),
       ),
     ).toBe(true);

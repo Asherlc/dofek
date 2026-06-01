@@ -877,6 +877,7 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
 
   await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
+  await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });
   await client.command({ query: "TRUNCATE TABLE analytics.activity_vo2max_estimate" });
   await client.command({ query: buildSensorScalarSampleBackfillSql() });
   await client.command({ query: buildDedupedSensorBackfillSql() });
