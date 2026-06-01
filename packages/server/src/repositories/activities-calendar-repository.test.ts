@@ -58,7 +58,7 @@ function normalizeSql(queryText: string | undefined): string {
   return queryText?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-function expectCanonicalActivitySummaryOnly(queryText: string | undefined): void {
+function expectDedupedActivitiesWithSummaryMetrics(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
   expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
@@ -71,10 +71,15 @@ function expectDedupedActivitiesOnly(queryText: string | undefined): void {
   expect(normalizedQueryText).not.toContain("analytics.v_activity");
 }
 
-function expectDedupedActivitiesDriveActivityIdentity(queryText: string | undefined): void {
+function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
   expect(normalizedQueryText).toContain("FROM analytics.deduped_activities FINAL AS activity");
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
+  expect(normalizedQueryText).toContain("toString(activity.activity_id) AS id");
+  expect(normalizedQueryText).toContain("activity.name AS name");
+  expect(normalizedQueryText).toContain("activity.activity_type AS activity_type");
+  expect(normalizedQueryText).toContain("toString(activity.started_at) AS started_at");
+  expect(normalizedQueryText).toContain("toString(activity.ended_at) AS ended_at");
 }
 
 describe("ActivitiesCalendarRepository", () => {
@@ -264,7 +269,7 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expectCanonicalActivitySummaryOnly(queryText);
+    expectDedupedActivitiesWithSummaryMetrics(queryText);
   });
 
   it("uses deduped activities as the activity page identity source", async () => {
@@ -279,7 +284,7 @@ describe("ActivitiesCalendarRepository", () => {
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expectDedupedActivitiesDriveActivityIdentity(queryText);
+    expectDedupedActivitiesDriveActivityListIdentity(queryText);
   });
 
   it("returns activity overview totals directly from ClickHouse", async () => {
@@ -344,7 +349,10 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectCanonicalActivitySummaryOnly(overviewQueryText);
+    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expect(normalizeSql(overviewQueryText)).toContain(
+      "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
+    );
     expectDedupedActivitiesOnly(typeQueryText);
   });
 
@@ -367,7 +375,10 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectDedupedActivitiesDriveActivityIdentity(overviewQueryText);
+    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expect(normalizeSql(overviewQueryText)).toContain(
+      "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
+    );
     expect(normalizeSql(typeQueryText)).toContain(
       "FROM analytics.deduped_activities FINAL AS activity",
     );
