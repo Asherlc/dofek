@@ -115,4 +115,12 @@ describe("NutritionPage AI meal confirmation", () => {
       });
     });
   });
+
+  it("shows FatSecret attribution on the nutrition screen", async () => {
+    const { NutritionPage } = await import("./NutritionPage");
+
+    render(<NutritionPage />);
+
+    expect(screen.getByText("Powered by FatSecret")).toBeTruthy();
+  });
 });
