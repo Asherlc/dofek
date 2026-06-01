@@ -132,4 +132,12 @@ describe("FoodScreen AI meal confirmation", () => {
       expect.stringMatching(/^\/food\/add\?meal=[a-z]+&date=\d{4}-\d{2}-\d{2}&mode=ai$/),
     );
   });
+
+  it("shows FatSecret attribution on the food screen", async () => {
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(screen.getByText("Powered by fatsecret")).toBeTruthy();
+  });
 });

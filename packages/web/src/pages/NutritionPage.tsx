@@ -488,6 +488,16 @@ export function NutritionPage() {
               })}
           </>
         )}
+        <div className="text-center text-xs font-medium text-subtle">
+          <a
+            href="https://www.fatsecret.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-colors hover:text-foreground"
+          >
+            Powered by fatsecret
+          </a>
+        </div>
       </div>
 
       <AddFoodModal

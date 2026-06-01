@@ -195,4 +195,10 @@ describe("LandingPage", () => {
 
     expect(screen.getByText(/No supported sources are currently available/i)).toBeTruthy();
   });
+
+  it("shows public FatSecret attribution without requiring login", () => {
+    render(<LandingPageView usableProviders={[]} />);
+
+    expect(screen.getByText("Powered by fatsecret")).toBeTruthy();
+  });
 });

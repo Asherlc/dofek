@@ -328,6 +328,7 @@ export default function FoodScreen() {
             />
           ))
         )}
+        <Text style={styles.fatsecretAttribution}>Powered by fatsecret</Text>
       </ScrollView>
     </View>
   );
@@ -557,5 +558,12 @@ const styles = StyleSheet.create({
     color: "#f87171",
     fontSize: 13,
     paddingVertical: 24,
+  },
+  fatsecretAttribution: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 10,
+    textAlign: "center",
   },
 });

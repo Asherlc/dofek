@@ -820,9 +820,19 @@ function Footer() {
   return (
     <footer className="border-t border-[#dce8df] bg-[#fbfdfb] py-8">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
-        <div className="flex items-center gap-2">
-          <img src="/icon.svg" alt="" width={20} height={20} className="rounded" />
-          <span className="text-sm text-[#45645b]">Dofek - health data dashboard</span>
+        <div className="flex flex-col items-center gap-1 sm:items-start">
+          <div className="flex items-center gap-2">
+            <img src="/icon.svg" alt="" width={20} height={20} className="rounded" />
+            <span className="text-sm text-[#45645b]">Dofek - health data dashboard</span>
+          </div>
+          <a
+            href="https://www.fatsecret.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-[#6b8178] transition-colors hover:text-foreground"
+          >
+            Powered by fatsecret
+          </a>
         </div>
         <div className="flex items-center gap-4 text-xs text-[#6b8178]">
           <a
