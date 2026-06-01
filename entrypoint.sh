@@ -18,7 +18,7 @@ fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
-DBT_SAFE_MODELS="sensor_scalar_sample deduped_sensor deduped_activities deduped_activity_members sleep_heart_rate_sample resting_heart_rate_sleep_window activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate"
+DBT_SAFE_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members sleep_heart_rate_sample resting_heart_rate_sleep_window activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate"
 
 case "${1:-sync}" in
   web)

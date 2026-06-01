@@ -1,0 +1,101 @@
+{{ config(
+    materialized='incremental',
+    incremental_strategy='append',
+    engine='ReplacingMergeTree(refresh_version)',
+    order_by='(activity_id, duplicate_activity_id)',
+    query_settings={
+        'max_threads': 1
+    }
+) }}
+
+WITH source_records AS (
+    SELECT
+        activity_id,
+        user_id,
+        started_at,
+        coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
+    FROM {{ ref('activity_source_records') }} FINAL
+    WHERE is_deleted = 0
+),
+
+current_duplicate_matches AS (
+    SELECT
+        left_activity.activity_id AS activity_id,
+        right_activity.activity_id AS duplicate_activity_id,
+        dateDiff(
+            'second',
+            greatest(left_activity.started_at, right_activity.started_at),
+            least(left_activity.ended_at, right_activity.ended_at)
+        ) / nullIf(dateDiff(
+            'second',
+            least(left_activity.started_at, right_activity.started_at),
+            greatest(left_activity.ended_at, right_activity.ended_at)
+        ), 0) AS overlap_ratio
+    FROM source_records AS left_activity
+    INNER JOIN source_records AS right_activity
+        ON left_activity.user_id = right_activity.user_id
+        AND toString(left_activity.activity_id) < toString(right_activity.activity_id)
+        AND dateDiff(
+            'second',
+            greatest(left_activity.started_at, right_activity.started_at),
+            least(left_activity.ended_at, right_activity.ended_at)
+        ) / nullIf(dateDiff(
+            'second',
+            least(left_activity.started_at, right_activity.started_at),
+            greatest(left_activity.ended_at, right_activity.ended_at)
+        ), 0) > 0.8
+),
+
+existing_duplicate_matches AS (
+    {% if is_incremental() %}
+        SELECT
+            activity_id,
+            duplicate_activity_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS duplicate_activity_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+stale_duplicate_matches AS (
+    SELECT
+        existing_duplicate_matches.activity_id,
+        existing_duplicate_matches.duplicate_activity_id
+    FROM existing_duplicate_matches
+    LEFT JOIN current_duplicate_matches
+        ON current_duplicate_matches.activity_id = existing_duplicate_matches.activity_id
+        AND current_duplicate_matches.duplicate_activity_id = existing_duplicate_matches.duplicate_activity_id
+    WHERE current_duplicate_matches.activity_id IS null
+),
+
+refresh_clock AS (
+    SELECT
+        toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+        now64(9) AS refreshed_at
+)
+
+SELECT
+    activity_id,
+    duplicate_activity_id,
+    overlap_ratio,
+    refresh_clock.refresh_version AS refresh_version,
+    0 AS is_deleted,
+    refresh_clock.refreshed_at AS refreshed_at
+FROM current_duplicate_matches
+CROSS JOIN refresh_clock
+
+UNION ALL
+
+SELECT
+    assumeNotNull(activity_id) AS activity_id,
+    assumeNotNull(duplicate_activity_id) AS duplicate_activity_id,
+    CAST(null, 'Nullable(Float64)') AS overlap_ratio,
+    refresh_clock.refresh_version AS refresh_version,
+    1 AS is_deleted,
+    refresh_clock.refreshed_at AS refreshed_at
+FROM stale_duplicate_matches
+CROSS JOIN refresh_clock
