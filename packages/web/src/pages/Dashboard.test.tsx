@@ -10,6 +10,12 @@ type MockInsightsQueryResult = {
   error: Error | null;
 };
 
+type MockQueryResult<TData> = {
+  data: TData | undefined;
+  isLoading: boolean;
+  error: Error | null;
+};
+
 const mockReadinessQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
 const mockWorkloadQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
 const mockStrainTargetQuery = vi.hoisted(() =>
@@ -19,22 +25,29 @@ const mockSleepPerformanceQuery = vi.hoisted(() =>
   vi.fn(() => ({ data: undefined, isLoading: false })),
 );
 const mockTrendsQuery = vi.hoisted(() =>
-  vi.fn(() => ({ data: undefined, isLoading: false, error: null })),
+  vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
+);
+const mockHeartRateBaselineQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
 const mockInsightsQuery = vi.hoisted(() =>
   vi.fn<() => MockInsightsQueryResult>(() => ({ data: [], isLoading: false, error: null })),
 );
+const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/DailyOverview.tsx", () => ({
   DailyOverview: () => <section aria-label="Daily health summary">Daily overview</section>,
 }));
 
 vi.mock("../components/DashboardEvidenceOverview.tsx", () => ({
-  DashboardEvidenceOverview: ({ insightError }: { insightError?: ReactNode }) => (
-    <section aria-label="Dashboard overview">
-      {insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}
-    </section>
-  ),
+  DashboardEvidenceOverview: (props: { insightError?: ReactNode }) => {
+    mockDashboardEvidenceOverview(props);
+    return (
+      <section aria-label="Dashboard overview">
+        {props.insightError ?? <div>Sleep consistency + Heart Rate Variability</div>}
+      </section>
+    );
+  },
 }));
 
 vi.mock("../components/HealthStatusBar.tsx", () => ({
@@ -65,6 +78,7 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     dailyMetrics: {
       trends: { useQuery: mockTrendsQuery },
+      hrvBaseline: { useQuery: mockHeartRateBaselineQuery },
     },
     insights: {
       compute: { useQuery: mockInsightsQuery },
@@ -89,7 +103,9 @@ afterEach(cleanup);
 describe("Dashboard", () => {
   beforeEach(() => {
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockDashboardEvidenceOverview.mockClear();
   });
 
   it("uses a loading panel while insights are loading", () => {
@@ -118,6 +134,76 @@ describe("Dashboard", () => {
     expect(
       dailySummary.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("passes API-backed resting heart rate chart points into the dashboard overview", () => {
+    mockTrendsQuery.mockReturnValue({
+      data: {
+        avg_hrv: 43.8,
+        avg_resting_hr: 56.2,
+        avg_spo2: null,
+        avg_steps: null,
+        avg_active_energy: null,
+        avg_skin_temp: null,
+        stddev_hrv: 7.5,
+        stddev_resting_hr: 3.1,
+        stddev_spo2: null,
+        stddev_skin_temp: null,
+        latest_hrv: 48,
+        latest_resting_hr: 55,
+        latest_spo2: null,
+        latest_steps: null,
+        latest_active_energy: null,
+        latest_skin_temp: null,
+        latest_date: "2026-05-27",
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockHeartRateBaselineQuery.mockReturnValue({
+      data: [
+        { date: "2026-05-25", resting_hr: 57 },
+        { date: "2026-05-26", resting_hr: null },
+        { date: "2026-05-27", resting_hr: 55 },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<Dashboard />);
+
+    expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trend: expect.objectContaining({
+          latestRestingHeartRate: 55,
+          averageRestingHeartRate: 56.2,
+          restingHeartRatePoints: [
+            { date: "2026-05-25", value: 57 },
+            { date: "2026-05-27", value: 55 },
+          ],
+        }),
+        restingHeartRateLoading: false,
+        restingHeartRateError: null,
+      }),
+    );
+  });
+
+  it("passes resting heart rate baseline loading and error states into the overview", () => {
+    const chartError = new Error("Baseline unavailable.");
+    mockHeartRateBaselineQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: chartError,
+    });
+
+    render(<Dashboard />);
+
+    expect(mockDashboardEvidenceOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restingHeartRateLoading: true,
+        restingHeartRateError: chartError,
+      }),
+    );
   });
 });
 
