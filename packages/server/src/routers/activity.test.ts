@@ -542,6 +542,29 @@ describe("activityRouter", () => {
       expect(result).toEqual({ success: true });
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("throws PRECONDITION_FAILED when activity views are missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.delete({
+          id: "00000000-0000-0000-0000-000000000001",
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
   });
 
   describe("strengthExercises", () => {
