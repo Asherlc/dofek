@@ -762,5 +762,22 @@ describe("ActivityRepository", () => {
       await repo.delete("activity-id");
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("deletes every member activity in the selected deduped activity group", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.delete("activity-id");
+
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("DELETE FROM fitness.activity");
+      expect(compiledQuery.sql).toContain("member_rows.member_activity_id");
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+      expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members selected_member");
+      expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members member_rows");
+      expect(compiledQuery.sql).toContain("selected_member.member_activity_id = $1");
+      expect(compiledQuery.sql).toContain("id IN");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["activity-id", "user-1"]));
+    });
   });
 });

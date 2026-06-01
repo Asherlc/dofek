@@ -302,4 +302,62 @@ describe("Activity summary deduplication", () => {
       50,
     );
   });
+
+  it("deletes all raw member rows when deleting a deduped activity member", async () => {
+    const inserted = await testCtx.db.execute<{ id: string; provider_id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES
+          (
+            'wahoo', ${TEST_USER_ID}, 'cycling',
+            CURRENT_TIMESTAMP + INTERVAL '3 days',
+            CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '30 minutes',
+            'Delete Me'
+          ),
+          (
+            'apple_health', ${TEST_USER_ID}, 'cycling',
+            CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '10 seconds',
+            CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '29 minutes 50 seconds',
+            'Delete Me'
+          )
+          RETURNING id, provider_id`,
+    );
+    const insertedIds = inserted.map((row) => row.id);
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      insertedIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+    const aliasRows = await testCtx.db.execute<{ id: string; member_activity_ids: string[] }>(
+      sql`SELECT id, member_activity_ids::text[] AS member_activity_ids
+          FROM fitness.v_activity
+          WHERE user_id = ${TEST_USER_ID}
+            AND member_activity_ids && ${insertedIdArray}
+          LIMIT 1`,
+    );
+    const aliasRow = aliasRows[0];
+    const activityIdToDelete = aliasRow?.member_activity_ids.find(
+      (activityId) => activityId !== aliasRow.id,
+    );
+
+    try {
+      expect(insertedIds).toHaveLength(2);
+      expect(aliasRow?.member_activity_ids).toEqual(expect.arrayContaining(insertedIds));
+      expect(activityIdToDelete).toBeDefined();
+
+      const { status, result } = await query("activity.delete", { id: activityIdToDelete });
+      expect(status).toBe(200);
+      expect(result.result.data).toEqual({ success: true });
+
+      const remainingRows = await testCtx.db.execute<{ count: string }>(
+        sql`SELECT COUNT(*)::text AS count
+            FROM fitness.activity
+            WHERE id = ANY(${insertedIdArray})`,
+      );
+      expect(Number(remainingRows[0]?.count)).toBe(0);
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
 });

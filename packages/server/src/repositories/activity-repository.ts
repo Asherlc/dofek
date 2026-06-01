@@ -508,7 +508,15 @@ export class ActivityRepository extends BaseRepository {
   async delete(activityId: string): Promise<void> {
     await this.db.execute(sql`
       DELETE FROM fitness.activity
-      WHERE id = ${activityId}::uuid AND user_id = ${this.userId}
+      WHERE id IN (
+        SELECT member_rows.member_activity_id
+        FROM fitness.v_activity a
+        JOIN fitness.v_activity_members selected_member ON selected_member.activity_id = a.id
+        JOIN fitness.v_activity_members member_rows ON member_rows.activity_id = a.id
+        WHERE selected_member.member_activity_id = ${activityId}::uuid
+          AND a.user_id = ${this.userId}
+      )
+      AND user_id = ${this.userId}
     `);
   }
 }
