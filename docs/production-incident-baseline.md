@@ -9533,6 +9533,29 @@ new incremental tables are populated.
   because local Withings secrets were unavailable; the fix is based on Sentry
   stack evidence, Withings docs, and targeted unit tests for the failing path.
 
+### 2026-06-02 Mobile native bridge crash during foreground sync
+
+- Symptoms: Sentry issue `DOFEK-MOBILE-P` recorded one production fatal
+  `EXC_BAD_ACCESS: ExceptionsManager > name >` in `dofek-mobile` release
+  `com.dofek.app@1.0.0+1780011142` on iOS 26.5.
+- User impact: One mobile user experienced a fatal app crash while the app was
+  in the foreground.
+- Evidence: Sentry breadcrumbs showed a foreground transition followed by
+  overlapping WHOOP BLE buffer drain and background HealthKit sync activity.
+  The native stack failed inside React Native TurboModule Objective-C exception
+  conversion while Hermes was creating a JS error string.
+- Root cause: Native module events could cross the Expo/React Native bridge
+  from background callback queues. The WHOOP disconnect event could also include
+  an optional nil `error` payload value, which is unsafe to bridge as
+  `[String: Any]`.
+- Fix / mitigation: WHOOP BLE connection/orientation events and HealthKit
+  observer events now emit through a main-thread event helper. The helper also
+  compacts optional nil payload values before calling `sendEvent`.
+- Remaining risk: The crash has only one Sentry occurrence, so the exact device
+  sequence was not locally reproduced. The fix targets the native bridge
+  hazards active in the Sentry breadcrumb window and is covered by Swift package
+  tests.
+
 ### 2026-06-02 HealthKit workout push Timescale metric_stream update failure
 
 - Symptoms: Sentry issue `DOFEK-SERVER-30` reported one production

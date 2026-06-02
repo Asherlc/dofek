@@ -290,10 +290,12 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     ) {
-        sendEvent("onConnectionStateChanged", [
+        MainThreadEventEmitter.emit([
             "state": "connected",
             "peripheralId": peripheral.identifier.uuidString,
-        ])
+        ]) { [weak self] payload in
+            self?.sendEvent("onConnectionStateChanged", payload)
+        }
 
         sendActivationCommands(includeImu: false)
         watchdog.start()
@@ -317,11 +319,13 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         frameParser.reset()
         cmdFrameParser.reset()
 
-        sendEvent("onConnectionStateChanged", [
+        MainThreadEventEmitter.emit([
             "state": "disconnected",
             "peripheralId": peripheralId,
-            "error": error?.localizedDescription as Any,
-        ])
+            "error": error?.localizedDescription,
+        ]) { [weak self] payload in
+            self?.sendEvent("onConnectionStateChanged", payload)
+        }
     }
 
     func connectionManager(
@@ -364,7 +368,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         totalSamplesExtracted += UInt64(newImuSamples.count)
 
         orientationProcessor.processSamples(newImuSamples) { [weak self] quaternion, euler in
-            self?.sendEvent("onOrientation", [
+            MainThreadEventEmitter.emit([
                 "w": quaternion.w,
                 "x": quaternion.x,
                 "y": quaternion.y,
@@ -372,7 +376,9 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
                 "roll": euler.roll,
                 "pitch": euler.pitch,
                 "yaw": euler.yaw,
-            ])
+            ]) { payload in
+                self?.sendEvent("onOrientation", payload)
+            }
         }
 
         sampleBuffer.appendImuSamples(newImuSamples)

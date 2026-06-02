@@ -548,11 +548,18 @@ public class HealthKitModule: Module {
 
                 let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
                     if error == nil {
-                        self?.sendEvent("onHealthKitSampleUpdate", [
-                            "typeIdentifier": sampleType.identifier,
-                        ])
+                        MainThreadEventEmitter.emit(
+                            [
+                                "typeIdentifier": sampleType.identifier,
+                            ],
+                            completion: completionHandler,
+                            send: { payload in
+                                self?.sendEvent("onHealthKitSampleUpdate", payload)
+                            }
+                        )
+                    } else {
+                        completionHandler()
                     }
-                    completionHandler()
                 }
                 self.observerQueries.append(query)
                 self.healthStore.execute(query)
