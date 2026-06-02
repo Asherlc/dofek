@@ -38,12 +38,13 @@ final class MainThreadEventEmitterTests: XCTestCase {
                     XCTAssertTrue(Thread.isMainThread)
                     XCTAssertTrue(emitted)
                     expectation.fulfill()
+                },
+                send: { payload in
+                    XCTAssertTrue(Thread.isMainThread)
+                    XCTAssertEqual(payload["typeIdentifier"] as? String, "HKQuantityTypeIdentifierActiveEnergyBurned")
+                    emitted = true
                 }
-            ) { payload in
-                XCTAssertTrue(Thread.isMainThread)
-                XCTAssertEqual(payload["typeIdentifier"] as? String, "HKQuantityTypeIdentifierActiveEnergyBurned")
-                emitted = true
-            }
+            )
         }
 
         waitForExpectations(timeout: 1)

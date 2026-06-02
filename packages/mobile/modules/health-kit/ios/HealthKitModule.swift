@@ -552,10 +552,11 @@ public class HealthKitModule: Module {
                             [
                                 "typeIdentifier": sampleType.identifier,
                             ],
-                            completion: completionHandler
-                        ) { payload in
-                            self?.sendEvent("onHealthKitSampleUpdate", payload)
-                        }
+                            completion: completionHandler,
+                            send: { payload in
+                                self?.sendEvent("onHealthKitSampleUpdate", payload)
+                            }
+                        )
                     } else {
                         completionHandler()
                     }
