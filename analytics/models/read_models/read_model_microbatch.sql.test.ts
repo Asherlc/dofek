@@ -98,6 +98,7 @@ describe("production analytics read-model build", () => {
     expect(sql).not.toContain("visited_activity_ids");
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
+    expect(sql).toContain("assumeNotNull(user_id) AS user_id");
     expect(sql).toContain("stale_deduped_activities AS");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("'join_use_nulls': 1");

@@ -9447,3 +9447,25 @@ new incremental tables are populated.
   could not complete because local ClickHouse at `127.0.0.1:8123` was not
   running; starting the local compose dependency was blocked by Docker address
   pool exhaustion in this workspace.
+
+### 2026-06-02 PR CI nullable sort-key update
+
+- Symptoms: PR `Test / E2E Tests (Web)` failed during the tracked e2e
+  analytics build, causing `Test / Test Gate` and `CI Gate` to fail.
+- User impact: The activity dedupe PR could not pass required CI despite the
+  production deploy succeeding against an existing `deduped_activities` table.
+- Evidence: The failing e2e step was
+  `docker compose -f docker-compose.e2e.yml up -d --no-build analytics`; the
+  first fatal dbt line was `Database Error in model deduped_activities`, with
+  ClickHouse error `Sorting key contains nullable columns, but merge tree
+  setting allow_nullable_key is disabled`.
+- Root cause: The clean e2e first build inferred `deduped_activities.user_id`
+  as nullable because upstream source-record models include tombstone branches
+  with nullable non-key fields, while `deduped_activities` sorts by
+  `(user_id, activity_id)`.
+- Fix / mitigation: `deduped_activities` now emits
+  `assumeNotNull(user_id) AS user_id` in both current and stale output branches
+  so clean first builds create a non-null sort-key column.
+- Remaining risk: Full local e2e validation remains blocked by Docker network
+  address-pool exhaustion in this workspace; CI rerun is the end-to-end
+  validation for the compose e2e path.

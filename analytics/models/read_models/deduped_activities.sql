@@ -138,7 +138,7 @@ refresh_clock AS (
 SELECT
     activity_id,
     provider_id,
-    user_id,
+    assumeNotNull(user_id) AS user_id,
     activity_id AS primary_activity_id,
     activity_type,
     started_at,
@@ -164,7 +164,7 @@ UNION ALL
 SELECT
     activity_id,
     provider_id,
-    user_id,
+    assumeNotNull(user_id) AS user_id,
     activity_id AS primary_activity_id,
     activity_type,
     started_at,
