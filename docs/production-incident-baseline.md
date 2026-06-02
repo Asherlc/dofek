@@ -9470,6 +9470,44 @@ new incremental tables are populated.
   address-pool exhaustion in this workspace; CI rerun is the end-to-end
   validation for the compose e2e path.
 
+### 2026-06-02 Garmin OAuth exchange rate-limit classification
+
+- Symptoms: Sentry issue `DOFEK-SERVER-2Z` reported
+  `GarminAuthError: Failed to exchange for OAuth2 (429): Rate limited` from
+  `GarminConnectClient.#exchangeForOAuth2` during production scheduled sync.
+- User impact: No Sentry users were marked impacted, but Garmin sync could not
+  refresh the expired internal token for the affected scheduled runs.
+- Evidence: Sentry showed two production events at `2026-06-02T15:00:01Z` and
+  `2026-06-02T15:30:01Z`, matching the 30-minute scheduled sync cadence, both
+  tagged `provider=garmin`. A 14-day Sentry search found no earlier matching
+  events. The failing frame was
+  `packages/garmin-connect/src/client.ts:266`, where OAuth2 exchange threw
+  `GarminAuthError` for every non-OK response.
+- Root cause: The Garmin client already modeled normal Connect API 429s as
+  `GarminRateLimitError`, but the OAuth1-to-OAuth2 exchange endpoint used the
+  generic auth-error branch for all non-OK responses, misclassifying provider
+  rate limiting as authentication failure.
+- Fix / mitigation: `#exchangeForOAuth2` now throws `GarminRateLimitError` for
+  HTTP 429 before falling back to `GarminAuthError` for other exchange
+  failures. A regression test covers expired-token refresh through
+  `GarminConnectClient.fromTokens`.
+- Remaining risk: Full `pnpm lint` could not be rerun to completion locally
+  because analytics SQL lint needs ClickHouse at `127.0.0.1:8123`; starting the
+  local compose stack was blocked by Docker address-pool exhaustion while
+  creating `richmond_default`.
+
+### Follow-Up Work
+
+- Monitor Sentry for `GarminRateLimitError` events from OAuth exchange and
+  confirm they are handled as provider rate-limit incidents rather than auth
+  failures.
+- Decide whether Garmin OAuth exchange should add bounded retry/backoff behavior
+  now that 429 responses are classified correctly.
+- Keep the `GarminConnectClient.fromTokens` expired-token refresh path covered
+  in CI through the package unit test and mutation test.
+- Resolve local ClickHouse/Docker address-pool setup so future incident fixes can
+  run full lint and e2e validation locally.
+
 ### 2026-06-02 Withings stale refresh token reported to Sentry
 
 - Symptoms: Sentry issue `DOFEK-SERVER-2Y` recorded two production errors,

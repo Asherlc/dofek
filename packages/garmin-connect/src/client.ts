@@ -263,6 +263,9 @@ export class GarminConnectClient {
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 429) {
+        throw new GarminRateLimitError(`Rate limit exceeded (429): ${text}`);
+      }
       throw new GarminAuthError(`Failed to exchange for OAuth2 (${response.status}): ${text}`);
     }
 
