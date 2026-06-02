@@ -5,7 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type {
   ProviderAuthSetup,
@@ -122,6 +122,24 @@ export function parseMeasureGroup(group: WithingsMeasureGroup): ParsedBodyMeasur
 const WITHINGS_API_BASE = "https://wbsapi.withings.net";
 const WITHINGS_AUTH_BASE = "https://account.withings.com";
 
+class WithingsTokenError extends Error {
+  #status: number;
+
+  constructor(status: number, details?: string) {
+    super(
+      details
+        ? `Withings token error (status ${status}): ${details}`
+        : `Withings token error (status ${status})`,
+    );
+    this.name = "WithingsTokenError";
+    this.#status = status;
+  }
+
+  get status(): number {
+    return this.#status;
+  }
+}
+
 export function withingsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WITHINGS_CLIENT_ID;
   const clientSecret = process.env.WITHINGS_CLIENT_SECRET;
@@ -163,9 +181,13 @@ async function withingsTokenExchange(
     throw new Error(`Withings token request failed (${response.status}): ${text}`);
   }
 
-  const json: { status: number; body: Record<string, unknown> } = await response.json();
+  const json: { status: number; body: Record<string, unknown>; error?: unknown } =
+    await response.json();
   if (json.status !== 0) {
-    throw new Error(`Withings token error (status ${json.status})`);
+    throw new WithingsTokenError(
+      json.status,
+      typeof json.error === "string" ? json.error : undefined,
+    );
   }
 
   const data = json.body;
@@ -382,9 +404,23 @@ export class WithingsProvider implements WebhookProvider {
         "WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required to refresh tokens",
       );
     if (!tokens.refreshToken) throw new Error("No refresh token for Withings");
-    const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.#fetchFn);
-    await saveTokens(db, this.id, refreshed);
-    return refreshed;
+    try {
+      const refreshed = await refreshWithingsToken(config, tokens.refreshToken, this.#fetchFn);
+      await saveTokens(db, this.id, refreshed);
+      return refreshed;
+    } catch (error: unknown) {
+      if (error instanceof WithingsTokenError && error.status === 503) {
+        logger.warn(
+          "[withings] Refresh token rejected by Withings, deleting stored tokens. " +
+            "User must re-authorize Withings.",
+        );
+        await deleteTokens(db, this.id);
+        throw new Error(
+          "Withings authorization revoked — re-connect the provider to resume syncing.",
+        );
+      }
+      throw error;
+    }
   }
 
   async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {

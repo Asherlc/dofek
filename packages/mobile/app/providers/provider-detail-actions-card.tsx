@@ -11,7 +11,7 @@ export function ProviderDetailActionsCard({
   onPrimaryAction,
   onFullSync,
 }: {
-  primaryActionLabel: "Sync" | "Connect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
