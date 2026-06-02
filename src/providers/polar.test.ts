@@ -298,12 +298,15 @@ describe("parsePolarSleepStages", () => {
 
 const sampleDailyActivity: PolarDailyActivity = {
   polar_user: "https://www.polar.com/v3/users/12345",
-  date: "2024-06-15",
-  created: "2024-06-15T23:59:00Z",
+  start_time: "2024-06-15T08:00:00",
+  end_time: "2024-06-15T23:59:59",
+  active_duration: "PT3H11M",
+  inactive_duration: "PT18H23M30S",
+  daily_activity: 89.1,
   calories: 2500,
   active_calories: 800,
   duration: "PT14H30M",
-  active_steps: 12345,
+  steps: 12345,
 };
 
 const sampleNightlyRecharge: PolarNightlyRecharge = {
@@ -416,6 +419,54 @@ describe("PolarClient", () => {
     const client = new PolarClient("token", mockFetch);
     const result = await client.getExercises();
     expect(result).toEqual([]);
+  });
+
+  it("requests sleep from Polar's user sleep endpoint and unwraps nights", async () => {
+    let capturedUrl: string | null = null;
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(url);
+      return Response.json({ nights: [sampleSleep] });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    const result = await client.getSleep();
+
+    expect(capturedUrl).toBe("https://www.polaraccesslink.com/v3/users/sleep");
+    expect(result).toEqual([sampleSleep]);
+  });
+
+  it("requests daily activity from Polar's user activities endpoint", async () => {
+    let capturedUrl: string | null = null;
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(url);
+      return Response.json([sampleDailyActivity]);
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    const result = await client.getDailyActivity();
+
+    expect(capturedUrl).toBe("https://www.polaraccesslink.com/v3/users/activities");
+    expect(result).toEqual([sampleDailyActivity]);
+  });
+
+  it("requests nightly recharge from Polar's user endpoint and unwraps recharges", async () => {
+    let capturedUrl: string | null = null;
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      capturedUrl = String(url);
+      return Response.json({ recharges: [sampleNightlyRecharge] });
+    };
+
+    const client = new PolarClient("token", mockFetch);
+    const result = await client.getNightlyRecharge();
+
+    expect(capturedUrl).toBe("https://www.polaraccesslink.com/v3/users/nightly-recharge");
+    expect(result).toEqual([sampleNightlyRecharge]);
   });
 
   it("truncates long plain-text error responses", async () => {
@@ -839,18 +890,33 @@ function createPolarMockDb(tokenRows = [POLAR_VALID_TOKEN]): SyncDatabase {
   };
 }
 
+type PolarDataEndpoint =
+  | "/exercises"
+  | "/users/sleep"
+  | "/users/activities"
+  | "/users/nightly-recharge";
+
+function polarSuccessResponse(endpoint: PolarDataEndpoint): Response {
+  if (endpoint === "/users/sleep") return Response.json({ nights: [] });
+  if (endpoint === "/users/nightly-recharge") return Response.json({ recharges: [] });
+  return Response.json([]);
+}
+
 function createPolarFetchWithEndpointStatus(
-  endpointStatus: Partial<
-    Record<"/exercises" | "/sleep" | "/activity" | "/nightly-recharge", number>
-  >,
+  endpointStatus: Partial<Record<PolarDataEndpoint, number>>,
 ): typeof globalThis.fetch {
   return async (url: string | URL | Request): Promise<Response> => {
     const urlString = String(url);
-    const endpoints = ["/exercises", "/sleep", "/activity", "/nightly-recharge"] as const;
+    const endpoints = [
+      "/exercises",
+      "/users/sleep",
+      "/users/activities",
+      "/users/nightly-recharge",
+    ] as const;
     const endpoint = endpoints.find((path) => urlString.endsWith(path));
     if (!endpoint) return Response.json([]);
     const status = endpointStatus[endpoint] ?? 200;
-    if (status === 200) return Response.json([]);
+    if (status === 200) return polarSuccessResponse(endpoint);
     return new Response(status === 404 ? "Not Found" : "Unauthorized", { status });
   };
 }
@@ -917,9 +983,9 @@ describe("PolarProvider.sync — error handling", () => {
         }
         return Response.json([]);
       }
-      if (urlString.endsWith("/sleep")) return Response.json([]);
-      if (urlString.endsWith("/activity")) return Response.json([]);
-      if (urlString.endsWith("/nightly-recharge")) return Response.json([]);
+      if (urlString.endsWith("/users/sleep")) return Response.json({ nights: [] });
+      if (urlString.endsWith("/users/activities")) return Response.json([]);
+      if (urlString.endsWith("/users/nightly-recharge")) return Response.json({ recharges: [] });
       return Response.json([]);
     };
 
@@ -959,7 +1025,7 @@ describe("PolarProvider.sync — error handling", () => {
   });
 
   it("captures unauthorized sleep endpoint errors with auth guidance", async () => {
-    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/sleep": 401 }));
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/users/sleep": 401 }));
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
     expect(
@@ -968,14 +1034,16 @@ describe("PolarProvider.sync — error handling", () => {
   });
 
   it("captures 404 sleep endpoint errors with re-auth guidance", async () => {
-    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/sleep": 404 }));
+    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/users/sleep": 404 }));
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
     expect(result.errors.some((e) => e.message.includes("sleep endpoint returned 404"))).toBe(true);
   });
 
   it("captures unauthorized daily activity endpoint errors with auth guidance", async () => {
-    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/activity": 401 }));
+    const provider = new PolarProvider(
+      createPolarFetchWithEndpointStatus({ "/users/activities": 401 }),
+    );
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
     expect(
@@ -986,7 +1054,9 @@ describe("PolarProvider.sync — error handling", () => {
   });
 
   it("captures 404 daily activity endpoint errors with re-auth guidance", async () => {
-    const provider = new PolarProvider(createPolarFetchWithEndpointStatus({ "/activity": 404 }));
+    const provider = new PolarProvider(
+      createPolarFetchWithEndpointStatus({ "/users/activities": 404 }),
+    );
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
 
     expect(
@@ -1009,9 +1079,10 @@ describe("PolarProvider.sync — error handling", () => {
     ): Promise<Response> => {
       const urlString = String(url);
       if (urlString.endsWith("/exercises")) return Response.json([sampleExercise]);
-      if (urlString.endsWith("/sleep")) return Response.json([sampleSleep]);
-      if (urlString.endsWith("/activity")) return Response.json([sampleDailyActivity]);
-      if (urlString.endsWith("/nightly-recharge")) return Response.json([sampleNightlyRecharge]);
+      if (urlString.endsWith("/users/sleep")) return Response.json({ nights: [sampleSleep] });
+      if (urlString.endsWith("/users/activities")) return Response.json([sampleDailyActivity]);
+      if (urlString.endsWith("/users/nightly-recharge"))
+        return Response.json({ recharges: [sampleNightlyRecharge] });
       return Response.json([]);
     };
 
@@ -1026,8 +1097,8 @@ describe("PolarProvider.sync — error handling", () => {
     const provider = new PolarProvider(
       createPolarFetchWithEndpointStatus({
         "/exercises": 500,
-        "/sleep": 500,
-        "/activity": 500,
+        "/users/sleep": 500,
+        "/users/activities": 500,
       }),
     );
     const result = await provider.sync(createPolarMockDb(), new Date("2026-01-01"));
@@ -1043,9 +1114,10 @@ describe("PolarProvider.sync — error handling", () => {
     ): Promise<Response> => {
       const urlString = String(url);
       if (urlString.endsWith("/exercises")) return Response.json([sampleExercise]);
-      if (urlString.endsWith("/sleep")) return Response.json([sampleSleep]);
-      if (urlString.endsWith("/activity")) return Response.json([sampleDailyActivity]);
-      if (urlString.endsWith("/nightly-recharge")) return Response.json([sampleNightlyRecharge]);
+      if (urlString.endsWith("/users/sleep")) return Response.json({ nights: [sampleSleep] });
+      if (urlString.endsWith("/users/activities")) return Response.json([sampleDailyActivity]);
+      if (urlString.endsWith("/users/nightly-recharge"))
+        return Response.json({ recharges: [sampleNightlyRecharge] });
       return Response.json([]);
     };
 
@@ -1099,6 +1171,8 @@ describe("PolarProvider.sync — error handling", () => {
       }
       const authorization = getAuthorizationHeader(init);
       apiCallAuthorizations.push(authorization);
+      if (urlString.endsWith("/users/sleep")) return Response.json({ nights: [] });
+      if (urlString.endsWith("/users/nightly-recharge")) return Response.json({ recharges: [] });
       return Response.json([]);
     };
 
@@ -1129,9 +1203,9 @@ describe("PolarProvider.sync — error handling", () => {
     ): Promise<Response> => {
       const urlString = String(url);
       if (urlString.endsWith("/exercises")) return Response.json([]);
-      if (urlString.endsWith("/sleep")) return Response.json([]);
-      if (urlString.endsWith("/activity")) return Response.json([sampleDailyActivity]);
-      if (urlString.endsWith("/nightly-recharge"))
+      if (urlString.endsWith("/users/sleep")) return Response.json({ nights: [] });
+      if (urlString.endsWith("/users/activities")) return Response.json([sampleDailyActivity]);
+      if (urlString.endsWith("/users/nightly-recharge"))
         return new Response("Not Found", { status: 404 });
       return Response.json([]);
     };
@@ -1188,12 +1262,18 @@ describe("PolarProvider.sync — error handling", () => {
       url: string | URL | Request,
     ): Promise<Response> => {
       const urlString = String(url);
-      const endpoints = ["/exercises", "/sleep", "/activity", "/nightly-recharge"] as const;
+      const endpoints = [
+        "/exercises",
+        "/users/sleep",
+        "/users/activities",
+        "/users/nightly-recharge",
+      ] as const;
       const endpoint = endpoints.find((path) => urlString.endsWith(path));
       if (endpoint) calledEndpoints.push(endpoint);
       if (urlString.endsWith("/exercises")) {
         return new Response("Unauthorized", { status: 401 });
       }
+      if (endpoint) return polarSuccessResponse(endpoint);
       return Response.json([]);
     };
 
@@ -1216,12 +1296,18 @@ describe("PolarProvider.sync — error handling", () => {
       url: string | URL | Request,
     ): Promise<Response> => {
       const urlString = String(url);
-      const endpoints = ["/exercises", "/sleep", "/activity", "/nightly-recharge"] as const;
+      const endpoints = [
+        "/exercises",
+        "/users/sleep",
+        "/users/activities",
+        "/users/nightly-recharge",
+      ] as const;
       const endpoint = endpoints.find((path) => urlString.endsWith(path));
       if (endpoint) calledEndpoints.push(endpoint);
-      if (urlString.endsWith("/activity")) {
+      if (urlString.endsWith("/users/activities")) {
         return new Response("Unauthorized", { status: 401 });
       }
+      if (endpoint) return polarSuccessResponse(endpoint);
       return Response.json([]);
     };
 
@@ -1231,8 +1317,8 @@ describe("PolarProvider.sync — error handling", () => {
 
     // Should have attempted exercises, sleep, and activity (but not nightly-recharge after 401)
     expect(calledEndpoints).toContain("/exercises");
-    expect(calledEndpoints).toContain("/sleep");
-    expect(calledEndpoints).toContain("/activity");
+    expect(calledEndpoints).toContain("/users/sleep");
+    expect(calledEndpoints).toContain("/users/activities");
     // Should report the auth error and delete tokens
     expect(result.errors.some((error) => error.message.includes("authorization failed"))).toBe(
       true,

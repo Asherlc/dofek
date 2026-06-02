@@ -2,6 +2,18 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 
+const { mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
+  const span = {
+    end: vi.fn(),
+    recordException: vi.fn(),
+    setStatus: vi.fn(),
+  };
+  return {
+    mockSpan: span,
+    mockStartActiveSpan: vi.fn((_name, _options, callback) => callback(span)),
+  };
+});
+
 // Mock external dependencies before importing
 vi.mock("dofek/lib/cache", () => ({
   queryCache: {
@@ -25,6 +37,15 @@ vi.mock("../logger.ts", () => ({
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
+}));
+
+vi.mock("@opentelemetry/api", () => ({
+  SpanStatusCode: { OK: 1, ERROR: 2 },
+  trace: {
+    getTracer: vi.fn(() => ({
+      startActiveSpan: mockStartActiveSpan,
+    })),
+  },
 }));
 
 import * as Sentry from "@sentry/node";
@@ -81,6 +102,69 @@ describe("trpc", () => {
   });
 
   describe("auth middleware", () => {
+    it("emits an OpenTelemetry span for tRPC procedures", async () => {
+      const testRouter = router({
+        test: protectedProcedure.query(() => "ok"),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: {},
+        userId: "user-123",
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).resolves.toBe("ok");
+
+      expect(mockStartActiveSpan).toHaveBeenCalledWith(
+        "trpc.procedure",
+        {
+          attributes: {
+            "rpc.method": "test",
+            "rpc.system": "trpc",
+            "rpc.type": "query",
+          },
+        },
+        expect.any(Function),
+      );
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
+      expect(mockSpan.end).toHaveBeenCalledOnce();
+    });
+
+    it("marks failed tRPC procedure spans as errors", async () => {
+      const testRouter = router({
+        test: protectedProcedure.query(() => "ok"),
+      });
+
+      const trpc = initTRPC.context<Context>().create();
+      const createCaller = trpc.createCallerFactory(testRouter);
+      const caller = createCaller({
+        db: {},
+        userId: null,
+        timezone: "UTC",
+      });
+
+      await expect(caller.test()).rejects.toThrow(TRPCError);
+
+      expect(mockStartActiveSpan).toHaveBeenCalledWith(
+        "trpc.procedure",
+        {
+          attributes: {
+            "rpc.method": "test",
+            "rpc.system": "trpc",
+            "rpc.type": "query",
+          },
+        },
+        expect.any(Function),
+      );
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({
+        code: 2,
+        message: "Not authenticated",
+      });
+      expect(mockSpan.end).toHaveBeenCalledOnce();
+    });
+
     it("rejects unauthenticated requests (userId is null)", async () => {
       const testRouter = router({
         test: protectedProcedure.query(() => "ok"),

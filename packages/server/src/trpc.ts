@@ -1,4 +1,5 @@
 // cspell:ignore overcommittracker
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import * as Sentry from "@sentry/node";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
@@ -39,6 +40,7 @@ export interface AuthenticatedContext extends Context {
 const fullAccessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" };
 
 const trpc = initTRPC.context<Context>().create();
+const tracer = trace.getTracer("dofek-server");
 const ANALYTICS_UNAVAILABLE_MESSAGE =
   "Analytics data is temporarily unavailable. Please retry in a minute.";
 
@@ -121,7 +123,41 @@ const sanitizeInfrastructureErrors = trpc.middleware(async ({ path, next }) => {
   }
 });
 
-const procedure = trpc.procedure.use(sanitizeInfrastructureErrors);
+const traceProcedure = trpc.middleware(async ({ path, type, next }) =>
+  tracer.startActiveSpan(
+    "trpc.procedure",
+    {
+      attributes: {
+        "rpc.method": path,
+        "rpc.system": "trpc",
+        "rpc.type": type,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await next();
+        if (result.ok) {
+          span.setStatus({ code: SpanStatusCode.OK });
+        } else {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: result.error.message });
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof Error) {
+          span.recordException(error);
+          span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+        } else {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: String(error) });
+        }
+        throw error;
+      } finally {
+        span.end();
+      }
+    },
+  ),
+);
+
+const procedure = trpc.procedure.use(traceProcedure).use(sanitizeInfrastructureErrors);
 
 // Auth middleware — rejects unauthenticated requests
 const isAuthenticated = trpc.middleware(({ ctx, next }) => {

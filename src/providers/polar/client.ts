@@ -7,6 +7,14 @@ import type {
   PolarSleep,
 } from "./types.ts";
 
+interface PolarSleepResponse {
+  nights: PolarSleep[];
+}
+
+interface PolarNightlyRechargeResponse {
+  recharges: PolarNightlyRecharge[];
+}
+
 export class PolarNotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -68,15 +76,17 @@ export class PolarClient {
   }
 
   async getSleep(): Promise<PolarSleep[]> {
-    return this.#get<PolarSleep[]>("/sleep");
+    const response = await this.#get<PolarSleepResponse>("/users/sleep");
+    return response.nights;
   }
 
   async getDailyActivity(): Promise<PolarDailyActivity[]> {
-    return this.#get<PolarDailyActivity[]>("/activity");
+    return this.#get<PolarDailyActivity[]>("/users/activities");
   }
 
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
-    return this.#get<PolarNightlyRecharge[]>("/nightly-recharge");
+    const response = await this.#get<PolarNightlyRechargeResponse>("/users/nightly-recharge");
+    return response.recharges;
   }
 
   /**
