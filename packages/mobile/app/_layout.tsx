@@ -102,6 +102,7 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 
 function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken } = useAuth();
+  const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
 
   const [queryClient] = useState(
     () =>
@@ -153,9 +154,25 @@ function AuthGate() {
     });
   }, [isLoading]);
 
+  useEffect(() => {
+    if (!user) {
+      setBackgroundSyncReady(false);
+      return;
+    }
+
+    setBackgroundSyncReady(false);
+    const timerId = setTimeout(() => {
+      setBackgroundSyncReady(true);
+    }, 0);
+
+    return () => {
+      clearTimeout(timerId);
+    };
+  }, [user]);
+
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
-    if (!user || !trpcClient) return;
+    if (!user || !trpcClient || !backgroundSyncReady) return;
     const syncClient: SyncTrpcClient = {
       healthKitSync: {
         pushQuantitySamples: {
@@ -271,7 +288,7 @@ function AuthGate() {
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
-  }, [user, trpcClient, queryClient]);
+  }, [user, trpcClient, queryClient, backgroundSyncReady]);
 
   if (isLoading) {
     return (
@@ -290,7 +307,7 @@ function AuthGate() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <WhoopBleSyncManager trpcClient={trpcClient} />
+        {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen

@@ -124,6 +124,15 @@ vi.mock("../repositories/anomaly-detection-repository.ts", () => ({
   },
 }));
 
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+import { logger } from "../logger.ts";
 import {
   computeComponentScores,
   computeReadinessScore,
@@ -312,6 +321,7 @@ describe("mobileDashboard.dashboard", () => {
       },
     ];
     const baselineSleepRows = [
+      ...lastNightSleepRows,
       sleepBaselineRow("2026-03-27", 420, 80, 50),
       sleepBaselineRow("2026-03-26", 450, 80),
       sleepBaselineRow("2026-03-25", 480, 80),
@@ -340,13 +350,13 @@ describe("mobileDashboard.dashboard", () => {
       lightPct: 50,
       awakePct: 5,
     });
-    expect(result.sleep?.sleepDebt).toBe(240);
+    expect(result.sleep?.sleepDebt).toBe(285);
     expect(result.sleepNeed).toEqual(
       expect.objectContaining({
         baselineMinutes: 525,
         strainDebtMinutes: 10,
-        accumulatedDebtMinutes: 240,
-        totalNeedMinutes: 595,
+        accumulatedDebtMinutes: 285,
+        totalNeedMinutes: 606,
         canRecommend: true,
       }),
     );
@@ -363,6 +373,60 @@ describe("mobileDashboard.dashboard", () => {
       neededMinutes: 525,
       debtMinutes: 105,
     });
+  });
+
+  it("fetches dashboard sleep nights once and reuses them for readiness, last night, and sleep need", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    const sleepRows = [
+      sleepBaselineRow("2026-03-28", 480, 80),
+      sleepBaselineRow("2026-03-27", 420, 80, 50),
+      sleepBaselineRow("2026-03-26", 450, 80),
+      sleepBaselineRow("2026-03-25", 480, 80),
+      sleepBaselineRow("2026-03-24", 510, 80),
+      sleepBaselineRow("2026-03-23", 540, 80),
+      sleepBaselineRow("2026-03-22", 570, 80),
+      sleepBaselineRow("2026-03-21", 600, 80),
+      sleepBaselineRow("2026-03-20", 630, 80),
+    ];
+    execute.mockResolvedValueOnce(hrvRowsAfterSleep(sleepRows));
+
+    const sensorStore = makeSensorStore([], 50, sleepRows);
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-03-28" });
+
+    const sleepQueryCallCount = vi
+      .mocked(sensorStore.query)
+      .mock.calls.filter((call) => String(call[1]).includes("analytics.v_sleep")).length;
+    expect(sleepQueryCallCount).toBe(1);
+    expect(result.sleep?.lastNight?.date).toBe("2026-03-28");
+    expect(result.sleepNeed?.canRecommend).toBe(true);
+  });
+
+  it("logs dashboard timing breakdowns for performance diagnosis", async () => {
+    vi.mocked(logger.info).mockClear();
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      expect.stringContaining("[mobile-dashboard] dashboard timings"),
+    );
   });
 
   it("builds sleep need from exactly seven high-HRV nights", async () => {

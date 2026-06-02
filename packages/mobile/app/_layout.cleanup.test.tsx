@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -189,6 +189,31 @@ describe("RootLayout background cleanup", () => {
     expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
     expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
     expect(mockRefreshRemove).toHaveBeenCalled();
+  });
+
+  it("defers authenticated background sync setup until after the first render pass", async () => {
+    vi.useFakeTimers();
+    try {
+      const RootLayout = await importRootLayout();
+
+      render(<RootLayout />);
+
+      expect(mockInitBackgroundHealthKitSync).not.toHaveBeenCalled();
+      expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
+      expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
+      expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce();
+      expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalledOnce();
+      expect(mockInitBackgroundWatchSync).toHaveBeenCalledOnce();
+      expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("uses batch links for mobile tRPC queries and mutations", async () => {
