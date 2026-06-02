@@ -332,9 +332,10 @@ export class PolarSyncService {
           let count = 0;
 
           for (const dailyActivity of dailyActivities) {
-            if (new Date(dailyActivity.date) < since) continue;
+            const activityDate = dailyActivity.start_time.slice(0, 10);
+            if (new Date(activityDate) < since) continue;
 
-            const recharge = rechargeByDate.get(dailyActivity.date) ?? null;
+            const recharge = rechargeByDate.get(activityDate) ?? null;
             const parsedDailyMetrics = parsePolarDailyActivity(dailyActivity, recharge);
 
             try {
@@ -365,8 +366,8 @@ export class PolarSyncService {
               count++;
             } catch (error) {
               this.#errors.push({
-                message: `Daily ${dailyActivity.date}: ${error instanceof Error ? error.message : String(error)}`,
-                externalId: dailyActivity.date,
+                message: `Daily ${parsedDailyMetrics.date}: ${error instanceof Error ? error.message : String(error)}`,
+                externalId: parsedDailyMetrics.date,
                 cause: error,
               });
             }

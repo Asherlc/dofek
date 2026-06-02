@@ -749,6 +749,15 @@ jobs:
           for f in $CANDIDATES; do
             [ ! -f "$f" ] && continue
 
+            if ! awk '
+              /^[[:space:]]*(\/\/|$)/ { next }
+              /(^|[[:space:]])(export[[:space:]]+default|export[[:space:]]+(async[[:space:]]+)?function|export[[:space:]]+class|export[[:space:]]+(const|let|var|enum)|((async[[:space:]]+)?function|class|const|let|var|enum)[[:space:]])/ { found=1 }
+              END { exit found ? 0 : 1 }
+            ' "$f"; then
+              echo "Skipping $f: no runtime declarations to mutate"
+              continue
+            fi
+
             STATS=$(git diff --numstat $DIFF_RANGE -- "$f")
             ADDED=$(echo "$STATS" | awk '{print $1}')
             DELETED=$(echo "$STATS" | awk '{print $2}')
