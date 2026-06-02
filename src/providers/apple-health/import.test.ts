@@ -463,7 +463,7 @@ describe("runImport", () => {
     expect(progressCalls[progressCalls.length - 1]).toBe(100);
   });
 
-  it("logs when it links imported heart-rate sensor rows to workouts", async () => {
+  it("does not run a post-import metric_stream activity link", async () => {
     const xmlPath = join(tmpDir, "linked-hr-import.xml");
     writeFileSync(
       xmlPath,
@@ -476,9 +476,13 @@ describe("runImport", () => {
 
     await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
 
-    expect(loggerInfoSpy).toHaveBeenCalledWith(
-      "[apple_health] Linked 1 heart-rate sensor rows to workouts after import",
+    expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("Linked 1 heart-rate sensor rows to workouts after import"),
     );
+    const linkCall = spies.execute.mock.calls.find((call: unknown[]) =>
+      JSON.stringify(call[0]).includes("UPDATE fitness.metric_stream ss"),
+    );
+    expect(linkCall).toBeUndefined();
   });
 });
 
@@ -507,7 +511,6 @@ describe("runImport (control-flow mutation killers)", () => {
     const upsertHealthEventBatch = vi.fn().mockResolvedValue(50);
     const upsertSleepBatch = vi.fn().mockResolvedValue(2);
     const upsertWorkoutBatch = vi.fn().mockResolvedValue(3);
-    const linkUnassignedHeartRateToActivities = vi.fn().mockResolvedValue(0);
     const aggregateSpO2ToDailyMetrics = vi.fn().mockResolvedValue(undefined);
     const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
 
@@ -524,7 +527,6 @@ describe("runImport (control-flow mutation killers)", () => {
       upsertHealthEventBatch,
       upsertSleepBatch,
       upsertWorkoutBatch,
-      linkUnassignedHeartRateToActivities,
       aggregateSpO2ToDailyMetrics,
       aggregateSkinTempToDailyMetrics,
     }));
@@ -609,7 +611,6 @@ describe("runImport (control-flow mutation killers)", () => {
       upsertHealthEventBatch,
       upsertSleepBatch: vi.fn().mockResolvedValue(0),
       upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
-      linkUnassignedHeartRateToActivities: vi.fn().mockResolvedValue(0),
       aggregateSpO2ToDailyMetrics: vi.fn().mockResolvedValue(undefined),
       aggregateSkinTempToDailyMetrics: vi.fn().mockResolvedValue(undefined),
     }));

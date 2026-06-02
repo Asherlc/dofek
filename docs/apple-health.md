@@ -33,6 +33,11 @@ We parse records into:
 - **metric_stream**: Heart rate, respiratory rate, SpO2, HRV, weight, body fat, BMI, blood pressure, temperature
 - **daily_metrics**: Steps, active/basal energy, resting HR, VO2max
 
+Heart-rate rows are not backfilled with `metric_stream.activity_id` after
+insert. Activity sensor read models associate Apple Health samples to workouts
+by user and workout time window. This avoids mutating Timescale chunks for a
+derived relationship while preserving the raw sensor rows.
+
 ### ClinicalRecord Elements
 
 ```xml

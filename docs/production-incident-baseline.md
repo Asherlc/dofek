@@ -9556,6 +9556,33 @@ new incremental tables are populated.
   hazards active in the Sentry breadcrumb window and is covered by Swift package
   tests.
 
+### 2026-06-02 HealthKit workout push Timescale metric_stream update failure
+
+- Symptoms: Sentry issue `DOFEK-SERVER-30` reported one production
+  `healthKitSync.pushWorkouts` error at `2026-06-02T17:52:15Z`.
+- User impact: Sentry reported 0 impacted users, but the affected workout push
+  returned an error after upserting the workout and before completing the
+  request.
+- Evidence: The first fatal query was `UPDATE fitness.metric_stream ss SET
+  activity_id = (...)` from
+  `packages/server/src/routers/health-kit-sync-processors.ts:79`, bounded to
+  Apple Health heart-rate rows between `2026-06-02T15:06:00Z` and
+  `2026-06-02T16:25:00Z`. PostgreSQL/Timescale raised `cannot update table
+  "_hyper_4_7633_chunk"`.
+- Root cause: HealthKit sync tried to backfill a derived activity association
+  into the Timescale hypertable after sensor rows already existed. That
+  `activity_id` update is redundant because ClickHouse activity read models
+  associate sensor samples to activities by user and time window, and unsafe on
+  compressed/managed Timescale chunks.
+- Fix / mitigation: Removed post-ingest heart-rate-to-workout linker calls from
+  mobile HealthKit sync, Apple Health XML import, and the unused repository
+  helper. Workout route samples that arrive with an explicit workout UUID still
+  write their known `activity_id` at insert time.
+- Remaining risk: Production SSH was unreachable from this workspace during
+  investigation, so chunk metadata could not be inspected directly. Validation
+  relies on Sentry evidence plus focused tests proving the failing `UPDATE
+  fitness.metric_stream` is no longer emitted.
+
 ### 2026-06-02 Wahoo null FIT file URL schema failure
 
 - Symptoms: Sentry issue `DOFEK-SERVER-31` recorded a production `ZodError`

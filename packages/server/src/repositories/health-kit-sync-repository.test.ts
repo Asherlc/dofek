@@ -1310,7 +1310,7 @@ describe("HealthKitSyncRepository", () => {
       expect(execute).not.toHaveBeenCalled();
     });
 
-    it("inserts workouts and links heart rate", async () => {
+    it("inserts workouts without updating metric_stream rows", async () => {
       const { repository, execute } = makeRepository();
       const workouts = [
         {
@@ -1327,8 +1327,10 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processWorkouts(workouts);
       expect(result).toBe(1);
-      // One insert for the workout + one update for linking heart-rate sensor rows.
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(execute.mock.calls[0]?.[0])).not.toContain(
+        "UPDATE fitness.metric_stream ss",
+      );
     });
   });
 
@@ -1355,74 +1357,6 @@ describe("HealthKitSyncRepository", () => {
       const db = { execute };
       const repository2 = new HealthKitSyncRepository(db, "user-1");
       const result = await repository2.processSleepSamples(samples);
-      expect(result).toBe(1);
-    });
-  });
-
-  describe("linkUnassignedHeartRateToWorkouts", () => {
-    it("returns count of linked rows", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValue([
-          { recorded_at: "2024-01-15T10:30:00Z" },
-          { recorded_at: "2024-01-15T10:31:00Z" },
-        ]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      const result = await repository.linkUnassignedHeartRateToWorkouts({
-        startAt: "2024-01-15T10:00:00Z",
-        endAt: "2024-01-15T11:00:00Z",
-      });
-      expect(result).toBe(2);
-    });
-
-    it("returns 0 when no rows linked", async () => {
-      const { repository } = makeRepository();
-      const result = await repository.linkUnassignedHeartRateToWorkouts();
-      expect(result).toBe(0);
-    });
-
-    it("handles non-array return value gracefully", async () => {
-      const execute = vi.fn().mockResolvedValue(42);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      const result = await repository.linkUnassignedHeartRateToWorkouts();
-      // Non-array returns 0
-      expect(result).toBe(0);
-    });
-
-    it("includes startAt filter when bounds.startAt is provided", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.linkUnassignedHeartRateToWorkouts({
-        startAt: "2024-01-15T10:00:00Z",
-      });
-      expect(execute).toHaveBeenCalledTimes(1);
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("2024-01-15T10:00:00Z");
-    });
-
-    it("includes endAt filter when bounds.endAt is provided", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      await repository.linkUnassignedHeartRateToWorkouts({
-        endAt: "2024-01-15T11:00:00Z",
-      });
-      expect(execute).toHaveBeenCalledTimes(1);
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("2024-01-15T11:00:00Z");
-    });
-
-    it("works with both startAt and endAt bounds", async () => {
-      const execute = vi.fn().mockResolvedValue([{ recorded_at: "2024-01-15T10:30:00Z" }]);
-      const db = { execute };
-      const repository = new HealthKitSyncRepository(db, "user-1");
-      const result = await repository.linkUnassignedHeartRateToWorkouts({
-        startAt: "2024-01-15T10:00:00Z",
-        endAt: "2024-01-15T11:00:00Z",
-      });
       expect(result).toBe(1);
     });
   });
