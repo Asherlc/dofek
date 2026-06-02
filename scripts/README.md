@@ -22,6 +22,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 ## Verification & Tooling
 
+- `conductor-archive.ts`: Conductor archive hook that removes Docker Compose containers for the current worktree's Compose project.
+  - Runs `docker compose down --remove-orphans` for the default compose file and `docker-compose.e2e.yml`.
+  - Removes any remaining containers labeled with the current workspace's Compose project name.
+  - Usage: `pnpm tsx scripts/conductor-archive.ts`
 - `check-dns-records.sh`: Validates that every domain in `deploy/stack.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema (`src/db/schema.ts`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
