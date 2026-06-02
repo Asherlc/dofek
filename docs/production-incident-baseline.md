@@ -9532,3 +9532,26 @@ new incremental tables are populated.
 - Remaining risk: The exact production token value was not reproduced locally
   because local Withings secrets were unavailable; the fix is based on Sentry
   stack evidence, Withings docs, and targeted unit tests for the failing path.
+
+### 2026-06-02 Wahoo null FIT file URL schema failure
+
+- Symptoms: Sentry issue `DOFEK-SERVER-31` recorded a production `ZodError`
+  during Wahoo sync at `2026-06-02T17:53:49Z`.
+- User impact: The affected Wahoo sync job failed while parsing the workouts
+  list response before any later workouts on that page could be persisted.
+- Evidence: The failing frame was `src/providers/http-client.ts:90` inside
+  `WahooClient.get`, called by `WahooProvider.sync`. The first fatal schema
+  issue was `workouts[28].workout_summary.file.url: Expected string, received
+  null`; Sentry showed the same issue again at `workouts[29]`. A trace-scoped
+  Sentry log search returned no related application log entries.
+- Root cause: The Wahoo schema allowed `workout_summary.file` to be absent, but
+  required `file.url` to be a string whenever `file` was present. Wahoo can send
+  a present `file` object with `url: null` for workouts that do not have a FIT
+  file URL available.
+- Fix / mitigation: `createWahooWorkoutSummarySchema` now normalizes
+  `file.url: null` to `undefined`, preserving the existing behavior where the
+  persister downloads a FIT file only when a URL exists. A regression unit test
+  covers Wahoo workout-list parsing with a null file URL.
+- Remaining risk: No event replay or application logs were available for the
+  trace, so validation is based on the Sentry stack, the captured payload path,
+  and the focused unit test.
