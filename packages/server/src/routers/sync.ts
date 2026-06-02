@@ -82,6 +82,15 @@ export { sanitizeErrorMessage };
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
 const legacySyncQueue = createSyncQueue();
 
+function hasCurrentAuthError(
+  errorMessage: string | null,
+  errorSyncedAt: Date,
+  tokenUpdatedAt?: Date,
+): boolean {
+  if (!isAuthError(errorMessage)) return false;
+  return !tokenUpdatedAt || errorSyncedAt > tokenUpdatedAt;
+}
+
 export const syncRouter = router({
   /** Public list of configured providers that have a user-facing connection or import flow. */
   usableProviders: publicProcedure.query(async () => {
@@ -117,9 +126,14 @@ export const syncRouter = router({
     ]);
 
     const tokenSet = new Set(allTokens.map((r) => r.providerId));
+    const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
     const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
     const authErrorProviders = new Set(
-      latestErrors.filter((r) => isAuthError(r.errorMessage)).map((r) => r.providerId),
+      latestErrors
+        .filter((r) =>
+          hasCurrentAuthError(r.errorMessage, r.syncedAt, tokenUpdatedAtMap.get(r.providerId)),
+        )
+        .map((r) => r.providerId),
     );
 
     return all

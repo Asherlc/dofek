@@ -42,9 +42,17 @@ describe("SyncRepository", () => {
     });
 
     it("returns provider tokens", async () => {
-      const { repo } = makeRepository([{ provider_id: "wahoo" }, { provider_id: "strava" }]);
+      const wahooUpdatedAt = new Date("2026-06-02T10:00:00Z");
+      const stravaUpdatedAt = new Date("2026-06-02T11:00:00Z");
+      const { repo } = makeRepository([
+        { provider_id: "wahoo", updated_at: wahooUpdatedAt },
+        { provider_id: "strava", updated_at: stravaUpdatedAt },
+      ]);
       const result = await repo.getConnectedProviderIds();
-      expect(result).toEqual([{ providerId: "wahoo" }, { providerId: "strava" }]);
+      expect(result).toEqual([
+        { providerId: "wahoo", updatedAt: wahooUpdatedAt },
+        { providerId: "strava", updatedAt: stravaUpdatedAt },
+      ]);
     });
 
     it("calls db.execute once", async () => {
@@ -82,14 +90,20 @@ describe("SyncRepository", () => {
     });
 
     it("maps rows to LatestError objects", async () => {
+      const wahooSyncedAt = new Date("2026-06-02T10:00:00Z");
+      const stravaSyncedAt = new Date("2026-06-02T11:00:00Z");
       const { repo } = makeRepository([
-        { provider_id: "wahoo", error_message: "authorization failed" },
-        { provider_id: "strava", error_message: null },
+        {
+          provider_id: "wahoo",
+          error_message: "authorization failed",
+          synced_at: wahooSyncedAt,
+        },
+        { provider_id: "strava", error_message: null, synced_at: stravaSyncedAt },
       ]);
       const result = await repo.getLatestErrors();
       expect(result).toEqual([
-        { providerId: "wahoo", errorMessage: "authorization failed" },
-        { providerId: "strava", errorMessage: null },
+        { providerId: "wahoo", errorMessage: "authorization failed", syncedAt: wahooSyncedAt },
+        { providerId: "strava", errorMessage: null, syncedAt: stravaSyncedAt },
       ]);
     });
   });
