@@ -9,6 +9,7 @@ const foodRefetchMock = vi.fn();
 const analyzeItemsMutateAsyncMock = vi.fn();
 const createAiEntryMutateAsyncMock = vi.fn();
 const deleteMutateMock = vi.fn();
+const loggerInfoMock = vi.fn();
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -45,6 +46,13 @@ vi.mock("../../lib/trpc", () => ({
 
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+}));
+
+vi.mock("../../lib/telemetry", () => ({
+  captureException: vi.fn(),
+  logger: {
+    info: loggerInfoMock,
+  },
 }));
 
 describe("FoodScreen AI meal confirmation", () => {
@@ -133,6 +141,16 @@ describe("FoodScreen AI meal confirmation", () => {
     expect(mockRouterPush).toHaveBeenLastCalledWith(
       expect.stringMatching(/^\/food\/add\?meal=[a-z]+&date=\d{4}-\d{2}-\d{2}&mode=ai$/),
     );
+  });
+
+  it("records a screen breadcrumb when the nutrition tab renders", async () => {
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(loggerInfoMock).toHaveBeenCalledWith("screen-navigation", "Nutrition tab rendered", {
+      route: "food",
+    });
   });
 
   it("opens FatSecret when pressing the food screen attribution", async () => {

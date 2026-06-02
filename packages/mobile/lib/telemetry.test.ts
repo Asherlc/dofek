@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   const mockInit = vi.fn();
   const mockCaptureException = vi.fn();
   const mockCaptureMessage = vi.fn();
+  const mockAddBreadcrumb = vi.fn();
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
   const mockResourceFromAttributes = vi.fn().mockReturnValue({ resource: "mock" });
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => {
     mockInit,
     mockCaptureException,
     mockCaptureMessage,
+    mockAddBreadcrumb,
     mockEmit,
     mockGetLogger,
     mockResourceFromAttributes,
@@ -30,6 +32,7 @@ vi.mock("@sentry/react-native", () => ({
   init: mocks.mockInit,
   captureException: mocks.mockCaptureException,
   captureMessage: mocks.mockCaptureMessage,
+  addBreadcrumb: mocks.mockAddBreadcrumb,
 }));
 
 vi.mock("@opentelemetry/sdk-logs", () => ({
@@ -179,6 +182,31 @@ describe("ios telemetry", () => {
         attributes: { key: "value" },
       }),
     );
+  });
+
+  it("logger.info adds a Sentry breadcrumb with sanitized data", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    mod.logger.info("screen-navigation", "Nutrition tab selected", {
+      route: "food",
+      selected: true,
+      count: 1,
+      ignored: { nested: "value" },
+    });
+
+    expect(mocks.mockAddBreadcrumb).toHaveBeenCalledWith({
+      category: "screen-navigation",
+      message: "Nutrition tab selected",
+      level: "info",
+      data: {
+        route: "food",
+        selected: true,
+        count: 1,
+      },
+    });
   });
 
   it("logger works without OTel endpoint (console-only)", async () => {
