@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -166,7 +167,7 @@ export function concept2OAuthConfig(host?: string): OAuthConfig | null {
 
 export class Concept2Client extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, CONCEPT2_API_BASE, fetchFn);
+    super(accessToken, CONCEPT2_API_BASE, fetchFn, "concept2");
   }
 
   protected override getHeaders(): Record<string, string> {
@@ -195,7 +196,7 @@ export class Concept2Provider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "concept2" });
   }
 
   validate(): string | null {

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /** Per-provider mock queues keyed by provider ID */
 const providerQueues = new Map<string, { add: ReturnType<typeof vi.fn> }>();
 const mockLoggerInfo = vi.fn();
+const mockGetActiveCooldown = vi.fn();
 
 function getMockQueue(providerId: string) {
   const existing = providerQueues.get(providerId);
@@ -41,12 +42,21 @@ vi.mock("./provider-registration.ts", () => ({
   ensureProvidersRegistered: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("./provider-rate-limit-cooldown.ts", () => ({
+  providerRateLimitCooldownStore: {
+    getActive: (...args: unknown[]) => mockGetActiveCooldown(...args),
+  },
+  providerRateLimitDelayMs: vi.fn(() => 600_000),
+  providerRateLimitCooldownJobId: vi.fn(() => "rate-limit-delayed-job"),
+}));
+
 const { processScheduledSyncJob } = await import("./process-scheduled-sync-job.ts");
 
 describe("processScheduledSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     providerQueues.clear();
+    mockGetActiveCooldown.mockResolvedValue(null);
   });
 
   it("enqueues sync jobs into per-provider queues for non-CSV providers only", async () => {
@@ -111,5 +121,35 @@ describe("processScheduledSyncJob", () => {
     expect(stravaQueue.add).toHaveBeenCalledTimes(2);
     // Only one queue instance created for strava
     expect(providerQueues.size).toBe(1);
+  });
+
+  it("enqueues delayed sync jobs when a provider cooldown is active", async () => {
+    const cooldown = {
+      providerId: "garmin",
+      scope: "provider" as const,
+      userId: null,
+      expiresAt: new Date("2026-06-02T12:10:00Z"),
+    };
+    mockGetActiveCooldown.mockResolvedValue(cooldown);
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
+    };
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+
+    const garminQueue = getMockQueue("garmin");
+    expect(garminQueue.add).toHaveBeenCalledWith(
+      "sync",
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        sinceDays: 1,
+      },
+      expect.objectContaining({
+        attempts: 288,
+        delay: 600_000,
+        jobId: "rate-limit-delayed-job",
+      }),
+    );
   });
 });

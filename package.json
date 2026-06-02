@@ -140,6 +140,7 @@
     "@clickhouse/client": "1.12.1",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
+    "@dofek/provider-http": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
     "@dofek/training": "workspace:*",

@@ -389,7 +389,8 @@ describe("GarminProvider.authSetup()", () => {
   });
 
   it("automatedLogin calls GarminConnectClient.signIn with the provider's fetchFn", async () => {
-    const customFetch: typeof globalThis.fetch = vi.fn();
+    const customFetch = vi.fn<typeof globalThis.fetch>();
+    customFetch.mockResolvedValue(new Response("ok"));
     const provider = new GarminProvider(customFetch);
     const setup = provider.authSetup();
 
@@ -403,8 +404,12 @@ describe("GarminProvider.authSetup()", () => {
       "user@test.com",
       "pass123",
       "garmin.com",
-      customFetch,
+      expect.any(Function),
     );
+    const forwardedFetch = mocks.signIn.mock.calls[0]?.[3];
+    if (typeof forwardedFetch !== "function") throw new Error("expected forwarded fetch function");
+    await forwardedFetch("https://example.com");
+    expect(customFetch).toHaveBeenCalledWith("https://example.com");
     expect(result.accessToken).toBe(JSON.stringify(tokens));
     expect(result.scopes).toBe(INTERNAL_SCOPE_MARKER);
   });

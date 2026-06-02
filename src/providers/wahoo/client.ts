@@ -112,7 +112,7 @@ export const wahooWebhookPayloadSchema = createWahooWebhookPayloadSchema();
 
 export class WahooClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, WAHOO_API_BASE, fetchFn);
+    super(accessToken, WAHOO_API_BASE, fetchFn, "wahoo");
   }
 
   async getWorkouts(page = 1, perPage = 30): Promise<WahooWorkoutListResponse> {

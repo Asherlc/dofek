@@ -1,7 +1,8 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { captureException } from "@sentry/node";
 import { and, eq } from "drizzle-orm";
-import { GarminApiError, GarminConnectClient } from "garmin-connect/client";
+import { GarminApiError, GarminConnectClient, GarminRateLimitError } from "garmin-connect/client";
 import {
   parseActivityDetail,
   parseConnectActivity,
@@ -288,7 +289,15 @@ export class GarminProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
+      providerId: "garmin",
+      createRateLimitError: (response, responseBody) =>
+        new GarminRateLimitError(
+          `Rate limit exceeded (${response.status}): ${responseBody}`,
+          responseBody,
+          response.headers?.get?.("Retry-After"),
+        ),
+    });
   }
 
   validate(): string | null {

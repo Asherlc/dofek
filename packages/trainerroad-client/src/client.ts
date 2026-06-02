@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { TrainerRoadActivity, TrainerRoadCareer, TrainerRoadMemberInfo } from "./types.ts";
 
 const TRAINERROAD_BASE = "https://www.trainerroad.com";
@@ -8,7 +9,7 @@ export class TrainerRoadClient {
 
   constructor(authCookie: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#authCookie = authCookie;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainerroad" });
   }
 
   async #get<T>(path: string): Promise<T> {
@@ -51,8 +52,9 @@ export class TrainerRoadClient {
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<{ authCookie: string; username: string }> {
+    const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainerroad" });
     // First, get the CSRF token from the login page
-    const loginPageResponse = await fetchFn(`${TRAINERROAD_BASE}/app/login`, {
+    const loginPageResponse = await rateLimitFetchFn(`${TRAINERROAD_BASE}/app/login`, {
       redirect: "manual",
     });
     const loginPageHtml = await loginPageResponse.text();
@@ -66,7 +68,7 @@ export class TrainerRoadClient {
     const cookieHeader = pageCookies.map((c) => c.split(";")[0]).join("; ");
 
     // Submit login form
-    const loginResponse = await fetchFn(`${TRAINERROAD_BASE}/app/login`, {
+    const loginResponse = await rateLimitFetchFn(`${TRAINERROAD_BASE}/app/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",

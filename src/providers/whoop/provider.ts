@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle } from "whoop-whoop/types";
 import { z } from "zod";
@@ -32,7 +33,7 @@ export class WhoopProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "whoop" });
   }
 
   validate(): string | null {

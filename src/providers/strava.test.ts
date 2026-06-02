@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mapStravaActivityType,
@@ -535,6 +536,7 @@ describe("StravaClient — error handling", () => {
     const client = new StravaClient("token", mockFetch, 0);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaRateLimitError);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
     expect(err).toHaveProperty("message", expect.stringContaining("(429)"));
   });
 
@@ -699,6 +701,8 @@ describe("StravaRateLimitError", () => {
     expect(error.name).toBe("StravaRateLimitError");
     expect(error.message).toBe("Rate limited");
     expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error.providerId).toBe("strava");
   });
 });
 

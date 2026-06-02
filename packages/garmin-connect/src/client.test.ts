@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GarminApiError,
@@ -119,7 +120,7 @@ describe("GarminConnectClient error classes", () => {
     const error = new GarminRateLimitError("too many requests");
     expect(error.name).toBe("GarminRateLimitError");
     expect(error.statusCode).toBe(429);
-    expect(error).toBeInstanceOf(GarminApiError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
   });
 });
 

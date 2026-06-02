@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -330,6 +331,7 @@ async function fatsecretApi(
   creds: OAuth1Credentials,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<unknown> {
+  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
   const allParams = { ...params, method, format: "json" };
   const authHeader = buildOAuth1Header("GET", API_BASE, allParams, creds);
 
@@ -337,7 +339,7 @@ async function fatsecretApi(
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
 
-  const response = await fetchFn(`${API_BASE}?${queryString}`, {
+  const response = await rateLimitFetchFn(`${API_BASE}?${queryString}`, {
     method: "GET",
     headers: { Authorization: authHeader },
   });
@@ -373,6 +375,7 @@ async function getRequestToken(
   callbackUrl: string,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<RequestTokenResult> {
+  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
   const oauthParams: Record<string, string> = {
     oauth_consumer_key: consumerKey,
     oauth_signature_method: "HMAC-SHA1",
@@ -402,7 +405,7 @@ async function getRequestToken(
     .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k] ?? "")}`)
     .join("&");
 
-  const response = await fetchFn(REQUEST_TOKEN_URL, {
+  const response = await rateLimitFetchFn(REQUEST_TOKEN_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -442,6 +445,7 @@ async function exchangeForAccessToken(
   oauthVerifier: string,
   fetchFn: FetchFn = globalThis.fetch,
 ): Promise<{ token: string; tokenSecret: string }> {
+  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
   const oauthParams: Record<string, string> = {
     oauth_consumer_key: consumerKey,
     oauth_token: requestToken,
@@ -472,7 +476,7 @@ async function exchangeForAccessToken(
     .map((k) => `${encodeRFC3986(k)}=${encodeRFC3986(oauthParams[k] ?? "")}`)
     .join("&");
 
-  const response = await fetchFn(ACCESS_TOKEN_URL, {
+  const response = await rateLimitFetchFn(ACCESS_TOKEN_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -512,7 +516,7 @@ export class FatSecretProvider implements SyncProvider {
   constructor(fetchFn: FetchFn = globalThis.fetch) {
     this.#consumerKey = process.env.FATSECRET_CONSUMER_KEY ?? null;
     this.#consumerSecret = process.env.FATSECRET_CONSUMER_SECRET ?? null;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
   }
 
   validate(): string | null {

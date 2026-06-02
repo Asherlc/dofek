@@ -10,6 +10,7 @@
  * 6. All API calls use OAuth2 Bearer token
  */
 
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { buildOAuth1Header } from "./oauth1.ts";
 import type {
   BodyBatteryDay,
@@ -54,7 +55,15 @@ export class GarminConnectClient {
 
   constructor(domain: string = "garmin.com", fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#domain = domain;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
+      providerId: "garmin",
+      createRateLimitError: (response, responseBody) =>
+        new GarminRateLimitError(
+          `Rate limit exceeded (${response.status}): ${responseBody}`,
+          responseBody,
+          response.headers?.get?.("Retry-After"),
+        ),
+    });
   }
 
   // ============================================================
@@ -94,7 +103,7 @@ export class GarminConnectClient {
     });
 
     // Step 1: Set cookies by visiting embed page
-    const embedResponse = await fetchFn(`${ssoEmbed}?${embedParams.toString()}`, {
+    const embedResponse = await client.#fetchFn(`${ssoEmbed}?${embedParams.toString()}`, {
       headers: { "User-Agent": USER_AGENT },
       redirect: "follow",
     });
@@ -103,14 +112,17 @@ export class GarminConnectClient {
     const cookies = extractSetCookies(embedResponse);
 
     // Step 2: Get CSRF token from signin page
-    const signinPageResponse = await fetchFn(`${ssoBase}/signin?${signinParams.toString()}`, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Cookie: cookies,
-        Referer: embedResponse.url,
+    const signinPageResponse = await client.#fetchFn(
+      `${ssoBase}/signin?${signinParams.toString()}`,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Cookie: cookies,
+          Referer: embedResponse.url,
+        },
+        redirect: "follow",
       },
-      redirect: "follow",
-    });
+    );
 
     const signinHtml = await signinPageResponse.text();
     const csrfToken = extractCsrf(signinHtml);
@@ -124,7 +136,7 @@ export class GarminConnectClient {
       _csrf: csrfToken,
     });
 
-    const loginResponse = await fetchFn(`${ssoBase}/signin?${signinParams.toString()}`, {
+    const loginResponse = await client.#fetchFn(`${ssoBase}/signin?${signinParams.toString()}`, {
       method: "POST",
       headers: {
         "User-Agent": USER_AGENT,
@@ -600,9 +612,16 @@ export class GarminApiError extends Error {
   }
 }
 
-export class GarminRateLimitError extends GarminApiError {
-  constructor(message: string) {
-    super(message, 429);
+export class GarminRateLimitError extends ProviderRateLimitError {
+  constructor(message: string, responseBody = "", retryAfterHeader?: string | null) {
+    const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+    super({
+      message,
+      providerId: "garmin",
+      statusCode: 429,
+      responseBody,
+      retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+    });
     this.name = "GarminRateLimitError";
   }
 }

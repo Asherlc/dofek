@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
@@ -59,10 +60,18 @@ vi.mock("../db/tokens.ts", () => ({
 
 const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
+const mockProviderQueueAdd = vi.fn().mockResolvedValue(undefined);
 vi.mock("./queues.ts", () => ({
   enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
     mockEnqueueDebouncedPostSyncMaintenance(...args),
   enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
+  getProviderSyncQueue: vi.fn(() => ({ add: mockProviderQueueAdd })),
+  SYNC_JOB_RETRY_OPTIONS: {
+    attempts: 288,
+    backoff: { type: "fixed", delay: 300_000 },
+    removeOnComplete: { age: 86_400, count: 1_000 },
+    removeOnFail: { age: 604_800, count: 1_000 },
+  },
 }));
 
 const mockSyncRecordsTotal = { add: vi.fn() };
@@ -160,6 +169,7 @@ describe("processSyncJob", () => {
     });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
+    mockProviderQueueAdd.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -204,6 +214,47 @@ describe("processSyncJob", () => {
     await expect(runSyncJob(createMockJob({ providerId: "nonexistent" }), mockDb)).rejects.toThrow(
       "Unknown provider: nonexistent",
     );
+  });
+
+  it("records provider rate-limit cooldowns and schedules a deterministic delayed retry", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(
+        new ProviderRateLimitError({
+          message: "Garmin API rate limit exceeded (429): limited",
+          providerId: "garmin",
+          statusCode: 429,
+          responseBody: "limited",
+          scope: "provider",
+          retryAfterSeconds: 600,
+        }),
+      ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "garmin",
+        userId: "user-1",
+        sinceDays: 1,
+      },
+      expect.objectContaining({
+        attempts: 288,
+        delay: 600_000,
+        jobId: "provider-rate-limit:garmin:provider:user-1:1780402200000",
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalledWith(
+      expect.any(ProviderRateLimitError),
+      expect.anything(),
+    );
+    vi.useRealTimers();
   });
 
   it("skips import-only providers when enqueued by id", async () => {

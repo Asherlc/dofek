@@ -123,7 +123,7 @@ export const FITBIT_API_BASE = "https://api.fitbit.com";
 
 export class FitbitClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, FITBIT_API_BASE, fetchFn);
+    super(accessToken, FITBIT_API_BASE, fetchFn, "fitbit");
   }
 
   async getActivities(afterDate: string, offset = 0): Promise<FitbitActivityListResponse> {

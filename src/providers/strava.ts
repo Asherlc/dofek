@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
@@ -253,7 +254,10 @@ export class StravaClient {
     throttleMs = STRAVA_THROTTLE_MS,
   ) {
     this.#accessToken = accessToken;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
+      providerId: "strava",
+      createRateLimitError: createStravaRateLimitError,
+    });
     this.#throttleMs = throttleMs;
   }
 
@@ -279,10 +283,6 @@ export class StravaClient {
     const response = await this.#fetchFn(url.toString(), {
       headers: { Authorization: `Bearer ${this.#accessToken}` },
     });
-
-    if (response.status === 429) {
-      throw new StravaRateLimitError(`Strava API rate limit exceeded (429)`);
-    }
 
     if (response.status === 401 || response.status === 403) {
       throw new StravaUnauthorizedError(
@@ -359,11 +359,30 @@ export class StravaClient {
   }
 }
 
-export class StravaRateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
+export class StravaRateLimitError extends ProviderRateLimitError {
+  constructor(message: string, responseBody = "", retryAfterSeconds?: number | null) {
+    super({
+      message,
+      providerId: "strava",
+      statusCode: 429,
+      responseBody,
+      retryAfterSeconds,
+    });
     this.name = "StravaRateLimitError";
   }
+}
+
+function createStravaRateLimitError(
+  response: Response,
+  responseBody: string,
+): StravaRateLimitError {
+  const retryAfterHeader = response.headers.get("Retry-After");
+  const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+  return new StravaRateLimitError(
+    `Strava API rate limit exceeded (${response.status}): ${responseBody}`,
+    responseBody,
+    Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+  );
 }
 
 export class StravaUnauthorizedError extends Error {
@@ -412,7 +431,10 @@ export class StravaProvider implements WebhookProvider {
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
     throttleMs = STRAVA_THROTTLE_MS,
   ) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
+      providerId: "strava",
+      createRateLimitError: createStravaRateLimitError,
+    });
     this.#throttleMs = throttleMs;
   }
 
@@ -533,9 +555,10 @@ export class StravaProvider implements WebhookProvider {
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = stravaOAuthConfig(options?.host);
     if (!config) throw new Error("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET are required");
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
       apiBaseUrl: STRAVA_API_BASE,
       identityCapabilities: { providesEmail: false },
       getUserIdentity: async (accessToken: string): Promise<ProviderIdentity> => {
