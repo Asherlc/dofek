@@ -37,7 +37,10 @@ device_priority_match AS (
             active_device_priority.priority AS priority,
             row_number() OVER (
                 PARTITION BY active_activity.id
-                ORDER BY length(active_device_priority.source_name_pattern) DESC
+                ORDER BY
+                    length(active_device_priority.source_name_pattern) DESC,
+                    active_device_priority.priority ASC,
+                    active_device_priority.source_name_pattern ASC
             ) AS row_number
         FROM active_activity
         INNER JOIN active_device_priority
