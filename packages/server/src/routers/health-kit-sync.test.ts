@@ -436,7 +436,7 @@ describe("healthKitSyncRouter", () => {
       );
     });
 
-    it("links newly inserted heart-rate metric rows to existing workouts", async () => {
+    it("does not update metric_stream rows after inserting heart-rate metrics", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -457,7 +457,7 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("SET activity_id")
         );
       });
-      expect(linkCall).toBeDefined();
+      expect(linkCall).toBeUndefined();
     });
 
     it("processes health event samples (catch-all)", async () => {
@@ -803,7 +803,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
-    it("links existing heart-rate metric rows after workout upsert", async () => {
+    it("does not update metric_stream rows after workout upsert", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -834,7 +834,7 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("SET activity_id")
         );
       });
-      expect(linkCall).toBeDefined();
+      expect(linkCall).toBeUndefined();
     });
 
     it("maps unknown workout type to other", async () => {
@@ -2583,7 +2583,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("exerciseName");
     });
 
-    it("calls linkUnassignedHeartRateToWorkouts after processing workouts (kills if(true)/if(>=0) mutations on workouts.length > 0)", async () => {
+    it("does not update metric_stream rows after processing workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2591,7 +2591,6 @@ describe("healthKitSyncRouter", () => {
         timezone: "UTC",
       });
 
-      // With workouts, should call link
       await caller.pushWorkouts({
         workouts: [
           {
@@ -2615,10 +2614,10 @@ describe("healthKitSyncRouter", () => {
           serialized.includes("SET activity_id")
         );
       });
-      expect(linkCall).toBeDefined();
+      expect(linkCall).toBeUndefined();
     });
 
-    it("does not call linkUnassignedHeartRateToWorkouts when no workouts (kills workouts.length > 0 boundary)", async () => {
+    it("does not update metric_stream rows when no workouts are provided", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },

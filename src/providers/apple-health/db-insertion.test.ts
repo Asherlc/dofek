@@ -1423,12 +1423,12 @@ describe("upsertWorkoutBatch", () => {
     expect(raw).not.toHaveProperty("maxHeartRate");
   });
 
-  it("correlates existing HR metric_stream rows with activities by time range", async () => {
+  it("does not update existing heart-rate metric_stream rows after workout insert", async () => {
     const { db } = createMockDb([{ id: "act-1" }]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 
-    expect(db.execute).toHaveBeenCalled();
+    expect(db.execute).not.toHaveBeenCalled();
   });
 
   it("does not call execute for empty workouts array", async () => {
