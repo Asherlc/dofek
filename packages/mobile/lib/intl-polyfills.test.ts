@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 describe("installIntlPolyfills", () => {
   it("installs NumberFormat formatToParts when the runtime does not provide it", async () => {
+    vi.resetModules();
+    const originalNumberFormat = Object.getOwnPropertyDescriptor(Intl, "NumberFormat");
     const originalFormatToParts = Object.getOwnPropertyDescriptor(
       Intl.NumberFormat.prototype,
       "formatToParts",
@@ -12,7 +14,7 @@ describe("installIntlPolyfills", () => {
     });
 
     try {
-      await import("./intl-polyfills.ts");
+      await import("./intl-polyfills.js");
 
       const parts = new Intl.NumberFormat("en-US", {
         maximumFractionDigits: 0,
@@ -26,8 +28,27 @@ describe("installIntlPolyfills", () => {
         { type: "integer", value: "000" },
       ]);
     } finally {
+      if (originalNumberFormat) {
+        Object.defineProperty(Intl, "NumberFormat", originalNumberFormat);
+      }
       if (originalFormatToParts) {
         Object.defineProperty(Intl.NumberFormat.prototype, "formatToParts", originalFormatToParts);
+      }
+    }
+  });
+
+  it("keeps the native NumberFormat implementation when formatToParts exists", async () => {
+    vi.resetModules();
+    const originalNumberFormat = Object.getOwnPropertyDescriptor(Intl, "NumberFormat");
+    const nativeNumberFormat = Intl.NumberFormat;
+
+    try {
+      await import("./intl-polyfills.js");
+
+      expect(Intl.NumberFormat).toBe(nativeNumberFormat);
+    } finally {
+      if (originalNumberFormat) {
+        Object.defineProperty(Intl, "NumberFormat", originalNumberFormat);
       }
     }
   });
