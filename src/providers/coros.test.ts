@@ -1,4 +1,6 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { exchangeCodeForTokens } from "../auth/oauth.ts";
 import {
   CorosClient,
   CorosProvider,
@@ -6,6 +8,18 @@ import {
   mapCorosSportType,
   parseCorosWorkout,
 } from "./coros.ts";
+
+async function expectCorosRateLimitError(action: () => Promise<unknown>) {
+  try {
+    await action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId: "coros", retryAfterSeconds: 45 });
+    return;
+  }
+
+  throw new Error("Expected COROS rate-limit error");
+}
 
 // ============================================================
 // Mock external dependencies
@@ -164,6 +178,30 @@ describe("CorosProvider", () => {
     });
   });
 
+  describe("authSetup()", () => {
+    it("passes token exchange throttling through the common rate-limit error", async () => {
+      process.env.COROS_CLIENT_ID = "test-id";
+      process.env.COROS_CLIENT_SECRET = "test-secret";
+      vi.mocked(exchangeCodeForTokens).mockImplementationOnce(
+        async (_config, _code, exchangeFetchFn = globalThis.fetch) => {
+          await exchangeFetchFn("https://open.coros.com/oauth2/token");
+          return {
+            accessToken: "access-token",
+            refreshToken: "refresh-token",
+            expiresAt: new Date("2027-01-01T00:00:00Z"),
+            scopes: null,
+          };
+        },
+      );
+      const fetchFn: typeof globalThis.fetch = async () =>
+        new Response("window exceeded", { status: 429, headers: { "Retry-After": "45" } });
+      const provider = new CorosProvider(fetchFn);
+      const setup = provider.authSetup();
+
+      await expectCorosRateLimitError(() => setup.exchangeCode("code"));
+    });
+  });
+
   describe("registerWebhook()", () => {
     it("returns static subscription ID (partner-managed)", async () => {
       const provider = new CorosProvider();
@@ -314,6 +352,19 @@ describe("CorosClient.downloadFitFile", () => {
 
     await expect(client.downloadFitFile("https://cdn.coros.com/bad.fit")).rejects.toThrow(
       "Failed to download FIT file (404)",
+    );
+  });
+
+  it("throws the common rate-limit error when FIT downloads are throttled", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("slow down", { status: 429, headers: { "Retry-After": "15" } });
+    const client = new CorosClient("token", mockFetch);
+
+    await expect(client.downloadFitFile("https://cdn.coros.com/fit/123.fit")).rejects.toMatchObject(
+      {
+        providerId: "coros",
+        retryAfterSeconds: 15,
+      },
     );
   });
 });

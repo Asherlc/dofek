@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildOAuth1Header,
@@ -7,6 +8,22 @@ import {
   inferCategory,
   parseFoodEntries,
 } from "./fatsecret.ts";
+
+async function expectProviderRateLimitError(
+  action: () => Promise<unknown>,
+  providerId: string,
+  retryAfterSeconds: number,
+) {
+  try {
+    await action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId, retryAfterSeconds });
+    return;
+  }
+
+  throw new Error("Expected provider rate-limit error");
+}
 
 // ============================================================
 // Sample API responses (based on FatSecret Platform API docs)
@@ -511,6 +528,24 @@ describe("FatSecretProvider.authSetup()", () => {
     await expect(
       setup.oauth1Flow.getRequestToken("http://localhost:9876/callback"),
     ).rejects.toThrow("FatSecret request token failed (401)");
+  });
+
+  it("oauth1Flow.getRequestToken throws the common rate-limit error when throttled", async () => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("wait", { status: 429, headers: { "Retry-After": "180" } });
+    };
+
+    const provider = new FatSecretProvider(mockFetch);
+    const setup = provider.authSetup();
+
+    await expectProviderRateLimitError(
+      () => setup.oauth1Flow.getRequestToken("http://localhost:9876/callback"),
+      "fatsecret",
+      180,
+    );
   });
 
   it("oauth1Flow.getRequestToken throws when token payload is incomplete", async () => {

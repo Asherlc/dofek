@@ -4,6 +4,7 @@ import {
   InMemoryProviderRateLimitCooldownStore,
   providerRateLimitCooldownJobId,
   providerRateLimitDelayMs,
+  RedisProviderRateLimitCooldownStore,
 } from "./provider-rate-limit-cooldown.ts";
 
 function rateLimitError(options: {
@@ -21,6 +22,31 @@ function rateLimitError(options: {
     userId: options.userId,
     retryAfterSeconds: options.retryAfterSeconds,
   });
+}
+
+function createMockRedisStore() {
+  const values = new Map<string, string>();
+  const setCalls: Array<{
+    key: string;
+    value: string;
+    mode: "PX";
+    millisecondsToExpire: number;
+  }> = [];
+  const getRedisClient: ConstructorParameters<typeof RedisProviderRateLimitCooldownStore>[0] =
+    async () => ({
+      set: async (key, value, mode, millisecondsToExpire) => {
+        setCalls.push({ key, value, mode, millisecondsToExpire });
+        values.set(key, value);
+        return "OK";
+      },
+      get: async (key) => values.get(key) ?? null,
+    });
+
+  return {
+    values,
+    setCalls,
+    store: new RedisProviderRateLimitCooldownStore(getRedisClient),
+  };
 }
 
 describe("ProviderRateLimitCooldownStore", () => {
@@ -103,6 +129,146 @@ describe("ProviderRateLimitCooldownStore", () => {
 
     await expect(store.getActive("fitbit", "user-1")).resolves.toEqual(userCooldown);
     vi.useRealTimers();
+  });
+
+  it("returns provider cooldown state when it expires after user-scoped state", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const providerCooldown = await store.record(
+      rateLimitError({ providerId: "fitbit", retryAfterSeconds: 300 }),
+      "user-1",
+    );
+    await store.record(
+      rateLimitError({ providerId: "fitbit", scope: "user", retryAfterSeconds: 60 }),
+      "user-1",
+    );
+
+    await expect(store.getActive("fitbit", "user-1")).resolves.toEqual(providerCooldown);
+    vi.useRealTimers();
+  });
+
+  it("falls back to the sync job user for user-scoped errors without an error user", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const cooldown = await store.record(
+      rateLimitError({
+        providerId: "fitbit",
+        scope: "user",
+        userId: null,
+        retryAfterSeconds: 120,
+      }),
+      "fallback-user",
+    );
+
+    expect(cooldown.userId).toBe("fallback-user");
+    await expect(store.getActive("fitbit", "fallback-user")).resolves.toEqual(cooldown);
+    vi.useRealTimers();
+  });
+
+  it("ignores expired cooldown state", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    await store.record(rateLimitError({ providerId: "withings", retryAfterSeconds: 60 }), "user-1");
+    vi.setSystemTime(new Date("2026-06-02T12:01:01Z"));
+
+    await expect(store.getActive("withings", "user-1")).resolves.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("returns null when no cooldown state exists", async () => {
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    await expect(store.getActive("garmin", "user-1")).resolves.toBeNull();
+  });
+
+  it("records provider cooldown state in Redis with serialized expiry", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const { setCalls, store } = createMockRedisStore();
+
+    const cooldown = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+
+    expect(setCalls).toEqual([
+      {
+        key: "provider-rate-limit:garmin:provider",
+        value: JSON.stringify({
+          providerId: "garmin",
+          scope: "provider",
+          userId: null,
+          expiresAt: "2026-06-02T12:10:00.000Z",
+        }),
+        mode: "PX",
+        millisecondsToExpire: 600_000,
+      },
+    ]);
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(cooldown);
+    vi.useRealTimers();
+  });
+
+  it("records user cooldown state in Redis with user-specific key", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const { setCalls, store } = createMockRedisStore();
+
+    const cooldown = await store.record(
+      rateLimitError({
+        providerId: "fitbit",
+        scope: "user",
+        userId: "user-1",
+        retryAfterSeconds: 120,
+      }),
+      "fallback-user",
+    );
+
+    expect(setCalls[0]).toEqual({
+      key: "provider-rate-limit:fitbit:user:user-1",
+      value: JSON.stringify({
+        providerId: "fitbit",
+        scope: "user",
+        userId: "user-1",
+        expiresAt: "2026-06-02T12:02:00.000Z",
+      }),
+      mode: "PX",
+      millisecondsToExpire: 120_000,
+    });
+    await expect(store.getActive("fitbit", "user-1")).resolves.toEqual(cooldown);
+    vi.useRealTimers();
+  });
+
+  it("ignores malformed Redis cooldown state", async () => {
+    const { values, store } = createMockRedisStore();
+
+    for (const raw of [
+      "null",
+      "42",
+      JSON.stringify({ scope: "provider", userId: null, expiresAt: "2026-06-02T12:00:00.000Z" }),
+      JSON.stringify({
+        providerId: "garmin",
+        scope: "unknown",
+        userId: null,
+        expiresAt: "2026-06-02T12:00:00.000Z",
+      }),
+      JSON.stringify({
+        providerId: "garmin",
+        scope: "provider",
+        userId: 1,
+        expiresAt: "2026-06-02T12:00:00.000Z",
+      }),
+      JSON.stringify({ providerId: "garmin", scope: "provider", userId: null, expiresAt: 1 }),
+      JSON.stringify({
+        providerId: "garmin",
+        scope: "provider",
+        userId: null,
+        expiresAt: "not-a-date",
+      }),
+    ]) {
+      values.set("provider-rate-limit:garmin:provider", raw);
+      await expect(store.getActive("garmin", "user-1")).resolves.toBeNull();
+    }
   });
 });
 

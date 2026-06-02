@@ -1,6 +1,22 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { TrainerRoadClient } from "./client.ts";
 import type { TrainerRoadActivity, TrainerRoadMemberInfo } from "./types.ts";
+
+async function expectTrainerRoadRateLimitError(
+  action: () => Promise<unknown>,
+  retryAfterSeconds: number,
+) {
+  try {
+    await action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId: "trainerroad", retryAfterSeconds });
+    return;
+  }
+
+  throw new Error("Expected TrainerRoad rate-limit error");
+}
 
 function mockFetch(response: {
   status: number;
@@ -104,6 +120,16 @@ describe("TrainerRoadClient.signIn", () => {
       "TrainerRoad login failed",
     );
   });
+
+  it("throws the common rate-limit error when login is throttled", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("retry later", { status: 429, headers: { "Retry-After": "120" } });
+
+    await expectTrainerRoadRateLimitError(
+      () => TrainerRoadClient.signIn("testuser", "password123", fetchFn),
+      120,
+    );
+  });
 });
 
 describe("TrainerRoadClient.getActivities", () => {
@@ -153,6 +179,17 @@ describe("TrainerRoadClient.getActivities", () => {
 
     await expect(client.getActivities("testuser", "2024-01-01", "2024-01-31")).rejects.toThrow(
       "TrainerRoad API error (403)",
+    );
+  });
+
+  it("throws the common rate-limit error when the API is throttled", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("too many requests", { status: 429, headers: { "Retry-After": "30" } });
+    const client = new TrainerRoadClient("test-auth-cookie", fetchFn);
+
+    await expectTrainerRoadRateLimitError(
+      () => client.getActivities("testuser", "2024-01-01", "2024-01-31"),
+      30,
     );
   });
 });

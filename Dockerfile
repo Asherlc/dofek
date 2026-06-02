@@ -24,6 +24,7 @@ COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY packages/provider-http/package.json ./packages/provider-http/
 COPY packages/format/package.json ./packages/format/
 COPY packages/scoring/package.json ./packages/scoring/
 COPY packages/nutrition/package.json ./packages/nutrition/
@@ -86,6 +87,8 @@ COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages
 COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
+COPY --from=source --chown=node:node /app/packages/provider-http/src ./packages/provider-http/src
+COPY --from=source --chown=node:node /app/packages/provider-http/package.json ./packages/provider-http/
 COPY --from=source --chown=node:node /app/packages/format/src ./packages/format/src
 COPY --from=source --chown=node:node /app/packages/format/package.json ./packages/format/
 COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/src
@@ -126,6 +129,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/auth node_modules/@dofek/auth && \
     ln -sfn /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
     ln -sfn /app/packages/providers-meta node_modules/@dofek/providers && \
+    ln -sfn /app/packages/provider-http node_modules/@dofek/provider-http && \
     ln -sfn /app/packages/recovery node_modules/@dofek/recovery && \
     ln -sfn /app/packages/zones node_modules/@dofek/zones
 

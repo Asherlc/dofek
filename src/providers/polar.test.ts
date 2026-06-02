@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -22,6 +23,22 @@ import type {
   PolarNightlyRecharge,
   PolarSleep,
 } from "./polar/types.ts";
+
+async function expectProviderRateLimitError(
+  action: () => Promise<unknown>,
+  providerId: string,
+  retryAfterSeconds: number,
+) {
+  try {
+    await action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId, retryAfterSeconds });
+    return;
+  }
+
+  throw new Error("Expected provider rate-limit error");
+}
 
 // ============================================================
 // Pure parsing unit tests (no DB, no network)
@@ -599,6 +616,21 @@ describe("PolarProvider.authSetup", () => {
     const setup = provider.authSetup();
     expect(setup.oauthConfig.scopes).toEqual(["accesslink.read_all"]);
     expect(setup.oauthConfig.tokenAuthMethod).toBe("basic");
+  });
+
+  it("registerWebhook throws the common rate-limit error when Polar throttles", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("try later", { status: 429, headers: { "Retry-After": "75" } });
+
+    const provider = new PolarProvider(fetchFn);
+
+    await expectProviderRateLimitError(
+      () => provider.registerWebhook("https://dofek.example.com/webhook", "verify-token"),
+      "polar",
+      75,
+    );
   });
 
   it("exchangeCode uses x_user_id from token response to register with AccessLink", async () => {
