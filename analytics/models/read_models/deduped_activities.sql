@@ -125,7 +125,7 @@ stale_deduped_activities AS (
     LEFT JOIN current_deduped_activities
         ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
         AND current_deduped_activities.user_id = existing_deduped_activities.user_id
-    WHERE current_deduped_activities.activity_id IS null
+    WHERE current_deduped_activities.activity_id IS NULL
 )
 {% endif %}
 

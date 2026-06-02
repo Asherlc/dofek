@@ -239,6 +239,37 @@ describe("GarminConnectClient.fromTokens", () => {
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
+  it("throws GarminRateLimitError when expired-token OAuth2 exchange is rate limited", async () => {
+    const tokens = makeGarminTokens({
+      expires_at: Math.floor(Date.now() / 1000) - 100,
+    });
+    const callCount = { value: 0 };
+
+    const fetchFn = vi.fn().mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              consumer_key: "test-consumer-key",
+              consumer_secret: "test-consumer-secret",
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 429,
+        text: () => Promise.resolve("Rate limited"),
+      });
+    });
+
+    await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
+      GarminRateLimitError,
+    );
+  });
+
   it("throws when consumer fetch fails", async () => {
     const tokens = makeGarminTokens();
 
