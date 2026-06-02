@@ -798,18 +798,20 @@ describe("GarminConnectClient.signIn", () => {
     expect(client.getDisplayName()).toBe("testuser");
 
     const [embedUrl, embedOptions] = expectFetchCall(fetchFn, 1);
-    expect(embedUrl).toContain("id=gauth-widget");
-    expect(embedUrl).toContain("embedWidget=true");
-    expect(embedUrl).toContain("gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso");
+    const embedSearchParams = new URL(embedUrl).searchParams;
+    expect(embedSearchParams.get("id")).toBe("gauth-widget");
+    expect(embedSearchParams.get("embedWidget")).toBe("true");
+    expect(embedSearchParams.get("gauthHost")).toBe("https://sso.garmin.com/sso");
     expect(embedOptions).toEqual({
       headers: { "User-Agent": "com.garmin.android.apps.connectmobile" },
       redirect: "follow",
     });
 
     const [signinUrl, signinOptions] = expectFetchCall(fetchFn, 2);
-    expect(signinUrl).toContain("service=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed");
-    expect(signinUrl).toContain(
-      "redirectAfterAccountCreationUrl=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+    const signinSearchParams = new URL(signinUrl).searchParams;
+    expect(signinSearchParams.get("service")).toBe("https://sso.garmin.com/sso/embed");
+    expect(signinSearchParams.get("redirectAfterAccountCreationUrl")).toBe(
+      "https://sso.garmin.com/sso/embed",
     );
     expect(signinOptions).toEqual({
       headers: {
