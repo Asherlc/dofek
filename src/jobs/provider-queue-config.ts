@@ -56,7 +56,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   // Strava: 100 req/15min (using 90 for safety margin)
   ["strava", realtimeProvider(2, { max: 90, duration: 15 * 60_000 })],
   // Withings: 120 req/min
-  ["withings", realtimeProvider(2, { max: 120, duration: 60_000 })],
+  ["withings", realtimeProvider(1, { max: 120, duration: 60_000 })],
   // Fitbit: 150 req/hour
   ["fitbit", frequentProvider(2, { max: 150, duration: 60 * 60_000 })],
 

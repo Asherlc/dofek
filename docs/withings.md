@@ -12,6 +12,14 @@ OAuth2 with client credentials. Withings has a non-standard token exchange that 
 
 Standard OAuth sends `grant_type=authorization_code`. Withings additionally requires `action=requesttoken` in the body, otherwise the token exchange fails silently.
 
+### Refresh Token Rotation
+
+Withings returns provider-level `status` values inside a JSON response; these are not HTTP status codes. In that table, `status: 503` means `Invalid params`, which can be returned when a refresh token is stale or invalid.
+
+Withings refresh tokens rotate on every successful refresh. Always save the returned `refresh_token`; the old refresh token expires 8 hours after a new one is issued or once the new access token is used. If refresh returns `status: 503`, Dofek treats the Withings connection as revoked, deletes the stored tokens, and asks the user to reconnect instead of reporting the expected auth-state failure to Sentry.
+
+Withings sync runs with queue concurrency `1` to avoid overlapping refreshes racing against token rotation.
+
 ## Environment Variables
 
 - `WITHINGS_CLIENT_ID` — From Withings developer portal

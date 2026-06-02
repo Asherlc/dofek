@@ -356,6 +356,44 @@ describe("syncRouter", () => {
       expect(wahoo?.needsReauth).toBe(false);
     });
 
+    it("returns needsReauth=true for a reconnect auth error after tokens are deleted", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "withings",
+          name: "Withings",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://account.withings.com" } }),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // no oauth tokens after stale refresh-token cleanup
+            .mockResolvedValueOnce([])
+            // last syncs
+            .mockResolvedValueOnce([{ provider_id: "withings", last_synced: "2026-06-02" }])
+            // latest errors
+            .mockResolvedValueOnce([
+              {
+                provider_id: "withings",
+                error_message:
+                  "Withings authorization revoked — re-connect the provider to resume syncing.",
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      const withings = result.find((provider: { id: string }) => provider.id === "withings");
+      expect(withings?.authorized).toBe(false);
+      expect(withings?.needsReauth).toBe(true);
+    });
+
     it("handles authSetup throwing", async () => {
       mockGetAllProviders.mockReturnValue([
         {
@@ -389,6 +427,9 @@ describe("syncRouter", () => {
       expect(isAuthError("Eight Sleep token expired — please re-authenticate via Settings")).toBe(
         true,
       );
+      expect(
+        isAuthError("Withings authorization revoked — re-connect the provider to resume syncing."),
+      ).toBe(true);
       expect(isAuthError("VeloHero session expired — please re-authenticate via Settings")).toBe(
         true,
       );
@@ -412,6 +453,7 @@ describe("syncRouter", () => {
       expect(isAuthError("authorization failed")).toBe(true);
       expect(isAuthError("unauthorized")).toBe(true);
       expect(isAuthError("re-authenticate")).toBe(true);
+      expect(isAuthError("re-connect")).toBe(true);
       expect(isAuthError("token expired")).toBe(true);
       expect(isAuthError("session expired")).toBe(true);
       expect(isAuthError("authentication failed")).toBe(true);

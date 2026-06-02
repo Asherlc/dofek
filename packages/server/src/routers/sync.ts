@@ -133,7 +133,7 @@ export const syncRouter = router({
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
           importOnly: model.importOnly,
-          needsReauth: model.isConnected && authErrorProviders.has(model.id),
+          needsReauth: authErrorProviders.has(model.id),
         };
       });
   }),

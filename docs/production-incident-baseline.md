@@ -9469,3 +9469,28 @@ new incremental tables are populated.
 - Remaining risk: Full local e2e validation remains blocked by Docker network
   address-pool exhaustion in this workspace; CI rerun is the end-to-end
   validation for the compose e2e path.
+
+### 2026-06-02 Withings stale refresh token reported to Sentry
+
+- Symptoms: Sentry issue `DOFEK-SERVER-2Y` recorded two production errors,
+  `Withings token error (status 503)`, at `2026-06-02T15:00:02Z` and
+  `2026-06-02T15:30:02Z`.
+- User impact: A Withings account with an invalid refresh token continued to be
+  treated as a sync error instead of being surfaced as a reconnect-required
+  provider state.
+- Evidence: The failing stack was `withingsTokenExchange` during
+  `WithingsProvider.#resolveTokens`. Withings docs define API response
+  `status: 503` as `Invalid params`, not HTTP `503 Service Unavailable`, and
+  document refresh-token rotation where old refresh tokens expire after 8 hours
+  or once the new access token is used.
+- Root cause: Withings token refresh handled provider-level `status: 503` as a
+  generic exception. The sync worker sent returned provider errors to Sentry
+  even when the error represented expected authorization state.
+- Fix / mitigation: Withings refresh now treats token `status: 503` as
+  reconnect-required auth state, deletes stored Withings tokens, and returns a
+  reconnect message. The sync worker no longer reports reconnect/auth sync
+  errors to Sentry, while sync history still records the error. Withings queue
+  concurrency is now `1` to avoid overlapping refresh-token rotation races.
+- Remaining risk: The exact production token value was not reproduced locally
+  because local Withings secrets were unavailable; the fix is based on Sentry
+  stack evidence, Withings docs, and targeted unit tests for the failing path.

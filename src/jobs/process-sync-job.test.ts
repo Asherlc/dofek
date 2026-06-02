@@ -410,6 +410,35 @@ describe("processSyncJob", () => {
     );
   });
 
+  it("does not report returned provider auth errors to Sentry", async () => {
+    const cause = new Error(
+      "Withings authorization revoked — re-connect the provider to resume syncing.",
+    );
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: cause.message, cause }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "withings",
+        status: "error",
+        errorMessage: cause.message,
+      }),
+    );
+  });
+
   it("calls ensureProvider for each synced provider", async () => {
     const provider = createMockProvider({ id: "test", name: "Test Provider" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);

@@ -69,6 +69,18 @@ function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   );
 }
 
+function isProviderAuthErrorMessage(message: string): boolean {
+  return (
+    /\bauthorization failed\b/i.test(message) ||
+    /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i.test(message) ||
+    /\bre-authenticate\b/i.test(message) ||
+    /\bre-connect\b/i.test(message) ||
+    /\btoken expired\b/i.test(message) ||
+    /\bsession expired\b/i.test(message) ||
+    /\bauthentication failed\b/i.test(message)
+  );
+}
+
 export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
   const { providerId } = job.data;
   const since = resolveSince(job.data);
@@ -169,9 +181,11 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-          Sentry.captureException(err.cause ?? new Error(err.message), {
-            tags: { provider: provider.id },
-          });
+          if (!isProviderAuthErrorMessage(err.message)) {
+            Sentry.captureException(err.cause ?? new Error(err.message), {
+              tags: { provider: provider.id },
+            });
+          }
         }
       }
 
@@ -214,7 +228,9 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
-      Sentry.captureException(err, { tags: { provider: provider.id } });
+      if (!isProviderAuthErrorMessage(message)) {
+        Sentry.captureException(err, { tags: { provider: provider.id } });
+      }
       providerStatus[provider.id] = { status: "error", message };
       await job.updateProgress({
         providers: providerStatus,

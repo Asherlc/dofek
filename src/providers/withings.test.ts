@@ -408,6 +408,36 @@ describe("WithingsProvider.sync() — unit tests", () => {
     expect(result.provider).toBe("withings");
   });
 
+  it("deletes stored tokens and asks the user to reconnect when Withings rejects refresh params", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const { db: mockDb, spies } = createMockDb({
+      tokensResult: [
+        {
+          providerId: "withings",
+          accessToken: "expired-token",
+          refreshToken: "stale-refresh",
+          expiresAt: new Date("2020-01-01"),
+          scopes: "user.metrics",
+        },
+      ],
+    });
+
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({ status: 503, error: "Invalid Params: invalid refresh token", body: {} });
+
+    const provider = new WithingsProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(spies.deleteFn).toHaveBeenCalledOnce();
+    expect(spies.deleteWhere).toHaveBeenCalledOnce();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe(
+      "Withings authorization revoked — re-connect the provider to resume syncing.",
+    );
+  });
+
   it("returns error when expired token has no refresh token", async () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";

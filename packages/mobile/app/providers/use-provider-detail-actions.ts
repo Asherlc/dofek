@@ -58,7 +58,7 @@ export interface ProviderDetailActionsResult {
   displayProvider: DisplayProvider | undefined;
   isLoading: boolean;
   isConnected: boolean;
-  primaryActionLabel: "Sync" | "Connect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
@@ -113,6 +113,7 @@ export function useProviderDetailActions(
     providerId === "apple_health" ? createAppleHealthProvider(healthKitEverAuthorized) : provider;
 
   const isConnected = Boolean(displayProvider?.authorized);
+  const needsReauth = Boolean(provider?.needsReauth);
 
   const invalidateProviderData = useCallback(() => {
     trpcUtils.sync.providers.invalidate();
@@ -297,13 +298,13 @@ export function useProviderDetailActions(
   );
 
   const handlePrimaryAction = useCallback(async () => {
-    if (isConnected) {
+    if (isConnected && !needsReauth) {
       await handleSync(7);
       return;
     }
 
     await handleConnect();
-  }, [handleConnect, handleSync, isConnected]);
+  }, [handleConnect, handleSync, isConnected, needsReauth]);
 
   const handleFullSync = useCallback(async () => {
     await handleSync(undefined);
@@ -341,12 +342,12 @@ export function useProviderDetailActions(
     displayProvider,
     isLoading: providers.isLoading,
     isConnected,
-    primaryActionLabel: isConnected ? "Sync" : "Connect",
+    primaryActionLabel: needsReauth ? "Reconnect" : isConnected ? "Sync" : "Connect",
     isSyncing,
     syncMessage,
     syncProgress,
     shouldShowActions: Boolean(displayProvider && !displayProvider.importOnly),
-    shouldShowFullSync: isConnected,
+    shouldShowFullSync: isConnected && !needsReauth,
     shouldShowAppleHealthPermissionBanner:
       providerId === "apple_health" &&
       healthKitAvailable &&

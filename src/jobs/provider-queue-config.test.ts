@@ -21,6 +21,7 @@ describe("getProviderQueueConfig", () => {
     expect(config.limiter).toBeDefined();
     expect(config.limiter?.max).toBe(120);
     expect(config.limiter?.duration).toBe(60_000); // 1 minute
+    expect(config.concurrency).toBe(1);
     expect(config.syncTier).toBe("realtime");
   });
 

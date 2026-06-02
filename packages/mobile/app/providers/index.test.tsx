@@ -365,8 +365,8 @@ describe("providerActionLabel", () => {
     expect(providerActionLabel("not_connected")).toBe("Connect");
   });
 
-  it("returns Connect for expired providers", () => {
-    expect(providerActionLabel("expired")).toBe("Connect");
+  it("returns Reconnect for expired providers", () => {
+    expect(providerActionLabel("expired")).toBe("Reconnect");
   });
 });
 
@@ -1018,7 +1018,7 @@ describe("ProvidersScreen", () => {
 
     const polarCard = within(screen.getByTestId("provider-card-polar"));
     expect(polarCard.getByText("Expired")).toBeTruthy();
-    expect(polarCard.getByText("Connect")).toBeTruthy();
+    expect(polarCard.getByText("Reconnect")).toBeTruthy();
   });
 
   it("opens browser for OAuth provider connect", async () => {
