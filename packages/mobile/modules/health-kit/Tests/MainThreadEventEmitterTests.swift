@@ -26,4 +26,26 @@ final class MainThreadEventEmitterTests: XCTestCase {
 
         waitForExpectations(timeout: 1)
     }
+
+    func testRunsCompletionAfterBackgroundEmission() {
+        let expectation = expectation(description: "completion runs after event emission")
+        var emitted = false
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            MainThreadEventEmitter.emit(
+                ["typeIdentifier": "HKQuantityTypeIdentifierActiveEnergyBurned"],
+                completion: {
+                    XCTAssertTrue(Thread.isMainThread)
+                    XCTAssertTrue(emitted)
+                    expectation.fulfill()
+                }
+            ) { payload in
+                XCTAssertTrue(Thread.isMainThread)
+                XCTAssertEqual(payload["typeIdentifier"] as? String, "HKQuantityTypeIdentifierActiveEnergyBurned")
+                emitted = true
+            }
+        }
+
+        waitForExpectations(timeout: 1)
+    }
 }
