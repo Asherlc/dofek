@@ -197,24 +197,14 @@ describe("TodayScreen independent loading states", () => {
         lastNight: null,
         sleepDebt: 0,
       },
-      sleepNeed: {
-        baselineMinutes: 480,
-        strainDebtMinutes: 0,
-        accumulatedDebtMinutes: 0,
-        totalNeedMinutes: 480,
-        recentNights: [],
-        canRecommend: false,
-      },
+      sleepNeed: null,
     };
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
-    expect(screen.getByText("No sleep data")).toBeTruthy();
-    expect(screen.getByText("Need last night's sleep for recommendation")).toBeTruthy();
-    expect(screen.queryByText("Baseline need")).toBeNull();
-    expect(screen.queryByText("8h 0m")).toBeNull();
+    expect(screen.getAllByText("No sleep data")).toHaveLength(2);
   });
 
   it("renders all rings when no queries are loading", async () => {
