@@ -1,7 +1,7 @@
 import { formatCalories, formatDateLong, formatDateYmd } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Linking,
   Pressable,
@@ -16,7 +16,7 @@ import {
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
 import { safeParseRows } from "../../lib/safe-parse";
-import { captureException } from "../../lib/telemetry";
+import { captureException, logger } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
@@ -56,6 +56,10 @@ export default function FoodScreen() {
   const [aiMealInput, setAiMealInput] = useState("");
   const [aiMealInputError, setAiMealInputError] = useState<string | null>(null);
   const dateString = formatDateForQuery(selectedDate);
+
+  useEffect(() => {
+    logger.info("screen-navigation", "Nutrition tab rendered", { route: "food" });
+  }, []);
 
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
   const calorieGoal =

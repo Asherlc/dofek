@@ -39,6 +39,17 @@ function sanitizeLogAttributes(
   return Object.keys(attributes).length > 0 ? attributes : undefined;
 }
 
+function sentryBreadcrumbLevel(severityText: string): "info" | "warning" | "error" {
+  switch (severityText) {
+    case "ERROR":
+      return "error";
+    case "WARN":
+      return "warning";
+    default:
+      return "info";
+  }
+}
+
 export function initTelemetry() {
   if (initialized) {
     return;
@@ -87,13 +98,21 @@ function emitLog(
   message: string,
   data?: Record<string, unknown>,
 ) {
+  const sanitizedData = sanitizeLogAttributes(data);
+  Sentry.addBreadcrumb({
+    category,
+    message,
+    level: sentryBreadcrumbLevel(severityText),
+    ...(sanitizedData ? { data: sanitizedData } : {}),
+  });
+
   if (loggerProvider) {
     const otelLogger = loggerProvider.getLogger(category);
     otelLogger.emit({
       severityNumber,
       severityText,
       body: `[${category}] ${message}`,
-      attributes: sanitizeLogAttributes(data),
+      attributes: sanitizedData,
     });
   }
 }
