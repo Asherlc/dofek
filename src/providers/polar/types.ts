@@ -37,12 +37,15 @@ export interface PolarSleep {
 
 export interface PolarDailyActivity {
   polar_user: string;
-  date: string;
-  created: string;
+  start_time: string;
+  end_time: string;
+  active_duration: string;
+  inactive_duration: string;
+  daily_activity: number;
   calories: number;
   active_calories: number;
   duration: string;
-  active_steps: number;
+  steps: number;
 }
 
 export interface PolarNightlyRecharge {

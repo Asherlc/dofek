@@ -58,12 +58,15 @@ function fakePolarSleep(overrides: Partial<PolarSleep> = {}): PolarSleep {
 function fakePolarDailyActivity(overrides: Partial<PolarDailyActivity> = {}): PolarDailyActivity {
   return {
     polar_user: "https://www.polaraccesslink.com/v3/users/12345",
-    date: "2026-03-01",
-    created: "2026-03-01T23:59:00Z",
+    start_time: "2026-03-01T08:00:00",
+    end_time: "2026-03-01T23:59:59",
+    active_duration: "PT3H11M",
+    inactive_duration: "PT18H23M30S",
+    daily_activity: 89.1,
     calories: 2400,
     active_calories: 850,
     duration: "PT14H30M",
-    active_steps: 11200,
+    steps: 11200,
     ...overrides,
   };
 }
@@ -113,17 +116,17 @@ function polarHandlers(opts?: {
     }),
 
     // Sleep
-    http.get("https://www.polaraccesslink.com/v3/sleep", () => {
-      return HttpResponse.json(sleep);
+    http.get("https://www.polaraccesslink.com/v3/users/sleep", () => {
+      return HttpResponse.json({ nights: sleep });
     }),
 
     // Nightly recharge
-    http.get("https://www.polaraccesslink.com/v3/nightly-recharge", () => {
-      return HttpResponse.json(nightlyRecharge);
+    http.get("https://www.polaraccesslink.com/v3/users/nightly-recharge", () => {
+      return HttpResponse.json({ recharges: nightlyRecharge });
     }),
 
     // Daily activity
-    http.get("https://www.polaraccesslink.com/v3/activity", () => {
+    http.get("https://www.polaraccesslink.com/v3/users/activities", () => {
       return HttpResponse.json(dailyActivity);
     }),
 
@@ -266,7 +269,12 @@ describe("PolarProvider.sync() (integration)", () => {
     server.use(
       ...polarHandlers({
         dailyActivity: [
-          fakePolarDailyActivity({ date: "2026-03-05", active_steps: 8500, active_calories: 600 }),
+          fakePolarDailyActivity({
+            start_time: "2026-03-05T08:00:00",
+            end_time: "2026-03-05T23:59:59",
+            steps: 8500,
+            active_calories: 600,
+          }),
         ],
         nightlyRecharge: [], // No recharge data
       }),
@@ -385,17 +393,17 @@ function polarCoverageHandlers(opts: {
     }),
 
     // Sleep — return empty
-    http.get("https://www.polaraccesslink.com/v3/sleep", () => {
-      return HttpResponse.json([]);
+    http.get("https://www.polaraccesslink.com/v3/users/sleep", () => {
+      return HttpResponse.json({ nights: [] });
     }),
 
     // Nightly recharge
-    http.get("https://www.polaraccesslink.com/v3/nightly-recharge", () => {
-      return HttpResponse.json(opts.nightlyRecharges ?? []);
+    http.get("https://www.polaraccesslink.com/v3/users/nightly-recharge", () => {
+      return HttpResponse.json({ recharges: opts.nightlyRecharges ?? [] });
     }),
 
     // Daily activity
-    http.get("https://www.polaraccesslink.com/v3/activity", () => {
+    http.get("https://www.polaraccesslink.com/v3/users/activities", () => {
       if (opts.dailyActivityError) {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }
@@ -457,7 +465,13 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
 
     errorServer.use(
       ...polarCoverageHandlers({
-        dailyActivities: [fakePolarDailyActivity({ date: "2026-03-10", active_steps: 9000 })],
+        dailyActivities: [
+          fakePolarDailyActivity({
+            start_time: "2026-03-10T08:00:00",
+            end_time: "2026-03-10T23:59:59",
+            steps: 9000,
+          }),
+        ],
       }),
     );
 

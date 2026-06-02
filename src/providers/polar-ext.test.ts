@@ -227,12 +227,15 @@ describe("parsePolarDailyActivity — with null recharge fields", () => {
   it("includes respiratory rate from recharge", () => {
     const daily: PolarDailyActivity = {
       polar_user: "user",
-      date: "2024-06-15",
-      created: "2024-06-15T23:59:00Z",
+      start_time: "2024-06-15T08:00:00",
+      end_time: "2024-06-15T23:59:59",
+      active_duration: "PT3H11M",
+      inactive_duration: "PT18H23M30S",
+      daily_activity: 89.1,
       calories: 2000,
       active_calories: 500,
       duration: "PT12H",
-      active_steps: 8000,
+      steps: 8000,
     };
 
     const recharge: PolarNightlyRecharge = {

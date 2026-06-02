@@ -132,8 +132,8 @@ export function parsePolarDailyActivity(
   nightlyRecharge: PolarNightlyRecharge | null,
 ): ParsedPolarDailyMetrics {
   return {
-    date: dailyActivity.date,
-    steps: dailyActivity.active_steps,
+    date: dailyActivity.start_time.slice(0, 10),
+    steps: dailyActivity.steps,
     activeEnergyKcal: dailyActivity.active_calories,
     restingHr: nightlyRecharge?.heart_rate_avg,
     hrv: nightlyRecharge?.heart_rate_variability_avg,
