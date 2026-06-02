@@ -9605,3 +9605,27 @@ new incremental tables are populated.
 - Remaining risk: No event replay or application logs were available for the
   trace, so validation is based on the Sentry stack, the captured payload path,
   and the focused unit test.
+
+### 2026-06-02 Mobile recovery formatter crash
+
+- Symptoms: Sentry issue `DOFEK-MOBILE-Q` recorded one production fatal
+  `TypeError: undefined is not a function` in `dofek-mobile` release
+  `com.dofek.app@1.0.0+1780011142` on iOS 26.5.
+- User impact: One mobile user experienced a fatal app crash while opening the
+  Recovery tab.
+- Evidence: The Sentry JS stack pointed to `RecoveryScreen` calling
+  `formatHRV -> formatHRVMeasurement -> formatMetricMeasurement ->
+  formatMetricParts`. The first fatal line was
+  `fixedDecimalFormatter(...).formatToParts(value)`. Breadcrumbs showed the
+  batched recovery/dashboard request succeeded immediately before render.
+- Root cause: The production React Native/Hermes runtime did not provide
+  `Intl.NumberFormat.prototype.formatToParts`, but shared measurement
+  formatting assumed it existed when splitting number and unit parts for UI
+  styling.
+- Fix / mitigation: Added FormatJS `Intl.NumberFormat` polyfills at mobile
+  startup before Expo Router loads. The polyfill installs
+  `NumberFormat.prototype.formatToParts` globally for the React Native runtime,
+  preserving existing shared formatter behavior.
+- Remaining risk: The exact production device runtime was not reproduced
+  locally. A regression test simulates the missing `formatToParts` method and
+  verifies the mobile startup polyfill restores grouped number parts.

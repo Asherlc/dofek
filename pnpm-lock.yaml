@@ -311,6 +311,18 @@ importers:
       '@expo/vector-icons':
         specifier: 15.1.1
         version: 15.1.1(expo-font@55.0.8)(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
+      '@formatjs/intl-getcanonicallocales':
+        specifier: 3.2.9
+        version: 3.2.9
+      '@formatjs/intl-locale':
+        specifier: 5.3.8
+        version: 5.3.8
+      '@formatjs/intl-numberformat':
+        specifier: 9.3.10
+        version: 9.3.10
+      '@formatjs/intl-pluralrules':
+        specifier: 6.3.9
+        version: 6.3.9
       '@opentelemetry/api-logs':
         specifier: 0.218.0
         version: 0.218.0
@@ -2317,6 +2329,30 @@ packages:
     resolution: {integrity: sha512-K4wyxfUZx2ux5o+b6BtTqouYFVILohLZmSbA2tKUueJstNcBnoGPVhllCaOvbQ3ZrXdUxUC/fyrSWSCqHhdOPg==}
     peerDependencies:
       '@opentelemetry/api': ^1.9.0
+
+  '@formatjs/bigdecimal@0.2.5':
+    resolution: {integrity: sha512-2XTKNrZRaCUyXK2976wfutqxMBuPO/S/zbJnQdysLI2Zy5mWPVNVEkE6tsTcSVWSE7DgO88t8DtBy+uf3I8bxg==}
+
+  '@formatjs/fast-memoize@3.1.5':
+    resolution: {integrity: sha512-KLi3fan6WnCHmigd9pmEEN8Hid0v4wiFBW576M/d07KMWYecf1CvyMI3n34vCmHT4AoVqG2n702kiHbXjzZX2A==}
+
+  '@formatjs/intl-getcanonicallocales@3.2.9':
+    resolution: {integrity: sha512-b1dLzhFSeccG5X1PY2KodVFRGd0p6tBPc7pRBJaW6A7+fMeZnwHOAJLkMsGNDyvM9XailkkstE4jzmNa1GVh5w==}
+
+  '@formatjs/intl-locale@5.3.8':
+    resolution: {integrity: sha512-pJgqQlg4zFoyCiVMXlKPBWpY7fAxvsUiShNmB/l8BW2ZwmFMefMWCrDzgocSH9WR+Z3pkihfjh1XbalCZhXc1Q==}
+
+  '@formatjs/intl-localematcher@0.8.9':
+    resolution: {integrity: sha512-GmB0F/gYh4Hdl4rLWjgDsgT+x4pB54fkJeRh8kAZ4XFzKeCK8dGs+SBJWXO42QZtOUni+IDWKNuCw6wiL4lTvw==}
+
+  '@formatjs/intl-numberformat@9.3.10':
+    resolution: {integrity: sha512-wYboXVXZyTvuMBgwE0AxcXYxV8LM0IkH+lfCoBlRVNjCwNzdHVbRcUxDRHE+HbFkQ6/zWFkyguvIP5y3PAt+jw==}
+
+  '@formatjs/intl-pluralrules@6.3.9':
+    resolution: {integrity: sha512-0405uU1npNs5/N04tfIQ3pme96Xb51tEkCBTBKy8HMjAsssbhnK70gf8v3ogj1WqHf7WFRoFZu8clQTsvwBQNg==}
+
+  '@formatjs/intl-supportedvaluesof@2.3.7':
+    resolution: {integrity: sha512-ZTXEKijV5H08z19odngZPsXlmGndfukHuVnjd9qyER77XSk/yJwDMiSjoJYY5C5WxFs2UN4s/EMtu75e6Tp3ug==}
 
   '@gorhom/bottom-sheet@5.2.8':
     resolution: {integrity: sha512-+N27SMpbBxXZQ/IA2nlEV6RGxL/qSFHKfdFKcygvW+HqPG5jVNb1OqehLQsGfBP+Up42i0gW5ppI+DhpB7UCzA==}
@@ -14619,6 +14655,35 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@formatjs/bigdecimal@0.2.5': {}
+
+  '@formatjs/fast-memoize@3.1.5': {}
+
+  '@formatjs/intl-getcanonicallocales@3.2.9': {}
+
+  '@formatjs/intl-locale@5.3.8':
+    dependencies:
+      '@formatjs/intl-getcanonicallocales': 3.2.9
+      '@formatjs/intl-supportedvaluesof': 2.3.7
+
+  '@formatjs/intl-localematcher@0.8.9':
+    dependencies:
+      '@formatjs/fast-memoize': 3.1.5
+
+  '@formatjs/intl-numberformat@9.3.10':
+    dependencies:
+      '@formatjs/bigdecimal': 0.2.5
+      '@formatjs/intl-localematcher': 0.8.9
+
+  '@formatjs/intl-pluralrules@6.3.9':
+    dependencies:
+      '@formatjs/bigdecimal': 0.2.5
+      '@formatjs/intl-localematcher': 0.8.9
+
+  '@formatjs/intl-supportedvaluesof@2.3.7':
+    dependencies:
+      '@formatjs/fast-memoize': 3.1.5
+
   '@gorhom/bottom-sheet@5.2.8(@types/react@19.2.14)(react-native-gesture-handler@2.30.1(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native-reanimated@4.3.1(react-native-worklets@0.8.1(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@gorhom/portal': 1.0.14(react-native@0.83.4(@babel/core@7.29.0)(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
@@ -16068,7 +16133,7 @@ snapshots:
   '@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.41.1
 
   '@opentelemetry/sdk-logs@0.208.0(@opentelemetry/api@1.9.1)':
@@ -16844,9 +16909,7 @@ snapshots:
       metro-runtime: 0.83.7
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
