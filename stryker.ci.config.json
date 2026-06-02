@@ -28,6 +28,7 @@
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
+    "packages/provider-http/src/**/*.ts",
     "packages/mobile/app/**/*.{ts,tsx}",
     "packages/mobile/components/**/*.{ts,tsx}",
     "packages/mobile/lib/**/*.{ts,tsx}",
@@ -44,6 +45,7 @@
   "ignorePatterns": [
     "dist/**",
     ".antigravitycli/**",
+    ".codegraph/**",
     ".codex/**",
     ".claude/**",
     ".context/**",

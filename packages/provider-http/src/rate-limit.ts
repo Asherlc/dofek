@@ -44,7 +44,7 @@ export interface RateLimitAwareFetchOptions {
 const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
 
 function retryAfterSeconds(response: Response): number | null {
-  const header = response.headers?.get?.("Retry-After");
+  const header = response.headers.get("Retry-After");
   if (!header) return null;
 
   const seconds = Number.parseInt(header, 10);
