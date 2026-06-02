@@ -6,6 +6,7 @@ import { z } from "zod";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
 import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type AnomalyCheckResult,
@@ -48,6 +49,17 @@ function addDays(dateString: string, days: number): string {
   const date = new Date(`${dateString}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function isWithinLookbackDays(
+  dateString: string,
+  anchorDateString: string,
+  lookbackDays: number,
+): boolean {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  const anchor = new Date(`${anchorDateString}T12:00:00Z`);
+  const diffDays = Math.round((anchor.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 && diffDays <= lookbackDays;
 }
 
 export interface MobileDashboardResult {
@@ -97,15 +109,28 @@ export const mobileDashboardRouter = router({
       const { endDate } = input;
       const tz = ctx.timezone;
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboard");
+      const timings: string[] = [];
+      const dashboardStart = performance.now();
+      const timed = async <T>(label: string, work: () => Promise<T>): Promise<T> => {
+        const start = performance.now();
+        try {
+          return await work();
+        } finally {
+          timings.push(`${label}=${Math.round(performance.now() - start)}ms`);
+        }
+      };
 
       // Fetch daily loads (last 60 days) + yesterday's load from ClickHouse.
-      const [dailyLoadRows, yesterdayLoadRows, restingHeartRateRows] = await Promise.all([
-        sensorStore.query(
-          z.object({
-            metric_date: z.string(),
-            daily_load: z.coerce.number(),
-          }),
-          `SELECT
+      const [dailyLoadRows, yesterdayLoadRows, restingHeartRateRows] = await timed(
+        "activity-loads",
+        () =>
+          Promise.all([
+            sensorStore.query(
+              z.object({
+                metric_date: z.string(),
+                daily_load: z.coerce.number(),
+              }),
+              `SELECT
             toString(toDate(toTimeZone(ended_at, {timezone:String}))) AS metric_date,
             sum(dateDiff('second', started_at, ended_at) / 60.0
                 * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
@@ -116,25 +141,26 @@ export const mobileDashboardRouter = router({
             AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({endDate:String}) - 60
             AND toDate(toTimeZone(ended_at, {timezone:String})) <= toDate({endDate:String})
           GROUP BY metric_date`,
-          { userId: ctx.userId, timezone: tz, endDate },
-        ),
-        sensorStore.query(
-          z.object({ load: z.coerce.number() }),
-          `SELECT coalesce(sum(dateDiff('second', started_at, ended_at) / 60.0
+              { userId: ctx.userId, timezone: tz, endDate },
+            ),
+            sensorStore.query(
+              z.object({ load: z.coerce.number() }),
+              `SELECT coalesce(sum(dateDiff('second', started_at, ended_at) / 60.0
                   * avg_hr / nullIf(toFloat64(max_hr), 0)), 0) AS load
           FROM analytics.activity_summary
           WHERE user_id = {userId:UUID}
             AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - 1`,
-          { userId: ctx.userId, timezone: tz, endDate },
-        ),
-        fetchRestingHeartRateRows({
-          sensorStore,
-          userId: ctx.userId,
-          timezone: tz,
-          endDate,
-          days: 60,
-        }),
-      ]);
+              { userId: ctx.userId, timezone: tz, endDate },
+            ),
+            fetchRestingHeartRateRows({
+              sensorStore,
+              userId: ctx.userId,
+              timezone: tz,
+              endDate,
+              days: 60,
+            }),
+          ]),
+      );
 
       const dailyLoadByDate = new Map(
         dailyLoadRows.map((row) => [row.metric_date, row.daily_load]),
@@ -157,11 +183,14 @@ export const mobileDashboardRouter = router({
         rr_sd_30d: z.coerce.number().nullable(),
       });
 
-      const [metricsRowsWithoutSleep, readinessSleepRows] = await Promise.all([
-        executeWithSchema(
-          ctx.db,
-          readinessSchema,
-          sql`
+      const [metricsRowsWithoutSleep, unsortedDashboardSleepRows] = await timed(
+        "readiness-and-sleep",
+        () =>
+          Promise.all([
+            executeWithSchema(
+              ctx.db,
+              readinessSchema,
+              sql`
           WITH ${restingHeartRateCte},
           metrics_base AS (
             SELECT
@@ -206,20 +235,26 @@ export const mobileDashboardRouter = router({
           FROM metrics_with_baselines m
           ORDER BY m.metric_date DESC
         `,
-        ),
-        fetchSleepNights({
-          sensorStore,
-          userId: ctx.userId,
-          timezone: tz,
-          endDate,
-          days: 60,
-          accessWindow: ctx.accessWindow,
-          order: "asc",
-        }),
-      ]);
+            ),
+            fetchSleepNights({
+              sensorStore,
+              userId: ctx.userId,
+              timezone: tz,
+              endDate,
+              days: 90,
+              accessWindow: ctx.accessWindow,
+              order: "asc",
+            }),
+          ]),
+      );
+      const dashboardSleepRows = [...unsortedDashboardSleepRows].sort((firstNight, secondNight) =>
+        firstNight.date.localeCompare(secondNight.date),
+      );
 
       const sleepEfficiencyByDate = new Map(
-        readinessSleepRows.map((row) => [row.date, row.efficiency_pct]),
+        dashboardSleepRows
+          .filter((sleepNight) => isWithinLookbackDays(sleepNight.date, endDate, 60))
+          .map((sleepNight) => [sleepNight.date, sleepNight.efficiency_pct]),
       );
       const metricsRows = metricsRowsWithoutSleep.map((row) => ({
         ...row,
@@ -229,7 +264,9 @@ export const mobileDashboardRouter = router({
       const latestMetric = metricsRows[0];
       let readinessResult: MobileDashboardResult["readiness"] = null;
 
-      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
+      const storedParams = await timed("personalization", () =>
+        loadPersonalizedParams(ctx.db, ctx.userId),
+      );
       const weights = getEffectiveParams(storedParams).readinessWeights;
 
       if (latestMetric && isRecent(latestMetric.date, endDate)) {
@@ -261,41 +298,25 @@ export const mobileDashboardRouter = router({
       }
 
       // 2. Sleep Analytics (Last Night)
-      const sleepRows = (
-        await fetchSleepNights({
-          sensorStore,
-          userId: ctx.userId,
-          timezone: tz,
-          endDate,
-          days: 14,
-          accessWindow: ctx.accessWindow,
-          order: "desc",
-        })
-      ).map((row) => {
-        const durationMinutes = row.duration_minutes ?? 0;
-        return {
-          date: row.date,
-          duration_minutes: durationMinutes,
-          deep_pct: durationMinutes > 0 ? ((row.deep_minutes ?? 0) / durationMinutes) * 100 : 0,
-          rem_pct: durationMinutes > 0 ? ((row.rem_minutes ?? 0) / durationMinutes) * 100 : 0,
-          light_pct: durationMinutes > 0 ? ((row.light_minutes ?? 0) / durationMinutes) * 100 : 0,
-          awake_pct: durationMinutes > 0 ? ((row.awake_minutes ?? 0) / durationMinutes) * 100 : 0,
-        };
-      });
+      const sleepRows = [...dashboardSleepRows]
+        .filter((sleepNight) => isWithinLookbackDays(sleepNight.date, endDate, 14))
+        .reverse()
+        .map((row) => {
+          const durationMinutes = row.duration_minutes ?? 0;
+          return {
+            date: row.date,
+            duration_minutes: durationMinutes,
+            deep_pct: durationMinutes > 0 ? ((row.deep_minutes ?? 0) / durationMinutes) * 100 : 0,
+            rem_pct: durationMinutes > 0 ? ((row.rem_minutes ?? 0) / durationMinutes) * 100 : 0,
+            light_pct: durationMinutes > 0 ? ((row.light_minutes ?? 0) / durationMinutes) * 100 : 0,
+            awake_pct: durationMinutes > 0 ? ((row.awake_minutes ?? 0) / durationMinutes) * 100 : 0,
+          };
+        });
 
       const lastNightRow = sleepRows.find((r) => isRecent(r.date, endDate));
 
       // 3. Sleep Need (90-day baseline)
-      const [baselineSleepRows, hrvRows] = await Promise.all([
-        fetchSleepNights({
-          sensorStore,
-          userId: ctx.userId,
-          timezone: tz,
-          endDate,
-          days: 90,
-          accessWindow: ctx.accessWindow,
-          order: "asc",
-        }),
+      const hrvRows = await timed("sleep-need-hrv", () =>
         executeWithSchema(
           ctx.db,
           z.object({
@@ -310,9 +331,9 @@ export const mobileDashboardRouter = router({
           WHERE user_id = ${ctx.userId} AND date > ${dateWindowStart(endDate, 90)}
         `,
         ),
-      ]);
+      );
       const hrvByDate = new Map(hrvRows.map((row) => [row.date, row.hrv]));
-      const sleepBaselineRows = baselineSleepRows.map((row) => ({
+      const sleepBaselineRows = dashboardSleepRows.map((row) => ({
         date: row.date,
         duration_minutes: row.duration_minutes ?? 0,
         hrv: hrvByDate.get(addDays(row.date, 1)) ?? null,
@@ -397,9 +418,9 @@ export const mobileDashboardRouter = router({
 
       // 5. Anomalies
       const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz, sensorStore);
-      const anomalies = await anomalyRepo.check(endDate);
+      const anomalies = await timed("anomalies", () => anomalyRepo.check(endDate));
 
-      return {
+      const result = {
         readiness: readinessResult,
         sleep: {
           lastNight: lastNightRow
@@ -419,5 +440,10 @@ export const mobileDashboardRouter = router({
         anomalies,
         latestDate: metricsRows[0]?.date ?? null,
       };
+      timings.push(`total=${Math.round(performance.now() - dashboardStart)}ms`);
+      logger.info(
+        `[mobile-dashboard] dashboard timings userId=${ctx.userId} endDate=${endDate} ${timings.join(" ")}`,
+      );
+      return result;
     }),
 });
