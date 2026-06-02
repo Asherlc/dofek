@@ -622,51 +622,6 @@ export async function upsertHealthEventBatch(
   return rows.length;
 }
 
-export async function linkUnassignedHeartRateToActivities(
-  db: SyncDatabase,
-  providerId: string,
-  bounds?: { startAt?: Date; endAt?: Date },
-): Promise<number> {
-  const filters = [
-    sql`ss.provider_id = ${providerId}`,
-    sql`ss.activity_id IS NULL`,
-    sql`ss.channel = 'heart_rate'`,
-    sql`ss.scalar IS NOT NULL`,
-  ];
-  if (bounds?.startAt) {
-    filters.push(sql`ss.recorded_at >= ${bounds.startAt.toISOString()}::timestamptz`);
-  }
-  if (bounds?.endAt) {
-    filters.push(sql`ss.recorded_at <= ${bounds.endAt.toISOString()}::timestamptz`);
-  }
-
-  const linkedRows = await db.execute(
-    sql`UPDATE fitness.metric_stream ss
-        SET activity_id = (
-          SELECT a.id
-          FROM fitness.activity a
-          WHERE a.provider_id = ${providerId}
-            AND a.user_id = ss.user_id
-            AND ss.recorded_at >= a.started_at
-            AND ss.recorded_at <= a.ended_at
-          ORDER BY a.started_at DESC
-          LIMIT 1
-        )
-        WHERE ${sql.join(filters, sql` AND `)}
-          AND EXISTS (
-            SELECT 1
-            FROM fitness.activity a
-            WHERE a.provider_id = ${providerId}
-              AND a.user_id = ss.user_id
-              AND ss.recorded_at >= a.started_at
-              AND ss.recorded_at <= a.ended_at
-          )
-        RETURNING ss.recorded_at`,
-  );
-
-  return Array.isArray(linkedRows) ? linkedRows.length : 0;
-}
-
 export async function upsertWorkoutBatch(
   db: SyncDatabase,
   providerId: string,
@@ -750,18 +705,6 @@ export async function upsertWorkoutBatch(
 
   // GPS route points are stored as metric_stream location samples with scalar metadata.
   await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
-
-  // Link HR rows for this batch's time window. A global reconciliation pass also
-  // runs at end-of-import to catch async ordering/race edge cases.
-  if (activityResults.length > 0) {
-    const startAt = new Date(
-      Math.min(...activityResults.map(({ workout }) => workout.startDate.getTime())),
-    );
-    const endAt = new Date(
-      Math.max(...activityResults.map(({ workout }) => workout.endDate.getTime())),
-    );
-    await linkUnassignedHeartRateToActivities(db, providerId, { startAt, endAt });
-  }
 
   return activityResults.length;
 }

@@ -394,6 +394,50 @@ describe("syncRouter", () => {
       expect(withings?.needsReauth).toBe(true);
     });
 
+    it("clears needsReauth when tokens were updated after the latest auth error", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "peloton",
+          name: "Peloton",
+          validate: () => null,
+          authSetup: () => ({
+            oauthConfig: { authUrl: "https://auth.onepeloton.com" },
+            automatedLogin: async () => ({}),
+          }),
+        },
+      ]);
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            // oauth tokens saved after reconnect
+            .mockResolvedValueOnce([
+              { provider_id: "peloton", updated_at: new Date("2026-06-02T10:05:00Z") },
+            ])
+            // last syncs
+            .mockResolvedValueOnce([{ provider_id: "peloton", last_synced: "2026-06-02" }])
+            // latest error happened before reconnect
+            .mockResolvedValueOnce([
+              {
+                provider_id: "peloton",
+                error_message:
+                  "Peloton authorization revoked — re-connect the provider to resume syncing.",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      const peloton = result.find((provider: { id: string }) => provider.id === "peloton");
+      expect(peloton?.authorized).toBe(true);
+      expect(peloton?.needsReauth).toBe(false);
+    });
+
     it("handles authSetup throwing", async () => {
       mockGetAllProviders.mockReturnValue([
         {

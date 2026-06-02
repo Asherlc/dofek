@@ -628,56 +628,7 @@ export class HealthKitSyncRepository {
       }
     }
 
-    if (workouts.length > 0) {
-      const bounds = computeBoundsFromIsoTimestamps(
-        workouts.flatMap((workout) => [workout.startDate, workout.endDate]),
-      );
-      await this.linkUnassignedHeartRateToWorkouts(bounds ?? undefined);
-    }
-
     return inserted;
-  }
-
-  /** Link heart-rate metric_stream rows to overlapping workouts. */
-  async linkUnassignedHeartRateToWorkouts(bounds?: {
-    startAt?: string;
-    endAt?: string;
-  }): Promise<number> {
-    const filters = [
-      sql`ss.user_id = ${this.#userId}`,
-      sql`ss.provider_id = ${PROVIDER_ID}`,
-      sql`ss.activity_id IS NULL`,
-      sql`ss.channel = 'heart_rate'`,
-      sql`ss.scalar IS NOT NULL`,
-    ];
-    if (bounds?.startAt) filters.push(sql`ss.recorded_at >= ${bounds.startAt}::timestamptz`);
-    if (bounds?.endAt) filters.push(sql`ss.recorded_at <= ${bounds.endAt}::timestamptz`);
-
-    const linked = await this.#db.execute(
-      sql`UPDATE fitness.metric_stream ss
-          SET activity_id = (
-            SELECT a.id
-            FROM fitness.activity a
-            WHERE a.user_id = ${this.#userId}
-              AND a.provider_id = ${PROVIDER_ID}
-              AND ss.recorded_at >= a.started_at
-              AND ss.recorded_at <= a.ended_at
-            ORDER BY a.started_at DESC
-            LIMIT 1
-          )
-          WHERE ${sql.join(filters, sql` AND `)}
-            AND EXISTS (
-              SELECT 1
-              FROM fitness.activity a
-              WHERE a.user_id = ${this.#userId}
-                AND a.provider_id = ${PROVIDER_ID}
-                AND ss.recorded_at >= a.started_at
-                AND ss.recorded_at <= a.ended_at
-            )
-          RETURNING ss.recorded_at`,
-    );
-
-    return Array.isArray(linked) ? linked.length : 0;
   }
 
   /** Process sleep samples, grouping by inBed boundaries */

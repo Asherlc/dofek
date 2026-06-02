@@ -9,7 +9,6 @@ import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
   computeBoundsFromIsoTimestamps,
-  linkUnassignedHeartRateToWorkouts,
   processBodyMeasurements,
   processDailyMetrics,
   processHealthEvents,
@@ -114,7 +113,6 @@ export const healthKitSyncRouter = router({
           const bounds = computeBoundsFromIsoTimestamps(
             metricStreamSamples.map((s) => s.startDate),
           );
-          await linkUnassignedHeartRateToWorkouts(ctx.db, ctx.userId, bounds ?? undefined);
 
           // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
           if (bounds) {

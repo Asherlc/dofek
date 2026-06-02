@@ -9532,3 +9532,53 @@ new incremental tables are populated.
 - Remaining risk: The exact production token value was not reproduced locally
   because local Withings secrets were unavailable; the fix is based on Sentry
   stack evidence, Withings docs, and targeted unit tests for the failing path.
+
+### 2026-06-02 HealthKit workout push Timescale metric_stream update failure
+
+- Symptoms: Sentry issue `DOFEK-SERVER-30` reported one production
+  `healthKitSync.pushWorkouts` error at `2026-06-02T17:52:15Z`.
+- User impact: Sentry reported 0 impacted users, but the affected workout push
+  returned an error after upserting the workout and before completing the
+  request.
+- Evidence: The first fatal query was `UPDATE fitness.metric_stream ss SET
+  activity_id = (...)` from
+  `packages/server/src/routers/health-kit-sync-processors.ts:79`, bounded to
+  Apple Health heart-rate rows between `2026-06-02T15:06:00Z` and
+  `2026-06-02T16:25:00Z`. PostgreSQL/Timescale raised `cannot update table
+  "_hyper_4_7633_chunk"`.
+- Root cause: HealthKit sync tried to backfill a derived activity association
+  into the Timescale hypertable after sensor rows already existed. That
+  `activity_id` update is redundant because ClickHouse activity read models
+  associate sensor samples to activities by user and time window, and unsafe on
+  compressed/managed Timescale chunks.
+- Fix / mitigation: Removed post-ingest heart-rate-to-workout linker calls from
+  mobile HealthKit sync, Apple Health XML import, and the unused repository
+  helper. Workout route samples that arrive with an explicit workout UUID still
+  write their known `activity_id` at insert time.
+- Remaining risk: Production SSH was unreachable from this workspace during
+  investigation, so chunk metadata could not be inspected directly. Validation
+  relies on Sentry evidence plus focused tests proving the failing `UPDATE
+  fitness.metric_stream` is no longer emitted.
+
+### 2026-06-02 Wahoo null FIT file URL schema failure
+
+- Symptoms: Sentry issue `DOFEK-SERVER-31` recorded a production `ZodError`
+  during Wahoo sync at `2026-06-02T17:53:49Z`.
+- User impact: The affected Wahoo sync job failed while parsing the workouts
+  list response before any later workouts on that page could be persisted.
+- Evidence: The failing frame was `src/providers/http-client.ts:90` inside
+  `WahooClient.get`, called by `WahooProvider.sync`. The first fatal schema
+  issue was `workouts[28].workout_summary.file.url: Expected string, received
+  null`; Sentry showed the same issue again at `workouts[29]`. A trace-scoped
+  Sentry log search returned no related application log entries.
+- Root cause: The Wahoo schema allowed `workout_summary.file` to be absent, but
+  required `file.url` to be a string whenever `file` was present. Wahoo can send
+  a present `file` object with `url: null` for workouts that do not have a FIT
+  file URL available.
+- Fix / mitigation: `createWahooWorkoutSummarySchema` now normalizes
+  `file.url: null` to `undefined`, preserving the existing behavior where the
+  persister downloads a FIT file only when a URL exists. A regression unit test
+  covers Wahoo workout-list parsing with a null file URL.
+- Remaining risk: No event replay or application logs were available for the
+  trace, so validation is based on the Sentry stack, the captured payload path,
+  and the focused unit test.
