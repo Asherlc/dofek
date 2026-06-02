@@ -3,6 +3,7 @@ import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
   ProviderRateLimitError,
+  parseRetryAfterHeader,
 } from "./rate-limit.ts";
 
 class TestRateLimitError extends ProviderRateLimitError {
@@ -294,5 +295,42 @@ describe("fetchWithRateLimitHandling", () => {
     });
 
     expect(wrappedAgain).toBe(rateLimitFetch);
+  });
+
+  it("returns the same wrapper when wrapping the same source fetch twice", () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(200, "ok"));
+
+    const first = createRateLimitAwareFetch(fetchFn, { providerId: "example" });
+    const second = createRateLimitAwareFetch(fetchFn, { providerId: "example" });
+
+    expect(second).toBe(first);
+  });
+});
+
+describe("parseRetryAfterHeader", () => {
+  it("parses numeric seconds", () => {
+    expect(parseRetryAfterHeader("5")).toBe(5);
+  });
+
+  it("accepts zero seconds", () => {
+    expect(parseRetryAfterHeader("0")).toBe(0);
+  });
+
+  it("parses an HTTP-date into seconds", () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    expect(parseRetryAfterHeader("Tue, 02 Jun 2026 12:00:05 GMT")).toBe(5);
+    vi.useRealTimers();
+  });
+
+  it("clamps past HTTP-dates to zero", () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    expect(parseRetryAfterHeader("Tue, 02 Jun 2026 11:59:59 GMT")).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("returns null for absent or unparseable values", () => {
+    expect(parseRetryAfterHeader(null)).toBeNull();
+    expect(parseRetryAfterHeader(undefined)).toBeNull();
+    expect(parseRetryAfterHeader("not a retry date")).toBeNull();
   });
 });

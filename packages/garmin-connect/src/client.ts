@@ -10,7 +10,11 @@
  * 6. All API calls use OAuth2 Bearer token
  */
 
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  createRateLimitAwareFetch,
+  ProviderRateLimitError,
+  parseRetryAfterHeader,
+} from "@dofek/provider-http/rate-limit";
 import { buildOAuth1Header } from "./oauth1.ts";
 import type {
   BodyBatteryDay,
@@ -614,13 +618,12 @@ export class GarminApiError extends Error {
 
 export class GarminRateLimitError extends ProviderRateLimitError {
   constructor(message: string, responseBody = "", retryAfterHeader?: string | null) {
-    const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
     super({
       message,
       providerId: "garmin",
       statusCode: 429,
       responseBody,
-      retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+      retryAfterSeconds: parseRetryAfterHeader(retryAfterHeader),
     });
     this.name = "GarminRateLimitError";
   }

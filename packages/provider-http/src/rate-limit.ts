@@ -42,9 +42,14 @@ export interface RateLimitAwareFetchOptions {
 }
 
 const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
+const wrappedFetchBySource = new WeakMap<typeof globalThis.fetch, typeof globalThis.fetch>();
 
-function retryAfterSeconds(response: Response): number | null {
-  const header = response.headers.get("Retry-After");
+/**
+ * Parses an HTTP `Retry-After` header value, which may be either a number of
+ * seconds or an HTTP-date. Returns the delay in seconds, or null when absent or
+ * unparseable.
+ */
+export function parseRetryAfterHeader(header: string | null | undefined): number | null {
   if (!header) return null;
 
   const seconds = Number.parseInt(header, 10);
@@ -84,7 +89,7 @@ function createDefaultRateLimitError(
     responseBody,
     scope,
     userId,
-    retryAfterSeconds: retryAfterSeconds(response),
+    retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
   });
 }
 
@@ -93,6 +98,9 @@ export function createRateLimitAwareFetch(
   options: RateLimitAwareFetchOptions,
 ): typeof globalThis.fetch {
   if (rateLimitAwareFetches.has(fetchFn)) return fetchFn;
+
+  const existing = wrappedFetchBySource.get(fetchFn);
+  if (existing) return existing;
 
   const rateLimitFetch: typeof globalThis.fetch = (input, init) =>
     fetchWithRateLimitHandling(fetchFn, input, init, {
@@ -108,5 +116,6 @@ export function createRateLimitAwareFetch(
           )),
     });
   rateLimitAwareFetches.add(rateLimitFetch);
+  wrappedFetchBySource.set(fetchFn, rateLimitFetch);
   return rateLimitFetch;
 }

@@ -122,6 +122,22 @@ describe("GarminConnectClient error classes", () => {
     expect(error.statusCode).toBe(429);
     expect(error).toBeInstanceOf(ProviderRateLimitError);
   });
+
+  it("GarminRateLimitError parses a numeric Retry-After header", () => {
+    const error = new GarminRateLimitError("too many requests", "", "30");
+    expect(error.retryAfterSeconds).toBe(30);
+  });
+
+  it("GarminRateLimitError parses an HTTP-date Retry-After header", () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const error = new GarminRateLimitError(
+      "too many requests",
+      "",
+      "Tue, 02 Jun 2026 12:00:45 GMT",
+    );
+    expect(error.retryAfterSeconds).toBe(45);
+    vi.useRealTimers();
+  });
 });
 
 describe("GarminConnectClient constructor", () => {
