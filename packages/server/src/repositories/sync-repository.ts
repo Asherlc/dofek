@@ -7,7 +7,10 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 // Zod row schemas
 // ---------------------------------------------------------------------------
 
-const tokenRowSchema = z.object({ provider_id: z.string() });
+const tokenRowSchema = z.object({
+  provider_id: z.string(),
+  updated_at: z.coerce.date(),
+});
 
 const lastSyncRowSchema = z.object({
   provider_id: z.string(),
@@ -17,6 +20,7 @@ const lastSyncRowSchema = z.object({
 const latestErrorRowSchema = z.object({
   provider_id: z.string(),
   error_message: z.string().nullable(),
+  synced_at: z.coerce.date(),
 });
 
 const clickHouseProviderStatsRowSchema = z.object({
@@ -59,6 +63,7 @@ const bodyMeasurementChannelListSql = bodyMeasurementChannels
 
 export interface ProviderToken {
   providerId: string;
+  updatedAt: Date;
 }
 
 export interface LastSync {
@@ -69,6 +74,7 @@ export interface LastSync {
 export interface LatestError {
   providerId: string;
   errorMessage: string | null;
+  syncedAt: Date;
 }
 
 export interface ProviderStatRow {
@@ -131,11 +137,11 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       tokenRowSchema,
-      sql`SELECT DISTINCT ot.provider_id
+      sql`SELECT DISTINCT ot.provider_id, ot.updated_at
           FROM fitness.oauth_token ot
           WHERE ot.user_id = ${this.#userId}`,
     );
-    return rows.map((row) => ({ providerId: row.provider_id }));
+    return rows.map((row) => ({ providerId: row.provider_id, updatedAt: row.updated_at }));
   }
 
   /** Get the most recent sync timestamp per provider. */
@@ -162,7 +168,7 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       latestErrorRowSchema,
-      sql`SELECT DISTINCT ON (provider_id) provider_id, error_message
+      sql`SELECT DISTINCT ON (provider_id) provider_id, error_message, synced_at
           FROM fitness.sync_log
           WHERE user_id = ${this.#userId} AND status = 'error'
             AND synced_at = (
@@ -174,6 +180,7 @@ export class SyncRepository {
     return rows.map((row) => ({
       providerId: row.provider_id,
       errorMessage: row.error_message,
+      syncedAt: row.synced_at,
     }));
   }
 
