@@ -27,7 +27,6 @@ import {
   aggregateSpO2ToDailyMetrics,
   BODY_MEASUREMENT_TYPES,
   DAILY_METRIC_TYPES,
-  linkUnassignedHeartRateToActivities,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
   upsertBodyMeasurementBatch,
@@ -224,15 +223,6 @@ export async function runImport(
         recordsSynced += rows.length;
       },
     });
-
-    const linkedHrRows = await linkUnassignedHeartRateToActivities(db, providerId, {
-      startAt: since,
-    });
-    if (linkedHrRows > 0) {
-      logger.info(
-        `[apple_health] Linked ${linkedHrRows} heart-rate sensor rows to workouts after import`,
-      );
-    }
 
     // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
     await aggregateSpO2ToDailyMetrics(db, providerId, since);
