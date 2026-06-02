@@ -9,65 +9,72 @@
     }
 ) }}
 
-WITH RECURSIVE target_state AS (
-    SELECT
-        coalesce(
-            max(refreshed_at),
-            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
-        ) AS last_refreshed_at,
-        {% if is_incremental() %}(count() = 0){% else %}1{% endif %} AS is_empty
-    FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
+WITH ranked AS (
+    SELECT *
+    FROM {{ ref('activity_source_records') }} FINAL
+    WHERE is_deleted = 0
 ),
 
-priority_changes AS (
-    SELECT count() > 0 AS has_changes
+final_groups AS (
+    SELECT
+        activity_id,
+        group_id
+    FROM {{ ref('activity_duplicate_groups') }} FINAL
+    WHERE is_deleted = 0
+),
+
+best AS (
+    SELECT *
     FROM (
-        SELECT _peerdb_synced_at
-        FROM {{ source('postgres_fitness', 'provider_priority') }} FINAL
-        UNION ALL
-        SELECT _peerdb_synced_at
-        FROM {{ source('postgres_fitness', 'device_priority') }} FINAL
+        SELECT
+            final_groups.group_id AS group_id,
+            ranked.activity_id AS canonical_id,
+            ranked.provider_id AS provider_id,
+            ranked.user_id AS user_id,
+            ranked.activity_type AS activity_type,
+            ranked.started_at AS started_at,
+            ranked.ended_at AS ended_at,
+            ranked.source_name AS source_name,
+            ranked.priority AS priority,
+            row_number() OVER (
+                PARTITION BY final_groups.group_id
+                ORDER BY ranked.priority ASC, toString(ranked.activity_id) ASC
+            ) AS row_number
+        FROM final_groups
+        INNER JOIN ranked
+            ON ranked.activity_id = final_groups.activity_id
     )
-    WHERE NOT (SELECT is_empty FROM target_state)
-        AND _peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
+    WHERE row_number = 1
 ),
 
-changed_activity_windows AS (
+merged AS (
     SELECT
-        activity.id AS activity_id,
-        activity.user_id AS user_id,
-        activity.started_at AS started_at,
-        coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
-    FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
-    WHERE NOT (SELECT is_empty FROM target_state)
-        AND activity._peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
+        best.group_id AS group_id,
+        best.canonical_id AS id,
+        any(best.provider_id) AS provider_id,
+        any(best.user_id) AS user_id,
+        any(best.activity_type) AS activity_type,
+        min(ranked.started_at) AS started_at,
+        max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at,
+        any(best.source_name) AS source_name,
+        argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
+        argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
+        argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
+        argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
+        max(ranked.source_synced_at) AS source_synced_at,
+        arraySort(groupUniqArray(ranked.provider_id)) AS source_providers,
+        groupArrayIf(
+            map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
+            ranked.external_id IS NOT NULL AND ranked.external_id != ''
+        ) AS source_external_ids,
+        groupArray(ranked.activity_id) AS member_activity_ids
+    FROM best
+    INNER JOIN final_groups
+        ON final_groups.group_id = best.group_id
+    INNER JOIN ranked
+        ON ranked.activity_id = final_groups.activity_id
+    GROUP BY best.group_id, best.canonical_id
 ),
-
-changed_user_windows AS (
-    SELECT
-        user_id,
-        min(started_at) - INTERVAL 12 HOUR AS started_at,
-        max(ended_at) + INTERVAL 12 HOUR AS ended_at
-    FROM changed_activity_windows
-    GROUP BY user_id
-),
-
-active_activity AS (
-    SELECT activity.*
-    FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
-    LEFT JOIN changed_user_windows
-        ON changed_user_windows.user_id = activity.user_id
-        AND activity.started_at < changed_user_windows.ended_at
-        AND coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) >= changed_user_windows.started_at
-    WHERE activity._peerdb_is_deleted = 0
-        AND (
-            (SELECT is_empty FROM target_state)
-            OR (SELECT has_changes FROM priority_changes)
-            OR changed_user_windows.user_id IS NOT null
-        )
-),
-
-{{ activity_dedup_graph() }},
 
 current_deduped_activities AS (
     SELECT
@@ -109,41 +116,30 @@ existing_deduped_activities AS (
         deduped.source_external_ids,
         deduped.member_activity_ids
     FROM {{ this }} AS deduped FINAL
-    LEFT JOIN changed_user_windows
-        ON changed_user_windows.user_id = deduped.user_id
-        AND deduped.started_at < changed_user_windows.ended_at
-        AND coalesce(deduped.ended_at, deduped.started_at + INTERVAL 12 HOUR) >= changed_user_windows.started_at
     WHERE deduped.is_deleted = 0
-        AND (
-            (SELECT has_changes FROM priority_changes)
-            OR changed_user_windows.user_id IS NOT null
-        )
 ),
 
 stale_deduped_activities AS (
-    SELECT *
+    SELECT existing_deduped_activities.*
     FROM existing_deduped_activities
+    LEFT JOIN current_deduped_activities
+        ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
+        AND current_deduped_activities.user_id = existing_deduped_activities.user_id
+    WHERE current_deduped_activities.activity_id IS null
 )
 {% endif %}
 
 ,
-changed_user_window_count AS (
-    SELECT count() AS changed_window_count
-    FROM changed_user_windows
-),
-
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
         now64(9) AS refreshed_at
-    FROM priority_changes
-    CROSS JOIN changed_user_window_count
 )
 
 SELECT
     activity_id,
     provider_id,
-    user_id,
+    assumeNotNull(user_id) AS user_id,
     activity_id AS primary_activity_id,
     activity_type,
     started_at,
@@ -169,7 +165,7 @@ UNION ALL
 SELECT
     activity_id,
     provider_id,
-    user_id,
+    assumeNotNull(user_id) AS user_id,
     activity_id AS primary_activity_id,
     activity_type,
     started_at,
@@ -183,7 +179,7 @@ SELECT
     source_providers,
     source_external_ids,
     member_activity_ids,
-    refresh_clock.refresh_version - 1 AS refresh_version,
+    refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
 FROM stale_deduped_activities

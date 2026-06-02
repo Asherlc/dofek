@@ -9405,3 +9405,67 @@ new incremental tables are populated.
 - Remaining risk: Local full-stack e2e validation was blocked by Docker network
   address-pool exhaustion; local single-model dbt first-build and incremental
   runs reproduced and validated the failing model path.
+
+### 2026-06-01 activities empty-state update
+
+- Symptoms: `https://dofek.asherlc.com/activities` showed "No activities in the
+  last 4 weeks" even though recent activities should exist.
+- User impact: The activity calendar list and overview could temporarily hide
+  recent activity data after sync/import and analytics catch-up.
+- Evidence: Production Postgres `fitness.v_activity` had 73 recent completed
+  activities for user `f923fed7-d934-4cd9-8cb9-8e83020d0e69` since
+  `2026-05-04`, latest `2026-06-01 03:39:00.46+00`. Mirrored ClickHouse
+  `postgres_fitness.activity FINAL` had 214 recent raw completed rows and
+  `analytics.activity_summary` had 211 recent rows, but
+  `analytics.deduped_activities FINAL` had zero rows total. The
+  `analytics-worker` first fatal log line was ClickHouse
+  `MEMORY_LIMIT_EXCEEDED` while executing `RecursiveCTESource` in
+  `deduped_activities`.
+- Root cause: The first build of dbt-owned `analytics.deduped_activities` ran
+  the recursive activity-overlap graph over all mirrored historical activities
+  because the target table was empty. That unbounded recursive CTE exceeded the
+  ClickHouse memory limit, leaving the table empty. The Activities page reads
+  `analytics.deduped_activities`, so it returned no recent activity cards even
+  though canonical and summary data existed.
+- Fix / mitigation: Production was manually populated through ClickHouse using
+  materialized intermediate source-record, duplicate-match, duplicate-group,
+  and canonical-activity stages. After the manual insert,
+  `analytics.deduped_activities FINAL` had 828 active rows; the
+  page-equivalent recent query returned 73 rows with matching
+  `analytics.activity_summary` rows and latest start
+  `2026-06-01 03:39:00`. The repo fix replaces the path-enumerating recursive
+  graph macro with dbt-owned domain read models:
+  `activity_source_records`, `activity_duplicate_matches`,
+  `activity_duplicate_groups`, and `deduped_activities`. A read-only
+  production performance check of the monolithic domain CTE returned the right
+  828 groups but took 9.4s; the dbt-style materialized component check returned
+  the same 828 groups with the duplicate-group stage taking 27ms and about 10MB
+  peak memory.
+- Remaining risk: Production is manually mitigated, but the analytics worker
+  still needs this repo fix deployed before scheduled dbt builds stop retrying
+  the old recursive model. Local dbt-templated SQL lint compiled the project but
+  could not complete because local ClickHouse at `127.0.0.1:8123` was not
+  running; starting the local compose dependency was blocked by Docker address
+  pool exhaustion in this workspace.
+
+### 2026-06-02 PR CI nullable sort-key update
+
+- Symptoms: PR `Test / E2E Tests (Web)` failed during the tracked e2e
+  analytics build, causing `Test / Test Gate` and `CI Gate` to fail.
+- User impact: The activity dedupe PR could not pass required CI despite the
+  production deploy succeeding against an existing `deduped_activities` table.
+- Evidence: The failing e2e step was
+  `docker compose -f docker-compose.e2e.yml up -d --no-build analytics`; the
+  first fatal dbt line was `Database Error in model deduped_activities`, with
+  ClickHouse error `Sorting key contains nullable columns, but merge tree
+  setting allow_nullable_key is disabled`.
+- Root cause: The clean e2e first build inferred `deduped_activities.user_id`
+  as nullable because upstream source-record models include tombstone branches
+  with nullable non-key fields, while `deduped_activities` sorts by
+  `(user_id, activity_id)`.
+- Fix / mitigation: `deduped_activities` now emits
+  `assumeNotNull(user_id) AS user_id` in both current and stale output branches
+  so clean first builds create a non-null sort-key column.
+- Remaining risk: Full local e2e validation remains blocked by Docker network
+  address-pool exhaustion in this workspace; CI rerun is the end-to-end
+  validation for the compose e2e path.

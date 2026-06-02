@@ -46,6 +46,9 @@ describe("production analytics read-model build", () => {
     expect(safeModelMatch?.[1]?.split(" ")).toEqual([
       "sensor_scalar_sample",
       "deduped_sensor",
+      "activity_source_records",
+      "activity_duplicate_matches",
+      "activity_duplicate_groups",
       "deduped_activities",
       "deduped_activity_members",
       "sleep_heart_rate_sample",
@@ -81,28 +84,55 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain("ref('sleep_heart_rate_sample') }} FINAL");
   });
 
-  it("materializes deduped activities once from the bounded activity graph", () => {
+  it("materializes deduped activities from domain activity dedupe models", () => {
     expect(existsSync(new URL("./deduped_activities.sql", import.meta.url))).toBe(true);
     const sql = readModel("deduped_activities");
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("WITH RECURSIVE target_state AS");
-    expect(sql).toContain("{{ activity_dedup_graph() }}");
-    expect(sql).toContain("priority_changes AS");
-    expect(sql).toContain("changed_user_windows AS");
-    expect(sql).toContain("activity._peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)");
+    expect(sql).toContain("ref('activity_source_records')");
+    expect(sql).toContain("ref('activity_duplicate_groups')");
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
+    expect(sql).toContain("assumeNotNull(user_id) AS user_id");
     expect(sql).toContain("stale_deduped_activities AS");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain("FROM existing_deduped_activities");
-    expect(sql).toContain("refresh_clock.refresh_version - 1 AS refresh_version");
-    expect(normalizedSql).toContain("LEFT JOIN changed_user_windows");
     expect(normalizedSql).toContain("FROM {{ this }} AS deduped FINAL");
     expect(normalizedSql).toContain("WHERE deduped.is_deleted = 0");
+    expect(normalizedSql).toContain(
+      "ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id AND current_deduped_activities.user_id = existing_deduped_activities.user_id",
+    );
+  });
+
+  it("breaks activity deduplication into conceptual domain stages", () => {
+    const sourceRecordsSql = readModel("activity_source_records");
+    const matchesSql = readModel("activity_duplicate_matches");
+    const groupsSql = readModel("activity_duplicate_groups");
+
+    expect(sourceRecordsSql).toContain("materialized='incremental'");
+    expect(sourceRecordsSql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sourceRecordsSql).toContain("active_provider_priority AS");
+    expect(sourceRecordsSql).toContain("device_priority_match AS");
+    expect(sourceRecordsSql).toContain("current_source_records AS");
+    expect(sourceRecordsSql).toContain("length(active_device_priority.source_name_pattern) DESC");
+    expect(sourceRecordsSql).toContain("active_device_priority.priority ASC");
+    expect(sourceRecordsSql).toContain("active_device_priority.source_name_pattern ASC");
+
+    expect(matchesSql).toContain("materialized='incremental'");
+    expect(matchesSql).toContain("ref('activity_source_records')");
+    expect(matchesSql).toContain("current_duplicate_matches AS");
+    expect(matchesSql).toContain("overlap_ratio");
+
+    expect(groupsSql).toContain("materialized='incremental'");
+    expect(groupsSql).toContain("ref('activity_source_records')");
+    expect(groupsSql).toContain("ref('activity_duplicate_matches')");
+    expect(groupsSql).toContain("duplicate_links AS");
+    expect(groupsSql).toContain("duplicate_walk AS");
+    expect(groupsSql).toContain("current_duplicate_groups AS");
+    expect(groupsSql).toContain("GROUP BY activity_id");
   });
 
   it("materializes deduped activity member aliases from deduped activities", () => {
@@ -121,7 +151,6 @@ describe("production analytics read-model build", () => {
     );
     expect(sql).toContain("arrayJoin(deduped_activities.member_activity_ids) AS member_activity_id");
     expect(sql).toContain("stale_activity_members AS");
-    expect(sql).not.toContain("bounded_activity_graph()");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain("LEFT JOIN current_activity_members");
     expect(normalizedSql).toContain(
@@ -140,7 +169,6 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
-    expect(sql).not.toContain("bounded_activity_graph()");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(sql).toContain("activity_id");
   });
@@ -154,7 +182,6 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).toContain("ref('deduped_activity_members')");
-    expect(sql).not.toContain("bounded_activity_graph()");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
     expect(sql).toContain("argMax(point, _peerdb_version) AS point");
@@ -164,33 +191,17 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("trim(BOTH '()' FROM location_rows.point_text)");
   });
 
-  it("bounds activity graph construction to the active microbatch window", () => {
-    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
+  it("uses the same null-ended activity window for duplicate matches and merged activities", () => {
+    const matchesSql = readModel("activity_duplicate_matches");
+    const dedupedActivitiesSql = readModel("deduped_activities");
 
-    expect(sql).toContain("__dbt_internal_microbatch_event_time_start");
-    expect(sql).toContain("__dbt_internal_microbatch_event_time_end");
-    expect(sql).toContain("started_at < toDateTime64('{{ batch_end }}', 6, 'UTC')");
-    expect(sql).toContain(
-      "coalesce(ended_at, started_at + INTERVAL 12 HOUR) >= toDateTime64('{{ batch_start }}', 6, 'UTC')",
-    );
-  });
+    expect(matchesSql).toContain("coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at");
+    expect(matchesSql).toContain("greatest(left_activity.started_at, right_activity.started_at)");
+    expect(matchesSql).toContain("least(left_activity.ended_at, right_activity.ended_at)");
 
-  it("uses the same null-ended activity window for overlap matching", () => {
-    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
-
-    expect(sql).toContain("coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 12 HOUR)");
-    expect(sql).toContain("coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 12 HOUR)");
-    expect(sql).not.toContain("INTERVAL 1 HOUR");
-  });
-
-  it("uses merged group time bounds for current activity sensor membership", () => {
-    const sql = readProjectFile("analytics/macros/bounded_activity_graph.sql");
-
-    expect(sql).toContain("min(ranked.started_at) AS started_at");
-    expect(sql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
-    expect(sql).toContain("max(ranked._peerdb_synced_at) AS source_synced_at");
-    expect(sql).not.toContain("any(best.started_at) AS started_at");
-    expect(sql).not.toContain("any(best.ended_at) AS ended_at");
+    expect(dedupedActivitiesSql).toContain("min(ranked.started_at) AS started_at");
+    expect(dedupedActivitiesSql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
+    expect(dedupedActivitiesSql).toContain("max(ranked.source_synced_at) AS source_synced_at");
   });
 
   it("carries upstream source freshness through lookback microbatch intermediaries", () => {
@@ -250,7 +261,6 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('deduped_activities')");
     expect(sql).toContain("ref('deduped_activity_members')");
-    expect(sql).not.toContain("bounded_activity_graph()");
     expect(sql).toContain("ref('activity_sensor_summary_rows')");
     expect(sql).toContain("ref('activity_location_summary_rows')");
     expect(sql).toContain("(user_id, activity_id) IN");
