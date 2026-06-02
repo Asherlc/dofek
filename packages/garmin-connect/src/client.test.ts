@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GarminApiError,
   GarminAuthError,
@@ -32,6 +32,10 @@ function makeGarminTokens(overrides: Partial<OAuth2Token> = {}): GarminTokens {
     oauth2: makeOAuth2Token(overrides),
   };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /**
  * Creates a GarminConnectClient with valid tokens set via fromTokens,
@@ -184,6 +188,9 @@ describe("GarminConnectClient.fromTokens", () => {
   });
 
   it("refreshes expired OAuth2 tokens", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-02T00:00:00Z"));
+
     const tokens = makeGarminTokens({
       expires_at: Math.floor(Date.now() / 1000) - 100, // expired
     });
@@ -237,6 +244,31 @@ describe("GarminConnectClient.fromTokens", () => {
     expect(client.getDisplayName()).toBe("testuser");
     // Should have made 3 calls: loadConsumer, exchangeForOAuth2, loadProfile
     expect(fetchFn).toHaveBeenCalledTimes(3);
+
+    const refreshedTokens = client.getTokens();
+    expect(refreshedTokens?.oauth2).toEqual({
+      scope: "refreshed-scope",
+      jti: "refreshed-jti",
+      token_type: "Bearer",
+      access_token: "refreshed-access-token",
+      refresh_token: "refreshed-refresh-token",
+      expires_in: 3600,
+      expires_at: 1_780_362_000,
+      refresh_token_expires_in: 86400,
+      refresh_token_expires_at: 1_780_444_800,
+    });
+
+    const [exchangeUrl, exchangeOptions] = fetchFn.mock.calls[1];
+    expect(String(exchangeUrl)).toContain("/oauth-service/oauth/exchange/user/2.0");
+    expect(exchangeOptions).toMatchObject({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "com.garmin.android.apps.connectmobile",
+        Authorization: expect.stringContaining("OAuth"),
+      },
+      body: "",
+    });
   });
 
   it("throws GarminRateLimitError when expired-token OAuth2 exchange is rate limited", async () => {
@@ -298,10 +330,17 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getActivities(0, 10);
 
     expect(result).toEqual(activities);
-    const [activitiesUrl]: [string] = apiFetchFn.mock.calls[0];
+    const [activitiesUrl, activitiesOptions] = apiFetchFn.mock.calls[0];
     expect(activitiesUrl).toContain("/activitylist-service/activities/search/activities");
     expect(activitiesUrl).toContain("start=0");
     expect(activitiesUrl).toContain("limit=10");
+    expect(activitiesOptions).toEqual({
+      headers: {
+        Authorization: "Bearer test-access-token",
+        "User-Agent": "GCM-iOS-5.19.1.2",
+        Accept: "application/json",
+      },
+    });
   });
 
   it("getActivityDetail returns detail data", async () => {
@@ -352,6 +391,8 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getDailyHeartRate("2024-01-15");
 
     expect(result).toEqual(hrData);
+    const [heartRateUrl]: [string] = apiFetchFn.mock.calls[0];
+    expect(heartRateUrl).toContain("date=2024-01-15");
   });
 
   it("getDailyStress returns stress data", async () => {
@@ -453,6 +494,7 @@ describe("GarminConnectClient API methods", () => {
     expect(result).toEqual(summary);
     const [summaryUrl]: [string] = apiFetchFn.mock.calls[0];
     expect(summaryUrl).toContain("/usersummary-service/usersummary/daily/testuser");
+    expect(summaryUrl).toContain("calendarDate=2024-01-15");
   });
 
   it("getTrainingStatus returns training status", async () => {
@@ -502,8 +544,14 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.downloadFitFile(12345);
 
     expect(result).toEqual(buffer);
-    const [downloadUrl]: [string] = apiFetchFn.mock.calls[0];
+    const [downloadUrl, downloadOptions] = apiFetchFn.mock.calls[0];
     expect(downloadUrl).toContain("/download-service/files/activity/12345");
+    expect(downloadOptions).toEqual({
+      headers: {
+        Authorization: "Bearer test-access-token",
+        "User-Agent": "GCM-iOS-5.19.1.2",
+      },
+    });
   });
 
   it("downloadFitFile throws on failure", async () => {
@@ -709,7 +757,21 @@ describe("GarminConnectClient.signIn", () => {
     return mock;
   }
 
+  function expectFetchCall(
+    fetchFn: ReturnType<typeof buildSignInMock>,
+    index: number,
+  ): [string, RequestInit | undefined] {
+    const call = fetchFn.mock.calls[index];
+    if (!call) {
+      throw new Error(`Expected fetch call ${index}`);
+    }
+    const [url, options] = call;
+    return [String(url), options];
+  }
+
   it("completes full sign-in flow successfully", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-02T00:00:00Z"));
     const fetchFn = buildSignInMock();
 
     const { client, tokens } = await GarminConnectClient.signIn(
@@ -722,8 +784,74 @@ describe("GarminConnectClient.signIn", () => {
     expect(client).toBeInstanceOf(GarminConnectClient);
     expect(tokens.oauth1.oauth_token).toBe("token123");
     expect(tokens.oauth1.oauth_token_secret).toBe("secret456");
-    expect(tokens.oauth2.access_token).toBe("access-token-xyz");
+    expect(tokens.oauth2).toEqual({
+      scope: "test",
+      jti: "jti-123",
+      token_type: "Bearer",
+      access_token: "access-token-xyz",
+      refresh_token: "refresh-token-xyz",
+      expires_in: 3600,
+      expires_at: 1_780_362_000,
+      refresh_token_expires_in: 86400,
+      refresh_token_expires_at: 1_780_444_800,
+    });
     expect(client.getDisplayName()).toBe("testuser");
+
+    const [embedUrl, embedOptions] = expectFetchCall(fetchFn, 1);
+    expect(embedUrl).toContain("id=gauth-widget");
+    expect(embedUrl).toContain("embedWidget=true");
+    expect(embedUrl).toContain("gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso");
+    expect(embedOptions).toEqual({
+      headers: { "User-Agent": "com.garmin.android.apps.connectmobile" },
+      redirect: "follow",
+    });
+
+    const [signinUrl, signinOptions] = expectFetchCall(fetchFn, 2);
+    expect(signinUrl).toContain("service=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed");
+    expect(signinUrl).toContain(
+      "redirectAfterAccountCreationUrl=https%3A%2F%2Fsso.garmin.com%2Fsso%2Fembed",
+    );
+    expect(signinOptions).toEqual({
+      headers: {
+        "User-Agent": "com.garmin.android.apps.connectmobile",
+        Cookie: "GARMIN-SSO-GUID=abc123",
+        Referer: "https://sso.garmin.com/sso/embed",
+      },
+      redirect: "follow",
+    });
+
+    const [, loginOptions] = expectFetchCall(fetchFn, 3);
+    expect(loginOptions).toMatchObject({
+      method: "POST",
+      headers: {
+        "User-Agent": "com.garmin.android.apps.connectmobile",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: "GARMIN-SSO-GUID=abc123; GARMIN-SSO-CUST=def456",
+        Referer: "https://sso.garmin.com/sso/signin",
+      },
+      redirect: "follow",
+    });
+    expect(loginOptions?.body).toBe(
+      "username=test%40example.com&password=password123&embed=true&_csrf=csrf123",
+    );
+
+    const [oauth1Url, oauth1Options] = expectFetchCall(fetchFn, 4);
+    expect(oauth1Url).toContain("ticket=ST-12345-test");
+    expect(oauth1Url).toContain("accepts-mfa-tokens=true");
+    expect(oauth1Options?.headers).toMatchObject({
+      "User-Agent": "com.garmin.android.apps.connectmobile",
+    });
+
+    const [oauth2Url, oauth2Options] = expectFetchCall(fetchFn, 5);
+    expect(oauth2Url).toContain("/oauth-service/oauth/exchange/user/2.0");
+    expect(oauth2Options).toMatchObject({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "com.garmin.android.apps.connectmobile",
+      },
+      body: "",
+    });
   });
 
   it("throws GarminMfaRequiredError when MFA is required", async () => {

@@ -9495,3 +9495,15 @@ new incremental tables are populated.
   because analytics SQL lint needs ClickHouse at `127.0.0.1:8123`; starting the
   local compose stack was blocked by Docker address-pool exhaustion while
   creating `richmond_default`.
+
+### Follow-Up Work
+
+- Monitor Sentry for `GarminRateLimitError` events from OAuth exchange and
+  confirm they are handled as provider rate-limit incidents rather than auth
+  failures.
+- Decide whether Garmin OAuth exchange should add bounded retry/backoff behavior
+  now that 429 responses are classified correctly.
+- Keep the `GarminConnectClient.fromTokens` expired-token refresh path covered
+  in CI through the package unit test and mutation test.
+- Resolve local ClickHouse/Docker address-pool setup so future incident fixes can
+  run full lint and e2e validation locally.
