@@ -37,7 +37,7 @@ describe("installIntlPolyfills", () => {
     }
   });
 
-  it("keeps the native NumberFormat implementation when formatToParts exists", async () => {
+  it("keeps native Intl implementations when they already exist", async () => {
     vi.resetModules();
     const originalGetCanonicalLocales = Object.getOwnPropertyDescriptor(
       Intl,
@@ -45,9 +45,11 @@ describe("installIntlPolyfills", () => {
     );
     const originalLocale = Object.getOwnPropertyDescriptor(Intl, "Locale");
     const originalNumberFormat = Object.getOwnPropertyDescriptor(Intl, "NumberFormat");
+    const originalPluralRules = Object.getOwnPropertyDescriptor(Intl, "PluralRules");
     const nativeGetCanonicalLocales = Intl.getCanonicalLocales;
     const nativeLocale = Intl.Locale;
     const nativeNumberFormat = Intl.NumberFormat;
+    const nativePluralRules = Intl.PluralRules;
 
     try {
       await import("./intl-polyfills.js");
@@ -55,6 +57,7 @@ describe("installIntlPolyfills", () => {
       expect(Intl.getCanonicalLocales).toBe(nativeGetCanonicalLocales);
       expect(Intl.Locale).toBe(nativeLocale);
       expect(Intl.NumberFormat).toBe(nativeNumberFormat);
+      expect(Intl.PluralRules).toBe(nativePluralRules);
     } finally {
       if (originalGetCanonicalLocales) {
         Object.defineProperty(Intl, "getCanonicalLocales", originalGetCanonicalLocales);
@@ -64,6 +67,9 @@ describe("installIntlPolyfills", () => {
       }
       if (originalNumberFormat) {
         Object.defineProperty(Intl, "NumberFormat", originalNumberFormat);
+      }
+      if (originalPluralRules) {
+        Object.defineProperty(Intl, "PluralRules", originalPluralRules);
       }
     }
   });
