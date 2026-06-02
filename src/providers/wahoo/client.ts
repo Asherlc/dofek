@@ -36,7 +36,11 @@ export function createWahooWorkoutSummarySchema() {
     work_accum: wahooNumeric,
     created_at: z.string(),
     updated_at: z.string(),
-    file: z.object({ url: z.string() }).optional(),
+    file: z
+      .object({
+        url: z.preprocess((value) => (value === null ? undefined : value), z.string().optional()),
+      })
+      .optional(),
   });
 }
 

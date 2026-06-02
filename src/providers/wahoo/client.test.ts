@@ -124,6 +124,28 @@ describe("Wahoo schemas", () => {
       expect(result.order).toBe("descending");
       expect(result.sort).toBe("created_at");
     });
+
+    it("accepts workout summaries with a null file URL", () => {
+      const schema = createWahooWorkoutListResponseSchema();
+      const result = schema.parse({
+        workouts: [
+          {
+            ...validWorkout,
+            workout_summary: {
+              ...validSummary,
+              file: { url: null },
+            },
+          },
+        ],
+        total: 1,
+        page: 1,
+        per_page: 20,
+        order: "descending",
+        sort: "created_at",
+      });
+
+      expect(result.workouts[0]?.workout_summary?.file?.url).toBeUndefined();
+    });
   });
 
   describe("wahooSingleWorkoutResponseSchema", () => {
