@@ -24,7 +24,7 @@ function rateLimitError(options: {
 }
 
 describe("ProviderRateLimitCooldownStore", () => {
-  it("records provider-wide cooldowns using Retry-After when present", async () => {
+  it("records provider-wide cooldown state using Retry-After when present", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
@@ -43,7 +43,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
-  it("records user-scoped cooldowns when the rate-limit error requests user scope", async () => {
+  it("records user-scoped cooldown state when the rate-limit error requests user scope", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
@@ -68,7 +68,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
-  it("uses provider fallback cooldowns when Retry-After is absent", async () => {
+  it("uses provider fallback cooldown state when Retry-After is absent", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
@@ -78,7 +78,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
-  it("uses provider fallback cooldowns when Retry-After is zero", async () => {
+  it("uses provider fallback cooldown state when Retry-After is zero", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 

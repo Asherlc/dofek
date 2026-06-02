@@ -110,14 +110,14 @@ function cooldownFromError(
 }
 
 export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
-  readonly #cooldowns = new Map<string, ProviderRateLimitCooldown>();
+  readonly #cooldownRecords = new Map<string, ProviderRateLimitCooldown>();
 
   async record(
     error: ProviderRateLimitError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
     const cooldown = cooldownFromError(error, fallbackUserId);
-    this.#cooldowns.set(
+    this.#cooldownRecords.set(
       cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId),
       cooldown,
     );
@@ -126,10 +126,10 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
 
   async getActive(providerId: string, userId: string): Promise<ProviderRateLimitCooldown | null> {
     const providerCooldown = activeOrNull(
-      this.#cooldowns.get(cooldownKey(providerId, "provider", null)) ?? null,
+      this.#cooldownRecords.get(cooldownKey(providerId, "provider", null)) ?? null,
     );
     const userCooldown = activeOrNull(
-      this.#cooldowns.get(cooldownKey(providerId, "user", userId)) ?? null,
+      this.#cooldownRecords.get(cooldownKey(providerId, "user", userId)) ?? null,
     );
     return laterCooldown(providerCooldown, userCooldown);
   }

@@ -216,7 +216,7 @@ describe("processSyncJob", () => {
     );
   });
 
-  it("records provider rate-limit cooldowns and schedules a deterministic delayed retry", async () => {
+  it("records provider rate-limit cooldown records and schedules a deterministic delayed retry", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const provider = createMockProvider({
       id: "garmin",
