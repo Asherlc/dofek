@@ -62,49 +62,89 @@ function isWithinLookbackDays(
   return diffDays >= 0 && diffDays <= lookbackDays;
 }
 
-export interface MobileDashboardResult {
-  readiness: {
-    score: number;
-    date: string;
-    components: {
-      hrvScore: number;
-      restingHrScore: number;
-      sleepScore: number;
-      respiratoryRateScore: number;
-    };
-    weights: {
-      hrv: number;
-      restingHr: number;
-      sleep: number;
-      respiratoryRate: number;
-    };
-  } | null;
-  sleep: {
-    lastNight: {
-      date: string;
-      durationMinutes: number;
-      deepPct: number;
-      remPct: number;
-      lightPct: number;
-      awakePct: number;
-    } | null;
-    sleepDebt: number;
-  } | null;
-  strain: {
-    dailyStrain: number;
-    acuteLoad: number;
-    chronicLoad: number;
-    workloadRatio: number | null;
-    date: string | null;
-  };
-  sleepNeed: SleepNeedResult | null;
-  anomalies: AnomalyCheckResult | null;
-  latestDate: string | null;
-}
+const sleepNeedOutputSchema = z.object({
+  baselineMinutes: z.number(),
+  strainDebtMinutes: z.number(),
+  accumulatedDebtMinutes: z.number(),
+  totalNeedMinutes: z.number(),
+  recentNights: z.array(
+    z.object({
+      date: z.string(),
+      actualMinutes: z.number().nullable(),
+      neededMinutes: z.number(),
+      debtMinutes: z.number().nullable(),
+    }),
+  ),
+  canRecommend: z.boolean(),
+}) satisfies z.ZodType<SleepNeedResult>;
+
+const anomalyCheckOutputSchema = z.object({
+  anomalies: z.array(
+    z.object({
+      date: z.string(),
+      metric: z.string(),
+      value: z.number(),
+      baselineMean: z.number(),
+      baselineStddev: z.number(),
+      zScore: z.number(),
+      severity: z.enum(["warning", "alert"]),
+    }),
+  ),
+  checkedMetrics: z.array(z.string()),
+}) satisfies z.ZodType<AnomalyCheckResult>;
+
+const mobileDashboardOutputSchema = z.object({
+  readiness: z
+    .object({
+      score: z.number(),
+      date: z.string(),
+      components: z.object({
+        hrvScore: z.number(),
+        restingHrScore: z.number(),
+        sleepScore: z.number(),
+        respiratoryRateScore: z.number(),
+      }),
+      weights: z.object({
+        hrv: z.number(),
+        restingHr: z.number(),
+        sleep: z.number(),
+        respiratoryRate: z.number(),
+      }),
+    })
+    .nullable(),
+  sleep: z
+    .object({
+      lastNight: z
+        .object({
+          date: z.string(),
+          durationMinutes: z.number(),
+          deepPct: z.number(),
+          remPct: z.number(),
+          lightPct: z.number(),
+          awakePct: z.number(),
+        })
+        .nullable(),
+      sleepDebt: z.number(),
+    })
+    .nullable(),
+  strain: z.object({
+    dailyStrain: z.number(),
+    acuteLoad: z.number(),
+    chronicLoad: z.number(),
+    workloadRatio: z.number().nullable(),
+    date: z.string().nullable(),
+  }),
+  sleepNeed: sleepNeedOutputSchema.nullable(),
+  anomalies: anomalyCheckOutputSchema.nullable(),
+  latestDate: z.string().nullable(),
+});
+
+export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
 
 export const mobileDashboardRouter = router({
   dashboard: cachedProtectedQuery(CacheTTL.SHORT)
     .input(z.object({ endDate: endDateSchema }))
+    .output(mobileDashboardOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
       const { endDate } = input;
       const tz = ctx.timezone;
@@ -388,14 +428,17 @@ export const mobileDashboardRouter = router({
 
       const yesterdayStr = new Date(anchorDate.getTime() - 86400000).toISOString().slice(0, 10);
 
-      const sleepNeedResult: SleepNeedResult = {
-        baselineMinutes,
-        strainDebtMinutes,
-        accumulatedDebtMinutes: Math.round(accumulatedDebt),
-        totalNeedMinutes,
-        recentNights,
-        canRecommend: nightsByDate.has(yesterdayStr),
-      };
+      const sleepNeedResult: SleepNeedResult | null =
+        sleepBaselineRows.length > 0
+          ? {
+              baselineMinutes,
+              strainDebtMinutes,
+              accumulatedDebtMinutes: Math.round(accumulatedDebt),
+              totalNeedMinutes,
+              recentNights,
+              canRecommend: nightsByDate.has(yesterdayStr),
+            }
+          : null;
 
       // 4. Strain (Acute/Chronic) — daily loads come from ClickHouse, indexed by metric date
       const acuteLoad = metricsRows
