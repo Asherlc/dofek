@@ -201,69 +201,77 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep summary */}
-      {!isLoading && lastNight && (
+      {!isLoading && (
         <Animated.View
           entering={FadeInUp.delay(160)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
+          {lastNight ? (
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push("/sleep")}>
+              <Card title="Last Night">
+                <SleepBar
+                  durationMinutes={lastNight.durationMinutes}
+                  deepPercentage={lastNight.deepPct}
+                  remPercentage={lastNight.remPct}
+                  lightPercentage={lastNight.lightPct}
+                  awakePercentage={lastNight.awakePct}
+                />
+                {sleepDebt > 0 && (
+                  <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
+                )}
+              </Card>
+            </TouchableOpacity>
+          ) : (
             <Card title="Last Night">
-              <SleepBar
-                durationMinutes={lastNight.durationMinutes}
-                deepPercentage={lastNight.deepPct}
-                remPercentage={lastNight.remPct}
-                lightPercentage={lastNight.lightPct}
-                awakePercentage={lastNight.awakePct}
-              />
-              {sleepDebt > 0 && (
-                <Text style={styles.sleepDebt}>{formatSleepDebtInline(sleepDebt)}</Text>
-              )}
+              <Text style={styles.noDataText}>No sleep data</Text>
             </Card>
-          </TouchableOpacity>
+          )}
         </Animated.View>
       )}
 
       {/* Sleep Coach */}
-      {!isLoading && sleepNeed && (
+      {!isLoading && (sleepNeed || !lastNight) && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Coach">
-            {sleepNeed.canRecommend ? (
+            {sleepNeed == null ? (
+              <Text style={styles.noDataText}>No sleep data</Text>
+            ) : sleepNeed.canRecommend ? (
               <>
                 <Text style={styles.sleepNeedTotal}>
                   {formatDurationMinutes(sleepNeed.totalNeedMinutes)}
                 </Text>
                 <Text style={styles.sleepNeedSubtitle}>recommended tonight</Text>
+                <View style={styles.sleepNeedBreakdown}>
+                  <View style={styles.sleepNeedRow}>
+                    <Text style={styles.sleepNeedLabel}>Baseline need</Text>
+                    <Text style={styles.sleepNeedValue}>
+                      {formatDurationMinutes(sleepNeed.baselineMinutes)}
+                    </Text>
+                  </View>
+                  <View style={styles.sleepNeedRow}>
+                    <Text style={styles.sleepNeedLabel}>Strain debt</Text>
+                    <Text style={styles.sleepNeedValue}>
+                      +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+                    </Text>
+                  </View>
+                  <View style={styles.sleepNeedRow}>
+                    <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
+                    <Text style={styles.sleepNeedValue}>
+                      +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
+                    </Text>
+                  </View>
+                </View>
               </>
             ) : (
               <Text style={styles.sleepNeedMissing}>
                 Need last night's sleep for recommendation
               </Text>
             )}
-            <View style={styles.sleepNeedBreakdown}>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Baseline need</Text>
-                <Text style={styles.sleepNeedValue}>
-                  {formatDurationMinutes(sleepNeed.baselineMinutes)}
-                </Text>
-              </View>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Strain debt</Text>
-                <Text style={styles.sleepNeedValue}>
-                  +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-                </Text>
-              </View>
-              <View style={styles.sleepNeedRow}>
-                <Text style={styles.sleepNeedLabel}>Accumulated debt</Text>
-                <Text style={styles.sleepNeedValue}>
-                  +{formatDurationMinutes(Math.round(sleepNeed.accumulatedDebtMinutes * 0.25))}
-                </Text>
-              </View>
-            </View>
           </Card>
         </Animated.View>
       )}
@@ -425,6 +433,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.orange,
     marginTop: 4,
+  },
+  noDataText: {
+    fontSize: 15,
+    color: colors.textTertiary,
   },
   // Anomaly banner
   anomalyBanner: {

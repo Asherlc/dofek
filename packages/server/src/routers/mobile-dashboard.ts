@@ -367,14 +367,17 @@ export const mobileDashboardRouter = router({
 
       const yesterdayStr = new Date(anchorDate.getTime() - 86400000).toISOString().slice(0, 10);
 
-      const sleepNeedResult: SleepNeedResult = {
-        baselineMinutes,
-        strainDebtMinutes,
-        accumulatedDebtMinutes: Math.round(accumulatedDebt),
-        totalNeedMinutes,
-        recentNights,
-        canRecommend: nightsByDate.has(yesterdayStr),
-      };
+      const sleepNeedResult: SleepNeedResult | null =
+        sleepBaselineRows.length > 0
+          ? {
+              baselineMinutes,
+              strainDebtMinutes,
+              accumulatedDebtMinutes: Math.round(accumulatedDebt),
+              totalNeedMinutes,
+              recentNights,
+              canRecommend: nightsByDate.has(yesterdayStr),
+            }
+          : null;
 
       // 4. Strain (Acute/Chronic) — daily loads come from ClickHouse, indexed by metric date
       const acuteLoad = metricsRows

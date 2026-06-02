@@ -190,6 +190,33 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("LAST NIGHT")).toBeTruthy();
   });
 
+  it("shows sleep no-data states without default numbers when previous night sleep is missing", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: {
+        lastNight: null,
+        sleepDebt: 0,
+      },
+      sleepNeed: {
+        baselineMinutes: 480,
+        strainDebtMinutes: 0,
+        accumulatedDebtMinutes: 0,
+        totalNeedMinutes: 480,
+        recentNights: [],
+        canRecommend: false,
+      },
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getByText("No sleep data")).toBeTruthy();
+    expect(screen.getByText("Need last night's sleep for recommendation")).toBeTruthy();
+    expect(screen.queryByText("Baseline need")).toBeNull();
+    expect(screen.queryByText("8h 0m")).toBeNull();
+  });
+
   it("renders all rings when no queries are loading", async () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);

@@ -402,7 +402,7 @@ describe("mobileDashboard.dashboard", () => {
     );
   });
 
-  it("returns null dashboard sections when no metric or sleep rows exist", async () => {
+  it("does not return default sleep coach numbers when no sleep rows exist", async () => {
     const execute = vi.fn();
     execute.mockResolvedValueOnce([]);
     execute.mockResolvedValueOnce([]);
@@ -419,15 +419,7 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.readiness).toBeNull();
     expect(result.sleep?.lastNight).toBeNull();
-    expect(result.sleepNeed).toEqual(
-      expect.objectContaining({
-        baselineMinutes: 480,
-        strainDebtMinutes: 0,
-        accumulatedDebtMinutes: 0,
-        totalNeedMinutes: 480,
-        canRecommend: false,
-      }),
-    );
+    expect(result.sleepNeed).toBeNull();
     expect(result.strain).toEqual({
       dailyStrain: 0,
       acuteLoad: 0,
