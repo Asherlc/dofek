@@ -1,5 +1,10 @@
-require("@formatjs/intl-getcanonicallocales/polyfill.js");
-require("@formatjs/intl-locale/polyfill.js");
+if (typeof Intl.getCanonicalLocales !== "function") {
+  require("@formatjs/intl-getcanonicallocales/polyfill-force.js");
+}
+
+if (typeof Intl.Locale !== "function") {
+  require("@formatjs/intl-locale/polyfill-force.js");
+}
 
 if (typeof Intl.PluralRules !== "function") {
   require("@formatjs/intl-pluralrules/polyfill-force.js");

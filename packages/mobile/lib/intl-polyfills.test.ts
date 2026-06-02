@@ -39,14 +39,29 @@ describe("installIntlPolyfills", () => {
 
   it("keeps the native NumberFormat implementation when formatToParts exists", async () => {
     vi.resetModules();
+    const originalGetCanonicalLocales = Object.getOwnPropertyDescriptor(
+      Intl,
+      "getCanonicalLocales",
+    );
+    const originalLocale = Object.getOwnPropertyDescriptor(Intl, "Locale");
     const originalNumberFormat = Object.getOwnPropertyDescriptor(Intl, "NumberFormat");
+    const nativeGetCanonicalLocales = Intl.getCanonicalLocales;
+    const nativeLocale = Intl.Locale;
     const nativeNumberFormat = Intl.NumberFormat;
 
     try {
       await import("./intl-polyfills.js");
 
+      expect(Intl.getCanonicalLocales).toBe(nativeGetCanonicalLocales);
+      expect(Intl.Locale).toBe(nativeLocale);
       expect(Intl.NumberFormat).toBe(nativeNumberFormat);
     } finally {
+      if (originalGetCanonicalLocales) {
+        Object.defineProperty(Intl, "getCanonicalLocales", originalGetCanonicalLocales);
+      }
+      if (originalLocale) {
+        Object.defineProperty(Intl, "Locale", originalLocale);
+      }
       if (originalNumberFormat) {
         Object.defineProperty(Intl, "NumberFormat", originalNumberFormat);
       }
