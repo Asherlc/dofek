@@ -8,6 +8,7 @@ const AUTH_ERROR_PATTERNS = [
   // like {"error":"unauthorized"} that are often endpoint-specific failures.
   /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i,
   /\bre-authenticate\b/i,
+  /\bre-connect\b/i,
   /\btoken expired\b/i,
   /\bsession expired\b/i,
   /\bauthentication failed\b/i,

@@ -345,7 +345,25 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
+      expect(screen.getByText("Reconnect")).toBeTruthy();
       expect(screen.getByText("Re-authorize")).toBeTruthy();
+      expect(screen.queryByText("Sync")).toBeNull();
+      expect(screen.queryByText("Full sync")).toBeNull();
+    });
+
+    it("renders Reconnect for providers whose expired tokens were deleted", async () => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...authorizedProvider, authorized: false, needsReauth: true }],
+        isLoading: false,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Reconnect")).toBeTruthy();
+      expect(screen.queryByText("Connect")).toBeNull();
+      expect(screen.queryByText("Sync")).toBeNull();
+      expect(screen.queryByText("Full sync")).toBeNull();
     });
 
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {

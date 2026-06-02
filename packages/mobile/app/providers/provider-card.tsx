@@ -52,8 +52,8 @@ function statusLabel(authStatus: AuthStatus): string {
   }
 }
 
-export function providerActionLabel(authStatus: AuthStatus): "Sync" | "Connect" {
-  return authStatus === "connected" ? "Sync" : "Connect";
+export function providerActionLabel(authStatus: AuthStatus): "Sync" | "Connect" | "Reconnect" {
+  return authStatus === "connected" ? "Sync" : authStatus === "expired" ? "Reconnect" : "Connect";
 }
 
 function formatDuration(ms: number): string {
