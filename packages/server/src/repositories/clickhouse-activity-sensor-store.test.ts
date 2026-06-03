@@ -21,7 +21,7 @@ describe("ClickHouseActivitySensorStore", () => {
     ],
   };
 
-  it("queries linked and ambient samples inside the activity window", async () => {
+  it("queries activity-keyed scalar samples and location samples inside the activity window", async () => {
     const { store, query } = makeStore([
       {
         recorded_at: "2024-01-15 10:00:00.000",
@@ -42,7 +42,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(query).toHaveBeenCalledWith(
       expect.objectContaining({
         format: "JSONEachRow",
-        query: expect.stringContaining("analytics.deduped_sensor"),
+        query: expect.stringContaining("analytics.activity_sensor_sample"),
         query_params: expect.objectContaining({
           activityIds: window.memberActivityIds,
           userId: window.userId,
@@ -53,6 +53,7 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).not.toContain("fitness.metric_stream");
     expect(queryText).not.toContain("fitness.deduped_sensor");
+    expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
     expect(queryText).toContain("analytics.deduped_location");
   });

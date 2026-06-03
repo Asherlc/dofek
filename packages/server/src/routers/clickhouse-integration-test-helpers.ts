@@ -293,8 +293,10 @@ const analyticsBuildOrder = [
   "analytics.v_body_measurement",
   "analytics.v_daily_metrics",
   "analytics.provider_stats",
+  "analytics.deduped_activities",
   "analytics.resting_heart_rate_sleep_window",
   "analytics.deduped_location",
+  "analytics.activity_sensor_sample",
   "analytics.activity_summary",
   "analytics.activity_trend_daily",
 ] as const;
@@ -466,6 +468,15 @@ member_activity_ids Array(UUID),
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at DateTime64(9, 'UTC')`,
+    activity_sensor_sample: `activity_id UUID,
+user_id UUID,
+recorded_at DateTime64(6, 'UTC'),
+recorded_date Date,
+channel String,
+scalar Nullable(Float32),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
     activity_summary: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -524,13 +535,70 @@ activity_count UInt64`,
     return null;
   }
   const engine =
-    shortViewName === "deduped_activities" ? "ReplacingMergeTree(refresh_version)" : "MergeTree";
-  const orderBy = shortViewName === "deduped_activities" ? "(user_id, activity_id)" : "tuple()";
+    shortViewName === "deduped_activities" || shortViewName === "activity_sensor_sample"
+      ? "ReplacingMergeTree(refresh_version)"
+      : "MergeTree";
+  const orderBy =
+    shortViewName === "deduped_activities"
+      ? "(user_id, activity_id)"
+      : shortViewName === "activity_sensor_sample"
+        ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
+        : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
 ENGINE = ${engine}
 ORDER BY ${orderBy}`;
+}
+
+function buildTestDedupedActivitiesSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `SELECT
+  id AS activity_id,
+  provider_id,
+  user_id,
+  activity_type,
+  started_at,
+  ended_at,
+  source_name,
+  name,
+  notes,
+  timezone,
+  raw,
+  now64(9, 'UTC') AS source_synced_at,
+  source_providers,
+  source_external_ids,
+  member_activity_ids,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(9, 'UTC') AS refreshed_at
+FROM ${databases.analytics}.v_activity`;
+}
+
+function buildTestActivitySensorSampleSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH current_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    started_at,
+    ended_at
+  FROM ${databases.analytics}.deduped_activities FINAL
+  WHERE is_deleted = 0
+)
+SELECT
+  current_activity.activity_id AS activity_id,
+  samples.user_id AS user_id,
+  samples.recorded_at AS recorded_at,
+  samples.recorded_date AS recorded_date,
+  samples.channel AS channel,
+  samples.scalar AS scalar,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  samples.is_deleted AS is_deleted,
+  now64(9) AS refreshed_at
+FROM ${databases.analytics}.deduped_sensor AS samples
+INNER JOIN current_activity
+  ON current_activity.user_id = samples.user_id
+ AND samples.recorded_at >= current_activity.started_at
+ AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
 }
 
 function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -830,10 +898,22 @@ async function bootstrapClickHouseTestSchema(
   for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
     await client.command({ query: statement });
   }
-  const dedupedActivitiesTableStatement = buildTestAnalyticsTableStatement(
-    "analytics.deduped_activities",
-  );
-  await client.command({ query: dedupedActivitiesTableStatement });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.deduped_activities
+AS
+${buildTestDedupedActivitiesSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_sample
+AS
+${buildTestActivitySensorSampleSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 }
 

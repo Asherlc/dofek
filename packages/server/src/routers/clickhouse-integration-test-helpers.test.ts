@@ -94,6 +94,13 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".activity_vo2max_estimate"),
       ),
     ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_sensor_sample"),
+      ),
+    ).toBe(true);
 
     clickHouseMocks.command.mockClear();
 
@@ -199,6 +206,14 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".deduped_sensor") &&
+          command.includes("FROM analytics_test_"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".activity_sensor_sample") &&
           command.includes("FROM analytics_test_"),
       ),
     ).toBe(true);
