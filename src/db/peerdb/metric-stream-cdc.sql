@@ -39,7 +39,7 @@ WITH TABLE MAPPING
 )
 WITH (
   do_initial_copy = false,
-  max_batch_size = 1000000,
+  max_batch_size = 100000,
   sync_interval = 60,
   publication_name = 'peerdb_metric_stream_no_imu',
   soft_delete = true
@@ -84,9 +84,12 @@ WITH TABLE MAPPING
 )
 WITH (
   do_initial_copy = {{FITNESS_RAW_ANALYTICS_DO_INITIAL_COPY}},
-  max_batch_size = 1000000,
+  max_batch_size = 100000,
   sync_interval = 60,
   publication_name = 'peerdb_metric_stream_publication',
+  snapshot_num_rows_per_partition = 100000,
+  snapshot_max_parallel_workers = 1,
+  snapshot_num_tables_in_parallel = 1,
   soft_delete = true
 );
 
@@ -117,9 +120,12 @@ WITH TABLE MAPPING
 )
 WITH (
   do_initial_copy = {{PROVIDER_INVENTORY_RAW_ANALYTICS_DO_INITIAL_COPY}},
-  max_batch_size = 1000000,
+  max_batch_size = 100000,
   sync_interval = 60,
   publication_name = 'peerdb_metric_stream_publication',
+  snapshot_num_rows_per_partition = 100000,
+  snapshot_max_parallel_workers = 1,
+  snapshot_num_tables_in_parallel = 1,
   soft_delete = true
 );
 
@@ -138,8 +144,11 @@ WITH TABLE MAPPING
 )
 WITH (
   do_initial_copy = {{SENSOR_PRIORITY_RAW_ANALYTICS_DO_INITIAL_COPY}},
-  max_batch_size = 1000000,
+  max_batch_size = 100000,
   sync_interval = 60,
   publication_name = 'peerdb_metric_stream_publication',
+  snapshot_num_rows_per_partition = 100000,
+  snapshot_max_parallel_workers = 1,
+  snapshot_num_tables_in_parallel = 1,
   soft_delete = true
 );

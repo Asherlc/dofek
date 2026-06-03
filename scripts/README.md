@@ -36,6 +36,10 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 - `exact-versions.sh`: Ensures all dependencies in `package.json` use exact versions (no `^` or `~`).
 - `migration-policy.ts`: Checks changed deploy migration SQL for inline backfills, refreshes, and other long-running data work that must live in resumable jobs instead.
 - `generate-icons.mjs`: Script to generate app icons for web and mobile.
+- `check-clickhouse-cdc.ts`: Fails loudly when required PeerDB replication slots
+  are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
+  mirrors have stale `_peerdb_synced_at` values.
+  - Usage: `pnpm check:clickhouse-cdc`
 
 ## Reverse Engineering (WHOOP)
 
