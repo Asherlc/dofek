@@ -7,8 +7,7 @@ Infrastructure (OCI) using the **Always Free** Ampere A1 shape
 
 This root is **isolated** from the primary `deploy/` root: it uses a local
 backend and the `oracle/oci` provider. The primary `deploy/` root manages
-Cloudflare plus staging Hetzner resources; `deploy/review-apps/` manages
-per-PR Hetzner servers.
+Cloudflare resources; `deploy/review-apps/` manages per-PR Hetzner servers.
 
 ## What it provisions
 
@@ -54,8 +53,7 @@ Unlike Hetzner (which deploys over `ssh://root@`), OCI's Ubuntu image disables
 root SSH, so the remote Docker context connects as the `ubuntu` user. cloud-init
 adds `ubuntu` to the `docker` group so it can reach the daemon socket without
 sudo. When invoking the `Deploy Web Stack` workflow against this host, pass
-`ssh_user: ubuntu` (the production deploy default is also `ubuntu`; staging
-callers pass `root` explicitly).
+`ssh_user: ubuntu` (the production deploy default is also `ubuntu`).
 
 The instance trusts two SSH keys (mirroring Hetzner): the personal 1Password key
 for manual access and the CI deploy key (pair of the `DEPLOY_SSH_KEY` GitHub
@@ -77,8 +75,7 @@ pass it as `server_host` with `ssh_user: ubuntu` and
 `deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
 CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
 single-user free-tier deployment does not need. The 24 GB node has ample room
-for the core app + PeerDB CDC + ClickHouse + Postgres, so unlike staging it
-does not tighten CPU.
+for the core app + PeerDB CDC + ClickHouse + Postgres.
 
 The historical Hetzner-to-Oracle migration notes live in
 [`docs/oracle-migration.md`](../../docs/oracle-migration.md).

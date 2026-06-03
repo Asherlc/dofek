@@ -8,8 +8,8 @@ host provisioned by `deploy/oracle-free/`, mounted at `/mnt/dofek-data`.
 
 - Production: monitor and expand the OCI data volume managed in
   `deploy/oracle-free/`.
-- Staging: monitor the Hetzner staging volume
-  `hcloud_volume.dofek_staging_data`, mounted through `/mnt/dofek-data`.
+- Staging: disabled; the main `deploy/` Terraform root no longer manages a
+  staging server or volume.
 - Review apps: disposable Hetzner servers; destroy stale review apps instead of
   expanding them unless a larger review-app server type is intentionally chosen.
 
@@ -38,7 +38,5 @@ Also alert on storage-specific early warning signals:
 ## Upgrade Notes
 
 For production, resize the OCI data volume in `deploy/oracle-free/` and grow
-the filesystem on the mounted device. For staging, adjust
-`staging_data_volume_size_gb` in the main `deploy/` root and apply Terraform.
-Do not proceed if Terraform plans to replace the active host instead of resizing
-the intended volume.
+the filesystem on the mounted device. Do not proceed if Terraform plans to
+replace the active host instead of resizing the intended volume.

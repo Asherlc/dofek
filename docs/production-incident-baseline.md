@@ -9721,6 +9721,27 @@ new incremental tables are populated.
 - Remaining risk: Provider result messages are still stored for display/log
   history, but auth classification no longer depends on parsing those messages.
 
+### 2026-06-03 production deploy applied retired staging Terraform
+
+- Symptoms: `Deploy Web Production / Deploy Infra / Terraform Apply` failed
+  during production deploy run `26911239600`.
+- User impact: Production deploy was blocked before stack rollout because the
+  shared Terraform apply failed.
+- Evidence: The failed command was `terraform apply -auto-approve
+  -lock-timeout=5m` in `.github/workflows/deploy-terraform.yml`. The first
+  fatal line was `Error: error during placement (resource_unavailable,
+  b5ca6fefbd58e21717194baa8e723212)` while creating
+  `hcloud_server.dofek_staging` in `deploy/server.tf`.
+- Root cause: The main production Terraform root still managed the retired
+  Hetzner staging server, volume, provisioners, staging DNS records, and
+  GitHub Actions staging output even though staging deploys were disabled.
+- Fix / mitigation: Removed staging from the main `deploy/` Terraform root,
+  deleted the unused staging stack override, removed staging deploy workflow
+  outputs/selection, and updated deployment docs to mark staging disabled.
+- Remaining risk: The next Terraform apply will reconcile the removed staging
+  resources in state. Review apps still use the separate
+  `deploy/review-apps/` Terraform root and remain independent of this change.
+
 ### 2026-06-03 Mobile Settings native SVG image crash
 
 - Symptoms: Sentry issue `DOFEK-MOBILE-R` recorded one production fatal

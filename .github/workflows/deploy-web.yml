@@ -42,7 +42,6 @@ jobs:
     uses: ./.github/workflows/deploy-web-environment.yml
     with:
       environment_name: production
-      server_host_source: production
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
       image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
