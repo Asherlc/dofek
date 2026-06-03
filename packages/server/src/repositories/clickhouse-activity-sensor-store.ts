@@ -94,6 +94,24 @@ function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
   `;
 }
 
+function activityStreamSamplesSql(channelPredicate = "1 = 1"): string {
+  return `
+    WITH activity_samples AS (
+      SELECT
+        recorded_at,
+        channel,
+        scalar
+      FROM analytics.activity_sensor_sample
+      WHERE user_id = {userId:UUID}
+        AND activity_id IN {activityIds:Array(UUID)}
+        AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
+        AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
+        AND is_deleted = 0
+        AND ${channelPredicate}
+    )
+  `;
+}
+
 export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   readonly #client: ClickHouseActivitySensorClient;
 
@@ -356,7 +374,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
     const result = await this.#client.query<StreamPointRow>({
       query: `
-        ${dedupedSamplesSql("channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')")}
+        ${activityStreamSamplesSql("channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')")}
         , location_samples AS (
           SELECT recorded_at, lat, lng
           FROM analytics.deduped_location
@@ -366,7 +384,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
         ),
         sample_times AS (
-          SELECT recorded_at FROM deduped_samples
+          SELECT recorded_at FROM activity_samples
           UNION DISTINCT
           SELECT recorded_at FROM location_samples
         ),
@@ -378,7 +396,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             maxIf(scalar, channel = 'speed') AS speed,
             maxIf(scalar, channel = 'cadence') AS cadence,
             maxIf(scalar, channel = 'altitude') AS altitude
-          FROM deduped_samples
+          FROM activity_samples
           GROUP BY recorded_at
         )
         SELECT
