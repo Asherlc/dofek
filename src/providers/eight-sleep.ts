@@ -15,7 +15,7 @@ import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import { AccessTokenExpiredError } from "./auth-errors.ts";
+import { AccessTokenExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -96,7 +96,7 @@ export class EightSleepProvider implements SyncProvider {
       const userIdMatch = stored.scopes?.match(/userId:(\S+)/);
       const userId = userIdMatch?.[1];
       if (!userId) {
-        throw new Error("Eight Sleep user ID not found — re-authenticate");
+        throw new ProviderStoredIdentityMissingError("Eight Sleep", "user ID");
       }
 
       // Eight Sleep has no refresh tokens — user must re-authenticate when expired

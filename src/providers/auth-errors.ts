@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const providerAuthFailureReasons = [
   "access_token_expired",
   "refresh_token_revoked",
@@ -7,6 +9,8 @@ export const providerAuthFailureReasons = [
 ] as const;
 
 export type ProviderAuthFailureReason = (typeof providerAuthFailureReasons)[number];
+
+export const providerAuthFailureReasonSchema = z.enum(providerAuthFailureReasons);
 
 export class ProviderAuthError extends Error {
   readonly authFailureReason: ProviderAuthFailureReason;
@@ -53,6 +57,18 @@ export class ProviderAuthorizationFailedError extends ProviderAuthError {
 export class ProviderAuthenticationFailedError extends ProviderAuthError {
   constructor(providerName: string, options?: ErrorOptions) {
     super("authentication_failed", `${providerName} authentication failed.`, options);
+  }
+}
+
+export class ProviderStoredIdentityMissingError extends ProviderAuthError {
+  constructor(providerName: string, identityName: string, options?: ErrorOptions) {
+    super("authentication_failed", `${providerName} ${identityName} not found.`, options);
+  }
+}
+
+export class ProviderStoredIdentityInvalidError extends ProviderAuthError {
+  constructor(message: string, options?: ErrorOptions) {
+    super("authentication_failed", message, options);
   }
 }
 

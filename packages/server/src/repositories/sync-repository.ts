@@ -1,5 +1,8 @@
 import type { Database } from "dofek/db";
-import type { ProviderAuthFailureReason } from "dofek/providers/auth-errors";
+import {
+  type ProviderAuthFailureReason,
+  providerAuthFailureReasonSchema,
+} from "dofek/providers/auth-errors";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -21,15 +24,7 @@ const lastSyncRowSchema = z.object({
 const latestErrorRowSchema = z.object({
   provider_id: z.string(),
   error_message: z.string().nullable(),
-  auth_failure_reason: z
-    .enum([
-      "access_token_expired",
-      "refresh_token_revoked",
-      "session_expired",
-      "authorization_failed",
-      "authentication_failed",
-    ])
-    .nullable(),
+  auth_failure_reason: providerAuthFailureReasonSchema.nullable(),
   synced_at: z.coerce.date(),
 });
 

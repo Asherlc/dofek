@@ -8,6 +8,7 @@ import {
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
+import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
@@ -164,12 +165,21 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       const connectedProviderIds = new Set(
         connectedProviders.map((provider) => provider.providerId),
       );
+      const tokenUpdatedAtMap = new Map(
+        connectedProviders.map((provider) => [provider.providerId, provider.updatedAt]),
+      );
       const lastSyncMap = new Map(
         lastSyncs.map((provider) => [provider.providerId, provider.lastSynced]),
       );
       const authErrorProviderIds = new Set(
         latestErrors
-          .filter((provider) => provider.authFailureReason !== null)
+          .filter((provider) =>
+            hasCurrentProviderAuthFailure(
+              provider.authFailureReason,
+              provider.syncedAt,
+              tokenUpdatedAtMap.get(provider.providerId),
+            ),
+          )
           .map((provider) => provider.providerId),
       );
 

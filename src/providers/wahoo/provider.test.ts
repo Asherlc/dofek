@@ -109,7 +109,7 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
         const authHeader = request.headers.get("Authorization");
         // First call with expired token fails
         if (authHeader === "Bearer expired-access") {
-          return HttpResponse.json({ error: "Unauthorized" }, { status: 401 });
+          return HttpResponse.json({ error: "Access token has expired" }, { status: 401 });
         }
         // Second call with refreshed token succeeds
         if (authHeader === "Bearer refreshed-access") {
@@ -160,7 +160,7 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
     setupEnv();
     server.use(
       http.delete(`${WAHOO_API_BASE}/v1/permissions`, () => {
-        return HttpResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return HttpResponse.json({ error: "Access token has expired" }, { status: 401 });
       }),
     );
 

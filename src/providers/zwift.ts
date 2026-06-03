@@ -8,7 +8,11 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
+import {
+  ProviderAuthenticationFailedError,
+  ProviderStoredIdentityInvalidError,
+  ProviderStoredIdentityMissingError,
+} from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -64,8 +68,8 @@ export class ZwiftProvider implements SyncProvider {
     const profile = await client.getAuthenticatedProfile();
     const athleteId = String(profile.id);
     if (!this.#isNumericAthleteId(athleteId)) {
-      throw new Error(
-        `Zwift authenticated profile ID is not numeric (${athleteId}) — re-authenticate`,
+      throw new ProviderStoredIdentityInvalidError(
+        `Zwift authenticated profile ID is not numeric (${athleteId}).`,
       );
     }
     return athleteId;
@@ -145,9 +149,7 @@ export class ZwiftProvider implements SyncProvider {
 
     if (!athleteId) {
       logger.error(`[zwift] Stored scopes missing athlete ID: ${JSON.stringify(stored.scopes)}`);
-      throw new Error(
-        `Zwift athlete ID not found in scopes (${stored.scopes ?? "null"}) — re-authenticate`,
-      );
+      throw new ProviderStoredIdentityMissingError("Zwift", "athlete ID");
     }
 
     let accessToken = stored.accessToken;

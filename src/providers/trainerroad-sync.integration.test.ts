@@ -213,6 +213,7 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("username not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 

@@ -334,11 +334,13 @@ describe("syncRouter", () => {
                 provider_id: "polar",
                 error_message: "Polar authorization failed while syncing exercises",
                 auth_failure_reason: "authorization_failed",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
               {
                 provider_id: "wahoo",
                 error_message: "Network timeout after 30s",
                 auth_failure_reason: null,
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
             ]),
         },
@@ -382,6 +384,7 @@ describe("syncRouter", () => {
                 error_message:
                   "Withings authorization revoked — re-connect the provider to resume syncing.",
                 auth_failure_reason: "refresh_token_revoked",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
             ]),
         },

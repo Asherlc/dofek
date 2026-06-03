@@ -91,6 +91,7 @@ describe("TrainerRoadProvider", () => {
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("username not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.duration).toBeGreaterThanOrEqual(0);
     expect(result.duration).toBeLessThan(60_000);
   });

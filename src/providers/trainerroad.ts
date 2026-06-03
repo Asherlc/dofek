@@ -4,7 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import { ProviderSessionExpiredError } from "./auth-errors.ts";
+import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -89,7 +89,7 @@ export class TrainerRoadProvider implements SyncProvider {
       const scope = stored.scopes ?? "";
       username = scope.startsWith(usernamePrefix) ? scope.slice(usernamePrefix.length) : "";
       if (!username) {
-        throw new Error("TrainerRoad username not found — re-authenticate");
+        throw new ProviderStoredIdentityMissingError("TrainerRoad", "username");
       }
 
       // TrainerRoad cookies expire — user must re-authenticate when expired

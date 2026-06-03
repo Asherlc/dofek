@@ -85,6 +85,7 @@ describe("ZwiftProvider", () => {
     const provider = new ZwiftProvider();
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("athlete ID not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
   it("self-heals missing scopes by extracting athleteId from JWT sub claim", async () => {
