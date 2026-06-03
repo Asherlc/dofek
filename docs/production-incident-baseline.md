@@ -7,6 +7,40 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-02: CI Stryker shard aborted on Docker Hub service-container pull timeout
+
+### Symptoms
+
+- One `Test / Stryker` matrix shard failed during "Initialize containers", before
+  any mutation testing ran. No mutants were evaluated; the artifact upload step
+  warned "No files were found with the provided path: reports/mutation/".
+
+### Evidence
+
+- First fatal log line:
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/": context
+  deadline exceeded` while pulling `timescale/timescaledb-ha:pg18.3-ts2.26.4-all`.
+- Three pull retries all timed out, then the job aborted.
+- Sibling Stryker shards in the same workflow run pulled the identical image
+  successfully, confirming a transient Docker Hub network issue rather than a bad
+  tag or config.
+
+### Root cause
+
+- GitHub Actions provisions `services:` containers via the runner's Docker daemon
+  during job initialization, before any step runs. The anonymous Docker Hub pull
+  hit a transient network timeout.
+
+### Remaining risk / follow-up
+
+- `services:` image pulls cannot be routed through the repo's existing
+  `mirror.gcr.io` buildx mirror (that only applies to buildx-driven pulls), and the
+  daemon mirror cannot be configured mid-job. A durable fix would start the DB in a
+  step via `docker compose ... --wait` behind the gcr mirror (matching the e2e job),
+  but that is a sizable rewrite of the heaviest jobs with port/credential cascades
+  and cannot be fully validated locally. Deferred unless the flake recurs; if it
+  does, prioritize the step-started-DB approach. Not fixed by re-run alone.
+
 ## 2026-05-31: Training, Activities, and Sleep Analytics Empty
 
 ### Symptoms
