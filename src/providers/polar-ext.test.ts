@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TokenSet } from "../auth/oauth.ts";
 import { logger } from "../logger.ts";
 import {
   mapPolarSport,
@@ -8,7 +9,6 @@ import {
   parsePolarSleep,
 } from "./polar/parsers.ts";
 import { PolarProvider } from "./polar/provider.ts";
-import type { TokenSet } from "../auth/oauth.ts";
 import type {
   PolarDailyActivity,
   PolarExercise,
@@ -555,7 +555,9 @@ describe("PolarProvider — revokeExistingTokens", () => {
     await revoke(oldTokens);
 
     expect(deleteCalled).toBe(false);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Could not discover Polar user ID"));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Could not discover Polar user ID"),
+    );
   });
 });
 

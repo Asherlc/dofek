@@ -297,7 +297,11 @@ describe("CorosProvider.sync() (integration)", () => {
     const queryParams: { start?: string | null; end?: string | null } = {};
     server.use(
       http.post("https://open.coros.com/oauth2/token", () =>
-        HttpResponse.json({ access_token: "refreshed-token", refresh_token: "r", expires_in: 7200 }),
+        HttpResponse.json({
+          access_token: "refreshed-token",
+          refresh_token: "r",
+          expires_in: 7200,
+        }),
       ),
       http.get("https://open.coros.com/v2/coros/sport/list", ({ request }) => {
         const url = new URL(request.url);
@@ -406,9 +410,9 @@ describe("CorosProvider.sync() (integration)", () => {
       .select()
       .from(sleepSession)
       .where(eq(sleepSession.providerId, "coros"));
-    expect(sleeps.filter((s) => (s.externalId ?? "").startsWith("coros-sleep-2026040")).length).toBe(
-      0,
-    );
+    expect(
+      sleeps.filter((s) => (s.externalId ?? "").startsWith("coros-sleep-2026040")).length,
+    ).toBe(0);
   });
 
   it("updates distanceKm on daily re-sync", async () => {
