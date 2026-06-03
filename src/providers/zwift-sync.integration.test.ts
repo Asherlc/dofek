@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -107,8 +108,11 @@ interface ZwiftMockOptions {
   fitnessDataError?: boolean;
   activityDetailError?: boolean;
   activitiesUnauthorizedOnce?: boolean;
+  activitiesRateLimited?: boolean;
   paginateActivities?: boolean;
   omitRefreshTokenInRefresh?: boolean;
+  noFitnessDataUrl?: boolean;
+  profileId?: number;
 }
 
 function zwiftHandlers(opts: ZwiftMockOptions = {}) {
@@ -144,7 +148,9 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }
       const activityId = Number(params.activityId);
-      const detail = opts.activityDetails?.[activityId] ?? fakeZwiftActivityDetail(activityId);
+      const detail =
+        opts.activityDetails?.[activityId] ??
+        fakeZwiftActivityDetail(activityId, { hasFitnessData: !opts.noFitnessDataUrl });
       return HttpResponse.json(detail);
     }),
 
@@ -160,13 +166,21 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     }),
 
     // Activity list (paginated)
-    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", () => {
+    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", ({ request }) => {
       activityListRequestCount++;
+      if (opts.activitiesRateLimited) {
+        return new HttpResponse("Too Many Requests", {
+          status: 429,
+          headers: { "Retry-After": "120" },
+        });
+      }
       if (opts.activitiesUnauthorizedOnce && activityListRequestCount === 1) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
       pageRequestCount++;
-      if (opts.paginateActivities && pageRequestCount > 1) {
+      // Honor the offset query param so pagination is exercised page by page.
+      const offset = Number(new URL(request.url).searchParams.get("start") ?? "0");
+      if (opts.paginateActivities && (pageRequestCount > 1 || offset > 0)) {
         return HttpResponse.json([]);
       }
       return HttpResponse.json(activities);
@@ -175,7 +189,7 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     // Profile endpoint
     http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId", () => {
       return HttpResponse.json({
-        id: 42,
+        id: opts.profileId ?? 42,
         firstName: "Test",
         lastName: "User",
         ftp: 260,
@@ -554,6 +568,192 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");
     expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId when activities return 429", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    server.use(...zwiftHandlers({ activitiesRateLimited: true }));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    if (!(cause instanceof ProviderRateLimitError)) {
+      throw new Error("expected sync error cause to be a ProviderRateLimitError");
+    }
+    expect(cause.providerId).toBe("zwift");
+    expect(cause.statusCode).toBe(429);
+    expect(cause.retryAfterSeconds).toBe(120);
+    // The default error message embeds the providerId, so a `{}` options mutant
+    // would produce "undefined API rate limit exceeded".
+    expect(result.errors[0]?.message).toContain("zwift API rate limit exceeded");
+  });
+
+  it("records a non-negative, fast duration on the sync result", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("records a non-negative, fast duration when token resolution fails early", async () => {
+    const { oauthToken } = await import("../db/schema.ts");
+    await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "zwift"));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("skips stream fetch when activity detail has no fitness data URL", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    const zwiftActivities = [
+      fakeZwiftActivitySummary({
+        id: 700001,
+        id_str: "700001",
+        startDate: "2026-05-01T10:00:00Z",
+      }),
+    ];
+
+    server.use(
+      ...zwiftHandlers({
+        activities: zwiftActivities,
+        paginateActivities: true,
+        noFitnessDataUrl: true,
+      }),
+    );
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+
+    // Activity is still counted, and no stream error is produced because the
+    // missing fullDataUrl short-circuits the stream fetch entirely.
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("persists the canonical numeric athlete ID when stored scopes hold a non-numeric ID", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    });
+
+    server.use(...zwiftHandlers({ activities: [], paginateActivities: true, profileId: 42 }));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    // Self-heal should rewrite the stored scopes to the numeric profile ID.
+    const { loadTokens } = await import("../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "zwift");
+    expect(tokens?.scopes).toBe("athleteId:42");
+  });
+
+  it("does not rewrite scopes when the stored numeric athlete ID is already canonical", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    // If the numeric-ID short circuit in #canonicalizeAthleteId were broken, the
+    // sync would try to GET /api/profiles/me; we intentionally do NOT register a
+    // profile handler so any such call fails MSW's unhandled-request guard.
+    server.use(
+      http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", () =>
+        HttpResponse.json([]),
+      ),
+    );
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const { loadTokens } = await import("../db/tokens.ts");
+    const tokens = await loadTokens(ctx.db, "zwift");
+    expect(tokens?.scopes).toBe("athleteId:42");
+  });
+
+  it("paginates through multiple activity pages using an increasing offset", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    // Page 0 (start=0): 20 activities, page 1 (start=20): 1 activity, page 2+: empty.
+    const pageZero = Array.from({ length: 20 }, (_, i) =>
+      fakeZwiftActivitySummary({
+        id: 800000 + i,
+        id_str: String(800000 + i),
+        startDate: "2026-06-01T10:00:00Z",
+      }),
+    );
+    const pageOne = [
+      fakeZwiftActivitySummary({
+        id: 800100,
+        id_str: "800100",
+        startDate: "2026-06-02T10:00:00Z",
+      }),
+    ];
+
+    server.use(
+      http.get(
+        "https://us-or-rly101.zwift.com/api/profiles/:profileId/activities",
+        ({ request }) => {
+          const start = Number(new URL(request.url).searchParams.get("start") ?? "0");
+          if (start === 0) return HttpResponse.json(pageZero);
+          if (start === 20) return HttpResponse.json(pageOne);
+          return HttpResponse.json([]);
+        },
+      ),
+      http.get("https://us-or-rly101.zwift.com/api/activities/:activityId", ({ params }) =>
+        HttpResponse.json(
+          fakeZwiftActivityDetail(Number(params.activityId), { hasFitnessData: false }),
+        ),
+      ),
+    );
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    // 20 from page 0 + 1 from page 1 = 21 activities synced across pages.
+    expect(result.recordsSynced).toBe(21);
   });
 
   it("preserves existing refresh token when refresh response omits refresh_token", async () => {

@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -306,5 +307,246 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
     expect(result.recordsSynced).toBe(0);
+    // Early-return duration must be a small elapsed time (Date.now() - start),
+    // not Date.now() + start which would be ~2 epochs.
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("builds the workout request from since, user id, and offset", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:99887",
+    });
+
+    const requestedUrls: string[] = [];
+    const apiKeyHeaders: Array<string | null> = [];
+
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", ({ request }) => {
+        requestedUrls.push(request.url);
+        apiKeyHeaders.push(request.headers.get("Api-Key"));
+        // Page 1 has workouts and a next link; page 2 is empty (terminates loop).
+        if (requestedUrls.length === 1) {
+          return HttpResponse.json({
+            _embedded: {
+              workouts: [
+                fakeWorkout({ id: "mmf-req", start_datetime: "2026-06-02T08:00:00+00:00" }),
+              ],
+            },
+            _links: { next: [{ href: "/v7.1/workout/?offset=40" }] },
+            total_count: 1,
+          });
+        }
+        return HttpResponse.json({
+          _embedded: { workouts: [] },
+          _links: {},
+          total_count: 0,
+        });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const since = new Date("2026-05-01T00:00:00Z");
+    await provider.sync(ctx.db, since);
+
+    // formatDate(since) must produce the ISO string used as started_after.
+    const firstUrl = new URL(requestedUrls[0] ?? "");
+    expect(firstUrl.searchParams.get("started_after")).toBe(since.toISOString());
+    // user id parsed out of scopes "user_id:99887" via the regex.
+    expect(firstUrl.searchParams.get("user")).toBe("99887");
+    // offset starts at 0 and increments by 40 (not decrements) between pages.
+    expect(firstUrl.searchParams.get("offset")).toBe("0");
+    const secondUrl = new URL(requestedUrls[1] ?? "");
+    expect(secondUrl.searchParams.get("offset")).toBe("40");
+    // Api-Key header carries the client id from MAPMYFITNESS_CLIENT_ID.
+    expect(apiKeyHeaders[0]).toBe("test-client-id");
+  });
+
+  it("defaults the user query param to '-' when scopes lack a user_id", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read write",
+    });
+
+    const requestedUrls: string[] = [];
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", ({ request }) => {
+        requestedUrls.push(request.url);
+        return HttpResponse.json({
+          _embedded: { workouts: [] },
+          _links: {},
+          total_count: 0,
+        });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
+
+    const url = new URL(requestedUrls[0] ?? "");
+    expect(url.searchParams.get("user")).toBe("-");
+  });
+
+  it("stops paginating after an empty workout page and skips empty external ids", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    let requestCount = 0;
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
+        requestCount++;
+        if (requestCount === 1) {
+          // One valid workout plus one with no external id (must be skipped).
+          const valid = fakeWorkout({
+            id: "mmf-valid",
+            start_datetime: "2026-06-10T08:00:00+00:00",
+          });
+          // _links present but no `self` array: `_links?.self?.[0]?.id` must yield ""
+          // (removing the `?.` after `self` would throw on `self[0]`).
+          const noSelf = {
+            _links: {},
+            name: "No Self Workout",
+            start_datetime: "2026-06-11T08:00:00+00:00",
+            start_locale_timezone: "UTC",
+            activity_type: "Run",
+            aggregates: { active_time_total: 1200 },
+          };
+          // _links absent entirely: removing the `?.` after `_links` would throw
+          // on `_links.self`.
+          const noLinks = {
+            name: "No Links Workout",
+            start_datetime: "2026-06-12T08:00:00+00:00",
+            start_locale_timezone: "UTC",
+            activity_type: "Run",
+            aggregates: { active_time_total: 1200 },
+          };
+          return HttpResponse.json({
+            _embedded: { workouts: [valid, noSelf, noLinks] },
+            _links: { next: [{ href: "/v7.1/workout/?offset=40" }] },
+            total_count: 3,
+          });
+        }
+        if (requestCount === 2) {
+          // Empty page that STILL advertises a next link: the length-0 break must
+          // stop the loop here regardless of the next link.
+          return HttpResponse.json({
+            _embedded: { workouts: [] },
+            _links: { next: [{ href: "/v7.1/workout/?offset=80" }] },
+            total_count: 0,
+          });
+        }
+        return HttpResponse.json({ _embedded: { workouts: [] }, _links: {}, total_count: 0 });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-06-01T00:00:00Z"));
+
+    // Loop fetched page 1 and the empty page, then broke (no 3rd request).
+    expect(requestCount).toBe(2);
+    // Only the workout with an external id was inserted.
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "mapmyfitness"));
+    expect(rows.some((row) => row.externalId === "mmf-valid")).toBe(true);
+    expect(rows.some((row) => row.externalId === "")).toBe(false);
+  });
+
+  it("treats a response without _embedded as an empty page", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
+        // No _embedded present: `response._embedded?.workouts ?? []` must
+        // resolve to [] rather than throwing.
+        return HttpResponse.json({ _links: {}, total_count: 0 });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-06-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("tolerates a page that has workouts but no _links object", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    let requestCount = 0;
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
+        requestCount++;
+        // Workouts present so the loop reaches `hasMore = !!response._links?.next?.length`,
+        // but _links is entirely absent: without the `?.` on _links this throws.
+        return HttpResponse.json({
+          _embedded: {
+            workouts: [
+              fakeWorkout({ id: "mmf-nolinks", start_datetime: "2026-06-20T08:00:00+00:00" }),
+            ],
+          },
+          total_count: 1,
+        });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-06-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    // Missing _links.next means hasMore is false, so the loop runs exactly once.
+    expect(requestCount).toBe(1);
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId on 429", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
+        return HttpResponse.text("rate limited", { status: 429 });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-06-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    if (!(cause instanceof ProviderRateLimitError)) {
+      throw new Error(`expected ProviderRateLimitError cause, got ${String(cause)}`);
+    }
+    expect(cause.providerId).toBe("mapmyfitness");
   });
 });

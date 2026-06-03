@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -118,5 +118,53 @@ describe("TrainerRoadProvider", () => {
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.errors[0]?.message).toContain("re-authenticate via Settings");
+  });
+
+  describe("token expiry boundary", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function tokenDb(expiresAt: Date) {
+      return {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  providerId: "trainerroad",
+                  accessToken: "cookie",
+                  refreshToken: null,
+                  expiresAt,
+                  scopes: "username:testuser",
+                },
+              ]),
+            }),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+            onConflictDoUpdate: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        execute: vi.fn().mockResolvedValue([]),
+      };
+    }
+
+    it("treats a token expiring exactly now as expired (boundary: <= not <)", async () => {
+      // Freeze time so `new Date()` inside sync equals the token's expiresAt exactly.
+      const now = new Date("2026-06-01T12:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+
+      const provider = new TrainerRoadProvider();
+      const result = await provider.sync(tokenDb(new Date(now.getTime())), new Date("2026-01-01"));
+
+      expect(result.errors[0]?.message).toContain("re-authenticate via Settings");
+    });
   });
 });
