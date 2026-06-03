@@ -266,6 +266,41 @@ describe("processSyncJob", () => {
       expect.any(ProviderRateLimitError),
       expect.anything(),
     );
+
+    // The rate-limited provider counts as completed (1/1 → 100%) and its status
+    // is reported as running with the retry message.
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: { status: "running", message: expect.stringContaining("retry scheduled") },
+      },
+      percentage: 100,
+    });
+
+    // The 429 is logged as an error with the provider's message and the elapsed
+    // duration (0 under frozen time — guards against Date.now() + syncStart).
+    expect(mockLogSync).toHaveBeenCalledWith(mockDb, {
+      providerId: "garmin",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Garmin API rate limit exceeded (429): limited",
+      durationMs: 0,
+      userId: "user-1",
+    });
+
+    // Metrics are tagged with the provider, not an empty options object.
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncDuration.record).toHaveBeenCalledWith(0, {
+      provider: "garmin",
+      data_type: "sync",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+    });
     vi.useRealTimers();
   });
 
