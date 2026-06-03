@@ -2,12 +2,12 @@ import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { foodEntry, oauthToken, userProfile } from "../db/schema.ts";
-import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import { failOnUnhandledExternalRequest } from "../test/msw.ts";
-import type { FatSecretFoodEntriesResponse } from "./fatsecret/parsing.ts";
-import { FatSecretProvider } from "./fatsecret.ts";
+import { foodEntry, oauthToken, userProfile } from "../../db/schema.ts";
+import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { ensureProvider, saveTokens } from "../../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
+import type { FatSecretFoodEntriesResponse } from "./parsing.ts";
+import { FatSecretProvider } from "./provider.ts";
 
 // ============================================================
 // Fake FatSecret API responses

@@ -24,7 +24,7 @@
     "./providers/withings": "./src/providers/withings.ts",
     "./providers/whoop": "./src/providers/whoop/provider.ts",
     "./providers/peloton": "./src/providers/peloton.ts",
-    "./providers/fatsecret": "./src/providers/fatsecret.ts",
+    "./providers/fatsecret": "./src/providers/fatsecret/provider.ts",
     "./providers/apple-health/import": "./src/providers/apple-health/import.ts",
     "./providers/apple-health/provider": "./src/providers/apple-health/provider.ts",
     "./providers/apple-health/db-insertion": "./src/providers/apple-health/db-insertion.ts",

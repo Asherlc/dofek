@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FatSecretProvider } from "./fatsecret.ts";
+import { FatSecretProvider } from "./provider.ts";
 
 // Unit tests for the FatSecretProvider wiring (validation + auth setup).
 // OAuth signing lives in ./fatsecret/oauth1.test.ts, the API client and

@@ -1,27 +1,23 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { getOAuthRedirectUri } from "../auth/oauth.ts";
-import type { SyncDatabase } from "../db/index.ts";
-import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
-import { getTokenUserId } from "../db/token-user-context.ts";
-import { ensureProvider } from "../db/tokens.ts";
-import { logger } from "../logger.ts";
+import { getOAuthRedirectUri } from "../../auth/oauth.ts";
+import type { SyncDatabase } from "../../db/index.ts";
+import { nutrientAmountEntriesFromLegacyFields } from "../../db/nutrient-columns.ts";
+import { foodEntry, foodEntryNutrient } from "../../db/schema.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
+import { ensureProvider } from "../../db/tokens.ts";
+import { logger } from "../../logger.ts";
+import type { SyncError, SyncProvider, SyncResult } from "../types.ts";
 import {
   ACCESS_TOKEN_URL,
   AUTHORIZE_URL,
   exchangeForAccessToken,
   fatsecretApi,
   getRequestToken,
-} from "./fatsecret/client.ts";
-import type { OAuth1Credentials } from "./fatsecret/oauth1.ts";
-import {
-  fatSecretFoodEntriesResponseSchema,
-  inferCategory,
-  parseFoodEntries,
-} from "./fatsecret/parsing.ts";
-import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
+} from "./client.ts";
+import type { OAuth1Credentials } from "./oauth1.ts";
+import { fatSecretFoodEntriesResponseSchema, inferCategory, parseFoodEntries } from "./parsing.ts";
 
 type FetchFn = typeof globalThis.fetch;
 
@@ -120,7 +116,7 @@ export class FatSecretProvider implements SyncProvider {
     await ensureProvider(db, this.id, this.name);
 
     // Load stored OAuth 1.0 tokens
-    const { loadTokens } = await import("../db/tokens.ts");
+    const { loadTokens } = await import("../../db/tokens.ts");
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
       return {
