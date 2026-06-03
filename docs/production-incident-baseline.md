@@ -9629,3 +9629,27 @@ new incremental tables are populated.
 - Remaining risk: The exact production device runtime was not reproduced
   locally. A regression test simulates the missing `formatToParts` method and
   verifies the mobile startup polyfill restores grouped number parts.
+
+### 2026-06-03 CI Docker Hub pull timeouts
+
+- Symptoms: PR CI failed in `Test / Integration Tests` and `Test / E2E Tests
+  (Web)` before running test assertions.
+- User impact: PR #1233 could not get green CI because required test jobs failed
+  during Docker image setup.
+- Evidence: Integration tests failed while starting the `postgres` service with
+  `Docker pull failed with exit code 1` after repeated Docker Hub
+  `registry-1.docker.io` timeouts for
+  `timescale/timescaledb-ha:pg18.3-ts2.26.4-all`. Web E2E failed while
+  booting BuildKit with `Error response from daemon: Get
+  "https://registry-1.docker.io/v2/": net/http: request canceled while waiting
+  for connection`.
+- Root cause: The Test workflow and E2E compose stack depended on live Docker
+  Hub pulls for service images and the BuildKit bootstrap image, and GitHub's
+  hosted runner could not reach Docker Hub within the Docker client timeout.
+- Fix / mitigation: Pointed affected Test workflow service images, E2E compose
+  service images, and BuildKit bootstrap configuration at confirmed
+  `mirror.gcr.io` image references.
+- Remaining risk: This addresses the observed Docker Hub setup failures for
+  Test workflow paths. Other non-test workflows may still use Docker Hub image
+  references and should be reviewed if they fail with the same first fatal
+  line.
