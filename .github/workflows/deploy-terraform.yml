@@ -15,9 +15,6 @@ on:
       server_host:
         description: "Oracle production server host/IP for Docker SSH deploys"
         value: ${{ jobs.terraform.outputs.server_host }}
-      staging_server_host:
-        description: "Terraform-managed staging server host/IP for Docker SSH deploys"
-        value: ${{ jobs.terraform.outputs.staging_server_host }}
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -37,7 +34,6 @@ jobs:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
     outputs:
       server_host: ${{ steps.tf_outputs.outputs.server_host }}
-      staging_server_host: ${{ steps.tf_outputs.outputs.staging_server_host }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -53,9 +49,6 @@ jobs:
       - name: Terraform Apply
         working-directory: deploy
         env:
-          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-          TF_VAR_ssh_private_key: ${{ secrets.DEPLOY_SSH_KEY }}
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
@@ -77,7 +70,6 @@ jobs:
           ORACLE_SERVER_HOST: ${{ vars.ORACLE_SERVER_HOST }}
         run: |
           echo "server_host=$ORACLE_SERVER_HOST" >> "$GITHUB_OUTPUT"
-          echo "staging_server_host=$(terraform output -raw staging_server_ip)" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

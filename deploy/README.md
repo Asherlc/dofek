@@ -4,21 +4,20 @@ Infrastructure-as-code and deployment configuration for Dofek.
 
 ## Architecture
 
-Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle Cloud Infrastructure (OCI) Always Free with **Cloudflare** for DNS, R2 storage, and CDN. Hetzner is still used for staging and per-PR review apps only.
+Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle Cloud Infrastructure (OCI) Always Free with **Cloudflare** for DNS, R2 storage, and CDN. Hetzner is still used for per-PR review apps only; the old staging environment is disabled and is not managed by the main Terraform root.
 
-- **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. Staging runs on a Hetzner Cloud ARM64 `dofek-staging` `cax11` server. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
+- **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. Review apps run on PR-scoped Hetzner servers from `deploy/review-apps/`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
   - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. It replicates `metric_stream` and raw fitness tables into `postgres_fitness.*` for analytics read models.
-  - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`. Staging uses a Terraform-managed Hetzner Block Storage volume (`staging_data_volume_size_gb`, default `100GB`) attached with `automount=true`.
-  - **Stable mount alias**: Staging Terraform maintains `/mnt/dofek-data` as a symlink to the attached Hetzner volume mount path (`/mnt/HC_Volume_<id>`). OCI cloud-init mounts the production data volume directly at `/mnt/dofek-data`.
+  - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
   - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
   - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
 - **Networking**:
-  - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS. `hcloud_firewall` allows the same ports for staging and review apps.
+  - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS. Review-app Hetzner firewalls are managed in `deploy/review-apps/`.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
   - **Reverse Proxy**: Traefik handles SSL termination via Let's Encrypt (DNS-01 challenge) and routes traffic based on `Host()` rules declared in `deploy.labels` on each swarm service. Traefik's `providers.swarm` watches the Docker API for service changes.
   - **Review app ingress**: Traefik also watches `/opt/dofek/traefik-dynamic` through the file provider for PR-specific routes like `pr-123.dofek.asherlc.com`.
@@ -32,10 +31,6 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 ## Implementation Details
 
 ### Terraform (`*.tf`)
-- `server.tf`: Defines the staging `hcloud_server` with `cloud-init.yml` for automated setup. The server bootstrap initializes Docker Swarm in cloud-init on fresh provisioning, and idempotent `terraform_data` resources handle post-provision state:
-  - `staging_app_directories_sync`: ensures bind-mount directories such as `/opt/dofek/traefik-dynamic` exist on the live staging host even when cloud-init does not rerun.
-  - (The OTel collector config is no longer synced via Terraform; it is a Docker Swarm config object in `stack.yml` — see "Collector Config Changes".)
-  - `hcloud_volume.dofek_staging_data`: attaches persistent staging block storage; size is controlled by `staging_data_volume_size_gb`.
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
 - `review-apps/`: Separate Terraform root for PR-scoped Hetzner review servers and the corresponding Traefik dynamic route files on the shared front door. See [docs/review-apps.md](../docs/review-apps.md).
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
@@ -52,7 +47,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
 - PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, `max_locks_per_transaction=4096` for large Timescale chunk scans, and logical replication settings needed by ClickHouse change-data capture.
 - ClickHouse has a 3500 MiB container memory limit, a 1 CPU Swarm limit, and a checked-in 3 GiB `max_server_memory_usage` cap so large analytics queries fail or throttle inside ClickHouse instead of triggering host-level OOM kills or CPU-starving SSH/Docker on the single-node host. It also loads checked-in server profile settings from `deploy/clickhouse/users.d/` and server settings from `deploy/clickhouse/config.d/`; the production stack mounts these as Docker Swarm configs so app-managed geospatial `Nullable(Point)` columns, bounded memory, and seven-day system-log TTL retention work without manual server changes. Docker Swarm config contents are immutable, so changing a checked-in config file must also rotate the config key in `deploy/stack.yml` (for example `clickhouse_memory_limits_3g`) instead of reusing the same config name with new contents.
-- All production entrypoint modes that run dbt use `--threads 1 --select $DBT_SAFE_MODELS` to avoid concurrent or unsafe ClickHouse model builds on the single-node host. `analytics-worker` also has a 0.5 CPU Swarm limit and currently runs the dbt-native microbatched `sensor_scalar_sample` and `deduped_sensor` models plus the dirty-keyed `activity_vo2max_estimate` model every 15 minutes. `analytics.activity_summary` is served from the incremental `analytics.activity_summary_rows` table through a thin view so dashboard workload routes do not recompute activity/sample joins on demand. Failed dbt runs sleep before retrying instead of exiting into an immediate Swarm restart loop. Staging applies `deploy/stack.staging.yml` to disable heavier dev/ops UIs and tighten CPU limits for web, worker, analytics-worker, training-export-worker, and ClickHouse on the 4 GB host while keeping the analytics worker enabled.
+- All production entrypoint modes that run dbt use `--threads 1 --select $DBT_SAFE_MODELS` to avoid concurrent or unsafe ClickHouse model builds on the single-node host. `analytics-worker` also has a 0.5 CPU Swarm limit and currently runs the dbt-native microbatched `sensor_scalar_sample` and `deduped_sensor` models plus the dirty-keyed `activity_vo2max_estimate` model every 15 minutes. `analytics.activity_summary` is served from the incremental `analytics.activity_summary_rows` table through a thin view so dashboard workload routes do not recompute activity/sample joins on demand. Failed dbt runs sleep before retrying instead of exiting into an immediate Swarm restart loop.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`.
@@ -71,13 +66,10 @@ Deployments are push-based from CI, using a remote Docker context over SSH. CI n
 
 ### Staging
 
-Staging is a production-shaped replica on its own Hetzner server, block storage volume, Docker stack, DNS records, and Infisical environment.
-
-- App: `https://staging.dofek.asherlc.com`
-- Stack: `dofek-staging`
-- Infisical environment: `staging`
-
-The staging workflow uses the same `deploy/stack.yml` as production, with host rules and public URLs passed through `.github/workflows/deploy-web.yml`. Staging deployments are currently disabled in **Deploy Web**; successful main CI and manual deploys update production only. See [docs/staging.md](../docs/staging.md).
+The old Hetzner staging environment is disabled. The main `deploy/` Terraform
+root no longer provisions a staging server, volume, DNS records, or deploy
+workflow output; successful main CI and manual deploys update production only.
+See [docs/staging.md](../docs/staging.md).
 
 ### SSH Access (Debugging Only)
 
@@ -92,11 +84,6 @@ Host dofek-server
   IdentityFile ~/.ssh/id_ed25519_infisical
   IdentitiesOnly yes
 
-Host dofek-staging
-  HostName <staging_server_ip>
-  User root
-  IdentityFile ~/.ssh/id_ed25519_infisical
-  IdentitiesOnly yes
 ```
 
 Quick checks:
@@ -107,7 +94,7 @@ ssh dofek-server 'df -h'
 ssh dofek-server 'docker system df'
 ```
 
-If direct SSH fails with `Permission denied`, verify you are using the matching host alias and user (`ubuntu` for production OCI, `root` for staging Hetzner) or pass `-i ~/.ssh/id_ed25519_infisical` explicitly.
+If direct SSH fails with `Permission denied`, verify you are using the matching host alias and user (`ubuntu` for production OCI) or pass `-i ~/.ssh/id_ed25519_infisical` explicitly.
 
 ### Release Unit (Important)
 
@@ -142,7 +129,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
 ```
 
 1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
-2. **Terraform apply** (if infra changed): updates Cloudflare and staging Hetzner infrastructure. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
+2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
       The template escapes embedded newlines only when `secret.IsMultilineEncodingEnabled` is true.
@@ -152,7 +139,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       - Must include `PEERDB_UI_NEXTAUTH_SECRET` as a dedicated high-entropy PeerDB UI session-signing secret.
       - Must include `AUTHENTIK_OUTPOST_TOKEN` for the local management UI proxy outpost.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
-   2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://<user>@<host>` (`ubuntu` for production OCI, `root` for staging Hetzner).
+   2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.
    4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
       The workflow also ensures pinned third-party stack images exist on the

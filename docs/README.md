@@ -64,9 +64,9 @@ Cross-provider reverse-engineering references:
 | [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |
 | [production-incident-baseline.md](production-incident-baseline.md) | Baseline knowledge from production incidents and recurring failure patterns. |
 | [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
-| [staging.md](staging.md) | Production-shaped staging environment and deploy workflow. |
+| [staging.md](staging.md) | Disabled staging environment notes and re-enable requirements. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
-| [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production and Hetzner staging. |
+| [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
 | [oracle-migration.md](oracle-migration.md) | Historical production migration notes for the Hetzner-to-Oracle move. |
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |

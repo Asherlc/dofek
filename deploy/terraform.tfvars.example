@@ -1,7 +1,3 @@
-hcloud_token          = "your-hetzner-api-token" # staging only
-ssh_public_key        = "ssh-ed25519 AAAA..."
 cloudflare_api_token  = "your-cloudflare-api-token"
 cloudflare_account_id = "your-cloudflare-account-id"
 oracle_server_host    = "1.2.3.4"
-# ssh_allowed_ips                  = ["1.2.3.4/32"] # Restrict staging SSH to your IP (recommended)
-# staging_data_volume_size_gb      = 100            # Hetzner block storage for staging persistent data

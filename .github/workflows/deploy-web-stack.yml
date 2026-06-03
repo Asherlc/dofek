@@ -194,13 +194,7 @@ jobs:
           PEERDB_HOST_RULE_INPUT: ${{ inputs.peerdb_host_rule }}
           STACK_OVERRIDE_INPUT: ${{ inputs.stack_override }}
         run: |
-          # deploy/stack.staging.yml overlays staging-only adjustments
-          # (e.g. scaling heavy dev/ops UIs to zero on the 4 GB box).
-          if [ "$DEPLOY_ENVIRONMENT" = "staging" ]; then
-            STACK_FILE_FLAGS="-c deploy/stack.yml -c deploy/stack.staging.yml"
-          else
-            STACK_FILE_FLAGS="-c deploy/stack.yml"
-          fi
+          STACK_FILE_FLAGS="-c deploy/stack.yml"
 
           # Optional caller-supplied override (e.g. deploy/stack.oracle.yml for
           # the Always Free OCI host, which scales operator UIs to zero).

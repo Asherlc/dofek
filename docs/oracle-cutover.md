@@ -9,10 +9,10 @@ The production cutover from Hetzner to Oracle Cloud is complete.
 - Production deploys use `ssh_user: ubuntu` and apply
   `deploy/stack.oracle.yml` over `deploy/stack.yml`.
 - Production DNS records in `deploy/dns.tf` point at `var.oracle_server_host`.
-- The main `deploy/` Terraform root no longer manages a production Hetzner
-  server or production Hetzner volume.
-- Hetzner remains in use for staging (`hcloud_server.dofek_staging`) and
-  per-PR review app servers (`deploy/review-apps/`).
+- The main `deploy/` Terraform root no longer manages Hetzner servers,
+  Hetzner volumes, or staging DNS records.
+- Hetzner remains in use for per-PR review app servers
+  (`deploy/review-apps/`).
 
 ## Rollback
 
