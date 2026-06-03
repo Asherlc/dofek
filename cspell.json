@@ -28,6 +28,7 @@
     "timescale",
     "timescaledb",
     "peerdb",
+    "peerflow",
     "pgcrypto",
     "PGDATA",
     "ClickHouse",
