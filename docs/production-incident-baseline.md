@@ -9675,3 +9675,44 @@ new incremental tables are populated.
   structured reason for reauthorization state.
 - Remaining risk: Provider result messages are still stored for display/log
   history, but auth classification no longer depends on parsing those messages.
+
+### 2026-06-03 Sleep dashboard stale because raw fitness CDC slot was lost
+
+- Symptoms: Sleep data on the dashboard appeared stale even though provider sync
+  was still running.
+- User impact: Web/mobile sleep views that read `analytics.v_sleep` did not show
+  the latest sleep rows.
+- Evidence: Production Postgres `fitness.sleep_session` had 131 rows with
+  latest `started_at = 2026-06-03 05:45:22.34+00` and
+  `ended_at = 2026-06-03 15:28:10.79+00`. ClickHouse
+  `postgres_fitness.sleep_session` had 129 rows with latest
+  `_peerdb_synced_at = 2026-06-02 17:31:00` and latest
+  `started_at = 2026-06-02 03:23:19.94`. `analytics.v_sleep` was stale through
+  the June 1 sleep date / June 2 start time. `pg_replication_slots` showed
+  `peerflow_slot_dofek_fitness_raw_analytics`,
+  `peerflow_slot_dofek_metric_stream_analytics`, and
+  `peerflow_slot_dofek_sensor_priority_raw_analytics` with
+  `wal_status = lost`. PeerDB logs reported `SQLSTATE 55000`:
+  `can no longer access replication slot`.
+- Root cause: The PeerDB flow worker stopped advancing multiple logical
+  replication slots long enough for ongoing WAL churn to exceed Postgres'
+  `max_slot_wal_keep_size = 4GB`; Postgres invalidated the slots with
+  `wal_removed`. The stale raw fitness slot meant Postgres continued receiving
+  sleep rows while the ClickHouse mirror used by `analytics.v_sleep` stopped
+  advancing.
+- Fix / mitigation: Dropped and recreated the lost raw fitness and sensor
+  priority PeerDB mirrors, dropped the orphaned lost metric-stream slot,
+  truncated the small affected ClickHouse destination tables, and reran the
+  checked-in CDC setup script. The metric-stream mirror also had an orphaned
+  Temporal workflow after the catalog row was gone, so that workflow was
+  terminated before rerunning setup. Verified all four production slots were
+  active with `wal_status = reserved`, `postgres_fitness.sleep_session` had the
+  June 3 sleep row, and `analytics.v_sleep` again returned the June 3 WHOOP
+  sleep session.
+- Remaining risk: The metric-stream mirror was restarted from a fresh slot, but
+  the large metric-stream destination table was not resnapshotted during the
+  sleep fix, so rows from the lost-slot window may need a separate bounded
+  backfill if sensor analytics show a gap. This PR raises production slot
+  retention to 16GB, adds replacement-slot headroom, and lowers PeerDB CDC and
+  initial-snapshot work units to 100,000 rows; the remaining recurrence risk is
+  a future WAL burst or long PeerDB outage that exceeds that bounded budget.

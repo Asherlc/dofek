@@ -369,6 +369,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     );
     expect(peerDbQueries[2]).not.toContain("latitude");
     expect(peerDbQueries[2]).not.toContain("longitude");
+    expect(peerDbQueries[2]).toContain("max_batch_size = 100000");
     expect(peerDbQueries[3]).toContain("TO dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[4]).toContain("TO dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[5]).toContain("TO dofek_clickhouse_postgres_fitness");
@@ -377,6 +378,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
       expect(rawMirrorSql).toContain(`from: fitness.${rawAnalyticsTable}`);
       expect(rawMirrorSql).toContain(`to: ${rawAnalyticsTable}`);
     }
+    expect(rawMirrorSql).toContain("max_batch_size = 100000");
+    expect(rawMirrorSql).toContain("snapshot_num_rows_per_partition = 100000");
+    expect(rawMirrorSql).toContain("snapshot_max_parallel_workers = 1");
+    expect(rawMirrorSql).toContain("snapshot_num_tables_in_parallel = 1");
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
   });
@@ -1202,8 +1207,13 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "exclude: [device_id, source_type, vector, point, metadata]",
     );
     expect(peerDbQueries[4]).toContain("publication_name = 'peerdb_metric_stream_no_imu'");
+    expect(peerDbQueries[4]).toContain("max_batch_size = 100000");
     expect(peerDbQueries[5]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
     expect(peerDbQueries[5]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[5]).toContain("max_batch_size = 100000");
+    expect(peerDbQueries[5]).toContain("snapshot_num_rows_per_partition = 100000");
+    expect(peerDbQueries[5]).toContain("snapshot_max_parallel_workers = 1");
+    expect(peerDbQueries[5]).toContain("snapshot_num_tables_in_parallel = 1");
     expect(peerDbQueries[6]).toContain(
       "CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics",
     );
