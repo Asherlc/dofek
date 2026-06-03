@@ -1,263 +1,244 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TokenSet } from "../auth/oauth.ts";
-import { logger } from "../logger.ts";
-import {
-  mapPolarSport,
-  parsePolarDailyActivity,
-  parsePolarDuration,
-  parsePolarExercise,
-  parsePolarSleep,
-} from "./polar/parsers.ts";
-import { PolarProvider } from "./polar/provider.ts";
-import type {
-  PolarDailyActivity,
-  PolarExercise,
-  PolarNightlyRecharge,
-  PolarSleep,
-} from "./polar/types.ts";
+import type { TokenSet } from "../../auth/oauth.ts";
+import { logger } from "../../logger.ts";
+import { PolarProvider } from "./provider.ts";
+
+async function expectProviderRateLimitError(
+  action: () => Promise<unknown>,
+  providerId: string,
+  retryAfterSeconds: number,
+) {
+  try {
+    await action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId, retryAfterSeconds });
+    return;
+  }
+
+  throw new Error("Expected provider rate-limit error");
+}
 
 // ============================================================
-// Extended Polar tests covering uncovered sport mappings,
-// PolarProvider validate/authSetup, and additional edge cases
+// PolarProvider auth setup
 // ============================================================
 
-describe("mapPolarSport — extended mappings", () => {
-  it("maps pilates", () => {
-    expect(mapPolarSport("PILATES")).toBe("pilates");
+describe("PolarProvider.authSetup", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
   });
 
-  it("maps cross_country_skiing", () => {
-    expect(mapPolarSport("CROSS_COUNTRY_SKIING")).toBe("cross_country_skiing");
+  it("throws when only POLAR_CLIENT_ID is set", () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    delete process.env.POLAR_CLIENT_SECRET;
+
+    const provider = new PolarProvider();
+    expect(() => provider.authSetup()).toThrow(
+      "POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required",
+    );
   });
 
-  it("maps rowing", () => {
-    expect(mapPolarSport("ROWING")).toBe("rowing");
+  it("throws when only POLAR_CLIENT_SECRET is set", () => {
+    delete process.env.POLAR_CLIENT_ID;
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const provider = new PolarProvider();
+    expect(() => provider.authSetup()).toThrow(
+      "POLAR_CLIENT_ID and POLAR_CLIENT_SECRET are required",
+    );
   });
 
-  it("maps elliptical", () => {
-    expect(mapPolarSport("ELLIPTICAL")).toBe("elliptical");
+  it("returns expected OAuth config fields for Polar", () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const provider = new PolarProvider();
+    const setup = provider.authSetup();
+    expect(setup.oauthConfig.scopes).toEqual(["accesslink.read_all"]);
+    expect(setup.oauthConfig.tokenAuthMethod).toBe("basic");
   });
 
-  it("maps mountain_biking", () => {
-    expect(mapPolarSport("MOUNTAIN_BIKING")).toBe("mountain_biking");
+  it("registerWebhook throws the common rate-limit error when Polar throttles", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("try later", { status: 429, headers: { "Retry-After": "75" } });
+
+    const provider = new PolarProvider(fetchFn);
+
+    await expectProviderRateLimitError(
+      () => provider.registerWebhook("https://dofek.example.com/webhook", "verify-token"),
+      "polar",
+      75,
+    );
   });
 
-  it("maps trail_running", () => {
-    expect(mapPolarSport("TRAIL_RUNNING")).toBe("trail_running");
-  });
+  it("exchangeCode uses x_user_id from token response to register with AccessLink", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
 
-  it("maps cross_training", () => {
-    expect(mapPolarSport("CROSS_TRAINING")).toBe("cross_training");
-  });
+    const calledUrls: string[] = [];
+    const registrationBodies: unknown[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      calledUrls.push(`${init?.method ?? "GET"} ${urlString}`);
 
-  it("maps group_exercise", () => {
-    expect(mapPolarSport("GROUP_EXERCISE")).toBe("group_exercise");
-  });
+      // Token exchange — includes x_user_id
+      if (urlString.startsWith("https://polarremote.com/")) {
+        return Response.json({
+          access_token: "new-access-token",
+          refresh_token: "new-refresh-token",
+          expires_in: 3600,
+          x_user_id: 99887766,
+        });
+      }
 
-  it("maps stretching", () => {
-    expect(mapPolarSport("STRETCHING")).toBe("stretching");
-  });
+      // POST /v3/users — register user
+      if (urlString.endsWith("/v3/users") && init?.method === "POST") {
+        if (init.body) registrationBodies.push(JSON.parse(String(init.body)));
+        return new Response(null, { status: 200 });
+      }
 
-  it("maps dance", () => {
-    expect(mapPolarSport("DANCE")).toBe("dance");
-  });
-
-  it("maps martial_arts", () => {
-    expect(mapPolarSport("MARTIAL_ARTS")).toBe("martial_arts");
-  });
-
-  it("maps tennis", () => {
-    expect(mapPolarSport("TENNIS")).toBe("tennis");
-  });
-
-  it("maps basketball", () => {
-    expect(mapPolarSport("BASKETBALL")).toBe("basketball");
-  });
-
-  it("maps soccer", () => {
-    expect(mapPolarSport("SOCCER")).toBe("soccer");
-  });
-
-  it("maps golf", () => {
-    expect(mapPolarSport("GOLF")).toBe("golf");
-  });
-
-  it("maps ice_hockey", () => {
-    expect(mapPolarSport("ICE_HOCKEY")).toBe("ice_hockey");
-  });
-
-  it("maps skiing", () => {
-    expect(mapPolarSport("SKIING")).toBe("skiing");
-  });
-
-  it("maps snowboarding", () => {
-    expect(mapPolarSport("SNOWBOARDING")).toBe("snowboarding");
-  });
-
-  it("maps skating", () => {
-    expect(mapPolarSport("SKATING")).toBe("skating");
-  });
-
-  it("maps rock_climbing", () => {
-    expect(mapPolarSport("ROCK_CLIMBING")).toBe("rock_climbing");
-  });
-
-  it("maps surfing", () => {
-    expect(mapPolarSport("SURFING")).toBe("surfing");
-  });
-
-  it("maps kayaking", () => {
-    expect(mapPolarSport("KAYAKING")).toBe("kayaking");
-  });
-
-  it("maps functional_training", () => {
-    expect(mapPolarSport("FUNCTIONAL_TRAINING")).toBe("functional_fitness");
-  });
-
-  it("maps bootcamp", () => {
-    expect(mapPolarSport("BOOTCAMP")).toBe("bootcamp");
-  });
-
-  it("maps boxing", () => {
-    expect(mapPolarSport("BOXING")).toBe("boxing");
-  });
-
-  it("maps core", () => {
-    expect(mapPolarSport("CORE")).toBe("core");
-  });
-
-  it("maps aqua_fitness", () => {
-    expect(mapPolarSport("AQUA_FITNESS")).toBe("aqua_fitness");
-  });
-
-  it("maps circuit_training", () => {
-    expect(mapPolarSport("CIRCUIT_TRAINING")).toBe("circuit_training");
-  });
-
-  it("maps triathlon", () => {
-    expect(mapPolarSport("TRIATHLON")).toBe("triathlon");
-  });
-
-  it("maps indoor_cycling to indoor_cycling", () => {
-    expect(mapPolarSport("INDOOR_CYCLING")).toBe("indoor_cycling");
-  });
-
-  it("maps indoor_rowing to rowing", () => {
-    expect(mapPolarSport("INDOOR_ROWING")).toBe("rowing");
-  });
-
-  it("maps indoor_running to running", () => {
-    expect(mapPolarSport("INDOOR_RUNNING")).toBe("running");
-  });
-
-  it("maps indoor_walking to walking", () => {
-    expect(mapPolarSport("INDOOR_WALKING")).toBe("walking");
-  });
-
-  it("maps treadmill_running to running", () => {
-    expect(mapPolarSport("TREADMILL_RUNNING")).toBe("running");
-  });
-
-  it("maps stair_climbing to stairmaster", () => {
-    expect(mapPolarSport("STAIR_CLIMBING")).toBe("stairmaster");
-  });
-});
-
-describe("parsePolarDuration — extended edge cases", () => {
-  it("handles fractional hours", () => {
-    expect(parsePolarDuration("PT1.5H")).toBe(5400);
-  });
-
-  it("handles fractional minutes", () => {
-    expect(parsePolarDuration("PT1.5M")).toBe(90);
-  });
-});
-
-describe("parsePolarSleep — edge cases", () => {
-  it("handles zero total in-bed time", () => {
-    const sleep: PolarSleep = {
-      polar_user: "https://www.polar.com/v3/users/12345",
-      date: "2024-06-15",
-      sleep_start_time: "2024-06-14T22:30:00Z",
-      sleep_end_time: "2024-06-14T22:30:00Z", // same start and end
-      device_id: "device-abc",
-      continuity: 0,
-      continuity_class: 0,
-      light_sleep: 0,
-      deep_sleep: 0,
-      rem_sleep: 0,
-      unrecognized_sleep_stage: 0,
-      sleep_score: 0,
-      total_interruption_duration: 0,
-      sleep_charge: 1,
-      sleep_goal_minutes: 480,
-      sleep_rating: 1,
-      hypnogram: {},
+      return Response.json([]);
     };
 
-    const result = parsePolarSleep(sleep);
-    expect(result).not.toHaveProperty("efficiencyPct");
-    expect(result.durationMinutes).toBe(0);
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    const tokens = await setup.exchangeCode("oauth-code");
+
+    expect(tokens.accessToken).toBe("new-access-token");
+    // Should register using x_user_id, not by calling GET /v3/users
+    expect(calledUrls).toContain("POST https://www.polaraccesslink.com/v3/users");
+    expect(calledUrls).not.toContain("GET https://www.polaraccesslink.com/v3/users");
+    expect(registrationBodies[0]).toEqual({ "member-id": "99887766" });
+  });
+
+  it("exchangeCode throws when registration fails", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString.startsWith("https://polarremote.com/")) {
+        return Response.json({
+          access_token: "new-access-token",
+          expires_in: 3600,
+          x_user_id: 12345,
+        });
+      }
+      // POST /v3/users — registration fails
+      if (urlString.endsWith("/v3/users") && init?.method === "POST") {
+        return new Response("Server Error", { status: 500 });
+      }
+      return Response.json([]);
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("oauth-code")).rejects.toThrow("registration failed");
+  });
+
+  it("exchangeCode throws when token response is missing x_user_id", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      if (urlString.startsWith("https://polarremote.com/")) {
+        return Response.json({
+          access_token: "new-access-token",
+          expires_in: 3600,
+          // No x_user_id
+        });
+      }
+      return Response.json([]);
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    await expect(setup.exchangeCode("oauth-code")).rejects.toThrow("missing x_user_id");
+  });
+
+  it("revokeExistingTokens deregisters user to free token slot", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const calledUrls: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (
+      url: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const urlString = String(url);
+      calledUrls.push(`${init?.method ?? "GET"} ${urlString}`);
+
+      // GET /v3/users — discover user ID
+      if (urlString.endsWith("/v3/users") && (!init?.method || init.method === "GET")) {
+        return Response.json({ polar_user_id: 12345 });
+      }
+
+      // DELETE /v3/users/12345 — deregister
+      if (urlString.includes("/v3/users/12345") && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+
+      return Response.json([]);
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.revokeExistingTokens) {
+      throw new Error("Expected revokeExistingTokens to be defined");
+    }
+
+    await setup.revokeExistingTokens({
+      accessToken: "old-access-token",
+      refreshToken: null,
+      expiresAt: new Date("2027-01-01"),
+      scopes: "accesslink.read_all",
+    });
+
+    expect(calledUrls).toContain("DELETE https://www.polaraccesslink.com/v3/users/12345");
+  });
+
+  it("revokeExistingTokens does not throw when old token is rejected", async () => {
+    process.env.POLAR_CLIENT_ID = "polar-id";
+    process.env.POLAR_CLIENT_SECRET = "polar-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const provider = new PolarProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.revokeExistingTokens) {
+      throw new Error("Expected revokeExistingTokens to be defined");
+    }
+
+    // Should not throw — revocation is best-effort
+    await setup.revokeExistingTokens({
+      accessToken: "dead-token",
+      refreshToken: null,
+      expiresAt: new Date("2020-01-01"),
+      scopes: null,
+    });
   });
 });
 
-describe("parsePolarExercise — additional mappings", () => {
-  it("handles exercise with duration-only format", () => {
-    const exercise: PolarExercise = {
-      id: "ex-456",
-      upload_time: "2024-06-15T10:00:00Z",
-      polar_user: "https://www.polar.com/v3/users/12345",
-      device: "Polar Vantage M2",
-      start_time: "2024-06-15T06:00:00Z",
-      duration: "PT45M",
-      calories: 300,
-      sport: "YOGA",
-      has_route: false,
-      detailed_sport_info: "Yoga",
-    };
-
-    const result = parsePolarExercise(exercise);
-    expect(result.activityType).toBe("yoga");
-    expect(result.durationSeconds).toBe(2700);
-    expect(result.distanceMeters).toBeUndefined();
-    expect(result.avgHeartRate).toBeUndefined();
-    expect(result.maxHeartRate).toBeUndefined();
-  });
-});
-
-describe("parsePolarDailyActivity — with null recharge fields", () => {
-  it("includes respiratory rate from recharge", () => {
-    const daily: PolarDailyActivity = {
-      polar_user: "user",
-      start_time: "2024-06-15T08:00:00",
-      end_time: "2024-06-15T23:59:59",
-      active_duration: "PT3H11M",
-      inactive_duration: "PT18H23M30S",
-      daily_activity: 89.1,
-      calories: 2000,
-      active_calories: 500,
-      duration: "PT12H",
-      steps: 8000,
-    };
-
-    const recharge: PolarNightlyRecharge = {
-      polar_user: "user",
-      date: "2024-06-15",
-      heart_rate_avg: 50,
-      beat_to_beat_avg: 1000,
-      heart_rate_variability_avg: 70,
-      breathing_rate_avg: 16.2,
-      nightly_recharge_status: 5,
-      ans_charge: 8.5,
-      ans_charge_status: 5,
-    };
-
-    const result = parsePolarDailyActivity(daily, recharge);
-    expect(result.respiratoryRateAvg).toBe(16.2);
-    expect(result.restingHr).toBe(50);
-    expect(result.hrv).toBe(70);
-  });
-});
+// ============================================================
+// PolarProvider — exchangeCode AccessLink registration
+// ============================================================
 
 describe("PolarProvider — exchangeCode AccessLink registration", () => {
   const originalEnv = { ...process.env };
@@ -382,6 +363,10 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
   });
 });
 
+// ============================================================
+// PolarProvider — exchangeCode token request & parsing
+// ============================================================
+
 describe("PolarProvider — exchangeCode token request & parsing", () => {
   const originalEnv = { ...process.env };
 
@@ -482,6 +467,10 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
   });
 });
 
+// ============================================================
+// PolarProvider — revokeExistingTokens
+// ============================================================
+
 describe("PolarProvider — revokeExistingTokens", () => {
   const originalEnv = { ...process.env };
 
@@ -560,6 +549,10 @@ describe("PolarProvider — revokeExistingTokens", () => {
     );
   });
 });
+
+// ============================================================
+// PolarProvider — validate and properties
+// ============================================================
 
 describe("PolarProvider — validate and properties", () => {
   const originalEnv = { ...process.env };
