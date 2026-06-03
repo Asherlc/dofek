@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { TrainerRoadClient } from "trainerroad-client/client";
+import { VeloHeroClient } from "velohero-client/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EightSleepProvider } from "./eight-sleep.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";
 import { parseUltrahumanMetrics, UltrahumanClient, UltrahumanProvider } from "./ultrahuman.ts";
 import { VeloHeroProvider } from "./velohero.ts";
 import { ZwiftProvider } from "./zwift.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 // ============================================================
 // Eight Sleep
@@ -104,10 +110,24 @@ describe("TrainerRoadProvider", () => {
       );
     });
 
-    it("accepts custom fetch function", () => {
+    it("passes custom fetch function through automated login", async () => {
       const mockFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
       const provider = new TrainerRoadProvider(mockFetch);
-      expect(provider.validate()).toBeNull();
+      const signIn = vi.spyOn(TrainerRoadClient, "signIn").mockResolvedValue({
+        authCookie: "trainerroad-cookie",
+        username: "testuser",
+      });
+      vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T00:00:00Z").getTime());
+
+      const tokenSet = await provider.authSetup().automatedLogin?.("test@example.com", "secret");
+
+      expect(signIn).toHaveBeenCalledWith("test@example.com", "secret", mockFetch);
+      expect(tokenSet).toEqual({
+        accessToken: "trainerroad-cookie",
+        refreshToken: null,
+        expiresAt: new Date("2026-01-31T00:00:00Z"),
+        scopes: "username:testuser",
+      });
     });
   });
 });
@@ -159,10 +179,24 @@ describe("VeloHeroProvider", () => {
       );
     });
 
-    it("accepts custom fetch function", () => {
+    it("passes custom fetch function through automated login", async () => {
       const mockFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
       const provider = new VeloHeroProvider(mockFetch);
-      expect(provider.validate()).toBeNull();
+      const signIn = vi.spyOn(VeloHeroClient, "signIn").mockResolvedValue({
+        sessionCookie: "VeloHero_session=velohero-session",
+        userId: "user-456",
+      });
+      vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T00:00:00Z").getTime());
+
+      const tokenSet = await provider.authSetup().automatedLogin?.("test@example.com", "secret");
+
+      expect(signIn).toHaveBeenCalledWith("test@example.com", "secret", mockFetch);
+      expect(tokenSet).toEqual({
+        accessToken: "VeloHero_session=velohero-session",
+        refreshToken: null,
+        expiresAt: new Date("2026-01-02T00:00:00Z"),
+        scopes: "userId:user-456",
+      });
     });
   });
 });

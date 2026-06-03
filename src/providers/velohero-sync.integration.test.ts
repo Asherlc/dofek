@@ -53,10 +53,11 @@ function fakeWorkout(overrides: Partial<FakeVeloHeroWorkout> = {}): FakeVeloHero
   };
 }
 
-function veloheroHandlers(workouts: FakeVeloHeroWorkout[]) {
+function veloheroHandlers(workouts: FakeVeloHeroWorkout[], onRequest?: (url: URL) => void) {
   return [
     // Workouts export
-    http.get("https://app.velohero.com/export/workouts/json", () => {
+    http.get("https://app.velohero.com/export/workouts/json", ({ request }) => {
+      onRequest?.(new URL(request.url));
       return HttpResponse.json({
         workouts,
       });
@@ -105,7 +106,8 @@ describe("VeloHeroProvider.sync() (integration)", () => {
       }),
     ];
 
-    server.use(...veloheroHandlers(workouts));
+    const requestedUrls: URL[] = [];
+    server.use(...veloheroHandlers(workouts, (url) => requestedUrls.push(url)));
 
     const provider = new VeloHeroProvider();
     const since = new Date("2026-02-01T00:00:00Z");
@@ -114,6 +116,11 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     expect(result.provider).toBe("velohero");
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+    expect(requestedUrls).toHaveLength(1);
+    expect(requestedUrls[0]?.searchParams.get("date_from")).toBe("2026-02-01");
+    expect(requestedUrls[0]?.searchParams.get("date_to")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // Verify activity rows
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "velohero"));

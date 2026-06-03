@@ -85,8 +85,9 @@ export class TrainerRoadProvider implements SyncProvider {
         throw new Error("TrainerRoad not connected — authenticate via the web UI");
       }
 
-      const usernameMatch = stored.scopes?.match(/username:(\S+)/);
-      username = usernameMatch?.[1] ?? "";
+      const usernamePrefix = "username:";
+      const scope = stored.scopes ?? "";
+      username = scope.startsWith(usernamePrefix) ? scope.slice(usernamePrefix.length) : "";
       if (!username) {
         throw new Error("TrainerRoad username not found — re-authenticate");
       }

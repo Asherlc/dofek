@@ -61,10 +61,14 @@ function fakeActivity(overrides: Partial<FakeTrainerRoadActivity> = {}): FakeTra
   };
 }
 
-function trainerroadHandlers(activities: FakeTrainerRoadActivity[]) {
+function trainerroadHandlers(
+  activities: FakeTrainerRoadActivity[],
+  onRequest?: (url: URL) => void,
+) {
   return [
     // Activities API
-    http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", () => {
+    http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", ({ request }) => {
+      onRequest?.(new URL(request.url));
       return HttpResponse.json(activities);
     }),
   ];
@@ -109,7 +113,8 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
       }),
     ];
 
-    server.use(...trainerroadHandlers(trActivities));
+    const requestedUrls: URL[] = [];
+    server.use(...trainerroadHandlers(trActivities, (url) => requestedUrls.push(url)));
 
     const provider = new TrainerRoadProvider();
     const since = new Date("2026-02-01T00:00:00Z");
@@ -118,6 +123,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     expect(result.provider).toBe("trainerroad");
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+    expect(requestedUrls).toHaveLength(1);
+    expect(requestedUrls[0]?.pathname).toBe("/app/api/calendar/activities/testuser");
+    expect(requestedUrls[0]?.searchParams.get("startDate")).toBe("2026-02-01");
+    expect(requestedUrls[0]?.searchParams.get("endDate")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // Verify activity rows
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "trainerroad"));
