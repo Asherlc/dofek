@@ -69,9 +69,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/configure-docker-mirror
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
+          driver-opts: |
+            image=mirror.gcr.io/moby/buildkit:buildx-stable-1
           config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
@@ -148,7 +149,7 @@ jobs:
       contents: read
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -451,15 +452,50 @@ jobs:
   test-integration:
     name: Integration Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: mirror.gcr.io/redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      clickhouse:
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: health
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+          --health-cmd "clickhouse-client --password health --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:health@localhost:8123
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: ./.github/actions/configure-docker-mirror
-      - name: Start test databases
-        run: docker compose -f docker-compose.ci.yml up -d --wait
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project integration --coverage
         timeout-minutes: 10
@@ -474,9 +510,6 @@ jobs:
         with:
           name: coverage-integration
           path: coverage/
-      - name: Stop test databases
-        if: always()
-        run: docker compose -f docker-compose.ci.yml down -v
 
   coverage:
     name: Coverage
@@ -556,9 +589,10 @@ jobs:
           df -h /
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec cypress install
-      - uses: ./.github/actions/configure-docker-mirror
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
+          driver-opts: |
+            image=mirror.gcr.io/moby/buildkit:buildx-stable-1
           config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
@@ -801,6 +835,44 @@ jobs:
     if: needs.mutation-prep.outputs.shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    services:
+      postgres:
+        image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: mirror.gcr.io/redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      clickhouse:
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: health
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+          --health-cmd "clickhouse-client --password health --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:health@localhost:8123
@@ -813,9 +885,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/configure-docker-mirror
-      - name: Start test databases
-        run: docker compose -f docker-compose.ci.yml up -d --wait
       - uses: ./.github/actions/setup-node-pnpm
       - name: Run Stryker
         run: pnpm exec stryker run stryker.ci.config.json --mutate "${{ matrix.files }}"
@@ -825,9 +894,6 @@ jobs:
           name: mutation-report-${{ strategy.job-index }}
           path: reports/mutation/
           retention-days: 7
-      - name: Stop test databases
-        if: always()
-        run: docker compose -f docker-compose.ci.yml down -v
 
   mutation-swift:
     name: Swift Mutation Testing

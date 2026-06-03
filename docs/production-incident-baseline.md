@@ -38,16 +38,19 @@ them, and the durability work they suggest.
   shard, confirming it as systemic daemon-level Docker Hub flakiness rather than a
   one-off. Root cause: daemon-level pulls (buildx bootstrap image, `services:`
   containers) bypass the buildkitd `config-inline` mirror.
-- Fix (commit `750b98d9`): added `.github/actions/configure-docker-mirror`, a
-  composite action that points the host Docker daemon at `mirror.gcr.io`, and run
-  it before buildx in the `image-scan` and `test-e2e-web` jobs. Converted the
-  `mutation` and `test-integration` jobs off GitHub `services:` to a
-  `docker-compose.ci.yml` stack started in a step after the mirror is configured,
-  preserving the same credentials/ports so the test env vars are unchanged.
+- Fix: pull every daemon-level image from the `mirror.gcr.io` pull-through cache
+  instead of `registry-1.docker.io`. `services:` images are prefixed with
+  `mirror.gcr.io/` (e.g. `mirror.gcr.io/timescale/timescaledb-ha:...`,
+  `mirror.gcr.io/redis:7-alpine`, `mirror.gcr.io/clickhouse/...`) across the
+  `lint`, `test-integration`, and `mutation` jobs, and the buildx jobs
+  (`image-scan`, `test-e2e-web`) pin the builder image via
+  `driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1` so the
+  buildkit bootstrap pull is mirrored too. (An earlier branch-local attempt used
+  a daemon-mirror composite action plus a `docker-compose.ci.yml` step stack;
+  that was superseded on merge by this simpler image-prefix approach, which keeps
+  GitHub `services:` and needs no extra files.)
 - Remaining risk: depends on `mirror.gcr.io` availability (already relied on
-  repo-wide for buildkitd pulls). The full CI job flow could only be validated by
-  parts locally (compose health, role presence, actionlint/yamllint); the GitHub
-  service-container removal itself is exercised on the next CI run.
+  repo-wide for buildkitd pulls). Exercised end-to-end on the next CI run.
 
 ## 2026-05-31: Training, Activities, and Sleep Analytics Empty
 
@@ -9671,3 +9674,27 @@ new incremental tables are populated.
 - Remaining risk: The exact production device runtime was not reproduced
   locally. A regression test simulates the missing `formatToParts` method and
   verifies the mobile startup polyfill restores grouped number parts.
+
+### 2026-06-03 CI Docker Hub pull timeouts
+
+- Symptoms: PR CI failed in `Test / Integration Tests` and `Test / E2E Tests
+  (Web)` before running test assertions.
+- User impact: PR #1233 could not get green CI because required test jobs failed
+  during Docker image setup.
+- Evidence: Integration tests failed while starting the `postgres` service with
+  `Docker pull failed with exit code 1` after repeated Docker Hub
+  `registry-1.docker.io` timeouts for
+  `timescale/timescaledb-ha:pg18.3-ts2.26.4-all`. Web E2E failed while
+  booting BuildKit with `Error response from daemon: Get
+  "https://registry-1.docker.io/v2/": net/http: request canceled while waiting
+  for connection`.
+- Root cause: The Test workflow and E2E compose stack depended on live Docker
+  Hub pulls for service images and the BuildKit bootstrap image, and GitHub's
+  hosted runner could not reach Docker Hub within the Docker client timeout.
+- Fix / mitigation: Pointed affected Test workflow service images, E2E compose
+  service images, and BuildKit bootstrap configuration at confirmed
+  `mirror.gcr.io` image references.
+- Remaining risk: This addresses the observed Docker Hub setup failures for
+  Test workflow paths. Other non-test workflows may still use Docker Hub image
+  references and should be reviewed if they fail with the same first fatal
+  line.
