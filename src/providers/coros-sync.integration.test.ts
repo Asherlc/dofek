@@ -30,6 +30,7 @@ interface FakeCorosWorkout {
   maxPower?: number;
   totalAscent?: number;
   totalDescent?: number;
+  fitUrl?: string;
 }
 
 function fakeWorkout(overrides: Partial<FakeCorosWorkout> = {}): FakeCorosWorkout {
@@ -280,6 +281,161 @@ describe("CorosProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
     expect(result.recordsSynced).toBe(0);
+    // duration is elapsed time (Date.now() - start), not Date.now() + start
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("requests data with compact YYYYMMDD dates and reports elapsed duration", async () => {
+    await saveTokens(ctx.db, "coros", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const queryParams: { start?: string | null; end?: string | null } = {};
+    server.use(
+      http.post("https://open.coros.com/oauth2/token", () =>
+        HttpResponse.json({ access_token: "refreshed-token", refresh_token: "r", expires_in: 7200 }),
+      ),
+      http.get("https://open.coros.com/v2/coros/sport/list", ({ request }) => {
+        const url = new URL(request.url);
+        queryParams.start = url.searchParams.get("startDate");
+        queryParams.end = url.searchParams.get("endDate");
+        return HttpResponse.json({ data: [], message: "OK", result: "0000" });
+      }),
+      http.get("https://open.coros.com/v2/coros/daily/list", () =>
+        HttpResponse.json({ data: [], message: "OK", result: "0000" }),
+      ),
+    );
+
+    const provider = new CorosProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T12:00:00Z"));
+
+    // compact = ISO date sliced to 10 chars with dashes removed → YYYYMMDD
+    expect(queryParams.start).toBe("20260201");
+    expect(queryParams.end).toMatch(/^\d{8}$/);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("downloads the FIT file only when a workout has a fitUrl", async () => {
+    await saveTokens(ctx.db, "coros", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    let fitRequested = false;
+    const workout = fakeWorkout({
+      labelId: "coros-fit-1",
+      fitUrl: "https://files.coros.com/fit/coros-fit-1.fit",
+    });
+
+    server.use(
+      ...corosHandlers([workout], []),
+      http.get("https://files.coros.com/fit/coros-fit-1.fit", () => {
+        fitRequested = true;
+        // Garbage FIT bytes — parsing will fail, but the request must be made.
+        return new HttpResponse(new ArrayBuffer(8), { status: 200 });
+      }),
+    );
+
+    const provider = new CorosProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // `if (activityId && raw.fitUrl)` must trigger the download
+    expect(fitRequested).toBe(true);
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "coros"));
+    expect(rows.some((r) => r.externalId === "coros-fit-1")).toBe(true);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    // garbage FIT bytes fail to parse → a labelled error is reported
+    const fitError = result.errors.find((e) => e.message.includes("FIT file for coros-fit-1"));
+    expect(fitError).toBeDefined();
+    expect(fitError?.externalId).toBe("coros-fit-1");
+  });
+
+  it("inserts daily metrics only when a metric field is present and converts distance to km", async () => {
+    await saveTokens(ctx.db, "coros", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    // Each record isolates one metric field so every term of the
+    // hasDailyMetrics OR-chain is independently load-bearing. The last
+    // record has no metric fields and no sleep → it must produce no rows.
+    const daily = [
+      { date: "20260401", steps: 1000 },
+      { date: "20260402", hrv: 50 },
+      { date: "20260403", spo2Avg: 96 },
+      { date: "20260404", calories: 1500 },
+      { date: "20260405", distance: 5000 },
+      { date: "20260406" },
+    ];
+
+    server.use(...corosHandlers([], daily));
+
+    const provider = new CorosProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "coros"));
+    const byDate = (date: string) => rows.find((r) => r.date === date);
+
+    // single-field records each produce a row
+    expect(byDate("2026-04-01")?.steps).toBe(1000);
+    expect(byDate("2026-04-02")?.hrv).toBe(50);
+    expect(byDate("2026-04-03")?.spo2Avg).toBe(96);
+    expect(byDate("2026-04-04")?.activeEnergyKcal).toBe(1500);
+    // distance converted to km (5000 m / 1000)
+    expect(Number(byDate("2026-04-05")?.distanceKm)).toBe(5);
+    // record with no metric field → no row at all
+    expect(byDate("2026-04-06")).toBeUndefined();
+    // record without distance → distanceKm stays null, not NaN
+    expect(byDate("2026-04-01")?.distanceKm).toBeNull();
+
+    // none of these records carry sleepDuration → no sleep sessions
+    const sleeps = await ctx.db
+      .select()
+      .from(sleepSession)
+      .where(eq(sleepSession.providerId, "coros"));
+    expect(sleeps.filter((s) => (s.externalId ?? "").startsWith("coros-sleep-2026040")).length).toBe(
+      0,
+    );
+  });
+
+  it("updates distanceKm on daily re-sync", async () => {
+    await saveTokens(ctx.db, "coros", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    server.use(...corosHandlers([], [{ date: "20260501", steps: 100, distance: 4000 }]));
+    const provider = new CorosProvider();
+    await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
+    server.resetHandlers();
+
+    server.use(...corosHandlers([], [{ date: "20260501", steps: 200, distance: 8000 }]));
+    await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
+
+    const rows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "coros"));
+    const may1 = rows.find((r) => r.date === "2026-05-01");
+    if (!may1) throw new Error("expected daily metrics for 2026-05-01");
+    // update path converts 8000 m → 8 km
+    expect(Number(may1.distanceKm)).toBe(8);
+    expect(may1.steps).toBe(200);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
