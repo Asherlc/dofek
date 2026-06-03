@@ -9665,11 +9665,13 @@ new incremental tables are populated.
 - Evidence: Sentry event `ffba1d041b264f4c9383bd08aa758cb4` showed the first
   fatal application frame at `src/providers/http-client.ts:59`, called from
   `WahooProvider.sync` through `processSyncJob`.
-- Root cause: The sync worker and provider-list auth classifiers recognized
-  phrases such as `token expired`, `session expired`, and `re-connect`, but not
-  Wahoo's `Access token has expired` wording.
-- Fix / mitigation: Added `access token has expired` to both auth-error
-  classifiers. Wahoo's expired-token 401 now avoids Sentry capture in the sync
-  worker, and the provider list marks the provider as needing reauthorization.
-- Remaining risk: The worker still logs the provider's original API error text;
-  it is intentionally classified for UI reconnect state rather than rewritten.
+- Root cause: Provider auth failures were classified from human-readable sync
+  error messages. Wahoo's `Access token has expired` wording did not match the
+  existing message patterns, so the worker treated it as reportable.
+- Fix / mitigation: Added provider auth error types and an
+  `auth_failure_reason` sync-log column. Wahoo now throws
+  `AccessTokenExpiredError`, the worker suppresses Sentry via
+  `instanceof ProviderAuthError`, and the provider list uses the persisted
+  structured reason for reauthorization state.
+- Remaining risk: Provider result messages are still stored for display/log
+  history, but auth classification no longer depends on parsing those messages.

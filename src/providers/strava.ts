@@ -15,6 +15,7 @@ import { activity, metricStream } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
+import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -742,8 +743,8 @@ export class StravaProvider implements WebhookProvider {
         }
         if (err instanceof StravaUnauthorizedError) {
           errors.push({
-            message: "Strava authorization failed — run: health-data auth strava",
-            cause: err,
+            message: "Strava authorization failed.",
+            cause: new ProviderAuthorizationFailedError("Strava", { cause: err }),
           });
           shouldStop = true;
           break;
@@ -785,9 +786,8 @@ export class StravaProvider implements WebhookProvider {
             }
             if (detailErr instanceof StravaUnauthorizedError) {
               errors.push({
-                message:
-                  "Strava authorization failed while fetching activity detail — run: health-data auth strava",
-                cause: detailErr,
+                message: "Strava authorization failed while fetching activity detail.",
+                cause: new ProviderAuthorizationFailedError("Strava", { cause: detailErr }),
               });
               shouldStop = true;
               break;
@@ -866,9 +866,8 @@ export class StravaProvider implements WebhookProvider {
             }
             if (streamErr instanceof StravaUnauthorizedError) {
               errors.push({
-                message:
-                  "Strava authorization failed while fetching streams — run: health-data auth strava",
-                cause: streamErr,
+                message: "Strava authorization failed while fetching streams.",
+                cause: new ProviderAuthorizationFailedError("Strava", { cause: streamErr }),
               });
               shouldStop = true;
               break;

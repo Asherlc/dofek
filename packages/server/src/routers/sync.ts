@@ -26,7 +26,6 @@ import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
   getAllConfiguredProviderIds,
-  isAuthError,
   mapBullMqStateToSyncStatus,
   parseJobId,
   resolveSinceIso,
@@ -83,11 +82,11 @@ export { sanitizeErrorMessage };
 const legacySyncQueue = createSyncQueue();
 
 function hasCurrentAuthError(
-  errorMessage: string | null,
+  authFailureReason: string | null,
   errorSyncedAt: Date,
   tokenUpdatedAt?: Date,
 ): boolean {
-  if (!isAuthError(errorMessage)) return false;
+  if (!authFailureReason) return false;
   return !tokenUpdatedAt || errorSyncedAt > tokenUpdatedAt;
 }
 
@@ -131,7 +130,7 @@ export const syncRouter = router({
     const authErrorProviders = new Set(
       latestErrors
         .filter((r) =>
-          hasCurrentAuthError(r.errorMessage, r.syncedAt, tokenUpdatedAtMap.get(r.providerId)),
+          hasCurrentAuthError(r.authFailureReason, r.syncedAt, tokenUpdatedAtMap.get(r.providerId)),
         )
         .map((r) => r.providerId),
     );

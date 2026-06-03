@@ -396,7 +396,8 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("no refresh token");
+    expect(result.errors[0]?.message).toBe("Zwift authentication failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 

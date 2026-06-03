@@ -12,4 +12,5 @@ export interface SyncLogEntry {
   recordCount: number | null;
   durationMs: number | null;
   errorMessage: string | null;
+  authFailureReason: string | null;
 }

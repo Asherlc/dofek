@@ -8,6 +8,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -149,9 +150,7 @@ export class ZwiftProvider implements SyncProvider {
     const shouldRefresh = forceRefresh || stored.expiresAt <= new Date();
     if (shouldRefresh) {
       if (!stored.refreshToken) {
-        throw new Error(
-          "Zwift authentication failed and no refresh token available — re-authenticate",
-        );
+        throw new ProviderAuthenticationFailedError("Zwift");
       }
       logger.info(
         forceRefresh

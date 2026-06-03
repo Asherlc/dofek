@@ -586,9 +586,13 @@ describe("createMcpRouter", () => {
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
     ]);
     toolTestMocks.getLatestErrors.mockResolvedValue([
-      { errorMessage: "rate limit exceeded", providerId: "fitbit" },
-      { errorMessage: "token expired", providerId: "strava" },
-      { errorMessage: "token expired", providerId: "wahoo" },
+      { authFailureReason: null, errorMessage: "rate limit exceeded", providerId: "fitbit" },
+      { authFailureReason: null, errorMessage: "token expired", providerId: "strava" },
+      {
+        authFailureReason: "access_token_expired",
+        errorMessage: "Wahoo access token expired.",
+        providerId: "wahoo",
+      },
     ]);
     toolTestMocks.getAllProviders.mockReturnValue([
       {

@@ -365,7 +365,7 @@ entity "mcp_access_token" {
   user_id : uuid <<FK>>
   name : text
   token_hash : text
-  scopes : text_array
+  scopes : text
   created_at : timestamp
   last_used_at : timestamp
   expires_at : timestamp
@@ -639,6 +639,7 @@ entity "sync_log" {
   status : text
   record_count : integer
   error_message : text
+  auth_failure_reason : text
   duration_ms : integer
   synced_at : timestamp
 }

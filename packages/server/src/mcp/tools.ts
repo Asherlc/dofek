@@ -18,7 +18,6 @@ import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
-  isAuthError,
   resolveSinceIso,
   resolveTargetRefreshWindow,
   toJobId,
@@ -170,7 +169,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
       const authErrorProviderIds = new Set(
         latestErrors
-          .filter((provider) => isAuthError(provider.errorMessage))
+          .filter((provider) => provider.authFailureReason !== null)
           .map((provider) => provider.providerId),
       );
 

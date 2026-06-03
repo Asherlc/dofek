@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
 
 const mockCaptureException = vi.fn();
@@ -366,9 +367,7 @@ describe("processSyncJob", () => {
   });
 
   it("does not report thrown expired access token errors to Sentry", async () => {
-    const expiredTokenError = new Error(
-      'API error 401 on /v1/workouts: {"error":"Access token has expired"}',
-    );
+    const expiredTokenError = new AccessTokenExpiredError("Wahoo");
     const provider = createMockProvider({
       id: "wahoo",
       name: "Wahoo",
@@ -385,6 +384,7 @@ describe("processSyncJob", () => {
         providerId: "wahoo",
         status: "error",
         errorMessage: expiredTokenError.message,
+        authFailureReason: "access_token_expired",
       }),
     );
   });
@@ -435,9 +435,7 @@ describe("processSyncJob", () => {
   });
 
   it("does not report returned provider auth errors to Sentry", async () => {
-    const cause = new Error(
-      "Withings authorization revoked — re-connect the provider to resume syncing.",
-    );
+    const cause = new RefreshTokenRevokedError("Withings");
     const provider = createMockProvider({
       id: "withings",
       name: "Withings",
@@ -459,6 +457,7 @@ describe("processSyncJob", () => {
         providerId: "withings",
         status: "error",
         errorMessage: cause.message,
+        authFailureReason: "refresh_token_revoked",
       }),
     );
   });

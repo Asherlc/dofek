@@ -15,6 +15,7 @@ import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -100,7 +101,7 @@ export class EightSleepProvider implements SyncProvider {
 
       // Eight Sleep has no refresh tokens — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error("Eight Sleep token expired — please re-authenticate via Settings");
+        throw new AccessTokenExpiredError("Eight Sleep");
       }
       client = new EightSleepClient(stored.accessToken, userId, this.#fetchFn);
     } catch (err) {
