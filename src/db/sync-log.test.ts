@@ -29,6 +29,7 @@ describe("logSync", () => {
       status: "success",
       recordCount: 42,
       errorMessage: undefined,
+      authFailureReason: undefined,
       durationMs: 1500,
       userId: "user-123",
     });
@@ -52,9 +53,29 @@ describe("logSync", () => {
       status: "error",
       recordCount: 0,
       errorMessage: "API timeout",
+      authFailureReason: undefined,
       durationMs: 5000,
       userId: "user-456",
     });
+  });
+
+  it("inserts a structured auth failure reason", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "wahoo",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Wahoo access token expired.",
+      authFailureReason: "access_token_expired",
+      userId: "user-123",
+    };
+
+    await logSync(db.db, entry);
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authFailureReason: "access_token_expired",
+      }),
+    );
   });
 
   it("defaults recordCount to 0 when not provided", async () => {
@@ -127,6 +148,7 @@ describe("withSyncLog", () => {
         dataType: "sleep",
         status: "error",
         errorMessage: "sync failed",
+        authFailureReason: undefined,
       }),
     );
   });

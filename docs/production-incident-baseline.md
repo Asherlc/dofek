@@ -9698,3 +9698,25 @@ new incremental tables are populated.
   Test workflow paths. Other non-test workflows may still use Docker Hub image
   references and should be reviewed if they fail with the same first fatal
   line.
+
+### 2026-06-03 Wahoo expired access token reported to Sentry
+
+- Symptoms: Sentry issue `DOFEK-SERVER-2B` recorded production errors from
+  `WahooClient.handleErrorResponse` for `API error 401 on /v1/workouts:
+  {"error":"Access token has expired"}`.
+- User impact: A Wahoo sync failed because the provider rejected the stored
+  access token. The failure was treated as reportable noise instead of a user
+  reauthorization state.
+- Evidence: Sentry event `ffba1d041b264f4c9383bd08aa758cb4` showed the first
+  fatal application frame at `src/providers/http-client.ts:59`, called from
+  `WahooProvider.sync` through `processSyncJob`.
+- Root cause: Provider auth failures were classified from human-readable sync
+  error messages. Wahoo's `Access token has expired` wording did not match the
+  existing message patterns, so the worker treated it as reportable.
+- Fix / mitigation: Added provider auth error types and an
+  `auth_failure_reason` sync-log column. Wahoo now throws
+  `AccessTokenExpiredError`, the worker suppresses Sentry via
+  `instanceof ProviderAuthError`, and the provider list uses the persisted
+  structured reason for reauthorization state.
+- Remaining risk: Provider result messages are still stored for display/log
+  history, but auth classification no longer depends on parsing those messages.

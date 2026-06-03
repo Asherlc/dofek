@@ -5,6 +5,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -85,15 +86,16 @@ export class TrainerRoadProvider implements SyncProvider {
         throw new Error("TrainerRoad not connected — authenticate via the web UI");
       }
 
-      const usernameMatch = stored.scopes?.match(/username:(\S+)/);
-      username = usernameMatch?.[1] ?? "";
+      const usernamePrefix = "username:";
+      const scope = stored.scopes ?? "";
+      username = scope.startsWith(usernamePrefix) ? scope.slice(usernamePrefix.length) : "";
       if (!username) {
-        throw new Error("TrainerRoad username not found — re-authenticate");
+        throw new ProviderStoredIdentityMissingError("TrainerRoad", "username");
       }
 
       // TrainerRoad cookies expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error("TrainerRoad session expired — please re-authenticate via Settings");
+        throw new ProviderSessionExpiredError("TrainerRoad");
       }
       client = new TrainerRoadClient(stored.accessToken, this.#fetchFn);
     } catch (err) {

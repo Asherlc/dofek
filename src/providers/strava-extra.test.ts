@@ -794,7 +794,8 @@ describe("StravaProvider.sync — additional coverage", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("run: health-data auth strava");
+    expect(result.errors[0]?.message).toBe("Strava authorization failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authorization_failed" });
   });
 
   it("generic getActivities failures are returned as fetch errors", async () => {

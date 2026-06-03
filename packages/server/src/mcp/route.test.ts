@@ -579,16 +579,31 @@ describe("createMcpRouter", () => {
   it("lists configured providers with connection and reauth state", async () => {
     authorizeMcpToken();
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([
-      { providerId: "fitbit" },
-      { providerId: "wahoo" },
+      { providerId: "fitbit", updatedAt: new Date("2026-05-20T11:00:00.000Z") },
+      { providerId: "wahoo", updatedAt: new Date("2026-05-20T11:00:00.000Z") },
     ]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([
       { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
     ]);
     toolTestMocks.getLatestErrors.mockResolvedValue([
-      { errorMessage: "rate limit exceeded", providerId: "fitbit" },
-      { errorMessage: "token expired", providerId: "strava" },
-      { errorMessage: "token expired", providerId: "wahoo" },
+      {
+        authFailureReason: null,
+        errorMessage: "rate limit exceeded",
+        providerId: "fitbit",
+        syncedAt: new Date("2026-05-20T12:00:00.000Z"),
+      },
+      {
+        authFailureReason: null,
+        errorMessage: "token expired",
+        providerId: "strava",
+        syncedAt: new Date("2026-05-20T12:00:00.000Z"),
+      },
+      {
+        authFailureReason: "access_token_expired",
+        errorMessage: "Wahoo access token expired.",
+        providerId: "wahoo",
+        syncedAt: new Date("2026-05-20T12:00:00.000Z"),
+      },
     ]);
     toolTestMocks.getAllProviders.mockReturnValue([
       {
@@ -648,6 +663,49 @@ describe("createMcpRouter", () => {
         lastSyncedAt: "2026-05-20T12:00:00.000Z",
         name: "Wahoo",
         needsReauth: true,
+      },
+    ]);
+  });
+
+  it("clears MCP provider reauth state when tokens were updated after the latest auth error", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getConnectedProviderIds.mockResolvedValue([
+      { providerId: "wahoo", updatedAt: new Date("2026-05-20T12:05:00.000Z") },
+    ]);
+    toolTestMocks.getLastSyncTimes.mockResolvedValue([
+      { lastSynced: "2026-05-20T12:00:00.000Z", providerId: "wahoo" },
+    ]);
+    toolTestMocks.getLatestErrors.mockResolvedValue([
+      {
+        authFailureReason: "access_token_expired",
+        errorMessage: "Wahoo access token expired.",
+        providerId: "wahoo",
+        syncedAt: new Date("2026-05-20T12:00:00.000Z"),
+      },
+    ]);
+    toolTestMocks.getAllProviders.mockReturnValue([
+      {
+        authSetup: () => ({ oauthConfig: {} }),
+        id: "wahoo",
+        name: "Wahoo",
+        validate: () => null,
+      },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("list_providers", {}),
+    });
+
+    expect(parseToolCallText(response.text)).toEqual([
+      {
+        authType: "oauth",
+        authorized: true,
+        id: "wahoo",
+        importOnly: false,
+        lastSyncedAt: "2026-05-20T12:00:00.000Z",
+        name: "Wahoo",
+        needsReauth: false,
       },
     ]);
   });

@@ -1316,6 +1316,7 @@ export const syncLog = fitness.table(
     status: text("status").notNull(),
     recordCount: integer("record_count").default(0),
     errorMessage: text("error_message"),
+    authFailureReason: text("auth_failure_reason"),
     durationMs: integer("duration_ms"),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },

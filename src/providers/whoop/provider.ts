@@ -7,6 +7,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts"
 import type { SyncDatabase } from "../../db/index.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
+import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -115,7 +116,7 @@ export class WhoopProvider implements SyncProvider {
       // Use the stored userId if available, otherwise use the one from bootstrap
       const userId = storedUserId ?? token.userId;
       if (!userId) {
-        throw new Error("WHOOP user ID not found — re-authenticate via the web UI");
+        throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
       }
 
       // Save the refreshed tokens back to DB, preserving the userId in scopes

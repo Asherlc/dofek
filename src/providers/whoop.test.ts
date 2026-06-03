@@ -692,6 +692,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("user ID not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
   it("uses stored userId from scopes when available", async () => {

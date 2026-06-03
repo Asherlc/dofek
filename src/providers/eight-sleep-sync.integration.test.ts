@@ -263,9 +263,8 @@ describe("EightSleepProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain(
-      "Eight Sleep token expired — please re-authenticate via Settings",
-    );
+    expect(result.errors[0]?.message).toContain("Eight Sleep access token expired.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "access_token_expired" });
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -293,6 +292,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("user ID not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
     expect(result.recordsSynced).toBe(0);
   });
 

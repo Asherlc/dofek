@@ -435,9 +435,8 @@ describe("WithingsProvider.sync() — unit tests", () => {
     expect(spies.deleteFn).toHaveBeenCalledOnce();
     expect(spies.deleteWhere).toHaveBeenCalledOnce();
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toBe(
-      "Withings authorization revoked — re-connect the provider to resume syncing.",
-    );
+    expect(result.errors[0]?.message).toBe("Withings refresh token was revoked or expired.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
   });
 
   it("returns error when expired token has no refresh token", async () => {

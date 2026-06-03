@@ -2,18 +2,6 @@ import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
 import type { SyncJobData } from "dofek/jobs/queues";
 import { registerProvider } from "dofek/providers/registry";
 
-const AUTH_ERROR_PATTERNS = [
-  /\bauthorization failed\b/i,
-  // Match standalone "unauthorized" text while avoiding JSON payload fragments
-  // like {"error":"unauthorized"} that are often endpoint-specific failures.
-  /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i,
-  /\bre-authenticate\b/i,
-  /\bre-connect\b/i,
-  /\btoken expired\b/i,
-  /\bsession expired\b/i,
-  /\bauthentication failed\b/i,
-] as const;
-
 export const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
   whoop: "custom:whoop",
   garmin: "custom:garmin",
@@ -27,15 +15,6 @@ export const UPLOAD_IMPORT_PROVIDERS = [
     importOnly: true,
   },
 ] as const;
-
-/**
- * Check if a sync error message indicates an authentication/authorization failure
- * that requires the user to re-connect the provider.
- */
-export function isAuthError(errorMessage: string | null): boolean {
-  if (!errorMessage) return false;
-  return AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage));
-}
 
 export function toJobId(id: string | number | undefined, providerId: string): string {
   return id === undefined ? `job-${providerId}-${Date.now()}` : `${providerId}:${id}`;

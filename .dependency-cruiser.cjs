@@ -58,6 +58,7 @@ module.exports = {
           "^src/providers/index\\.ts$",
           "^src/providers/provider-model\\.ts$",
           "^src/providers/http-client\\.ts$",
+          "^src/providers/auth-errors\\.ts$",
         ],
       },
     },

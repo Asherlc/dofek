@@ -639,6 +639,7 @@ entity "sync_log" {
   status : text
   record_count : integer
   error_message : text
+  auth_failure_reason : text
   duration_ms : integer
   synced_at : timestamp
 }

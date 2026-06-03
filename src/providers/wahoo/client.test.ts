@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AccessTokenExpiredError } from "../auth-errors.ts";
 import {
   createWahooNumeric,
   createWahooSingleWorkoutResponseSchema,
@@ -6,6 +7,7 @@ import {
   createWahooWorkoutListResponseSchema,
   createWahooWorkoutSchema,
   createWahooWorkoutSummarySchema,
+  WahooClient,
 } from "./client.ts";
 
 const validSummary = {
@@ -175,5 +177,15 @@ describe("Wahoo schemas", () => {
       const schema = createWahooWebhookPayloadSchema();
       expect(() => schema.parse({ event_type: "test" })).toThrow();
     });
+  });
+});
+
+describe("WahooClient", () => {
+  it("throws an access token expired error for Wahoo's expired token response", async () => {
+    const fetchFn = async () =>
+      new Response(JSON.stringify({ error: "Access token has expired" }), { status: 401 });
+    const client = new WahooClient("expired-token", fetchFn);
+
+    await expect(client.getWorkouts()).rejects.toBeInstanceOf(AccessTokenExpiredError);
   });
 });

@@ -983,6 +983,7 @@ table fitness.sync_log {
   status text [not null]
   record_count integer [default: 0]
   error_message text
+  auth_failure_reason text
   duration_ms integer
   synced_at "timestamp with time zone" [not null, default: `now()`]
 

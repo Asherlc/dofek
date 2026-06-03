@@ -96,14 +96,30 @@ describe("SyncRepository", () => {
         {
           provider_id: "wahoo",
           error_message: "authorization failed",
+          auth_failure_reason: "authorization_failed",
           synced_at: wahooSyncedAt,
         },
-        { provider_id: "strava", error_message: null, synced_at: stravaSyncedAt },
+        {
+          provider_id: "strava",
+          error_message: null,
+          auth_failure_reason: null,
+          synced_at: stravaSyncedAt,
+        },
       ]);
       const result = await repo.getLatestErrors();
       expect(result).toEqual([
-        { providerId: "wahoo", errorMessage: "authorization failed", syncedAt: wahooSyncedAt },
-        { providerId: "strava", errorMessage: null, syncedAt: stravaSyncedAt },
+        {
+          providerId: "wahoo",
+          errorMessage: "authorization failed",
+          authFailureReason: "authorization_failed",
+          syncedAt: wahooSyncedAt,
+        },
+        {
+          providerId: "strava",
+          errorMessage: null,
+          authFailureReason: null,
+          syncedAt: stravaSyncedAt,
+        },
       ]);
     });
   });

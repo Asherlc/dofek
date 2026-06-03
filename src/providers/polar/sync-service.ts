@@ -9,6 +9,11 @@ import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
+import {
+  authFailureReasonFromError,
+  ProviderAuthorizationFailedError,
+  RefreshTokenRevokedError,
+} from "../auth-errors.ts";
 import type { SyncError } from "../types.ts";
 import { PolarClient, PolarNotFoundError, PolarUnauthorizedError } from "./client.ts";
 import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
@@ -109,9 +114,9 @@ export class PolarSyncService {
               `User must re-authorize ${this.#providerName}.`,
           );
           await deleteTokens(this.#db, this.#providerId);
-          throw new Error(
-            `${this.#providerName} authorization revoked — re-connect the provider to resume syncing.`,
-          );
+          throw new RefreshTokenRevokedError(this.#providerName, {
+            cause: error instanceof Error ? error : undefined,
+          });
         }
         throw error;
       }
@@ -402,12 +407,14 @@ export class PolarSyncService {
    * Returns true if tokens were invalidated (caller should short-circuit).
    */
   async #invalidateTokensIfAuthFailed(): Promise<boolean> {
-    if (!this.#errors.some((error) => error.cause instanceof PolarUnauthorizedError)) {
+    if (
+      !this.#errors.some(
+        (syncError) => authFailureReasonFromError(syncError.cause) === "authorization_failed",
+      )
+    ) {
       return false;
     }
-    logger.warn(
-      `[${this.#providerId}] Authorization failed — deleting stored tokens. Re-connect provider to resume syncing.`,
-    );
+    logger.warn(`[${this.#providerId}] Authorization failed; deleting stored tokens.`);
     try {
       await deleteTokens(this.#db, this.#providerId);
     } catch (deleteError) {
@@ -421,23 +428,22 @@ export class PolarSyncService {
 
   #buildSectionError(section: "exercises" | "sleep" | "daily_activity", error: unknown): SyncError {
     if (error instanceof PolarUnauthorizedError) {
+      const cause = new ProviderAuthorizationFailedError(this.#providerName, { cause: error });
       if (section === "exercises") {
         return {
-          message:
-            "Polar authorization failed while syncing exercises — run: health-data auth polar",
-          cause: error,
+          message: "Polar authorization failed while syncing exercises.",
+          cause,
         };
       }
       if (section === "sleep") {
         return {
-          message: "Polar authorization failed while syncing sleep — run: health-data auth polar",
-          cause: error,
+          message: "Polar authorization failed while syncing sleep.",
+          cause,
         };
       }
       return {
-        message:
-          "Polar authorization failed while syncing daily activity — run: health-data auth polar",
-        cause: error,
+        message: "Polar authorization failed while syncing daily activity.",
+        cause,
       };
     }
 

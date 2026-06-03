@@ -6,6 +6,7 @@ import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import { ProviderSessionExpiredError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -89,7 +90,7 @@ export class VeloHeroProvider implements SyncProvider {
 
       // VeloHero sessions expire — user must re-authenticate when expired
       if (stored.expiresAt <= new Date()) {
-        throw new Error("VeloHero session expired — please re-authenticate via Settings");
+        throw new ProviderSessionExpiredError("VeloHero");
       }
       client = new VeloHeroClient(stored.accessToken, this.#fetchFn);
     } catch (err) {

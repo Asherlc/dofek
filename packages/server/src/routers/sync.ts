@@ -12,6 +12,7 @@ import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
+import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
@@ -26,7 +27,6 @@ import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
   getAllConfiguredProviderIds,
-  isAuthError,
   mapBullMqStateToSyncStatus,
   parseJobId,
   resolveSinceIso,
@@ -82,15 +82,6 @@ export { sanitizeErrorMessage };
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
 const legacySyncQueue = createSyncQueue();
 
-function hasCurrentAuthError(
-  errorMessage: string | null,
-  errorSyncedAt: Date,
-  tokenUpdatedAt?: Date,
-): boolean {
-  if (!isAuthError(errorMessage)) return false;
-  return !tokenUpdatedAt || errorSyncedAt > tokenUpdatedAt;
-}
-
 export const syncRouter = router({
   /** Public list of configured providers that have a user-facing connection or import flow. */
   usableProviders: publicProcedure.query(async () => {
@@ -131,7 +122,11 @@ export const syncRouter = router({
     const authErrorProviders = new Set(
       latestErrors
         .filter((r) =>
-          hasCurrentAuthError(r.errorMessage, r.syncedAt, tokenUpdatedAtMap.get(r.providerId)),
+          hasCurrentProviderAuthFailure(
+            r.authFailureReason,
+            r.syncedAt,
+            tokenUpdatedAtMap.get(r.providerId),
+          ),
         )
         .map((r) => r.providerId),
     );

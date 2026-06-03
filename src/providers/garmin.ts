@@ -25,6 +25,7 @@ import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncCheckpointStore,
@@ -431,7 +432,9 @@ export class GarminProvider implements SyncProvider {
     } catch (err) {
       errors.push({
         message: `Connect API authentication failed: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        cause: new ProviderAuthenticationFailedError("Garmin Connect", {
+          cause: err instanceof Error ? err : undefined,
+        }),
       });
       return 0;
     }

@@ -471,19 +471,35 @@ describe("ZwiftProvider.sync() — power curve sync", () => {
 
 describe("ZwiftProvider.authSetup() — automatedLogin", () => {
   it("calls signIn and returns token set with athleteId in scopes", async () => {
+    const nowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(new Date("2026-01-01T00:00:00Z").getTime());
+    const mockFetch: typeof globalThis.fetch = vi.fn(async () => Response.json({}));
     MockZwiftClient.signIn.mockResolvedValueOnce({
       accessToken: "fake-header.eyJzdWIiOiI1NTU1NSJ9.fake",
       refreshToken: "refresh-123",
       expiresIn: 3600,
     });
 
-    const provider = new ZwiftProvider();
+    const provider = new ZwiftProvider(mockFetch);
     const setup = provider.authSetup();
     const result = await setup.automatedLogin?.("user@example.com", "password123");
 
+    // signIn receives the provider's rate-limit-wrapped fetch, which delegates to mockFetch.
+    expect(MockZwiftClient.signIn).toHaveBeenCalledWith(
+      "user@example.com",
+      "password123",
+      expect.any(Function),
+    );
+    const passedFetch = MockZwiftClient.signIn.mock.calls[0]?.[2];
+    if (!passedFetch) throw new Error("expected a fetch passed to signIn");
+    await passedFetch("https://example.com");
+    expect(mockFetch).toHaveBeenCalled();
     expect(result?.accessToken).toContain("eyJ");
     expect(result?.refreshToken).toBe("refresh-123");
-    expect(result?.scopes).toContain("athleteId:");
+    expect(result?.expiresAt).toEqual(new Date("2026-01-01T01:00:00Z"));
+    expect(result?.scopes).toBe("athleteId:55555");
+    nowSpy.mockRestore();
   });
 
   it("handles UUID sub claim in JWT", async () => {

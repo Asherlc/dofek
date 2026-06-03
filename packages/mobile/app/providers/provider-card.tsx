@@ -27,6 +27,7 @@ export interface SyncLog {
   recordCount: number | null;
   durationMs: number | null;
   errorMessage: string | null;
+  authFailureReason: string | null;
   syncedAt: string;
 }
 
