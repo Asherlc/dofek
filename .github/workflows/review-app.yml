@@ -2,6 +2,11 @@ name: Review App
 
 on:
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -11,16 +16,62 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: review-app-pr-${{ github.event.pull_request.number }}
+  group: review-app-pr-${{ inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
+  validate-pr:
+    name: Validate Review App PR
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    steps:
+      - name: Validate PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          state="$(jq -r '.state' <<< "$pr_json")"
+          head_repo_full_name="$(jq -r '.head.repo.full_name // ""' <<< "$pr_json")"
+          draft="$(jq -r '.draft' <<< "$pr_json")"
+          head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+
+          if [ "$state" != "open" ]; then
+            echo "::error::Review app PR #${PR_NUMBER} must be open; current state is ${state}."
+            exit 1
+          fi
+          if [ "$head_repo_full_name" != "$REPOSITORY" ]; then
+            echo "::error::Review apps can only run for same-repository PRs. PR #${PR_NUMBER} is from ${head_repo_full_name}."
+            exit 1
+          fi
+          if [ "$draft" = "true" ]; then
+            echo "::error::Review apps are disabled for draft PRs. Mark PR #${PR_NUMBER} ready for review first."
+            exit 1
+          fi
+          if [ -z "$head_sha" ] || [ "$head_sha" = "null" ]; then
+            echo "::error::Could not resolve head SHA for PR #${PR_NUMBER}."
+            exit 1
+          fi
+
+          {
+            echo "head_sha=${head_sha}"
+            echo "pr_number=${PR_NUMBER}"
+          } >> "$GITHUB_OUTPUT"
+
   build-image:
     name: Build Review App Image
-    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    needs: [validate-pr]
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: refs/pull/${{ needs.validate-pr.outputs.pr_number }}/merge
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           config-inline: |
@@ -36,7 +87,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=pr-${{ github.event.pull_request.number }}
+            type=raw,value=pr-${{ needs.validate-pr.outputs.pr_number }}
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -45,7 +96,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ github.sha }}
+          build-args: COMMIT_HASH=${{ needs.validate-pr.outputs.head_sha }}
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=server-review
@@ -53,17 +104,18 @@ jobs:
 
   deploy:
     name: Deploy Review App
-    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
-    needs: [build-image]
+    needs: [validate-pr, build-image]
     runs-on: ubuntu-latest
     env:
       FRONT_DOOR_HOST: ${{ vars.ORACLE_SERVER_HOST }}
       FRONT_DOOR_SSH_USER: ubuntu
-      IMAGE_TAG: pr-${{ github.event.pull_request.number }}
-      REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ github.event.pull_request.number }}
+      IMAGE_TAG: pr-${{ needs.validate-pr.outputs.pr_number }}
+      REVIEW_TERRAFORM_WORKSPACE: dofek-review-pr-${{ needs.validate-pr.outputs.pr_number }}
       TERRAFORM_ORGANIZATION: dofek
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: refs/pull/${{ needs.validate-pr.outputs.pr_number }}/merge
 
       - name: Ensure review app Terraform workspace exists
         env:
@@ -184,7 +236,7 @@ jobs:
           TF_WORKSPACE: ${{ env.REVIEW_TERRAFORM_WORKSPACE }}
           TF_VAR_front_door_ipv4: ${{ steps.front_door.outputs.ipv4 }}
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
-          TF_VAR_pr_number: ${{ github.event.pull_request.number }}
+          TF_VAR_pr_number: ${{ needs.validate-pr.outputs.pr_number }}
         run: |
           set -euo pipefail
           terraform init -input=false -lock-timeout=5m
@@ -202,7 +254,7 @@ jobs:
                 echo "review_server_ip=unavailable"
                 echo "review_app_skip_reason=Hetzner returned a server quota error while trying to provision a new review server. Infra capacity needs to be increased or old review app resources cleaned up."
               } >> "$GITHUB_OUTPUT"
-              echo "::warning::Review app skipped due Hetzner server limit reached for PR #${{ github.event.pull_request.number }}."
+              echo "::warning::Review app skipped due Hetzner server limit reached for PR #${{ needs.validate-pr.outputs.pr_number }}."
               rm -f "$apply_output"
               exit 0
             fi
@@ -214,7 +266,7 @@ jobs:
                 echo "review_server_ip=unavailable"
                 echo "review_app_skip_reason=Hetzner could not allocate the configured review app server type in the configured location. This is provider capacity/placement availability, not a code failure in this PR."
               } >> "$GITHUB_OUTPUT"
-              echo "::warning::Review app skipped because Hetzner could not allocate the configured review app server for PR #${{ github.event.pull_request.number }}."
+              echo "::warning::Review app skipped because Hetzner could not allocate the configured review app server for PR #${{ needs.validate-pr.outputs.pr_number }}."
               rm -f "$apply_output"
               exit 0
             fi
@@ -243,9 +295,9 @@ jobs:
         env:
           FRONT_DOOR_HOST: ${{ env.FRONT_DOOR_HOST }}
           REVIEW_HOST: ${{ steps.terraform.outputs.review_host }}
-          REVIEW_ROUTE_FILE: /opt/dofek/traefik-dynamic/review-app-pr-${{ github.event.pull_request.number }}.yml
+          REVIEW_ROUTE_FILE: /opt/dofek/traefik-dynamic/review-app-pr-${{ needs.validate-pr.outputs.pr_number }}.yml
           REVIEW_SERVER_IP: ${{ steps.terraform.outputs.review_server_ip }}
-          TRAEFIK_ROUTER_NAME: review-app-pr-${{ github.event.pull_request.number }}
+          TRAEFIK_ROUTER_NAME: review-app-pr-${{ needs.validate-pr.outputs.pr_number }}
         run: |
           set -euo pipefail
 
@@ -355,7 +407,7 @@ jobs:
       - name: Deploy review stack
         if: steps.terraform.outputs.review_app_skipped != 'true'
         env:
-          COMPOSE_PROJECT_NAME: dofek-review-pr-${{ github.event.pull_request.number }}
+          COMPOSE_PROJECT_NAME: dofek-review-pr-${{ needs.validate-pr.outputs.pr_number }}
           DOCKER_HOST: ssh://root@${{ steps.terraform.outputs.review_server_ip }}
           REVIEW_SERVER_IP: ${{ steps.terraform.outputs.review_server_ip }}
           REVIEW_ENV_FILE: ${{ github.workspace }}/.env.review
@@ -484,20 +536,22 @@ jobs:
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
         with:
           header: review-app
+          number: ${{ needs.validate-pr.outputs.pr_number }}
           message: |
             Review app is ready:
 
             - [Open review app](${{ steps.terraform.outputs.review_url }})
             - [Jump into seeded dashboard](${{ steps.terraform.outputs.review_url }}/auth/dev-login)
 
-            This environment runs on a dedicated Hetzner server for PR #${{ github.event.pull_request.number }} and updates on each push.
+            This environment runs on a dedicated Hetzner server for PR #${{ needs.validate-pr.outputs.pr_number }} and updates on each push.
 
       - name: Comment review app skip reason
         if: steps.terraform.outputs.review_app_skipped == 'true'
         uses: marocchino/sticky-pull-request-comment@52423e01640425a022ef5fd42c6fb5f633a02728 # v2
         with:
           header: review-app
+          number: ${{ needs.validate-pr.outputs.pr_number }}
           message: |
-            Review app deployment was skipped for PR #${{ github.event.pull_request.number }}.
+            Review app deployment was skipped for PR #${{ needs.validate-pr.outputs.pr_number }}.
 
             ${{ steps.terraform.outputs.review_app_skip_reason }}
