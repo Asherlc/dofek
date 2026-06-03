@@ -9721,6 +9721,33 @@ new incremental tables are populated.
 - Remaining risk: Provider result messages are still stored for display/log
   history, but auth classification no longer depends on parsing those messages.
 
+### 2026-06-03 Mobile Settings native SVG image crash
+
+- Symptoms: Sentry issue `DOFEK-MOBILE-R` recorded one production fatal
+  `EXC_BAD_ACCESS: Exception 1, Code 1, Subcode 15` in `dofek-mobile` release
+  `com.dofek.app@1.0.0+1780429552` on iOS 26.5.
+- User impact: One mobile user experienced a fatal app crash after opening
+  Settings.
+- Evidence: The Sentry native stack ended in
+  `hermes::vm::HiddenClass::addProperty` through
+  `facebook::react::ObjCTurboModule::performVoidMethodInvocation`, with no
+  app frame. Breadcrumbs showed the app mounted Settings, successfully fetched
+  `/api/export`, loaded provider logos including `peloton.svg`, and completed
+  the Settings tRPC batch immediately before the crash. No related trace logs
+  were found, and Sentry Seer failed with API event
+  `b912a391be3144c5bf4ce2fffb0128c6`.
+- Root cause: The mobile `ProviderLogo` component treated SVG and PNG provider
+  logos the same and passed remote SVG URLs to React Native's native `Image`
+  loader. The crash trigger is inferred from the Settings breadcrumbs because
+  the native crash stack did not include an app frame.
+- Fix / mitigation: Mobile now only renders remote provider logos when the
+  shared logo metadata says the asset is PNG. SVG-logo providers use the
+  existing styled-letter fallback, avoiding native SVG image loading on iOS.
+  A colocated unit test covers the SVG fallback behavior.
+- Remaining risk: The exact production device crash was not reproduced locally,
+  and the Sentry stack did not name the native module. Monitor
+  `DOFEK-MOBILE-R` for recurrence after the next mobile release.
+
 ### 2026-06-03 Sleep dashboard stale because raw fitness CDC slot was lost
 
 - Symptoms: Sleep data on the dashboard appeared stale even though provider sync

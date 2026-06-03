@@ -12,7 +12,7 @@ interface ProviderLogoProps {
 
 function logoUrl(serverUrl: string, provider: string): string | null {
   const type = providerLogoType(provider);
-  if (type) return `${serverUrl}/logos/${provider}.${type}`;
+  if (type === "png") return `${serverUrl}/logos/${provider}.${type}`;
   return null;
 }
 
