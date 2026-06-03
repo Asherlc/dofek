@@ -51,7 +51,12 @@ export class ZwiftProvider implements SyncProvider {
   }
 
   #isNumericAthleteId(athleteId: string): boolean {
-    return /^\d+$/.test(athleteId);
+    return (
+      athleteId.length > 0 &&
+      Array.from(athleteId).every((character) => {
+        return character >= "0" && character <= "9";
+      })
+    );
   }
 
   async #resolveAuthenticatedAthleteId(accessToken: string): Promise<string> {
@@ -123,8 +128,11 @@ export class ZwiftProvider implements SyncProvider {
       throw new Error("Zwift not connected — authenticate via the web UI");
     }
 
-    const athleteIdMatch = stored.scopes?.match(/athleteId:(\S+)/);
-    let athleteId = athleteIdMatch?.[1];
+    const athleteIdPrefix = "athleteId:";
+    const scope = stored.scopes ?? "";
+    let athleteId = scope.startsWith(athleteIdPrefix)
+      ? scope.slice(athleteIdPrefix.length)
+      : undefined;
 
     // Self-heal: if scopes are missing the athleteId, try to extract it from the JWT.
     const hadMissingScopes = !athleteId;
