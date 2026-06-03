@@ -9741,3 +9741,71 @@ new incremental tables are populated.
 - Remaining risk: The next Terraform apply will reconcile the removed staging
   resources in state. Review apps still use the separate
   `deploy/review-apps/` Terraform root and remain independent of this change.
+
+### 2026-06-03 Mobile Settings native SVG image crash
+
+- Symptoms: Sentry issue `DOFEK-MOBILE-R` recorded one production fatal
+  `EXC_BAD_ACCESS: Exception 1, Code 1, Subcode 15` in `dofek-mobile` release
+  `com.dofek.app@1.0.0+1780429552` on iOS 26.5.
+- User impact: One mobile user experienced a fatal app crash after opening
+  Settings.
+- Evidence: The Sentry native stack ended in
+  `hermes::vm::HiddenClass::addProperty` through
+  `facebook::react::ObjCTurboModule::performVoidMethodInvocation`, with no
+  app frame. Breadcrumbs showed the app mounted Settings, successfully fetched
+  `/api/export`, loaded provider logos including `peloton.svg`, and completed
+  the Settings tRPC batch immediately before the crash. No related trace logs
+  were found, and Sentry Seer failed with API event
+  `b912a391be3144c5bf4ce2fffb0128c6`.
+- Root cause: The mobile `ProviderLogo` component treated SVG and PNG provider
+  logos the same and passed remote SVG URLs to React Native's native `Image`
+  loader. The crash trigger is inferred from the Settings breadcrumbs because
+  the native crash stack did not include an app frame.
+- Fix / mitigation: Mobile now only renders remote provider logos when the
+  shared logo metadata says the asset is PNG. SVG-logo providers use the
+  existing styled-letter fallback, avoiding native SVG image loading on iOS.
+  A colocated unit test covers the SVG fallback behavior.
+- Remaining risk: The exact production device crash was not reproduced locally,
+  and the Sentry stack did not name the native module. Monitor
+  `DOFEK-MOBILE-R` for recurrence after the next mobile release.
+
+### 2026-06-03 Sleep dashboard stale because raw fitness CDC slot was lost
+
+- Symptoms: Sleep data on the dashboard appeared stale even though provider sync
+  was still running.
+- User impact: Web/mobile sleep views that read `analytics.v_sleep` did not show
+  the latest sleep rows.
+- Evidence: Production Postgres `fitness.sleep_session` had 131 rows with
+  latest `started_at = 2026-06-03 05:45:22.34+00` and
+  `ended_at = 2026-06-03 15:28:10.79+00`. ClickHouse
+  `postgres_fitness.sleep_session` had 129 rows with latest
+  `_peerdb_synced_at = 2026-06-02 17:31:00` and latest
+  `started_at = 2026-06-02 03:23:19.94`. `analytics.v_sleep` was stale through
+  the June 1 sleep date / June 2 start time. `pg_replication_slots` showed
+  `peerflow_slot_dofek_fitness_raw_analytics`,
+  `peerflow_slot_dofek_metric_stream_analytics`, and
+  `peerflow_slot_dofek_sensor_priority_raw_analytics` with
+  `wal_status = lost`. PeerDB logs reported `SQLSTATE 55000`:
+  `can no longer access replication slot`.
+- Root cause: The PeerDB flow worker stopped advancing multiple logical
+  replication slots long enough for ongoing WAL churn to exceed Postgres'
+  `max_slot_wal_keep_size = 4GB`; Postgres invalidated the slots with
+  `wal_removed`. The stale raw fitness slot meant Postgres continued receiving
+  sleep rows while the ClickHouse mirror used by `analytics.v_sleep` stopped
+  advancing.
+- Fix / mitigation: Dropped and recreated the lost raw fitness and sensor
+  priority PeerDB mirrors, dropped the orphaned lost metric-stream slot,
+  truncated the small affected ClickHouse destination tables, and reran the
+  checked-in CDC setup script. The metric-stream mirror also had an orphaned
+  Temporal workflow after the catalog row was gone, so that workflow was
+  terminated before rerunning setup. Verified all four production slots were
+  active with `wal_status = reserved`, `postgres_fitness.sleep_session` had the
+  June 3 sleep row, and `analytics.v_sleep` again returned the June 3 WHOOP
+  sleep session.
+- Remaining risk: The metric-stream mirror was restarted from a fresh slot, but
+  the large metric-stream destination table was not resnapshotted during the
+  sleep fix, so rows from the lost-slot window may need a separate bounded
+  backfill if sensor analytics show a gap. This PR raises production slot
+  retention to 16GB, adds replacement-slot headroom, and lowers PeerDB CDC and
+  initial-snapshot work units to 100,000 rows; the remaining recurrence risk is
+  a future WAL burst or long PeerDB outage that exceeds that bounded budget.
