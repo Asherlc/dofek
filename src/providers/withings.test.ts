@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -9,6 +10,7 @@ import { createMockDatabase } from "./test-helpers.ts";
 import {
   exchangeWithingsCode,
   parseMeasureGroup,
+  WithingsClient,
   type WithingsMeasureGroup,
   WithingsProvider,
 } from "./withings.ts";
@@ -756,5 +758,70 @@ describe("exchangeWithingsCode — scope handling", () => {
 
     const result = await exchangeWithingsCode(config, "code", mockFetch);
     expect(result.scopes).toBe("");
+  });
+});
+
+describe("Withings — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  const rateLimited429: typeof globalThis.fetch = async () =>
+    new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
+
+  const oauthConfig = {
+    clientId: "test-id",
+    clientSecret: "test-secret",
+    authorizeUrl: "",
+    tokenUrl: "https://wbsapi.withings.net/v2/oauth2",
+    redirectUri: "",
+    scopes: [],
+  };
+
+  it("token exchange surfaces a 429 as a ProviderRateLimitError tagged 'withings'", async () => {
+    const err = await exchangeWithingsCode(oauthConfig, "code", rateLimited429).catch(
+      (caught: unknown) => caught,
+    );
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("withings");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("WithingsClient surfaces a 429 as a ProviderRateLimitError tagged 'withings'", async () => {
+    const client = new WithingsClient("access-token", rateLimited429);
+    const err = await client.getMeas(0, 1).catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("withings");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("provider sync surfaces a 429 from its fetch as an error tagged 'withings'", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const { db } = createMockDatabase({
+      tokensResult: [
+        {
+          accessToken: "valid-token",
+          refreshToken: "refresh-token",
+          expiresAt: new Date(Date.now() + 3_600_000),
+        },
+      ],
+    });
+
+    const provider = new WithingsProvider(rateLimited429);
+    const result = await provider.sync(db, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    expect(cause).toBeInstanceOf(ProviderRateLimitError);
+    if (cause instanceof ProviderRateLimitError) {
+      expect(cause.providerId).toBe("withings");
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { GarminApiError } from "garmin-connect/client";
+import { GarminApiError, GarminRateLimitError } from "garmin-connect/client";
 import type { GarminTokens } from "garmin-connect/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
@@ -62,6 +62,7 @@ vi.mock("garmin-connect/client", async (importOriginal) => {
   const original = await importOriginal<typeof import("garmin-connect/client")>();
   return {
     GarminApiError: original.GarminApiError,
+    GarminRateLimitError: original.GarminRateLimitError,
     GarminConnectClient: {
       signIn: mocks.signIn,
       fromTokens: mocks.fromTokens,
@@ -412,6 +413,71 @@ describe("GarminProvider.authSetup()", () => {
     expect(customFetch).toHaveBeenCalledWith("https://example.com");
     expect(result.accessToken).toBe(JSON.stringify(tokens));
     expect(result.scopes).toBe(INTERNAL_SCOPE_MARKER);
+  });
+
+  // Grabs the rate-limit-aware fetch the provider forwarded into signIn, so we
+  // can drive it with crafted responses to assert the createRateLimitError callback.
+  async function getProviderRateLimitFetch(innerFetch: typeof globalThis.fetch) {
+    const provider = new GarminProvider(innerFetch);
+    const setup = provider.authSetup();
+    mocks.signIn.mockResolvedValue({ tokens: fakeGarminTokens() });
+    if (!setup.automatedLogin) throw new Error("expected automatedLogin");
+    await setup.automatedLogin("user@test.com", "pass123");
+    const forwardedFetch = mocks.signIn.mock.calls[0]?.[3];
+    if (typeof forwardedFetch !== "function") throw new Error("expected forwarded fetch function");
+    return forwardedFetch;
+  }
+
+  it("surfaces a 429 from the provider's fetch as a GarminRateLimitError", async () => {
+    const customFetch = vi.fn<typeof globalThis.fetch>();
+    customFetch.mockResolvedValue(
+      new Response("slow down", { status: 429, headers: { "Retry-After": "120" } }),
+    );
+
+    const forwardedFetch = await getProviderRateLimitFetch(customFetch);
+    const err = await forwardedFetch("https://example.com").catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(GarminRateLimitError);
+    if (err instanceof GarminRateLimitError) {
+      expect(err.providerId).toBe("garmin");
+      expect(err.statusCode).toBe(429);
+      expect(err.responseBody).toBe("slow down");
+      expect(err.retryAfterSeconds).toBe(120);
+      expect(err.message).toBe("Rate limit exceeded (429): slow down");
+    }
+  });
+
+  it("guards against a 429 response that lacks a headers object", async () => {
+    // The createRateLimitError callback uses optional chaining on response.headers
+    // so a header-less response yields a GarminRateLimitError with no Retry-After.
+    const innerFetch = vi
+      .fn()
+      .mockResolvedValue({ status: 429, headers: undefined, text: async () => "no headers" });
+
+    const forwardedFetch = await getProviderRateLimitFetch(innerFetch);
+    const err = await forwardedFetch("https://example.com").catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(GarminRateLimitError);
+    if (err instanceof GarminRateLimitError) {
+      expect(err.responseBody).toBe("no headers");
+      expect(err.retryAfterSeconds).toBeNull();
+    }
+  });
+
+  it("guards against a 429 response whose headers lack a get method", async () => {
+    // Optional chaining on response.headers?.get guards a headers object without get().
+    const innerFetch = vi
+      .fn()
+      .mockResolvedValue({ status: 429, headers: {}, text: async () => "no get" });
+
+    const forwardedFetch = await getProviderRateLimitFetch(innerFetch);
+    const err = await forwardedFetch("https://example.com").catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(GarminRateLimitError);
+    if (err instanceof GarminRateLimitError) {
+      expect(err.responseBody).toBe("no get");
+      expect(err.retryAfterSeconds).toBeNull();
+    }
   });
 });
 
