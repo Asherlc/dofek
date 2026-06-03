@@ -1221,7 +1221,8 @@ describe("PolarProvider.sync — error handling", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("authorization revoked");
+    expect(result.errors[0]?.message).toContain("refresh token was revoked or expired");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
   });
 
   it("deletes tokens and skips remaining sections when API returns 401", async () => {
@@ -1254,6 +1255,7 @@ describe("PolarProvider.sync — error handling", () => {
     // Should report the auth error
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("authorization failed");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authorization_failed" });
     // Should have deleted the stored tokens
     expect(mockDb.delete).toHaveBeenCalled();
   });
@@ -1291,6 +1293,7 @@ describe("PolarProvider.sync — error handling", () => {
     expect(result.errors.some((error) => error.message.includes("authorization failed"))).toBe(
       true,
     );
+    expect(result.errors.some((error) => error.cause instanceof Error)).toBe(true);
     expect(mockDb.delete).toHaveBeenCalled();
   });
 });

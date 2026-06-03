@@ -7,6 +7,7 @@ import {
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
+import { AccessTokenExpiredError } from "../auth-errors.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -199,10 +200,9 @@ export class WahooProvider implements WebhookProvider {
           await client.revokeAuthorization();
           return;
         } catch (revokeError) {
-          // Only fall through to refresh on 401 (expired/invalid token).
+          // Only fall through when Wahoo confirms the stored access token expired.
           // Rethrow on other failures (429, 5xx, network) so they're visible.
-          const message = revokeError instanceof Error ? revokeError.message : String(revokeError);
-          if (!message.includes("401")) {
+          if (!(revokeError instanceof AccessTokenExpiredError)) {
             throw revokeError;
           }
         }

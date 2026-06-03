@@ -138,6 +138,7 @@ export function DataSourcesPanel() {
     status: string;
     recordCount: number | null;
     errorMessage: string | null;
+    authFailureReason: string | null;
     durationMs: number | null;
     syncedAt: string;
   }> = logs.data ?? [];

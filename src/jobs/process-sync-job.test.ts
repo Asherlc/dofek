@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
 
 const mockCaptureException = vi.fn();
@@ -365,6 +366,29 @@ describe("processSyncJob", () => {
     });
   });
 
+  it("does not report thrown expired access token errors to Sentry", async () => {
+    const expiredTokenError = new AccessTokenExpiredError("Wahoo");
+    const provider = createMockProvider({
+      id: "wahoo",
+      name: "Wahoo",
+      sync: vi.fn().mockRejectedValue(expiredTokenError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "wahoo",
+        status: "error",
+        errorMessage: expiredTokenError.message,
+        authFailureReason: "access_token_expired",
+      }),
+    );
+  });
+
   it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {
     const infraError = new Error("FATAL: the database system is in recovery mode");
     const provider = createMockProvider({
@@ -411,9 +435,7 @@ describe("processSyncJob", () => {
   });
 
   it("does not report returned provider auth errors to Sentry", async () => {
-    const cause = new Error(
-      "Withings authorization revoked — re-connect the provider to resume syncing.",
-    );
+    const cause = new RefreshTokenRevokedError("Withings");
     const provider = createMockProvider({
       id: "withings",
       name: "Withings",
@@ -435,6 +457,7 @@ describe("processSyncJob", () => {
         providerId: "withings",
         status: "error",
         errorMessage: cause.message,
+        authFailureReason: "refresh_token_revoked",
       }),
     );
   });

@@ -46,6 +46,7 @@
     "dist/**",
     ".antigravitycli/**",
     ".codex/**",
+    ".codegraph/**",
     ".claude/**",
     ".context/**",
     ".gemini/**"

@@ -5,6 +5,10 @@ import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import {
+  authFailureReasonFromError,
+  type ProviderAuthFailureReason,
+} from "../providers/auth-errors.ts";
 import type { SyncCheckpointStore, SyncError } from "../providers/types.ts";
 import {
   syncDuration,
@@ -69,16 +73,10 @@ function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   );
 }
 
-function isProviderAuthErrorMessage(message: string): boolean {
-  return (
-    /\bauthorization failed\b/i.test(message) ||
-    /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i.test(message) ||
-    /\bre-authenticate\b/i.test(message) ||
-    /\bre-connect\b/i.test(message) ||
-    /\btoken expired\b/i.test(message) ||
-    /\bsession expired\b/i.test(message) ||
-    /\bauthentication failed\b/i.test(message)
-  );
+function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason | undefined {
+  return errors
+    .map((syncError) => authFailureReasonFromError(syncError.cause))
+    .find((authFailureReason) => authFailureReason !== undefined);
 }
 
 export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
@@ -181,7 +179,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       if (hasErrors) {
         for (const err of result.errors) {
           logger.error(`[worker] ${provider.name} sync error: ${err.message}`);
-          if (!isProviderAuthErrorMessage(err.message)) {
+          if (!authFailureReasonFromError(err.cause)) {
             Sentry.captureException(err.cause ?? new Error(err.message), {
               tags: { provider: provider.id },
             });
@@ -196,6 +194,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         status: hasErrors ? "error" : "success",
         recordCount: result.recordsSynced,
         errorMessage: hasErrors ? result.errors.map((e) => e.message).join("; ") : undefined,
+        authFailureReason: firstAuthFailureReason(result.errors),
         durationMs,
         userId: job.data.userId,
       });
@@ -228,7 +227,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
       completedCount++;
       const message = err instanceof Error ? err.message : String(err);
-      if (!isProviderAuthErrorMessage(message)) {
+      const authFailureReason = authFailureReasonFromError(err);
+      if (!authFailureReason) {
         Sentry.captureException(err, { tags: { provider: provider.id } });
       }
       providerStatus[provider.id] = { status: "error", message };
@@ -243,6 +243,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         dataType: "sync",
         status: "error",
         errorMessage: message,
+        authFailureReason,
         durationMs,
         userId: job.data.userId,
       });

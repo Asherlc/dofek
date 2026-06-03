@@ -91,6 +91,11 @@ describe("parseColumnLine", () => {
     expect(col).toEqual({ name: "groups", type: "text_array", pk: false, fk: false });
   });
 
+  it("converts text[] with attributes to text_array", () => {
+    const col = parseColumnLine("  scopes text[] [not null]");
+    expect(col).toEqual({ name: "scopes", type: "text_array", pk: false, fk: false });
+  });
+
   it("returns null for empty lines", () => {
     expect(parseColumnLine("")).toBeNull();
     expect(parseColumnLine("   ")).toBeNull();

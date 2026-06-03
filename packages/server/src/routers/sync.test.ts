@@ -150,7 +150,6 @@ import {
 } from "./sync.ts";
 import {
   ensureProvidersRegistered,
-  isAuthError,
   mapBullMqStateToSyncStatus,
   parseJobId,
   toJobId,
@@ -334,10 +333,14 @@ describe("syncRouter", () => {
               {
                 provider_id: "polar",
                 error_message: "Polar authorization failed while syncing exercises",
+                auth_failure_reason: "authorization_failed",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
               {
                 provider_id: "wahoo",
                 error_message: "Network timeout after 30s",
+                auth_failure_reason: null,
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
             ]),
         },
@@ -380,6 +383,8 @@ describe("syncRouter", () => {
                 provider_id: "withings",
                 error_message:
                   "Withings authorization revoked — re-connect the provider to resume syncing.",
+                auth_failure_reason: "refresh_token_revoked",
+                synced_at: new Date("2026-06-02T10:00:00Z"),
               },
             ]),
         },
@@ -423,6 +428,7 @@ describe("syncRouter", () => {
                 provider_id: "peloton",
                 error_message:
                   "Peloton authorization revoked — re-connect the provider to resume syncing.",
+                auth_failure_reason: "refresh_token_revoked",
                 synced_at: new Date("2026-06-02T10:00:00Z"),
               },
             ]),
@@ -461,60 +467,6 @@ describe("syncRouter", () => {
       const result = await caller.providers();
       expect(result).toHaveLength(1);
       expect(result[0]?.authType).toBe("none");
-    });
-  });
-
-  describe("isAuthError", () => {
-    it("detects authorization failure messages", () => {
-      expect(isAuthError("Polar authorization failed while syncing exercises")).toBe(true);
-      expect(isAuthError("Strava API unauthorized (401): /athlete/activities")).toBe(true);
-      expect(isAuthError("Eight Sleep token expired — please re-authenticate via Settings")).toBe(
-        true,
-      );
-      expect(
-        isAuthError("Withings authorization revoked — re-connect the provider to resume syncing."),
-      ).toBe(true);
-      expect(isAuthError("VeloHero session expired — please re-authenticate via Settings")).toBe(
-        true,
-      );
-      expect(isAuthError("Connect API authentication failed: invalid token")).toBe(true);
-    });
-
-    it("rejects non-auth errors", () => {
-      expect(isAuthError("Network timeout after 30s")).toBe(false);
-      expect(isAuthError("Rate limited by provider")).toBe(false);
-      expect(isAuthError("Internal server error")).toBe(false);
-      expect(isAuthError('Polar API error (422): {"error":"unauthorized"}')).toBe(false);
-    });
-
-    it("handles null/empty", () => {
-      expect(isAuthError(null)).toBe(false);
-      expect(isAuthError("")).toBe(false);
-    });
-
-    it("detects each AUTH_ERROR_PATTERNS entry individually", () => {
-      // Each of the 6 patterns must individually trigger true
-      expect(isAuthError("authorization failed")).toBe(true);
-      expect(isAuthError("unauthorized")).toBe(true);
-      expect(isAuthError("re-authenticate")).toBe(true);
-      expect(isAuthError("re-connect")).toBe(true);
-      expect(isAuthError("token expired")).toBe(true);
-      expect(isAuthError("session expired")).toBe(true);
-      expect(isAuthError("authentication failed")).toBe(true);
-    });
-
-    it("is case-insensitive (matches uppercase input)", () => {
-      expect(isAuthError("AUTHORIZATION FAILED")).toBe(true);
-      expect(isAuthError("UNAUTHORIZED")).toBe(true);
-      expect(isAuthError("RE-AUTHENTICATE")).toBe(true);
-      expect(isAuthError("TOKEN EXPIRED")).toBe(true);
-      expect(isAuthError("SESSION EXPIRED")).toBe(true);
-      expect(isAuthError("AUTHENTICATION FAILED")).toBe(true);
-    });
-
-    it("returns false for a partial match that does not contain any pattern", () => {
-      expect(isAuthError("author")).toBe(false);
-      expect(isAuthError("expire")).toBe(false);
     });
   });
 

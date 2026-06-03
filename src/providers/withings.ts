@@ -7,6 +7,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import { RefreshTokenRevokedError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -415,9 +416,7 @@ export class WithingsProvider implements WebhookProvider {
             "User must re-authorize Withings.",
         );
         await deleteTokens(db, this.id);
-        throw new Error(
-          "Withings authorization revoked — re-connect the provider to resume syncing.",
-        );
+        throw new RefreshTokenRevokedError("Withings", { cause: error });
       }
       throw error;
     }

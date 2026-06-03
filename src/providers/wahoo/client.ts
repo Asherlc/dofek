@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AccessTokenExpiredError } from "../auth-errors.ts";
 import { ProviderHttpClient } from "../http-client.ts";
 
 export const WAHOO_API_BASE = "https://api.wahooligan.com";
@@ -110,9 +111,33 @@ export const wahooWebhookPayloadSchema = createWahooWebhookPayloadSchema();
 
 // ── Client ──
 
+const wahooErrorResponseSchema = z.object({
+  error: z.string().optional(),
+});
+
+function isAccessTokenExpiredResponse(text: string): boolean {
+  try {
+    const parsedJson: unknown = JSON.parse(text);
+    const parsed = wahooErrorResponseSchema.safeParse(parsedJson);
+    return parsed.success && parsed.data.error === "Access token has expired";
+  } catch {
+    return false;
+  }
+}
+
 export class WahooClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     super(accessToken, WAHOO_API_BASE, fetchFn);
+  }
+
+  protected override async handleErrorResponse(response: Response, path: string): Promise<never> {
+    const text = await response.text();
+    const truncated = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    const apiError = new Error(`API error ${response.status} on ${path}: ${truncated}`);
+    if (response.status === 401 && isAccessTokenExpiredResponse(text)) {
+      throw new AccessTokenExpiredError("Wahoo", { cause: apiError });
+    }
+    throw apiError;
   }
 
   async getWorkouts(page = 1, perPage = 30): Promise<WahooWorkoutListResponse> {

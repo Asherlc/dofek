@@ -1,4 +1,8 @@
 import type { Database } from "dofek/db";
+import {
+  type ProviderAuthFailureReason,
+  providerAuthFailureReasonSchema,
+} from "dofek/providers/auth-errors";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -20,6 +24,7 @@ const lastSyncRowSchema = z.object({
 const latestErrorRowSchema = z.object({
   provider_id: z.string(),
   error_message: z.string().nullable(),
+  auth_failure_reason: providerAuthFailureReasonSchema.nullable(),
   synced_at: z.coerce.date(),
 });
 
@@ -74,6 +79,7 @@ export interface LastSync {
 export interface LatestError {
   providerId: string;
   errorMessage: string | null;
+  authFailureReason: ProviderAuthFailureReason | null;
   syncedAt: Date;
 }
 
@@ -102,6 +108,7 @@ export interface SyncLogRow {
   recordCount: number | null;
   dataType: string;
   errorMessage: string | null;
+  authFailureReason: string | null;
 }
 
 interface ProviderStatsClickHouseStore {
@@ -168,7 +175,11 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       latestErrorRowSchema,
-      sql`SELECT DISTINCT ON (provider_id) provider_id, error_message, synced_at
+      sql`SELECT DISTINCT ON (provider_id)
+            provider_id,
+            error_message,
+            auth_failure_reason,
+            synced_at
           FROM fitness.sync_log
           WHERE user_id = ${this.#userId} AND status = 'error'
             AND synced_at = (
@@ -180,6 +191,7 @@ export class SyncRepository {
     return rows.map((row) => ({
       providerId: row.provider_id,
       errorMessage: row.error_message,
+      authFailureReason: row.auth_failure_reason,
       syncedAt: row.synced_at,
     }));
   }

@@ -8,6 +8,11 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import {
+  ProviderAuthenticationFailedError,
+  ProviderStoredIdentityInvalidError,
+  ProviderStoredIdentityMissingError,
+} from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -50,7 +55,12 @@ export class ZwiftProvider implements SyncProvider {
   }
 
   #isNumericAthleteId(athleteId: string): boolean {
-    return /^\d+$/.test(athleteId);
+    return (
+      athleteId.length > 0 &&
+      Array.from(athleteId).every((character) => {
+        return character >= "0" && character <= "9";
+      })
+    );
   }
 
   async #resolveAuthenticatedAthleteId(accessToken: string): Promise<string> {
@@ -58,8 +68,8 @@ export class ZwiftProvider implements SyncProvider {
     const profile = await client.getAuthenticatedProfile();
     const athleteId = String(profile.id);
     if (!this.#isNumericAthleteId(athleteId)) {
-      throw new Error(
-        `Zwift authenticated profile ID is not numeric (${athleteId}) — re-authenticate`,
+      throw new ProviderStoredIdentityInvalidError(
+        `Zwift authenticated profile ID is not numeric (${athleteId}).`,
       );
     }
     return athleteId;
@@ -122,8 +132,11 @@ export class ZwiftProvider implements SyncProvider {
       throw new Error("Zwift not connected — authenticate via the web UI");
     }
 
-    const athleteIdMatch = stored.scopes?.match(/athleteId:(\S+)/);
-    let athleteId = athleteIdMatch?.[1];
+    const athleteIdPrefix = "athleteId:";
+    const scope = stored.scopes ?? "";
+    let athleteId = scope.startsWith(athleteIdPrefix)
+      ? scope.slice(athleteIdPrefix.length)
+      : undefined;
 
     // Self-heal: if scopes are missing the athleteId, try to extract it from the JWT.
     const hadMissingScopes = !athleteId;
@@ -136,9 +149,7 @@ export class ZwiftProvider implements SyncProvider {
 
     if (!athleteId) {
       logger.error(`[zwift] Stored scopes missing athlete ID: ${JSON.stringify(stored.scopes)}`);
-      throw new Error(
-        `Zwift athlete ID not found in scopes (${stored.scopes ?? "null"}) — re-authenticate`,
-      );
+      throw new ProviderStoredIdentityMissingError("Zwift", "athlete ID");
     }
 
     let accessToken = stored.accessToken;
@@ -149,9 +160,7 @@ export class ZwiftProvider implements SyncProvider {
     const shouldRefresh = forceRefresh || stored.expiresAt <= new Date();
     if (shouldRefresh) {
       if (!stored.refreshToken) {
-        throw new Error(
-          "Zwift authentication failed and no refresh token available — re-authenticate",
-        );
+        throw new ProviderAuthenticationFailedError("Zwift");
       }
       logger.info(
         forceRefresh

@@ -1,6 +1,7 @@
 import type { SyncDatabase } from "../db/index.ts";
 import { deleteTokens, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
 import { refreshAccessToken } from "./oauth.ts";
 
@@ -61,9 +62,9 @@ export async function resolveOAuthTokens(options: {
           `User must re-authorize ${providerName}.`,
       );
       await deleteTokens(db, providerId);
-      throw new Error(
-        `${providerName} authorization revoked — re-connect the provider to resume syncing.`,
-      );
+      throw new RefreshTokenRevokedError(providerName, {
+        cause: error instanceof Error ? error : undefined,
+      });
     }
     throw error;
   }

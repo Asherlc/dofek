@@ -60,6 +60,7 @@ const meta = {
         recordCount: 12,
         durationMs: 1200,
         errorMessage: null,
+        authFailureReason: null,
       },
     ],
     onSync: () => {},

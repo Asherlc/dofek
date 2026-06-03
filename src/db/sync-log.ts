@@ -1,3 +1,7 @@
+import {
+  authFailureReasonFromError,
+  type ProviderAuthFailureReason,
+} from "../providers/auth-errors.ts";
 import type { SyncDatabase } from "./index.ts";
 import { syncLog } from "./schema.ts";
 import { getTokenUserId } from "./token-user-context.ts";
@@ -8,6 +12,7 @@ export interface SyncLogEntry {
   status: "success" | "error";
   recordCount?: number;
   errorMessage?: string;
+  authFailureReason?: ProviderAuthFailureReason;
   durationMs?: number;
   /** User ID for this sync log entry. */
   userId?: string;
@@ -32,6 +37,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     status: entry.status,
     recordCount: entry.recordCount ?? 0,
     errorMessage: entry.errorMessage,
+    authFailureReason: entry.authFailureReason,
     durationMs: entry.durationMs,
     userId: scopedUserId,
   });
@@ -66,6 +72,7 @@ export async function withSyncLog<T>(
       dataType,
       status: "error",
       errorMessage: err instanceof Error ? err.message : String(err),
+      authFailureReason: authFailureReasonFromError(err),
       durationMs: Date.now() - start,
       userId,
     });

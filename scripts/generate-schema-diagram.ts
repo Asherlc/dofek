@@ -51,12 +51,17 @@ export function parseColumnLine(line: string): Column | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed === "}") return null;
 
-  const colMatch = trimmed.match(/^(\w+)\s+(.+?)(?:\s*\[(.+)])?$/);
+  const colMatch = trimmed.match(/^(\w+)\s+(.+)$/);
   if (!colMatch) return null;
 
   const colName = colMatch[1];
-  const rawType = colMatch[2].replace(/"/g, "");
-  const attrs = colMatch[3] ?? "";
+  const typeAndAttrs = colMatch[2];
+  const attrsStart = typeAndAttrs.indexOf(" [");
+  const rawType = (attrsStart === -1 ? typeAndAttrs : typeAndAttrs.slice(0, attrsStart)).replace(
+    /"/g,
+    "",
+  );
+  const attrs = attrsStart === -1 ? "" : typeAndAttrs.slice(attrsStart + 1);
   const pk = attrs.includes("pk");
 
   // Simplify types for readability
