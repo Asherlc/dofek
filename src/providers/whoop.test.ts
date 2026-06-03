@@ -3068,8 +3068,8 @@ describe("WhoopProvider.sync() — request logging callback", () => {
     await provider.sync(db, new Date(Date.now() - 1000), { userId: "test-user-123" });
 
     // winston types logger.info via an object-arg overload, so mock.calls is a
-    // 1-tuple at the type level; widen to read the metadata (2nd) argument.
-    const infoCalls = infoSpy.mock.calls as ReadonlyArray<readonly unknown[]>;
+    // 1-tuple at the type level; spread each call to read the metadata (2nd) argument.
+    const infoCalls = infoSpy.mock.calls.map((call) => [...call]);
     const infoApiLog = infoCalls.find((call) => String(call[0]) === "[whoop] API request");
     expect(infoApiLog).toBeDefined();
     if (isRecord(infoApiLog?.[1])) {

@@ -507,7 +507,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
         return HttpResponse.json({
           _embedded: {
             workouts: [
-              fakeWorkout({ id: "mmf-nolinks", start_datetime: "2026-06-20T08:00:00+00:00" }),
+              fakeWorkout({ id: "mmf-no-links", start_datetime: "2026-06-20T08:00:00+00:00" }),
             ],
           },
           total_count: 1,
