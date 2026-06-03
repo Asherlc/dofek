@@ -1,0 +1,53 @@
+# Test dependencies for the unit/integration and mutation CI jobs.
+#
+# These were previously declared as GitHub Actions `services:`, but service
+# containers are pulled by the runner's Docker daemon during job
+# initialization — before any step runs — so they cannot benefit from the
+# mirror.gcr.io pull-through cache and were flaking on registry-1.docker.io
+# timeouts. Starting them in a step (after ./.github/actions/configure-docker-mirror)
+# routes their pulls through the mirror. Credentials/ports match the old
+# `services:` definitions so TEST_DATABASE_URL / CLICKHOUSE_URL / REDIS_URL are
+# unchanged.
+name: dofek-ci
+
+services:
+  db:
+    image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+    environment:
+      POSTGRES_DB: test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "test", "-d", "test"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.3.20-alpine
+    environment:
+      CLICKHOUSE_DB: fitness
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: health
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--password", "health", "--query", "SELECT 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
