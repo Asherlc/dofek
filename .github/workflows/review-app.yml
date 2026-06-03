@@ -72,6 +72,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: refs/pull/${{ needs.validate-pr.outputs.pr_number }}/merge
+          persist-credentials: false
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
           config-inline: |
@@ -116,6 +117,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           ref: refs/pull/${{ needs.validate-pr.outputs.pr_number }}/merge
+          persist-credentials: false
 
       - name: Ensure review app Terraform workspace exists
         env:
