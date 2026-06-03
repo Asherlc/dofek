@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -168,5 +169,39 @@ describe("WahooProvider.authSetup.revokeExistingTokens", () => {
     await expect(revokeExistingTokens({ ...expiredTokens, refreshToken: null })).rejects.toThrow(
       "Cannot revoke Wahoo tokens",
     );
+  });
+});
+
+describe("WahooProvider — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+  const server = setupServer();
+
+  beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+  afterEach(() => {
+    server.resetHandlers();
+    process.env = { ...originalEnv };
+  });
+  afterAll(() => server.close());
+
+  it("authSetup.exchangeCode surfaces a 429 as a ProviderRateLimitError tagged 'wahoo'", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+    server.use(
+      http.post(`${WAHOO_API_BASE}/oauth/token`, () =>
+        HttpResponse.text("rate limited", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        }),
+      ),
+    );
+
+    const setup = new WahooProvider().authSetup();
+    const err = await setup.exchangeCode("code").catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("wahoo");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });

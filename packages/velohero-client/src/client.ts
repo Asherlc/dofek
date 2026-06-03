@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { VeloHeroSsoResponse, VeloHeroWorkout, VeloHeroWorkoutsResponse } from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
@@ -8,7 +9,7 @@ export class VeloHeroClient {
 
   constructor(sessionCookie: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#sessionCookie = sessionCookie;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "velohero" });
   }
 
   async #get<T>(path: string, params?: URLSearchParams): Promise<T> {
@@ -52,7 +53,8 @@ export class VeloHeroClient {
       view: "json",
     });
 
-    const response = await fetchFn(`${VELOHERO_BASE_URL}/sso`, {
+    const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "velohero" });
+    const response = await rateLimitFetchFn(`${VELOHERO_BASE_URL}/sso`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",

@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type BodySpecBoneDensityResponse,
@@ -905,6 +906,60 @@ describe("BodySpecProvider", () => {
       if (!err) return;
       // Error message should be truncated
       expect(err.message.length).toBeLessThan(400);
+    });
+  });
+
+  describe("rate-limit aware fetch wiring", () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      process.env = {
+        ...originalEnv,
+        BODYSPEC_CLIENT_ID: "test-id",
+        BODYSPEC_CLIENT_SECRET: "test-secret",
+      };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    function mockDb(): SyncDatabase {
+      const insertFn = vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([{ id: "scan-uuid-1" }]),
+          }),
+        }),
+      });
+      return { insert: insertFn, select: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+    }
+
+    it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'bodyspec'", async () => {
+      vi.mocked(loadTokens).mockResolvedValue({
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      });
+
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValue(
+          new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } }),
+        );
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(mockDb(), new Date("2025-01-01"));
+
+      expect(result.errors).toHaveLength(1);
+      const cause = result.errors[0]?.cause;
+      expect(cause).toBeInstanceOf(ProviderRateLimitError);
+      if (cause instanceof ProviderRateLimitError) {
+        expect(cause.providerId).toBe("bodyspec");
+        expect(cause.statusCode).toBe(429);
+      }
     });
   });
 });

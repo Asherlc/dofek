@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import {
   mapFitnessDiscipline,
@@ -8,6 +9,7 @@ import {
   parseAuth0FormHtml,
   parsePerformanceGraph,
   parseWorkout,
+  pelotonAutomatedLogin,
   pelotonOAuthConfig,
 } from "./peloton.ts";
 
@@ -1297,5 +1299,41 @@ describe("PelotonProvider.sync — duration", () => {
 
     expect(result.duration).toBeGreaterThanOrEqual(0);
     expect(result.duration).toBeLessThanOrEqual(after - before + 100);
+  });
+});
+
+describe("Peloton — rate-limit aware fetch wiring", () => {
+  const rateLimited429: typeof globalThis.fetch = async () =>
+    new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
+
+  it("PelotonClient surfaces a 429 as a ProviderRateLimitError tagged 'peloton'", async () => {
+    const client = new PelotonClient("token", rateLimited429);
+    const err = await client.getUserId().catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("peloton");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("provider authSetup.exchangeCode surfaces a 429 tagged 'peloton'", async () => {
+    const setup = new PelotonProvider(rateLimited429).authSetup();
+    const err = await setup.exchangeCode("code").catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("peloton");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("pelotonAutomatedLogin surfaces a 429 tagged 'peloton'", async () => {
+    const err = await pelotonAutomatedLogin("user@test.com", "pass", rateLimited429).catch(
+      (caught: unknown) => caught,
+    );
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("peloton");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });

@@ -111,7 +111,7 @@ describe("TrainerRoadProvider", () => {
     });
 
     it("passes custom fetch function through automated login", async () => {
-      const mockFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
+      const mockFetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(new Response()));
       const provider = new TrainerRoadProvider(mockFetch);
       const signIn = vi.spyOn(TrainerRoadClient, "signIn").mockResolvedValue({
         authCookie: "trainerroad-cookie",
@@ -121,7 +121,12 @@ describe("TrainerRoadProvider", () => {
 
       const tokenSet = await provider.authSetup().automatedLogin?.("test@example.com", "secret");
 
-      expect(signIn).toHaveBeenCalledWith("test@example.com", "secret", mockFetch);
+      // signIn receives the provider's rate-limit-wrapped fetch, which delegates to mockFetch.
+      expect(signIn).toHaveBeenCalledWith("test@example.com", "secret", expect.any(Function));
+      const passedFetch = signIn.mock.calls[0]?.[2];
+      if (!passedFetch) throw new Error("expected a fetch passed to signIn");
+      await passedFetch("https://example.com");
+      expect(mockFetch).toHaveBeenCalled();
       expect(tokenSet).toEqual({
         accessToken: "trainerroad-cookie",
         refreshToken: null,
@@ -180,7 +185,7 @@ describe("VeloHeroProvider", () => {
     });
 
     it("passes custom fetch function through automated login", async () => {
-      const mockFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
+      const mockFetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(new Response()));
       const provider = new VeloHeroProvider(mockFetch);
       const signIn = vi.spyOn(VeloHeroClient, "signIn").mockResolvedValue({
         sessionCookie: "VeloHero_session=velohero-session",
@@ -190,7 +195,12 @@ describe("VeloHeroProvider", () => {
 
       const tokenSet = await provider.authSetup().automatedLogin?.("test@example.com", "secret");
 
-      expect(signIn).toHaveBeenCalledWith("test@example.com", "secret", mockFetch);
+      // signIn receives the provider's rate-limit-wrapped fetch, which delegates to mockFetch.
+      expect(signIn).toHaveBeenCalledWith("test@example.com", "secret", expect.any(Function));
+      const passedFetch = signIn.mock.calls[0]?.[2];
+      if (!passedFetch) throw new Error("expected a fetch passed to signIn");
+      await passedFetch("https://example.com");
+      expect(mockFetch).toHaveBeenCalled();
       expect(tokenSet).toEqual({
         accessToken: "VeloHero_session=velohero-session",
         refreshToken: null,

@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -258,5 +259,31 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
     const swim = rows.find((r) => r.externalId === "7003");
     expect(swim?.activityType).toBe("swimming");
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId when the API returns 429", async () => {
+    await saveTokens(ctx.db, "trainerroad", {
+      accessToken: "valid-cookie",
+      refreshToken: null,
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "username:testuser",
+    });
+
+    server.use(
+      http.get("https://www.trainerroad.com/app/api/calendar/activities/:username", () => {
+        return new HttpResponse("rate limited", { status: 429 });
+      }),
+    );
+
+    const provider = new TrainerRoadProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    expect(cause).toBeInstanceOf(ProviderRateLimitError);
+    if (!(cause instanceof ProviderRateLimitError)) throw new Error("expected rate limit error");
+    expect(cause.providerId).toBe("trainerroad");
+    expect(cause.statusCode).toBe(429);
   });
 });

@@ -48,7 +48,7 @@ vi.mock("../providers/withings.ts", () => ({
 vi.mock("../providers/peloton.ts", () => ({
   PelotonProvider: vi.fn(() => mockProviders.peloton),
 }));
-vi.mock("../providers/fatsecret.ts", () => ({
+vi.mock("../providers/fatsecret/provider.ts", () => ({
   FatSecretProvider: vi.fn(() => mockProviders.fatsecret),
 }));
 vi.mock("../providers/whoop/provider.ts", () => ({

@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import * as Sentry from "@sentry/node";
 import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
@@ -16,7 +17,13 @@ import {
   syncOperationsTotal,
   syncRecordsTotal,
 } from "../sync-metrics.ts";
+import {
+  providerRateLimitCooldownJobId,
+  providerRateLimitCooldownStore,
+  providerRateLimitDelayMs,
+} from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
+import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS } from "./queues.ts";
 
 /**
  * Compute overall job percentage from completed providers + within-provider progress.
@@ -77,6 +84,28 @@ function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason 
   return errors
     .map((syncError) => authFailureReasonFromError(syncError.cause))
     .find((authFailureReason) => authFailureReason !== undefined);
+}
+
+async function scheduleRateLimitRetry(
+  job: SyncJob,
+  error: ProviderRateLimitError,
+  since: Date,
+): Promise<string> {
+  const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
+  const delay = providerRateLimitDelayMs(cooldown);
+  const nextData: SyncJobData = {
+    ...job.data,
+    providerId: error.providerId,
+    // Persist the concrete window resolved for this run so the delayed retry
+    // syncs from the same point rather than recomputing a now-shifted sinceDays.
+    sinceIso: since.toISOString(),
+  };
+  await getProviderSyncQueue(error.providerId).add("sync", nextData, {
+    ...SYNC_JOB_RETRY_OPTIONS,
+    delay,
+    jobId: providerRateLimitCooldownJobId(cooldown, job.data.userId),
+  });
+  return cooldown.expiresAt.toISOString();
 }
 
 export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
@@ -211,6 +240,33 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
         syncErrorsTotal.add(result.errors.length, { provider: provider.id, data_type: "sync" });
       }
     } catch (err: unknown) {
+      if (err instanceof ProviderRateLimitError) {
+        const retryAt = await scheduleRateLimitRetry(job, err, since);
+        const message = `Rate limited; retry scheduled for ${retryAt}`;
+        completedCount++;
+        providerStatus[provider.id] = { status: "running", message };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        logger.warn(`[worker] ${provider.name} rate limited; retry scheduled for ${retryAt}`);
+
+        const durationMs = Date.now() - syncStart;
+        await logSync(db, {
+          providerId: provider.id,
+          dataType: "sync",
+          status: "error",
+          errorMessage: err.message,
+          durationMs,
+          userId: job.data.userId,
+        });
+
+        syncOperationsTotal.add(1, { provider: provider.id, data_type: "sync", status: "error" });
+        syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
+        syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
+        continue;
+      }
+
       if (isRetryableInfraError(err)) {
         const message = err instanceof Error ? err.message : String(err);
         Sentry.captureException(err, { tags: { provider: provider.id, retryable: "true" } });

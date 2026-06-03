@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -257,7 +258,7 @@ function bodySpecOAuthConfig(host?: string): OAuthConfig | null {
 
 class BodySpecClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, BODYSPEC_API_BASE, fetchFn);
+    super(accessToken, BODYSPEC_API_BASE, fetchFn, "bodyspec");
   }
 
   async listResults(page = 1, pageSize = 100): Promise<BodySpecResultsListResponse> {
@@ -314,7 +315,7 @@ export class BodySpecProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "bodyspec" });
   }
 
   validate(): string | null {

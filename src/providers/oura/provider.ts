@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
@@ -38,7 +39,7 @@ export class OuraProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "oura" });
   }
 
   validate(): string | null {

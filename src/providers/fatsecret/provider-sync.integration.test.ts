@@ -1,12 +1,14 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { foodEntry, oauthToken, userProfile } from "../db/schema.ts";
-import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
-import { ensureProvider, saveTokens } from "../db/tokens.ts";
-import { failOnUnhandledExternalRequest } from "../test/msw.ts";
-import { type FatSecretFoodEntriesResponse, FatSecretProvider } from "./fatsecret.ts";
+import { foodEntry, oauthToken, userProfile } from "../../db/schema.ts";
+import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { ensureProvider, saveTokens } from "../../db/tokens.ts";
+import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
+import type { FatSecretFoodEntriesResponse } from "./parsing.ts";
+import { FatSecretProvider } from "./provider.ts";
 
 // ============================================================
 // Fake FatSecret API responses
@@ -139,6 +141,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
     expect(result.provider).toBe("fatsecret");
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
+    // duration is elapsed wall-clock (Date.now() - start), not Date.now() + start
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
 
     // Verify food_entry rows
     const rows = await ctx.db.select().from(foodEntry).where(eq(foodEntry.providerId, "fatsecret"));
@@ -242,6 +247,23 @@ describe("FatSecretProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
     expect(result.recordsSynced).toBe(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("throws when the stored token has no secret", async () => {
+    await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fatsecret"));
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: null, // OAuth 1.0 token secret is stored as refreshToken
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const provider = new FatSecretProvider();
+    await expect(provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"))).rejects.toThrow(
+      "No token secret stored for FatSecret",
+    );
   });
 
   it("handles null food_entries response for days with no data", async () => {
@@ -286,8 +308,32 @@ describe("FatSecretProvider.sync() (integration)", () => {
     const since = new Date("2026-03-10T00:00:00Z");
     const result = await provider.sync(ctx.db, since);
 
-    // Should have errors but not crash
+    // Should have errors but not crash, and each error names the failing date
     expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toMatch(/^Date \d{4}-\d{2}-\d{2}: /);
+  });
+
+  it("propagates a 429 as a ProviderRateLimitError instead of capturing it as a per-day error", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return new HttpResponse("Too Many Requests", {
+          status: 429,
+          headers: { "Retry-After": "30" },
+        });
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    const since = new Date("2026-03-15T00:00:00Z");
+
+    await expect(provider.sync(ctx.db, since)).rejects.toBeInstanceOf(ProviderRateLimitError);
   });
 
   it("caps lookback to 2 years when since is epoch (new Date(0))", async () => {

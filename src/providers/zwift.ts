@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "zwift-client/client";
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
@@ -31,7 +32,7 @@ export class ZwiftProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "zwift" });
   }
 
   validate(): string | null {

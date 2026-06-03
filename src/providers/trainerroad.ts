@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { TrainerRoadClient } from "trainerroad-client/client";
 import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
@@ -33,7 +34,7 @@ export class TrainerRoadProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainerroad" });
   }
 
   validate(): string | null {

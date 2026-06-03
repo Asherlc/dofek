@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -178,7 +179,7 @@ function formatDateCompact(date: Date): string {
 
 export class CorosClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, COROS_API_BASE, fetchFn);
+    super(accessToken, COROS_API_BASE, fetchFn, "coros");
   }
 
   protected override getHeaders(): Record<string, string> {
@@ -227,7 +228,7 @@ export class CorosProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "coros" });
   }
 
   validate(): string | null {

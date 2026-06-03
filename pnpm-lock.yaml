@@ -54,6 +54,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:packages/heart-rate-variability
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:packages/provider-http
       '@dofek/scoring':
         specifier: workspace:*
         version: link:packages/scoring
@@ -255,6 +258,10 @@ importers:
         version: 3.25.76
 
   packages/eight-sleep:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -266,6 +273,10 @@ importers:
   packages/format: {}
 
   packages/garmin-connect:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -474,6 +485,8 @@ importers:
 
   packages/onboarding: {}
 
+  packages/provider-http: {}
+
   packages/providers-meta: {}
 
   packages/recovery: {}
@@ -602,6 +615,10 @@ importers:
         version: link:../scoring
 
   packages/trainerroad-client:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -620,6 +637,10 @@ importers:
         version: link:../zones
 
   packages/trainingpeaks-connect:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -629,6 +650,10 @@ importers:
         version: 3.2.4(@types/node@25.9.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
   packages/velohero-client:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -756,6 +781,10 @@ importers:
         version: 8.0.13(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
   packages/whoop-whoop:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -767,6 +796,10 @@ importers:
   packages/zones: {}
 
   packages/zwift-client:
+    dependencies:
+      '@dofek/provider-http':
+        specifier: workspace:*
+        version: link:../provider-http
     devDependencies:
       typescript:
         specifier: 5.9.3
@@ -16891,9 +16924,7 @@ snapshots:
       metro-runtime: 0.83.7
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

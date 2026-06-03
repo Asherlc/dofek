@@ -38,7 +38,7 @@ export const OURA_API_BASE = "https://api.ouraring.com";
 
 export class OuraClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, OURA_API_BASE, fetchFn);
+    super(accessToken, OURA_API_BASE, fetchFn, "oura");
   }
 
   #dateQuery(startDate: string, endDate: string, nextToken?: string): string {

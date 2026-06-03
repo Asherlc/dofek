@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -136,6 +137,20 @@ describe("MapMyFitnessClient", () => {
     );
   });
 
+  it("throws a ProviderRateLimitError with providerId on 429", async () => {
+    // Kills the constructor ObjectLiteral mutant on
+    // createRateLimitAwareFetch(fetchFn, { providerId: "mapmyfitness" }) → {}.
+    const mockFetch = vi.fn().mockResolvedValue(new Response("slow down", { status: 429 }));
+
+    const client = new MapMyFitnessClient("token", "client-id", mockFetch);
+    const error = await client.getWorkouts("user-1", "2026-01-01T00:00:00Z").catch((e) => e);
+    if (!(error instanceof ProviderRateLimitError)) {
+      throw new Error(`expected ProviderRateLimitError, got ${String(error)}`);
+    }
+    expect(error.providerId).toBe("mapmyfitness");
+    expect(error.statusCode).toBe(429);
+  });
+
   it("includes correct headers", async () => {
     const mockFetch = vi.fn().mockResolvedValue(
       Response.json({
@@ -181,6 +196,29 @@ describe("MapMyFitnessProvider", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+  });
+
+  it("authSetup exposes a working exchangeCode that hits the token endpoint", async () => {
+    // Kills the ArrowFunction mutant on
+    // exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn) → () => undefined.
+    process.env.MAPMYFITNESS_CLIENT_ID = "id";
+    process.env.MAPMYFITNESS_CLIENT_SECRET = "secret";
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      Response.json({
+        access_token: "access-xyz",
+        refresh_token: "refresh-xyz",
+        expires_in: 3600,
+      }),
+    );
+
+    const setup = new MapMyFitnessProvider(mockFetch).authSetup();
+    const tokens = await setup.exchangeCode("auth-code-123");
+
+    expect(tokens.accessToken).toBe("access-xyz");
+    const [url, init] = mockFetch.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/oauth2/access_token/");
+    expect(String(init?.body)).toContain("auth-code-123");
   });
 
   it("validate returns errors for missing env vars", () => {

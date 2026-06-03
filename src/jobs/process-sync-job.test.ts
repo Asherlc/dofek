@@ -1,7 +1,17 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
+
+const MockJobDataSchema = z.object({
+  providerId: z.string().optional(),
+  sinceDays: z.number().optional(),
+  sinceIso: z.string().optional(),
+  userId: z.string(),
+  checkpoint: z.unknown().optional(),
+});
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -60,10 +70,18 @@ vi.mock("../db/tokens.ts", () => ({
 
 const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
+const mockProviderQueueAdd = vi.fn().mockResolvedValue(undefined);
 vi.mock("./queues.ts", () => ({
   enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
     mockEnqueueDebouncedPostSyncMaintenance(...args),
   enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
+  getProviderSyncQueue: vi.fn(() => ({ add: mockProviderQueueAdd })),
+  SYNC_JOB_RETRY_OPTIONS: {
+    attempts: 288,
+    backoff: { type: "fixed", delay: 300_000 },
+    removeOnComplete: { age: 86_400, count: 1_000 },
+    removeOnFail: { age: 604_800, count: 1_000 },
+  },
 }));
 
 const mockSyncRecordsTotal = { add: vi.fn() };
@@ -161,9 +179,13 @@ describe("processSyncJob", () => {
     });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
+    mockProviderQueueAdd.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
+    // Restore real timers so a test that throws before its own useRealTimers()
+    // can't leak the fake clock into later tests.
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -205,6 +227,128 @@ describe("processSyncJob", () => {
     await expect(runSyncJob(createMockJob({ providerId: "nonexistent" }), mockDb)).rejects.toThrow(
       "Unknown provider: nonexistent",
     );
+  });
+
+  it("records provider rate-limit cooldown records and schedules a deterministic delayed retry", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(
+        new ProviderRateLimitError({
+          message: "Garmin API rate limit exceeded (429): limited",
+          providerId: "garmin",
+          statusCode: 429,
+          responseBody: "limited",
+          scope: "provider",
+          retryAfterSeconds: 600,
+        }),
+      ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "garmin",
+        userId: "user-1",
+        sinceDays: 1,
+        // Resolved absolute window for this run (2026-06-02T12:00:00Z minus 1 day),
+        // persisted so the delayed retry does not recompute a shifted relative window.
+        sinceIso: "2026-06-01T12:00:00.000Z",
+      },
+      expect.objectContaining({
+        attempts: 288,
+        delay: 600_000,
+        jobId: "provider-rate-limit:garmin:provider:user-1:1780402200000",
+      }),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalledWith(
+      expect.any(ProviderRateLimitError),
+      expect.anything(),
+    );
+
+    // The rate-limited provider counts as completed (1/1 → 100%) and its status
+    // is reported as running with the retry message.
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: { status: "running", message: expect.stringContaining("retry scheduled") },
+      },
+      percentage: 100,
+    });
+
+    // The 429 is logged as an error with the provider's message and the elapsed
+    // duration (0 under frozen time — guards against Date.now() + syncStart).
+    expect(mockLogSync).toHaveBeenCalledWith(mockDb, {
+      providerId: "garmin",
+      dataType: "sync",
+      status: "error",
+      errorMessage: "Garmin API rate limit exceeded (429): limited",
+      durationMs: 0,
+      userId: "user-1",
+    });
+
+    // Metrics are tagged with the provider, not an empty options object.
+    expect(mockSyncOperationsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+      status: "error",
+    });
+    expect(mockSyncDuration.record).toHaveBeenCalledWith(0, {
+      provider: "garmin",
+      data_type: "sync",
+    });
+    expect(mockSyncErrorsTotal.add).toHaveBeenCalledWith(1, {
+      provider: "garmin",
+      data_type: "sync",
+    });
+    vi.useRealTimers();
+  });
+
+  it("requeues a rate-limited run with the resolved absolute since timestamp", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(
+        new ProviderRateLimitError({
+          message: "Garmin API rate limit exceeded (429): limited",
+          providerId: "garmin",
+          statusCode: 429,
+          responseBody: "limited",
+          scope: "provider",
+          retryAfterSeconds: 600,
+        }),
+      ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 7 });
+    await runSyncJob(job, mockDb);
+
+    // The original run resolved since = now - 7 days = 2026-05-26T12:00:00Z.
+    const expectedSinceIso = "2026-05-26T12:00:00.000Z";
+    const firstCall = mockProviderQueueAdd.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const requeuedData = MockJobDataSchema.parse(firstCall?.[1]);
+    expect(requeuedData.sinceIso).toBe(expectedSinceIso);
+
+    // The delayed retry resolves the same absolute window from the persisted sinceIso,
+    // not a shifted relative sinceDays, even if it runs later.
+    vi.setSystemTime(new Date("2026-06-02T12:30:00Z"));
+    const retryProvider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetEnabledSyncProviders.mockReturnValue([retryProvider]);
+    await runSyncJob(createMockJob(requeuedData), mockDb);
+
+    expect(retryProvider.sync).toHaveBeenCalledWith(
+      mockDb,
+      new Date(expectedSinceIso),
+      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+    );
+    vi.useRealTimers();
   });
 
   it("skips import-only providers when enqueued by id", async () => {

@@ -1,7 +1,16 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { EIGHT_SLEEP_CLIENT_ID, EIGHT_SLEEP_CLIENT_SECRET, EightSleepClient } from "./client.ts";
 import { createMockFetch } from "./test-helpers.ts";
 import type { EightSleepAuthResponse, EightSleepTrendsResponse } from "./types.ts";
+
+function rateLimitedFetch(retryAfterSeconds: string): typeof globalThis.fetch {
+  return async () =>
+    new Response("Too Many Requests", {
+      status: 429,
+      headers: { "Retry-After": retryAfterSeconds },
+    });
+}
 
 describe("EightSleepClient constants", () => {
   it("exports EIGHT_SLEEP_CLIENT_ID as a non-empty string", () => {
@@ -51,6 +60,18 @@ describe("EightSleepClient.signIn", () => {
     await expect(
       EightSleepClient.signIn("test@example.com", "wrong-password", fetchFn),
     ).rejects.toThrow("Eight Sleep sign-in failed (401)");
+  });
+
+  it("throws an eight-sleep-scoped ProviderRateLimitError on 429", async () => {
+    const error = await EightSleepClient.signIn(
+      "test@example.com",
+      "password123",
+      rateLimitedFetch("30"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "eight-sleep");
+    expect(error).toHaveProperty("retryAfterSeconds", 30);
   });
 });
 
@@ -103,5 +124,17 @@ describe("EightSleepClient.getTrends", () => {
     await expect(client.getTrends("America/New_York", "2024-01-01", "2024-01-02")).rejects.toThrow(
       "Eight Sleep API error (500)",
     );
+  });
+
+  it("throws an eight-sleep-scoped ProviderRateLimitError on 429", async () => {
+    const client = new EightSleepClient("test-token", "user-123", rateLimitedFetch("15"));
+
+    const error = await client
+      .getTrends("America/New_York", "2024-01-01", "2024-01-02")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "eight-sleep");
+    expect(error).toHaveProperty("retryAfterSeconds", 15);
   });
 });

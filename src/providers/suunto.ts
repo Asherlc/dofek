@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -171,7 +172,7 @@ export class SuuntoProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "suunto" });
   }
 
   validate(): string | null {

@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MapMyFitnessClient,
@@ -679,8 +680,11 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (429): Rate limit exceeded",
-    );
+    const error = await client
+      .getWorkouts("-", "2026-03-01T00:00:00Z")
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "mapmyfitness");
+    expect(error).toHaveProperty("responseBody", "Rate limit exceeded");
   });
 });

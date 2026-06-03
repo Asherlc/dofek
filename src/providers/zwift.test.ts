@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Restore real timers and any Date.now spy after each test so a failed
+// assertion before an inline mockRestore() can't leak the mocked clock.
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 // cspell:ignore RESTEASY
 
@@ -485,11 +492,16 @@ describe("ZwiftProvider.authSetup() — automatedLogin", () => {
     const setup = provider.authSetup();
     const result = await setup.automatedLogin?.("user@example.com", "password123");
 
+    // signIn receives the provider's rate-limit-wrapped fetch, which delegates to mockFetch.
     expect(MockZwiftClient.signIn).toHaveBeenCalledWith(
       "user@example.com",
       "password123",
-      mockFetch,
+      expect.any(Function),
     );
+    const passedFetch = MockZwiftClient.signIn.mock.calls[0]?.[2];
+    if (!passedFetch) throw new Error("expected a fetch passed to signIn");
+    await passedFetch("https://example.com");
+    expect(mockFetch).toHaveBeenCalled();
     expect(result?.accessToken).toContain("eyJ");
     expect(result?.refreshToken).toBe("refresh-123");
     expect(result?.expiresAt).toEqual(new Date("2026-01-01T01:00:00Z"));

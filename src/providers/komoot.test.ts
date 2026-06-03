@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -6,6 +7,18 @@ vi.mock("../db/token-user-context.ts", () => ({
 }));
 
 import { KomootProvider, komootOAuthConfig, mapKomootSport, parseKomootTour } from "./komoot.ts";
+
+async function expectKomootRateLimitError(action: () => Promise<unknown>) {
+  try {
+    await action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toMatchObject({ providerId: "komoot", retryAfterSeconds: 90 });
+    return;
+  }
+
+  throw new Error("Expected Komoot rate-limit error");
+}
 
 // ============================================================
 // Tests merged from komoot-coverage.test.ts
@@ -197,6 +210,18 @@ describe("KomootProvider.authSetup()", () => {
     expect(setup.oauthConfig.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("komoot.de");
+  });
+
+  it("throws the common rate-limit error when token exchange is throttled", async () => {
+    process.env.KOMOOT_CLIENT_ID = "test-id";
+    process.env.KOMOOT_CLIENT_SECRET = "test-secret";
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("throttled", { status: 429, headers: { "Retry-After": "90" } });
+
+    const provider = new KomootProvider(fetchFn);
+    const setup = provider.authSetup();
+
+    await expectKomootRateLimitError(() => setup.exchangeCode("code"));
   });
 
   it("throws when env vars are missing", () => {

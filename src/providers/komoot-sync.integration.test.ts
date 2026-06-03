@@ -224,6 +224,76 @@ describe("KomootProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
     expect(result.recordsSynced).toBe(0);
+    // duration is the elapsed time (Date.now() - start), not Date.now() + start
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("requests each page exactly once and sends auth headers", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    const pages = [
+      [fakeTour({ id: 9001, name: "Page 0" })],
+      [fakeTour({ id: 9002, name: "Page 1" })],
+    ];
+    const requestedPages: number[] = [];
+    const authHeaders: (string | null)[] = [];
+
+    server.use(
+      http.get("https://external-api.komoot.de/v007/users/me/tours/", ({ request }) => {
+        const url = new URL(request.url);
+        const page = Number.parseInt(url.searchParams.get("page") ?? "0", 10);
+        requestedPages.push(page);
+        authHeaders.push(request.headers.get("Authorization"));
+        return HttpResponse.json({
+          _embedded: { tours: pages[page] ?? [] },
+          page: { size: 50, totalElements: 2, totalPages: pages.length, number: page },
+        });
+      }),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    // pages 0 and 1 only — never the out-of-range page at index === totalPages
+    // (kills the `page < totalPages` → `page <= totalPages` boundary mutant)
+    expect(requestedPages).toEqual([0, 1]);
+    // every request carries the bearer token (kills the headers ObjectLiteral mutants)
+    expect(authHeaders).toEqual(["Bearer valid-token", "Bearer valid-token"]);
+    // duration is elapsed time, not Date.now() + start
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
+  });
+
+  it("treats a response with no _embedded section as zero tours", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      http.get("https://external-api.komoot.de/v007/users/me/tours/", () => {
+        return HttpResponse.json({
+          page: { size: 50, totalElements: 0, totalPages: 1, number: 0 },
+        });
+      }),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    // `data._embedded?.tours ?? []` must not throw when _embedded is absent
+    // (kills the optional-chaining mutant that would dereference undefined)
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
   });
 
   it("handles API errors gracefully", async () => {

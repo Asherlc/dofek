@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -306,5 +307,31 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
     expect(result.recordsSynced).toBe(0);
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId on 429", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    server.use(
+      http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
+        return HttpResponse.text("rate limited", { status: 429 });
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-06-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    if (!(cause instanceof ProviderRateLimitError)) {
+      throw new Error(`expected ProviderRateLimitError cause, got ${String(cause)}`);
+    }
+    expect(cause.providerId).toBe("mapmyfitness");
   });
 });

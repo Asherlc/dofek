@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { EightSleepAuthResponse, EightSleepTrendsResponse } from "./types.ts";
 
 const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
@@ -20,7 +21,7 @@ export class EightSleepClient {
   ) {
     this.#accessToken = accessToken;
     this.#userId = userId;
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "eight-sleep" });
   }
 
   async #get<T>(baseUrl: string, path: string): Promise<T> {
@@ -66,7 +67,8 @@ export class EightSleepClient {
     password: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<{ accessToken: string; expiresIn: number; userId: string }> {
-    const response = await fetchFn(`${AUTH_API_BASE}/tokens`, {
+    const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "eight-sleep" });
+    const response = await rateLimitFetchFn(`${AUTH_API_BASE}/tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

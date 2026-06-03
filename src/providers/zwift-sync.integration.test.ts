@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -107,8 +108,11 @@ interface ZwiftMockOptions {
   fitnessDataError?: boolean;
   activityDetailError?: boolean;
   activitiesUnauthorizedOnce?: boolean;
+  activitiesRateLimited?: boolean;
   paginateActivities?: boolean;
   omitRefreshTokenInRefresh?: boolean;
+  noFitnessDataUrl?: boolean;
+  profileId?: number;
 }
 
 function zwiftHandlers(opts: ZwiftMockOptions = {}) {
@@ -144,7 +148,9 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }
       const activityId = Number(params.activityId);
-      const detail = opts.activityDetails?.[activityId] ?? fakeZwiftActivityDetail(activityId);
+      const detail =
+        opts.activityDetails?.[activityId] ??
+        fakeZwiftActivityDetail(activityId, { hasFitnessData: !opts.noFitnessDataUrl });
       return HttpResponse.json(detail);
     }),
 
@@ -160,13 +166,21 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     }),
 
     // Activity list (paginated)
-    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", () => {
+    http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId/activities", ({ request }) => {
       activityListRequestCount++;
+      if (opts.activitiesRateLimited) {
+        return new HttpResponse("Too Many Requests", {
+          status: 429,
+          headers: { "Retry-After": "120" },
+        });
+      }
       if (opts.activitiesUnauthorizedOnce && activityListRequestCount === 1) {
         return new HttpResponse("Unauthorized", { status: 401 });
       }
       pageRequestCount++;
-      if (opts.paginateActivities && pageRequestCount > 1) {
+      // Honor the offset query param so pagination is exercised page by page.
+      const offset = Number(new URL(request.url).searchParams.get("start") ?? "0");
+      if (opts.paginateActivities && (pageRequestCount > 1 || offset > 0)) {
         return HttpResponse.json([]);
       }
       return HttpResponse.json(activities);
@@ -175,7 +189,7 @@ function zwiftHandlers(opts: ZwiftMockOptions = {}) {
     // Profile endpoint
     http.get("https://us-or-rly101.zwift.com/api/profiles/:profileId", () => {
       return HttpResponse.json({
-        id: 42,
+        id: opts.profileId ?? 42,
         firstName: "Test",
         lastName: "User",
         ftp: 260,
@@ -556,6 +570,33 @@ describe("ZwiftProvider.sync() (integration)", () => {
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");
     expect(tokens?.accessToken).toBe("refreshed-zwift-token");
+  });
+
+  it("surfaces a ProviderRateLimitError tagged with providerId when activities return 429", async () => {
+    await saveTokens(ctx.db, "zwift", {
+      accessToken: FAKE_ACCESS_TOKEN,
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "athleteId:42",
+    });
+
+    server.use(...zwiftHandlers({ activitiesRateLimited: true }));
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    if (!(cause instanceof ProviderRateLimitError)) {
+      throw new Error("expected sync error cause to be a ProviderRateLimitError");
+    }
+    expect(cause.providerId).toBe("zwift");
+    expect(cause.statusCode).toBe(429);
+    expect(cause.retryAfterSeconds).toBe(120);
+    // The default error message embeds the providerId, so a `{}` options mutant
+    // would produce "undefined API rate limit exceeded".
+    expect(result.errors[0]?.message).toContain("zwift API rate limit exceeded");
   });
 
   it("preserves existing refresh token when refresh response omits refresh_token", async () => {

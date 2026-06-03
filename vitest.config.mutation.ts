@@ -40,6 +40,7 @@ export default defineConfig({
       "packages/zwift-client/src/**/*.test.ts",
       "packages/whoop-whoop/src/**/*.test.ts",
       "packages/trainingpeaks-connect/src/**/*.test.ts",
+      "packages/provider-http/src/**/*.test.ts",
       "packages/mobile/**/*.test.{ts,tsx}",
     ],
     exclude: ["**/node_modules/**"],

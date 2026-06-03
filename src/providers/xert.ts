@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -134,6 +135,7 @@ export async function signInToXert(
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
+  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "xert" });
   const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
   const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
 
@@ -143,7 +145,7 @@ export async function signInToXert(
     password: password,
   });
 
-  const response = await fetchFn(`${XERT_API_BASE}/oauth/token`, {
+  const response = await rateLimitFetchFn(`${XERT_API_BASE}/oauth/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
@@ -197,7 +199,7 @@ export class XertProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "xert" });
   }
 
   validate(): string | null {

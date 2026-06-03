@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
   exchangeCodeForTokens,
@@ -48,7 +49,7 @@ export class WahooProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "wahoo" });
   }
 
   validate(): string | null {
@@ -190,9 +191,10 @@ export class WahooProvider implements WebhookProvider {
   authSetup(options?: { host?: string }): ProviderAuthSetup {
     const config = wahooOAuthConfig(options?.host);
     if (!config) throw new Error("WAHOO_CLIENT_ID and WAHOO_CLIENT_SECRET are required");
+    const fetchFn = this.#fetchFn;
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeCodeForTokens(config, code),
+      exchangeCode: (code) => exchangeCodeForTokens(config, code, fetchFn),
       revokeExistingTokens: async (tokens) => {
         // Try revoking with the stored access token first.
         try {

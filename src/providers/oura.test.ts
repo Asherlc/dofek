@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -3020,5 +3021,31 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found for Oura");
     expectReasonableDuration(result.duration);
+  });
+});
+
+describe("OuraProvider — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("surfaces a 429 as a ProviderRateLimitError tagged 'oura'", async () => {
+    process.env.OURA_CLIENT_ID = "test-id";
+    process.env.OURA_CLIENT_SECRET = "test-secret";
+
+    const rateLimited429: typeof globalThis.fetch = async () =>
+      new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
+
+    const provider = new OuraProvider(rateLimited429);
+    const err = await provider
+      .registerWebhook("https://example.com/cb", "verify-token")
+      .catch((caught: unknown) => caught);
+
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("oura");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });

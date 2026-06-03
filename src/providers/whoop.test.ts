@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
@@ -2869,5 +2870,43 @@ describe("WhoopProvider.sync() — strength sync", () => {
       (call: unknown[]) => Array.isArray(call[0]) && call[0].length === 0,
     );
     expect(insertedEmptySetBatch).toBe(false);
+  });
+});
+
+// ============================================================
+// Rate-limit wrapper + provider wiring (mutation coverage)
+// ============================================================
+
+describe("WhoopProvider — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("throws ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
+      new Response("slow down", { status: 429 });
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+
+    // The constructor wraps fetchFn with createRateLimitAwareFetch({ providerId: "whoop" }).
+    // A 429 must surface as a ProviderRateLimitError carrying that providerId.
+    await expect(setup.getUserIdentity("tok")).rejects.toBeInstanceOf(ProviderRateLimitError);
+    try {
+      await setup.getUserIdentity("tok");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderRateLimitError);
+      if (err instanceof ProviderRateLimitError) {
+        expect(err.providerId).toBe("whoop");
+        expect(err.statusCode).toBe(429);
+      }
+    }
   });
 });

@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import {
+  fetchWithRateLimitHandling,
+  ProviderRateLimitError,
+  parseRetryAfterHeader,
+} from "@dofek/provider-http/rate-limit";
 import type {
   WhoopAuthToken,
   WhoopCycle,
@@ -19,11 +24,26 @@ const WHOOP_AUTH_USER_AGENT =
 const WHOOP_AUTH_AMZ_USER_AGENT =
   "aws-sdk-js/3.848.0 ua/2.1 os/macOS#10.15 lang/js md/browser#Firefox_150.0 api/cognito-identity-provider#3.848.0 m/N,E";
 
-export class WhoopRateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
+export class WhoopRateLimitError extends ProviderRateLimitError {
+  constructor(message: string, responseBody = "", retryAfterSeconds?: number | null) {
+    super({
+      message,
+      providerId: "whoop",
+      statusCode: 429,
+      responseBody,
+      retryAfterSeconds,
+    });
     this.name = "WhoopRateLimitError";
   }
+}
+
+function createWhoopRateLimitError(response: Response, responseBody: string): WhoopRateLimitError {
+  const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
+  return new WhoopRateLimitError(
+    `WHOOP API rate limit exceeded (${response.status}): ${responseBody}`,
+    responseBody,
+    retryAfterSeconds,
+  );
 }
 
 // Cognito auth config (from id.whoop.com web app)
@@ -59,26 +79,31 @@ async function cognitoCall(
   body: Record<string, unknown>,
   fetchFn: typeof globalThis.fetch,
 ): Promise<Record<string, unknown>> {
-  const response = await fetchFn(COGNITO_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Accept: "*/*",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Content-Type": "application/x-amz-json-1.1",
-      Origin: WHOOP_AUTH_ORIGIN,
-      Priority: "u=4",
-      Referer: `${WHOOP_AUTH_ORIGIN}/`,
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Site": "same-site",
-      "User-Agent": WHOOP_AUTH_USER_AGENT,
-      "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
-      "amz-sdk-invocation-id": randomUUID(),
-      "amz-sdk-request": "attempt=1; max=3",
-      "x-amz-user-agent": WHOOP_AUTH_AMZ_USER_AGENT,
+  const response = await fetchWithRateLimitHandling(
+    fetchFn,
+    COGNITO_ENDPOINT,
+    {
+      method: "POST",
+      headers: {
+        Accept: "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type": "application/x-amz-json-1.1",
+        Origin: WHOOP_AUTH_ORIGIN,
+        Priority: "u=4",
+        Referer: `${WHOOP_AUTH_ORIGIN}/`,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "User-Agent": WHOOP_AUTH_USER_AGENT,
+        "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+        "amz-sdk-invocation-id": randomUUID(),
+        "amz-sdk-request": "attempt=1; max=3",
+        "x-amz-user-agent": WHOOP_AUTH_AMZ_USER_AGENT,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    { createRateLimitError: createWhoopRateLimitError },
+  );
 
   // Read body as text first — the proxy may return non-JSON errors
   const bodyText = await response.text();
@@ -287,13 +312,15 @@ export class WhoopClient {
     accessToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
   ): Promise<number | null> {
-    const response = await fetchFn(
+    const response = await fetchWithRateLimitHandling(
+      fetchFn,
       `${WHOOP_API_BASE}/users-service/v2/bootstrap/?accountType=users&apiVersion=7&include=profile`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       },
+      { createRateLimitError: createWhoopRateLimitError },
     );
 
     if (!response.ok) {
@@ -322,46 +349,40 @@ export class WhoopClient {
     }
     requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const maxRetries = 3;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const response = await this.#fetchFn(requestUrl.toString(), {
-        headers: {
-          Authorization: `Bearer ${this.#accessToken}`,
-          "User-Agent": "WHOOP/4.0",
-        },
-      });
+    const response = await this.#fetchFn(requestUrl.toString(), {
+      headers: {
+        Authorization: `Bearer ${this.#accessToken}`,
+        "User-Agent": "WHOOP/4.0",
+      },
+    });
 
-      const retryAfterHeader = response.status === 429 ? response.headers.get("Retry-After") : null;
-      const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+    const retryAfterSeconds =
+      response.status === 429 ? parseRetryAfterHeader(response.headers.get("Retry-After")) : null;
 
-      this.#onRequest?.({
-        userId: this.#userId,
-        endpoint: requestUrl.pathname,
-        status: response.status,
-        attempt,
-        retryAfterSeconds,
-        timestamp: new Date(),
-      });
+    this.#onRequest?.({
+      userId: this.#userId,
+      endpoint: requestUrl.pathname,
+      status: response.status,
+      attempt: 0,
+      retryAfterSeconds,
+      timestamp: new Date(),
+    });
 
-      if (response.ok) {
-        return response.json();
-      }
-
-      if (response.status === 429) {
-        if (attempt === maxRetries) {
-          const text = await response.text();
-          throw new WhoopRateLimitError(`WHOOP API rate limit exceeded (429): ${text}`);
-        }
-        const delaySeconds = retryAfterSeconds ?? 2 ** attempt;
-        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-        continue;
-      }
-
-      const text = await response.text();
-      throw new Error(`WHOOP API error (${response.status}): ${text}`);
+    if (response.ok) {
+      return response.json();
     }
 
-    throw new Error("unreachable");
+    if (response.status === 429) {
+      const text = await response.text();
+      throw new WhoopRateLimitError(
+        `WHOOP API rate limit exceeded (429): ${text}`,
+        text,
+        retryAfterSeconds,
+      );
+    }
+
+    const text = await response.text();
+    throw new Error(`WHOOP API error (${response.status}): ${text}`);
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
@@ -435,12 +456,30 @@ export class WhoopClient {
     );
     requestUrl.searchParams.set("apiVersion", WHOOP_API_VERSION);
 
-    const response = await this.#fetchFn(requestUrl.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.#accessToken}`,
-        "User-Agent": "WHOOP/4.0",
+    const response = await fetchWithRateLimitHandling(
+      this.#fetchFn,
+      requestUrl.toString(),
+      {
+        headers: {
+          Authorization: `Bearer ${this.#accessToken}`,
+          "User-Agent": "WHOOP/4.0",
+        },
       },
-    });
+      {
+        createRateLimitError: (response, responseBody) => {
+          const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
+          this.#onRequest?.({
+            userId: this.#userId,
+            endpoint: requestUrl.pathname,
+            status: response.status,
+            attempt: 0,
+            retryAfterSeconds,
+            timestamp: new Date(),
+          });
+          return createWhoopRateLimitError(response, responseBody);
+        },
+      },
+    );
 
     if (response.status === 404) return null;
 

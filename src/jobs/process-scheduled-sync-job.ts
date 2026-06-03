@@ -4,6 +4,11 @@ import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import {
+  providerRateLimitCooldownJobId,
+  providerRateLimitCooldownStore,
+  providerRateLimitDelayMs,
+} from "./provider-rate-limit-cooldown.ts";
+import {
   getProviderSyncQueue,
   type ScheduledSyncJobData,
   SYNC_JOB_RETRY_OPTIONS,
@@ -47,15 +52,21 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         continue;
       }
 
-      await getProviderSyncQueue(providerId).add(
-        "sync",
-        {
-          userId,
-          providerId,
-          sinceDays: 1,
-        },
-        SYNC_JOB_RETRY_OPTIONS,
-      );
+      const jobData = {
+        userId,
+        providerId,
+        sinceDays: 1,
+      };
+      const cooldown = await providerRateLimitCooldownStore.getActive(providerId, userId);
+      const jobOptions = cooldown
+        ? {
+            ...SYNC_JOB_RETRY_OPTIONS,
+            delay: providerRateLimitDelayMs(cooldown),
+            jobId: providerRateLimitCooldownJobId(cooldown, userId),
+          }
+        : SYNC_JOB_RETRY_OPTIONS;
+
+      await getProviderSyncQueue(providerId).add("sync", jobData, jobOptions);
       jobCount++;
     }
   }

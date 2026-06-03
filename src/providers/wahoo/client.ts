@@ -127,7 +127,7 @@ function isAccessTokenExpiredResponse(text: string): boolean {
 
 export class WahooClient extends ProviderHttpClient {
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    super(accessToken, WAHOO_API_BASE, fetchFn);
+    super(accessToken, WAHOO_API_BASE, fetchFn, "wahoo");
   }
 
   protected override async handleErrorResponse(response: Response, path: string): Promise<never> {

@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { VeloHeroClient } from "velohero-client/client";
 import { parseVeloHeroWorkout } from "velohero-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
@@ -34,7 +35,7 @@ export class VeloHeroProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "velohero" });
   }
 
   validate(): string | null {

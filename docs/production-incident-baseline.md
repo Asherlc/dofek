@@ -7,6 +7,51 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-02: CI Stryker shard aborted on Docker Hub service-container pull timeout
+
+### Symptoms
+
+- One `Test / Stryker` matrix shard failed during "Initialize containers", before
+  any mutation testing ran. No mutants were evaluated; the artifact upload step
+  warned "No files were found with the provided path: reports/mutation/".
+
+### Evidence
+
+- First fatal log line:
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/": context
+  deadline exceeded` while pulling `timescale/timescaledb-ha:pg18.3-ts2.26.4-all`.
+- Three pull retries all timed out, then the job aborted.
+- Sibling Stryker shards in the same workflow run pulled the identical image
+  successfully, confirming a transient Docker Hub network issue rather than a bad
+  tag or config.
+
+### Root cause
+
+- GitHub Actions provisions `services:` containers via the runner's Docker daemon
+  during job initialization, before any step runs. The anonymous Docker Hub pull
+  hit a transient network timeout.
+
+### Resolution (2026-06-02, after recurrence on E2E + Stryker)
+
+- The flake recurred the same day on the E2E job (`docker buildx create` pulling
+  its `moby/buildkit` bootstrap image via the host daemon) and another Stryker
+  shard, confirming it as systemic daemon-level Docker Hub flakiness rather than a
+  one-off. Root cause: daemon-level pulls (buildx bootstrap image, `services:`
+  containers) bypass the buildkitd `config-inline` mirror.
+- Fix: pull every daemon-level image from the `mirror.gcr.io` pull-through cache
+  instead of `registry-1.docker.io`. `services:` images are prefixed with
+  `mirror.gcr.io/` (e.g. `mirror.gcr.io/timescale/timescaledb-ha:...`,
+  `mirror.gcr.io/redis:7-alpine`, `mirror.gcr.io/clickhouse/...`) across the
+  `lint`, `test-integration`, and `mutation` jobs, and the buildx jobs
+  (`image-scan`, `test-e2e-web`) pin the builder image via
+  `driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1` so the
+  buildkit bootstrap pull is mirrored too. (An earlier branch-local attempt used
+  a daemon-mirror composite action plus a `docker-compose.ci.yml` step stack;
+  that was superseded on merge by this simpler image-prefix approach, which keeps
+  GitHub `services:` and needs no extra files.)
+- Remaining risk: depends on `mirror.gcr.io` availability (already relied on
+  repo-wide for buildkitd pulls). Exercised end-to-end on the next CI run.
+
 ## 2026-05-31: Training, Activities, and Sleep Analytics Empty
 
 ### Symptoms

@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -686,7 +687,12 @@ describe("FitbitClient — error handling", () => {
     );
 
     const client = new FitbitClient("token");
-    await expect(client.getWeightLogs("2026-03-01")).rejects.toThrow("API error 429");
+    const error = await client
+      .getWeightLogs("2026-03-01")
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "fitbit");
+    expect(error).toHaveProperty("responseBody", "Rate Limited");
   });
 
   it("throws on non-OK daily summary response", async () => {
@@ -844,9 +850,12 @@ describe("FitbitProvider.getUserIdentity()", () => {
     const provider = new FitbitProvider(fetchProfile);
     const setup = provider.authSetup();
     if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
-    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
-      "Fitbit profile API error (429)",
-    );
+    const error = await setup
+      .getUserIdentity("bad-token")
+      .catch((caughtError: unknown) => caughtError);
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "fitbit");
+    expect(error).toHaveProperty("responseBody", "Too Many Requests");
     expect(fetchProfile).toHaveBeenCalledOnce();
   });
 });

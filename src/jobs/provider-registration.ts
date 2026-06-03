@@ -14,7 +14,10 @@ async function doRegisterProviders() {
     ["wahoo", () => import("../providers/wahoo/provider.ts").then((m) => new m.WahooProvider())],
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],
-    ["fatsecret", () => import("../providers/fatsecret.ts").then((m) => new m.FatSecretProvider())],
+    [
+      "fatsecret",
+      () => import("../providers/fatsecret/provider.ts").then((m) => new m.FatSecretProvider()),
+    ],
     ["whoop", () => import("../providers/whoop/provider.ts").then((m) => new m.WhoopProvider())],
     [
       "ride-with-gps",

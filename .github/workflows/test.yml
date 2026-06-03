@@ -452,6 +452,8 @@ jobs:
   test-integration:
     name: Integration Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -480,19 +482,19 @@ jobs:
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
-          CLICKHOUSE_PASSWORD: health
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
         ports:
           - 8123:8123
           - 9000:9000
         options: >-
           --add-host=host.docker.internal:host-gateway
-          --health-cmd "clickhouse-client --password health --query 'SELECT 1'"
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-      CLICKHOUSE_URL: http://default:health@localhost:8123
+      CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -762,17 +764,33 @@ jobs:
               continue
             fi
 
-            STATS=$(git diff --numstat $DIFF_RANGE -- "$f")
-            ADDED=$(echo "$STATS" | awk '{print $1}')
-            DELETED=$(echo "$STATS" | awk '{print $2}')
-            TOTAL=$((ADDED + DELETED))
-            if [ "$TOTAL" -gt 50 ] && [ "$((ADDED * 100 / TOTAL))" -lt 10 ]; then
-              echo "Skipping $f: $ADDED added, $DELETED deleted (mostly extraction)"
-              continue
-            fi
+            # Mutate only the lines this PR changed (added/modified), not the
+            # whole file. A one-line edit (e.g. wrapping fetch for rate limiting)
+            # must not surface a pre-existing file's entire coverage debt. Parse
+            # the new-side line ranges from the unified diff hunks and pass them
+            # to Stryker as `path:start-end` specs.
+            RANGES=$(git diff -U0 $DIFF_RANGE -- "$f" | awk '
+              /^@@ / {
+                match($0, /\+[0-9]+(,[0-9]+)?/)
+                plus = substr($0, RSTART + 1, RLENGTH - 1)
+                n = split(plus, parts, ",")
+                start = parts[1]
+                count = (n > 1 ? parts[2] : 1)
+                if (count > 0) print start "-" (start + count - 1)
+              }')
+            [ -z "$RANGES" ] && continue
 
-            WEIGHT=$(wc -l < "$f" | tr -d ' ')
-            FILE_WEIGHTS+=("$WEIGHT $f")
+            SPEC=""
+            WEIGHT=0
+            while IFS= read -r range; do
+              [ -z "$range" ] && continue
+              rstart="${range%-*}"
+              rend="${range#*-}"
+              WEIGHT=$((WEIGHT + rend - rstart + 1))
+              SPEC="${SPEC:+$SPEC,}$f:$range"
+            done <<< "$RANGES"
+
+            FILE_WEIGHTS+=("$WEIGHT $SPEC")
           done
 
           COUNT=${#FILE_WEIGHTS[@]}
@@ -835,9 +853,11 @@ jobs:
     if: needs.mutation-prep.outputs.shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    permissions:
+      contents: read
     services:
       postgres:
-        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
         env:
           POSTGRES_DB: test
           POSTGRES_USER: test
@@ -850,7 +870,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -859,23 +879,23 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: clickhouse/clickhouse-server:26.3.3.20-alpine
+        image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
-          CLICKHOUSE_PASSWORD: health
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
         ports:
           - 8123:8123
           - 9000:9000
         options: >-
           --add-host=host.docker.internal:host-gateway
-          --health-cmd "clickhouse-client --password health --query 'SELECT 1'"
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-      CLICKHOUSE_URL: http://default:health@localhost:8123
+      CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
       REDIS_URL: redis://localhost:6379
     strategy:
       fail-fast: false

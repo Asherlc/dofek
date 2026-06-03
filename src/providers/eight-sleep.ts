@@ -1,3 +1,4 @@
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import {
   EIGHT_SLEEP_CLIENT_ID,
   EIGHT_SLEEP_CLIENT_SECRET,
@@ -44,7 +45,7 @@ export class EightSleepProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "eight-sleep" });
   }
 
   validate(): string | null {

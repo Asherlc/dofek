@@ -1,9 +1,11 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
   parseEightSleepTrendDay,
 } from "eight-sleep-client/parsing";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { EightSleepProvider } from "./eight-sleep.ts";
 
 // ============================================================
 // Sample API responses
@@ -204,5 +206,31 @@ describe("Eight Sleep Provider", () => {
       const result = parseEightSleepHeartRateSamples(multiSession);
       expect(result).toHaveLength(2);
     });
+  });
+});
+
+describe("EightSleepProvider — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'eight-sleep'", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
+      new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
+
+    const provider = new EightSleepProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup.automatedLogin) throw new Error("automatedLogin not defined");
+
+    const err = await setup
+      .automatedLogin("user@example.com", "password")
+      .catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("eight-sleep");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });
