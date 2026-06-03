@@ -89,11 +89,11 @@ export class TrainerRoadClient {
       throw new Error("TrainerRoad login failed — no auth cookie returned");
     }
 
+    // authCookieEntry was matched by startsWith("SharedTrainerRoadAuth="), so it
+    // always contains "=" — take everything after the first one (the value may
+    // itself contain "=") up to the first attribute separator.
     const firstEqualsIndex = authCookieEntry.indexOf("=");
-    const authCookieValue =
-      firstEqualsIndex === -1
-        ? ""
-        : (authCookieEntry.slice(firstEqualsIndex + 1).split(";")[0] ?? "");
+    const authCookieValue = authCookieEntry.slice(firstEqualsIndex + 1).split(";")[0] ?? "";
 
     // Get username from member info
     const client = new TrainerRoadClient(authCookieValue, fetchFn);

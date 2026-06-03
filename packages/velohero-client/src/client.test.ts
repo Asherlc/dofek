@@ -1,6 +1,15 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { VeloHeroClient } from "./client.ts";
 import type { VeloHeroSsoResponse, VeloHeroWorkout, VeloHeroWorkoutsResponse } from "./types.ts";
+
+function rateLimitedFetch(retryAfterSeconds: string): typeof globalThis.fetch {
+  return async () =>
+    new Response("Too Many Requests", {
+      status: 429,
+      headers: { "Retry-After": retryAfterSeconds },
+    });
+}
 
 function mockFetch(response: {
   status: number;
@@ -57,6 +66,32 @@ describe("VeloHeroClient.signIn", () => {
     await expect(VeloHeroClient.signIn("testuser", "password123", fetchFn)).rejects.toThrow(
       "VeloHero sign-in did not return a session token",
     );
+  });
+
+  it("throws a velohero-scoped ProviderRateLimitError on 429", async () => {
+    const error = await VeloHeroClient.signIn(
+      "testuser",
+      "password123",
+      rateLimitedFetch("30"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "velohero");
+    expect(error).toHaveProperty("retryAfterSeconds", 30);
+  });
+});
+
+describe("VeloHeroClient instance rate limit detection", () => {
+  it("throws a velohero-scoped ProviderRateLimitError on 429", async () => {
+    const client = new VeloHeroClient("VeloHero_session=abc123", rateLimitedFetch("15"));
+
+    const error = await client
+      .getWorkouts("2024-01-01", "2024-01-31")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "velohero");
+    expect(error).toHaveProperty("retryAfterSeconds", 15);
   });
 });
 

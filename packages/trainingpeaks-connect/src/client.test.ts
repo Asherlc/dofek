@@ -1,5 +1,14 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { TrainingPeaksConnectClient } from "./client.ts";
+
+function rateLimitedFetch(retryAfterSeconds: string): typeof globalThis.fetch {
+  return async () =>
+    new Response("Too Many Requests", {
+      status: 429,
+      headers: { "Retry-After": retryAfterSeconds },
+    });
+}
 
 function mockFetch(response: {
   status: number;
@@ -67,6 +76,17 @@ describe("TrainingPeaksConnectClient.exchangeCookieForToken", () => {
     await expect(
       TrainingPeaksConnectClient.exchangeCookieForToken("expired-cookie", fetchFn),
     ).rejects.toThrow("success=false");
+  });
+
+  it("throws a trainingpeaks-scoped ProviderRateLimitError on 429", async () => {
+    const error = await TrainingPeaksConnectClient.exchangeCookieForToken(
+      "my-cookie",
+      rateLimitedFetch("30"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "trainingpeaks");
+    expect(error).toHaveProperty("retryAfterSeconds", 30);
   });
 });
 
@@ -141,6 +161,17 @@ describe("TrainingPeaksConnectClient.refreshCookie", () => {
       "did not return a new Production_tpAuth cookie",
     );
   });
+
+  it("throws a trainingpeaks-scoped ProviderRateLimitError on 429", async () => {
+    const error = await TrainingPeaksConnectClient.refreshCookie(
+      "old-cookie",
+      rateLimitedFetch("60"),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "trainingpeaks");
+    expect(error).toHaveProperty("retryAfterSeconds", 60);
+  });
 });
 
 // ============================================================
@@ -170,6 +201,16 @@ describe("TrainingPeaksConnectClient.getUser", () => {
     expect(url).toContain("/users/v3/user");
     const headers = options.headers<string, string>;
     expect(headers.Authorization).toBe("Bearer test-token");
+  });
+
+  it("throws a trainingpeaks-scoped ProviderRateLimitError on 429", async () => {
+    const client = new TrainingPeaksConnectClient("test-token", rateLimitedFetch("15"));
+
+    const error = await client.getUser().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "trainingpeaks");
+    expect(error).toHaveProperty("retryAfterSeconds", 15);
   });
 });
 

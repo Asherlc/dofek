@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "./client.ts";
 import type {
@@ -73,6 +74,19 @@ describe("ZwiftClient.signIn", () => {
       ZwiftClient.signIn("rider@example.com", "wrong-password", fetchFn),
     ).rejects.toThrow("Zwift sign-in failed (401)");
   });
+
+  it("throws a zwift-scoped ProviderRateLimitError on 429", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("Too Many Requests", { status: 429, headers: { "Retry-After": "30" } });
+
+    const error = await ZwiftClient.signIn("rider@example.com", "password123", fetchFn).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "zwift");
+    expect(error).toHaveProperty("retryAfterSeconds", 30);
+  });
 });
 
 describe("ZwiftClient.refreshToken", () => {
@@ -107,6 +121,19 @@ describe("ZwiftClient.refreshToken", () => {
     await expect(ZwiftClient.refreshToken("expired-token", fetchFn)).rejects.toThrow(
       "Zwift token refresh failed (400)",
     );
+  });
+
+  it("throws a zwift-scoped ProviderRateLimitError on 429", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("Too Many Requests", { status: 429, headers: { "Retry-After": "45" } });
+
+    const error = await ZwiftClient.refreshToken("old-refresh-token", fetchFn).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "zwift");
+    expect(error).toHaveProperty("retryAfterSeconds", 45);
   });
 });
 
@@ -196,6 +223,18 @@ describe("ZwiftClient.getActivities", () => {
     const client = new ZwiftClient("test-token", "100", fetchFn);
 
     await expect(client.getActivities()).rejects.toThrow("Zwift API error (500)");
+  });
+
+  it("throws a zwift-scoped ProviderRateLimitError on 429", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("Too Many Requests", { status: 429, headers: { "Retry-After": "15" } });
+    const client = new ZwiftClient("test-token", "100", fetchFn);
+
+    const error = await client.getActivities().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "zwift");
+    expect(error).toHaveProperty("retryAfterSeconds", 15);
   });
 });
 

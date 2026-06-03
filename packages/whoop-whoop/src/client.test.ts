@@ -895,6 +895,115 @@ describe("WhoopClient rate limit detection", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({ status: 429, attempt: 0 });
   });
+
+  it("sends the bearer Authorization header on GET requests", async () => {
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: [] } });
+    const client = new WhoopClient(makeToken({ accessToken: "secret-token" }), fetchFn);
+
+    await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    const init = fetchFn.mock.calls[0]?.[1];
+    const headers = init?.headers;
+    if (!headers || Array.isArray(headers) || headers instanceof Headers) {
+      throw new Error("Expected plain request headers");
+    }
+    expect(headers.Authorization).toBe("Bearer secret-token");
+    expect(headers["User-Agent"]).toBe("WHOOP/4.0");
+  });
+
+  it("does not parse Retry-After on a non-429 GET response", async () => {
+    const events: Array<{ status: number; retryAfterSeconds: number | null }> = [];
+    const response = createMockResponse({ ok: true, status: 200, body: { values: [] } });
+    response.headers.set("Retry-After", "30");
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockResolvedValue(response);
+
+    const client = new WhoopClient(makeToken(), fetchFn, (event) => {
+      events.push({ status: event.status, retryAfterSeconds: event.retryAfterSeconds });
+    });
+
+    await client.getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z");
+
+    expect(events[0]).toEqual({ status: 200, retryAfterSeconds: null });
+  });
+});
+
+describe("WhoopClient._fetchUserId rate limit detection", () => {
+  it("throws WhoopRateLimitError on 429 and sends the bearer header", async () => {
+    const fetchFn = createMockFetch({ ok: false, status: 429, body: "Rate Limit Exceeded" });
+
+    const error = await WhoopClient._fetchUserId("bootstrap-token", fetchFn).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+    if (error instanceof WhoopRateLimitError) {
+      expect(error.message).toContain("429");
+      expect(error.responseBody).toBe("Rate Limit Exceeded");
+    }
+    const init = fetchFn.mock.calls[0]?.[1];
+    const headers = init?.headers;
+    if (!headers || Array.isArray(headers) || headers instanceof Headers) {
+      throw new Error("Expected plain request headers");
+    }
+    expect(headers.Authorization).toBe("Bearer bootstrap-token");
+  });
+});
+
+describe("WhoopClient.getWeightliftingWorkout rate limit detection", () => {
+  it("throws WhoopRateLimitError on 429 with the status in the message", async () => {
+    const fetchFn = createMockFetch({ ok: false, status: 429, body: "Slow down" });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const error = await client
+      .getWeightliftingWorkout("abc-123")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+    if (error instanceof WhoopRateLimitError) {
+      expect(error.message).toContain("429");
+      expect(error.responseBody).toBe("Slow down");
+    }
+  });
+
+  it("emits an onRequest 429 event with parsed Retry-After before throwing", async () => {
+    const events: Array<{ status: number; attempt: number; retryAfterSeconds: number | null }> = [];
+    const response = createMockResponse({ ok: false, status: 429, body: "Slow down" });
+    response.headers.set("Retry-After", "12");
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockResolvedValue(response);
+
+    const client = new WhoopClient(makeToken(), fetchFn, (event) => {
+      events.push({
+        status: event.status,
+        attempt: event.attempt,
+        retryAfterSeconds: event.retryAfterSeconds,
+      });
+    });
+
+    const error = await client
+      .getWeightliftingWorkout("abc-123")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+    expect(error).toHaveProperty("retryAfterSeconds", 12);
+    expect(events).toEqual([{ status: 429, attempt: 0, retryAfterSeconds: 12 }]);
+  });
+
+  it("sends the bearer Authorization header", async () => {
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: { activity_id: "abc-123" } });
+    const client = new WhoopClient(makeToken({ accessToken: "lift-token" }), fetchFn);
+
+    await client.getWeightliftingWorkout("abc-123");
+
+    const init = fetchFn.mock.calls[0]?.[1];
+    const headers = init?.headers;
+    if (!headers || Array.isArray(headers) || headers instanceof Headers) {
+      throw new Error("Expected plain request headers");
+    }
+    expect(headers.Authorization).toBe("Bearer lift-token");
+    expect(headers["User-Agent"]).toBe("WHOOP/4.0");
+  });
 });
 
 describe("cognitoCall error handling", () => {
