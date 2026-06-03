@@ -833,6 +833,15 @@ describe("FitbitProvider", () => {
       const result = provider.handleValidationChallenge({}, "my-token");
       expect(result).toBeNull();
     });
+
+    it("returns null for an empty verify param even when verifyToken is empty", () => {
+      const provider = new FitbitProvider();
+      // `!verify` is true here, so the missing-verify guard must short-circuit.
+      // Without that guard the empty verify would equal an empty verifyToken and
+      // the challenge string would be returned instead of null.
+      const result = provider.handleValidationChallenge({ verify: "" }, "");
+      expect(result).toBeNull();
+    });
   });
 
   describe("sync()", () => {
@@ -956,6 +965,65 @@ describe("FitbitProvider", () => {
       expect(weightRow.scalar).toBe(82.5);
     });
 
+    it("returns a reasonable duration when token resolution fails", async () => {
+      setupEnv();
+      const { loadTokens } = await import("../db/tokens.ts");
+      vi.mocked(loadTokens).mockResolvedValueOnce(null);
+
+      const provider = new FitbitProvider(createMockApiFetch());
+      const db = createMockDb();
+
+      const since = new Date();
+      since.setUTCHours(0, 0, 0, 0);
+      const result = await provider.sync(db, since);
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors.length).toBeGreaterThanOrEqual(1);
+      // duration must be Date.now() - start (a small elapsed time), not a sum.
+      expectReasonableDuration(result.duration);
+    });
+
+    it("processes the current day when since equals now in daily and weight loops", async () => {
+      setupEnv();
+      // since and now are the exact same instant: the loop condition must be
+      // `<=` (inclusive) for the day to be processed. A `<` condition would skip
+      // it entirely, persisting zero daily/weight rows.
+      const instant = new Date("2026-03-01T12:00:00Z");
+      vi.useFakeTimers({ now: instant });
+
+      const provider = new FitbitProvider(
+        createMockApiFetch({
+          activities: [],
+          sleep: [],
+          dailySummary: sampleDailySummary,
+          weight: [sampleWeightLog],
+        }),
+      );
+      const db = createMockDb();
+
+      const result = await provider.sync(db, new Date(instant));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      // 1 daily summary + 1 weight measurement for the single (current) day.
+      expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
+
+      const dailyRow = findValuesCall(
+        db,
+        (value) => value.providerId === "fitbit" && value.date === "2026-03-01",
+      );
+      expect(dailyRow.steps).toBe(12345);
+
+      const weightRow = findValuesCall(
+        db,
+        (value) =>
+          value.providerId === "fitbit" &&
+          value.externalId === "55555" &&
+          value.channel === "body_weight",
+      );
+      expect(weightRow.scalar).toBe(82.5);
+    });
+
     it("paginates activity sync by increasing offset", async () => {
       setupEnv();
       vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
@@ -1018,6 +1086,66 @@ describe("FitbitProvider", () => {
       expect(findValuesCall(db, (value) => value.externalId === "12345679").name).toBe("Run");
       expectReasonableDuration(result.duration);
     });
+
+    it("paginates sleep sync by increasing offset", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+
+      const firstSleep: FitbitSleepLog = sampleSleep;
+      const secondSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654322 };
+      const seenSleepOffsets: number[] = [];
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          return Response.json({
+            activities: [],
+            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/sleep/list.json")) {
+          const offsetMatch = url.match(/[?&]offset=(\d+)/);
+          const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+          seenSleepOffsets.push(offset);
+          if (offset === 0) {
+            return Response.json({
+              sleep: [firstSleep],
+              pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+            });
+          }
+          return Response.json({
+            sleep: [secondSleep],
+            pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
+          });
+        }
+        if (url.includes("/activities/date/")) {
+          return Response.json(sampleDailySummary);
+        }
+        if (url.includes("/body/log/weight/date/")) {
+          return Response.json({ weight: [] });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      // Both pages fetched: offset advanced from 0 to limit (1). A stopped loop
+      // (hasMore = false) would only see [0]; a decremented offset would not be [0, 1].
+      expect(seenSleepOffsets).toEqual([0, 1]);
+      expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+        465,
+      );
+      expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
+        465,
+      );
+      expectReasonableDuration(result.duration);
+    });
   });
 
   describe("syncWebhookEvent()", () => {
@@ -1078,6 +1206,155 @@ describe("FitbitProvider", () => {
         ],
         "steps",
       );
+    });
+
+    it("paginates webhook activity sync by increasing offset", async () => {
+      setupEnv();
+      const firstActivity: FitbitActivity = sampleActivity;
+      const secondActivity: FitbitActivity = { ...sampleActivity, logId: 12345679 };
+      const seenOffsets: number[] = [];
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          const offsetMatch = url.match(/[?&]offset=(\d+)/);
+          const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+          seenOffsets.push(offset);
+          if (offset === 0) {
+            return Response.json({
+              activities: [firstActivity],
+              pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+            });
+          }
+          return Response.json({
+            activities: [secondActivity],
+            pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
+          });
+        }
+        if (url.includes("/activities/date/")) {
+          return Response.json(sampleDailySummary);
+        }
+        if (url.endsWith(".tcx")) {
+          return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", { status: 200 });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      const event: WebhookEvent = {
+        ownerExternalId: "USER1",
+        eventType: "update",
+        objectType: "activities",
+        metadata: { date: "2026-03-01" },
+      };
+
+      const result = await provider.syncWebhookEvent(db, event);
+
+      expect(result.errors).toHaveLength(0);
+      expect(seenOffsets).toEqual([0, 1]);
+      expect(findValuesCall(db, (value) => value.externalId === "12345678").name).toBe("Run");
+      expect(findValuesCall(db, (value) => value.externalId === "12345679").name).toBe("Run");
+      expectReasonableDuration(result.duration);
+    });
+
+    it("paginates webhook sleep sync by increasing offset", async () => {
+      setupEnv();
+      const firstSleep: FitbitSleepLog = sampleSleep;
+      const secondSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654322 };
+      const seenOffsets: number[] = [];
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/sleep/list.json")) {
+          const offsetMatch = url.match(/[?&]offset=(\d+)/);
+          const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+          seenOffsets.push(offset);
+          if (offset === 0) {
+            return Response.json({
+              sleep: [firstSleep],
+              pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+            });
+          }
+          return Response.json({
+            sleep: [secondSleep],
+            pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
+          });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      const event: WebhookEvent = {
+        ownerExternalId: "USER1",
+        eventType: "update",
+        objectType: "sleep",
+        metadata: { date: "2026-03-01" },
+      };
+
+      const result = await provider.syncWebhookEvent(db, event);
+
+      expect(result.errors).toHaveLength(0);
+      expect(seenOffsets).toEqual([0, 1]);
+      expect(result.recordsSynced).toBe(2);
+      expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+        465,
+      );
+      expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
+        465,
+      );
+      expectReasonableDuration(result.duration);
+    });
+
+    it("queries the event metadata date rather than today", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-06-15T12:00:00Z") });
+
+      const capturedDailyDates: string[] = [];
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          // afterDate carries the event date for the activity list query
+          const match = url.match(/afterDate=([\d-]+)/);
+          if (match?.[1]) capturedDailyDates.push(match[1]);
+          return Response.json({
+            activities: [],
+            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/activities/date/")) {
+          const match = url.match(/\/activities\/date\/([\d-]+)\.json/);
+          if (match?.[1]) capturedDailyDates.push(match[1]);
+          return Response.json(sampleDailySummary);
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      const event: WebhookEvent = {
+        ownerExternalId: "USER1",
+        eventType: "update",
+        objectType: "activities",
+        metadata: { date: "2026-03-01" },
+      };
+
+      const result = await provider.syncWebhookEvent(db, event);
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      // The event's metadata.date ("2026-03-01") must be used, not today
+      // ("2026-06-15"). The mutated ternary would always fall back to today.
+      expect(capturedDailyDates.length).toBeGreaterThan(0);
+      expect(capturedDailyDates.every((date) => date === "2026-03-01")).toBe(true);
+      expect(capturedDailyDates).not.toContain("2026-06-15");
     });
 
     it("syncs sleep when objectType is sleep", async () => {

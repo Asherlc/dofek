@@ -239,6 +239,57 @@ describe("FitbitProvider — authSetup", () => {
     const provider = new FitbitProvider();
     expect(() => provider.authSetup()).toThrow("FITBIT_CLIENT_ID");
   });
+
+  it("includes the PKCE code challenge in the authorization URL", () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+    const provider = new FitbitProvider();
+    const setup = provider.authSetup();
+    if (!setup.authUrl) throw new Error("authUrl not defined");
+
+    // The real PKCE challenge must be forwarded. If buildAuthorizationUrl
+    // received an empty object ({}), code_challenge would be the literal string
+    // "undefined" rather than a real base64url SHA-256 digest.
+    const url = new URL(setup.authUrl);
+    const codeChallenge = url.searchParams.get("code_challenge");
+    expect(codeChallenge).not.toBeNull();
+    expect(codeChallenge).not.toBe("undefined");
+    expect(codeChallenge).toMatch(/^[A-Za-z0-9_-]{20,}$/);
+    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(url.searchParams.get("client_id")).toBe("test-id");
+  });
+
+  it("exchangeCode forwards the authorization code to the token endpoint", async () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+
+    let capturedBody = "";
+    const fetchToken: typeof fetch = async (_input, init) => {
+      capturedBody = typeof init?.body === "string" ? init.body : "";
+      return Response.json({
+        access_token: "exchanged-access-token",
+        refresh_token: "exchanged-refresh-token",
+        expires_in: 28800,
+        token_type: "Bearer",
+        scope: "activity",
+      });
+    };
+
+    const provider = new FitbitProvider(fetchToken);
+    const setup = provider.authSetup();
+
+    // The arrow function must actually call exchangeCodeForTokens with the code
+    // and the real PKCE verifier. A missing verifier object ({}) would send
+    // code_verifier=undefined; a no-op arrow (() => undefined) would never fetch.
+    const tokens = await setup.exchangeCode("auth-code-123");
+    expect(tokens).not.toBeUndefined();
+    expect(tokens.accessToken).toBe("exchanged-access-token");
+    expect(capturedBody).toContain("code=auth-code-123");
+    const verifierMatch = capturedBody.match(/(?:^|&)code_verifier=([^&]+)/);
+    expect(verifierMatch?.[1]).toBeDefined();
+    expect(verifierMatch?.[1]).not.toBe("undefined");
+    expect(verifierMatch?.[1]).toMatch(/^[A-Za-z0-9_%-]{20,}$/);
+  });
 });
 
 describe("FitbitClient — Zod runtime validation", () => {

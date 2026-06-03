@@ -858,4 +858,25 @@ describe("FitbitProvider.getUserIdentity()", () => {
     expect(error).toHaveProperty("responseBody", "Too Many Requests");
     expect(fetchProfile).toHaveBeenCalledOnce();
   });
+
+  it("throws a profile API error with the status and body for non-429 failures", async () => {
+    process.env.FITBIT_CLIENT_ID = "test-id";
+    process.env.FITBIT_CLIENT_SECRET = "test-secret";
+
+    // 500 is not intercepted by the rate-limit wrapper, so the !response.ok
+    // guard inside getUserIdentity is what produces the error. The body is not
+    // valid JSON, so removing the guard (if(false)) would surface a JSON parse
+    // error instead of this specific message — distinguishing the mutant.
+    const fetchProfile: typeof fetch = vi.fn(async () => {
+      return new Response("Internal Server Error", { status: 500 });
+    });
+
+    const provider = new FitbitProvider(fetchProfile);
+    const setup = provider.authSetup();
+    if (!setup.getUserIdentity) throw new Error("getUserIdentity not defined");
+    await expect(setup.getUserIdentity("token")).rejects.toThrow(
+      "Fitbit profile API error (500): Internal Server Error",
+    );
+    expect(fetchProfile).toHaveBeenCalledOnce();
+  });
 });

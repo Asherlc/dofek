@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
@@ -2868,5 +2869,434 @@ describe("WhoopProvider.sync() — strength sync", () => {
       (call: unknown[]) => Array.isArray(call[0]) && call[0].length === 0,
     );
     expect(insertedEmptySetBatch).toBe(false);
+  });
+});
+
+// ============================================================
+// Rate-limit wrapper + provider wiring (mutation coverage)
+// ============================================================
+
+const storedTokens = {
+  accessToken: "tok",
+  refreshToken: "ref",
+  expiresAt: new Date("2099-01-01T00:00:00Z"),
+  scopes: "userId:42",
+};
+
+describe("WhoopProvider — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("throws ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
+      new Response("slow down", { status: 429 });
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+
+    // The constructor wraps fetchFn with createRateLimitAwareFetch({ providerId: "whoop" }).
+    // A 429 must surface as a ProviderRateLimitError carrying that providerId.
+    await expect(setup.getUserIdentity("tok")).rejects.toBeInstanceOf(ProviderRateLimitError);
+    try {
+      await setup.getUserIdentity("tok");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderRateLimitError);
+      if (err instanceof ProviderRateLimitError) {
+        expect(err.providerId).toBe("whoop");
+        expect(err.statusCode).toBe(429);
+      }
+    }
+  });
+});
+
+describe("WhoopProvider.authSetup() — env var requirements", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns undefined when only the client id is set (both are required)", () => {
+    process.env.WHOOP_CLIENT_ID = "only-id";
+    delete process.env.WHOOP_CLIENT_SECRET;
+    const provider = new WhoopProvider();
+    expect(provider.authSetup()).toBeUndefined();
+  });
+
+  it("returns undefined when only the client secret is set (both are required)", () => {
+    delete process.env.WHOOP_CLIENT_ID;
+    process.env.WHOOP_CLIENT_SECRET = "only-secret";
+    const provider = new WhoopProvider();
+    expect(provider.authSetup()).toBeUndefined();
+  });
+});
+
+describe("WhoopProvider.authSetup() — exchangeCode + getUserIdentity request", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("exchangeCode delegates to the OAuth token endpoint and returns the token set", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    let tokenUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+    ): Promise<Response> => {
+      tokenUrl = input.toString();
+      return Response.json({
+        access_token: "exchanged-access",
+        refresh_token: "exchanged-refresh",
+        expires_in: 3600,
+      });
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup) throw new Error("authSetup returned undefined");
+
+    const tokens = await setup.exchangeCode("auth-code-123");
+    // Mutated `() => undefined` would return undefined here.
+    expect(tokens).toBeDefined();
+    expect(tokens.accessToken).toBe("exchanged-access");
+    expect(tokens.refreshToken).toBe("exchanged-refresh");
+    expect(tokenUrl).toBe("https://api.prod.whoop.com/oauth/oauth2/token");
+  });
+
+  it("getUserIdentity sends a Bearer Authorization header with the access token", async () => {
+    process.env.WHOOP_CLIENT_ID = "test-id";
+    process.env.WHOOP_CLIENT_SECRET = "test-secret";
+
+    let capturedAuth: string | undefined;
+    const mockFetch: typeof globalThis.fetch = async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const headers = new Headers(init?.headers);
+      capturedAuth = headers.get("Authorization") ?? undefined;
+      return Response.json({ user_id: 7 });
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const setup = provider.authSetup();
+    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+
+    const identity = await setup.getUserIdentity("my-access-token");
+    expect(identity.providerAccountId).toBe("7");
+    // Mutated headers `{}` or `{ headers: {} }` would drop this header.
+    expect(capturedAuth).toBe("Bearer my-access-token");
+  });
+});
+
+describe("WhoopProvider.sync() — token persistence + client construction", () => {
+  it("saves refreshed tokens with a ~24h expiry and passes credentials to the client", async () => {
+    const { loadTokens, saveTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    let cyclesAuthHeader: string | undefined;
+    const mockFetch: typeof globalThis.fetch = (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "fresh-access", RefreshToken: "fresh-refresh" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        return Promise.resolve(Response.json({ id: 42 }));
+      }
+      if (url.includes("cycles/details")) {
+        cyclesAuthHeader = new Headers(init?.headers).get("Authorization") ?? undefined;
+        return Promise.resolve(Response.json([]));
+      }
+      if (url.includes("metrics-service") || url.includes("behavior-impact-service")) {
+        return Promise.resolve(Response.json({ values: [] }));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    };
+
+    const before = Date.now();
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    await provider.sync(db, new Date(Date.now() - 1000), { userId: "test-user-123" });
+    const after = Date.now();
+
+    expect(saveTokens).toHaveBeenCalled();
+    const savedExpiry = vi.mocked(saveTokens).mock.calls[0]?.[2]?.expiresAt;
+    expect(savedExpiry).toBeInstanceOf(Date);
+    const expiryMs = savedExpiry?.getTime() ?? 0;
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    // ~24h ahead of "now": a mutated + → - or * → / would land far from this.
+    expect(expiryMs).toBeGreaterThanOrEqual(before + twentyFourHours - 5000);
+    expect(expiryMs).toBeLessThanOrEqual(after + twentyFourHours + 5000);
+
+    // The client was constructed with the refreshed accessToken (not `{}`),
+    // so authenticated requests carry it.
+    expect(cyclesAuthHeader).toBe("Bearer fresh-access");
+  });
+});
+
+describe("WhoopProvider.sync() — request logging callback", () => {
+  it("logs a successful (non-429) API request with info level, not warn", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    const { logger } = await import("../logger.ts");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const infoSpy = vi.spyOn(logger, "info");
+
+    const mockFetch = makeSyncMockFetch({ cycles: [], hrValues: [], journalData: [] });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    await provider.sync(db, new Date(Date.now() - 1000), { userId: "test-user-123" });
+
+    // winston types logger.info via an object-arg overload, so mock.calls is a
+    // 1-tuple at the type level; widen to read the metadata (2nd) argument.
+    const infoCalls = infoSpy.mock.calls as ReadonlyArray<readonly unknown[]>;
+    const infoApiLog = infoCalls.find((call) => String(call[0]) === "[whoop] API request");
+    expect(infoApiLog).toBeDefined();
+    if (isRecord(infoApiLog?.[1])) {
+      expect(infoApiLog?.[1].whoopUserId).toBe(42);
+    }
+    const warnApiLog = warnSpy.mock.calls.find((call) => String(call[0]) === "[whoop] API request");
+    // Successful requests must NOT be logged at warn level.
+    expect(warnApiLog).toBeUndefined();
+
+    warnSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+});
+
+describe("WhoopProvider.sync() — duration is wall-clock elapsed (>=0 and small)", () => {
+  it("reports a small non-negative duration on the token-resolution error path", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(null);
+
+    const provider = new WhoopProvider();
+    const db = makeChainableMock();
+    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    // Date.now() - start: small and non-negative. A mutated `+` would be huge.
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60000);
+  });
+
+  it("reports a small non-negative duration on the getCycles error path", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    const mockFetch = makeSyncMockFetch({ cyclesError: true });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+
+    const cyclesError = result.errors.find((error) => error.message.includes("getCycles"));
+    expect(cyclesError).toBeDefined();
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60000);
+  });
+});
+
+describe("WhoopProvider.sync() — cycle window paging", () => {
+  it("pages cycle fetches in <=200-day windows (Math.min caps the window end)", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    let cycleFetchCount = 0;
+    const cycleWindows: { start: string; end: string }[] = [];
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "fresh-access", RefreshToken: "fresh-refresh" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        return Promise.resolve(Response.json({ id: 42 }));
+      }
+      if (url.includes("cycles/details")) {
+        cycleFetchCount++;
+        const parsed = new URL(url);
+        cycleWindows.push({
+          start: parsed.searchParams.get("startTime") ?? "",
+          end: parsed.searchParams.get("endTime") ?? "",
+        });
+        return Promise.resolve(Response.json([]));
+      }
+      if (url.includes("metrics-service") || url.includes("behavior-impact-service")) {
+        return Promise.resolve(Response.json({ values: [] }));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    // 400 days ago forces two 200-day windows when the end is min(start+200d, now).
+    const since = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+    await provider.sync(db, since, { userId: "test-user-123" });
+
+    // With Math.max instead of Math.min the first window would jump straight to
+    // "now" and only a single fetch would occur.
+    expect(cycleFetchCount).toBeGreaterThanOrEqual(2);
+    // Each window must be at most 200 days wide.
+    const maxWindowMs = 200 * 24 * 60 * 60 * 1000;
+    for (const window of cycleWindows) {
+      const widthMs = new Date(window.end).getTime() - new Date(window.start).getTime();
+      expect(widthMs).toBeGreaterThan(0);
+      expect(widthMs).toBeLessThanOrEqual(maxWindowMs + 1000);
+    }
+  });
+});
+
+describe("WhoopProvider.sync() — sleep stages contribute to records synced", () => {
+  it("adds (not subtracts) sleep-stage records to the total", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    // One cycle referencing a single sleep id; no inline sleeps, no workouts,
+    // no recovery, no steps, no HR, no journal → only sleep_stages adds a record.
+    const cycles = [
+      {
+        days: ["2026-03-01"],
+        recovery: null,
+        sleep: { id: "sleep-100" },
+        workouts: [],
+      },
+    ];
+
+    const sleepData = {
+      id: "sleep-100",
+      stages: [
+        { stage: "deep", during: "['2026-03-01T01:00:00Z','2026-03-01T02:00:00Z')" },
+        { stage: "light", during: "['2026-03-01T02:00:00Z','2026-03-01T03:00:00Z')" },
+      ],
+    };
+
+    const mockFetch = makeSyncMockFetch({
+      cycles,
+      sleepData,
+      hrValues: [],
+      journalData: [],
+      weightliftingData: null,
+    });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+    // sleep-stage session lookup resolves to an existing session id.
+    db.limit.mockResolvedValue([{ id: "session-1" }]);
+
+    const result = await provider.sync(db, new Date(Date.now() - 1000), {
+      userId: "test-user-123",
+    });
+
+    expect(result.provider).toBe("whoop");
+    // Exactly one sleep-stage record. A mutated `recordsSynced -= ...` would make
+    // the total negative; `+=` yields 1.
+    expect(result.recordsSynced).toBe(1);
+  });
+});
+
+describe("WhoopProvider.sync() — downstream phases run absent rate limiting", () => {
+  it("runs heart-rate and journal phases when no phase reports rate limiting", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    let heartRateRequested = false;
+    let journalRequested = false;
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "fresh-access", RefreshToken: "fresh-refresh" },
+          }),
+        );
+      }
+      if (url.includes("users-service/v2/bootstrap")) {
+        return Promise.resolve(Response.json({ id: 42 }));
+      }
+      if (url.includes("cycles/details")) {
+        return Promise.resolve(Response.json([]));
+      }
+      if (url.includes("metrics-service")) {
+        const name = new URL(url).searchParams.get("name");
+        if (name === "heart_rate") heartRateRequested = true;
+        return Promise.resolve(Response.json({ values: [] }));
+      }
+      if (url.includes("behavior-impact-service")) {
+        journalRequested = true;
+        return Promise.resolve(Response.json([]));
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+
+    await provider.sync(db, new Date(Date.now() - 1000), { userId: "test-user-123" });
+
+    // No rate limiting → both downstream phases execute.
+    expect(heartRateRequested).toBe(true);
+    expect(journalRequested).toBe(true);
+  });
+});
+
+describe("WhoopProvider.sync() — empty cycle list yields no cycle-derived records", () => {
+  it("inserts no recovery or activity rows when no cycles are returned", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce(storedTokens);
+
+    const { logger } = await import("../logger.ts");
+    const infoSpy = vi.spyOn(logger, "info");
+
+    const mockFetch = makeSyncMockFetch({ cycles: [], hrValues: [], journalData: [] });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
+    db.returning = vi.fn().mockResolvedValue([]);
+
+    const result = await provider.sync(db, new Date(Date.now() - 1000), {
+      userId: "test-user-123",
+    });
+
+    expect(result.provider).toBe("whoop");
+    expect(result.recordsSynced).toBe(0);
+    // The cycles accumulator starts as `[]`. A mutated `["Stryker was here"]` would
+    // feed a bogus cycle into the recovery/sleep/workout phases and produce errors.
+    expect(result.errors).toHaveLength(0);
+    // The accumulator is seeded empty: total fetched cycles is 0, not 1.
+    expect(infoSpy).toHaveBeenCalledWith("[whoop] Fetched 0 total cycles");
+    infoSpy.mockRestore();
+
+    // No recovery or activity inserts should occur from cycle processing.
+    const valuesCallArgs = getValuesCallArgs(db);
+    const cycleDerivedInsert = findValuesRecord(
+      valuesCallArgs,
+      (rec) => rec.activityType !== undefined || rec.restingHr !== undefined,
+    );
+    expect(cycleDerivedInsert).toBeUndefined();
   });
 });
