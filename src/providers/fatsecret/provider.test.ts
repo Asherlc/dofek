@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FatSecretProvider } from "./provider.ts";
 
 // Unit tests for the FatSecretProvider wiring (validation + auth setup).
-// OAuth signing lives in ./fatsecret/oauth1.test.ts, the API client and
-// 3-legged token flow in ./fatsecret/client.test.ts, parsing in
-// ./fatsecret/parsing.test.ts, and sync in fatsecret-sync.integration.test.ts.
+// OAuth signing lives in ./signing.test.ts, the API client and 3-legged token
+// flow in ./client.test.ts, parsing in ./parsing.test.ts, and end-to-end sync
+// in ./provider-sync.integration.test.ts.
 
 describe("FatSecretProvider — validate()", () => {
   const originalEnv = { ...process.env };

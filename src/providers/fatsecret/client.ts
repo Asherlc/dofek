@@ -4,7 +4,7 @@ import {
   buildOAuth1Header,
   encodeRFC3986,
   type OAuth1Credentials,
-} from "./oauth1.ts";
+} from "./signing.ts";
 
 type FetchFn = typeof globalThis.fetch;
 

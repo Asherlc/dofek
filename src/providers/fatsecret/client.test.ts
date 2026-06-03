@@ -1,7 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { exchangeForAccessToken, fatsecretApi, getRequestToken } from "./client.ts";
-import type { OAuth1Credentials } from "./oauth1.ts";
+import type { OAuth1Credentials } from "./signing.ts";
 
 const creds: OAuth1Credentials = {
   consumerKey: "ck",

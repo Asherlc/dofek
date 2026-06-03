@@ -5,7 +5,7 @@ import {
   buildOAuth1Header,
   encodeRFC3986,
   type OAuth1Credentials,
-} from "./oauth1.ts";
+} from "./signing.ts";
 
 // Independent re-implementation of RFC 3986 encoding so a mutation in the
 // production encoder is not mirrored in the expected-signature computation.
