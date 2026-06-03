@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -284,6 +285,37 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       process.env.ULTRAHUMAN_API_TOKEN = savedToken;
       process.env.ULTRAHUMAN_EMAIL = savedEmail;
     }
+  });
+
+  it("propagates a rate-limit error instead of swallowing it per day", async () => {
+    await saveTokens(ctx.db, "ultrahuman", {
+      accessToken: "test-token",
+      refreshToken: null,
+      expiresAt: new Date("2099-12-31T23:59:59Z"),
+      scopes: "email:user@example.com",
+    });
+
+    let requestCount = 0;
+    server.use(
+      http.get("https://partner.ultrahuman.com/api/v1/partner/daily_metrics", () => {
+        requestCount++;
+        return new HttpResponse("rate limited", {
+          status: 429,
+          headers: { "Retry-After": "120" },
+        });
+      }),
+    );
+
+    const provider = new UltrahumanProvider();
+    const error = await provider
+      .sync(ctx.db, new Date("2026-03-10T00:00:00Z"))
+      .catch((caughtError: unknown) => caughtError);
+
+    // The 429 must surface (for the cooldown pipeline), not be flattened into
+    // result.errors, and the day-by-day loop must stop on the first 429.
+    expect(error).toBeInstanceOf(ProviderRateLimitError);
+    expect(error).toHaveProperty("providerId", "ultrahuman");
+    expect(requestCount).toBe(1);
   });
 
   it("continues syncing other days when one day API call fails", async () => {
