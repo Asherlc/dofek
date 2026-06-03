@@ -75,6 +75,7 @@ function isProviderAuthErrorMessage(message: string): boolean {
     /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i.test(message) ||
     /\bre-authenticate\b/i.test(message) ||
     /\bre-connect\b/i.test(message) ||
+    /\baccess token has expired\b/i.test(message) ||
     /\btoken expired\b/i.test(message) ||
     /\bsession expired\b/i.test(message) ||
     /\bauthentication failed\b/i.test(message)

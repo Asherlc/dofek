@@ -9,6 +9,7 @@ const AUTH_ERROR_PATTERNS = [
   /(?:^|[\s[(])unauthorized(?:$|[\s):\]])/i,
   /\bre-authenticate\b/i,
   /\bre-connect\b/i,
+  /\baccess token has expired\b/i,
   /\btoken expired\b/i,
   /\bsession expired\b/i,
   /\bauthentication failed\b/i,

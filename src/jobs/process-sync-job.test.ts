@@ -365,6 +365,30 @@ describe("processSyncJob", () => {
     });
   });
 
+  it("does not report thrown expired access token errors to Sentry", async () => {
+    const expiredTokenError = new Error(
+      'API error 401 on /v1/workouts: {"error":"Access token has expired"}',
+    );
+    const provider = createMockProvider({
+      id: "wahoo",
+      name: "Wahoo",
+      sync: vi.fn().mockRejectedValue(expiredTokenError),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob(), mockDb);
+
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(mockLogSync).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "wahoo",
+        status: "error",
+        errorMessage: expiredTokenError.message,
+      }),
+    );
+  });
+
   it("rethrows retryable infrastructure errors so BullMQ retries the same job", async () => {
     const infraError = new Error("FATAL: the database system is in recovery mode");
     const provider = createMockProvider({

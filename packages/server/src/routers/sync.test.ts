@@ -471,6 +471,7 @@ describe("syncRouter", () => {
       expect(isAuthError("Eight Sleep token expired — please re-authenticate via Settings")).toBe(
         true,
       );
+      expect(isAuthError('Wahoo API error 401: {"error":"Access token has expired"}')).toBe(true);
       expect(
         isAuthError("Withings authorization revoked — re-connect the provider to resume syncing."),
       ).toBe(true);
