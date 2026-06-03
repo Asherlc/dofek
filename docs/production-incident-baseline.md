@@ -31,15 +31,23 @@ them, and the durability work they suggest.
   during job initialization, before any step runs. The anonymous Docker Hub pull
   hit a transient network timeout.
 
-### Remaining risk / follow-up
+### Resolution (2026-06-02, after recurrence on E2E + Stryker)
 
-- `services:` image pulls cannot be routed through the repo's existing
-  `mirror.gcr.io` buildx mirror (that only applies to buildx-driven pulls), and the
-  daemon mirror cannot be configured mid-job. A durable fix would start the DB in a
-  step via `docker compose ... --wait` behind the gcr mirror (matching the e2e job),
-  but that is a sizable rewrite of the heaviest jobs with port/credential cascades
-  and cannot be fully validated locally. Deferred unless the flake recurs; if it
-  does, prioritize the step-started-DB approach. Not fixed by re-run alone.
+- The flake recurred the same day on the E2E job (`docker buildx create` pulling
+  its `moby/buildkit` bootstrap image via the host daemon) and another Stryker
+  shard, confirming it as systemic daemon-level Docker Hub flakiness rather than a
+  one-off. Root cause: daemon-level pulls (buildx bootstrap image, `services:`
+  containers) bypass the buildkitd `config-inline` mirror.
+- Fix (commit `750b98d9`): added `.github/actions/configure-docker-mirror`, a
+  composite action that points the host Docker daemon at `mirror.gcr.io`, and run
+  it before buildx in the `image-scan` and `test-e2e-web` jobs. Converted the
+  `mutation` and `test-integration` jobs off GitHub `services:` to a
+  `docker-compose.ci.yml` stack started in a step after the mirror is configured,
+  preserving the same credentials/ports so the test env vars are unchanged.
+- Remaining risk: depends on `mirror.gcr.io` availability (already relied on
+  repo-wide for buildkitd pulls). The full CI job flow could only be validated by
+  parts locally (compose health, role presence, actionlint/yamllint); the GitHub
+  service-container removal itself is exercised on the next CI run.
 
 ## 2026-05-31: Training, Activities, and Sleep Analytics Empty
 
