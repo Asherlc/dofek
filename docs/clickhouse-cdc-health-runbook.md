@@ -72,8 +72,17 @@ the affected ClickHouse destination tables.
 
 ## Recovery
 
-1. Identify the affected mirror and its destination tables from
-   `src/db/clickhouse-cdc.ts`.
+1. Identify the affected mirror and destination tables:
+
+   | PeerDB mirror | Postgres source tables | ClickHouse destination tables |
+   | --- | --- | --- |
+   | `dofek_metric_stream_analytics` | `fitness.metric_stream` | `postgres_fitness.metric_stream` |
+   | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.user_profile` |
+   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.lab_panel`, `fitness.lab_result`, `fitness.journal_entry` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.lab_panel`, `postgres_fitness.lab_result`, `postgres_fitness.journal_entry` |
+   | `dofek_sensor_priority_raw_analytics` | `fitness.sensor_provider_priority`, `fitness.sensor_device_priority` | `postgres_fitness.sensor_provider_priority`, `postgres_fitness.sensor_device_priority` |
+
+   This mapping matches `src/db/peerdb/metric-stream-cdc.sql` and
+   `src/db/clickhouse-cdc.ts` as of commit `ec487f3`.
 2. Drop the affected PeerDB mirror through PeerDB SQL:
 
    ```sql
@@ -100,8 +109,7 @@ the affected ClickHouse destination tables.
 5. Run the checked-in setup path:
 
    ```bash
-   node --experimental-transform-types --enable-source-maps \
-     --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts
+   ./scripts/with-env.sh tsx src/db/setup-clickhouse-cdc.ts
    ```
 
 6. If setup claims the mirror exists but PeerDB catalog does not list it, check
@@ -121,7 +129,7 @@ the affected ClickHouse destination tables.
      --reason "recover lost Postgres replication slot"
    ```
 
-7. Rerun `scripts/check-clickhouse-cdc.ts` and verify the user-facing read model.
+7. Rerun `pnpm check:clickhouse-cdc` and verify the user-facing read model.
 
 ## Follow-Up
 

@@ -21,13 +21,16 @@ export async function main(): Promise<void> {
     Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
   }
 
-  const postgresClient = new Client({
-    connectionString: requireEnvironmentVariable("DATABASE_URL"),
-  });
-  const clickHouseClient = createClickHouseClientFromEnv();
+  let postgresClient: Client | null = null;
+  let clickHouseClient: ReturnType<typeof createClickHouseClientFromEnv> | null = null;
 
   let exitCode = 0;
   try {
+    postgresClient = new Client({
+      connectionString: requireEnvironmentVariable("DATABASE_URL"),
+    });
+    clickHouseClient = createClickHouseClientFromEnv();
+
     await postgresClient.connect();
     const report = await checkClickHouseCdcHealth({
       postgresClient,
@@ -50,7 +53,7 @@ export async function main(): Promise<void> {
     console.error(`[clickhouse-cdc-health] ${error}`);
     await Sentry.close(2_000);
   } finally {
-    await Promise.all([postgresClient.end(), clickHouseClient.close?.()]);
+    await Promise.all([postgresClient?.end(), clickHouseClient?.close?.()]);
   }
 
   process.exit(exitCode);
@@ -61,5 +64,5 @@ const isDirectExecution =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 
 if (isDirectExecution) {
-  main();
+  void main();
 }
