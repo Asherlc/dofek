@@ -180,16 +180,16 @@ services:
       - -c
       - wal_level=logical
       - -c
-      - max_replication_slots=4
+      - max_replication_slots=6
       - -c
-      - max_wal_senders=4
+      - max_wal_senders=6
       - -c
-      # Cap WAL retained for any single replication slot at 4GB. If a
-      # consumer (PeerDB) falls further behind than this, postgres
-      # invalidates the slot rather than retaining unbounded WAL.
-      # Without this, an inactive logical slot once filled the entire
-      # data volume to 100% (2026-05-10 incident).
-      - max_slot_wal_keep_size=4GB
+      # Cap WAL retained for any single replication slot at 16GB. This keeps
+      # logical slots from filling the data volume while giving PeerDB enough
+      # catch-up budget for the lag observed during the 2026-06-03 lost-slot
+      # incident. The extra slots/senders leave room to recreate mirrors during
+      # recovery without first deleting a required production slot.
+      - max_slot_wal_keep_size=16GB
     ports:
       - "127.0.0.1:5432:5432"
     environment:
