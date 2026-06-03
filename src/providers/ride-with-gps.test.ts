@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   mapActivityType,
   parseTrackPoints,
   parseTripToActivity,
+  RideWithGpsClient,
+  RideWithGpsProvider,
   type RideWithGpsTrackPoint,
   type RideWithGpsTripSummary,
 } from "./ride-with-gps.ts";
+
+const rateLimitedFetch: typeof globalThis.fetch = async (): Promise<Response> =>
+  new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
 
 describe("mapActivityType", () => {
   it("maps cycling types", () => {
@@ -205,5 +211,39 @@ describe("parseTrackPoints", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.lng).toBe(-122.8);
     expect(result[0]?.lat).toBe(45.7);
+  });
+});
+
+describe("RideWithGps — rate-limit aware fetch wiring", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("RideWithGpsClient surfaces a 429 as a ProviderRateLimitError tagged 'ride-with-gps'", async () => {
+    const client = new RideWithGpsClient("access-token", rateLimitedFetch);
+
+    const err = await client.sync("2024-01-01T00:00:00Z").catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("ride-with-gps");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("exchangeCode surfaces a 429 as a ProviderRateLimitError tagged 'ride-with-gps'", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    process.env.RWGPS_CLIENT_SECRET = "test-secret";
+
+    const provider = new RideWithGpsProvider(rateLimitedFetch);
+    const setup = provider.authSetup();
+
+    const err = await setup.exchangeCode("any-code").catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("ride-with-gps");
+      expect(err.statusCode).toBe(429);
+    }
   });
 });

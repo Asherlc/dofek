@@ -1,7 +1,9 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
+  Concept2Client,
   Concept2Provider,
   concept2OAuthConfig,
   mapConcept2Type,
@@ -466,5 +468,38 @@ describe("concept2OAuthConfig", () => {
     const config = concept2OAuthConfig();
 
     expect(config?.scopeSeparator).toBe(",");
+  });
+});
+
+// ============================================================
+// Rate-limit aware fetch wiring
+// ============================================================
+
+describe("Concept2 — rate-limit aware fetch wiring", () => {
+  const rateLimitedFetch: typeof globalThis.fetch = async (): Promise<Response> =>
+    new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
+
+  it("Concept2Client surfaces a 429 as a ProviderRateLimitError tagged 'concept2'", async () => {
+    const client = new Concept2Client("access-token", rateLimitedFetch);
+
+    const err = await client.getResults("2025-01-01").catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(ProviderRateLimitError);
+    if (err instanceof ProviderRateLimitError) {
+      expect(err.providerId).toBe("concept2");
+      expect(err.statusCode).toBe(429);
+    }
+  });
+
+  it("provider sync surfaces a 429 as a ProviderRateLimitError tagged 'concept2'", async () => {
+    const provider = new Concept2Provider(rateLimitedFetch);
+    const result = await provider.sync(createMockDb(), new Date("2025-01-01"));
+
+    expect(result.errors).toHaveLength(1);
+    const cause = result.errors[0]?.cause;
+    expect(cause).toBeInstanceOf(ProviderRateLimitError);
+    if (cause instanceof ProviderRateLimitError) {
+      expect(cause.providerId).toBe("concept2");
+      expect(cause.statusCode).toBe(429);
+    }
   });
 });
