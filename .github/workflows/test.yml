@@ -764,17 +764,33 @@ jobs:
               continue
             fi
 
-            STATS=$(git diff --numstat $DIFF_RANGE -- "$f")
-            ADDED=$(echo "$STATS" | awk '{print $1}')
-            DELETED=$(echo "$STATS" | awk '{print $2}')
-            TOTAL=$((ADDED + DELETED))
-            if [ "$TOTAL" -gt 50 ] && [ "$((ADDED * 100 / TOTAL))" -lt 10 ]; then
-              echo "Skipping $f: $ADDED added, $DELETED deleted (mostly extraction)"
-              continue
-            fi
+            # Mutate only the lines this PR changed (added/modified), not the
+            # whole file. A one-line edit (e.g. wrapping fetch for rate limiting)
+            # must not surface a pre-existing file's entire coverage debt. Parse
+            # the new-side line ranges from the unified diff hunks and pass them
+            # to Stryker as `path:start-end` specs.
+            RANGES=$(git diff -U0 $DIFF_RANGE -- "$f" | awk '
+              /^@@ / {
+                match($0, /\+[0-9]+(,[0-9]+)?/)
+                plus = substr($0, RSTART + 1, RLENGTH - 1)
+                n = split(plus, parts, ",")
+                start = parts[1]
+                count = (n > 1 ? parts[2] : 1)
+                if (count > 0) print start "-" (start + count - 1)
+              }')
+            [ -z "$RANGES" ] && continue
 
-            WEIGHT=$(wc -l < "$f" | tr -d ' ')
-            FILE_WEIGHTS+=("$WEIGHT $f")
+            SPEC=""
+            WEIGHT=0
+            while IFS= read -r range; do
+              [ -z "$range" ] && continue
+              rstart="${range%-*}"
+              rend="${range#*-}"
+              WEIGHT=$((WEIGHT + rend - rstart + 1))
+              SPEC="${SPEC:+$SPEC,}$f:$range"
+            done <<< "$RANGES"
+
+            FILE_WEIGHTS+=("$WEIGHT $SPEC")
           done
 
           COUNT=${#FILE_WEIGHTS[@]}
