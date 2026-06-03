@@ -16,8 +16,8 @@ import {
   fatsecretApi,
   getRequestToken,
 } from "./client.ts";
-import type { OAuth1Credentials } from "./signing.ts";
 import { fatSecretFoodEntriesResponseSchema, inferCategory, parseFoodEntries } from "./parsing.ts";
+import type { OAuth1Credentials } from "./signing.ts";
 
 type FetchFn = typeof globalThis.fetch;
 

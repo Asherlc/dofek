@@ -76,7 +76,7 @@ describe("parseFoodEntries", () => {
       food_entries: {
         food_entry: [
           {
-            food_entry_id: "deci",
+            food_entry_id: "decimal-calories",
             food_entry_name: "Olive Oil",
             food_entry_description: "1 tsp",
             food_id: "9000",
