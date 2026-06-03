@@ -148,6 +148,70 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
+  it("keeps the longer existing cooldown when a shorter one is recorded for the same key", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const longer = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+    const result = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 60 }),
+      "user-1",
+    );
+
+    expect(result).toEqual(longer);
+    expect(result.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
+    vi.useRealTimers();
+  });
+
+  it("extends the cooldown when a longer one is recorded after a shorter one", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    await store.record(rateLimitError({ providerId: "garmin", retryAfterSeconds: 60 }), "user-1");
+    const longer = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+
+    expect(longer.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
+    vi.useRealTimers();
+  });
+
+  it("keeps the longer Redis cooldown when a shorter one is recorded for the same key", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const { setCalls, store } = createMockRedisStore();
+
+    const longer = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+    const result = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 60 }),
+      "user-1",
+    );
+
+    expect(result).toEqual(longer);
+    // The second set still writes the longer expiry with a TTL reflecting it.
+    expect(setCalls[1]).toEqual({
+      key: "provider-rate-limit:garmin:provider",
+      value: JSON.stringify({
+        providerId: "garmin",
+        scope: "provider",
+        userId: null,
+        expiresAt: "2026-06-02T12:10:00.000Z",
+      }),
+      mode: "PX",
+      millisecondsToExpire: 600_000,
+    });
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
+    vi.useRealTimers();
+  });
+
   it("falls back to the sync job user for user-scoped errors without an error user", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();

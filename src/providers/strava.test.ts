@@ -540,6 +540,24 @@ describe("StravaClient — error handling", () => {
     expect(err).toHaveProperty("message", expect.stringContaining("(429)"));
   });
 
+  it("parses an HTTP-date Retry-After header into seconds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-01-15T00:00:00Z"));
+    const retryAt = new Date("2024-01-15T00:01:00Z").toUTCString();
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Rate Limit Exceeded", {
+        status: 429,
+        headers: { "Retry-After": retryAt },
+      });
+    };
+
+    const client = new StravaClient("token", mockFetch, 0);
+    const err = await client.getActivities(0).catch((caughtError: unknown) => caughtError);
+    expect(err).toBeInstanceOf(StravaRateLimitError);
+    expect(err).toHaveProperty("retryAfterSeconds", 60);
+    vi.useRealTimers();
+  });
+
   it("throws generic error on non-OK, non-429 response", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });

@@ -117,11 +117,11 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
     const cooldown = cooldownFromError(error, fallbackUserId);
-    this.#cooldownRecords.set(
-      cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId),
-      cooldown,
-    );
-    return cooldown;
+    const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
+    const existing = activeOrNull(this.#cooldownRecords.get(key) ?? null);
+    const effective = laterCooldown(existing, cooldown) ?? cooldown;
+    this.#cooldownRecords.set(key, effective);
+    return effective;
   }
 
   async getActive(providerId: string, userId: string): Promise<ProviderRateLimitCooldown | null> {
@@ -165,15 +165,13 @@ export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCoo
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
     const cooldown = cooldownFromError(error, fallbackUserId);
-    const millisecondsToExpire = providerRateLimitDelayMs(cooldown);
+    const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
     const redisClient = await this.#getRedisClient();
-    await redisClient.set(
-      cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId),
-      serializeCooldown(cooldown),
-      "PX",
-      millisecondsToExpire,
-    );
-    return cooldown;
+    const existing = activeOrNull(parseCooldown(await redisClient.get(key)));
+    const effective = laterCooldown(existing, cooldown) ?? cooldown;
+    const millisecondsToExpire = providerRateLimitDelayMs(effective);
+    await redisClient.set(key, serializeCooldown(effective), "PX", millisecondsToExpire);
+    return effective;
   }
 
   async getActive(providerId: string, userId: string): Promise<ProviderRateLimitCooldown | null> {

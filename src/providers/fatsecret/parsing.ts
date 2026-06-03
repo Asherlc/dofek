@@ -218,7 +218,7 @@ export function parseFoodEntries(response: FatSecretFoodEntriesResponse): Parsed
     numberOfUnits: parseFloat(e.number_of_units),
     meal: normalizeMeal(e.meal),
     date: dateIntToIso(e.date_int),
-    calories: parseInt(e.calories, 10),
+    calories: Number.parseFloat(e.calories),
     proteinG: parseFloat(e.protein),
     carbsG: parseFloat(e.carbohydrate),
     fatG: parseFloat(e.fat),

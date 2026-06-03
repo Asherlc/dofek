@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WhoopClient, WhoopRateLimitError } from "./client.ts";
 import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
 import type { WhoopAuthToken } from "./types.ts";
@@ -830,6 +830,29 @@ describe("WhoopClient rate limit detection", () => {
     expect(error).toBeInstanceOf(WhoopRateLimitError);
     expect(error).toHaveProperty("retryAfterSeconds", 5);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("parses an HTTP-date Retry-After header into seconds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-01-15T00:00:00Z"));
+    const response = createMockResponse({
+      ok: false,
+      status: 429,
+      body: "Rate Limit Exceeded",
+    });
+    response.headers.set("Retry-After", new Date("2024-01-15T00:01:00Z").toUTCString());
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockResolvedValue(response);
+
+    const client = new WhoopClient(makeToken(), fetchFn);
+    const error = await client
+      .getHeartRate("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z")
+      .catch((caughtError: unknown) => caughtError);
+
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+    expect(error).toHaveProperty("retryAfterSeconds", 60);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("WhoopRateLimitError has correct name", () => {

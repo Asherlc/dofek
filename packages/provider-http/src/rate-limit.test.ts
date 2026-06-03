@@ -297,13 +297,19 @@ describe("fetchWithRateLimitHandling", () => {
     expect(wrappedAgain).toBe(rateLimitFetch);
   });
 
-  it("returns the same wrapper when wrapping the same source fetch twice", () => {
-    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(200, "ok"));
+  it("wraps the same source fetch independently per options (no cross-provider reuse)", async () => {
+    // Many providers default to the shared globalThis.fetch; each must get its
+    // own wrapper so a 429 reports the correct providerId, not the first caller's.
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(429, "limited"));
 
-    const first = createRateLimitAwareFetch(fetchFn, { providerId: "example" });
-    const second = createRateLimitAwareFetch(fetchFn, { providerId: "example" });
+    const first = createRateLimitAwareFetch(fetchFn, { providerId: "first" });
+    const second = createRateLimitAwareFetch(fetchFn, { providerId: "second" });
 
-    expect(second).toBe(first);
+    const secondError = await second("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+    expect(secondError).toHaveProperty("providerId", "second");
+    expect(first).not.toBe(second);
   });
 });
 

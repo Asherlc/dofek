@@ -71,6 +71,30 @@ describe("parseFoodEntries", () => {
     expect(entry.ironMg).toBeCloseTo(6.32);
   });
 
+  it("preserves decimal calories instead of truncating them", () => {
+    const response: FatSecretFoodEntriesResponse = {
+      food_entries: {
+        food_entry: [
+          {
+            food_entry_id: "deci",
+            food_entry_name: "Olive Oil",
+            food_entry_description: "1 tsp",
+            food_id: "9000",
+            serving_id: "9001",
+            number_of_units: "1.000",
+            meal: "Dinner",
+            date_int: "19797",
+            calories: "158.5",
+            carbohydrate: "0",
+            protein: "0",
+            fat: "18",
+          },
+        ],
+      },
+    };
+    expect(parseFoodEntries(response)[0]?.calories).toBe(158.5);
+  });
+
   it("parses multiple entries and normalizes meal names", () => {
     const response: FatSecretFoodEntriesResponse = {
       food_entries: {

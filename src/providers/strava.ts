@@ -1,4 +1,8 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  createRateLimitAwareFetch,
+  ProviderRateLimitError,
+  parseRetryAfterHeader,
+} from "@dofek/provider-http/rate-limit";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
@@ -376,12 +380,11 @@ function createStravaRateLimitError(
   response: Response,
   responseBody: string,
 ): StravaRateLimitError {
-  const retryAfterHeader = response.headers.get("Retry-After");
-  const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+  const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
   return new StravaRateLimitError(
     `Strava API rate limit exceeded (${response.status}): ${responseBody}`,
     responseBody,
-    Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+    retryAfterSeconds,
   );
 }
 

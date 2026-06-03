@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   fetchWithRateLimitHandling,
   ProviderRateLimitError,
+  parseRetryAfterHeader,
 } from "@dofek/provider-http/rate-limit";
 import type {
   WhoopAuthToken,
@@ -37,12 +38,11 @@ export class WhoopRateLimitError extends ProviderRateLimitError {
 }
 
 function createWhoopRateLimitError(response: Response, responseBody: string): WhoopRateLimitError {
-  const retryAfterHeader = response.headers.get("Retry-After");
-  const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+  const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
   return new WhoopRateLimitError(
     `WHOOP API rate limit exceeded (${response.status}): ${responseBody}`,
     responseBody,
-    Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
+    retryAfterSeconds,
   );
 }
 
@@ -356,8 +356,8 @@ export class WhoopClient {
       },
     });
 
-    const retryAfterHeader = response.status === 429 ? response.headers.get("Retry-After") : null;
-    const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+    const retryAfterSeconds =
+      response.status === 429 ? parseRetryAfterHeader(response.headers.get("Retry-After")) : null;
 
     this.#onRequest?.({
       userId: this.#userId,
@@ -467,8 +467,7 @@ export class WhoopClient {
       },
       {
         createRateLimitError: (response, responseBody) => {
-          const retryAfterHeader = response.headers.get("Retry-After");
-          const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : null;
+          const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
           this.#onRequest?.({
             userId: this.#userId,
             endpoint: requestUrl.pathname,

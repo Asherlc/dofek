@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
@@ -310,6 +311,29 @@ describe("FatSecretProvider.sync() (integration)", () => {
     // Should have errors but not crash, and each error names the failing date
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toMatch(/^Date \d{4}-\d{2}-\d{2}: /);
+  });
+
+  it("propagates a 429 as a ProviderRateLimitError instead of capturing it as a per-day error", async () => {
+    await saveTokens(ctx.db, "fatsecret", {
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    server.use(
+      http.get("https://platform.fatsecret.com/rest/server.api", () => {
+        return new HttpResponse("Too Many Requests", {
+          status: 429,
+          headers: { "Retry-After": "30" },
+        });
+      }),
+    );
+
+    const provider = new FatSecretProvider();
+    const since = new Date("2026-03-15T00:00:00Z");
+
+    await expect(provider.sync(ctx.db, since)).rejects.toBeInstanceOf(ProviderRateLimitError);
   });
 
   it("caps lookback to 2 years when since is epoch (new Date(0))", async () => {

@@ -452,6 +452,8 @@ jobs:
   test-integration:
     name: Integration Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -835,6 +837,8 @@ jobs:
     if: needs.mutation-prep.outputs.shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    permissions:
+      contents: read
     services:
       postgres:
         image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all

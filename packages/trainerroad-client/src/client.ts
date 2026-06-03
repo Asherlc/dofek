@@ -89,7 +89,11 @@ export class TrainerRoadClient {
       throw new Error("TrainerRoad login failed — no auth cookie returned");
     }
 
-    const authCookieValue = authCookieEntry.split("=")[1]?.split(";")[0] ?? "";
+    const firstEqualsIndex = authCookieEntry.indexOf("=");
+    const authCookieValue =
+      firstEqualsIndex === -1
+        ? ""
+        : (authCookieEntry.slice(firstEqualsIndex + 1).split(";")[0] ?? "");
 
     // Get username from member info
     const client = new TrainerRoadClient(authCookieValue, fetchFn);

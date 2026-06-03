@@ -42,7 +42,6 @@ export interface RateLimitAwareFetchOptions {
 }
 
 const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
-const wrappedFetchBySource = new WeakMap<typeof globalThis.fetch, typeof globalThis.fetch>();
 
 /**
  * Parses an HTTP `Retry-After` header value, which may be either a number of
@@ -99,9 +98,6 @@ export function createRateLimitAwareFetch(
 ): typeof globalThis.fetch {
   if (rateLimitAwareFetches.has(fetchFn)) return fetchFn;
 
-  const existing = wrappedFetchBySource.get(fetchFn);
-  if (existing) return existing;
-
   const rateLimitFetch: typeof globalThis.fetch = (input, init) =>
     fetchWithRateLimitHandling(fetchFn, input, init, {
       createRateLimitError:
@@ -116,6 +112,5 @@ export function createRateLimitAwareFetch(
           )),
     });
   rateLimitAwareFetches.add(rateLimitFetch);
-  wrappedFetchBySource.set(fetchFn, rateLimitFetch);
   return rateLimitFetch;
 }

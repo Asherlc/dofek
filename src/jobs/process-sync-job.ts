@@ -91,12 +91,16 @@ function isProviderAuthErrorMessage(message: string): boolean {
 async function scheduleRateLimitRetry(
   job: SyncJob,
   error: ProviderRateLimitError,
+  since: Date,
 ): Promise<string> {
   const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
   const delay = providerRateLimitDelayMs(cooldown);
   const nextData: SyncJobData = {
     ...job.data,
     providerId: error.providerId,
+    // Persist the concrete window resolved for this run so the delayed retry
+    // syncs from the same point rather than recomputing a now-shifted sinceDays.
+    sinceIso: since.toISOString(),
   };
   await getProviderSyncQueue(error.providerId).add("sync", nextData, {
     ...SYNC_JOB_RETRY_OPTIONS,
@@ -238,7 +242,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
     } catch (err: unknown) {
       if (err instanceof ProviderRateLimitError) {
-        const retryAt = await scheduleRateLimitRetry(job, err);
+        const retryAt = await scheduleRateLimitRetry(job, err, since);
         const message = `Rate limited; retry scheduled for ${retryAt}`;
         completedCount++;
         providerStatus[provider.id] = { status: "running", message };

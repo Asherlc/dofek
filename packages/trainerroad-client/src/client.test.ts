@@ -248,7 +248,8 @@ describe("TrainerRoadClient.signIn", () => {
           text: () => Promise.resolve(""),
           headers: {
             getSetCookie: () => [
-              "SharedTrainerRoadAuth=real-token-987; expires=Wed, 09-Jun-2027 10:18:14 GMT; path=/; secure; HttpOnly",
+              // Value itself contains `=` (e.g. base64 padding) and must be preserved in full.
+              "SharedTrainerRoadAuth=tok==en==value; expires=Wed, 09-Jun-2027 10:18:14 GMT; path=/; secure; HttpOnly",
             ],
           },
         });
@@ -263,14 +264,15 @@ describe("TrainerRoadClient.signIn", () => {
 
     const result = await TrainerRoadClient.signIn("testuser", "password123", fetchFn);
 
-    expect(result.authCookie).toBe("real-token-987");
+    expect(result.authCookie).toBe("tok==en==value");
 
-    // The auth cookie value (not the decorated entry) is used for the member-info request.
+    // The full auth cookie value (not the decorated entry, not a truncated segment) is used
+    // for the member-info request.
     const memberCall = fetchFn.mock.calls[2];
     if (!memberCall) throw new Error("expected a member-info request");
     const memberOptions: RequestInit = memberCall[1];
     const memberHeaders = new Headers(memberOptions.headers);
-    expect(memberHeaders.get("Cookie")).toBe("SharedTrainerRoadAuth=real-token-987");
+    expect(memberHeaders.get("Cookie")).toBe("SharedTrainerRoadAuth=tok==en==value");
   });
 
   it("throws when the login response has no Set-Cookie support at all", async () => {

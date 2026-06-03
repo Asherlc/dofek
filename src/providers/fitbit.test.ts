@@ -341,6 +341,12 @@ const sampleWeightLog: FitbitWeightLog = {
 // Tests
 // ============================================================
 
+// Always restore real timers between tests so a fake clock set by a test that
+// throws before its own `vi.useRealTimers()` can't leak into later cases.
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("Fitbit Provider", () => {
   describe("mapFitbitActivityType", () => {
     it("maps running activities", () => {

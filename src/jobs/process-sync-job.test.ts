@@ -1,7 +1,16 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
+
+const MockJobDataSchema = z.object({
+  providerId: z.string().optional(),
+  sinceDays: z.number().optional(),
+  sinceIso: z.string().optional(),
+  userId: z.string(),
+  checkpoint: z.unknown().optional(),
+});
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -243,6 +252,9 @@ describe("processSyncJob", () => {
         providerId: "garmin",
         userId: "user-1",
         sinceDays: 1,
+        // Resolved absolute window for this run (2026-06-02T12:00:00Z minus 1 day),
+        // persisted so the delayed retry does not recompute a shifted relative window.
+        sinceIso: "2026-06-01T12:00:00.000Z",
       },
       expect.objectContaining({
         attempts: 288,
@@ -253,6 +265,49 @@ describe("processSyncJob", () => {
     expect(mockCaptureException).not.toHaveBeenCalledWith(
       expect.any(ProviderRateLimitError),
       expect.anything(),
+    );
+    vi.useRealTimers();
+  });
+
+  it("requeues a rate-limited run with the resolved absolute since timestamp", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn().mockRejectedValue(
+        new ProviderRateLimitError({
+          message: "Garmin API rate limit exceeded (429): limited",
+          providerId: "garmin",
+          statusCode: 429,
+          responseBody: "limited",
+          scope: "provider",
+          retryAfterSeconds: 600,
+        }),
+      ),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 7 });
+    await runSyncJob(job, mockDb);
+
+    // The original run resolved since = now - 7 days = 2026-05-26T12:00:00Z.
+    const expectedSinceIso = "2026-05-26T12:00:00.000Z";
+    const firstCall = mockProviderQueueAdd.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const requeuedData = MockJobDataSchema.parse(firstCall?.[1]);
+    expect(requeuedData.sinceIso).toBe(expectedSinceIso);
+
+    // The delayed retry resolves the same absolute window from the persisted sinceIso,
+    // not a shifted relative sinceDays, even if it runs later.
+    vi.setSystemTime(new Date("2026-06-02T12:30:00Z"));
+    const retryProvider = createMockProvider({ id: "garmin", name: "Garmin" });
+    mockGetEnabledSyncProviders.mockReturnValue([retryProvider]);
+    await runSyncJob(createMockJob(requeuedData), mockDb);
+
+    expect(retryProvider.sync).toHaveBeenCalledWith(
+      mockDb,
+      new Date(expectedSinceIso),
+      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
     );
     vi.useRealTimers();
   });

@@ -17,7 +17,7 @@ export interface OAuth1Credentials {
 export function encodeRFC3986(str: string): string {
   return encodeURIComponent(str).replace(
     /[!'()*]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }
 

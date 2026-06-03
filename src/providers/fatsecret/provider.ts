@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../../auth/oauth.ts";
@@ -139,13 +139,13 @@ export class FatSecretProvider implements SyncProvider {
     // Iterate day-by-day from `since` to today
     const today = new Date();
     const current = new Date(since);
-    current.setHours(0, 0, 0, 0);
+    current.setUTCHours(0, 0, 0, 0);
 
     // Cap lookback to 2 years — FatSecret syncs day-by-day, so unbounded ranges
     // generate thousands of API calls for empty days
     const maxLookback = new Date();
     maxLookback.setFullYear(maxLookback.getFullYear() - 2);
-    maxLookback.setHours(0, 0, 0, 0);
+    maxLookback.setUTCHours(0, 0, 0, 0);
     if (current < maxLookback) {
       current.setTime(maxLookback.getTime());
     }
@@ -226,6 +226,9 @@ export class FatSecretProvider implements SyncProvider {
           recordsSynced += entries.length;
         }
       } catch (err) {
+        // Let rate-limit errors propagate so the cooldown/retry pipeline can handle them.
+        if (err instanceof ProviderRateLimitError) throw err;
+
         // FatSecret returns an error for days with no entries — not a real error.
         // The API may return "No entries found" (HTTP error) or an unexpected response
         // shape that fails Zod validation on the food_entries key (empty day variant).
