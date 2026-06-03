@@ -7,7 +7,7 @@ Infrastructure (OCI) using the **Always Free** Ampere A1 shape
 
 This root is **isolated** from the primary `deploy/` root: it uses a local
 backend and the `oracle/oci` provider. The primary `deploy/` root manages
-Cloudflare resources; `deploy/review-apps/` manages per-PR Hetzner servers.
+Cloudflare resources.
 
 ## What it provisions
 
@@ -49,16 +49,15 @@ host. All deploy logic lives in CI and talks to the remote Docker API over SSH
 which applies the Oracle override (`-c deploy/stack.yml -c deploy/stack.oracle.yml`)
 over SSH to this host. See the "Stable address + DNS + CI" section below.
 
-Unlike Hetzner (which deploys over `ssh://root@`), OCI's Ubuntu image disables
-root SSH, so the remote Docker context connects as the `ubuntu` user. cloud-init
-adds `ubuntu` to the `docker` group so it can reach the daemon socket without
-sudo. When invoking the `Deploy Web Stack` workflow against this host, pass
-`ssh_user: ubuntu` (the production deploy default is also `ubuntu`).
+OCI's Ubuntu image disables root SSH, so the remote Docker context connects as
+the `ubuntu` user. cloud-init adds `ubuntu` to the `docker` group so it can
+reach the daemon socket without sudo. When invoking the `Deploy Web Stack`
+workflow against this host, pass `ssh_user: ubuntu` (the production deploy
+default is also `ubuntu`).
 
-The instance trusts two SSH keys (mirroring Hetzner): the personal 1Password key
-for manual access and the CI deploy key (pair of the `DEPLOY_SSH_KEY` GitHub
-secret) so GitHub Actions can deploy. Set both via the multiline `ssh_public_key`
-tfvar.
+The instance trusts two SSH keys: the personal 1Password key for manual access
+and the CI deploy key (pair of the `DEPLOY_SSH_KEY` GitHub secret) so GitHub
+Actions can deploy. Set both via the multiline `ssh_public_key` tfvar.
 
 ### Stable address + DNS + CI
 

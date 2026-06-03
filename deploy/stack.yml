@@ -1,4 +1,4 @@
-# Docker Swarm stack for production and staging.
+# Docker Swarm stack for production.
 #
 # Deployed from CI via a remote Docker context:
 #   docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek
@@ -15,8 +15,6 @@ services:
       - --providers.swarm=true
       - --providers.swarm.exposedbydefault=false
       - --providers.swarm.network=${STACK_NAME:-dofek}_default
-      - --providers.file.directory=/dynamic
-      - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
@@ -35,7 +33,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
-      - /opt/dofek/traefik-dynamic:/dynamic:ro
     deploy:
       labels:
         - traefik.enable=true

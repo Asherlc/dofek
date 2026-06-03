@@ -4,12 +4,11 @@
 # remote Docker context (SSH); there are no deploy scripts or secrets on the
 # instance.
 #
-# Two things differ from the Hetzner cloud-init:
-#   1. Oracle's Ubuntu images ship restrictive instance-level iptables rules
+# Oracle's Ubuntu images ship restrictive instance-level iptables rules
 #      that block everything except SSH, regardless of the VCN security list.
 #      We must explicitly accept 80/443 on the INPUT chain.
-#   2. The attached block volume is formatted and mounted at /mnt/dofek-data
-#      so the production stack bind mounts work unchanged.
+# The attached block volume is formatted and mounted at /mnt/dofek-data so the
+# production stack bind mounts work unchanged.
 
 package_update: true
 
@@ -62,8 +61,8 @@ runcmd:
   # /var/run/docker.sock.
   - usermod -aG docker ubuntu
 
-  # --- App directory (Traefik dynamic config lives here) ---
-  - mkdir -p /opt/dofek /opt/dofek/traefik-dynamic
+  # --- App directory ---
+  - mkdir -p /opt/dofek
 
 %{ if data_volume_enabled ~}
   # --- Format and mount the attached data volume at /mnt/dofek-data ---
@@ -117,7 +116,7 @@ runcmd:
   # The timescaledb-ha (Postgres) image runs as uid/gid 1000 and cannot chown
   # its own data directory, so it hangs/fails on a root-owned bind mount with
   # "initdb: could not change permissions ... Operation not permitted". Pre-own
-  # the data dir to 1000:1000 (matches the Hetzner box). Other services either
+  # the data dir to 1000:1000. Other services either
   # run as root and self-chown (clickhouse, redis, peerdb-catalog) or are scaled
   # to zero by stack.oracle.yml, so only Postgres needs this.
   - chown 1000:1000 /mnt/dofek-data/postgres

@@ -7,6 +7,47 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-03: Deploy Terraform failed on retired Hetzner provider state
+
+### Symptoms
+
+- `Deploy Web Production / Deploy Infra / Terraform Apply` failed before the
+  production stack deploy, so the downstream `Deploy Web Stack` job was skipped.
+
+### Evidence
+
+- Failed run: `26918337754`, job `79413169473`.
+- First fatal log line:
+  `Provider "registry.terraform.io/hetznercloud/hcloud" requires explicit configuration`.
+- The same step then reported `Missing Hetzner Cloud API token`.
+- Local `terraform state list` for the main `deploy/` HCP workspace still showed
+  `hcloud_firewall.dofek` and `hcloud_ssh_key.default`, even though the checked-in
+  main Terraform root no longer configured the Hetzner provider.
+
+### Root cause
+
+- The main Terraform state still contained orphaned Hetzner provider resources
+  from retired infrastructure. Terraform had to configure the removed provider
+  while planning their removal, but CI no longer supplies `HCLOUD_TOKEN` because
+  Dofek no longer uses Hetzner infrastructure.
+
+### Fix
+
+- Removed the orphaned `hcloud_firewall.dofek` and `hcloud_ssh_key.default`
+  entries from the main HCP Terraform state with `terraform state rm`.
+- Reran the failed deploy workflow; the Terraform Apply job completed
+  successfully without a Hetzner token.
+- Removed the remaining Hetzner-backed review-app workflow, Terraform root,
+  Traefik dynamic route wiring, and active docs so future CI/config does not
+  reintroduce that provider.
+
+### Remaining Risk
+
+- Historical incident docs still mention Hetzner for past outages and migration
+  context; those are not active runbooks. If any stale remote review-app
+  Terraform workspaces still exist, delete them in HCP Terraform rather than
+  restoring Hetzner credentials to CI.
+
 ## 2026-06-02: CI Stryker shard aborted on Docker Hub service-container pull timeout
 
 ### Symptoms
