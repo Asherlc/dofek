@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { logger } from "../logger.ts";
 import {
   mapPolarSport,
   parsePolarDailyActivity,
@@ -7,6 +8,7 @@ import {
   parsePolarSleep,
 } from "./polar/parsers.ts";
 import { PolarProvider } from "./polar/provider.ts";
+import type { TokenSet } from "../auth/oauth.ts";
 import type {
   PolarDailyActivity,
   PolarExercise,
@@ -377,6 +379,183 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
     expect(setup.exchangeCode).toBeDefined();
     const tokens = await setup.exchangeCode("auth-code");
     expect(tokens.accessToken).toBe("new-token");
+  });
+});
+
+describe("PolarProvider — exchangeCode token request & parsing", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  function setupProvider(tokenBody: Record<string, unknown>, tokenStatus = 200) {
+    process.env.POLAR_CLIENT_ID = "client-id";
+    process.env.POLAR_CLIENT_SECRET = "client-secret";
+
+    const tokenRequest: { method?: string; headers: Headers; body: string } = {
+      headers: new Headers(),
+      body: "",
+    };
+    const mockFetch: typeof globalThis.fetch = vi.fn(async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.includes("oauth2/token")) {
+        tokenRequest.method = init?.method;
+        tokenRequest.headers = new Headers(init?.headers);
+        tokenRequest.body = String(init?.body ?? "");
+        if (tokenStatus !== 200) {
+          return new Response("bad request", { status: tokenStatus });
+        }
+        return new Response(JSON.stringify(tokenBody), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (urlStr.includes("/v3/users") && init?.method === "POST") {
+        return new Response(null, { status: 200 });
+      }
+      return new Response("Not found", { status: 404 });
+    });
+
+    return { provider: new PolarProvider(mockFetch), tokenRequest };
+  }
+
+  it("posts a form-encoded body with basic auth and the auth code", async () => {
+    const { provider, tokenRequest } = setupProvider({
+      access_token: "tok",
+      x_user_id: "user-1",
+    });
+
+    await provider.authSetup().exchangeCode("the-auth-code");
+
+    expect(tokenRequest.method).toBe("POST");
+    expect(tokenRequest.headers.get("Content-Type")).toBe("application/x-www-form-urlencoded");
+    expect(tokenRequest.headers.get("Authorization")).toBe(
+      `Basic ${btoa("client-id:client-secret")}`,
+    );
+    const params = new URLSearchParams(tokenRequest.body);
+    expect(params.get("grant_type")).toBe("authorization_code");
+    expect(params.get("code")).toBe("the-auth-code");
+    expect(params.get("redirect_uri")).toBeTruthy();
+  });
+
+  it("throws when the token exchange response is not ok", async () => {
+    const { provider } = setupProvider({}, 400);
+    await expect(provider.authSetup().exchangeCode("c")).rejects.toThrow(
+      "Polar token exchange failed",
+    );
+  });
+
+  it("uses provider-supplied expires_in, refresh_token, and scope", async () => {
+    const before = Date.now();
+    const { provider } = setupProvider({
+      access_token: "tok",
+      x_user_id: "user-1",
+      expires_in: 3600,
+      refresh_token: "refresh-tok",
+      scope: "accesslink.read_all",
+    });
+
+    const tokens = await provider.authSetup().exchangeCode("c");
+
+    expect(tokens.refreshToken).toBe("refresh-tok");
+    expect(tokens.scopes).toBe("accesslink.read_all");
+    const elapsedToExpiry = tokens.expiresAt.getTime() - before;
+    expect(elapsedToExpiry).toBeGreaterThan(3500 * 1000);
+    expect(elapsedToExpiry).toBeLessThan(3700 * 1000);
+  });
+
+  it("falls back to one-year expiry and null refresh/scope when omitted", async () => {
+    const before = Date.now();
+    const { provider } = setupProvider({
+      access_token: "tok",
+      x_user_id: "user-1",
+    });
+
+    const tokens = await provider.authSetup().exchangeCode("c");
+
+    expect(tokens.refreshToken).toBeNull();
+    expect(tokens.scopes).toBeNull();
+    const daysToExpiry = (tokens.expiresAt.getTime() - before) / (1000 * 60 * 60 * 24);
+    expect(daysToExpiry).toBeGreaterThan(364);
+    expect(daysToExpiry).toBeLessThan(366);
+  });
+});
+
+describe("PolarProvider — revokeExistingTokens", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  const oldTokens: TokenSet = {
+    accessToken: "old-token",
+    refreshToken: null,
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: null,
+  };
+
+  it("deregisters the discovered user to revoke the old token", async () => {
+    process.env.POLAR_CLIENT_ID = "client-id";
+    process.env.POLAR_CLIENT_SECRET = "client-secret";
+    const deletedIds: string[] = [];
+
+    const mockFetch: typeof globalThis.fetch = vi.fn(async (url, init) => {
+      const urlStr = String(url);
+      const method = init?.method ?? "GET";
+      if (urlStr.endsWith("/v3/users") && method === "GET") {
+        return new Response(JSON.stringify({ polar_user_id: "old-user-9" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (method === "DELETE" && urlStr.includes("/v3/users/")) {
+        deletedIds.push(urlStr.split("/v3/users/")[1] ?? "");
+        return new Response(null, { status: 204 });
+      }
+      return new Response("Not found", { status: 404 });
+    });
+
+    const provider = new PolarProvider(mockFetch);
+    const revoke = provider.authSetup().revokeExistingTokens;
+    if (!revoke) throw new Error("expected revokeExistingTokens");
+    await revoke(oldTokens);
+
+    expect(deletedIds).toEqual(["old-user-9"]);
+  });
+
+  it("warns and does not deregister when the user id cannot be discovered", async () => {
+    process.env.POLAR_CLIENT_ID = "client-id";
+    process.env.POLAR_CLIENT_SECRET = "client-secret";
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    let deleteCalled = false;
+
+    const mockFetch: typeof globalThis.fetch = vi.fn(async (url, init) => {
+      const urlStr = String(url);
+      const method = init?.method ?? "GET";
+      if (urlStr.endsWith("/v3/users") && method === "GET") {
+        // No polar_user_id → getCurrentUserId resolves null
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (method === "DELETE") {
+        deleteCalled = true;
+        return new Response(null, { status: 204 });
+      }
+      return new Response("Not found", { status: 404 });
+    });
+
+    const provider = new PolarProvider(mockFetch);
+    const revoke = provider.authSetup().revokeExistingTokens;
+    if (!revoke) throw new Error("expected revokeExistingTokens");
+    await revoke(oldTokens);
+
+    expect(deleteCalled).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Could not discover Polar user ID"));
   });
 });
 

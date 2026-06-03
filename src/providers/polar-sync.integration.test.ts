@@ -209,6 +209,9 @@ describe("PolarProvider.sync() (integration)", () => {
 
     expect(result.provider).toBe("polar");
     expect(result.errors).toHaveLength(0);
+    // duration is elapsed wall-clock (Date.now() - startTime), not Date.now() + startTime
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThan(60_000);
 
     // Verify exercises -> activity
     const activityRows = await ctx.db
