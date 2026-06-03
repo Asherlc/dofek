@@ -48,7 +48,6 @@
     ".antigravitycli/**",
     ".codegraph/**",
     ".codex/**",
-    ".codegraph/**",
     ".claude/**",
     ".context/**",
     ".gemini/**"

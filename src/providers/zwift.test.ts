@@ -1,4 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Restore real timers and any Date.now spy after each test so a failed
+// assertion before an inline mockRestore() can't leak the mocked clock.
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 // cspell:ignore RESTEASY
 

@@ -183,6 +183,9 @@ describe("processSyncJob", () => {
   });
 
   afterEach(() => {
+    // Restore real timers so a test that throws before its own useRealTimers()
+    // can't leak the fake clock into later tests.
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
