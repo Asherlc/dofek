@@ -19,9 +19,9 @@ Staging DNS records point directly at the staging server so Traefik can serve th
 
 ## Deploy
 
-Staging deploys automatically after successful main CI through **Deploy Web**, using the same `sha-<commit>` image tag as production. You can also run **Deploy Web** manually; `environment=both` is the default, and `environment=staging` deploys only staging.
+Staging deployments are currently disabled in **Deploy Web**. Successful main CI and manual deploys update production only.
 
-The workflow:
+When re-enabled, the workflow:
 
 1. Confirms the `dofek` and `dofek-ml` GHCR image tags exist.
 2. Applies Terraform and reads `staging_server_ip`.

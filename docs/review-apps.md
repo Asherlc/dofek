@@ -22,8 +22,8 @@ existing explicit records and Traefik routes.
 
 ### Open, Reopen, Synchronize
 
-For same-repo PRs that are ready for review, `.github/workflows/review-app.yml`
-does the following:
+Review app creation is currently disabled. When `.github/workflows/review-app.yml`
+is re-enabled for same-repo PRs that are ready for review, it does the following:
 
 1. Build `ghcr.io/asherlc/dofek:pr-<number>`.
 2. Create the tagged HCP Terraform workspace `dofek-review-pr-<number>` if it
