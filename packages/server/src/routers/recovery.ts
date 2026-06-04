@@ -453,17 +453,12 @@ export const recoveryRouter = router({
         efficiency_pct: z.coerce.number().nullable(),
       });
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.readinessScore");
-      const accessWindow = ctx.accessWindow ?? {
-        kind: "full",
-        paid: true,
-        reason: "paid_grant",
-      };
       const accessWindowClause =
-        accessWindow.kind === "full"
-          ? ""
-          : `
+        ctx.accessWindow?.kind === "limited"
+          ? `
             AND recovery_inputs.date >= toDate({accessStartDate:String})
-            AND recovery_inputs.date < toDate({accessEndDateExclusive:String})`;
+            AND recovery_inputs.date < toDate({accessEndDateExclusive:String})`
+          : "";
       const combinedRows = await sensorStore.query(
         readinessRowSchema,
         `SELECT
@@ -488,12 +483,12 @@ export const recoveryRouter = router({
           userId: ctx.userId,
           windowStart: dateWindowStartString(input.endDate, queryDays),
           endDate: input.endDate,
-          ...(accessWindow.kind === "full"
-            ? {}
-            : {
-                accessStartDate: accessWindow.startDate,
-                accessEndDateExclusive: accessWindow.endDateExclusive,
-              }),
+          ...(ctx.accessWindow?.kind === "limited"
+            ? {
+                accessStartDate: ctx.accessWindow.startDate,
+                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
+              }
+            : {}),
         },
       );
       const cutoffDate = new Date(input.endDate);

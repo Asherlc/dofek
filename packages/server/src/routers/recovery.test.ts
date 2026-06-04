@@ -716,9 +716,14 @@ describe("recoveryRouter.readinessScore", () => {
     const result = await caller.readinessScore({});
     expect(result).toEqual([]);
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(queryText).toContain("analytics.daily_recovery_inputs");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
+    expect(queryText).not.toContain("accessStartDate");
+    expect(queryText).not.toContain("accessEndDateExclusive");
+    expect(queryParams).not.toHaveProperty("accessStartDate");
+    expect(queryParams).not.toHaveProperty("accessEndDateExclusive");
   });
 
   it("computes readiness score from HRV, RHR, sleep efficiency, and respiratory rate", async () => {
@@ -2576,5 +2581,32 @@ describe("recoveryRouter access window gating", () => {
     });
     const result = await caller.sleepConsistency({});
     expect(result).toEqual([]);
+  });
+
+  it("readinessScore passes accessWindow to query", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      },
+      sensorStore,
+    });
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-04-20" });
+    expect(result).toEqual([]);
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).toContain("accessStartDate");
+    expect(queryText).toContain("accessEndDateExclusive");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-04-10",
+      accessEndDateExclusive: "2026-04-17",
+    });
   });
 });
