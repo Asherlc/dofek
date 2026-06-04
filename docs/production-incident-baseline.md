@@ -7,6 +7,53 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-04: Garmin Rate Limits Still Reported to Sentry
+
+### Symptoms
+
+- Sentry issue `DOFEK-SERVER-33` continued receiving unresolved production
+  `GarminRateLimitError: Rate limit exceeded (429): Rate limited` events after
+  provider rate-limit retry logic had been added.
+
+### User Impact
+
+- Garmin background sync jobs produced noisy production error events for expected
+  provider throttling. The user-facing impact was delayed Garmin sync while the
+  provider was rate limited.
+
+### Evidence
+
+- Latest observed Sentry event `7cea1c00286a4d60a81002ab758f874c` occurred at
+  `2026-06-04T17:00:01.674Z`.
+- Stack trace:
+  `processSyncJob -> GarminProvider.sync -> GarminProvider.#resolveTokens ->
+  GarminConnectClient.fromTokens -> GarminConnectClient.#exchangeForOAuth2 ->
+  fetchWithRateLimitHandling -> GarminProvider.createRateLimitError`.
+- The first relevant application frame was
+  `/app/src/providers/garmin.ts:296`, where the rate-limit-aware fetch wrapper
+  correctly created a `GarminRateLimitError`.
+
+### Root Cause
+
+- Garmin token resolution caught the `GarminRateLimitError` and returned it in
+  `SyncResult.errors`. The worker only scheduled cooldown retries for thrown
+  `ProviderRateLimitError` instances, so returned rate-limit causes fell through
+  the generic sync-error branch and were captured to Sentry.
+
+### Fix or Mitigation
+
+- `processSyncJob` now detects `ProviderRateLimitError` causes returned inside
+  `SyncResult.errors` before generic sync-error handling, then routes them
+  through the existing cooldown/retry scheduling path.
+- Added a regression test covering returned rate-limit errors so they enqueue a
+  delayed retry and do not call Sentry.
+
+### Remaining Risk
+
+- The fix must be deployed before Sentry stops receiving this issue. Future
+  provider implementations should either throw `ProviderRateLimitError` directly
+  or preserve it as `SyncError.cause` so the worker can schedule the cooldown.
+
 ## 2026-06-03: Deploy Terraform failed on retired Hetzner provider state
 
 ### Symptoms
