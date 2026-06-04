@@ -11,9 +11,16 @@ sources:
     tables:
       - name: activity
       - name: device_priority
+      - name: daily_metrics
+      - name: food_entry
+      - name: health_event
+      - name: journal_entry
+      - name: lab_panel
+      - name: lab_result
       - name: metric_stream
         config:
           event_time: recorded_at
+      - name: provider
       - name: provider_priority
       - name: sensor_device_priority
       - name: sensor_provider_priority

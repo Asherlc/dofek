@@ -60,6 +60,146 @@ export function tableInfo(dataType: DataType): {
   }
 }
 
+function listColumns(dataType: DataType): string {
+  switch (dataType) {
+    case "activities":
+      return [
+        "id",
+        "provider_id",
+        "external_id",
+        "activity_type",
+        "started_at",
+        "ended_at",
+        "name",
+        "source_name",
+        "created_at",
+      ].join(", ");
+    case "dailyMetrics":
+      return [
+        "id",
+        "provider_id",
+        "date",
+        "hrv",
+        "respiratory_rate_avg",
+        "steps",
+        "active_energy_kcal",
+        "distance_km",
+        "source_name",
+        "created_at",
+      ].join(", ");
+    case "sleepSessions":
+      return [
+        "id",
+        "provider_id",
+        "external_id",
+        "started_at",
+        "ended_at",
+        "duration_minutes",
+        "sleep_type",
+        "source_name",
+        "created_at",
+      ].join(", ");
+    case "bodyMeasurements":
+      return [
+        "id",
+        "provider_id",
+        "recorded_at",
+        "weight_kg",
+        "body_fat_pct",
+        "muscle_mass_kg",
+        "source_name",
+      ].join(", ");
+    case "foodEntries":
+      return [
+        "id",
+        "provider_id",
+        "external_id",
+        "date",
+        "meal",
+        "food_name",
+        "logged_at",
+        "source_name",
+        "created_at",
+      ].join(", ");
+    case "healthEvents":
+      return [
+        "id",
+        "provider_id",
+        "external_id",
+        "type",
+        "value",
+        "value_text",
+        "unit",
+        "source_name",
+        "start_date",
+        "end_date",
+        "created_at",
+      ].join(", ");
+    case "metricStream":
+      return [
+        "id",
+        "recorded_at",
+        "provider_id",
+        "external_id",
+        "device_id",
+        "source_type",
+        "channel",
+        "activity_id",
+        "scalar",
+      ].join(", ");
+    case "nutritionDaily":
+      return [
+        "date",
+        "provider_id",
+        "calories",
+        "protein_g",
+        "carbs_g",
+        "fat_g",
+        "fiber_g",
+        "sugar_g",
+      ].join(", ");
+    case "labPanels":
+      return [
+        "id",
+        "provider_id",
+        "external_id",
+        "name",
+        "loinc_code",
+        "status",
+        "source_name",
+        "recorded_at",
+        "issued_at",
+        "created_at",
+      ].join(", ");
+    case "labResults":
+      return [
+        "id",
+        "provider_id",
+        "panel_id",
+        "external_id",
+        "test_name",
+        "loinc_code",
+        "value",
+        "value_text",
+        "unit",
+        "status",
+        "recorded_at",
+        "created_at",
+      ].join(", ");
+    case "journalEntries":
+      return [
+        "id",
+        "provider_id",
+        "date",
+        "question_slug",
+        "answer_text",
+        "answer_numeric",
+        "impact_score",
+        "created_at",
+      ].join(", ");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -135,7 +275,7 @@ export class ProviderDetailRepository {
       return this.#queryBodyRecords(providerId, info, limit, offset);
     }
 
-    const query = sql`SELECT * FROM ${sql.raw(info.table)}
+    const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${sql.raw(info.table)}
               WHERE user_id = ${this.#userId}
                 AND provider_id = ${providerId}
               ORDER BY ${sql.raw(info.orderColumn)} DESC

@@ -180,27 +180,38 @@ export const adminRouter = router({
       executeWithSchema(
         ctx.db,
         overviewCountSchema,
-        sql`SELECT table_name, row_count FROM (
-        SELECT 'user_profile' AS table_name, COUNT(*)::text AS row_count FROM fitness.user_profile
-        UNION ALL SELECT 'activity', COUNT(*)::text FROM fitness.activity
-        UNION ALL SELECT 'sleep_session', COUNT(*)::text FROM fitness.sleep_session
-        UNION ALL SELECT 'food_entry', COUNT(*)::text FROM fitness.food_entry
-        UNION ALL SELECT 'daily_metrics', COUNT(*)::text FROM fitness.daily_metrics
-        UNION ALL SELECT 'sync_log', COUNT(*)::text FROM fitness.sync_log
-        UNION ALL SELECT 'session', COUNT(*)::text FROM fitness.session
-        UNION ALL SELECT 'auth_account', COUNT(*)::text FROM fitness.auth_account
-        UNION ALL SELECT 'oauth_token', COUNT(*)::text FROM fitness.oauth_token
-        UNION ALL SELECT 'provider', COUNT(*)::text FROM fitness.provider
-        UNION ALL SELECT 'lab_panel', COUNT(*)::text FROM fitness.lab_panel
-        UNION ALL SELECT 'journal_entry', COUNT(*)::text FROM fitness.journal_entry
-        UNION ALL SELECT 'breathwork_session', COUNT(*)::text FROM fitness.breathwork_session
-        UNION ALL SELECT 'supplement', COUNT(*)::text FROM fitness.supplement
-        UNION ALL SELECT 'life_events', COUNT(*)::text FROM fitness.life_events
-        UNION ALL SELECT 'nutrient', COUNT(*)::text FROM fitness.nutrient
-        UNION ALL SELECT 'food_entry_nutrient', COUNT(*)::text FROM fitness.food_entry_nutrient
-        UNION ALL SELECT 'supplement_nutrient', COUNT(*)::text FROM fitness.supplement_nutrient
-        UNION ALL SELECT 'metric_stream', COUNT(*)::text FROM fitness.metric_stream
-      ) counts ORDER BY row_count DESC`,
+        sql`WITH target_tables(table_name) AS (
+          VALUES
+            ('user_profile'),
+            ('activity'),
+            ('sleep_session'),
+            ('food_entry'),
+            ('daily_metrics'),
+            ('sync_log'),
+            ('session'),
+            ('auth_account'),
+            ('oauth_token'),
+            ('provider'),
+            ('lab_panel'),
+            ('journal_entry'),
+            ('breathwork_session'),
+            ('supplement'),
+            ('life_events'),
+            ('nutrient'),
+            ('food_entry_nutrient'),
+            ('supplement_nutrient'),
+            ('metric_stream')
+        )
+        SELECT
+          target_tables.table_name,
+          GREATEST(pg_class.reltuples, 0)::bigint::text AS row_count
+        FROM target_tables
+        JOIN pg_class
+          ON pg_class.relname = target_tables.table_name
+        JOIN pg_namespace
+          ON pg_namespace.oid = pg_class.relnamespace
+         AND pg_namespace.nspname = 'fitness'
+        ORDER BY GREATEST(pg_class.reltuples, 0) DESC`,
       ),
       bodyStore.query(
         overviewCountSchema,
