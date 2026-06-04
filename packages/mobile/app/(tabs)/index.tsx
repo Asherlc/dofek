@@ -43,6 +43,10 @@ export default function TodayScreen() {
   // Consolidated dashboard data fetch
   const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
   const dashboardData = dashboardQuery.data;
+  const anomalyQuery = trpc.anomalyDetection.check.useQuery(
+    { endDate },
+    { staleTime: 10 * 60 * 1000 },
+  );
 
   // Derived readiness/recovery
   const todayReadiness = dashboardData?.readiness ?? undefined;
@@ -62,7 +66,7 @@ export default function TodayScreen() {
 
   // Alerts and sleep guidance from consolidated query
   const sleepNeed = dashboardData?.sleepNeed;
-  const anomalies = dashboardData?.anomalies;
+  const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
   const isLoading = dashboardQuery.isLoading;
   const isError = dashboardQuery.isError;
