@@ -29,15 +29,6 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-/**
- * Per-activity training load expression over `analytics.activity_summary`.
- * Load = duration_minutes * avg_hr / max_hr. Assumes the table is aliased
- * `activity_summary` in the surrounding query.
- */
-const ACTIVITY_LOAD_EXPRESSION = `dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
-  * activity_summary.avg_hr
-  / nullIf(toFloat64(activity_summary.max_hr), 0)`;
-
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
   feature: string,
@@ -282,22 +273,14 @@ export const recoveryRouter = router({
       });
       const rows = await sensorStore.query(
         workloadRowSchema,
-        `WITH per_activity AS (
+        `WITH activity_load AS (
           SELECT
-            toDate(toTimeZone(activity_summary.started_at, {timezone:String})) AS date,
-            ${ACTIVITY_LOAD_EXPRESSION} AS load
-          FROM analytics.activity_summary AS activity_summary
-          WHERE activity_summary.user_id = {userId:UUID}
-            AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
-            AND activity_summary.ended_at IS NOT NULL
-            AND activity_summary.avg_hr IS NOT NULL
-        ),
-        activity_load AS (
-          SELECT
-            date,
-            sum(load) AS daily_load
-          FROM per_activity
-          GROUP BY date
+            toDate(toTimeZone(started_at, {timezone:String})) AS date,
+            sum(daily_load) AS daily_load
+          FROM analytics.daily_activity_load
+          WHERE user_id = {userId:UUID}
+            AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
+          GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
         ),
         date_series AS (
           SELECT toDate({windowStart:String}) + INTERVAL number DAY AS date
@@ -685,21 +668,19 @@ export const recoveryRouter = router({
         `,
       );
 
-      // Get daily loads for ACWR (from ClickHouse analytics.activity_summary)
+      // Get daily loads for ACWR from the compact ClickHouse activity-load read model.
       const loads = await sensorStore.query(
         z.object({
           date: z.string(),
           daily_load: z.coerce.number(),
         }),
         `SELECT
-          toString(toDate(toTimeZone(activity_summary.started_at, {timezone:String}))) AS date,
-          sum(${ACTIVITY_LOAD_EXPRESSION}) AS daily_load
-        FROM analytics.activity_summary AS activity_summary
-        WHERE activity_summary.user_id = {userId:UUID}
-          AND toDate(toTimeZone(activity_summary.started_at, {timezone:String})) >= toDate({windowStart:String})
-          AND activity_summary.ended_at IS NOT NULL
-          AND activity_summary.avg_hr IS NOT NULL
-        GROUP BY toDate(toTimeZone(activity_summary.started_at, {timezone:String}))
+          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+          sum(daily_load) AS daily_load
+        FROM analytics.daily_activity_load
+        WHERE user_id = {userId:UUID}
+          AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
+        GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
         ORDER BY date ASC`,
         {
           userId: ctx.userId,

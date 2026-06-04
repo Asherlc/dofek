@@ -172,12 +172,9 @@ export const mobileDashboardRouter = router({
               }),
               `SELECT
             toString(toDate(toTimeZone(ended_at, {timezone:String}))) AS metric_date,
-            sum(dateDiff('second', started_at, ended_at) / 60.0
-                * avg_hr / nullIf(toFloat64(max_hr), 0)) AS daily_load
-          FROM analytics.activity_summary
+            sum(daily_load) AS daily_load
+          FROM analytics.daily_activity_load
           WHERE user_id = {userId:UUID}
-            AND ended_at IS NOT NULL
-            AND avg_hr IS NOT NULL
             AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({endDate:String}) - 60
             AND toDate(toTimeZone(ended_at, {timezone:String})) <= toDate({endDate:String})
           GROUP BY metric_date`,
@@ -185,9 +182,8 @@ export const mobileDashboardRouter = router({
             ),
             sensorStore.query(
               z.object({ load: z.coerce.number() }),
-              `SELECT coalesce(sum(dateDiff('second', started_at, ended_at) / 60.0
-                  * avg_hr / nullIf(toFloat64(max_hr), 0)), 0) AS load
-          FROM analytics.activity_summary
+              `SELECT coalesce(sum(daily_load), 0) AS load
+          FROM analytics.daily_activity_load
           WHERE user_id = {userId:UUID}
             AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - 1`,
               { userId: ctx.userId, timezone: tz, endDate },
