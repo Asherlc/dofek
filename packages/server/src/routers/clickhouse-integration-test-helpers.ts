@@ -545,6 +545,7 @@ started_at DateTime64(6, 'UTC'),
 ended_at DateTime64(6, 'UTC'),
 aerobic_minutes Float64,
 high_intensity_minutes Float64,
+is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     activity_trend_daily: `user_id UUID,
@@ -784,7 +785,7 @@ sleep_by_date AS (
   SELECT
     user_id,
     toDate(started_at - INTERVAL 6 HOUR) AS date,
-    argMax(efficiency_pct, duration_minutes) AS efficiency_pct
+    argMax(efficiency_pct, tuple(duration_minutes, started_at)) AS efficiency_pct
   FROM ${databases.analytics}.v_sleep
   WHERE is_nap = false
   GROUP BY user_id, date
@@ -1040,6 +1041,7 @@ SELECT
   zone_minutes.ended_at AS ended_at,
   zone_minutes.aerobic_minutes AS aerobic_minutes,
   zone_minutes.high_intensity_minutes AS high_intensity_minutes,
+  toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM zone_minutes

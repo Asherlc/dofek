@@ -2,7 +2,10 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, activity_id)'
+    order_by='(user_id, activity_id)',
+    query_settings={
+        'max_threads': 1
+    }
 ) }}
 
 WITH activity_load AS (

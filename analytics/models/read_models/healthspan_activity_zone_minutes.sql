@@ -15,8 +15,33 @@ WITH activity_bounds AS (
         started_at,
         ended_at,
         dateDiff('second', started_at, ended_at) / 60.0 AS duration_minutes
-    FROM {{ ref('activity_summary_rows') }}
-    WHERE ended_at IS NOT NULL
+    FROM {{ ref('activity_summary_rows') }} FINAL
+    WHERE is_deleted = 0
+        AND ended_at IS NOT NULL
+),
+
+{% if is_incremental() %}
+existing_activities AS (
+    SELECT DISTINCT
+        activity_id,
+        user_id
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+),
+{% endif %}
+
+activity_keys AS (
+    SELECT
+        activity_id,
+        user_id
+    FROM activity_bounds
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT
+        activity_id,
+        user_id
+    FROM existing_activities
+    {% endif %}
 ),
 
 resting_by_activity AS (
@@ -132,13 +157,17 @@ refresh_clock AS (
 )
 
 SELECT
-    zone_minutes.activity_id AS activity_id,
-    zone_minutes.user_id AS user_id,
+    activity_keys.activity_id AS activity_id,
+    activity_keys.user_id AS user_id,
     zone_minutes.started_at AS started_at,
     zone_minutes.ended_at AS ended_at,
-    zone_minutes.aerobic_minutes AS aerobic_minutes,
-    zone_minutes.high_intensity_minutes AS high_intensity_minutes,
+    coalesce(zone_minutes.aerobic_minutes, 0) AS aerobic_minutes,
+    coalesce(zone_minutes.high_intensity_minutes, 0) AS high_intensity_minutes,
+    if(zone_minutes.activity_id IS NULL, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM zone_minutes
+FROM activity_keys
+LEFT JOIN zone_minutes
+    ON zone_minutes.activity_id = activity_keys.activity_id
+    AND zone_minutes.user_id = activity_keys.user_id
 CROSS JOIN refresh_clock

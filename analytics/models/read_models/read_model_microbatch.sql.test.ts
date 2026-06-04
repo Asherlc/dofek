@@ -344,6 +344,8 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('activity_summary_rows')");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("query_settings={");
+    expect(sql).toContain("'max_threads': 1");
     expect(sql).not.toContain("ref('activity_sensor_sample')");
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
@@ -353,6 +355,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("analytics.v_daily_metrics");
     expect(sql).toContain("analytics.v_sleep");
+    expect(sql).toContain("argMax(efficiency_pct, tuple(duration_minutes, started_at))");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("hrv_mean_60d");
     expect(sql).toContain("rhr_mean_60d");
@@ -365,9 +368,13 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_summary_rows')");
+    expect(sql).toContain("FROM {{ ref('activity_summary_rows') }} FINAL");
+    expect(sql).toContain("WHERE is_deleted = 0");
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("FROM {{ this }} FINAL");
+    expect(sql).toContain("if(zone_minutes.activity_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).toContain("sensor_samples.scalar >= activity_metadata.ftp * 0.9");
     expect(sql).not.toContain("ref('deduped_sensor')");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");

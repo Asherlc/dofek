@@ -105,8 +105,9 @@ async function fetchHrZoneTime(
     `SELECT
       coalesce(sum(aerobic_minutes), 0) AS aerobic_minutes,
       coalesce(sum(high_intensity_minutes), 0) AS high_intensity_minutes
-    FROM analytics.healthspan_activity_zone_minutes
+    FROM analytics.healthspan_activity_zone_minutes FINAL
     WHERE user_id = {userId:UUID}
+      AND is_deleted = 0
       AND started_at > toDateTime({windowStart:String})
       AND started_at < toDateTime({windowEndExclusive:String})`,
     {

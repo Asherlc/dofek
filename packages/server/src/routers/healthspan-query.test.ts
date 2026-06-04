@@ -74,12 +74,13 @@ describe("fetchHealthspanRawData", () => {
     expect(zoneQuery).toEqual(expect.any(String));
     expect(query).toHaveBeenCalledWith(
       expect.anything(),
-      expect.stringContaining("analytics.healthspan_activity_zone_minutes"),
+      expect.stringContaining("analytics.healthspan_activity_zone_minutes FINAL"),
       expect.objectContaining({
         windowStart: "2026-03-01 00:00:00",
         windowEndExclusive: "2026-03-16 00:00:00",
       }),
     );
+    expect(zoneQuery).toContain("is_deleted = 0");
     expect(zoneQuery).toContain("started_at < toDateTime({windowEndExclusive:String})");
     expect(zoneQuery).not.toContain("analytics.deduped_sensor");
     expect(zoneQuery).not.toContain("analytics.activity_summary");
