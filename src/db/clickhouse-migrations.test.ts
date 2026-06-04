@@ -55,6 +55,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0021_incremental_resting_heart_rate.ts",
       "0022_incremental_activity_summary.ts",
       "0023_incremental_activity_vo2max_estimate.ts",
+      "0024_create_dbt_serving_read_model_tables.ts",
     ]);
   });
 
@@ -364,7 +365,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(23);
+    expect(count).toBe(24);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
