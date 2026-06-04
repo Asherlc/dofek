@@ -6,14 +6,12 @@ import {
 } from "@dofek/recovery/stress";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStart } from "../lib/date-window.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
-import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 export type { WeeklyStressRow };
 
@@ -56,8 +54,6 @@ type RawRow = z.infer<typeof rawRowSchema>;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const BASELINE_LOOKBACK_DAYS = 60;
 
 function computeHrvDeviation(row: RawRow): number | null {
   if (
@@ -102,74 +98,49 @@ export class StressRepository extends BaseRepository {
     userId: string,
     timezone = "UTC",
     sensorStore?: Pick<ActivitySensorStore, "query">,
+    accessWindow?: AccessWindow,
   ) {
-    super(db, userId, timezone);
+    super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
   }
 
   async getStressScores(days: number, endDate: string): Promise<StressResult> {
-    const queryDays = days + BASELINE_LOOKBACK_DAYS;
     const sensorStore = this.#requireSensorStore();
-    const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
-      sensorStore,
-      userId: this.userId,
-      timezone: this.timezone,
-      endDate,
-      days: queryDays,
-    });
-
-    const [vitalRows, sleepRows] = await Promise.all([
-      this.query(
-        rawRowSchema,
-        sql`WITH ${restingHeartRateCte},
-          vitals_baseline AS (
-            SELECT
-              base.date,
-              base.hrv,
-              drhr.resting_hr,
-              AVG(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_mean_60d,
-              STDDEV_POP(base.hrv) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS hrv_stddev_60d,
-              AVG(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS resting_hr_mean_60d,
-              STDDEV_POP(drhr.resting_hr) OVER (ORDER BY base.date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS resting_hr_stddev_60d
-            FROM (
-              SELECT date, hrv
-              FROM fitness.v_daily_metrics
-              WHERE user_id = ${this.userId}
-                AND date > ${dateWindowStart(endDate, queryDays)}
-            ) base
-            LEFT JOIN resting_heart_rate drhr
-              ON drhr.date = base.date
-            ORDER BY base.date ASC
-          )
-          SELECT
-            m.date::text,
-            m.hrv,
-            m.resting_hr,
-            m.hrv_mean_60d,
-            m.hrv_stddev_60d AS hrv_sd_60d,
-            m.resting_hr_mean_60d AS rhr_mean_60d,
-            m.resting_hr_stddev_60d AS rhr_sd_60d,
-            NULL::real AS efficiency_pct
-          FROM vitals_baseline m
-          WHERE m.date > ${dateWindowStart(endDate, days)}
-            ${this.dateAccessPredicate(sql`m.date`)}
-          ORDER BY m.date ASC`,
-      ),
-      fetchSleepNights({
-        sensorStore,
+    const accessWindowClause =
+      this.accessWindow.kind === "full"
+        ? ""
+        : `
+          AND date >= toDate({accessStartDate:String})
+          AND date < toDate({accessEndDateExclusive:String})`;
+    const rows = await sensorStore.query(
+      rawRowSchema,
+      `SELECT
+        toString(date) AS date,
+        hrv,
+        resting_hr,
+        hrv_mean_60d,
+        hrv_sd_60d,
+        rhr_mean_60d,
+        rhr_sd_60d,
+        efficiency_pct
+      FROM analytics.daily_recovery_inputs
+      WHERE user_id = {userId:UUID}
+        AND date > toDate({windowStart:String})
+        AND date <= toDate({endDate:String})
+        ${accessWindowClause}
+      ORDER BY date ASC`,
+      {
         userId: this.userId,
-        timezone: this.timezone,
+        windowStart: dateWindowStartString(endDate, days),
         endDate,
-        days: queryDays,
-        accessWindow: this.accessWindow,
-        order: "asc",
-      }),
-    ]);
-    const sleepEfficiencyByDate = new Map(sleepRows.map((row) => [row.date, row.efficiency_pct]));
-    const rows = vitalRows.map((row) => ({
-      ...row,
-      efficiency_pct: sleepEfficiencyByDate.get(row.date) ?? row.efficiency_pct,
-    }));
+        ...(this.accessWindow.kind === "full"
+          ? {}
+          : {
+              accessStartDate: this.accessWindow.startDate,
+              accessEndDateExclusive: this.accessWindow.endDateExclusive,
+            }),
+      },
+    );
 
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);

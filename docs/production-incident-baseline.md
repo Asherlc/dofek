@@ -9827,3 +9827,30 @@ new incremental tables are populated.
 - Remaining risk: If `activity.stream` traffic resumes with new slow-query
   rows, rerun the Axiom query and open a focused optimization task for stream
   tiling or sample bucketing.
+
+### 2026-06-04 Slow query audit dashboard read-model follow-up
+
+- Symptoms: Axiom slow-query logs showed repeated dashboard-adjacent tRPC
+  routes, including `stress.scores`, `healthspan.score`,
+  `recovery.strainTarget`, `recovery.workloadRatio`, and
+  `sleepNeed.calculate`, spending multiple seconds in repeated daily/activity
+  aggregate queries.
+- User impact: Dashboard and score cards could remain in loading states while
+  batched tRPC responses waited for the slowest score query.
+- Evidence: The 2026-06-04 slow-query split plan recorded current 24-hour
+  offenders with max durations around 45-71 seconds for health, recovery, and
+  stress routes. Focused tests now assert that stress reads
+  `analytics.daily_recovery_inputs`, healthspan zone minutes read
+  `analytics.healthspan_activity_zone_minutes`, and activity-load routes read
+  `analytics.daily_activity_load`.
+- Root cause: Request paths were recomputing rolling recovery/stress windows,
+  activity load, and healthspan zone minutes from broader raw or semi-raw
+  analytic views instead of reading compact serving tables.
+- Fix / mitigation: Added dbt read models for daily recovery inputs and
+  healthspan activity zone minutes, included them plus daily activity load in
+  `DBT_SAFE_MODELS`, routed `stress.scores` through the compact recovery input
+  model, and updated healthspan zone aggregation to sum the compact zone-minute
+  table.
+- Remaining risk: `recovery.readinessScore` and `sleepNeed.performance` still
+  contain some request-time composition; rerun Axiom after deploy to decide
+  whether they need their own serving-model pass.

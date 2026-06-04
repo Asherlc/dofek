@@ -55,7 +55,7 @@ function makeFetchContext(
 }
 
 describe("fetchHealthspanRawData", () => {
-  it("keeps activity sensor bounds in the ClickHouse join", async () => {
+  it("reads precomputed zone minutes from the ClickHouse read model", async () => {
     const query = vi.fn().mockResolvedValue([]);
     const ctx = makeFetchContext({
       sensorStore: makeSensorStore({
@@ -67,24 +67,21 @@ describe("fetchHealthspanRawData", () => {
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
     const zoneQuery = query.mock.calls.find(
-      ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
+      ([, queryText]) =>
+        typeof queryText === "string" &&
+        queryText.includes("analytics.healthspan_activity_zone_minutes"),
     )?.[1];
     expect(zoneQuery).toEqual(expect.any(String));
     expect(query).toHaveBeenCalledWith(
       expect.anything(),
-      expect.stringContaining("activity_metadata"),
+      expect.stringContaining("analytics.healthspan_activity_zone_minutes"),
       expect.objectContaining({
         windowStart: "2026-03-01 00:00:00",
         windowEndExclusive: "2026-03-16 00:00:00",
       }),
     );
-    expect(zoneQuery).toContain("AND asum.started_at < toDateTime({windowEndExclusive:String})");
-    expect(zoneQuery).toContain(`INNER JOIN analytics.deduped_sensor AS ds
-        ON ds.user_id = am.user_id
-       AND ds.recorded_at >= am.started_at
-       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-       AND ds.channel IN ('heart_rate', 'power')
-       AND ds.is_deleted = 0`);
-    expect(zoneQuery).not.toContain("WHERE ds.recorded_at >= am.started_at");
+    expect(zoneQuery).toContain("started_at < toDateTime({windowEndExclusive:String})");
+    expect(zoneQuery).not.toContain("analytics.deduped_sensor");
+    expect(zoneQuery).not.toContain("analytics.activity_summary");
   });
 });

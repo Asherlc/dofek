@@ -15,17 +15,17 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+let latestRowsForSensorStore: Record<string, unknown>[] = [];
+
 function makeDb(metricsRows: Record<string, unknown>[] = []) {
-  const execute = vi
-    .fn()
-    .mockResolvedValueOnce(metricsRows) // metrics + sleep query
-    .mockResolvedValueOnce([]); // loadPersonalizedParams query (empty = use defaults)
+  latestRowsForSensorStore = metricsRows;
+  const execute = vi.fn().mockResolvedValue([]); // loadPersonalizedParams query (empty = use defaults)
   return { execute };
 }
 
-function makeSensorStore() {
+function makeSensorStore(rows: Record<string, unknown>[] = latestRowsForSensorStore) {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2024-01-14", resting_hr: 52 }]),
+    query: vi.fn().mockResolvedValue(rows),
   };
 }
 
@@ -40,6 +40,19 @@ describe("StressRepository", () => {
       expect(result.weekly).toEqual([]);
       expect(result.latestScore).toBeNull();
       expect(result.trend).toBe("stable");
+    });
+
+    it("reads compact daily recovery inputs from ClickHouse", async () => {
+      const db = makeDb([]);
+      const sensorStore = makeSensorStore([]);
+      const repo = new StressRepository(db, "user-1", "UTC", sensorStore);
+
+      await repo.getStressScores(90, "2024-01-15");
+
+      const queryText = sensorStore.query.mock.calls[0]?.[1];
+      expect(queryText).toContain("analytics.daily_recovery_inputs");
+      expect(queryText).not.toContain("fitness.v_daily_metrics");
+      expect(queryText).not.toContain("analytics.v_sleep");
     });
 
     // ── HRV deviation computation ────────────────────────────────
@@ -442,12 +455,14 @@ describe("StressRepository", () => {
       expect(row?.stressScore).toBeTypeOf("number");
     });
 
-    // ── Database call count ─────────────────────────────────────
-    it("calls execute twice (metrics + params)", async () => {
+    // ── Data-source call count ──────────────────────────────────
+    it("queries ClickHouse inputs once and keeps DB access to personalization", async () => {
       const db = makeDb([]);
-      const repo = new StressRepository(db, "user-1", "UTC", makeSensorStore());
+      const sensorStore = makeSensorStore();
+      const repo = new StressRepository(db, "user-1", "UTC", sensorStore);
       await repo.getStressScores(90, "2024-01-15");
-      expect(db.execute).toHaveBeenCalledTimes(2);
+      expect(sensorStore.query).toHaveBeenCalledTimes(1);
+      expect(db.execute).toHaveBeenCalledTimes(1);
     });
 
     // ── Multiple rows processing ────────────────────────────────
