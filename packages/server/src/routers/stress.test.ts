@@ -64,12 +64,13 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 function makeCaller(rows: unknown[]) {
+  const query = vi.fn().mockResolvedValue(rows);
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+    db: { execute: vi.fn().mockResolvedValue([]) },
     userId: "user-1",
     timezone: "UTC",
     sensorStore: {
-      query: vi.fn().mockResolvedValue([]),
+      query,
       getActivitySummaries: vi.fn().mockResolvedValue([]),
       getStream: vi.fn().mockResolvedValue([]),
       getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -91,6 +92,37 @@ describe("Router transformation logic", () => {
     expect(result.weekly).toEqual([]);
     expect(result.latestScore).toBeNull();
     expect(result.trend).toBe("stable");
+  });
+
+  it("reads daily recovery inputs from the ClickHouse read model", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
+    });
+
+    await caller.scores({ days: 30, endDate: "2026-03-24" });
+
+    const queryText = query.mock.calls.find(
+      ([, sqlText]) =>
+        typeof sqlText === "string" && sqlText.includes("analytics.daily_recovery_inputs"),
+    )?.[1];
+    expect(queryText).toEqual(expect.any(String));
+    expect(queryText).not.toContain("fitness.v_daily_metrics");
+    expect(queryText).not.toContain("analytics.v_sleep");
   });
 
   it("rejects unbounded day windows", async () => {
@@ -419,22 +451,23 @@ describe("Router transformation logic", () => {
 describe("stressRouter access window gating", () => {
   it("scores passes accessWindow to query (limited window returns empty)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
+    const sensorStore = {
+      query: vi.fn().mockResolvedValue([]),
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    };
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: {
-        query: vi.fn().mockResolvedValue([]),
-        getActivitySummaries: vi.fn().mockResolvedValue([]),
-        getStream: vi.fn().mockResolvedValue([]),
-        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-        getPaceCurveRows: vi.fn().mockResolvedValue([]),
-      },
+      sensorStore,
       accessWindow: {
         kind: "limited",
         paid: false,
@@ -446,5 +479,13 @@ describe("stressRouter access window gating", () => {
     const result = await caller.scores({ days: 30, endDate: "2026-04-20" });
     expect(result.daily).toEqual([]);
     expect(result.latestScore).toBeNull();
+    const queryText = sensorStore.query.mock.calls[0]?.[1];
+    const queryParams = sensorStore.query.mock.calls[0]?.[2];
+    expect(queryText).toContain("accessStartDate");
+    expect(queryText).toContain("accessEndDateExclusive");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-04-10",
+      accessEndDateExclusive: "2026-04-17",
+    });
   });
 });

@@ -1,5 +1,4 @@
 import { averageVo2MaxEstimates } from "@dofek/training/derived-cardio";
-import { ZONE_BOUNDARIES_FTP } from "@dofek/zones/zones";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateAccessPredicate } from "../billing/entitlement.ts";
@@ -9,7 +8,6 @@ import { fetchBodyCompRows } from "../repositories/body-clickhouse.ts";
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import {
   fetchRestingHeartRateRows,
-  type RestingHeartRateRow,
   restingHeartRateValuesCte,
 } from "../repositories/resting-heart-rate-query.ts";
 import type { AuthenticatedContext } from "../trpc.ts";
@@ -83,15 +81,10 @@ function nextDateString(dateString: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-/**
- * Compute total aerobic and high-intensity minutes from analytics.deduped_sensor.
- * Uses user_profile plus bounded helper-provided resting heart-rate rows.
- */
 async function fetchHrZoneTime(
   ctx: HealthspanRawDataContext,
   endDate: string,
   totalDays: number,
-  restingHeartRateRows: RestingHeartRateRow[],
 ): Promise<{ aerobic_minutes: number; high_intensity_minutes: number }> {
   const sensorStore = ctx.sensorStore;
   if (!sensorStore) return { aerobic_minutes: 0, high_intensity_minutes: 0 };
@@ -109,83 +102,18 @@ async function fetchHrZoneTime(
       aerobic_minutes: z.coerce.number(),
       high_intensity_minutes: z.coerce.number(),
     }),
-    `WITH activity_metadata AS (
-      SELECT
-        asum.activity_id AS activity_id,
-        asum.user_id AS user_id,
-        asum.started_at AS started_at,
-        asum.ended_at AS ended_at,
-        dateDiff('second', asum.started_at, asum.ended_at) / 60.0 AS duration_minutes,
-        up.max_hr AS max_hr,
-        up.ftp AS ftp,
-        coalesce(
-          if(
-            indexOf({restingHeartRateDates:Array(String)}, toString(toDate(asum.started_at))) > 0,
-            arrayElement(
-              {restingHeartRates:Array(Float64)},
-              indexOf({restingHeartRateDates:Array(String)}, toString(toDate(asum.started_at)))
-            ),
-            NULL
-          ),
-          up.resting_hr
-        ) AS resting_hr
-      FROM analytics.activity_summary AS asum
-      INNER JOIN postgres_fitness.user_profile_current AS up
-        ON up.id = asum.user_id
-      WHERE asum.user_id = {userId:UUID}
-        AND asum.started_at > toDateTime({windowStart:String})
-        AND asum.started_at < toDateTime({windowEndExclusive:String})
-        AND asum.ended_at IS NOT NULL
-        AND (up.max_hr IS NOT NULL OR up.ftp IS NOT NULL)
-    ),
-    sensor_counts AS (
-      SELECT
-        am.activity_id AS activity_id,
-        am.duration_minutes AS duration_minutes,
-        am.max_hr AS max_hr,
-        am.ftp AS ftp,
-        am.resting_hr AS resting_hr,
-        countIf(ds.channel = 'heart_rate') AS hr_sample_count,
-        countIf(ds.channel = 'power') AS power_sample_count,
-        countIf(ds.channel = 'heart_rate'
-          AND am.resting_hr IS NOT NULL
-          AND ds.scalar < am.resting_hr + (am.max_hr - am.resting_hr) * 0.8) AS aerobic_count,
-        countIf(ds.channel = 'heart_rate'
-          AND am.resting_hr IS NOT NULL
-          AND ds.scalar >= am.resting_hr + (am.max_hr - am.resting_hr) * 0.8) AS hr_hi_count,
-        countIf(ds.channel = 'power'
-          AND am.ftp IS NOT NULL
-          AND ds.scalar >= am.ftp * {powerThreshold:Float64}) AS power_hi_count
-      FROM activity_metadata AS am
-      INNER JOIN analytics.deduped_sensor AS ds
-        ON ds.user_id = am.user_id
-       AND ds.recorded_at >= am.started_at
-       AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-       AND ds.channel IN ('heart_rate', 'power')
-       AND ds.is_deleted = 0
-      GROUP BY am.activity_id, am.duration_minutes, am.max_hr, am.ftp, am.resting_hr
-    )
-    SELECT
-      sum(if(max_hr IS NOT NULL AND resting_hr IS NOT NULL AND hr_sample_count > 0,
-        toFloat64(aerobic_count) / toFloat64(hr_sample_count) * duration_minutes,
-        0)) AS aerobic_minutes,
-      sum(greatest(
-        if(max_hr IS NOT NULL AND resting_hr IS NOT NULL AND hr_sample_count > 0,
-          toFloat64(hr_hi_count) / toFloat64(hr_sample_count) * duration_minutes,
-          0),
-        if(ftp IS NOT NULL AND power_sample_count > 0,
-          toFloat64(power_hi_count) / toFloat64(power_sample_count) * duration_minutes,
-          0)
-      )) AS high_intensity_minutes
-    FROM sensor_counts`,
+    `SELECT
+      coalesce(sum(aerobic_minutes), 0) AS aerobic_minutes,
+      coalesce(sum(high_intensity_minutes), 0) AS high_intensity_minutes
+    FROM analytics.healthspan_activity_zone_minutes FINAL
+    WHERE user_id = {userId:UUID}
+      AND is_deleted = 0
+      AND started_at > toDateTime({windowStart:String})
+      AND started_at < toDateTime({windowEndExclusive:String})`,
     {
       userId: ctx.userId,
-      timezone: ctx.timezone,
       windowStart: windowStartTimestamp,
       windowEndExclusive,
-      powerThreshold: ZONE_BOUNDARIES_FTP[2],
-      restingHeartRateDates: restingHeartRateRows.map((row) => row.date),
-      restingHeartRates: restingHeartRateRows.map((row) => row.resting_hr),
     },
   );
 
@@ -235,7 +163,7 @@ export async function fetchHealthspanRawData(
       })
     : [];
   const restingHeartRateCte = restingHeartRateValuesCte(restingHeartRateRows);
-  const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays, restingHeartRateRows);
+  const hrZoneTime = await fetchHrZoneTime(ctx, endDate, totalDays);
   const weeklyExerciseMin = await fetchWeeklyExerciseMinutes(ctx, endDate, totalDays);
   const weeklyDivisor = Math.max(totalDays / 7, 1);
   const weeklyAerobicMin = Math.max(

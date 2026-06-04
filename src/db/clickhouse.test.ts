@@ -198,6 +198,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("FROM postgres_fitness.body_measurement");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(sql).toContain("toUInt8(0) AS is_deleted");
+    expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
+    expect(sql).toContain("now64(9) AS refreshed_at");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.provider_stats");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.provider_stats");
     expect(sql).toContain("toUInt8(0) AS is_deleted");

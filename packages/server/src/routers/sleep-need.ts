@@ -161,21 +161,16 @@ export const sleepNeedRouter = router({
     .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.calculate");
 
-      // Yesterday's training load comes from analytics.activity_summary in CH
-      // (the dedup-graph data left Postgres). The sleep + HRV part of the
-      // query stays in PG; we inject the load value as a parameter.
+      // Yesterday's training load comes from the compact ClickHouse activity-load read model.
+      // The sleep + HRV part of the query stays in PG; we inject the load value as a parameter.
       const loadRows = await sensorStore.query(
         z.object({ load: z.coerce.number() }),
         `SELECT
-          coalesce(sum(
-            dateDiff('second', started_at, ended_at) / 60.0
-            * avg_hr / nullIf(toFloat64(max_hr), 0)
-          ), 0) AS load
-        FROM analytics.activity_summary
+          coalesce(sum(daily_load), 0) AS load
+        FROM analytics.daily_activity_load
         WHERE user_id = {userId:UUID}
           AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - INTERVAL 1 DAY
-          AND ended_at IS NOT NULL
-          AND avg_hr IS NOT NULL`,
+        `,
         { userId: ctx.userId, timezone: ctx.timezone, endDate: input.endDate },
       );
       const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
@@ -354,6 +349,7 @@ export const sleepNeedRouter = router({
         ctx.userId,
         tz,
         sensorStore,
+        ctx.accessWindow,
       ).getStressScores(90, input.endDate);
       const stressScore =
         stressResult.daily.find((stressRow) => stressRow.date === lastSleep.date)?.stressScore ??

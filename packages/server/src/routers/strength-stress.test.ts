@@ -173,7 +173,13 @@ describe("stressRouter", () => {
       db: { execute: vi.fn().mockResolvedValue(rows) },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeMockSensorStore([]),
+      sensorStore: {
+        ...makeMockSensorStore([]),
+        query: vi.fn(async (_schema: unknown, query: string) => {
+          if (query.includes("analytics.daily_recovery_inputs")) return rows;
+          return [];
+        }),
+      },
     });
   }
 

@@ -492,7 +492,7 @@ describe("fetchHealthspanRawData", () => {
       if (queryText.includes("analytics.resting_heart_rate_sleep_window")) {
         return [{ date: "2026-03-02", resting_hr: 48 }];
       }
-      if (queryText.includes("activity_metadata")) {
+      if (queryText.includes("analytics.healthspan_activity_zone_minutes")) {
         return [{ aerobic_minutes: 140, high_intensity_minutes: 70 }];
       }
       if (queryText.includes("analytics.v_body_measurement")) {
@@ -561,12 +561,10 @@ describe("fetchHealthspanRawData", () => {
 
     expect(query).toHaveBeenCalledWith(
       expect.anything(),
-      expect.stringContaining("activity_metadata"),
+      expect.stringContaining("analytics.healthspan_activity_zone_minutes"),
       expect.objectContaining({
         windowStart: "2026-03-01 00:00:00",
         windowEndExclusive: "2026-03-16 00:00:00",
-        restingHeartRateDates: ["2026-03-02"],
-        restingHeartRates: [48],
       }),
     );
     const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
@@ -585,7 +583,7 @@ describe("fetchHealthspanRawData", () => {
       .mockResolvedValueOnce([{ weekly_exercise_min: 112 }])
       .mockResolvedValueOnce([makeRawHealthspanRow()]);
     const query = vi.fn(async (_schema: unknown, queryText: string) => {
-      if (queryText.includes("activity_metadata")) {
+      if (queryText.includes("analytics.healthspan_activity_zone_minutes")) {
         return [{ aerobic_minutes: 0, high_intensity_minutes: 0 }];
       }
       return [];
@@ -637,7 +635,7 @@ describe("fetchHealthspanRawData", () => {
     expect(aggregateSqlText).toContain("AND started_at::date < ");
   });
 
-  it("keeps activity sensor bounds in the ClickHouse join", async () => {
+  it("keeps activity zone read-model bounds in the ClickHouse query", async () => {
     const query = vi.fn().mockResolvedValue([]);
     const ctx = makeFetchContext({
       sensorStore: makeSensorStore({
@@ -649,29 +647,21 @@ describe("fetchHealthspanRawData", () => {
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
     const zoneQuery = query.mock.calls.find(
-      ([, queryText]) => typeof queryText === "string" && queryText.includes("activity_metadata"),
+      ([, queryText]) =>
+        typeof queryText === "string" &&
+        queryText.includes("analytics.healthspan_activity_zone_minutes"),
     )?.[1];
     expect(zoneQuery).toEqual(expect.any(String));
     expect(query).toHaveBeenCalledWith(
       expect.anything(),
-      expect.stringContaining("activity_metadata"),
+      expect.stringContaining("analytics.healthspan_activity_zone_minutes"),
       expect.objectContaining({
         windowStart: "2026-03-01 00:00:00",
         windowEndExclusive: "2026-03-16 00:00:00",
       }),
     );
-    expect(zoneQuery).toMatch(
-      /AND\s+asum\.started_at\s*<\s*toDateTime\(\{windowEndExclusive:String\}\)/,
-    );
-    expect(zoneQuery).toContain("INNER JOIN analytics.deduped_sensor AS ds");
-    expect(zoneQuery).toMatch(/ON\s+ds\.user_id\s*=\s*am\.user_id/);
-    expect(zoneQuery).toMatch(/AND\s+ds\.recorded_at\s*>=\s*am\.started_at/);
-    expect(zoneQuery).toMatch(
-      /AND\s+ds\.recorded_at\s*<=\s*coalesce\(am\.ended_at,\s*am\.started_at\s*\+\s*INTERVAL\s+12\s+HOUR\)/,
-    );
-    expect(zoneQuery).toMatch(/AND\s+ds\.channel\s+IN\s+\('heart_rate',\s*'power'\)/);
-    expect(zoneQuery).toMatch(/AND\s+ds\.is_deleted\s*=\s*0/);
-    expect(zoneQuery).not.toContain(`WHERE ds.recorded_at >= am.started_at`);
+    expect(zoneQuery).toMatch(/AND\s+started_at\s*>\s*toDateTime\(\{windowStart:String\}\)/);
+    expect(zoneQuery).toMatch(/AND\s+started_at\s*<\s*toDateTime\(\{windowEndExclusive:String\}\)/);
   });
 
   it("merges VO2 max estimates into sorted weekly history", async () => {

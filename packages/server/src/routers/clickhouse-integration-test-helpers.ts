@@ -295,9 +295,12 @@ const analyticsBuildOrder = [
   "analytics.provider_stats",
   "analytics.deduped_activities",
   "analytics.resting_heart_rate_sleep_window",
+  "analytics.daily_recovery_inputs",
   "analytics.deduped_location",
   "analytics.activity_sensor_sample",
   "analytics.activity_summary",
+  "analytics.daily_activity_load",
+  "analytics.healthspan_activity_zone_minutes",
   "analytics.activity_trend_daily",
 ] as const;
 
@@ -381,6 +384,24 @@ sample_count UInt64,
 resting_hr Nullable(Int32),
 refresh_version UInt64,
 is_deleted UInt8,
+refreshed_at DateTime64(9)`,
+    daily_recovery_inputs: `user_id UUID,
+date Date,
+hrv Nullable(Float32),
+resting_hr Nullable(Float64),
+respiratory_rate Nullable(Float32),
+efficiency_pct Nullable(Float64),
+hrv_mean_30d Nullable(Float64),
+hrv_sd_30d Nullable(Float64),
+rhr_mean_30d Nullable(Float64),
+rhr_sd_30d Nullable(Float64),
+rr_mean_30d Nullable(Float64),
+rr_sd_30d Nullable(Float64),
+hrv_mean_60d Nullable(Float64),
+hrv_sd_60d Nullable(Float64),
+rhr_mean_60d Nullable(Float64),
+rhr_sd_60d Nullable(Float64),
+refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     v_body_measurement: `id UUID,
 provider_id String,
@@ -514,6 +535,22 @@ hr_sample_count UInt64,
 power_sample_count UInt64,
 first_sample_at DateTime64(6, 'UTC'),
 last_sample_at DateTime64(6, 'UTC')`,
+    daily_activity_load: `activity_id UUID,
+user_id UUID,
+started_at DateTime64(6, 'UTC'),
+ended_at DateTime64(6, 'UTC'),
+daily_load Nullable(Float64),
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    healthspan_activity_zone_minutes: `activity_id UUID,
+user_id UUID,
+started_at DateTime64(6, 'UTC'),
+ended_at DateTime64(6, 'UTC'),
+aerobic_minutes Float64,
+high_intensity_minutes Float64,
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     activity_trend_daily: `user_id UUID,
 bucket_date Date,
 avg_hr Nullable(Float64),
@@ -540,6 +577,9 @@ activity_count UInt64`,
   const engine =
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
+    shortViewName === "daily_recovery_inputs" ||
+    shortViewName === "daily_activity_load" ||
+    shortViewName === "healthspan_activity_zone_minutes" ||
     shortViewName === "provider_stats"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
@@ -548,9 +588,14 @@ activity_count UInt64`,
       ? "(user_id, activity_id)"
       : shortViewName === "activity_sensor_sample"
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : shortViewName === "provider_stats"
-          ? "(user_id, provider_id)"
-          : "tuple()";
+        : shortViewName === "daily_recovery_inputs"
+          ? "(user_id, date)"
+          : shortViewName === "daily_activity_load" ||
+              shortViewName === "healthspan_activity_zone_minutes"
+            ? "(user_id, activity_id)"
+            : shortViewName === "provider_stats"
+              ? "(user_id, provider_id)"
+              : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -724,6 +769,293 @@ function buildTestActivitySummarySelectSql(databases: IsolatedClickHouseDatabase
     throw new Error("Could not parse ClickHouse activity summary test SELECT");
   }
   return selectSql;
+}
+
+function buildTestDailyRecoveryInputsSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH daily_metrics AS (
+  SELECT
+    user_id,
+    date,
+    hrv,
+    respiratory_rate_avg AS respiratory_rate
+  FROM ${databases.analytics}.v_daily_metrics
+),
+resting_by_date AS (
+  SELECT
+    user_id,
+    toDate(ended_at - INTERVAL 6 HOUR) AS date,
+    argMax(resting_hr, tuple(duration_seconds, ended_at)) AS selected_resting_hr
+  FROM ${databases.analytics}.resting_heart_rate_sleep_window FINAL
+  WHERE is_deleted = 0
+    AND ended_at IS NOT NULL
+    AND resting_hr IS NOT NULL
+  GROUP BY user_id, date
+),
+sleep_by_date AS (
+  SELECT
+    user_id,
+    toDate(started_at - INTERVAL 6 HOUR) AS date,
+    argMax(efficiency_pct, tuple(duration_minutes, started_at)) AS efficiency_pct
+  FROM ${databases.analytics}.v_sleep
+  WHERE is_nap = false
+  GROUP BY user_id, date
+),
+input_dates AS (
+  SELECT user_id, date FROM daily_metrics
+  UNION DISTINCT
+  SELECT user_id, date FROM resting_by_date
+  UNION DISTINCT
+  SELECT user_id, date FROM sleep_by_date
+),
+daily_inputs AS (
+  SELECT
+    input_dates.user_id AS user_id,
+    input_dates.date AS date,
+    daily_metrics.hrv AS hrv,
+    resting_by_date.selected_resting_hr AS resting_hr,
+    daily_metrics.respiratory_rate AS respiratory_rate,
+    sleep_by_date.efficiency_pct AS efficiency_pct
+  FROM input_dates
+  LEFT JOIN daily_metrics
+    ON daily_metrics.user_id = input_dates.user_id
+   AND daily_metrics.date = input_dates.date
+  LEFT JOIN resting_by_date
+    ON resting_by_date.user_id = input_dates.user_id
+   AND resting_by_date.date = input_dates.date
+  LEFT JOIN sleep_by_date
+    ON sleep_by_date.user_id = input_dates.user_id
+   AND sleep_by_date.date = input_dates.date
+),
+inputs_with_baselines AS (
+  SELECT
+    user_id,
+    date,
+    hrv,
+    resting_hr,
+    respiratory_rate,
+    efficiency_pct,
+    avg(hrv) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS hrv_mean_30d,
+    stddevPop(hrv) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS hrv_sd_30d,
+    avg(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS rhr_mean_30d,
+    stddevPop(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS rhr_sd_30d,
+    avg(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS rr_mean_30d,
+    stddevPop(respiratory_rate) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+    ) AS rr_sd_30d,
+    avg(hrv) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+    ) AS hrv_mean_60d,
+    stddevPop(hrv) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+    ) AS hrv_sd_60d,
+    avg(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+    ) AS rhr_mean_60d,
+    stddevPop(resting_hr) OVER (
+      PARTITION BY user_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+    ) AS rhr_sd_60d
+  FROM daily_inputs
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  CAST(inputs_with_baselines.user_id, 'UUID') AS user_id,
+  CAST(inputs_with_baselines.date, 'Date') AS date,
+  inputs_with_baselines.hrv AS hrv,
+  inputs_with_baselines.resting_hr AS resting_hr,
+  inputs_with_baselines.respiratory_rate AS respiratory_rate,
+  inputs_with_baselines.efficiency_pct AS efficiency_pct,
+  inputs_with_baselines.hrv_mean_30d AS hrv_mean_30d,
+  inputs_with_baselines.hrv_sd_30d AS hrv_sd_30d,
+  inputs_with_baselines.rhr_mean_30d AS rhr_mean_30d,
+  inputs_with_baselines.rhr_sd_30d AS rhr_sd_30d,
+  inputs_with_baselines.rr_mean_30d AS rr_mean_30d,
+  inputs_with_baselines.rr_sd_30d AS rr_sd_30d,
+  inputs_with_baselines.hrv_mean_60d AS hrv_mean_60d,
+  inputs_with_baselines.hrv_sd_60d AS hrv_sd_60d,
+  inputs_with_baselines.rhr_mean_60d AS rhr_mean_60d,
+  inputs_with_baselines.rhr_sd_60d AS rhr_sd_60d,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM inputs_with_baselines
+CROSS JOIN refresh_clock`;
+}
+
+function buildTestDailyActivityLoadSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH activity_load AS (
+  SELECT
+    activity_id,
+    user_id,
+    started_at,
+    assumeNotNull(ended_at) AS ended_at,
+    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0
+      * avg_hr / nullIf(toFloat64(max_hr), 0) AS daily_load
+  FROM ${databases.analytics}.activity_summary
+  WHERE ended_at IS NOT NULL
+    AND avg_hr IS NOT NULL
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  activity_load.activity_id AS activity_id,
+  activity_load.user_id AS user_id,
+  activity_load.started_at AS started_at,
+  activity_load.ended_at AS ended_at,
+  activity_load.daily_load AS daily_load,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM activity_load
+CROSS JOIN refresh_clock`;
+}
+
+function buildTestHealthspanActivityZoneMinutesSelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return `WITH activity_bounds AS (
+  SELECT
+    activity_id,
+    user_id,
+    started_at,
+    assumeNotNull(ended_at) AS ended_at,
+    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0 AS duration_minutes
+  FROM ${databases.analytics}.activity_summary
+  WHERE ended_at IS NOT NULL
+),
+resting_by_activity AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    argMax(resting.resting_hr, toDate(resting.ended_at)) AS resting_hr
+  FROM activity_bounds
+  INNER JOIN ${databases.analytics}.resting_heart_rate_sleep_window AS resting FINAL
+    ON resting.user_id = activity_bounds.user_id
+   AND toDate(resting.ended_at) <= toDate(activity_bounds.started_at)
+  WHERE resting.is_deleted = 0
+    AND resting.ended_at IS NOT NULL
+    AND resting.resting_hr IS NOT NULL
+  GROUP BY activity_bounds.activity_id
+),
+activity_metadata AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    activity_bounds.user_id AS user_id,
+    activity_bounds.started_at AS started_at,
+    activity_bounds.ended_at AS ended_at,
+    activity_bounds.duration_minutes AS duration_minutes,
+    user_profile.max_hr AS max_hr,
+    user_profile.ftp AS ftp,
+    coalesce(resting_by_activity.resting_hr, user_profile.resting_hr) AS resting_hr
+  FROM activity_bounds
+  INNER JOIN ${databases.postgresFitness}.user_profile_current AS user_profile
+    ON user_profile.id = activity_bounds.user_id
+  LEFT JOIN resting_by_activity
+    ON resting_by_activity.activity_id = activity_bounds.activity_id
+  WHERE user_profile.max_hr IS NOT NULL OR user_profile.ftp IS NOT NULL
+),
+sensor_counts AS (
+  SELECT
+    activity_metadata.activity_id AS activity_id,
+    activity_metadata.user_id AS user_id,
+    any(activity_metadata.started_at) AS started_at,
+    any(activity_metadata.ended_at) AS ended_at,
+    any(activity_metadata.duration_minutes) AS duration_minutes,
+    any(activity_metadata.max_hr) AS max_hr,
+    any(activity_metadata.ftp) AS ftp,
+    any(activity_metadata.resting_hr) AS resting_hr,
+    countIf(sensor_samples.channel = 'heart_rate') AS heart_rate_sample_count,
+    countIf(sensor_samples.channel = 'power') AS power_sample_count,
+    countIf(
+      sensor_samples.channel = 'heart_rate'
+      AND activity_metadata.resting_hr IS NOT NULL
+      AND sensor_samples.scalar
+        < activity_metadata.resting_hr
+        + (activity_metadata.max_hr - activity_metadata.resting_hr) * 0.8
+    ) AS aerobic_sample_count,
+    countIf(
+      sensor_samples.channel = 'heart_rate'
+      AND activity_metadata.resting_hr IS NOT NULL
+      AND sensor_samples.scalar
+        >= activity_metadata.resting_hr
+        + (activity_metadata.max_hr - activity_metadata.resting_hr) * 0.8
+    ) AS heart_rate_high_intensity_sample_count,
+    countIf(
+      sensor_samples.channel = 'power'
+      AND activity_metadata.ftp IS NOT NULL
+      AND sensor_samples.scalar >= activity_metadata.ftp * 0.9
+    ) AS power_high_intensity_sample_count
+  FROM activity_metadata
+  INNER JOIN ${databases.analytics}.activity_sensor_sample AS sensor_samples
+    ON sensor_samples.activity_id = activity_metadata.activity_id
+   AND sensor_samples.user_id = activity_metadata.user_id
+  WHERE sensor_samples.channel IN ('heart_rate', 'power')
+    AND sensor_samples.scalar IS NOT NULL
+    AND sensor_samples.is_deleted = 0
+  GROUP BY activity_metadata.activity_id, activity_metadata.user_id
+),
+zone_minutes AS (
+  SELECT
+    activity_id,
+    user_id,
+    started_at,
+    ended_at,
+    if(
+      max_hr IS NOT NULL
+      AND resting_hr IS NOT NULL
+      AND heart_rate_sample_count > 0,
+      toFloat64(aerobic_sample_count) / toFloat64(heart_rate_sample_count) * duration_minutes,
+      0
+    ) AS aerobic_minutes,
+    greatest(
+      if(
+        max_hr IS NOT NULL
+        AND resting_hr IS NOT NULL
+        AND heart_rate_sample_count > 0,
+        toFloat64(heart_rate_high_intensity_sample_count)
+          / toFloat64(heart_rate_sample_count) * duration_minutes,
+        0
+      ),
+      if(
+        ftp IS NOT NULL
+        AND power_sample_count > 0,
+        toFloat64(power_high_intensity_sample_count)
+          / toFloat64(power_sample_count) * duration_minutes,
+        0
+      )
+    ) AS high_intensity_minutes
+  FROM sensor_counts
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  zone_minutes.activity_id AS activity_id,
+  zone_minutes.user_id AS user_id,
+  zone_minutes.started_at AS started_at,
+  zone_minutes.ended_at AS ended_at,
+  zone_minutes.aerobic_minutes AS aerobic_minutes,
+  zone_minutes.high_intensity_minutes AS high_intensity_minutes,
+  toUInt8(0) AS is_deleted,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM zone_minutes
+CROSS JOIN refresh_clock`;
 }
 
 function rewriteClickHouseTestCommand(
@@ -935,6 +1267,30 @@ ${buildTestDedupedActivitiesSelectSql({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_sample
 AS
 ${buildTestActivitySensorSampleSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery_inputs
+AS
+${buildTestDailyRecoveryInputsSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_activity_load
+AS
+${buildTestDailyActivityLoadSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes
+AS
+${buildTestHealthspanActivityZoneMinutesSelectSql({
   analytics: "analytics",
   postgresFitness: "postgres_fitness",
 })}`,
