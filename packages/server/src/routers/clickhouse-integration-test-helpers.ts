@@ -433,7 +433,10 @@ metric_stream UInt64,
 nutrition_daily UInt64,
 lab_panels UInt64,
 lab_results UInt64,
-journal_entries UInt64`,
+journal_entries UInt64,
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     deduped_sensor: `user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
 recorded_date Date,
@@ -535,7 +538,9 @@ activity_count UInt64`,
     return null;
   }
   const engine =
-    shortViewName === "deduped_activities" || shortViewName === "activity_sensor_sample"
+    shortViewName === "deduped_activities" ||
+    shortViewName === "activity_sensor_sample" ||
+    shortViewName === "provider_stats"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
   const orderBy =
@@ -543,7 +548,9 @@ activity_count UInt64`,
       ? "(user_id, activity_id)"
       : shortViewName === "activity_sensor_sample"
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : "tuple()";
+        : shortViewName === "provider_stats"
+          ? "(user_id, provider_id)"
+          : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -599,6 +606,17 @@ INNER JOIN current_activity
   ON current_activity.user_id = samples.user_id
  AND samples.recorded_at >= current_activity.started_at
  AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
+}
+
+function buildTestProviderStatsSelectSql(selectSql: string): string {
+  return `SELECT
+  provider_stats.*,
+  toUInt8(0) AS is_deleted,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  now64(9) AS refreshed_at
+FROM (
+${selectSql}
+) AS provider_stats`;
 }
 
 function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -734,10 +752,7 @@ function rewriteClickHouseTestCommand(
     const trimmedSelectSql = selectSql.trim();
     precomputedAnalyticsSelectByName.set(
       viewName,
-      viewName.endsWith(".activity_summary") &&
-        trimmedSelectSql.includes(".activity_summary_rows FINAL")
-        ? buildTestActivitySummarySelectSql(databases)
-        : trimmedSelectSql,
+      buildTestAnalyticsSelectSql(viewName, trimmedSelectSql, databases),
     );
     const tableStatement = buildTestAnalyticsTableStatement(viewName);
     if (!tableStatement) {
@@ -772,6 +787,23 @@ function rewriteClickHouseTestCommand(
   }
 
   return [rewrittenQuery];
+}
+
+function buildTestAnalyticsSelectSql(
+  viewName: string,
+  selectSql: string,
+  databases: IsolatedClickHouseDatabases,
+): string {
+  if (
+    viewName.endsWith(".activity_summary") &&
+    selectSql.includes(".activity_summary_rows FINAL")
+  ) {
+    return buildTestActivitySummarySelectSql(databases);
+  }
+  if (viewName.endsWith(".provider_stats")) {
+    return buildTestProviderStatsSelectSql(selectSql);
+  }
+  return selectSql;
 }
 
 function createIsolatedClickHouseClient(

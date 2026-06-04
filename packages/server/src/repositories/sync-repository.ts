@@ -43,25 +43,6 @@ const clickHouseProviderStatsRowSchema = z.object({
   journal_entries: z.coerce.number(),
 });
 
-const bodyMeasurementChannels = [
-  "body_weight",
-  "body_fat_percentage",
-  "muscle_mass",
-  "bone_mass",
-  "body_water_percentage",
-  "body_mass_index",
-  "height",
-  "waist_circumference",
-  "systolic_blood_pressure",
-  "diastolic_blood_pressure",
-  "heart_pulse",
-  "body_temperature",
-];
-
-const bodyMeasurementChannelListSql = bodyMeasurementChannels
-  .map((channel) => `'${channel}'`)
-  .join(",\n      ");
-
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
@@ -241,160 +222,23 @@ export class SyncRepository {
     const rows = await this.#providerStatsStore.query(
       clickHouseProviderStatsRowSchema,
       `
-        WITH
-        providers AS (
-          SELECT DISTINCT id AS provider_id
-          FROM postgres_fitness.provider
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.activity
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.daily_metrics
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.sleep_session
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.metric_stream
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.food_entry
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.health_event
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.lab_panel
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.lab_result
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          UNION DISTINCT
-          SELECT DISTINCT provider_id
-          FROM postgres_fitness.journal_entry
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-        ),
-        activity_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.activity
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        daily_metric_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.daily_metrics
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        sleep_session_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.sleep_session
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        body_measurement_counts AS (
-          SELECT
-            provider_id,
-            uniqExact(ifNull(
-              external_id,
-              concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
-            )) AS count
-          FROM analytics.body_measurement_sample
-          WHERE _peerdb_is_deleted = 0
-            AND user_id = {userId:UUID}
-            AND channel IN (
-              ${bodyMeasurementChannelListSql}
-            )
-          GROUP BY provider_id
-        ),
-        metric_stream_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.metric_stream
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        food_entry_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.food_entry
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        health_event_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.health_event
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        nutrition_daily_counts AS (
-          SELECT provider_id, uniqExact(date) AS count
-          FROM postgres_fitness.food_entry
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        lab_panel_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.lab_panel
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        lab_result_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.lab_result
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        ),
-        journal_entry_counts AS (
-          SELECT provider_id, count() AS count
-          FROM postgres_fitness.journal_entry
-          WHERE _peerdb_is_deleted = 0 AND user_id = {userId:UUID}
-          GROUP BY provider_id
-        )
         SELECT
-          providers.provider_id AS provider_id,
-          coalesce(activity_counts.count, 0) AS activities,
-          coalesce(daily_metric_counts.count, 0) AS daily_metrics,
-          coalesce(sleep_session_counts.count, 0) AS sleep_sessions,
-          coalesce(body_measurement_counts.count, 0) AS body_measurements,
-          coalesce(food_entry_counts.count, 0) AS food_entries,
-          coalesce(health_event_counts.count, 0) AS health_events,
-          coalesce(metric_stream_counts.count, 0) AS metric_stream,
-          coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
-          coalesce(lab_panel_counts.count, 0) AS lab_panels,
-          coalesce(lab_result_counts.count, 0) AS lab_results,
-          coalesce(journal_entry_counts.count, 0) AS journal_entries
-        FROM providers
-        LEFT JOIN activity_counts
-          ON activity_counts.provider_id = providers.provider_id
-        LEFT JOIN daily_metric_counts
-          ON daily_metric_counts.provider_id = providers.provider_id
-        LEFT JOIN sleep_session_counts
-          ON sleep_session_counts.provider_id = providers.provider_id
-        LEFT JOIN body_measurement_counts
-          ON body_measurement_counts.provider_id = providers.provider_id
-        LEFT JOIN metric_stream_counts
-          ON metric_stream_counts.provider_id = providers.provider_id
-        LEFT JOIN food_entry_counts
-          ON food_entry_counts.provider_id = providers.provider_id
-        LEFT JOIN health_event_counts
-          ON health_event_counts.provider_id = providers.provider_id
-        LEFT JOIN nutrition_daily_counts
-          ON nutrition_daily_counts.provider_id = providers.provider_id
-        LEFT JOIN lab_panel_counts
-          ON lab_panel_counts.provider_id = providers.provider_id
-        LEFT JOIN lab_result_counts
-          ON lab_result_counts.provider_id = providers.provider_id
-        LEFT JOIN journal_entry_counts
-          ON journal_entry_counts.provider_id = providers.provider_id
-        ORDER BY providers.provider_id
+          provider_id,
+          activities,
+          daily_metrics,
+          sleep_sessions,
+          body_measurements,
+          food_entries,
+          health_events,
+          metric_stream,
+          nutrition_daily,
+          lab_panels,
+          lab_results,
+          journal_entries
+        FROM analytics.provider_stats FINAL
+        WHERE user_id = {userId:UUID}
+          AND is_deleted = 0
+        ORDER BY provider_id
       `,
       { userId: this.#userId },
     );

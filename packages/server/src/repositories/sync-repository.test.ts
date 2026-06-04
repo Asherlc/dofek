@@ -243,7 +243,7 @@ describe("SyncRepository", () => {
       expect(result[1]?.metricStream).toBe(42);
     });
 
-    it("pushes provider stats user filtering into ClickHouse count queries", async () => {
+    it("reads provider stats from the compact ClickHouse read model", async () => {
       const { repo, execute, query } = makeRepository(
         [],
         [
@@ -270,11 +270,12 @@ describe("SyncRepository", () => {
       const querySql = query.mock.calls[0]?.[1];
       expect(query).toHaveBeenCalledWith(
         expect.anything(),
-        expect.stringContaining("FROM postgres_fitness.metric_stream"),
+        expect.stringContaining("FROM analytics.provider_stats FINAL"),
         { userId: "user-1" },
       );
       expect(querySql).toEqual(expect.stringContaining("user_id = {userId:UUID}"));
-      expect(querySql).not.toEqual(expect.stringContaining("analytics.provider_stats"));
+      expect(querySql).toEqual(expect.stringContaining("is_deleted = 0"));
+      expect(querySql).not.toEqual(expect.stringContaining("postgres_fitness.metric_stream"));
       expect(execute).not.toHaveBeenCalled();
     });
   });
