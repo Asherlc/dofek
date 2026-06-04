@@ -18,6 +18,7 @@ import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
+import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
@@ -123,6 +124,7 @@ function AuthGate() {
     const versionHeaders = getVersionHeaders();
     const commonOptions = {
       url,
+      fetch: createTrpcFetch(),
       methodOverride: "POST" as const,
       headers: () => {
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;

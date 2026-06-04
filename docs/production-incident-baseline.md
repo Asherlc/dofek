@@ -10097,3 +10097,35 @@ new incremental tables are populated.
   path. The durable fix is to move IMU coverage reads to a bounded serving model
   or otherwise pre-aggregate the coverage buckets; simply increasing the
   database memory limit would leave the request-time scan pattern in place.
+
+### 2026-06-04 Mobile WHOOP BLE tRPC non-JSON response
+
+- Symptoms: Sentry issue `DOFEK-MOBILE-B` reported production mobile
+  `SyntaxError: JSON Parse error: Unexpected character: p` from tRPC response
+  parsing. The latest events at investigation time were on
+  `2026-06-04T22:40:02Z`.
+- User impact: Sentry reported one impacted user and over 1,300 occurrences.
+  Recent events repeated roughly every 30 seconds, matching the WHOOP BLE
+  periodic drain loop retrying retained samples.
+- Evidence: Events were tagged with `source` values
+  `whoop-ble-imu-upload` and `whoop-ble-realtime-upload`, both from
+  `packages/mobile/lib/background-whoop-ble-sync.ts`. tRPC client code parses
+  responses with `response.json()`, so a body starting with `p` indicates a
+  non-JSON HTTP response before tRPC could deserialize an error envelope. A
+  1.47 MiB unauthenticated production probe to
+  `/api/trpc/inertialMeasurementUnitSync.pushSamples?batch=1` reached Express
+  and returned JSON `401`, so the normal production path was not rejecting
+  500-sample WHOOP batches on request size alone.
+- Root cause: The exact upstream body remains unknown because the mobile
+  transport discarded it behind the JSON parse error. The confirmed failure
+  mode is a non-JSON response reaching the mobile tRPC client during WHOOP BLE
+  background uploads.
+- Fix / mitigation: Added a mobile tRPC fetch wrapper that detects non-JSON
+  responses before `response.json()`, throws an error containing the tRPC path,
+  HTTP status, and a short body preview, and preserves JSON responses
+  unchanged. Future Sentry events should show the real response body/status
+  instead of only `Unexpected character: p`.
+- Remaining risk: This is diagnostic mitigation, not a server-side root-cause
+  fix. If the next event body shows a stable upstream error, fix that
+  upstream cause directly and keep the diagnostic wrapper so future transport
+  regressions remain observable.
