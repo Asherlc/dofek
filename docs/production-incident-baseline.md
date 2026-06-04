@@ -9809,3 +9809,21 @@ new incremental tables are populated.
   retention to 16GB, adds replacement-slot headroom, and lowers PeerDB CDC and
   initial-snapshot work units to 100,000 rows; the remaining recurrence risk is
   a future WAL burst or long PeerDB outage that exceeds that bounded budget.
+
+### 2026-06-04 Slow query audit activity stream verification
+
+- Symptoms: A 7-day Axiom slow-query scan found a historical
+  `activity.stream` outlier, while `origin/main` already included
+  `ad06f204 Optimize activity stream ClickHouse query (#1235)`.
+- User impact: No current user impact was observed during the follow-up check.
+- Evidence: Axiom queries against `dofek-logs` for the last 24 hours returned
+  no `Slow query` rows containing `activity.stream` and no `activity.stream`
+  log rows at all.
+- Root cause: No active root cause remains for `activity.stream` in the
+  current 24-hour production window; the historical outlier is treated as
+  already addressed by the existing activity stream optimization.
+- Fix / mitigation: No new code change for `activity.stream`. The slow-query
+  optimization work focused on currently active slow paths instead.
+- Remaining risk: If `activity.stream` traffic resumes with new slow-query
+  rows, rerun the Axiom query and open a focused optimization task for stream
+  tiling or sample bucketing.
