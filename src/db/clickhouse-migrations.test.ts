@@ -158,8 +158,8 @@ describe("buildClickHouseMigrationStatements", () => {
     const statements = recreateProviderStatsDbtTableMigration.createMigration().statements;
 
     expect(statements).toHaveLength(3);
-    expect(statements[0]).toBe("DROP VIEW IF EXISTS analytics.provider_stats");
-    expect(statements[1]).toBe("DROP TABLE IF EXISTS analytics.provider_stats");
+    expect(statements[0]).toBe("DROP TABLE IF EXISTS analytics.provider_stats");
+    expect(statements[1]).toBe("DROP VIEW IF EXISTS analytics.provider_stats");
     expect(statements[2]).toContain("CREATE TABLE IF NOT EXISTS analytics.provider_stats");
     expect(statements[2]).toContain("is_deleted UInt8");
     expect(statements[2]).toContain("ENGINE = ReplacingMergeTree(refresh_version)");

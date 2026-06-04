@@ -5,8 +5,8 @@ export function createMigration(): ClickHouseMigration {
   return {
     id: "0025_recreate_provider_stats_dbt_table",
     statements: [
-      "DROP VIEW IF EXISTS analytics.provider_stats",
       "DROP TABLE IF EXISTS analytics.provider_stats",
+      "DROP VIEW IF EXISTS analytics.provider_stats",
       buildProviderStatsTableSql(),
     ],
   };
