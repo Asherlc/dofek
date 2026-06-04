@@ -7,6 +7,97 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-04: Stryker CI aborted on broken review-app agent symlinks
+
+### Symptoms
+
+- PR `1247` failed `Test / Stryker (0)` before mutation testing completed.
+- The downstream `Test / Mutation Testing` aggregate check failed because the
+  Stryker shard failed.
+
+### Evidence
+
+- Failed run: `26967699960`, job `79574620588`.
+- First fatal log line:
+  `ERROR Stryker Unexpected error occurred while running Stryker Error: ENOENT:
+  no such file or directory, copyfile
+  '/home/runner/work/dofek/dofek/deploy/review-apps/CLAUDE.md' ->
+  '/home/runner/work/dofek/dofek/.stryker-tmp/.../deploy/review-apps/CLAUDE.md'`.
+- `deploy/review-apps/CLAUDE.md` and `deploy/review-apps/GEMINI.md` were tracked
+  symlinks to `AGENTS.md`, but `deploy/review-apps/AGENTS.md` no longer existed.
+
+### Root Cause
+
+- Retired review-app infrastructure left behind broken agent-doc symlinks.
+  Stryker copies the repository into a sandbox before running mutants, and its
+  copy step aborted when it tried to follow the missing symlink target.
+
+### Fix or Mitigation
+
+- Removed the stale `deploy/review-apps/CLAUDE.md` and
+  `deploy/review-apps/GEMINI.md` symlinks. The directory has no `AGENTS.md`, so
+  no same-directory agent-doc mirrors are required there.
+
+### Validation
+
+- The exact CI command now passes locally:
+  `pnpm exec stryker run stryker.ci.config.json --mutate "src/jobs/process-sync-job.ts:83-91,src/jobs/process-sync-job.ts:197-200"`.
+- `pnpm lint`, root `pnpm tsc --noEmit`, server `pnpm tsc --noEmit`, and web
+  `pnpm tsc --noEmit` pass.
+
+### Remaining Risk
+
+- None known for this failure mode. If Stryker later aborts on another broken
+  symlink, remove the stale symlink or restore its valid target based on whether
+  the owning directory still has active agent guidance.
+
+## 2026-06-04: Garmin Rate Limits Still Reported to Sentry
+
+### Symptoms
+
+- Sentry issue `DOFEK-SERVER-33` continued receiving unresolved production
+  `GarminRateLimitError: Rate limit exceeded (429): Rate limited` events after
+  provider rate-limit retry logic had been added.
+
+### User Impact
+
+- Garmin background sync jobs produced noisy production error events for expected
+  provider throttling. The user-facing impact was delayed Garmin sync while the
+  provider was rate limited.
+
+### Evidence
+
+- Latest observed Sentry event `7cea1c00286a4d60a81002ab758f874c` occurred at
+  `2026-06-04T17:00:01.674Z`.
+- Stack trace:
+  `processSyncJob -> GarminProvider.sync -> GarminProvider.#resolveTokens ->
+  GarminConnectClient.fromTokens -> GarminConnectClient.#exchangeForOAuth2 ->
+  fetchWithRateLimitHandling -> GarminProvider.createRateLimitError`.
+- The first relevant application frame was
+  `/app/src/providers/garmin.ts:296`, where the rate-limit-aware fetch wrapper
+  correctly created a `GarminRateLimitError`.
+
+### Root Cause
+
+- Garmin token resolution caught the `GarminRateLimitError` and returned it in
+  `SyncResult.errors`. The worker only scheduled cooldown retries for thrown
+  `ProviderRateLimitError` instances, so returned rate-limit causes fell through
+  the generic sync-error branch and were captured to Sentry.
+
+### Fix or Mitigation
+
+- `processSyncJob` now detects `ProviderRateLimitError` causes returned inside
+  `SyncResult.errors` before generic sync-error handling, then routes them
+  through the existing cooldown/retry scheduling path.
+- Added a regression test covering returned rate-limit errors so they enqueue a
+  delayed retry and do not call Sentry.
+
+### Remaining Risk
+
+- The fix must be deployed before Sentry stops receiving this issue. Future
+  provider implementations should either throw `ProviderRateLimitError` directly
+  or preserve it as `SyncError.cause` so the worker can schedule the cooldown.
+
 ## 2026-06-03: Deploy Terraform failed on retired Hetzner provider state
 
 ### Symptoms
