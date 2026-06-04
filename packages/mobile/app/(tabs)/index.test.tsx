@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
+const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockInvalidate = vi.fn();
 const mockUseRefresh = vi.fn((_options: unknown) => ({
   refreshing: false,
@@ -13,6 +14,7 @@ const mockUseRefresh = vi.fn((_options: unknown) => ({
 let mockDashboardLoading = false;
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
+let mockAnomalyData: unknown;
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -28,6 +30,17 @@ vi.mock("../../lib/trpc", () => ({
           isError: !!mockDashboardError,
           error: mockDashboardError,
           refetch: mockDashboardRefetch,
+        }),
+      },
+    },
+    anomalyDetection: {
+      check: {
+        useQuery: () => ({
+          data: mockAnomalyData,
+          isLoading: false,
+          isError: false,
+          error: null,
+          refetch: mockAnomalyRefetch,
         }),
       },
     },
@@ -96,6 +109,8 @@ vi.mock("../../theme", () => ({
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
     mockDashboardLoading = false;
+    mockDashboardRefetch.mockClear();
+    mockAnomalyRefetch.mockClear();
     mockDashboardData = {
       readiness: {
         score: 85,
@@ -132,6 +147,7 @@ describe("TodayScreen independent loading states", () => {
       anomalies: { anomalies: [], checkedMetrics: [] },
       latestDate: "2026-03-21",
     };
+    mockAnomalyData = undefined;
     mockDashboardError = null;
     mockRouterPush.mockClear();
     mockDashboardRefetch.mockClear();
@@ -216,6 +232,32 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
   });
 
+  it("shows anomaly alerts from the standalone anomaly query", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      anomalies: null,
+    };
+    mockAnomalyData = {
+      anomalies: [
+        {
+          date: "2026-03-21",
+          metric: "Resting Heart Rate",
+          value: 70,
+          baselineMean: 60,
+          baselineStddev: 3,
+          zScore: 3.33,
+          severity: "alert",
+        },
+      ],
+      checkedMetrics: ["resting_hr"],
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText(/Resting Heart Rate: 70/)).toBeTruthy();
+  });
+
   it("opens add food with today's date and auto-selected meal", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 21, 15, 30));
@@ -230,7 +272,7 @@ describe("TodayScreen independent loading states", () => {
     );
   });
 
-  it("refreshes only the dashboard query when pull-to-refresh runs", async () => {
+  it("refreshes dashboard and anomaly queries when pull-to-refresh runs", async () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
@@ -245,6 +287,7 @@ describe("TodayScreen independent loading states", () => {
     await refreshOptions.refresh();
 
     expect(mockDashboardRefetch).toHaveBeenCalledOnce();
+    expect(mockAnomalyRefetch).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 

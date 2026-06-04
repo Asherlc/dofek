@@ -116,10 +116,14 @@ vi.mock("../repositories/training-recommendation.ts", () => ({
   computeReadinessScore: vi.fn(() => 62),
 }));
 
+const anomalyRepositoryMock = vi.hoisted(() => ({
+  check: vi.fn(),
+}));
+
 vi.mock("../repositories/anomaly-detection-repository.ts", () => ({
   AnomalyDetectionRepository: class {
-    check() {
-      return Promise.resolve(null);
+    check(endDate: string) {
+      return anomalyRepositoryMock.check(endDate);
     }
   },
 }));
@@ -262,6 +266,38 @@ describe("mobileDashboard.dashboard", () => {
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expect(queryText).toContain("analytics.daily_activity_load");
     expect(queryText).not.toContain("analytics.activity_summary");
+  });
+
+  it("does not compute anomalies in the dashboard critical path", async () => {
+    anomalyRepositoryMock.check.mockResolvedValue({
+      anomalies: [
+        {
+          date: "2026-03-28",
+          metric: "Resting Heart Rate",
+          value: 70,
+          baselineMean: 60,
+          baselineStddev: 3,
+          zScore: 3.33,
+          severity: "alert",
+        },
+      ],
+      checkedMetrics: ["resting_hr"],
+    });
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    const result = await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(anomalyRepositoryMock.check).not.toHaveBeenCalled();
+    expect(result.anomalies).toBeNull();
   });
 
   it("computes daily strain from today's raw activity load", async () => {

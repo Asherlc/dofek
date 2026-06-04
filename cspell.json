@@ -30,6 +30,7 @@
     "peerdb",
     "peerflow",
     "pgcrypto",
+    "reltuples",
     "PGDATA",
     "ClickHouse",
     "CLICKHOUSE",
