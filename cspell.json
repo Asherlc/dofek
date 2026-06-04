@@ -193,6 +193,8 @@
     "plpgsql",
     "relname",
     "relnamespace",
+    "inhparent",
+    "inhrelid",
     "nspname",
     "prpubid",
     "prrelid",

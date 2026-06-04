@@ -80,6 +80,15 @@ function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   );
 }
 
+function firstProviderRateLimitError(errors: SyncError[]): ProviderRateLimitError | null {
+  const rateLimitSyncError = errors.find(
+    (syncError) => syncError.cause instanceof ProviderRateLimitError,
+  );
+  return rateLimitSyncError?.cause instanceof ProviderRateLimitError
+    ? rateLimitSyncError.cause
+    : null;
+}
+
 function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailureReason | undefined {
   return errors
     .map((syncError) => authFailureReasonFromError(syncError.cause))
@@ -185,6 +194,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
           checkpoint: createCheckpointStore(job),
         }),
       );
+      const rateLimitError = firstProviderRateLimitError(result.errors);
+      if (rateLimitError) {
+        throw rateLimitError;
+      }
       const retryableInfraError = firstRetryableInfraSyncError(result.errors);
       if (retryableInfraError) {
         throw retryableInfraError.cause instanceof Error

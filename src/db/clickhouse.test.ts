@@ -203,6 +203,9 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("now64(9) AS refreshed_at");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.provider_stats");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.provider_stats");
+    expect(sql).toContain("toUInt8(0) AS is_deleted");
+    expect(sql).toContain("refresh_clock.refresh_version AS refresh_version");
+    expect(sql).toContain("refresh_clock.refreshed_at AS refreshed_at");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_trend_daily");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.activity_trend_daily");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_trend_daily");

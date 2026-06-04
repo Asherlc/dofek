@@ -41,10 +41,30 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
   runClickHouseMigrations: vi.fn(
     async (client: { command(options: { query: string }): Promise<unknown> }) => {
       for (const viewName of testAnalyticsViewNames) {
+        const selectSql =
+          viewName === "analytics.provider_stats"
+            ? `SELECT
+  toUUID('00000000-0000-0000-0000-000000000001') AS user_id,
+  'test-provider' AS provider_id,
+  toUInt64(0) AS activities,
+  toUInt64(0) AS daily_metrics,
+  toUInt64(0) AS sleep_sessions,
+  toUInt64(0) AS body_measurements,
+  toUInt64(0) AS food_entries,
+  toUInt64(0) AS health_events,
+  toUInt64(0) AS metric_stream,
+  toUInt64(0) AS nutrition_daily,
+  toUInt64(0) AS lab_panels,
+  toUInt64(0) AS lab_results,
+  toUInt64(0) AS journal_entries,
+  toUInt8(0) AS is_deleted,
+  toUInt64(1) AS refresh_version,
+  now64(9) AS refreshed_at`
+            : "SELECT 1 AS value";
         await client.command({
           query: `CREATE VIEW IF NOT EXISTS ${viewName}
 AS
-SELECT 1 AS value`,
+${selectSql}`,
         });
       }
       return 0;

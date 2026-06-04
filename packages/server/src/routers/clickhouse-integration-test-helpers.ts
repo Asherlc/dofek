@@ -654,22 +654,7 @@ INNER JOIN current_activity
 }
 
 function buildTestProviderStatsSelectSql(selectSql: string): string {
-  if (
-    /\bAS\s+is_deleted\b/i.test(selectSql) &&
-    /\bAS\s+refresh_version\b/i.test(selectSql) &&
-    /\bAS\s+refreshed_at\b/i.test(selectSql)
-  ) {
-    return selectSql;
-  }
-
-  return `SELECT
-  provider_stats.*,
-  toUInt8(0) AS is_deleted,
-  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-  now64(9) AS refreshed_at
-FROM (
-${selectSql}
-) AS provider_stats`;
+  return selectSql;
 }
 
 function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
