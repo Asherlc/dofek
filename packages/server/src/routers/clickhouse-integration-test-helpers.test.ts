@@ -190,6 +190,16 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".provider_stats") &&
+          command.includes("AS is_deleted") &&
+          command.includes("AS refresh_version") &&
+          command.includes("AS refreshed_at"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO analytics_test_") && command.includes(".deduped_location"),
       ),
     ).toBe(true);

@@ -608,6 +608,17 @@ INNER JOIN current_activity
  AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
 }
 
+function buildTestProviderStatsSelectSql(selectSql: string): string {
+  return `SELECT
+  provider_stats.*,
+  toUInt8(0) AS is_deleted,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  now64(9) AS refreshed_at
+FROM (
+${selectSql}
+) AS provider_stats`;
+}
+
 function buildTestRestingHeartRateSelectSql(databases: IsolatedClickHouseDatabases): string {
   return `WITH
 active_sleep AS (
@@ -741,10 +752,7 @@ function rewriteClickHouseTestCommand(
     const trimmedSelectSql = selectSql.trim();
     precomputedAnalyticsSelectByName.set(
       viewName,
-      viewName.endsWith(".activity_summary") &&
-        trimmedSelectSql.includes(".activity_summary_rows FINAL")
-        ? buildTestActivitySummarySelectSql(databases)
-        : trimmedSelectSql,
+      buildTestAnalyticsSelectSql(viewName, trimmedSelectSql, databases),
     );
     const tableStatement = buildTestAnalyticsTableStatement(viewName);
     if (!tableStatement) {
@@ -779,6 +787,23 @@ function rewriteClickHouseTestCommand(
   }
 
   return [rewrittenQuery];
+}
+
+function buildTestAnalyticsSelectSql(
+  viewName: string,
+  selectSql: string,
+  databases: IsolatedClickHouseDatabases,
+): string {
+  if (
+    viewName.endsWith(".activity_summary") &&
+    selectSql.includes(".activity_summary_rows FINAL")
+  ) {
+    return buildTestActivitySummarySelectSql(databases);
+  }
+  if (viewName.endsWith(".provider_stats")) {
+    return buildTestProviderStatsSelectSql(selectSql);
+  }
+  return selectSql;
 }
 
 function createIsolatedClickHouseClient(
