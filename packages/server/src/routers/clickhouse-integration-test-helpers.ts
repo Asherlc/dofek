@@ -773,7 +773,7 @@ resting_by_date AS (
   SELECT
     user_id,
     toDate(ended_at - INTERVAL 6 HOUR) AS date,
-    argMax(resting_hr, tuple(duration_seconds, ended_at)) AS resting_hr
+    argMax(resting_hr, tuple(duration_seconds, ended_at)) AS selected_resting_hr
   FROM ${databases.analytics}.resting_heart_rate_sleep_window FINAL
   WHERE is_deleted = 0
     AND ended_at IS NOT NULL
@@ -801,7 +801,7 @@ daily_inputs AS (
     input_dates.user_id AS user_id,
     input_dates.date AS date,
     daily_metrics.hrv AS hrv,
-    resting_by_date.resting_hr AS resting_hr,
+    resting_by_date.selected_resting_hr AS resting_hr,
     daily_metrics.respiratory_rate AS respiratory_rate,
     sleep_by_date.efficiency_pct AS efficiency_pct
   FROM input_dates
