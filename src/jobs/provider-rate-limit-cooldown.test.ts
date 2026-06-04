@@ -349,7 +349,7 @@ describe("provider rate-limit scheduling helpers", () => {
     expect(providerRateLimitDelayMs(cooldown, new Date("2026-06-02T12:11:00Z"))).toBe(0);
   });
 
-  it("builds stable delayed retry job IDs", () => {
+  it("builds BullMQ-safe delayed retry job IDs", () => {
     const cooldown = {
       providerId: "garmin",
       scope: "provider" as const,
@@ -357,8 +357,8 @@ describe("provider rate-limit scheduling helpers", () => {
       expiresAt: new Date("2026-06-02T12:10:00Z"),
     };
 
-    expect(providerRateLimitCooldownJobId(cooldown, "user-1")).toBe(
-      "provider-rate-limit:garmin:provider:user-1:1780402200000",
-    );
+    const jobId = providerRateLimitCooldownJobId(cooldown, "user-1");
+
+    expect(jobId).toBe("provider-rate-limit-garmin-provider-user-1-1780402200000");
   });
 });

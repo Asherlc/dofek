@@ -202,5 +202,5 @@ export function providerRateLimitCooldownJobId(
   cooldown: ProviderRateLimitCooldown,
   jobUserId: string,
 ): string {
-  return `${KEY_PREFIX}:${cooldown.providerId}:${cooldown.scope}:${cooldown.userId ?? jobUserId}:${cooldown.expiresAt.getTime()}`;
+  return `${KEY_PREFIX}-${cooldown.providerId}-${cooldown.scope}-${cooldown.userId ?? jobUserId}-${cooldown.expiresAt.getTime()}`;
 }

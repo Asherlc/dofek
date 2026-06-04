@@ -9965,3 +9965,30 @@ new incremental tables are populated.
   handoff. A future unrelated Swarm manager bug or out-of-band service update
   could still produce `update out of sequence` and would need separate
   operational investigation.
+
+### 2026-06-04 Scheduled sync failed while enqueueing rate-limit retry
+
+- Symptoms: Sentry issue `DOFEK-SERVER-34` reported `Error: Custom Id cannot
+  contain :` in production at `2026-06-04T18:30:09Z` and
+  `2026-06-04T18:35:09Z`.
+- User impact: Scheduled sync processing failed when it tried to enqueue a
+  delayed provider sync during an active provider rate-limit cooldown. Sentry
+  reported zero directly impacted users, but the affected scheduled sync jobs
+  did not enqueue their delayed retry normally.
+- Evidence: The Sentry stack ended in BullMQ
+  `Job.validateOptions()` after `Queue.addJob()` and `Queue.add()`. The first
+  fatal line was `Error: Custom Id cannot contain :`. Local tests showed the
+  cooldown retry helper returned
+  `provider-rate-limit:garmin:provider:user-1:1780402200000`, and
+  `processScheduledSyncJob()` and `processSyncJob()` pass that helper output as
+  BullMQ `jobId`.
+- Root cause: `providerRateLimitCooldownJobId()` reused colon-separated
+  cooldown identity formatting for BullMQ custom job ids, but BullMQ 5 rejects
+  custom `jobId` values containing `:`.
+- Fix / mitigation: Changed only the BullMQ cooldown retry job-id formatter to
+  use hyphen separators while leaving Redis cooldown keys unchanged. Added a
+  colocated unit test asserting delayed retry job ids do not contain `:`, and
+  updated enqueueing tests for the new deterministic id.
+- Remaining risk: Existing delayed jobs created before this fix, if any, keep
+  their old ids. The Sentry issue had only two production occurrences, both
+  during active cooldown enqueueing.
