@@ -10060,3 +10060,40 @@ new incremental tables are populated.
 - Remaining risk: Requests made before the first analytics build may see empty
   read-model results, but they should no longer fail because the table is
   missing.
+
+### 2026-06-04 PostgreSQL idle pool client crash
+
+- Symptoms: Sentry issue `DOFEK-SERVER-2M` reported fatal uncaught
+  `Error: Connection terminated unexpectedly` events from `pg/lib/client.js` in
+  production.
+- User impact: Sentry reported zero directly impacted users, but the Node
+  process treated the idle PostgreSQL client error as an uncaught exception.
+  The database entered crash recovery, briefly dropping active connections.
+- Evidence: The latest Sentry event occurred at `2026-06-04T21:26:38Z` with
+  mechanism `auto.node.onuncaughtexception`, and the stack ended in
+  node-postgres `Connection.?` emitting `Connection terminated unexpectedly`.
+  The shared `src/db/index.ts` `pg.Pool` had no `error` listener. Production
+  Postgres logs at the same timestamp showed backend PID `204991` killed by
+  signal 9 while running `inertialMeasurementUnit.getCoverageTimeline` over
+  `fitness.metric_stream` for user `f923fed7-d934-4cd9-8cb9-8e83020d0e69`,
+  date `2026-06-02`, and channels `imu` / `accel`. Host kernel logs confirmed
+  the database container cgroup was at its `2097152kB` memory limit and
+  OOM-killed a `postgres` process. A read-only `EXPLAIN` for the same statement
+  estimated roughly `7.16M` matching rows from one Timescale chunk before
+  grouping them into five-minute buckets.
+- Root cause: The immediate Node crash happened because idle PostgreSQL clients
+  disconnected by backend events emit `error` on the pool; without a pool-level
+  listener, Node treats that event as uncaught. The underlying disconnect was a
+  Postgres cgroup OOM: a high-cardinality IMU coverage request scanned millions
+  of raw vector samples from `fitness.metric_stream` inside the 2GiB database
+  container, Postgres crash recovery terminated other backends, and the web
+  processes then observed broken pool clients.
+- Fix / mitigation: Added a `pg.Pool` `error` listener in `createDatabase()`
+  that logs the idle-client failure and reports the original error to Sentry
+  with a `postgres-pool` source tag. Added a unit test that reproduces the
+  missing listener.
+- Remaining risk: This prevents the uncaught idle-client error class from
+  crashing the process. It does not remove the heavy raw-Postgres IMU analytics
+  path. The durable fix is to move IMU coverage reads to a bounded serving model
+  or otherwise pre-aggregate the coverage buckets; simply increasing the
+  database memory limit would leave the request-time scan pattern in place.

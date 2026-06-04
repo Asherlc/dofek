@@ -1,16 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockCaptureException = vi.fn();
+const mockLoggerError = vi.fn();
 const mockDrizzleReturn = {
   query: {},
   execute: vi.fn(),
   $client: { end: vi.fn() },
 };
 const mockDrizzle = vi.fn(() => mockDrizzleReturn);
-const mockPoolInstance = {};
+const mockPoolInstance = {
+  on: vi.fn(),
+};
 const mockPool = vi.fn(() => mockPoolInstance);
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockCaptureException,
+}));
 
 vi.mock("drizzle-orm/node-postgres", () => ({
   drizzle: mockDrizzle,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    error: mockLoggerError,
+  },
 }));
 
 vi.mock("pg", () => ({
@@ -47,6 +61,26 @@ describe("db/index", () => {
       createDatabase("postgres://localhost:5432/test");
 
       expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema });
+    });
+
+    it("reports idle pool client errors", async () => {
+      const { createDatabase } = await import("./index.ts");
+      const error = new Error("Connection terminated unexpectedly");
+
+      createDatabase("postgres://localhost:5432/test");
+      const errorHandler = mockPoolInstance.on.mock.calls.find(
+        ([eventName]) => eventName === "error",
+      )?.[1];
+      expect(errorHandler).toBeTypeOf("function");
+
+      errorHandler?.(error);
+
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        "[db] PostgreSQL pool idle client error: Connection terminated unexpectedly",
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(error, {
+        tags: { source: "postgres-pool" },
+      });
     });
 
     it("preserves the existing row-array execute contract", async () => {
