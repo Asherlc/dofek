@@ -1,3 +1,4 @@
+import { buildProviderStatsTableSql } from "../clickhouse-provider-stats.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
 const dailyRecoveryInputsTableSql = `CREATE TABLE IF NOT EXISTS analytics.daily_recovery_inputs (
@@ -56,6 +57,9 @@ export function createMigration(): ClickHouseMigration {
       dailyRecoveryInputsTableSql,
       dailyActivityLoadTableSql,
       healthspanActivityZoneMinutesTableSql,
+      "DROP VIEW IF EXISTS analytics.provider_stats",
+      "DROP TABLE IF EXISTS analytics.provider_stats",
+      buildProviderStatsTableSql(),
     ],
   };
 }

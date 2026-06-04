@@ -18,5 +18,8 @@ describe("clickHouseMigrations", () => {
         "CREATE TABLE IF NOT EXISTS analytics.healthspan_activity_zone_minutes",
       ),
     );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_stats"),
+    );
   });
 });

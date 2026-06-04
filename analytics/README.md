@@ -25,6 +25,8 @@ over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
 offline ClickHouse models can set dbt `query_settings` locally and use
 `max_threads=1` so offline builds do not compete with request traffic.
+`provider_stats` materializes provider record counts for the sync provider
+inventory route so the API does not compute all-provider counts on request.
 `daily_recovery_inputs`, `daily_activity_load`, and
 `healthspan_activity_zone_minutes` are compact serving read models over daily
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
@@ -36,10 +38,10 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_recovery_inputs`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
-`activity_summary_rows`, `activity_vo2max_estimate`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes`. The sample-stage and sample-intermediate
-models use dbt's `microbatch` incremental strategy with `recorded_at` as the
-event time, daily batches, and short lookbacks so
+`activity_summary_rows`, `activity_vo2max_estimate`, `provider_stats`,
+`daily_activity_load`, and `healthspan_activity_zone_minutes`. The sample-stage
+and sample-intermediate models use dbt's `microbatch` incremental strategy with
+`recorded_at` as the event time, daily batches, and short lookbacks so
 ClickHouse processes bounded sample-time windows instead of one large
 activity/window query. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
@@ -51,6 +53,6 @@ and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and
 `max_threads=1`; it materializes reusable per-activity VO2 max estimates, not
 final API responses. `daily_recovery_inputs`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes` materialize per-activity serving inputs so
-request paths do not recompute recovery baselines, training load, or zone
+`healthspan_activity_zone_minutes` materialize serving inputs so request paths
+do not recompute provider inventory, recovery baselines, training load, or zone
 minutes from raw samples.
