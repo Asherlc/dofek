@@ -12,6 +12,23 @@ const clickHouseMocks = vi.hoisted(() => ({
   query: vi.fn(),
 }));
 
+const testAnalyticsViewNames = [
+  "analytics.v_activity",
+  "analytics.v_activity_members",
+  "analytics.v_sleep",
+  "analytics.v_body_measurement",
+  "analytics.v_daily_metrics",
+  "analytics.provider_stats",
+  "analytics.deduped_sensor",
+  "analytics.resting_heart_rate_sleep_window",
+  "analytics.daily_recovery_inputs",
+  "analytics.deduped_location",
+  "analytics.activity_summary",
+  "analytics.daily_activity_load",
+  "analytics.healthspan_activity_zone_minutes",
+  "analytics.activity_trend_daily",
+];
+
 vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../../src/db/clickhouse.ts")>();
   return {
@@ -23,22 +40,7 @@ vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
 vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
   runClickHouseMigrations: vi.fn(
     async (client: { command(options: { query: string }): Promise<unknown> }) => {
-      for (const viewName of [
-        "analytics.v_activity",
-        "analytics.v_activity_members",
-        "analytics.v_sleep",
-        "analytics.v_body_measurement",
-        "analytics.v_daily_metrics",
-        "analytics.provider_stats",
-        "analytics.deduped_sensor",
-        "analytics.resting_heart_rate_sleep_window",
-        "analytics.daily_recovery_inputs",
-        "analytics.deduped_location",
-        "analytics.activity_summary",
-        "analytics.daily_activity_load",
-        "analytics.healthspan_activity_zone_minutes",
-        "analytics.activity_trend_daily",
-      ]) {
+      for (const viewName of testAnalyticsViewNames) {
         await client.command({
           query: `CREATE VIEW IF NOT EXISTS ${viewName}
 AS
@@ -211,16 +213,16 @@ describe("clickhouse integration test helpers", () => {
           command.includes("\nSELECT"),
       ),
     ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".provider_stats") &&
-          command.includes("AS is_deleted") &&
-          command.includes("AS refresh_version") &&
-          command.includes("AS refreshed_at"),
-      ),
-    ).toBe(true);
+    const providerStatsInsert = commands.find(
+      (command) =>
+        command.includes("INSERT INTO analytics_test_") && command.includes(".provider_stats"),
+    );
+    expect(providerStatsInsert).toBeDefined();
+    const providerStatsInsertSql = providerStatsInsert ?? "";
+    expect(providerStatsInsertSql).toContain("AS is_deleted");
+    expect(providerStatsInsertSql).toContain("AS refresh_version");
+    expect(providerStatsInsertSql).toContain("AS refreshed_at");
+    expect(providerStatsInsertSql).not.toContain("provider_stats.*");
     expect(
       commands.some(
         (command) =>
