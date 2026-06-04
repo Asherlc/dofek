@@ -1,6 +1,8 @@
+import * as Sentry from "@sentry/node";
 import type { SQLWrapper } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { logger } from "../logger.ts";
 import * as schema from "./schema.ts";
 
 type DrizzleDatabase = ReturnType<typeof drizzle<typeof schema>>;
@@ -57,6 +59,10 @@ export function createDatabase(connectionString: string): Database {
     maxLifetimeSeconds: 600, // 10 min — recycle connections to avoid stale server-side state
     keepAlive: true, // TCP keep-alive detects dead connections from network/server drops
     keepAliveInitialDelayMillis: 60_000,
+  });
+  client.on("error", (error) => {
+    logger.error(`[db] PostgreSQL pool idle client error: ${error.message}`);
+    Sentry.captureException(error, { tags: { source: "postgres-pool" } });
   });
   const db = drizzle(client, { schema });
   const rawExecute = db.execute.bind(db);
