@@ -41,12 +41,6 @@ function makeFetchContext(
   overrides: Partial<Parameters<typeof fetchHealthspanRawData>[0]>,
 ): Parameters<typeof fetchHealthspanRawData>[0] {
   return {
-    db: {
-      execute: vi
-        .fn()
-        .mockResolvedValueOnce([{ weekly_exercise_min: null }])
-        .mockResolvedValueOnce([makeRawHealthspanRow()]),
-    },
     userId: "user-1",
     timezone: "UTC",
     accessWindow: fullAccessWindow,
@@ -55,8 +49,13 @@ function makeFetchContext(
 }
 
 describe("fetchHealthspanRawData", () => {
-  it("reads precomputed zone minutes from the ClickHouse read model", async () => {
-    const query = vi.fn().mockResolvedValue([]);
+  it("reads healthspan inputs from the compact ClickHouse read model", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        week_start: "2026-03-03",
+        ...makeRawHealthspanRow(),
+      },
+    ]);
     const ctx = makeFetchContext({
       sensorStore: makeSensorStore({
         query,
@@ -66,23 +65,66 @@ describe("fetchHealthspanRawData", () => {
 
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    const zoneQuery = query.mock.calls.find(
-      ([, queryText]) =>
-        typeof queryText === "string" &&
-        queryText.includes("analytics.healthspan_activity_zone_minutes"),
-    )?.[1];
-    expect(zoneQuery).toEqual(expect.any(String));
-    expect(query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("analytics.healthspan_activity_zone_minutes FINAL"),
-      expect.objectContaining({
-        windowStart: "2026-03-01 00:00:00",
-        windowEndExclusive: "2026-03-16 00:00:00",
+    const queryText = query.mock.calls[0]?.[1];
+    expect(queryText).toContain("analytics.healthspan_read_model");
+    expect(queryText).not.toContain("analytics.healthspan_activity_zone_minutes");
+    expect(queryText).not.toContain("analytics.v_sleep");
+    expect(queryText).not.toContain("fitness.v_daily_metrics");
+  });
+
+  it("aggregates weekly healthspan rows into the route raw shape", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        week_start: "2026-03-03",
+        avg_sleep_min: 420,
+        bedtime_stddev_min: 20,
+        avg_resting_hr: 55,
+        avg_steps: 8000,
+        latest_vo2max: 42,
+        weekly_aerobic_min: 120,
+        weekly_high_intensity_min: 30,
+        sessions_per_week: 2,
+        weight_kg: 80,
+        body_fat_pct: 20,
+      },
+      {
+        week_start: "2026-03-10",
+        avg_sleep_min: 480,
+        bedtime_stddev_min: 40,
+        avg_resting_hr: 53,
+        avg_steps: 10000,
+        latest_vo2max: 45,
+        weekly_aerobic_min: 180,
+        weekly_high_intensity_min: 60,
+        sessions_per_week: 3,
+        weight_kg: 79,
+        body_fat_pct: 19,
+      },
+    ]);
+    const ctx = makeFetchContext({
+      sensorStore: makeSensorStore({
+        query,
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
       }),
-    );
-    expect(zoneQuery).toContain("is_deleted = 0");
-    expect(zoneQuery).toContain("started_at < toDateTime({windowEndExclusive:String})");
-    expect(zoneQuery).not.toContain("analytics.deduped_sensor");
-    expect(zoneQuery).not.toContain("analytics.activity_summary");
+    });
+
+    const row = await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    expect(row).toMatchObject({
+      avg_sleep_min: 450,
+      bedtime_stddev_min: 30,
+      avg_resting_hr: 54,
+      avg_steps: 9000,
+      latest_vo2max: 45,
+      weekly_aerobic_min: 150,
+      weekly_high_intensity_min: 45,
+      sessions_per_week: 2.5,
+      weight_kg: 79,
+      body_fat_pct: 19,
+      weekly_history: [
+        { week_start: "2026-03-03", avg_rhr: 55, avg_steps: 8000, avg_vo2max: 42 },
+        { week_start: "2026-03-10", avg_rhr: 53, avg_steps: 10000, avg_vo2max: 45 },
+      ],
+    });
   });
 });

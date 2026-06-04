@@ -18,5 +18,17 @@ describe("clickHouseMigrations", () => {
         "CREATE TABLE IF NOT EXISTS analytics.healthspan_activity_zone_minutes",
       ),
     );
+    expect(clickHouseMigrationFileNames).toContain(
+      "0025_create_named_dashboard_read_model_tables.ts",
+    );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.recovery_read_model"),
+    );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.strain_read_model"),
+    );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.healthspan_read_model"),
+    );
   });
 });

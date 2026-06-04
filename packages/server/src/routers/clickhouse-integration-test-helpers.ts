@@ -296,11 +296,14 @@ const analyticsBuildOrder = [
   "analytics.deduped_activities",
   "analytics.resting_heart_rate_sleep_window",
   "analytics.daily_recovery_inputs",
+  "analytics.recovery_read_model",
   "analytics.deduped_location",
   "analytics.activity_sensor_sample",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
+  "analytics.strain_read_model",
   "analytics.healthspan_activity_zone_minutes",
+  "analytics.healthspan_read_model",
   "analytics.activity_trend_daily",
 ] as const;
 
@@ -401,6 +404,28 @@ hrv_mean_60d Nullable(Float64),
 hrv_sd_60d Nullable(Float64),
 rhr_mean_60d Nullable(Float64),
 rhr_sd_60d Nullable(Float64),
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    recovery_read_model: `user_id UUID,
+date Date,
+hrv Nullable(Float64),
+resting_hr Nullable(Float64),
+respiratory_rate Nullable(Float64),
+efficiency_pct Nullable(Float64),
+hrv_mean_30d Nullable(Float64),
+hrv_sd_30d Nullable(Float64),
+rhr_mean_30d Nullable(Float64),
+rhr_sd_30d Nullable(Float64),
+rr_mean_30d Nullable(Float64),
+rr_sd_30d Nullable(Float64),
+hrv_mean_60d Nullable(Float64),
+hrv_sd_60d Nullable(Float64),
+rhr_mean_60d Nullable(Float64),
+rhr_sd_60d Nullable(Float64),
+hrv_score Nullable(Float64),
+resting_hr_score Nullable(Float64),
+sleep_score Nullable(Float64),
+respiratory_rate_score Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     v_body_measurement: `id UUID,
@@ -542,6 +567,15 @@ ended_at DateTime64(6, 'UTC'),
 daily_load Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
+    strain_read_model: `user_id UUID,
+date Date,
+daily_load Float64,
+strain Float64,
+acute_load_7d Float64,
+chronic_load_28d Float64,
+workload_ratio Nullable(Float64),
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     healthspan_activity_zone_minutes: `activity_id UUID,
 user_id UUID,
 started_at DateTime64(6, 'UTC'),
@@ -549,6 +583,20 @@ ended_at DateTime64(6, 'UTC'),
 aerobic_minutes Float64,
 high_intensity_minutes Float64,
 is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    healthspan_read_model: `user_id UUID,
+week_start Date,
+avg_sleep_min Nullable(Float64),
+bedtime_stddev_min Nullable(Float64),
+avg_resting_hr Nullable(Float64),
+avg_steps Nullable(Float64),
+latest_vo2max Nullable(Float64),
+weekly_aerobic_min Float64,
+weekly_high_intensity_min Float64,
+sessions_per_week Nullable(Float64),
+weight_kg Nullable(Float64),
+body_fat_pct Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     activity_trend_daily: `user_id UUID,
@@ -578,8 +626,11 @@ activity_count UInt64`,
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
     shortViewName === "daily_recovery_inputs" ||
+    shortViewName === "recovery_read_model" ||
     shortViewName === "daily_activity_load" ||
+    shortViewName === "strain_read_model" ||
     shortViewName === "healthspan_activity_zone_minutes" ||
+    shortViewName === "healthspan_read_model" ||
     shortViewName === "provider_stats"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
@@ -590,12 +641,18 @@ activity_count UInt64`,
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
         : shortViewName === "daily_recovery_inputs"
           ? "(user_id, date)"
-          : shortViewName === "daily_activity_load" ||
-              shortViewName === "healthspan_activity_zone_minutes"
-            ? "(user_id, activity_id)"
-            : shortViewName === "provider_stats"
-              ? "(user_id, provider_id)"
-              : "tuple()";
+          : shortViewName === "recovery_read_model"
+            ? "(user_id, date)"
+            : shortViewName === "daily_activity_load" ||
+                shortViewName === "healthspan_activity_zone_minutes"
+              ? "(user_id, activity_id)"
+              : shortViewName === "strain_read_model"
+                ? "(user_id, date)"
+                : shortViewName === "healthspan_read_model"
+                  ? "(user_id, week_start)"
+                  : shortViewName === "provider_stats"
+                    ? "(user_id, provider_id)"
+                    : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -921,6 +978,183 @@ SELECT
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM activity_load
+CROSS JOIN refresh_clock`;
+}
+
+function buildTestRecoveryReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `SELECT
+  user_id,
+  date,
+  hrv,
+  resting_hr,
+  respiratory_rate,
+  efficiency_pct,
+  hrv_mean_30d,
+  hrv_sd_30d,
+  rhr_mean_30d,
+  rhr_sd_30d,
+  rr_mean_30d,
+  rr_sd_30d,
+  hrv_mean_60d,
+  hrv_sd_60d,
+  rhr_mean_60d,
+  rhr_sd_60d,
+  CAST(NULL, 'Nullable(Float64)') AS hrv_score,
+  CAST(NULL, 'Nullable(Float64)') AS resting_hr_score,
+  CAST(NULL, 'Nullable(Float64)') AS sleep_score,
+  CAST(NULL, 'Nullable(Float64)') AS respiratory_rate_score,
+  refresh_version,
+  refreshed_at
+FROM ${databases.analytics}.daily_recovery_inputs`;
+}
+
+function buildTestStrainReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH activity_load AS (
+  SELECT
+    user_id,
+    toDate(started_at) AS date,
+    coalesce(sum(daily_load), 0) AS daily_load
+  FROM ${databases.analytics}.daily_activity_load
+  GROUP BY user_id, toDate(started_at)
+),
+date_bounds AS (
+  SELECT
+    user_id,
+    min(date) AS min_date,
+    greatest(max(date), today()) AS max_date
+  FROM activity_load
+  GROUP BY user_id
+),
+date_series AS (
+  SELECT
+    date_bounds.user_id AS user_id,
+    date_bounds.min_date + INTERVAL number DAY AS date
+  FROM date_bounds
+  ARRAY JOIN range(toUInt32(dateDiff('day', min_date, max_date) + 1)) AS number
+),
+daily AS (
+  SELECT
+    date_series.user_id AS user_id,
+    date_series.date AS date,
+    coalesce(activity_load.daily_load, 0) AS daily_load
+  FROM date_series
+  LEFT JOIN activity_load
+    ON activity_load.user_id = date_series.user_id
+   AND activity_load.date = date_series.date
+),
+with_windows AS (
+  SELECT
+    user_id,
+    date,
+    daily_load,
+    sum(daily_load) OVER (PARTITION BY user_id ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load_7d,
+    avg(daily_load) OVER (PARTITION BY user_id ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) * 7 AS chronic_load_28d,
+    count() OVER (PARTITION BY user_id ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
+  FROM daily
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  user_id,
+  date,
+  daily_load,
+  least(21, round(2.775 * log(1 + greatest(daily_load, 0)), 1)) AS strain,
+  acute_load_7d,
+  chronic_load_28d,
+  if(chronic_load_28d > 0 AND chronic_count = 28, acute_load_7d / chronic_load_28d, NULL) AS workload_ratio,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM with_windows
+CROSS JOIN refresh_clock`;
+}
+
+function buildTestHealthspanReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH week_keys AS (
+  SELECT
+    user_id,
+    toMonday(date) AS week_start
+  FROM ${databases.analytics}.v_daily_metrics
+  GROUP BY user_id, toMonday(date)
+  UNION DISTINCT
+  SELECT
+    user_id,
+    toMonday(toDate(started_at)) AS week_start
+  FROM ${databases.analytics}.healthspan_activity_zone_minutes FINAL
+  WHERE is_deleted = 0
+    AND started_at IS NOT NULL
+  GROUP BY user_id, toMonday(toDate(started_at))
+  UNION DISTINCT
+  SELECT
+    user_id,
+    toMonday(toDate(recorded_at)) AS week_start
+  FROM ${databases.analytics}.v_body_measurement
+  GROUP BY user_id, toMonday(toDate(recorded_at))
+),
+metrics AS (
+  SELECT
+    user_id,
+    toMonday(date) AS week_start,
+    avg(steps) AS avg_steps,
+    CAST(coalesce(sum(exercise_minutes), 0), 'Float64') AS weekly_aerobic_min
+  FROM ${databases.analytics}.v_daily_metrics
+  GROUP BY user_id, toMonday(date)
+),
+zone_minutes AS (
+  SELECT
+    user_id,
+    toMonday(toDate(started_at)) AS week_start,
+    CAST(sum(aerobic_minutes), 'Float64') AS weekly_aerobic_min,
+    CAST(sum(high_intensity_minutes), 'Float64') AS weekly_high_intensity_min
+  FROM ${databases.analytics}.healthspan_activity_zone_minutes FINAL
+  WHERE is_deleted = 0
+    AND started_at IS NOT NULL
+  GROUP BY user_id, toMonday(toDate(started_at))
+),
+body_by_week AS (
+  SELECT
+    user_id,
+    toMonday(toDate(recorded_at)) AS week_start,
+    argMax(weight_kg, recorded_at) AS weight_kg,
+    argMax(body_fat_pct, recorded_at) AS body_fat_pct
+  FROM ${databases.analytics}.v_body_measurement
+  GROUP BY user_id, toMonday(toDate(recorded_at))
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  week_keys.user_id AS user_id,
+  week_keys.week_start AS week_start,
+  CAST(NULL, 'Nullable(Float64)') AS avg_sleep_min,
+  CAST(NULL, 'Nullable(Float64)') AS bedtime_stddev_min,
+  CAST(NULL, 'Nullable(Float64)') AS avg_resting_hr,
+  metrics.avg_steps AS avg_steps,
+  CAST(NULL, 'Nullable(Float64)') AS latest_vo2max,
+  greatest(
+    coalesce(metrics.weekly_aerobic_min, toFloat64(0)),
+    coalesce(zone_minutes.weekly_aerobic_min, toFloat64(0))
+  ) AS weekly_aerobic_min,
+  coalesce(zone_minutes.weekly_high_intensity_min, toFloat64(0)) AS weekly_high_intensity_min,
+  CAST(NULL, 'Nullable(Float64)') AS sessions_per_week,
+  body_by_week.weight_kg AS weight_kg,
+  body_by_week.body_fat_pct AS body_fat_pct,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM week_keys
+LEFT JOIN metrics
+  ON metrics.user_id = week_keys.user_id
+ AND metrics.week_start = week_keys.week_start
+LEFT JOIN zone_minutes
+  ON zone_minutes.user_id = week_keys.user_id
+ AND zone_minutes.week_start = week_keys.week_start
+LEFT JOIN body_by_week
+  ON body_by_week.user_id = week_keys.user_id
+ AND body_by_week.week_start = week_keys.week_start
 CROSS JOIN refresh_clock`;
 }
 
@@ -1280,6 +1514,14 @@ ${buildTestDailyRecoveryInputsSelectSql({
 })}`,
   });
   await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.recovery_read_model
+AS
+${buildTestRecoveryReadModelSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_activity_load
 AS
 ${buildTestDailyActivityLoadSelectSql({
@@ -1288,9 +1530,25 @@ ${buildTestDailyActivityLoadSelectSql({
 })}`,
   });
   await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.strain_read_model
+AS
+${buildTestStrainReadModelSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes
 AS
 ${buildTestHealthspanActivityZoneMinutesSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_read_model
+AS
+${buildTestHealthspanReadModelSelectSql({
   analytics: "analytics",
   postgresFitness: "postgres_fitness",
 })}`,

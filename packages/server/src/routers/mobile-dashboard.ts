@@ -168,22 +168,21 @@ export const mobileDashboardRouter = router({
                 daily_load: z.coerce.number(),
               }),
               `SELECT
-            toString(toDate(toTimeZone(ended_at, {timezone:String}))) AS metric_date,
-            sum(daily_load) AS daily_load
-          FROM analytics.daily_activity_load
+            toString(date) AS metric_date,
+            daily_load
+          FROM analytics.strain_read_model FINAL
           WHERE user_id = {userId:UUID}
-            AND toDate(toTimeZone(ended_at, {timezone:String})) > toDate({endDate:String}) - 60
-            AND toDate(toTimeZone(ended_at, {timezone:String})) <= toDate({endDate:String})
-          GROUP BY metric_date`,
-              { userId: ctx.userId, timezone: tz, endDate },
+            AND date > toDate({endDate:String}) - 60
+            AND date <= toDate({endDate:String})`,
+              { userId: ctx.userId, endDate },
             ),
             sensorStore.query(
               z.object({ load: z.coerce.number() }),
-              `SELECT coalesce(sum(daily_load), 0) AS load
-          FROM analytics.daily_activity_load
+              `SELECT coalesce(daily_load, 0) AS load
+          FROM analytics.strain_read_model FINAL
           WHERE user_id = {userId:UUID}
-            AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - 1`,
-              { userId: ctx.userId, timezone: tz, endDate },
+            AND date = toDate({endDate:String}) - 1`,
+              { userId: ctx.userId, endDate },
             ),
             fetchRestingHeartRateRows({
               sensorStore,

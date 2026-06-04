@@ -22,10 +22,13 @@ const testAnalyticsViewNames = [
   "analytics.deduped_sensor",
   "analytics.resting_heart_rate_sleep_window",
   "analytics.daily_recovery_inputs",
+  "analytics.recovery_read_model",
   "analytics.deduped_location",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
+  "analytics.strain_read_model",
   "analytics.healthspan_activity_zone_minutes",
+  "analytics.healthspan_read_model",
   "analytics.activity_trend_daily",
 ];
 
@@ -137,6 +140,13 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".recovery_read_model"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".daily_activity_load"),
       ),
     ).toBe(true);
@@ -144,7 +154,21 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".strain_read_model"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".healthspan_activity_zone_minutes"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".healthspan_read_model"),
       ),
     ).toBe(true);
 
@@ -298,6 +322,14 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".recovery_read_model") &&
+          command.includes(".daily_recovery_inputs"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
       ),
     ).toBe(true);
@@ -313,8 +345,24 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".strain_read_model") &&
+          command.includes(".daily_activity_load"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
           command.includes(".healthspan_activity_zone_minutes") &&
           command.includes(".activity_sensor_sample"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".healthspan_read_model") &&
+          command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
   });

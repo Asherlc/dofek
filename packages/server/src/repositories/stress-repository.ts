@@ -123,7 +123,7 @@ export class StressRepository extends BaseRepository {
         rhr_mean_60d,
         rhr_sd_60d,
         efficiency_pct
-      FROM analytics.daily_recovery_inputs AS recovery_inputs
+      FROM analytics.recovery_read_model AS recovery_inputs FINAL
       WHERE recovery_inputs.user_id = {userId:UUID}
         AND recovery_inputs.date > toDate({windowStart:String})
         AND recovery_inputs.date <= toDate({endDate:String})

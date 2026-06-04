@@ -414,7 +414,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.displayedStrain).toBe(0);
     expect(result.displayedDate).toBeNull();
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).toContain("analytics.strain_read_model AS strain FINAL");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 
@@ -717,7 +717,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result).toEqual([]);
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    expect(queryText).toContain("analytics.daily_recovery_inputs");
+    expect(queryText).toContain("analytics.recovery_read_model AS recovery_inputs FINAL");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("accessStartDate");
@@ -1308,7 +1308,7 @@ describe("recoveryRouter.readinessScore", () => {
 
 describe("recoveryRouter.strainTarget", () => {
   // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
-  // CH mock: loads from analytics.daily_activity_load.
+  // CH mock: loads from analytics.strain_read_model.
   function setup({
     readinessRows = [],
     sleepRows,
@@ -1355,7 +1355,7 @@ describe("recoveryRouter.strainTarget", () => {
     await caller.strainTarget({ endDate: "2026-03-28" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).toContain("analytics.strain_read_model FINAL");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 
