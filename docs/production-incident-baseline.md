@@ -7,6 +7,97 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-04: Stryker CI aborted on broken review-app agent symlinks
+
+### Symptoms
+
+- PR `1247` failed `Test / Stryker (0)` before mutation testing completed.
+- The downstream `Test / Mutation Testing` aggregate check failed because the
+  Stryker shard failed.
+
+### Evidence
+
+- Failed run: `26967699960`, job `79574620588`.
+- First fatal log line:
+  `ERROR Stryker Unexpected error occurred while running Stryker Error: ENOENT:
+  no such file or directory, copyfile
+  '/home/runner/work/dofek/dofek/deploy/review-apps/CLAUDE.md' ->
+  '/home/runner/work/dofek/dofek/.stryker-tmp/.../deploy/review-apps/CLAUDE.md'`.
+- `deploy/review-apps/CLAUDE.md` and `deploy/review-apps/GEMINI.md` were tracked
+  symlinks to `AGENTS.md`, but `deploy/review-apps/AGENTS.md` no longer existed.
+
+### Root Cause
+
+- Retired review-app infrastructure left behind broken agent-doc symlinks.
+  Stryker copies the repository into a sandbox before running mutants, and its
+  copy step aborted when it tried to follow the missing symlink target.
+
+### Fix or Mitigation
+
+- Removed the stale `deploy/review-apps/CLAUDE.md` and
+  `deploy/review-apps/GEMINI.md` symlinks. The directory has no `AGENTS.md`, so
+  no same-directory agent-doc mirrors are required there.
+
+### Validation
+
+- The exact CI command now passes locally:
+  `pnpm exec stryker run stryker.ci.config.json --mutate "src/jobs/process-sync-job.ts:83-91,src/jobs/process-sync-job.ts:197-200"`.
+- `pnpm lint`, root `pnpm tsc --noEmit`, server `pnpm tsc --noEmit`, and web
+  `pnpm tsc --noEmit` pass.
+
+### Remaining Risk
+
+- None known for this failure mode. If Stryker later aborts on another broken
+  symlink, remove the stale symlink or restore its valid target based on whether
+  the owning directory still has active agent guidance.
+
+## 2026-06-04: Garmin Rate Limits Still Reported to Sentry
+
+### Symptoms
+
+- Sentry issue `DOFEK-SERVER-33` continued receiving unresolved production
+  `GarminRateLimitError: Rate limit exceeded (429): Rate limited` events after
+  provider rate-limit retry logic had been added.
+
+### User Impact
+
+- Garmin background sync jobs produced noisy production error events for expected
+  provider throttling. The user-facing impact was delayed Garmin sync while the
+  provider was rate limited.
+
+### Evidence
+
+- Latest observed Sentry event `7cea1c00286a4d60a81002ab758f874c` occurred at
+  `2026-06-04T17:00:01.674Z`.
+- Stack trace:
+  `processSyncJob -> GarminProvider.sync -> GarminProvider.#resolveTokens ->
+  GarminConnectClient.fromTokens -> GarminConnectClient.#exchangeForOAuth2 ->
+  fetchWithRateLimitHandling -> GarminProvider.createRateLimitError`.
+- The first relevant application frame was
+  `/app/src/providers/garmin.ts:296`, where the rate-limit-aware fetch wrapper
+  correctly created a `GarminRateLimitError`.
+
+### Root Cause
+
+- Garmin token resolution caught the `GarminRateLimitError` and returned it in
+  `SyncResult.errors`. The worker only scheduled cooldown retries for thrown
+  `ProviderRateLimitError` instances, so returned rate-limit causes fell through
+  the generic sync-error branch and were captured to Sentry.
+
+### Fix or Mitigation
+
+- `processSyncJob` now detects `ProviderRateLimitError` causes returned inside
+  `SyncResult.errors` before generic sync-error handling, then routes them
+  through the existing cooldown/retry scheduling path.
+- Added a regression test covering returned rate-limit errors so they enqueue a
+  delayed retry and do not call Sentry.
+
+### Remaining Risk
+
+- The fix must be deployed before Sentry stops receiving this issue. Future
+  provider implementations should either throw `ProviderRateLimitError` directly
+  or preserve it as `SyncError.cause` so the worker can schedule the cooldown.
+
 ## 2026-06-03: Deploy Terraform failed on retired Hetzner provider state
 
 ### Symptoms
@@ -9868,3 +9959,53 @@ new incremental tables are populated.
 - Remaining risk: If `activity.stream` traffic resumes with new slow-query
   rows, rerun the Axiom query and open a focused optimization task for stream
   tiling or sample bucketing.
+### 2026-06-04 Deploy failed during final Swarm stack update
+
+- Symptoms: Deploy Web run `26924058329` failed in job `79430469079` during
+  the production Deploy stack step after migrations had succeeded.
+- User impact: The new app image `sha-90c7d51` was not fully rolled out by
+  that workflow run. The pre-migration stack apply and migrations completed
+  before the final stack update failed.
+- Evidence: The failed command was
+  `docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml --with-registry-auth --prune --detach=true dofek`.
+  The first fatal log line was `failed to update service dofek_traefik: Error
+  response from daemon: rpc error: code = Unknown desc = update out of
+  sequence`.
+- Root cause: The deploy workflow submitted the final pruned stack deploy
+  immediately after a pre-migration stack deploy without first waiting for
+  Swarm service updates from the pre-migration apply to finish, so Docker
+  rejected the Traefik service update as out of sequence.
+- Fix / mitigation: The workflow now polls all services in the stack after the
+  pre-migration stack apply and proceeds only when no service reports an active
+  `updating` state, failing loudly on paused or rollback states.
+- Remaining risk: This protects the same-job pre-migration-to-final deploy
+  handoff. A future unrelated Swarm manager bug or out-of-band service update
+  could still produce `update out of sequence` and would need separate
+  operational investigation.
+
+### 2026-06-04 Scheduled sync failed while enqueueing rate-limit retry
+
+- Symptoms: Sentry issue `DOFEK-SERVER-34` reported `Error: Custom Id cannot
+  contain :` in production at `2026-06-04T18:30:09Z` and
+  `2026-06-04T18:35:09Z`.
+- User impact: Scheduled sync processing failed when it tried to enqueue a
+  delayed provider sync during an active provider rate-limit cooldown. Sentry
+  reported zero directly impacted users, but the affected scheduled sync jobs
+  did not enqueue their delayed retry normally.
+- Evidence: The Sentry stack ended in BullMQ
+  `Job.validateOptions()` after `Queue.addJob()` and `Queue.add()`. The first
+  fatal line was `Error: Custom Id cannot contain :`. Local tests showed the
+  cooldown retry helper returned
+  `provider-rate-limit:garmin:provider:user-1:1780402200000`, and
+  `processScheduledSyncJob()` and `processSyncJob()` pass that helper output as
+  BullMQ `jobId`.
+- Root cause: `providerRateLimitCooldownJobId()` reused colon-separated
+  cooldown identity formatting for BullMQ custom job ids, but BullMQ 5 rejects
+  custom `jobId` values containing `:`.
+- Fix / mitigation: Changed only the BullMQ cooldown retry job-id formatter to
+  use hyphen separators while leaving Redis cooldown keys unchanged. Added a
+  colocated unit test asserting delayed retry job ids do not contain `:`, and
+  updated enqueueing tests for the new deterministic id.
+- Remaining risk: Existing delayed jobs created before this fix, if any, keep
+  their old ids. The Sentry issue had only two production occurrences, both
+  during active cooldown enqueueing.
