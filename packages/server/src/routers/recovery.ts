@@ -453,91 +453,48 @@ export const recoveryRouter = router({
         efficiency_pct: z.coerce.number().nullable(),
       });
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.readinessScore");
-      const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        endDate: input.endDate,
-        days: queryDays,
-      });
-      const [metricsRows, sleepRows] = await Promise.all([
-        executeWithSchema(
-          ctx.db,
-          readinessRowSchema,
-          sql`WITH ${restingHeartRateCte},
-          metrics_with_baselines AS (
-              SELECT
-                dm.date::text AS date,
-                dm.hrv,
-                drhr.resting_hr,
-                dm.respiratory_rate_avg AS respiratory_rate,
-                AVG(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_mean_30d,
-                STDDEV_POP(dm.hrv) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS hrv_sd_30d,
-                AVG(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_mean_30d,
-                STDDEV_POP(drhr.resting_hr) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rhr_sd_30d,
-                AVG(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_mean_30d,
-                STDDEV_POP(dm.respiratory_rate_avg) OVER (ORDER BY dm.date ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS rr_sd_30d
-              FROM fitness.v_daily_metrics dm
-	              LEFT JOIN resting_heart_rate drhr
-	                ON drhr.date = dm.date
-              WHERE dm.user_id = ${ctx.userId}
-                AND dm.date > ${dateWindowStart(input.endDate, queryDays)}
-                AND dm.date <= ${dateWindowEnd(input.endDate)}
-                ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
-            )
-            SELECT
-              m.date AS date,
-              m.hrv,
-              m.resting_hr,
-              m.respiratory_rate,
-              m.hrv_mean_30d,
-              m.hrv_sd_30d,
-              m.rhr_mean_30d,
-              m.rhr_sd_30d,
-              m.rr_mean_30d,
-              m.rr_sd_30d,
-              NULL::real AS efficiency_pct
-            FROM metrics_with_baselines m
-            ORDER BY date ASC`,
-        ),
-        fetchSleepNights({
-          sensorStore,
+      const accessWindow = ctx.accessWindow ?? {
+        kind: "full",
+        paid: true,
+        reason: "paid_grant",
+      };
+      const accessWindowClause =
+        accessWindow.kind === "full"
+          ? ""
+          : `
+            AND date >= toDate({accessStartDate:String})
+            AND date < toDate({accessEndDateExclusive:String})`;
+      const combinedRows = await sensorStore.query(
+        readinessRowSchema,
+        `SELECT
+          toString(date) AS date,
+          hrv,
+          resting_hr,
+          respiratory_rate,
+          hrv_mean_30d,
+          hrv_sd_30d,
+          rhr_mean_30d,
+          rhr_sd_30d,
+          rr_mean_30d,
+          rr_sd_30d,
+          efficiency_pct
+        FROM analytics.daily_recovery_inputs
+        WHERE user_id = {userId:UUID}
+          AND date > toDate({windowStart:String})
+          AND date <= toDate({endDate:String})
+          ${accessWindowClause}
+        ORDER BY date ASC`,
+        {
           userId: ctx.userId,
-          timezone: ctx.timezone,
+          windowStart: dateWindowStartString(input.endDate, queryDays),
           endDate: input.endDate,
-          days: queryDays,
-          accessWindow: ctx.accessWindow,
-          order: "asc",
-        }),
-      ]);
-      const combinedByDate = new Map(
-        metricsRows.map((row) => [
-          row.date,
-          {
-            ...row,
-            efficiency_pct:
-              sleepRows.find((sleepRow) => sleepRow.date === row.date)?.efficiency_pct ?? null,
-          },
-        ]),
-      );
-      for (const sleepRow of sleepRows) {
-        if (combinedByDate.has(sleepRow.date)) continue;
-        combinedByDate.set(sleepRow.date, {
-          date: sleepRow.date,
-          hrv: null,
-          resting_hr: null,
-          respiratory_rate: null,
-          hrv_mean_30d: null,
-          hrv_sd_30d: null,
-          rhr_mean_30d: null,
-          rhr_sd_30d: null,
-          rr_mean_30d: null,
-          rr_sd_30d: null,
-          efficiency_pct: sleepRow.efficiency_pct,
-        });
-      }
-      const combinedRows = [...combinedByDate.values()].sort((leftRow, rightRow) =>
-        leftRow.date.localeCompare(rightRow.date),
+          ...(accessWindow.kind === "full"
+            ? {}
+            : {
+                accessStartDate: accessWindow.startDate,
+                accessEndDateExclusive: accessWindow.endDateExclusive,
+              }),
+        },
       );
       const cutoffDate = new Date(input.endDate);
       cutoffDate.setDate(cutoffDate.getDate() - input.days);

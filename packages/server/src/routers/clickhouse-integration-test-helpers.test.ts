@@ -32,8 +32,11 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
         "analytics.provider_stats",
         "analytics.deduped_sensor",
         "analytics.resting_heart_rate_sleep_window",
+        "analytics.daily_recovery_inputs",
         "analytics.deduped_location",
         "analytics.activity_summary",
+        "analytics.daily_activity_load",
+        "analytics.healthspan_activity_zone_minutes",
         "analytics.activity_trend_daily",
       ]) {
         await client.command({
@@ -99,6 +102,27 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".activity_sensor_sample"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".daily_recovery_inputs"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".daily_activity_load"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".healthspan_activity_zone_minutes"),
       ),
     ).toBe(true);
 
@@ -234,7 +258,31 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".daily_recovery_inputs") &&
+          command.includes(".v_daily_metrics"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("INSERT INTO analytics_test_") && command.includes(".activity_summary"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".daily_activity_load") &&
+          command.includes(".activity_summary"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".healthspan_activity_zone_minutes") &&
+          command.includes(".activity_sensor_sample"),
       ),
     ).toBe(true);
   });

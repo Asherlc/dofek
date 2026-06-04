@@ -53,12 +53,15 @@ describe("production analytics read-model build", () => {
       "deduped_activity_members",
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
+      "daily_recovery_inputs",
       "activity_sensor_sample",
       "activity_location_sample",
       "activity_sensor_summary_rows",
       "activity_location_summary_rows",
       "activity_summary_rows",
       "activity_vo2max_estimate",
+      "daily_activity_load",
+      "healthspan_activity_zone_minutes",
     ]);
   });
 
@@ -334,5 +337,41 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain("INNER JOIN {{ ref('deduped_sensor') }}");
     expect(normalizedSql).toContain("samples.activity_id = activity_bounds.activity_id");
     expect(normalizedSql).toContain("samples.user_id = activity_bounds.user_id");
+  });
+
+  it("materializes daily activity load from activity summary rows", () => {
+    const sql = readModel("daily_activity_load");
+
+    expect(sql).toContain("ref('activity_summary_rows')");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).not.toContain("ref('activity_sensor_sample')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes daily recovery inputs from compact daily and sleep sources", () => {
+    const sql = readModel("daily_recovery_inputs");
+
+    expect(sql).toContain("analytics.v_daily_metrics");
+    expect(sql).toContain("analytics.v_sleep");
+    expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
+    expect(sql).toContain("hrv_mean_60d");
+    expect(sql).toContain("rhr_mean_60d");
+    expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes healthspan zone minutes from bounded activity samples", () => {
+    const sql = readModel("healthspan_activity_zone_minutes");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("ref('activity_summary_rows')");
+    expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
+    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("sensor_samples.scalar >= activity_metadata.ftp * 0.9");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+    expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).toContain("sensor_samples.activity_id = activity_metadata.activity_id");
+    expect(normalizedSql).toContain("sensor_samples.user_id = activity_metadata.user_id");
   });
 });

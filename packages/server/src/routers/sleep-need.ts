@@ -349,6 +349,7 @@ export const sleepNeedRouter = router({
         ctx.userId,
         tz,
         sensorStore,
+        ctx.accessWindow,
       ).getStressScores(90, input.endDate);
       const stressScore =
         stressResult.daily.find((stressRow) => stressRow.date === lastSleep.date)?.stressScore ??

@@ -707,13 +707,18 @@ describe("recoveryRouter.sleepAnalytics", () => {
 
 describe("recoveryRouter.readinessScore", () => {
   it("returns empty array when no data", async () => {
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
       db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore,
     });
     const result = await caller.readinessScore({});
     expect(result).toEqual([]);
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("analytics.daily_recovery_inputs");
+    expect(queryText).not.toContain("fitness.v_daily_metrics");
+    expect(queryText).not.toContain("analytics.v_sleep");
   });
 
   it("computes readiness score from HRV, RHR, sleep efficiency, and respiratory rate", async () => {
@@ -740,9 +745,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 92 })]]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -799,9 +804,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -841,9 +846,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], []]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({ days: 30, endDate: "2026-05-21" });
 
@@ -874,9 +879,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -906,9 +911,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -938,9 +943,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 120 })]]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -970,9 +975,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1007,9 +1012,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 120 })]]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1040,9 +1045,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: -10 })]]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1072,9 +1077,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1106,9 +1111,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1138,9 +1143,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1172,9 +1177,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1204,9 +1209,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1239,9 +1244,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1272,9 +1277,9 @@ describe("recoveryRouter.readinessScore", () => {
     ];
 
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
 
@@ -1283,14 +1288,14 @@ describe("recoveryRouter.readinessScore", () => {
   });
 
   it("uses default days of 30", async () => {
-    const executeMock = vi.fn().mockResolvedValue([]);
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
-      db: { execute: executeMock },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore,
     });
     await caller.readinessScore({});
-    expect(executeMock).toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalled();
   });
 });
 
@@ -2277,9 +2282,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 85 })]]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     // z = (30-50)/10 = -2, should map to low score
@@ -2304,9 +2309,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     // z_rhr = (70-60)/5 = +2, inverted: -2, should map to low score
@@ -2331,9 +2336,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     // z_rr = (13-15)/1 = -2, inverted: +2, maps to high score
@@ -2358,9 +2363,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     // z_rr = (17-15)/1 = +2, inverted: -2, maps to low score
@@ -2385,9 +2390,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([[], [sleepNightRow({ date: dateStr, efficiency_pct: 85 })]]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.sleepScore).toBe(85);
@@ -2411,9 +2416,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     // All defaults: 62 * 0.5 + 62 * 0.2 + 62 * 0.15 + 62 * 0.15 = 62
@@ -2438,9 +2443,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.hrvScore).toBe(62);
@@ -2464,9 +2469,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.restingHrScore).toBe(62);
@@ -2490,9 +2495,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.components.respiratoryRateScore).toBe(62);
@@ -2516,9 +2521,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(Number.isInteger(result[0]?.components.hrvScore)).toBe(true);
@@ -2544,9 +2549,9 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
       },
     ];
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore: makeSensorStore(rows),
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.date).toBe(dateStr);
