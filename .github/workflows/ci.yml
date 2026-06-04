@@ -98,4 +98,6 @@ jobs:
     if: github.event_name == 'pull_request'
     needs: [build-storybook, build-storybook-mobile]
     uses: ./.github/workflows/storybook-preview.yml
-    secrets: inherit
+    secrets:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

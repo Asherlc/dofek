@@ -3,7 +3,7 @@
 > **Read the [README.md](./README.md) first** for architecture and implementation details.
 
 ## High-Level Mandates
-- **Always use Terraform**: Never manually modify infrastructure on OCI or Cloudflare.
+- **Always use Terraform**: Never manually modify infrastructure on OCI, Hetzner, or Cloudflare.
 - **Secrets via Infisical**: Never hardcode secrets in `.tf` files or `stack.yml`. CI fetches deploy-tagged single-line secrets into an `env_file` for stack deploy; multiline secrets must be injected as Docker Swarm secrets.
 - **Zero-Downtime via Swarm**: `deploy.update_config` on `web`/`worker` uses `order: start-first` + healthcheck-gated `monitor` + `failure_action: rollback`. Never bypass this (e.g., no `docker service rm` + recreate — always `docker stack deploy` or `docker service update`).
 - **Deterministic Migrations**: Migrations run in CI **before** `stack deploy` as a one-shot container against the remote swarm (`docker --context prod run --rm --network dofek_default ... migrate`). Do not run migrations inside `web` startup in production.
