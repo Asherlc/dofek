@@ -235,8 +235,9 @@ export class SyncRepository {
           lab_panels,
           lab_results,
           journal_entries
-        FROM analytics.provider_stats
+        FROM analytics.provider_stats FINAL
         WHERE user_id = {userId:UUID}
+          AND is_deleted = 0
         ORDER BY provider_id
       `,
       { userId: this.#userId },

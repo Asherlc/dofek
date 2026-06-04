@@ -270,10 +270,11 @@ describe("SyncRepository", () => {
       const querySql = query.mock.calls[0]?.[1];
       expect(query).toHaveBeenCalledWith(
         expect.anything(),
-        expect.stringContaining("FROM analytics.provider_stats"),
+        expect.stringContaining("FROM analytics.provider_stats FINAL"),
         { userId: "user-1" },
       );
       expect(querySql).toEqual(expect.stringContaining("user_id = {userId:UUID}"));
+      expect(querySql).toEqual(expect.stringContaining("is_deleted = 0"));
       expect(querySql).not.toEqual(expect.stringContaining("postgres_fitness.metric_stream"));
       expect(execute).not.toHaveBeenCalled();
     });

@@ -5,7 +5,7 @@
     order_by='(user_id, provider_id)'
 ) }}
 
-WITH providers AS (
+WITH current_providers AS (
     SELECT DISTINCT
         user_id,
         id AS provider_id
@@ -83,6 +83,30 @@ WITH providers AS (
         provider_id
     FROM {{ source('postgres_fitness', 'journal_entry') }} FINAL
     WHERE _peerdb_is_deleted = 0
+),
+
+{% if is_incremental() %}
+existing_providers AS (
+    SELECT DISTINCT
+        user_id,
+        provider_id
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+),
+{% endif %}
+
+providers AS (
+    SELECT
+        user_id,
+        provider_id
+    FROM current_providers
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT
+        user_id,
+        provider_id
+    FROM existing_providers
+    {% endif %}
 ),
 
 activity_counts AS (
@@ -232,10 +256,14 @@ SELECT
     coalesce(lab_panel_counts.count, 0) AS lab_panels,
     coalesce(lab_result_counts.count, 0) AS lab_results,
     coalesce(journal_entry_counts.count, 0) AS journal_entries,
+    if(current_providers.provider_id IS NULL, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
 FROM providers
 CROSS JOIN refresh_clock
+LEFT JOIN current_providers
+    ON current_providers.user_id = providers.user_id
+    AND current_providers.provider_id = providers.provider_id
 LEFT JOIN activity_counts
     ON activity_counts.user_id = providers.user_id
     AND activity_counts.provider_id = providers.provider_id
