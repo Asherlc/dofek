@@ -861,8 +861,8 @@ refresh_clock AS (
     now64(9) AS refreshed_at
 )
 SELECT
-  inputs_with_baselines.user_id AS user_id,
-  inputs_with_baselines.date AS date,
+  CAST(inputs_with_baselines.user_id, 'UUID') AS user_id,
+  CAST(inputs_with_baselines.date, 'Date') AS date,
   inputs_with_baselines.hrv AS hrv,
   inputs_with_baselines.resting_hr AS resting_hr,
   inputs_with_baselines.respiratory_rate AS respiratory_rate,
