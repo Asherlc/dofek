@@ -434,6 +434,44 @@ jobs:
             exit "$status"
           fi
 
+          wait_deadline_seconds=$((SECONDS + 1200))
+          while true; do
+            pending_service_count=0
+            while IFS= read -r service_name; do
+              if [ -z "$service_name" ]; then
+                continue
+              fi
+              update_state="$(
+                docker service inspect "$service_name" \
+                  --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
+              )"
+              replicas="$(
+                docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
+              )"
+              echo "${service_name} replicas=${replicas} update_state=${update_state:-none}"
+              case "$update_state" in
+                rollback_*|paused)
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} did not finish pre-migration deployment cleanly; update_state=${update_state}"
+                  exit 1
+                  ;;
+                updating)
+                  pending_service_count="$((pending_service_count + 1))"
+                  ;;
+              esac
+            done < <(docker stack services "$STACK_NAME" --format '{{.Name}}')
+
+            if [ "$pending_service_count" -eq 0 ]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
+              docker stack services "$STACK_NAME"
+              echo "::error::pre-migration stack services did not finish updating before timeout"
+              exit 124
+            fi
+            sleep 10
+          done
+
       - name: Wait for Postgres writable
         run: |
           for attempt in $(seq 1 36); do

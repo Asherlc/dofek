@@ -9850,3 +9850,27 @@ new incremental tables are populated.
   retention to 16GB, adds replacement-slot headroom, and lowers PeerDB CDC and
   initial-snapshot work units to 100,000 rows; the remaining recurrence risk is
   a future WAL burst or long PeerDB outage that exceeds that bounded budget.
+
+### 2026-06-04 Deploy failed during final Swarm stack update
+
+- Symptoms: Deploy Web run `26924058329` failed in job `79430469079` during
+  the production Deploy stack step after migrations had succeeded.
+- User impact: The new app image `sha-90c7d51` was not fully rolled out by
+  that workflow run. The pre-migration stack apply and migrations completed
+  before the final stack update failed.
+- Evidence: The failed command was
+  `docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml --with-registry-auth --prune --detach=true dofek`.
+  The first fatal log line was `failed to update service dofek_traefik: Error
+  response from daemon: rpc error: code = Unknown desc = update out of
+  sequence`.
+- Root cause: The deploy workflow submitted the final pruned stack deploy
+  immediately after a pre-migration stack deploy without first waiting for
+  Swarm service updates from the pre-migration apply to finish, so Docker
+  rejected the Traefik service update as out of sequence.
+- Fix / mitigation: The workflow now polls all services in the stack after the
+  pre-migration stack apply and proceeds only when no service reports an active
+  `updating` state, failing loudly on paused or rollback states.
+- Remaining risk: This protects the same-job pre-migration-to-final deploy
+  handoff. A future unrelated Swarm manager bug or out-of-band service update
+  could still produce `update out of sequence` and would need separate
+  operational investigation.
