@@ -10036,3 +10036,25 @@ new incremental tables are populated.
 - Remaining risk: Existing delayed jobs created before this fix, if any, keep
   their old ids. The Sentry issue had only two production occurrences, both
   during active cooldown enqueueing.
+
+### 2026-06-04 PostgreSQL idle pool client crash
+
+- Symptoms: Sentry issue `DOFEK-SERVER-2M` reported fatal uncaught
+  `Error: Connection terminated unexpectedly` events from `pg/lib/client.js` in
+  production.
+- User impact: Sentry reported zero directly impacted users, but the Node
+  process treated the idle PostgreSQL client error as an uncaught exception.
+- Evidence: The latest Sentry event occurred at `2026-06-04T21:26:38Z` with
+  mechanism `auto.node.onuncaughtexception`, and the stack ended in
+  node-postgres `Connection.?` emitting `Connection terminated unexpectedly`.
+  The shared `src/db/index.ts` `pg.Pool` had no `error` listener.
+- Root cause: Idle PostgreSQL clients disconnected by backend or network
+  events emit `error` on the pool; without a pool-level listener, Node treats
+  that event as uncaught.
+- Fix / mitigation: Added a `pg.Pool` `error` listener in `createDatabase()`
+  that logs the idle-client failure and reports the original error to Sentry
+  with a `postgres-pool` source tag. Added a unit test that reproduces the
+  missing listener.
+- Remaining risk: This prevents the uncaught idle-client error class from
+  crashing the process. It does not address a separate underlying database
+  restart or network partition if one caused the disconnect.
