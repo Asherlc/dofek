@@ -13,7 +13,7 @@ WITH activity_load AS (
         ended_at,
         dateDiff('second', started_at, ended_at) / 60.0
         * avg_hr / nullIf(toFloat64(max_hr), 0) AS daily_load
-    FROM {{ ref('activity_summary_rows') }} FINAL
+    FROM {{ ref('activity_summary_rows') }}
     WHERE ended_at IS NOT NULL
         AND avg_hr IS NOT NULL
 ),

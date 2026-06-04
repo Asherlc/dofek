@@ -892,7 +892,7 @@ function buildTestDailyActivityLoadSelectSql(databases: IsolatedClickHouseDataba
     assumeNotNull(ended_at) AS ended_at,
     dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0
       * avg_hr / nullIf(toFloat64(max_hr), 0) AS daily_load
-  FROM ${databases.analytics}.activity_summary FINAL
+  FROM ${databases.analytics}.activity_summary
   WHERE ended_at IS NOT NULL
     AND avg_hr IS NOT NULL
 ),
@@ -923,7 +923,7 @@ function buildTestHealthspanActivityZoneMinutesSelectSql(
     started_at,
     assumeNotNull(ended_at) AS ended_at,
     dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0 AS duration_minutes
-  FROM ${databases.analytics}.activity_summary FINAL
+  FROM ${databases.analytics}.activity_summary
   WHERE ended_at IS NOT NULL
 ),
 resting_by_activity AS (

@@ -15,7 +15,7 @@ WITH activity_bounds AS (
         started_at,
         ended_at,
         dateDiff('second', started_at, ended_at) / 60.0 AS duration_minutes
-    FROM {{ ref('activity_summary_rows') }} FINAL
+    FROM {{ ref('activity_summary_rows') }}
     WHERE ended_at IS NOT NULL
 ),
 
