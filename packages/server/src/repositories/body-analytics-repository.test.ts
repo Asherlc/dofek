@@ -237,6 +237,30 @@ describe("BodyAnalyticsRepository", () => {
     );
   });
 
+  it("reuses identical non-body-fat body weight fetches within one repository instance", async () => {
+    const { repo, query } = makeRepository([
+      { date: "2024-01-01", weight_kg: "80" },
+      { date: "2024-01-02", weight_kg: "81" },
+    ]);
+
+    await repo.getSmoothedWeight(90, "2024-06-01");
+    await repo.getWeightPrediction(90, "2024-06-01", null);
+
+    expect(query).toHaveBeenCalledOnce();
+  });
+
+  it("does not reuse non-body-fat rows for recomposition fetches", async () => {
+    const { repo, query } = makeRepository([
+      { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },
+    ]);
+
+    await repo.getSmoothedWeight(180, "2024-06-01");
+    await repo.getRecomposition(180, "2024-06-01");
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1]?.[1]).toContain("AND body_fat_pct IS NOT NULL");
+  });
+
   describe("getSmoothedWeight", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
