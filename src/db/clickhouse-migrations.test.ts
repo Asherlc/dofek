@@ -93,6 +93,9 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(statementSql).toContain("FROM postgres_fitness.food_entry FINAL");
+    expect(statementSql).toContain("toUInt8(0) AS is_deleted");
+    expect(statementSql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
+    expect(statementSql).toContain("now64(9) AS refreshed_at");
   });
 
   it("keeps incremental resting heart rate cleanup and table creation in its migration file", () => {
@@ -232,6 +235,9 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_daily_metrics");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(sql).toContain("FROM postgres_fitness.provider FINAL");
+    expect(sql).toContain("toUInt8(0) AS is_deleted");
+    expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
+    expect(sql).toContain("now64(9) AS refreshed_at");
     expect(sql).toContain("FROM postgres_fitness.food_entry FINAL");
     expect(sql).toContain("FROM postgres_fitness.health_event FINAL");
     expect(sql).toContain("FROM postgres_fitness.lab_panel FINAL");

@@ -896,6 +896,11 @@ journal_entry_counts AS (
   FROM postgres_fitness.journal_entry FINAL
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
 )
 SELECT
   providers.user_id AS user_id,
@@ -910,8 +915,12 @@ SELECT
   coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
   coalesce(lab_panel_counts.count, 0) AS lab_panels,
   coalesce(lab_result_counts.count, 0) AS lab_results,
-  coalesce(journal_entry_counts.count, 0) AS journal_entries
+  coalesce(journal_entry_counts.count, 0) AS journal_entries,
+  toUInt8(0) AS is_deleted,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
 FROM providers
+CROSS JOIN refresh_clock
 LEFT JOIN activity_counts
   ON activity_counts.user_id = providers.user_id
  AND activity_counts.provider_id = providers.provider_id
