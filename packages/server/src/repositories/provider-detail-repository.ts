@@ -60,7 +60,7 @@ export function tableInfo(dataType: DataType): {
   }
 }
 
-function listColumns(dataType: DataType): string {
+function listColumns(dataType: Exclude<DataType, "bodyMeasurements">): string {
   switch (dataType) {
     case "activities":
       return [
@@ -98,16 +98,6 @@ function listColumns(dataType: DataType): string {
         "sleep_type",
         "source_name",
         "created_at",
-      ].join(", ");
-    case "bodyMeasurements":
-      return [
-        "id",
-        "provider_id",
-        "recorded_at",
-        "weight_kg",
-        "body_fat_pct",
-        "muscle_mass_kg",
-        "source_name",
       ].join(", ");
     case "foodEntries":
       return [
