@@ -1,0 +1,22 @@
+import { describe, expect, it } from "vitest";
+import { clickHouseMigrationFileNames, clickHouseMigrations } from "./registry.ts";
+
+describe("clickHouseMigrations", () => {
+  it("creates serving dbt read-model tables before the web service can query them", () => {
+    const migrations = clickHouseMigrations("postgres://health:test@localhost:5432/health");
+    const statements = migrations.flatMap((migration) => migration.statements);
+
+    expect(clickHouseMigrationFileNames).toContain("0024_create_dbt_serving_read_model_tables.ts");
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.daily_recovery_inputs"),
+    );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.daily_activity_load"),
+    );
+    expect(statements).toContainEqual(
+      expect.stringContaining(
+        "CREATE TABLE IF NOT EXISTS analytics.healthspan_activity_zone_minutes",
+      ),
+    );
+  });
+});

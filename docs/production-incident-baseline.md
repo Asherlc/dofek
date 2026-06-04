@@ -10037,6 +10037,30 @@ new incremental tables are populated.
   their old ids. The Sentry issue had only two production occurrences, both
   during active cooldown enqueueing.
 
+### 2026-06-04 dbt serving tables missing during web rollout
+
+- Symptoms: Sentry issue `DOFEK-SERVER-36` reported production ClickHouse
+  errors for `stress.scores`, `recovery.*`, and `healthspan.*` routes starting
+  at `2026-06-04T21:24:52Z`.
+- User impact: Affected dashboard requests failed while the new web image
+  queried serving read models that did not exist yet. Sentry reported 28
+  occurrences and zero directly identified impacted users.
+- Evidence: The first fatal line was `Unknown table expression identifier
+  'analytics.daily_recovery_inputs'`; related events in the same issue also
+  failed on `analytics.healthspan_activity_zone_minutes`.
+- Root cause: The deploy migration path runs tracked Postgres and ClickHouse
+  migrations before the web service starts, but the new serving dbt read-model
+  tables were only created by the scheduled `analytics-worker`, which starts
+  after web and intentionally delays its first dbt build.
+- Fix / mitigation: Added ClickHouse migration
+  `0024_create_dbt_serving_read_model_tables` to create empty
+  `analytics.daily_recovery_inputs`, `analytics.daily_activity_load`, and
+  `analytics.healthspan_activity_zone_minutes` tables during the deploy
+  migration phase. Dbt remains responsible for populating and refreshing them.
+- Remaining risk: Requests made before the first analytics build may see empty
+  read-model results, but they should no longer fail because the table is
+  missing.
+
 ### 2026-06-04 PostgreSQL idle pool client crash
 
 - Symptoms: Sentry issue `DOFEK-SERVER-2M` reported fatal uncaught
