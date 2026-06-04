@@ -122,10 +122,11 @@ describe("recoveryRouter", () => {
       ...makeMockSensorStore([]),
       query: vi.fn(async (_schema: unknown, query: string) => {
         if (query.includes("analytics.v_sleep")) return toSleepRows(rows);
-        if (query.includes("analytics.activity_summary")) {
+        if (query.includes("analytics.daily_activity_load")) {
           if (rows.some((row) => "daily_load" in row || "acute_load" in row)) return rows;
           return [{ load: rows[0]?.yesterday_load ?? 0 }];
         }
+        if (query.includes("analytics.daily_recovery_inputs")) return rows;
         return [];
       }),
     };
