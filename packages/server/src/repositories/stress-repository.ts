@@ -110,12 +110,12 @@ export class StressRepository extends BaseRepository {
       this.accessWindow.kind === "full"
         ? ""
         : `
-          AND date >= toDate({accessStartDate:String})
-          AND date < toDate({accessEndDateExclusive:String})`;
+          AND recovery_inputs.date >= toDate({accessStartDate:String})
+          AND recovery_inputs.date < toDate({accessEndDateExclusive:String})`;
     const rows = await sensorStore.query(
       rawRowSchema,
       `SELECT
-        toString(date) AS date,
+        toString(recovery_inputs.date) AS date,
         hrv,
         resting_hr,
         hrv_mean_60d,
@@ -123,12 +123,12 @@ export class StressRepository extends BaseRepository {
         rhr_mean_60d,
         rhr_sd_60d,
         efficiency_pct
-      FROM analytics.daily_recovery_inputs
-      WHERE user_id = {userId:UUID}
-        AND date > toDate({windowStart:String})
-        AND date <= toDate({endDate:String})
+      FROM analytics.daily_recovery_inputs AS recovery_inputs
+      WHERE recovery_inputs.user_id = {userId:UUID}
+        AND recovery_inputs.date > toDate({windowStart:String})
+        AND recovery_inputs.date <= toDate({endDate:String})
         ${accessWindowClause}
-      ORDER BY date ASC`,
+      ORDER BY recovery_inputs.date ASC`,
       {
         userId: this.userId,
         windowStart: dateWindowStartString(endDate, days),
