@@ -116,14 +116,6 @@ vi.mock("../repositories/training-recommendation.ts", () => ({
   computeReadinessScore: vi.fn(() => 62),
 }));
 
-vi.mock("../repositories/anomaly-detection-repository.ts", () => ({
-  AnomalyDetectionRepository: class {
-    check() {
-      return Promise.resolve(null);
-    }
-  },
-}));
-
 vi.mock("../logger.ts", () => ({
   logger: {
     info: vi.fn(),

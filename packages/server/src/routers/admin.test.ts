@@ -101,6 +101,33 @@ describe("adminRouter", () => {
         { table_name: "user_profile", row_count: "5" },
       ]);
     });
+
+    it("uses catalog estimates instead of live table counts", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      await caller.overview();
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("pg_class");
+      expect(sqlText).toContain("reltuples");
+      expect(sqlText).not.toContain("COUNT(*)");
+    });
+
+    it("uses chunk estimates for metric stream hypertable counts", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = makeCaller(execute);
+
+      await caller.overview();
+
+      const sqlText = getSqlText(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("metric_stream_chunk_estimates");
+      expect(sqlText).toContain("pg_inherits");
+      expect(sqlText).toContain("parent_class.relname = 'metric_stream'");
+      expect(sqlText).toContain(
+        "GREATEST(base_estimates.row_count, metric_stream_chunk_estimates.row_count)",
+      );
+    });
   });
 
   describe("users", () => {

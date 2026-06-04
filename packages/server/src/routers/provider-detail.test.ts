@@ -128,6 +128,137 @@ function extractSqlParams(sqlObj: unknown): Array<string | number> {
   );
 }
 
+const expectedListColumns = {
+  activities: [
+    "id",
+    "provider_id",
+    "external_id",
+    "activity_type",
+    "started_at",
+    "ended_at",
+    "name",
+    "source_name",
+    "created_at",
+  ],
+  dailyMetrics: [
+    "id",
+    "provider_id",
+    "date",
+    "hrv",
+    "respiratory_rate_avg",
+    "steps",
+    "active_energy_kcal",
+    "distance_km",
+    "source_name",
+    "created_at",
+  ],
+  sleepSessions: [
+    "id",
+    "provider_id",
+    "external_id",
+    "started_at",
+    "ended_at",
+    "duration_minutes",
+    "sleep_type",
+    "source_name",
+    "created_at",
+  ],
+  foodEntries: [
+    "id",
+    "provider_id",
+    "external_id",
+    "date",
+    "meal",
+    "food_name",
+    "logged_at",
+    "source_name",
+    "created_at",
+  ],
+  healthEvents: [
+    "id",
+    "provider_id",
+    "external_id",
+    "type",
+    "value",
+    "value_text",
+    "unit",
+    "source_name",
+    "start_date",
+    "end_date",
+    "created_at",
+  ],
+  metricStream: [
+    "id",
+    "recorded_at",
+    "provider_id",
+    "external_id",
+    "device_id",
+    "source_type",
+    "channel",
+    "activity_id",
+    "scalar",
+  ],
+  nutritionDaily: [
+    "date",
+    "provider_id",
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "fiber_g",
+    "sugar_g",
+  ],
+  labPanels: [
+    "id",
+    "provider_id",
+    "external_id",
+    "name",
+    "loinc_code",
+    "status",
+    "source_name",
+    "recorded_at",
+    "issued_at",
+    "created_at",
+  ],
+  labResults: [
+    "id",
+    "provider_id",
+    "panel_id",
+    "external_id",
+    "test_name",
+    "loinc_code",
+    "value",
+    "value_text",
+    "unit",
+    "status",
+    "recorded_at",
+    "created_at",
+  ],
+  journalEntries: [
+    "id",
+    "provider_id",
+    "date",
+    "question_slug",
+    "answer_text",
+    "answer_numeric",
+    "impact_score",
+    "created_at",
+  ],
+} satisfies Record<Exclude<(typeof dataTypeEnum.options)[number], "bodyMeasurements">, string[]>;
+
+const expectedListColumnCases = [
+  ["activities", expectedListColumns.activities],
+  ["dailyMetrics", expectedListColumns.dailyMetrics],
+  ["sleepSessions", expectedListColumns.sleepSessions],
+  ["foodEntries", expectedListColumns.foodEntries],
+  ["healthEvents", expectedListColumns.healthEvents],
+  ["metricStream", expectedListColumns.metricStream],
+  ["nutritionDaily", expectedListColumns.nutritionDaily],
+  ["labPanels", expectedListColumns.labPanels],
+  ["labResults", expectedListColumns.labResults],
+  ["journalEntries", expectedListColumns.journalEntries],
+] satisfies Array<[keyof typeof expectedListColumns, string[]]>;
+
 describe("providerDetailRouter", () => {
   const createCaller = createTestCallerFactory(providerDetailRouter);
 
@@ -414,6 +545,26 @@ describe("providerDetailRouter", () => {
       expect(sqlText).toContain("ORDER BY");
       expect(sqlText).toContain("LIMIT");
       expect(sqlText).toContain("OFFSET");
+    });
+
+    it.each(
+      expectedListColumnCases,
+    )("selects explicit list columns for %s", async (dataType, expectedColumns) => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.records({ providerId: "test-provider", dataType });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      const selectClause = sqlText.slice(
+        sqlText.indexOf("SELECT") + "SELECT".length,
+        sqlText.indexOf("FROM"),
+      );
+      expect(selectClause.trim()).toBe(expectedColumns.join(", "));
     });
 
     it("queries body measurement records through ClickHouse", async () => {

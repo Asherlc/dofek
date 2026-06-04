@@ -92,6 +92,9 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
+    expect(statementSql).toContain("toUInt8(0) AS is_deleted");
+    expect(statementSql).toContain("refresh_clock.refresh_version AS refresh_version");
+    expect(statementSql).toContain("refresh_clock.refreshed_at AS refreshed_at");
     expect(statementSql).toContain("FROM postgres_fitness.food_entry FINAL");
   });
 
