@@ -10037,7 +10037,7 @@ new incremental tables are populated.
   their old ids. The Sentry issue had only two production occurrences, both
   during active cooldown enqueueing.
 
-### 2026-06-04 Dbt serving tables missing during web rollout
+### 2026-06-04 dbt serving tables missing during web rollout
 
 - Symptoms: Sentry issue `DOFEK-SERVER-36` reported production ClickHouse
   errors for `stress.scores`, `recovery.*`, and `healthspan.*` routes starting
