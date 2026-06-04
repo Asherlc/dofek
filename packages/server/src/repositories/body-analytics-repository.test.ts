@@ -249,6 +249,23 @@ describe("BodyAnalyticsRepository", () => {
     expect(query).toHaveBeenCalledOnce();
   });
 
+  it("evicts rejected body weight fetches from the per-instance cache", async () => {
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary ClickHouse failure"))
+      .mockResolvedValueOnce([{ date: "2024-01-01", weight_kg: "80" }]);
+    const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", undefined, { query });
+
+    await expect(repo.getSmoothedWeight(90, "2024-06-01")).rejects.toThrow(
+      "temporary ClickHouse failure",
+    );
+    const result = await repo.getSmoothedWeight(90, "2024-06-01");
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(1);
+  });
+
   it("does not reuse non-body-fat rows for recomposition fetches", async () => {
     const { repo, query } = makeRepository([
       { date: "2024-01-01", weight_kg: "80", body_fat_pct: "20" },

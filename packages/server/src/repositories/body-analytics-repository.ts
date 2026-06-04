@@ -321,7 +321,10 @@ export class BodyAnalyticsRepository extends BaseRepository {
       endDate,
       days,
       { requireBodyFat, accessWindow: this.accessWindow },
-    );
+    ).catch((error: unknown) => {
+      this.#bodyWeightRowsCache.delete(cacheKey);
+      throw error;
+    });
     this.#bodyWeightRowsCache.set(cacheKey, rowsPromise);
     return rowsPromise;
   }
