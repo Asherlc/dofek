@@ -437,6 +437,16 @@ jobs:
           wait_deadline_seconds=$((SECONDS + 1200))
           while true; do
             pending_service_count=0
+            services="$(
+              docker stack services "$STACK_NAME" --format '{{.Name}}'
+            )" || {
+              echo "::error::Failed to list stack services for ${STACK_NAME} during pre-migration convergence wait"
+              exit 1
+            }
+            if [ -z "$services" ]; then
+              echo "::error::No services found in stack ${STACK_NAME} during pre-migration convergence wait"
+              exit 1
+            fi
             while IFS= read -r service_name; do
               if [ -z "$service_name" ]; then
                 continue
@@ -459,7 +469,7 @@ jobs:
                   pending_service_count="$((pending_service_count + 1))"
                   ;;
               esac
-            done < <(docker stack services "$STACK_NAME" --format '{{.Name}}')
+            done <<< "$services"
 
             if [ "$pending_service_count" -eq 0 ]; then
               break
