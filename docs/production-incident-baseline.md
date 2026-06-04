@@ -9968,6 +9968,7 @@ new incremental tables are populated.
 - Remaining risk: `sleepNeed.performance` still contains some request-time
   composition; rerun Axiom after deploy to decide whether it needs its own
   serving-model pass.
+
 ### 2026-06-04 Slow query audit activity stream verification
 
 - Symptoms: A 7-day Axiom slow-query scan found a historical
