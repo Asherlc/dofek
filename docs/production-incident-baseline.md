@@ -10061,6 +10061,28 @@ new incremental tables are populated.
   read-model results, but they should no longer fail because the table is
   missing.
 
+### 2026-06-04 provider stats dbt table still using legacy object
+
+- Symptoms: Sentry issue `DOFEK-SERVER-36` continued reporting production
+  `sync.providerStats` errors after the initial serving-table migration fix.
+- User impact: Provider inventory requests failed; Sentry reported zero
+  directly identified impacted users on the latest event.
+- Evidence: The latest Sentry event at `2026-06-04T22:30:30.645Z` failed with
+  `Unknown expression or function identifier is_deleted` while querying
+  `analytics.provider_stats FINAL ... AND is_deleted = 0`.
+- Root cause: `analytics.provider_stats` had moved to a dbt-owned incremental
+  model with `is_deleted`, `refresh_version`, and `refreshed_at`, but the
+  production-safe dbt selection and deploy-time serving-table migration omitted
+  it. The existing production object could therefore remain the legacy
+  ClickHouse view/table shape while the API queried the dbt table contract.
+- Fix / mitigation: Added `provider_stats` to `DBT_SAFE_MODELS`, updated
+  `0024_create_dbt_serving_read_model_tables` for fresh installs, and added
+  `0025_recreate_provider_stats_dbt_table` to drop the live legacy
+  `analytics.provider_stats` object before creating the dbt-owned
+  ReplacingMergeTree table with the full serving schema.
+- Remaining risk: Requests made before the first analytics build after deploy
+  may see empty provider counts, but they should not fail on a stale schema.
+
 ### 2026-06-04 PostgreSQL idle pool client crash
 
 - Symptoms: Sentry issue `DOFEK-SERVER-2M` reported fatal uncaught

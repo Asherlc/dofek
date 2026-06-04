@@ -22,6 +22,7 @@ import { createMigration as createMigration0021 } from "./0021_incremental_resti
 import { createMigration as createMigration0022 } from "./0022_incremental_activity_summary.ts";
 import { createMigration as createMigration0023 } from "./0023_incremental_activity_vo2max_estimate.ts";
 import { createMigration as createMigration0024 } from "./0024_create_dbt_serving_read_model_tables.ts";
+import { createMigration as createMigration0025 } from "./0025_recreate_provider_stats_dbt_table.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -49,6 +50,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0022,
   createMigration0023,
   createMigration0024,
+  createMigration0025,
 ];
 
 export const clickHouseMigrationFileNames = [
@@ -76,6 +78,7 @@ export const clickHouseMigrationFileNames = [
   "0022_incremental_activity_summary.ts",
   "0023_incremental_activity_vo2max_estimate.ts",
   "0024_create_dbt_serving_read_model_tables.ts",
+  "0025_recreate_provider_stats_dbt_table.ts",
 ] as const;
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

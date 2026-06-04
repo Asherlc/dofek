@@ -60,6 +60,7 @@ describe("production analytics read-model build", () => {
       "activity_location_summary_rows",
       "activity_summary_rows",
       "activity_vo2max_estimate",
+      "provider_stats",
       "daily_activity_load",
       "healthspan_activity_zone_minutes",
     ]);
