@@ -433,7 +433,10 @@ metric_stream UInt64,
 nutrition_daily UInt64,
 lab_panels UInt64,
 lab_results UInt64,
-journal_entries UInt64`,
+journal_entries UInt64,
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     deduped_sensor: `user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
 recorded_date Date,
@@ -535,7 +538,9 @@ activity_count UInt64`,
     return null;
   }
   const engine =
-    shortViewName === "deduped_activities" || shortViewName === "activity_sensor_sample"
+    shortViewName === "deduped_activities" ||
+    shortViewName === "activity_sensor_sample" ||
+    shortViewName === "provider_stats"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
   const orderBy =
@@ -543,7 +548,9 @@ activity_count UInt64`,
       ? "(user_id, activity_id)"
       : shortViewName === "activity_sensor_sample"
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : "tuple()";
+        : shortViewName === "provider_stats"
+          ? "(user_id, provider_id)"
+          : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
