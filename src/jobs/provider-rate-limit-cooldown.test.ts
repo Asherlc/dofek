@@ -360,6 +360,5 @@ describe("provider rate-limit scheduling helpers", () => {
     const jobId = providerRateLimitCooldownJobId(cooldown, "user-1");
 
     expect(jobId).toBe("provider-rate-limit-garmin-provider-user-1-1780402200000");
-    expect(jobId).not.toContain(":");
   });
 });
