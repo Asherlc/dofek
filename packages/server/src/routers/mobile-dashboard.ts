@@ -8,10 +8,7 @@ import { dateWindowStart, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import {
-  type AnomalyCheckResult,
-  AnomalyDetectionRepository,
-} from "../repositories/anomaly-detection-repository.ts";
+import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
 import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import {
   fetchRestingHeartRateRows,
@@ -460,8 +457,7 @@ export const mobileDashboardRouter = router({
       };
 
       // 5. Anomalies
-      const anomalyRepo = new AnomalyDetectionRepository(ctx.db, ctx.userId, tz, sensorStore);
-      const anomalies = await timed("anomalies", () => anomalyRepo.check(endDate));
+      const anomalies = null;
 
       const result = {
         readiness: readinessResult,
