@@ -201,17 +201,48 @@ export const adminRouter = router({
             ('food_entry_nutrient'),
             ('supplement_nutrient'),
             ('metric_stream')
+        ),
+        base_estimates AS (
+          SELECT
+            target_tables.table_name,
+            GREATEST(pg_class.reltuples, 0)::bigint AS row_count
+          FROM target_tables
+          JOIN pg_class
+            ON pg_class.relname = target_tables.table_name
+          JOIN pg_namespace
+            ON pg_namespace.oid = pg_class.relnamespace
+           AND pg_namespace.nspname = 'fitness'
+        ),
+        metric_stream_chunk_estimates AS (
+          SELECT
+            COALESCE(SUM(GREATEST(chunk_class.reltuples, 0)), 0)::bigint AS row_count
+          FROM pg_inherits
+          JOIN pg_class AS parent_class
+            ON parent_class.oid = pg_inherits.inhparent
+          JOIN pg_namespace AS parent_namespace
+            ON parent_namespace.oid = parent_class.relnamespace
+           AND parent_namespace.nspname = 'fitness'
+          JOIN pg_class AS chunk_class
+            ON chunk_class.oid = pg_inherits.inhrelid
+          WHERE parent_class.relname = 'metric_stream'
         )
         SELECT
-          target_tables.table_name,
-          GREATEST(pg_class.reltuples, 0)::bigint::text AS row_count
-        FROM target_tables
-        JOIN pg_class
-          ON pg_class.relname = target_tables.table_name
-        JOIN pg_namespace
-          ON pg_namespace.oid = pg_class.relnamespace
-         AND pg_namespace.nspname = 'fitness'
-        ORDER BY GREATEST(pg_class.reltuples, 0) DESC`,
+          base_estimates.table_name,
+          CASE
+            WHEN base_estimates.table_name = 'metric_stream'
+              THEN GREATEST(
+                base_estimates.row_count,
+                metric_stream_chunk_estimates.row_count
+              )::text
+            ELSE base_estimates.row_count::text
+          END AS row_count
+        FROM base_estimates
+        CROSS JOIN metric_stream_chunk_estimates
+        ORDER BY CASE
+          WHEN base_estimates.table_name = 'metric_stream'
+            THEN GREATEST(base_estimates.row_count, metric_stream_chunk_estimates.row_count)
+          ELSE base_estimates.row_count
+        END DESC`,
       ),
       bodyStore.query(
         overviewCountSchema,
