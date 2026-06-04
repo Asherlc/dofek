@@ -27,11 +27,6 @@ import {
 }
 
 import {
-  to = cloudflare_dns_record.dofek_fit_preview_wildcard
-  id = "a744a251a98f2cbffef47d0e3054e084/424bedb3215b3ae375717ad639693ce2"
-}
-
-import {
   to = cloudflare_dns_record.dofek_live_root
   id = "04dc9fc04f990bdb6c509fd51b13688f/1b0d9221fdffbe5e96a690d55b602d55"
 }

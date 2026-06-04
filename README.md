@@ -189,7 +189,7 @@ Keep `src/free-exercise-db.json` minified so upstream catalog refreshes do not b
 
 Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/pr-<PR number>/index.html`. Closed PR previews are deleted by workflow, with R2 lifecycle rules as a fallback safety net. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
 
-Automatic full review app creation on dedicated Hetzner infrastructure is currently disabled. Manual review-app dispatch remains available for a specific PR when explicitly needed. See [docs/review-apps.md](docs/review-apps.md) for the shared-front-door architecture and lifecycle.
+Dedicated PR review apps have been retired. Pull requests still publish Storybook previews to R2 for web and mobile UI review.
 
 Tests use [Vitest](https://vitest.dev/). TDD is the standard workflow — write tests first, then implement. Test files are colocated with source files (e.g. `index.test.ts` next to `index.ts`). E2E tests use [Cypress](https://www.cypress.io/) and run against a Docker Compose stack in CI. [Stryker](https://stryker-mutator.io/) mutation testing runs on PRs to verify test quality.
 
@@ -393,7 +393,7 @@ See `packages/server/src/routers/life-events.ts` for the API and `packages/web/s
 - [x] GHA CI with Docker build + push to GHCR
 - [x] GitHub Actions deploys the Docker Swarm stack with shared app/ML image tags
 - [x] CLI for authenticating, pulling, and managing providers (`sync`, `auth`, `import` commands)
-- [x] Ephemeral preview environments per PR (Hetzner PR server + OCI front door + seeded DB)
+- [x] Storybook previews per PR (R2-hosted web and mobile builds)
 
 ### Resilience
 - [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.

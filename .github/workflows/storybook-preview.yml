@@ -1,7 +1,16 @@
-name: Review App — Storybook
+name: Storybook Preview
 
 on:
   workflow_call:
+    secrets:
+      R2_ACCESS_KEY_ID:
+        required: true
+      R2_SECRET_ACCESS_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   deploy:

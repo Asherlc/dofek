@@ -4,9 +4,9 @@ Infrastructure-as-code and deployment configuration for Dofek.
 
 ## Architecture
 
-Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle Cloud Infrastructure (OCI) Always Free with **Cloudflare** for DNS, R2 storage, and CDN. Hetzner is still used for per-PR review apps only; the old staging environment is disabled and is not managed by the main Terraform root.
+Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle Cloud Infrastructure (OCI) Always Free with **Cloudflare** for DNS, R2 storage, and CDN. Hetzner-backed production, staging, and PR review-app infrastructure has been retired.
 
-- **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. Review apps run on PR-scoped Hetzner servers from `deploy/review-apps/`. Each server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
+- **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
   - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
@@ -17,10 +17,9 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
   - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
   - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
 - **Networking**:
-  - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS. Review-app Hetzner firewalls are managed in `deploy/review-apps/`.
+  - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
   - **Reverse Proxy**: Traefik handles SSL termination via Let's Encrypt (DNS-01 challenge) and routes traffic based on `Host()` rules declared in `deploy.labels` on each swarm service. Traefik's `providers.swarm` watches the Docker API for service changes.
-  - **Review app ingress**: Traefik also watches `/opt/dofek/traefik-dynamic` through the file provider for PR-specific routes like `pr-123.dofek.asherlc.com`.
 - **Observability**:
   - **OpenTelemetry**: `otel-collector` gathers traces, logs, and metrics.
   - **Axiom**: Primary destination for structured logs and metrics via OTLP.
@@ -32,7 +31,6 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 
 ### Terraform (`*.tf`)
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
-- `review-apps/`: Separate Terraform root for PR-scoped Hetzner review servers and the corresponding Traefik dynamic route files on the shared front door. See [docs/review-apps.md](../docs/review-apps.md).
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
 - `storage.tf`: Manages Cloudflare R2 buckets and preview-object lifecycle rules. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
 
@@ -41,7 +39,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 
 ### Swarm Stack (`stack.yml`)
 - Single file defining all services: `web`, `worker`, `analytics-worker`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
-- Traefik consumes both the swarm provider and a bind-mounted dynamic-config directory at `/opt/dofek/traefik-dynamic` so review-app workspaces can add exact PR host routes without modifying the stack for every PR.
+- Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
@@ -285,7 +283,6 @@ This preserves migration gating while remaining safe for both warm updates and s
 If management subdomains return `404 page not found`, use:
 
 - `docs/traefik-subdomain-404-runbook.md`
-- `docs/review-apps.md` for PR-specific shared-front-door routes
 
 ### Deployment Runbook: Stale ClickHouse Body Measurements
 

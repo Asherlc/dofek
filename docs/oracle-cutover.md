@@ -11,8 +11,7 @@ The production cutover from Hetzner to Oracle Cloud is complete.
 - Production DNS records in `deploy/dns.tf` point at `var.oracle_server_host`.
 - The main `deploy/` Terraform root no longer manages Hetzner servers,
   Hetzner volumes, or staging DNS records.
-- Hetzner remains in use for per-PR review app servers
-  (`deploy/review-apps/`).
+- Dedicated Hetzner-backed PR review apps have been retired.
 
 ## Rollback
 

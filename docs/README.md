@@ -64,7 +64,6 @@ Cross-provider reverse-engineering references:
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering lost PeerDB CDC slots. |
 | [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |
 | [production-incident-baseline.md](production-incident-baseline.md) | Baseline knowledge from production incidents and recurring failure patterns. |
-| [review-apps.md](review-apps.md) | Review app lifecycle, routing, and quota troubleshooting. |
 | [staging.md](staging.md) | Disabled staging environment notes and re-enable requirements. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
@@ -78,6 +77,6 @@ Cross-provider reverse-engineering references:
 
 ## Notes
 
-- Storybook previews are active via `review-app-storybook.yml` and published to R2.
+- Storybook previews are active via `storybook-preview.yml` and published to R2.
 - PR preview artifacts are deleted on close via `cleanup-pr-r2.yml`, with R2 lifecycle rules as a fallback safety net.
-- The old web preview workflow (`review-app-web.yml`) has been removed and should stay removed.
+- Dedicated PR review apps and the old web preview workflow have been removed and should stay removed.

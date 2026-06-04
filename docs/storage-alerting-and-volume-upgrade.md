@@ -10,8 +10,6 @@ host provisioned by `deploy/oracle-free/`, mounted at `/mnt/dofek-data`.
   `deploy/oracle-free/`.
 - Staging: disabled; the main `deploy/` Terraform root no longer manages a
   staging server or volume.
-- Review apps: disposable Hetzner servers; destroy stale review apps instead of
-  expanding them unless a larger review-app server type is intentionally chosen.
 
 ## Alerting Targets
 
