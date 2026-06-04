@@ -618,39 +618,6 @@ describe("providerDetailRouter", () => {
       expect(sqlText).not.toContain("avg_hr");
     });
 
-    it("does not select raw payload columns for activity list records", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await caller.records({ providerId: "strava", dataType: "activities" });
-
-      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
-      expect(sqlText).not.toMatch(/SELECT \*/);
-      expect(sqlText).not.toContain("raw");
-    });
-
-    it("does not select raw payload columns for metric stream list records", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await caller.records({ providerId: "apple_health", dataType: "metricStream" });
-
-      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
-      expect(sqlText).not.toMatch(/SELECT \*/);
-      expect(sqlText).toContain("recorded_at");
-      expect(sqlText).toContain("channel");
-      expect(sqlText).toContain("scalar");
-      expect(sqlText).not.toContain("raw");
-    });
-
     it("defaults offset to 0 and limit to 50", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({

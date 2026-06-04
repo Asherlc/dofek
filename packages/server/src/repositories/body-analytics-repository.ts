@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -323,6 +324,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
       { requireBodyFat, accessWindow: this.accessWindow },
     ).catch((error: unknown) => {
       this.#bodyWeightRowsCache.delete(cacheKey);
+      captureException(error);
       throw error;
     });
     this.#bodyWeightRowsCache.set(cacheKey, rowsPromise);

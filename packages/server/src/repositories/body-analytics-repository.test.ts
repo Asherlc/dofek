@@ -1,4 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("@sentry/node", () => ({
+  captureException: mockCaptureException,
+}));
+
 import {
   BodyAnalyticsRepository,
   ewmaSmooth,
@@ -264,6 +271,19 @@ describe("BodyAnalyticsRepository", () => {
 
     expect(query).toHaveBeenCalledTimes(2);
     expect(result).toHaveLength(1);
+  });
+
+  it("reports rejected body weight fetches before rethrowing", async () => {
+    const fetchError = new Error("temporary ClickHouse failure");
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn().mockRejectedValueOnce(fetchError);
+    const repo = new BodyAnalyticsRepository({ execute }, "user-1", "UTC", undefined, { query });
+
+    await expect(repo.getSmoothedWeight(90, "2024-06-01")).rejects.toThrow(
+      "temporary ClickHouse failure",
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(fetchError);
   });
 
   it("does not reuse non-body-fat rows for recomposition fetches", async () => {
